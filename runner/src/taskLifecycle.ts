@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -101,7 +102,7 @@ export class TaskLifecycleService {
 
   async startTask(input: TaskStartRequest): Promise<TaskStartResponse> {
     await this.ensureReady();
-    const request = TaskStartRequestSchema.parse(input);
+    const request = this.normalizeTaskStartRequest(input);
     await this.resolveStep(request.blueprintPath, request.stepId);
 
     const existingSession = this.getActiveSession(request.blueprintPath, request.stepId);
@@ -174,7 +175,7 @@ export class TaskLifecycleService {
 
   async submitTask(input: TaskSubmitRequest): Promise<TaskSubmitResponse> {
     await this.ensureReady();
-    const request = TaskSubmitRequestSchema.parse(input);
+    const request = this.normalizeTaskSubmitRequest(input);
     const session = this.getSessionById(request.sessionId);
 
     if (!session) {
@@ -300,6 +301,7 @@ export class TaskLifecycleService {
 
   async getTaskProgress(stepId: string, blueprintPath: string): Promise<TaskProgress> {
     await this.ensureReady();
+    const normalizedBlueprintPath = this.normalizeBlueprintPath(blueprintPath);
     const database = this.getDatabase();
     const countRow = database
       .prepare(
@@ -309,7 +311,7 @@ export class TaskLifecycleService {
           WHERE step_id = ? AND blueprint_path = ?
         `
       )
-      .get(stepId, blueprintPath) as { total_attempts: number };
+      .get(stepId, normalizedBlueprintPath) as { total_attempts: number };
     const latestAttemptRow = database
       .prepare(
         `
@@ -329,12 +331,12 @@ export class TaskLifecycleService {
           LIMIT 1
         `
       )
-      .get(stepId, blueprintPath) as AttemptRow | undefined;
+      .get(stepId, normalizedBlueprintPath) as AttemptRow | undefined;
 
     return TaskProgressSchema.parse({
       stepId,
       totalAttempts: countRow?.total_attempts ?? 0,
-      activeSession: this.getActiveSession(blueprintPath, stepId),
+      activeSession: this.getActiveSession(normalizedBlueprintPath, stepId),
       latestAttempt: latestAttemptRow ? deserializeAttempt(latestAttemptRow) : null
     });
   }
@@ -561,6 +563,46 @@ export class TaskLifecycleService {
     }
 
     return this.database;
+  }
+
+  private normalizeTaskStartRequest(input: TaskStartRequest): TaskStartRequest {
+    const request = TaskStartRequestSchema.parse(input);
+
+    return {
+      ...request,
+      blueprintPath: this.normalizeBlueprintPath(request.blueprintPath)
+    };
+  }
+
+  private normalizeTaskSubmitRequest(input: TaskSubmitRequest): TaskSubmitRequest {
+    const request = TaskSubmitRequestSchema.parse(input);
+
+    return {
+      ...request,
+      blueprintPath: this.normalizeBlueprintPath(request.blueprintPath)
+    };
+  }
+
+  private normalizeBlueprintPath(blueprintPath: string): string {
+    if (path.isAbsolute(blueprintPath)) {
+      return path.normalize(blueprintPath);
+    }
+
+    const candidates = [
+      path.resolve(blueprintPath),
+      path.resolve(this.workspaceRoot, blueprintPath),
+      path.resolve(path.dirname(this.workspaceRoot), blueprintPath),
+      path.resolve(path.dirname(path.dirname(this.workspaceRoot)), blueprintPath),
+      path.resolve(this.workspaceRoot, path.basename(blueprintPath))
+    ];
+
+    for (const candidate of candidates) {
+      if (existsSync(candidate)) {
+        return path.normalize(candidate);
+      }
+    }
+
+    return path.resolve(blueprintPath);
   }
 }
 

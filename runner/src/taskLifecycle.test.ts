@@ -41,6 +41,29 @@ test("TaskLifecycleService starts a task with a persisted pre-task snapshot", as
   }
 });
 
+test("TaskLifecycleService accepts a repo-relative blueprint path and normalizes it", async () => {
+  const { blueprintPath, cleanup, workspaceRoot } = await createWorkspaceFixture();
+  const clock = createClock("2025-03-15T00:00:00.000Z");
+  const relativeBlueprintPath = path.relative(rootDir, blueprintPath);
+
+  try {
+    const service = new TaskLifecycleService(workspaceRoot, {
+      now: clock.now
+    });
+    const startResponse = await service.startTask({
+      blueprintPath: relativeBlueprintPath,
+      stepId: "step.state-merge"
+    });
+
+    assert.equal(startResponse.session.blueprintPath, blueprintPath);
+    assert.equal(startResponse.progress.activeSession?.blueprintPath, blueprintPath);
+
+    service.close();
+  } finally {
+    await cleanup();
+  }
+});
+
 test("TaskLifecycleService reuses an active session and persists attempts, telemetry, and pass snapshots", async () => {
   const { blueprintPath, cleanup, workspaceRoot } = await createWorkspaceFixture();
   const brokenStatePath = path.join(workspaceRoot, "src", "state.ts");

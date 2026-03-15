@@ -68,7 +68,8 @@ const server = http.createServer(async (request, response) => {
       response.end(
         JSON.stringify({
           blueprint,
-          workspaceRoot
+          workspaceRoot,
+          blueprintPath: defaultBlueprintPath
         })
       );
       return;

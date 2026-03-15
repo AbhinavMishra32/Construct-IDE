@@ -9,7 +9,6 @@ import {
   buildStepHints,
   evaluateCheckResponse,
   hasAnsweredCheck,
-  resolveBlueprintDefinitionPath,
   type CheckReview
 } from "./lib/guide";
 import {
@@ -60,6 +59,7 @@ const SAVE_DEBOUNCE_MS = 450;
 export default function App() {
   const [runnerHealth, setRunnerHealth] = useState<RunnerHealth | null>(null);
   const [blueprint, setBlueprint] = useState<ProjectBlueprint | null>(null);
+  const [blueprintPath, setBlueprintPath] = useState("");
   const [workspaceFiles, setWorkspaceFiles] = useState<WorkspaceFileEntry[]>([]);
   const [activeFilePath, setActiveFilePath] = useState("");
   const [editorValue, setEditorValue] = useState("");
@@ -138,9 +138,6 @@ export default function App() {
   const activeRewriteGate =
     activeTaskProgress?.activeSession?.rewriteGate ?? taskSession?.rewriteGate ?? null;
   const activeAttemptStatus = activeTaskProgress?.latestAttempt?.status ?? null;
-  const blueprintPath = blueprint
-    ? resolveBlueprintDefinitionPath(blueprint.projectRoot)
-    : "";
   const overlayVisible = surfaceMode === "brief" && Boolean(activeStep);
   const explorerIsFiltered = filterQuery.trim().length > 0;
   const editorTheme = theme === "dark" ? "vs-dark" : "vs";
@@ -178,6 +175,7 @@ export default function App() {
 
         setRunnerHealth(health);
         setBlueprint(blueprintEnvelope.blueprint);
+        setBlueprintPath(blueprintEnvelope.blueprintPath);
         setWorkspaceFiles(filesEnvelope.files);
         setLearnerModel(learner);
         setLoadError("");
@@ -198,6 +196,7 @@ export default function App() {
         const message =
           error instanceof Error ? error.message : "Runner is not reachable.";
         setLoadError(message);
+        setBlueprintPath("");
         setStatusMessage("Construct is waiting for the local runner.");
       }
     };

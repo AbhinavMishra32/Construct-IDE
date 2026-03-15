@@ -189,6 +189,7 @@ export type ProjectBlueprint = {
 export type BlueprintEnvelope = {
   blueprint: ProjectBlueprint;
   workspaceRoot: string;
+  blueprintPath: string;
 };
 
 export type WorkspaceFilesEnvelope = {
