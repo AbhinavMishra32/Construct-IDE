@@ -74,7 +74,7 @@ export async function executeBlueprintTask(
     throw new Error(`Runner responded with ${response.status} while executing ${stepId}.`);
   }
 
-  return (await response.json()) as TaskResult;
+  return parseJsonResponse<TaskResult>(response, `executing ${stepId}`);
 }
 
 export async function startBlueprintTask(
@@ -96,7 +96,7 @@ export async function startBlueprintTask(
     throw new Error(`Runner responded with ${response.status} while starting ${stepId}.`);
   }
 
-  return (await response.json()) as TaskStartResponse;
+  return parseJsonResponse<TaskStartResponse>(response, `starting ${stepId}`);
 }
 
 export async function submitBlueprintTask(input: {
@@ -118,7 +118,7 @@ export async function submitBlueprintTask(input: {
     throw new Error(`Runner responded with ${response.status} while submitting ${input.stepId}.`);
   }
 
-  return (await response.json()) as TaskSubmitResponse;
+  return parseJsonResponse<TaskSubmitResponse>(response, `submitting ${input.stepId}`);
 }
 
 export async function fetchTaskProgress(
@@ -140,5 +140,16 @@ async function getJson<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(`Runner responded with ${response.status} for ${path}.`);
   }
 
-  return (await response.json()) as T;
+  return parseJsonResponse<T>(response, path);
+}
+
+async function parseJsonResponse<T>(response: Response, context: string): Promise<T> {
+  const rawBody = await response.text();
+
+  try {
+    return JSON.parse(rawBody) as T;
+  } catch {
+    const bodyPreview = rawBody.trim().slice(0, 180) || "<empty body>";
+    throw new Error(`Runner returned a non-JSON response while ${context}: ${bodyPreview}`);
+  }
 }

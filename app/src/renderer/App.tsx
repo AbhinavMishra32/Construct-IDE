@@ -146,8 +146,8 @@ export default function App() {
         ? "Save failed"
         : "Saved";
   const snapshotLabel = taskSession
-    ? `snapshot ${formatCommitId(taskSession.preTaskSnapshot.commitId)}`
-    : "No snapshot";
+    ? `snap ${formatCommitId(taskSession.preTaskSnapshot.commitId)}`
+    : "No snap";
   const taskAttemptLabel = activeTaskProgress
     ? `${activeTaskProgress.totalAttempts} attempt${
         activeTaskProgress.totalAttempts === 1 ? "" : "s"
@@ -581,7 +581,7 @@ export default function App() {
                   onClick={toggleTheme}
                   className="construct-theme-toggle"
                 >
-                  {theme === "light" ? "Dark mode" : "Light mode"}
+                  {theme === "light" ? "Dark" : "Light"}
                 </button>
               </div>
             </header>

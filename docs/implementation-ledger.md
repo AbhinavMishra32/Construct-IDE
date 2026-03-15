@@ -19,7 +19,7 @@ This file tracks the implementation phases, current status, shipped scope, and v
 | 3 | Test runner & adapters | Implemented | Adapter-based task execution now runs targeted Jest tests in child processes with timeouts, structured task results, and a runner endpoint for blueprint step execution. |
 | 4 | Editor UI basics & anchor navigation | Implemented | The Electron renderer now loads blueprint metadata, renders a Monaco editor and file tree, opens real workspace files, and jumps to `TASK:` anchors for selected steps. |
 | 5 | Learning Surface & Guidance Console | Implemented | Each unit now opens in a technical brief with quick checks, then transitions into a focused execution mode with a persistent guidance console, deterministic hints, and targeted task submission. |
-| 6 | Task lifecycle & telemetry | Implemented | Pre-task snapshots, persisted task attempts, learner-model updates, telemetry submission, and renderer-side task lifecycle wiring are in place. |
+| 6 | Task lifecycle & telemetry | Implemented | Pre-task snapshots, persisted task attempts, learner-model updates, telemetry submission, renderer-side task lifecycle wiring, and the compact native IDE shell pass are in place. |
 | 7 | Edit tracking & anti-cheat | Pending | Not started. |
 | 8 | Live Guide orchestration & LLM integration | Pending | Not started. |
 | 9 | Architect static generator | Pending | Not started. |
