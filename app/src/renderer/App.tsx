@@ -15,6 +15,7 @@ import {
   completePlanningSession,
   fetchBlueprint,
   fetchLearnerModel,
+  fetchProjectsDashboard,
   fetchRunnerHealth,
   fetchTaskProgress,
   fetchWorkspaceFile,
@@ -22,9 +23,11 @@ import {
   requestBlueprintDeepDive,
   requestRuntimeGuide,
   saveWorkspaceFile,
+  selectProject,
   startPlanningSession,
   startBlueprintTask,
-  submitBlueprintTask
+  submitBlueprintTask,
+  syncCurrentProjectStep
 } from "./lib/api";
 import { buildWorkspaceTree } from "./lib/tree";
 import { monaco } from "./monaco";
@@ -39,7 +42,9 @@ import type {
   LearnerModel,
   PlanningAnswer,
   PlanningSession,
+  ProjectSummary,
   ProjectBlueprint,
+  ProjectsDashboardResponse,
   RewriteGate,
   RunnerHealth,
   RuntimeInfo,
@@ -88,6 +93,10 @@ function hasPlanningAnswer(answer: PlanningAnswerDraft | undefined): answer is P
 
 export default function App() {
   const [runnerHealth, setRunnerHealth] = useState<RunnerHealth | null>(null);
+  const [projectsDashboard, setProjectsDashboard] =
+    useState<ProjectsDashboardResponse | null>(null);
+  const [dashboardOpen, setDashboardOpen] = useState(true);
+  const [dashboardBusy, setDashboardBusy] = useState(false);
   const [blueprint, setBlueprint] = useState<ProjectBlueprint | null>(null);
   const [blueprintPath, setBlueprintPath] = useState("");
   const [canonicalBlueprintPath, setCanonicalBlueprintPath] = useState("");
@@ -98,6 +107,7 @@ export default function App() {
   const [activeStepId, setActiveStepId] = useState("");
   const [anchorLocation, setAnchorLocation] = useState<AnchorLocation | null>(null);
   const [loadError, setLoadError] = useState("");
+  const [projectsError, setProjectsError] = useState("");
   const [saveState, setSaveState] = useState<"saved" | "saving" | "error">("saved");
   const [statusMessage, setStatusMessage] = useState("Loading Construct workspace...");
   const [surfaceMode, setSurfaceMode] = useState<SurfaceMode>("brief");
@@ -238,14 +248,15 @@ export default function App() {
   useEffect(() => {
     const controller = new AbortController();
 
-    const loadWorkspace = async () => {
+    const loadDashboard = async () => {
       try {
-        const [health, blueprintEnvelope] = await Promise.all([
+        const [health, projects] = await Promise.all([
           fetchRunnerHealth(controller.signal),
-          fetchBlueprint(controller.signal)
+          fetchProjectsDashboard(controller.signal)
         ]);
 
         setRunnerHealth(health);
+        setProjectsDashboard(projects);
         setPlanningSession(null);
         setPlanningPlan(null);
         setPlanningAnswers({});
@@ -253,47 +264,28 @@ export default function App() {
         setPlanningError("");
         setPlanningGoal("");
         setLoadError("");
-
-        if (!blueprintEnvelope.blueprint) {
-          setBlueprint(null);
-          setBlueprintPath("");
-          setCanonicalBlueprintPath("");
-          setWorkspaceFiles([]);
-          setLearnerModel(null);
-          setActiveStepId("");
-          setTaskProgress(null);
-          setTaskSession(null);
-          setTaskResult(null);
-          setSurfaceMode("brief");
-          setPlanningOverlayOpen(true);
-          setStatusMessage("No active blueprint yet. Start planning to generate the first project.");
-          return;
-        }
-
-        const [filesEnvelope, learner] = await Promise.all([
-          fetchWorkspaceFiles(controller.signal),
-          fetchLearnerModel(controller.signal)
-        ]);
-
-        setBlueprint(blueprintEnvelope.blueprint);
-        setBlueprintPath(blueprintEnvelope.blueprintPath);
-        setCanonicalBlueprintPath(blueprintEnvelope.canonicalBlueprintPath ?? "");
-        setWorkspaceFiles(filesEnvelope.files);
-        setLearnerModel(learner);
-        setPlanningOverlayOpen(true);
-
-        const initialStep = blueprintEnvelope.blueprint.steps[0];
-        if (initialStep) {
-          setActiveStepId(initialStep.id);
-          setSurfaceMode("brief");
-          setStatusMessage(
-            `Loaded ${blueprintEnvelope.blueprint.name}. Start a new project prompt or close the planner to resume this workspace.`
-          );
-        } else {
-          setStatusMessage(
-            `Loaded ${blueprintEnvelope.blueprint.name}. Start a new project prompt or close the planner to resume this workspace.`
-          );
-        }
+        setProjectsError("");
+        setBlueprint(null);
+        setBlueprintPath("");
+        setCanonicalBlueprintPath("");
+        setWorkspaceFiles([]);
+        setLearnerModel(null);
+        setActiveStepId("");
+        setTaskProgress(null);
+        setTaskSession(null);
+        setTaskResult(null);
+        setActiveFilePath("");
+        setEditorValue("");
+        setSavedValue("");
+        setAnchorLocation(null);
+        setSurfaceMode("brief");
+        setPlanningOverlayOpen(false);
+        setDashboardOpen(true);
+        setStatusMessage(
+          projects.projects.length > 0
+            ? "Choose a project to resume or start a new one."
+            : "Start the first project to generate a guided build."
+        );
       } catch (error) {
         if (controller.signal.aborted) {
           return;
@@ -302,13 +294,12 @@ export default function App() {
         const message =
           error instanceof Error ? error.message : "Runner is not reachable.";
         setLoadError(message);
-        setBlueprintPath("");
-        setCanonicalBlueprintPath("");
+        setProjectsError(message);
         setStatusMessage("Construct is waiting for the local runner.");
       }
     };
 
-    void loadWorkspace();
+    void loadDashboard();
 
     return () => {
       controller.abort();
@@ -439,6 +430,16 @@ export default function App() {
     rewriteGateRef.current = activeRewriteGate;
   }, [activeRewriteGate]);
 
+  useEffect(() => {
+    if (!dashboardOpen) {
+      return;
+    }
+
+    void refreshProjectsDashboard().catch(() => {
+      // Keep the last successful dashboard state if a refresh misses.
+    });
+  }, [dashboardOpen]);
+
   const resetTaskTelemetry = () => {
     const emptyTelemetry = createEmptyTelemetry();
     pendingPasteCharsRef.current = 0;
@@ -458,6 +459,93 @@ export default function App() {
 
   const appendRuntimeGuideEvent = (event: AgentEvent) => {
     setRuntimeGuideEvents((current) => appendAgentEvent(current, event));
+  };
+
+  const hydrateWorkspace = async (preferredStepId?: string | null) => {
+    const [blueprintEnvelope, filesEnvelope, learner] = await Promise.all([
+      fetchBlueprint(),
+      fetchWorkspaceFiles(),
+      fetchLearnerModel()
+    ]);
+
+    if (!blueprintEnvelope.blueprint) {
+      setBlueprint(null);
+      setBlueprintPath("");
+      setCanonicalBlueprintPath("");
+      setWorkspaceFiles([]);
+      setLearnerModel(null);
+      setActiveStepId("");
+      setTaskProgress(null);
+      setTaskSession(null);
+      setTaskResult(null);
+      setActiveFilePath("");
+      setEditorValue("");
+      setSavedValue("");
+      setAnchorLocation(null);
+      setSurfaceMode("brief");
+      return null;
+    }
+
+    const preferredStep =
+      (preferredStepId
+        ? blueprintEnvelope.blueprint.steps.find((step) => step.id === preferredStepId)
+        : null) ?? blueprintEnvelope.blueprint.steps[0] ?? null;
+
+    setBlueprint(blueprintEnvelope.blueprint);
+    setBlueprintPath(blueprintEnvelope.blueprintPath);
+    setCanonicalBlueprintPath(blueprintEnvelope.canonicalBlueprintPath ?? "");
+    setWorkspaceFiles(filesEnvelope.files);
+    setLearnerModel(learner);
+    setActiveFilePath("");
+    setEditorValue("");
+    setSavedValue("");
+    setAnchorLocation(null);
+    setTaskProgress(null);
+    setTaskSession(null);
+    setTaskResult(null);
+    setSurfaceMode("brief");
+
+    if (preferredStep) {
+      setActiveStepId(preferredStep.id);
+    } else {
+      setActiveStepId("");
+    }
+
+    return blueprintEnvelope.blueprint;
+  };
+
+  const refreshProjectsDashboard = async (signal?: AbortSignal) => {
+    const projects = await fetchProjectsDashboard(signal);
+    setProjectsDashboard(projects);
+    setProjectsError("");
+    return projects;
+  };
+
+  const openProject = async (project: ProjectSummary) => {
+    setDashboardBusy(true);
+    setProjectsError("");
+
+    try {
+      const selection = await selectProject(project.id);
+      const dashboard = await refreshProjectsDashboard();
+      const selectedProject =
+        dashboard.projects.find((entry) => entry.id === selection.activeProjectId) ?? project;
+      await hydrateWorkspace(selectedProject.currentStepId);
+      setDashboardOpen(false);
+      setPlanningOverlayOpen(false);
+      setStatusMessage(
+        `Resumed ${selectedProject.name} at ${
+          selectedProject.currentStepTitle ?? "the current step"
+        }.`
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : `Failed to open ${project.name}.`;
+      setProjectsError(message);
+      setStatusMessage(message);
+    } finally {
+      setDashboardBusy(false);
+    }
   };
 
   const openFile = async (filePath: string, step?: BlueprintStep | null) => {
@@ -510,6 +598,9 @@ export default function App() {
     setTaskResult((current) => (current?.stepId === step.id ? current : null));
     setTaskError("");
     setStatusMessage(`Opened brief for ${step.title}.`);
+    void syncCurrentProjectStep(step.id).catch(() => {
+      // Keep step selection local even if project syncing misses once.
+    });
   };
 
   const handleApplyStep = async () => {
@@ -815,37 +906,29 @@ export default function App() {
 
       setPlanningSession(completed.session);
       setPlanningPlan(completed.plan);
-      const [blueprintEnvelope, filesEnvelope, learner] = await Promise.all([
-        fetchBlueprint(),
-        fetchWorkspaceFiles(),
-        fetchLearnerModel()
-      ]);
+      const dashboard = await refreshProjectsDashboard();
+      const activeProjectSummary =
+        dashboard.projects.find((project) => project.id === dashboard.activeProjectId) ?? null;
+      const openedBlueprint = await hydrateWorkspace(activeProjectSummary?.currentStepId);
 
-      if (!blueprintEnvelope.blueprint) {
-        throw new Error("Planning completed, but no active generated blueprint was activated.");
+      if (!openedBlueprint) {
+        throw new Error("Planning completed, but no active generated project was activated.");
       }
 
-      setBlueprint(blueprintEnvelope.blueprint);
-      setBlueprintPath(blueprintEnvelope.blueprintPath);
-      setCanonicalBlueprintPath(blueprintEnvelope.canonicalBlueprintPath ?? "");
-      setWorkspaceFiles(filesEnvelope.files);
-      setLearnerModel(learner);
       resetTaskTelemetry();
-      const firstGeneratedStep = blueprintEnvelope.blueprint.steps[0];
+      const firstGeneratedStep =
+        (activeProjectSummary?.currentStepId
+          ? openedBlueprint.steps.find((step) => step.id === activeProjectSummary.currentStepId)
+          : null) ?? openedBlueprint.steps[0];
+
       if (firstGeneratedStep) {
         setActiveStepId(firstGeneratedStep.id);
-        setActiveFilePath("");
-        setEditorValue("");
-        setSavedValue("");
-        setAnchorLocation(null);
-        setTaskProgress(null);
-        setTaskSession(null);
-        setTaskResult(null);
         setSurfaceMode("brief");
       }
-      setPlanningOverlayOpen(true);
+      setDashboardOpen(false);
+      setPlanningOverlayOpen(false);
       setStatusMessage(
-        `Generated a ${completed.plan.steps.length}-step course for ${completed.plan.goal}. Start the lesson before opening the code workspace.`
+        `Generated ${openedBlueprint.name}. Start the lesson, then move into the code workspace when the step opens up.`
       );
     } catch (error) {
       setPlanningError(
@@ -872,7 +955,23 @@ export default function App() {
 
   return (
     <main className="construct-app">
-      <div className="construct-layout">
+      {dashboardOpen ? (
+        <ProjectsHome
+          projectsDashboard={projectsDashboard}
+          runnerHealth={runnerHealth}
+          projectsError={projectsError}
+          dashboardBusy={dashboardBusy}
+          onOpenProject={(project) => {
+            void openProject(project);
+          }}
+          onStartProject={() => {
+            openFreshPlanningOverlay();
+          }}
+          onToggleTheme={toggleTheme}
+          theme={theme}
+        />
+      ) : (
+        <div className="construct-layout">
         <aside className="construct-explorer">
           <div className="construct-filter-shell">
             <input
@@ -937,6 +1036,17 @@ export default function App() {
               </div>
 
               <div className="construct-editor-chrome-right">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDashboardOpen(true);
+                    setPlanningOverlayOpen(false);
+                    setStatusMessage("Opened projects dashboard.");
+                  }}
+                  className="construct-secondary-button"
+                >
+                  Projects
+                </button>
                 <button
                   type="button"
                   onClick={openFreshPlanningOverlay}
@@ -1126,7 +1236,8 @@ export default function App() {
             ) : null}
           </section>
         </section>
-      </div>
+        </div>
+      )}
 
       <AnimatePresence>
         {planningOverlayOpen ? (
@@ -1513,6 +1624,196 @@ function FloatingGuideCard({
         />
       </div>
     </motion.aside>
+  );
+}
+
+function ProjectsHome({
+  projectsDashboard,
+  runnerHealth,
+  projectsError,
+  dashboardBusy,
+  onOpenProject,
+  onStartProject,
+  onToggleTheme,
+  theme
+}: {
+  projectsDashboard: ProjectsDashboardResponse | null;
+  runnerHealth: RunnerHealth | null;
+  projectsError: string;
+  dashboardBusy: boolean;
+  onOpenProject: (project: ProjectSummary) => void;
+  onStartProject: () => void;
+  onToggleTheme: () => void;
+  theme: ThemeMode;
+}) {
+  const projects = projectsDashboard?.projects ?? [];
+  const activeProject =
+    projectsDashboard?.activeProjectId
+      ? projects.find((project) => project.id === projectsDashboard.activeProjectId) ?? null
+      : null;
+  const inProgressProjects = projects.filter((project) => project.status === "in-progress");
+  const recentProjects = projects.slice(0, 6);
+
+  return (
+    <section className="construct-home">
+      <header className="construct-home-header">
+        <div>
+          <span className="construct-home-kicker">Projects</span>
+          <h1 className="construct-home-title">Resume a project or start a new one.</h1>
+          <p className="construct-home-copy">
+            Construct keeps project progress in the backend so you can jump back into the
+            exact step you were on.
+          </p>
+        </div>
+
+        <div className="construct-home-actions">
+          <span className="construct-toolbar-pill">
+            {runnerHealth?.status ?? "offline"}
+          </span>
+          <button type="button" onClick={onToggleTheme} className="construct-theme-toggle">
+            {theme === "light" ? "Dark" : "Light"} mode
+          </button>
+          <button
+            type="button"
+            onClick={onStartProject}
+            className="construct-primary-button"
+            disabled={dashboardBusy}
+          >
+            New project
+          </button>
+        </div>
+      </header>
+
+      {projectsError ? (
+        <div className="construct-home-error">{projectsError}</div>
+      ) : null}
+
+      {activeProject ? (
+        <section className="construct-home-hero">
+          <div>
+            <span className="construct-home-section-kicker">Continue</span>
+            <h2>{activeProject.name}</h2>
+            <p>{activeProject.description}</p>
+            <div className="construct-home-meta-row">
+              <span>{activeProject.language}</span>
+              <span>
+                Step{" "}
+                {activeProject.currentStepIndex !== null
+                  ? activeProject.currentStepIndex + 1
+                  : 1}
+                /{Math.max(activeProject.totalSteps, 1)}
+              </span>
+              <span>
+                {activeProject.completedStepsCount} completed
+              </span>
+              <span>{formatProjectTimestamp(activeProject.lastOpenedAt ?? activeProject.updatedAt)}</span>
+            </div>
+          </div>
+
+          <div className="construct-home-hero-actions">
+            <button
+              type="button"
+              onClick={() => {
+                onOpenProject(activeProject);
+              }}
+              className="construct-primary-button"
+              disabled={dashboardBusy}
+            >
+              {dashboardBusy ? "Opening..." : "Resume project"}
+            </button>
+            <div className="construct-home-current-step">
+              <span className="construct-home-section-kicker">Current step</span>
+              <strong>{activeProject.currentStepTitle ?? "Ready to begin"}</strong>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      <div className="construct-home-grid">
+        <section className="construct-home-panel">
+          <div className="construct-home-panel-header">
+            <div>
+              <span className="construct-home-section-kicker">In progress</span>
+              <h2>Pick up where you left off</h2>
+            </div>
+          </div>
+
+          {inProgressProjects.length > 0 ? (
+            <div className="construct-project-list">
+              {inProgressProjects.map((project) => (
+                <button
+                  type="button"
+                  key={project.id}
+                  onClick={() => {
+                    onOpenProject(project);
+                  }}
+                  className="construct-project-card"
+                  disabled={dashboardBusy}
+                >
+                  <div className="construct-project-card-header">
+                    <strong>{project.name}</strong>
+                    <span>{project.language}</span>
+                  </div>
+                  <p>{project.description}</p>
+                  <div className="construct-project-card-footer">
+                    <span>
+                      Step{" "}
+                      {project.currentStepIndex !== null
+                        ? project.currentStepIndex + 1
+                        : 1}
+                      /{Math.max(project.totalSteps, 1)}
+                    </span>
+                    <span>{project.currentStepTitle ?? "Ready to begin"}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="construct-home-empty">
+              No in-progress projects yet. Start the first one and it will show up here.
+            </div>
+          )}
+        </section>
+
+        <section className="construct-home-panel">
+          <div className="construct-home-panel-header">
+            <div>
+              <span className="construct-home-section-kicker">Recent</span>
+              <h2>All recent projects</h2>
+            </div>
+          </div>
+
+          {recentProjects.length > 0 ? (
+            <div className="construct-recent-list">
+              {recentProjects.map((project) => (
+                <button
+                  type="button"
+                  key={project.id}
+                  onClick={() => {
+                    onOpenProject(project);
+                  }}
+                  className="construct-recent-row"
+                  disabled={dashboardBusy}
+                >
+                  <div>
+                    <strong>{project.name}</strong>
+                    <p>{project.currentStepTitle ?? project.description}</p>
+                  </div>
+                  <div className="construct-recent-row-meta">
+                    <span>{project.status}</span>
+                    <span>{formatProjectTimestamp(project.lastOpenedAt ?? project.updatedAt)}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="construct-home-empty">
+              No projects created yet. Use the new project action to generate the first one.
+            </div>
+          )}
+        </section>
+      </div>
+    </section>
   );
 }
 
@@ -3315,6 +3616,31 @@ function buildAnchorSnippet(
   const start = Math.max(anchor.lineNumber - radius - 1, 0);
   const end = Math.min(anchor.lineNumber + radius, lines.length);
   return lines.slice(start, end).join("\n");
+}
+
+function formatProjectTimestamp(value: string): string {
+  const date = new Date(value);
+  const deltaMs = Date.now() - date.getTime();
+  const deltaMinutes = Math.max(1, Math.round(deltaMs / 60_000));
+
+  if (deltaMinutes < 60) {
+    return `${deltaMinutes} min ago`;
+  }
+
+  const deltaHours = Math.round(deltaMinutes / 60);
+  if (deltaHours < 48) {
+    return `${deltaHours} hr ago`;
+  }
+
+  const deltaDays = Math.round(deltaHours / 24);
+  if (deltaDays < 14) {
+    return `${deltaDays} day ago`;
+  }
+
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric"
+  });
 }
 
 function createEmptyTelemetry(): TaskTelemetry {

@@ -21,7 +21,7 @@ This file tracks the implementation phases, current status, shipped scope, and v
 | 5 | Learning Surface & Guidance Console | Implemented | Each unit now opens in a technical brief with quick checks, then transitions into a focused execution mode with a persistent guidance console, deterministic hints, and targeted task submission. |
 | 6 | Task lifecycle & telemetry | Implemented | Pre-task snapshots, persisted task attempts, learner-model updates, telemetry submission, renderer-side task lifecycle wiring, and the compact native IDE shell pass are in place. |
 | 7 | Edit tracking & anti-cheat | Implemented | Typed-versus-pasted telemetry is enforced through a rewrite gate, and the learner now works inside a materialized starter workspace where internal step tests stay hidden from the explorer. |
-| 8 | Live Guide orchestration & LLM integration | In progress | Real agent foundations are now live: LangGraph job orchestration, the LangChain OpenAI provider, Tavily-backed research, SSE activity streaming, prompt compaction for structured plan generation, runtime Guide responses, first-slice generated blueprint synthesis, and agent persistence for planning state, learner knowledge, active blueprint metadata, and generated blueprint records. When `DATABASE_URL` is configured, those records are stored in Neon; otherwise Construct falls back to local state files. Dynamic plan mutation after runtime struggle is still pending. |
+| 8 | Live Guide orchestration & LLM integration | In progress | Real agent foundations are now live: LangGraph job orchestration, the LangChain OpenAI provider, Tavily-backed research, SSE activity streaming, prompt compaction for structured plan generation, runtime Guide responses, first-slice generated blueprint synthesis, and agent persistence for planning state, learner knowledge, active blueprint metadata, generated blueprint records, and dashboard-ready project summaries. When `DATABASE_URL` is configured, those records are stored through Prisma on Postgres/Neon; otherwise Construct falls back to local state files. Dynamic plan mutation after runtime struggle is still pending. |
 | 9 | Architect static generator | Pending | Not started. |
 | 10 | Rollback UX & snapshot management | Pending | Not started. |
 | 11 | Multi-language adapters | Pending | Not started. |
@@ -31,6 +31,7 @@ This file tracks the implementation phases, current status, shipped scope, and v
 ## Current Changeset Scope
 
 - Replace the previously hardcoded planner path with a real agent runtime in the runner.
+- Add a real homepage/dashboard that lists persisted projects, shows in-progress and recent work, and resumes the selected project back into its stored step.
 - Add provider-controlled OpenAI integration through the LangChain OpenAI provider with structured outputs and `gpt-5.4` as the current default planning model.
 - Add Tavily-backed architecture research behind a swappable search-provider boundary.
 - Add LangGraph-backed planning/runtime graphs for question generation, personalized roadmap generation, and live runtime guidance.
@@ -41,7 +42,8 @@ This file tracks the implementation phases, current status, shipped scope, and v
 - Remove the silent startup fallback to the fixed sample blueprint so the desktop app opens in planning mode until an agent-generated blueprint exists.
 - Persist a user knowledge base derived from prior planning sessions and feed it back into future question generation and roadmap synthesis.
 - Add an agent persistence boundary so planning sessions, learner knowledge, active generated-project selection, and generated blueprint records are stored as user data.
-- Use Neon as the remote backing store for that user data when `DATABASE_URL` is configured, while keeping the runnable local project workspace on disk.
+- Replace the raw SQL Neon persistence path with a Prisma-backed persistence layer that maps onto the existing backend tables and stores project metadata, current-step progress, and active-project selection per user.
+- Use Postgres/Neon as the remote backing store for that user data when `DATABASE_URL` is configured, while keeping the runnable local project workspace on disk.
 - Open the desktop app in a fresh new-project intake by default, even when a generated blueprint already exists, so the user can always start a new Architect run first and only resume an existing workspace intentionally.
 - Expand the Architect planning flow from a single research hop into a multi-stage LangGraph with separate research passes for project shape, prerequisite skills, dependency order, and validation strategy before synthesis.
 - Add explicit user-facing blueprint materialization stages so Construct shows when it is creating the project layout, writing support files, writing canonical files, generating hidden tests, packaging masked learner tasks, preparing dependencies, and activating the workspace.
@@ -108,6 +110,12 @@ This file tracks the implementation phases, current status, shipped scope, and v
 - Phase 8 agentic project-scope analysis: [`/Users/abhinavmishra/solin/socrates/runner/src/agentService.ts`](/Users/abhinavmishra/solin/socrates/runner/src/agentService.ts) and [`/Users/abhinavmishra/solin/socrates/runner/src/agentService.test.ts`](/Users/abhinavmishra/solin/socrates/runner/src/agentService.test.ts).
 - Phase 8 dynamic intake options and resolved-answer context: [`/Users/abhinavmishra/solin/socrates/pkg/shared/src/agentSchemas.ts`](/Users/abhinavmishra/solin/socrates/pkg/shared/src/agentSchemas.ts), [`/Users/abhinavmishra/solin/socrates/runner/src/agentService.ts`](/Users/abhinavmishra/solin/socrates/runner/src/agentService.ts), [`/Users/abhinavmishra/solin/socrates/runner/src/agentService.test.ts`](/Users/abhinavmishra/solin/socrates/runner/src/agentService.test.ts), [`/Users/abhinavmishra/solin/socrates/runner/src/agentPlanner.ts`](/Users/abhinavmishra/solin/socrates/runner/src/agentPlanner.ts), [`/Users/abhinavmishra/solin/socrates/runner/src/agentPlanner.test.ts`](/Users/abhinavmishra/solin/socrates/runner/src/agentPlanner.test.ts), [`/Users/abhinavmishra/solin/socrates/app/src/renderer/App.tsx`](/Users/abhinavmishra/solin/socrates/app/src/renderer/App.tsx), [`/Users/abhinavmishra/solin/socrates/app/src/renderer/index.css`](/Users/abhinavmishra/solin/socrates/app/src/renderer/index.css), and [`/Users/abhinavmishra/solin/socrates/app/src/renderer/types.ts`](/Users/abhinavmishra/solin/socrates/app/src/renderer/types.ts).
 - Phase 8 environment config for Neon-backed storage: [`/Users/abhinavmishra/solin/socrates/.env.example`](/Users/abhinavmishra/solin/socrates/.env.example).
+- Prisma schema and backend client: [`/Users/abhinavmishra/solin/socrates/prisma/schema.prisma`](/Users/abhinavmishra/solin/socrates/prisma/schema.prisma) and [`/Users/abhinavmishra/solin/socrates/runner/src/prisma.ts`](/Users/abhinavmishra/solin/socrates/runner/src/prisma.ts).
+- Prisma/Neon additive schema bootstrap: [`/Users/abhinavmishra/solin/socrates/runner/scripts/bootstrap-prisma-db.ts`](/Users/abhinavmishra/solin/socrates/runner/scripts/bootstrap-prisma-db.ts).
+- Prisma-backed agent and project persistence: [`/Users/abhinavmishra/solin/socrates/runner/src/agentPersistence.ts`](/Users/abhinavmishra/solin/socrates/runner/src/agentPersistence.ts).
+- Project dashboard/shared contracts: [`/Users/abhinavmishra/solin/socrates/pkg/shared/src/schemas.ts`](/Users/abhinavmishra/solin/socrates/pkg/shared/src/schemas.ts), [`/Users/abhinavmishra/solin/socrates/app/src/renderer/types.ts`](/Users/abhinavmishra/solin/socrates/app/src/renderer/types.ts), and [`/Users/abhinavmishra/solin/socrates/app/src/renderer/lib/api.ts`](/Users/abhinavmishra/solin/socrates/app/src/renderer/lib/api.ts).
+- Project dashboard endpoints and progress sync: [`/Users/abhinavmishra/solin/socrates/runner/src/index.ts`](/Users/abhinavmishra/solin/socrates/runner/src/index.ts) and [`/Users/abhinavmishra/solin/socrates/runner/src/agentService.ts`](/Users/abhinavmishra/solin/socrates/runner/src/agentService.ts).
+- Homepage/dashboard UI and resume flow: [`/Users/abhinavmishra/solin/socrates/app/src/renderer/App.tsx`](/Users/abhinavmishra/solin/socrates/app/src/renderer/App.tsx) and [`/Users/abhinavmishra/solin/socrates/app/src/renderer/index.css`](/Users/abhinavmishra/solin/socrates/app/src/renderer/index.css).
 
 ## Verification
 
@@ -125,6 +133,14 @@ This file tracks the implementation phases, current status, shipped scope, and v
 - Passed: `pnpm --filter @construct/app build`.
 - Passed: `pnpm verify:phase4`.
 - Passed: `pnpm --filter @construct/app test`.
+- Passed: `env PRISMA_GENERATE_SKIP_AUTOINSTALL=1 pnpm prisma:generate`.
+- Passed: `node --import tsx runner/scripts/bootstrap-prisma-db.ts`.
+- Passed: `pnpm --filter @construct/runner typecheck`.
+- Passed: `export PATH="$HOME/.nvm/versions/node/v25.4.0/bin:$PATH" pnpm --filter @construct/runner test`.
+- Passed: `pnpm --filter @construct/runner build`.
+- Passed: `pnpm --filter @construct/app typecheck`.
+- Passed: `pnpm --filter @construct/app test`.
+- Passed: `pnpm --filter @construct/app build`.
 - Passed: `pnpm verify:phase5`.
 - Passed: `pnpm --filter @construct/app typecheck`.
 - Passed: `pnpm --filter @construct/app build`.
@@ -170,8 +186,8 @@ This file tracks the implementation phases, current status, shipped scope, and v
 - The Architect graph now uses multiple research stages, but blueprint generation is still a single synthesis pass after those stages; it relies on prompt quality rather than a separate critique-and-repair subgraph before activation.
 - Dependency installation is currently best-effort and manifest-driven (`package.json` via `pnpm`, `Cargo.toml` via `cargo fetch`). It is surfaced clearly in the UI and logs, but Construct does not yet branch into repair flows when install/setup fails.
 - The real agent stack requires `OPENAI_API_KEY` and `TAVILY_API_KEY` in the runner environment. Provider choice remains developer-controlled through environment configuration, not end-user UI.
-- Neon-backed persistence requires `DATABASE_URL` in the runner environment. The current implementation stores planning state, learner knowledge, active blueprint metadata, and generated blueprint records in Neon when configured, but still keeps runnable project files and task-lifecycle SQLite state local on disk because execution stays local-first.
+- Prisma-backed persistence requires `DATABASE_URL` in the runner environment. The current implementation stores planning state, learner knowledge, active blueprint metadata, generated blueprint records, project summaries, and current-step resume state in Postgres/Neon when configured, but still keeps runnable project files and task-lifecycle SQLite state local on disk because execution stays local-first.
 
 ## Next Phase
 
-Continue Phase 8 by hardening the new generated-blueprint path: improve prompt examples and generation reliability, run pre-activation smoke tests on generated projects, and start persisting runtime step mutations back into the active blueprint instead of treating it as fixed after generation.
+Continue Phase 8 by hardening the new generated-blueprint path: improve prompt examples and generation reliability, run pre-activation smoke tests on generated projects, and start persisting runtime step mutations back into the active blueprint instead of treating it as fixed after generation. After that, add deeper per-user project analytics and richer dashboard filtering on top of the new Prisma-backed project metadata.

@@ -9,11 +9,17 @@
       "esbuild"
     ]
   },
+  "dependencies": {
+    "@prisma/client": "^6.16.0"
+  },
   "scripts": {
     "dev": "turbo run dev --parallel",
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
+    "prisma:generate": "prisma generate",
+    "prisma:push": "prisma db push",
+    "db:bootstrap": "pnpm --filter @construct/runner db:bootstrap",
     "validate:blueprint": "pnpm --filter @construct/shared validate:blueprint",
     "verify:phase1": "pnpm validate:blueprint && pnpm --filter @construct/runner blueprint:test",
     "verify:phase2": "pnpm --filter @construct/shared typecheck && pnpm verify:phase1 && pnpm --filter @construct/runner typecheck && pnpm --filter @construct/runner test",
@@ -23,6 +29,7 @@
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "prisma": "^6.16.0",
     "tsx": "^4.19.2",
     "turbo": "^2.4.0",
     "typescript": "^5.8.2"

@@ -4,12 +4,21 @@ import path from "node:path";
 
 import {
   CurrentPlanningSessionResponseSchema,
+  GeneratedProjectPlanSchema,
+  ProjectAttemptStatusSchema,
+  ProjectBlueprintSchema,
+  ProjectSummarySchema,
   UserKnowledgeBaseSchema,
   type CurrentPlanningSessionResponse,
+  type GeneratedProjectPlan,
+  type ProjectAttemptStatus,
+  type ProjectStatus as SharedProjectStatus,
+  type ProjectSummary,
   type UserKnowledgeBase
 } from "@construct/shared";
-import { neon } from "@neondatabase/serverless";
 import { z } from "zod";
+
+import { getPrismaClient } from "./prisma";
 
 const ActiveBlueprintStateSchema = z.object({
   blueprintPath: z.string().min(1),
@@ -35,10 +44,35 @@ const PersistedGeneratedBlueprintRecordListSchema = z.array(
   PersistedGeneratedBlueprintRecordSchema
 );
 
+const PersistedProjectRecordSchema = ProjectSummarySchema.omit({
+  completedStepsCount: true
+}).extend({
+  blueprintId: z.string().min(1),
+  learningStyle: z.string().min(1).nullable().default(null),
+  completedStepIds: z.array(z.string().min(1)).default([]),
+  blueprintJson: z.string().min(1),
+  planJson: z.string().min(1),
+  bundleJson: z.string().min(1)
+});
+
+const PersistedProjectRecordListSchema = z.array(PersistedProjectRecordSchema);
+
 export type ActiveBlueprintState = z.infer<typeof ActiveBlueprintStateSchema>;
 export type PersistedGeneratedBlueprintRecord = z.infer<
   typeof PersistedGeneratedBlueprintRecordSchema
 >;
+
+type PersistedProjectRecord = z.infer<typeof PersistedProjectRecordSchema>;
+
+export type ProjectProgressUpdate = {
+  blueprintPath: string;
+  stepId: string;
+  stepTitle: string;
+  stepIndex: number;
+  totalSteps: number;
+  markStepCompleted?: boolean;
+  lastAttemptStatus?: ProjectAttemptStatus | null;
+};
 
 export type AgentPersistence = {
   getPlanningState(): Promise<CurrentPlanningSessionResponse | null>;
@@ -49,6 +83,11 @@ export type AgentPersistence = {
   setActiveBlueprintState(state: ActiveBlueprintState): Promise<void>;
   getGeneratedBlueprintRecord(sessionId: string): Promise<PersistedGeneratedBlueprintRecord | null>;
   saveGeneratedBlueprintRecord(record: PersistedGeneratedBlueprintRecord): Promise<void>;
+  listProjects(): Promise<ProjectSummary[]>;
+  getActiveProject(): Promise<ProjectSummary | null>;
+  getProject(projectId: string): Promise<ProjectSummary | null>;
+  setActiveProject(projectId: string): Promise<ProjectSummary | null>;
+  updateProjectProgress(update: ProjectProgressUpdate): Promise<ProjectSummary | null>;
 };
 
 type AgentPersistenceLogger = {
@@ -62,7 +101,7 @@ type AgentPersistenceInput = {
   logger: AgentPersistenceLogger;
 };
 
-type StorageBackend = "local" | "neon";
+type StorageBackend = "local" | "prisma";
 
 export function createAgentPersistence(input: AgentPersistenceInput): AgentPersistence {
   const backend = resolveStorageBackend();
@@ -72,16 +111,16 @@ export function createAgentPersistence(input: AgentPersistenceInput): AgentPersi
     hasDatabaseUrl: Boolean(process.env.DATABASE_URL?.trim())
   });
 
-  if (backend === "neon") {
+  if (backend === "prisma") {
     const databaseUrl = process.env.DATABASE_URL?.trim();
 
     if (!databaseUrl) {
       throw new Error(
-        "DATABASE_URL is required when CONSTRUCT_STORAGE_BACKEND=neon."
+        "DATABASE_URL is required when CONSTRUCT_STORAGE_BACKEND=prisma."
       );
     }
 
-    return new NeonAgentPersistence(databaseUrl, input.logger);
+    return new PrismaAgentPersistence(input.logger);
   }
 
   return new LocalFileAgentPersistence(input.rootDirectory);
@@ -93,6 +132,7 @@ class LocalFileAgentPersistence implements AgentPersistence {
   private readonly knowledgeBasePath: string;
   private readonly activeBlueprintStatePath: string;
   private readonly blueprintRecordsPath: string;
+  private readonly projectsPath: string;
 
   constructor(rootDirectory: string) {
     this.stateDirectory = path.join(rootDirectory, ".construct", "state");
@@ -100,6 +140,7 @@ class LocalFileAgentPersistence implements AgentPersistence {
     this.knowledgeBasePath = path.join(this.stateDirectory, "user-knowledge.json");
     this.activeBlueprintStatePath = path.join(this.stateDirectory, "active-blueprint.json");
     this.blueprintRecordsPath = path.join(this.stateDirectory, "generated-blueprints.json");
+    this.projectsPath = path.join(this.stateDirectory, "projects.json");
   }
 
   async getPlanningState(): Promise<CurrentPlanningSessionResponse | null> {
@@ -158,6 +199,20 @@ class LocalFileAgentPersistence implements AgentPersistence {
         record.sessionId === state.sessionId || record.blueprintPath === state.blueprintPath
     }));
     await this.writeBlueprintRecords(nextRecords);
+
+    const projects = await this.readProjects();
+    const nextProjects = sortProjectRecords(
+      projects.map((project) => ({
+        ...project,
+        isActive:
+          project.id === state.sessionId || project.blueprintPath === state.blueprintPath,
+        lastOpenedAt:
+          project.id === state.sessionId || project.blueprintPath === state.blueprintPath
+            ? state.updatedAt
+            : project.lastOpenedAt
+      }))
+    );
+    await this.writeProjects(nextProjects);
   }
 
   async getGeneratedBlueprintRecord(
@@ -170,12 +225,104 @@ class LocalFileAgentPersistence implements AgentPersistence {
   async saveGeneratedBlueprintRecord(
     record: PersistedGeneratedBlueprintRecord
   ): Promise<void> {
+    const parsed = PersistedGeneratedBlueprintRecordSchema.parse(record);
     const records = await this.readBlueprintRecords();
     const nextRecords = records.filter(
-      (existingRecord) => existingRecord.sessionId !== record.sessionId
+      (existingRecord) => existingRecord.sessionId !== parsed.sessionId
     );
-    nextRecords.unshift(PersistedGeneratedBlueprintRecordSchema.parse(record));
+    nextRecords.unshift(parsed);
     await this.writeBlueprintRecords(nextRecords);
+
+    const projects = await this.readProjects();
+    const nextProjects = upsertProjectRecord(
+      projects,
+      buildProjectRecordFromGeneratedRecord(parsed)
+    );
+    await this.writeProjects(nextProjects);
+  }
+
+  async listProjects(): Promise<ProjectSummary[]> {
+    const projects = await this.readProjects();
+    return sortProjectRecords(projects)
+      .map(toProjectSummary)
+      .filter((project): project is ProjectSummary => Boolean(project));
+  }
+
+  async getActiveProject(): Promise<ProjectSummary | null> {
+    const projects = await this.readProjects();
+    return toProjectSummary(projects.find((project) => project.isActive) ?? null);
+  }
+
+  async getProject(projectId: string): Promise<ProjectSummary | null> {
+    const projects = await this.readProjects();
+    return toProjectSummary(projects.find((project) => project.id === projectId) ?? null);
+  }
+
+  async setActiveProject(projectId: string): Promise<ProjectSummary | null> {
+    const projects = await this.readProjects();
+    const timestamp = new Date().toISOString();
+    const nextProjects = sortProjectRecords(
+      projects.map((project) => {
+        const isActive = project.id === projectId;
+        return {
+          ...project,
+          isActive,
+          lastOpenedAt: isActive ? timestamp : project.lastOpenedAt,
+          updatedAt: isActive ? timestamp : project.updatedAt
+        };
+      })
+    );
+    const nextActiveProject =
+      nextProjects.find((project) => project.id === projectId) ?? null;
+
+    await this.writeProjects(nextProjects);
+
+    if (nextActiveProject) {
+      await this.setActiveBlueprintState({
+        blueprintPath: nextActiveProject.blueprintPath,
+        sessionId: nextActiveProject.id,
+        updatedAt: timestamp
+      });
+    }
+
+    return toProjectSummary(nextActiveProject);
+  }
+
+  async updateProjectProgress(update: ProjectProgressUpdate): Promise<ProjectSummary | null> {
+    const projects = await this.readProjects();
+    const normalizedBlueprintPath = path.resolve(update.blueprintPath);
+    let nextProject: PersistedProjectRecord | null = null;
+    const timestamp = new Date().toISOString();
+    const nextProjects = sortProjectRecords(
+      projects.map((project) => {
+        if (path.resolve(project.blueprintPath) !== normalizedBlueprintPath) {
+          return project;
+        }
+
+        const completedStepIds = update.markStepCompleted
+          ? Array.from(new Set([...project.completedStepIds, update.stepId]))
+          : project.completedStepIds;
+        const status = deriveProjectStatus(completedStepIds.length, update.totalSteps);
+
+        nextProject = {
+          ...project,
+          currentStepId: update.stepId,
+          currentStepTitle: update.stepTitle,
+          currentStepIndex: update.stepIndex,
+          totalSteps: update.totalSteps,
+          completedStepIds,
+          status,
+          lastAttemptStatus: update.lastAttemptStatus ?? project.lastAttemptStatus,
+          updatedAt: timestamp,
+          lastOpenedAt: timestamp
+        };
+
+        return nextProject;
+      })
+    );
+
+    await this.writeProjects(nextProjects);
+    return toProjectSummary(nextProject);
   }
 
   private async readBlueprintRecords(): Promise<PersistedGeneratedBlueprintRecord[]> {
@@ -197,226 +344,678 @@ class LocalFileAgentPersistence implements AgentPersistence {
       "utf8"
     );
   }
+
+  private async readProjects(): Promise<PersistedProjectRecord[]> {
+    if (!existsSync(this.projectsPath)) {
+      return [];
+    }
+
+    const raw = await readFile(this.projectsPath, "utf8");
+    return PersistedProjectRecordListSchema.parse(JSON.parse(raw));
+  }
+
+  private async writeProjects(records: PersistedProjectRecord[]): Promise<void> {
+    await mkdir(this.stateDirectory, { recursive: true });
+    await writeFile(this.projectsPath, `${JSON.stringify(records, null, 2)}\n`, "utf8");
+  }
 }
 
-class NeonAgentPersistence implements AgentPersistence {
-  private readonly sql;
-  private schemaReadyPromise: Promise<void> | null = null;
+class PrismaAgentPersistence implements AgentPersistence {
+  private readonly prisma = getPrismaClient();
+  private readonly userId: string;
 
-  constructor(
-    databaseUrl: string,
-    private readonly logger: AgentPersistenceLogger
-  ) {
-    this.sql = neon(databaseUrl);
+  constructor(_logger: AgentPersistenceLogger) {
+    this.userId = getCurrentUserId();
   }
 
   async getPlanningState(): Promise<CurrentPlanningSessionResponse | null> {
-    const raw = await this.readStateValue("planning_state");
-    return raw ? CurrentPlanningSessionResponseSchema.parse(JSON.parse(raw)) : null;
+    const row = await this.prisma.constructState.findUnique({
+      where: {
+        key: toStateKey(this.userId, "planning_state")
+      }
+    });
+
+    return row ? CurrentPlanningSessionResponseSchema.parse(JSON.parse(row.valueJson)) : null;
   }
 
   async setPlanningState(state: CurrentPlanningSessionResponse): Promise<void> {
-    await this.writeStateValue("planning_state", JSON.stringify(state));
+    await this.prisma.constructState.upsert({
+      where: {
+        key: toStateKey(this.userId, "planning_state")
+      },
+      create: {
+        key: toStateKey(this.userId, "planning_state"),
+        valueJson: JSON.stringify(state)
+      },
+      update: {
+        valueJson: JSON.stringify(state)
+      }
+    });
   }
 
   async getKnowledgeBase(): Promise<UserKnowledgeBase | null> {
-    const raw = await this.readStateValue("knowledge_base");
-    return raw ? UserKnowledgeBaseSchema.parse(JSON.parse(raw)) : null;
+    const row = await this.prisma.constructState.findUnique({
+      where: {
+        key: toStateKey(this.userId, "knowledge_base")
+      }
+    });
+
+    return row ? UserKnowledgeBaseSchema.parse(JSON.parse(row.valueJson)) : null;
   }
 
   async setKnowledgeBase(knowledgeBase: UserKnowledgeBase): Promise<void> {
-    await this.writeStateValue("knowledge_base", JSON.stringify(knowledgeBase));
+    await this.prisma.constructState.upsert({
+      where: {
+        key: toStateKey(this.userId, "knowledge_base")
+      },
+      create: {
+        key: toStateKey(this.userId, "knowledge_base"),
+        valueJson: JSON.stringify(knowledgeBase)
+      },
+      update: {
+        valueJson: JSON.stringify(knowledgeBase)
+      }
+    });
   }
 
   async getActiveBlueprintState(): Promise<ActiveBlueprintState | null> {
-    const raw = await this.readStateValue("active_blueprint");
-    return raw ? ActiveBlueprintStateSchema.parse(JSON.parse(raw)) : null;
+    const project = await this.prisma.project.findFirst({
+      where: {
+        userId: this.userId,
+        isActive: true
+      },
+      orderBy: {
+        updatedAt: "desc"
+      }
+    });
+
+    if (!project) {
+      return null;
+    }
+
+    return ActiveBlueprintStateSchema.parse({
+      blueprintPath: project.blueprintPath,
+      updatedAt: project.updatedAt.toISOString(),
+      sessionId: project.id
+    });
   }
 
   async setActiveBlueprintState(state: ActiveBlueprintState): Promise<void> {
-    await this.ensureSchema();
-    await this.writeStateValue("active_blueprint", JSON.stringify(state));
-    await this.sql`
-      UPDATE construct_blueprints
-      SET is_active = CASE
-        WHEN session_id = ${state.sessionId ?? ""} THEN TRUE
-        ELSE FALSE
-      END
-    `;
+    const resolvedBlueprintPath = path.resolve(state.blueprintPath);
+    const activeProjectWhere = state.sessionId
+      ? {
+          OR: [
+            {
+              id: state.sessionId
+            },
+            {
+              blueprintPath: resolvedBlueprintPath
+            }
+          ]
+        }
+      : {
+          blueprintPath: resolvedBlueprintPath
+        };
+
+    await this.prisma.$transaction(async (transaction) => {
+      await transaction.project.updateMany({
+        where: {
+          userId: this.userId
+        },
+        data: {
+          isActive: false
+        }
+      });
+
+      await transaction.project.updateMany({
+        where: {
+          userId: this.userId,
+          ...activeProjectWhere
+        },
+        data: {
+          isActive: true,
+          lastOpenedAt: new Date(state.updatedAt)
+        }
+      });
+    });
   }
 
   async getGeneratedBlueprintRecord(
     sessionId: string
   ): Promise<PersistedGeneratedBlueprintRecord | null> {
-    await this.ensureSchema();
-    const rows = await this.sql`
-      SELECT
-        session_id,
-        goal,
-        blueprint_id,
-        blueprint_path,
-        project_root,
-        blueprint_json,
-        plan_json,
-        bundle_json,
-        created_at,
-        updated_at,
-        is_active
-      FROM construct_blueprints
-      WHERE session_id = ${sessionId}
-      LIMIT 1
-    `;
-
-    const row = rows[0] as Record<string, unknown> | undefined;
-    if (!row) {
-      return null;
-    }
-
-    return PersistedGeneratedBlueprintRecordSchema.parse({
-      sessionId: String(row.session_id),
-      goal: String(row.goal),
-      blueprintId: String(row.blueprint_id),
-      blueprintPath: String(row.blueprint_path),
-      projectRoot: String(row.project_root),
-      blueprintJson: String(row.blueprint_json),
-      planJson: String(row.plan_json),
-      bundleJson: String(row.bundle_json),
-      createdAt: toIsoString(row.created_at),
-      updatedAt: toIsoString(row.updated_at),
-      isActive: Boolean(row.is_active)
+    const project = await this.prisma.project.findFirst({
+      where: {
+        userId: this.userId,
+        id: sessionId
+      }
     });
+
+    return project ? toGeneratedBlueprintRecord(project) : null;
   }
 
   async saveGeneratedBlueprintRecord(
     record: PersistedGeneratedBlueprintRecord
   ): Promise<void> {
     const parsed = PersistedGeneratedBlueprintRecordSchema.parse(record);
-    await this.ensureSchema();
-    await this.sql`
-      INSERT INTO construct_blueprints (
-        session_id,
-        goal,
-        blueprint_id,
-        blueprint_path,
-        project_root,
-        blueprint_json,
-        plan_json,
-        bundle_json,
-        created_at,
-        updated_at,
-        is_active
-      )
-      VALUES (
-        ${parsed.sessionId},
-        ${parsed.goal},
-        ${parsed.blueprintId},
-        ${parsed.blueprintPath},
-        ${parsed.projectRoot},
-        ${parsed.blueprintJson},
-        ${parsed.planJson},
-        ${parsed.bundleJson},
-        ${parsed.createdAt},
-        ${parsed.updatedAt},
-        ${parsed.isActive}
-      )
-      ON CONFLICT (session_id) DO UPDATE SET
-        goal = EXCLUDED.goal,
-        blueprint_id = EXCLUDED.blueprint_id,
-        blueprint_path = EXCLUDED.blueprint_path,
-        project_root = EXCLUDED.project_root,
-        blueprint_json = EXCLUDED.blueprint_json,
-        plan_json = EXCLUDED.plan_json,
-        bundle_json = EXCLUDED.bundle_json,
-        updated_at = EXCLUDED.updated_at,
-        is_active = EXCLUDED.is_active
-    `;
+    const projectRecord = buildProjectRecordFromGeneratedRecord(parsed);
+
+    await this.prisma.$transaction(async (transaction) => {
+      if (parsed.isActive) {
+        await transaction.project.updateMany({
+          where: {
+            userId: this.userId
+          },
+          data: {
+            isActive: false
+          }
+        });
+      }
+
+      await transaction.project.upsert({
+        where: {
+          id: projectRecord.id
+        },
+        create: mapProjectCreateInput(this.userId, projectRecord),
+        update: mapProjectUpdateInput(projectRecord)
+      });
+    });
   }
 
-  private async readStateValue(key: string): Promise<string | null> {
-    await this.ensureSchema();
-    const rows = await this.sql`
-      SELECT value_json
-      FROM construct_state
-      WHERE key = ${key}
-      LIMIT 1
-    `;
-    const row = rows[0] as { value_json?: string } | undefined;
-    return typeof row?.value_json === "string" ? row.value_json : null;
-  }
-
-  private async writeStateValue(key: string, valueJson: string): Promise<void> {
-    await this.ensureSchema();
-    await this.sql`
-      INSERT INTO construct_state (key, value_json, updated_at)
-      VALUES (${key}, ${valueJson}, NOW())
-      ON CONFLICT (key) DO UPDATE SET
-        value_json = EXCLUDED.value_json,
-        updated_at = NOW()
-    `;
-  }
-
-  private async ensureSchema(): Promise<void> {
-    if (!this.schemaReadyPromise) {
-      this.schemaReadyPromise = this.initializeSchema();
-    }
-
-    await this.schemaReadyPromise;
-  }
-
-  private async initializeSchema(): Promise<void> {
-    this.logger.info("Ensuring Neon persistence schema.", {
-      backend: "neon"
+  async listProjects(): Promise<ProjectSummary[]> {
+    const projects = await this.prisma.project.findMany({
+      where: {
+        userId: this.userId
+      },
+      orderBy: [
+        {
+          lastOpenedAt: "desc"
+        },
+        {
+          updatedAt: "desc"
+        }
+      ]
     });
 
-    await this.sql`
-      CREATE TABLE IF NOT EXISTS construct_state (
-        key TEXT PRIMARY KEY,
-        value_json TEXT NOT NULL,
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      )
-    `;
+    return projects.map(toProjectSummaryFromPrisma);
+  }
 
-    await this.sql`
-      CREATE TABLE IF NOT EXISTS construct_blueprints (
-        session_id TEXT PRIMARY KEY,
-        goal TEXT NOT NULL,
-        blueprint_id TEXT NOT NULL,
-        blueprint_path TEXT NOT NULL,
-        project_root TEXT NOT NULL,
-        blueprint_json TEXT NOT NULL,
-        plan_json TEXT NOT NULL,
-        bundle_json TEXT NOT NULL,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        is_active BOOLEAN NOT NULL DEFAULT FALSE
-      )
-    `;
+  async getActiveProject(): Promise<ProjectSummary | null> {
+    const project = await this.prisma.project.findFirst({
+      where: {
+        userId: this.userId,
+        isActive: true
+      },
+      orderBy: {
+        updatedAt: "desc"
+      }
+    });
 
-    await this.sql`
-      CREATE INDEX IF NOT EXISTS construct_blueprints_active_idx
-      ON construct_blueprints (is_active)
-    `;
+    return project ? toProjectSummaryFromPrisma(project) : null;
+  }
+
+  async getProject(projectId: string): Promise<ProjectSummary | null> {
+    const project = await this.prisma.project.findFirst({
+      where: {
+        userId: this.userId,
+        id: projectId
+      }
+    });
+
+    return project ? toProjectSummaryFromPrisma(project) : null;
+  }
+
+  async setActiveProject(projectId: string): Promise<ProjectSummary | null> {
+    const timestamp = new Date();
+
+    await this.prisma.$transaction(async (transaction) => {
+      await transaction.project.updateMany({
+        where: {
+          userId: this.userId
+        },
+        data: {
+          isActive: false
+        }
+      });
+
+      await transaction.project.updateMany({
+        where: {
+          userId: this.userId,
+          id: projectId
+        },
+        data: {
+          isActive: true,
+          lastOpenedAt: timestamp
+        }
+      });
+    });
+
+    return this.getProject(projectId);
+  }
+
+  async updateProjectProgress(update: ProjectProgressUpdate): Promise<ProjectSummary | null> {
+    const resolvedBlueprintPath = path.resolve(update.blueprintPath);
+    const project = await this.prisma.project.findFirst({
+      where: {
+        userId: this.userId,
+        blueprintPath: resolvedBlueprintPath
+      }
+    });
+
+    if (!project) {
+      return null;
+    }
+
+    const currentCompletedStepIds = parseCompletedStepIdsFromPrisma(project.completedStepIds);
+    const completedStepIds = update.markStepCompleted
+      ? Array.from(new Set([...currentCompletedStepIds, update.stepId]))
+      : currentCompletedStepIds;
+    const status = sharedStatusToPrismaStatus(
+      deriveProjectStatus(completedStepIds.length, update.totalSteps)
+    );
+    const updatedProject = await this.prisma.project.update({
+      where: {
+        id: project.id
+      },
+      data: {
+        currentStepId: update.stepId,
+        currentStepTitle: update.stepTitle,
+        currentStepIndex: update.stepIndex,
+        totalSteps: update.totalSteps,
+        completedStepIds: JSON.stringify(completedStepIds),
+        status,
+        lastAttemptStatus: update.lastAttemptStatus ?? project.lastAttemptStatus,
+        lastOpenedAt: new Date()
+      }
+    });
+
+    return toProjectSummaryFromPrisma(updatedProject);
   }
 }
 
 function resolveStorageBackend(): StorageBackend {
   const configuredBackend = process.env.CONSTRUCT_STORAGE_BACKEND?.trim().toLowerCase();
 
-  if (configuredBackend === "local" || configuredBackend === "neon") {
-    return configuredBackend;
+  if (configuredBackend === "local") {
+    return "local";
   }
 
-  return process.env.DATABASE_URL?.trim() ? "neon" : "local";
+  if (configuredBackend === "prisma" || configuredBackend === "neon") {
+    return "prisma";
+  }
+
+  return process.env.DATABASE_URL?.trim() ? "prisma" : "local";
 }
 
-function toIsoString(value: unknown): string {
-  if (typeof value === "string") {
-    return new Date(value).toISOString();
+function buildProjectRecordFromGeneratedRecord(
+  record: PersistedGeneratedBlueprintRecord
+): PersistedProjectRecord {
+  const blueprint = ProjectBlueprintSchema.parse(JSON.parse(record.blueprintJson));
+  const plan = GeneratedProjectPlanSchema.parse(JSON.parse(record.planJson));
+  const initialStep =
+    blueprint.steps.find((step) => step.id === plan.suggestedFirstStepId) ?? blueprint.steps[0];
+  const timestamp = record.updatedAt;
+
+  return PersistedProjectRecordSchema.parse({
+    id: record.sessionId,
+    goal: record.goal,
+    name: blueprint.name,
+    description: blueprint.description,
+    language: blueprint.language,
+    blueprintId: record.blueprintId,
+    blueprintPath: path.resolve(record.blueprintPath),
+    projectRoot: path.resolve(record.projectRoot),
+    learningStyle: plan.learningStyle,
+    currentStepId: initialStep?.id ?? null,
+    currentStepTitle: initialStep?.title ?? null,
+    currentStepIndex: initialStep
+      ? Math.max(
+          0,
+          blueprint.steps.findIndex((step) => step.id === initialStep.id)
+        )
+      : null,
+    totalSteps: blueprint.steps.length,
+    completedStepIds: [],
+    status: "in-progress",
+    lastAttemptStatus: null,
+    blueprintJson: record.blueprintJson,
+    planJson: record.planJson,
+    bundleJson: record.bundleJson,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    lastOpenedAt: record.isActive ? timestamp : null,
+    isActive: record.isActive
+  });
+}
+
+function upsertProjectRecord(
+  records: PersistedProjectRecord[],
+  record: PersistedProjectRecord
+): PersistedProjectRecord[] {
+  const nextRecords = records.filter((existing) => existing.id !== record.id);
+  nextRecords.unshift(record);
+
+  if (!record.isActive) {
+    return sortProjectRecords(nextRecords);
   }
 
-  if (value instanceof Date) {
-    return value.toISOString();
+  return sortProjectRecords(
+    nextRecords.map((existing) => ({
+      ...existing,
+      isActive: existing.id === record.id
+    }))
+  );
+}
+
+function sortProjectRecords(records: PersistedProjectRecord[]): PersistedProjectRecord[] {
+  return [...records].sort((left, right) => {
+    const leftTimestamp = left.lastOpenedAt ?? left.updatedAt;
+    const rightTimestamp = right.lastOpenedAt ?? right.updatedAt;
+    return Date.parse(rightTimestamp) - Date.parse(leftTimestamp);
+  });
+}
+
+function deriveProjectStatus(
+  completedStepsCount: number,
+  totalSteps: number
+): SharedProjectStatus {
+  if (totalSteps > 0 && completedStepsCount >= totalSteps) {
+    return "completed";
   }
 
-  return new Date(String(value)).toISOString();
+  return "in-progress";
+}
+
+function toProjectSummary(record: PersistedProjectRecord | null): ProjectSummary | null {
+  if (!record) {
+    return null;
+  }
+
+  return ProjectSummarySchema.parse({
+    id: record.id,
+    goal: record.goal,
+    name: record.name,
+    description: record.description,
+    language: record.language,
+    blueprintPath: record.blueprintPath,
+    projectRoot: record.projectRoot,
+    currentStepId: record.currentStepId,
+    currentStepTitle: record.currentStepTitle,
+    currentStepIndex: record.currentStepIndex,
+    totalSteps: record.totalSteps,
+    completedStepsCount: record.completedStepIds.length,
+    status: record.status,
+    lastAttemptStatus: record.lastAttemptStatus,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    lastOpenedAt: record.lastOpenedAt,
+    isActive: record.isActive
+  });
+}
+
+function sharedStatusToPrismaStatus(status: SharedProjectStatus): string {
+  switch (status) {
+    case "draft":
+      return "DRAFT";
+    case "completed":
+      return "COMPLETED";
+    case "archived":
+      return "ARCHIVED";
+    case "in-progress":
+    default:
+      return "IN_PROGRESS";
+  }
+}
+
+function prismaStatusToSharedStatus(status: string): SharedProjectStatus {
+  if (status === "DRAFT") {
+    return "draft";
+  }
+
+  if (status === "COMPLETED") {
+    return "completed";
+  }
+
+  if (status === "ARCHIVED") {
+    return "archived";
+  }
+
+  return "in-progress";
+}
+
+function mapProjectCreateInput(userId: string, record: PersistedProjectRecord) {
+  return {
+    id: record.id,
+    userId,
+    goal: record.goal,
+    name: record.name,
+    slug: slugify(record.name || record.goal),
+    description: record.description,
+    language: record.language,
+    blueprintId: record.blueprintId,
+    blueprintPath: path.resolve(record.blueprintPath),
+    projectRoot: path.resolve(record.projectRoot),
+    learningStyle: record.learningStyle,
+    currentStepId: record.currentStepId,
+    currentStepTitle: record.currentStepTitle,
+    currentStepIndex: record.currentStepIndex,
+    totalSteps: record.totalSteps,
+    completedStepIds: JSON.stringify(record.completedStepIds),
+    status: sharedStatusToPrismaStatus(record.status),
+    lastAttemptStatus: record.lastAttemptStatus,
+    blueprintJson: record.blueprintJson,
+    planJson: record.planJson,
+    bundleJson: record.bundleJson,
+    isActive: record.isActive,
+    createdAt: new Date(record.createdAt),
+    updatedAt: new Date(record.updatedAt),
+    lastOpenedAt: record.lastOpenedAt ? new Date(record.lastOpenedAt) : null
+  };
+}
+
+function mapProjectUpdateInput(record: PersistedProjectRecord) {
+  return {
+    goal: record.goal,
+    name: record.name,
+    slug: slugify(record.name || record.goal),
+    description: record.description,
+    language: record.language,
+    blueprintId: record.blueprintId,
+    blueprintPath: path.resolve(record.blueprintPath),
+    projectRoot: path.resolve(record.projectRoot),
+    learningStyle: record.learningStyle,
+    currentStepId: record.currentStepId,
+    currentStepTitle: record.currentStepTitle,
+    currentStepIndex: record.currentStepIndex,
+    totalSteps: record.totalSteps,
+    completedStepIds: JSON.stringify(record.completedStepIds),
+    status: sharedStatusToPrismaStatus(record.status),
+    lastAttemptStatus: record.lastAttemptStatus,
+    blueprintJson: record.blueprintJson,
+    planJson: record.planJson,
+    bundleJson: record.bundleJson,
+    isActive: record.isActive,
+    createdAt: new Date(record.createdAt),
+    updatedAt: new Date(record.updatedAt),
+    lastOpenedAt: record.lastOpenedAt ? new Date(record.lastOpenedAt) : null
+  };
+}
+
+function toProjectSummaryFromPrisma(project: {
+  id: string;
+  goal: string;
+  name: string;
+  description: string;
+  language: string;
+  blueprintPath: string;
+  projectRoot: string;
+  currentStepId: string | null;
+  currentStepTitle: string | null;
+  currentStepIndex: number | null;
+  totalSteps: number;
+  completedStepIds: string;
+  status: string;
+  lastAttemptStatus: string | null;
+  blueprintJson: string;
+  planJson: string;
+  bundleJson: string;
+  createdAt: Date;
+  updatedAt: Date;
+  lastOpenedAt: Date | null;
+  isActive: boolean;
+}): ProjectSummary {
+  const blueprint = parseBlueprintSummary(project.blueprintJson);
+  const derivedStep = parseCurrentStepSummary(project.blueprintJson, project.planJson);
+  const lastAttemptStatus = project.lastAttemptStatus
+    ? ProjectAttemptStatusSchema.parse(project.lastAttemptStatus)
+    : null;
+  const completedStepIds = parseCompletedStepIdsFromPrisma(project.completedStepIds);
+  const name = project.name.trim() || blueprint.name;
+  const description = project.description.trim() || blueprint.description;
+  const language = project.language.trim() || blueprint.language;
+  const currentStepId = project.currentStepId ?? derivedStep.id;
+  const currentStepTitle = project.currentStepTitle ?? derivedStep.title;
+  const currentStepIndex = project.currentStepIndex ?? derivedStep.index;
+  const totalSteps = project.totalSteps > 0 ? project.totalSteps : derivedStep.totalSteps;
+
+  return ProjectSummarySchema.parse({
+    id: project.id,
+    goal: project.goal,
+    name,
+    description,
+    language,
+    blueprintPath: project.blueprintPath,
+    projectRoot: project.projectRoot,
+    currentStepId,
+    currentStepTitle,
+    currentStepIndex,
+    totalSteps,
+    completedStepsCount: completedStepIds.length,
+    status: prismaStatusToSharedStatus(project.status),
+    lastAttemptStatus,
+    createdAt: project.createdAt.toISOString(),
+    updatedAt: project.updatedAt.toISOString(),
+    lastOpenedAt: project.lastOpenedAt?.toISOString() ?? null,
+    isActive: project.isActive
+  });
+}
+
+function toGeneratedBlueprintRecord(project: {
+  id: string;
+  goal: string;
+  blueprintId: string;
+  blueprintPath: string;
+  projectRoot: string;
+  blueprintJson: string;
+  planJson: string;
+  bundleJson: string;
+  createdAt: Date;
+  updatedAt: Date;
+  isActive: boolean;
+}): PersistedGeneratedBlueprintRecord {
+  return PersistedGeneratedBlueprintRecordSchema.parse({
+    sessionId: project.id,
+    goal: project.goal,
+    blueprintId: project.blueprintId,
+    blueprintPath: project.blueprintPath,
+    projectRoot: project.projectRoot,
+    blueprintJson: project.blueprintJson,
+    planJson: project.planJson,
+    bundleJson: project.bundleJson,
+    createdAt: project.createdAt.toISOString(),
+    updatedAt: project.updatedAt.toISOString(),
+    isActive: project.isActive
+  });
+}
+
+function parseCompletedStepIdsFromPrisma(value: string): string[] {
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.filter((entry): entry is string => typeof entry === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseBlueprintSummary(rawBlueprint: string): {
+  name: string;
+  description: string;
+  language: string;
+} {
+  try {
+    const blueprint = ProjectBlueprintSchema.parse(JSON.parse(rawBlueprint));
+    return {
+      name: blueprint.name,
+      description: blueprint.description,
+      language: blueprint.language
+    };
+  } catch {
+    return {
+      name: "Project",
+      description: "Agent-generated project",
+      language: "Unknown"
+    };
+  }
+}
+
+function parseCurrentStepSummary(
+  rawBlueprint: string,
+  rawPlan: string
+): {
+  id: string | null;
+  title: string | null;
+  index: number | null;
+  totalSteps: number;
+} {
+  try {
+    const blueprint = ProjectBlueprintSchema.parse(JSON.parse(rawBlueprint));
+    const plan = GeneratedProjectPlanSchema.parse(JSON.parse(rawPlan));
+    const step =
+      blueprint.steps.find((entry) => entry.id === plan.suggestedFirstStepId) ??
+      blueprint.steps[0] ??
+      null;
+
+    if (!step) {
+      return {
+        id: null,
+        title: null,
+        index: null,
+        totalSteps: 0
+      };
+    }
+
+    return {
+      id: step.id,
+      title: step.title,
+      index: Math.max(
+        0,
+        blueprint.steps.findIndex((entry) => entry.id === step.id)
+      ),
+      totalSteps: blueprint.steps.length
+    };
+  } catch {
+    return {
+      id: null,
+      title: null,
+      index: null,
+      totalSteps: 0
+    };
+  }
+}
+
+function toStateKey(userId: string, key: string): string {
+  return `${userId}:${key}`;
+}
+
+function getCurrentUserId(): string {
+  return process.env.CONSTRUCT_USER_ID?.trim() || "local-user";
+}
+
+function slugify(value: string): string {
+  return (
+    value
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "project"
+  );
 }

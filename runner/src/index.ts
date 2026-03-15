@@ -7,6 +7,8 @@ import {
   AgentJobSnapshotSchema,
   BlueprintDeepDiveRequestSchema,
   BlueprintTaskRequestSchema,
+  ProjectCurrentStepRequestSchema,
+  ProjectSelectionRequestSchema,
   PlanningSessionCompleteRequestSchema,
   PlanningSessionStartRequestSchema,
   RuntimeGuideRequestSchema,
@@ -124,6 +126,12 @@ const server = http.createServer(async (request, response) => {
     if (request.method === "GET" && request.url === "/agent/planning/current") {
       response.writeHead(200, { "Content-Type": "application/json" });
       response.end(JSON.stringify(await getConstructAgent().getCurrentPlanningState()));
+      return;
+    }
+
+    if (request.method === "GET" && request.url === "/projects") {
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify(await getConstructAgent().listProjectsDashboard()));
       return;
     }
 
@@ -287,6 +295,37 @@ const server = http.createServer(async (request, response) => {
       return;
     }
 
+    if (request.method === "POST" && request.url === "/projects/select") {
+      const body = await readRequestBody(request);
+      const selectionRequest = ProjectSelectionRequestSchema.parse(JSON.parse(body));
+      const selection = await getConstructAgent().selectProject(selectionRequest.projectId);
+      workspaceContextPromise = null;
+      workspaceContextBlueprintPath = "";
+
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify(selection));
+      return;
+    }
+
+    if (request.method === "POST" && request.url === "/projects/current-step") {
+      const workspaceContext = await getWorkspaceContext();
+
+      if (!workspaceContext) {
+        throw new Error("No active generated project. Select or create a project first.");
+      }
+
+      const body = await readRequestBody(request);
+      const currentStepRequest = ProjectCurrentStepRequestSchema.parse(JSON.parse(body));
+      await getConstructAgent().syncProjectStepSelection(
+        workspaceContext.canonicalBlueprintPath,
+        currentStepRequest.stepId
+      );
+
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ ok: true, stepId: currentStepRequest.stepId }));
+      return;
+    }
+
     if (request.method === "POST" && request.url === "/workspace/file") {
       const workspaceContext = await getWorkspaceContext();
 
@@ -335,6 +374,10 @@ const server = http.createServer(async (request, response) => {
       const body = await readRequestBody(request);
       const startRequest = TaskStartRequestSchema.parse(JSON.parse(body));
       const taskSession = await workspaceContext.taskLifecycle.startTask(startRequest);
+      await getConstructAgent().syncProjectTaskProgress({
+        canonicalBlueprintPath: workspaceContext.canonicalBlueprintPath,
+        stepId: startRequest.stepId
+      });
 
       response.writeHead(200, { "Content-Type": "application/json" });
       response.end(JSON.stringify(taskSession));
@@ -351,6 +394,12 @@ const server = http.createServer(async (request, response) => {
       const body = await readRequestBody(request);
       const submitRequest = TaskSubmitRequestSchema.parse(JSON.parse(body));
       const taskSubmission = await workspaceContext.taskLifecycle.submitTask(submitRequest);
+      await getConstructAgent().syncProjectTaskProgress({
+        canonicalBlueprintPath: workspaceContext.canonicalBlueprintPath,
+        stepId: submitRequest.stepId,
+        markStepCompleted: taskSubmission.attempt.status === "passed",
+        lastAttemptStatus: taskSubmission.attempt.status
+      });
 
       response.writeHead(200, { "Content-Type": "application/json" });
       response.end(JSON.stringify(taskSubmission));

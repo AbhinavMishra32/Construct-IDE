@@ -7,6 +7,8 @@ import type {
   BlueprintEnvelope,
   CurrentPlanningSessionResponse,
   LearnerModel,
+  ProjectSelectionResponse,
+  ProjectsDashboardResponse,
   PlanningAnswer,
   PlanningSessionCompleteResponse,
   PlanningSessionStartResponse,
@@ -30,6 +32,32 @@ export async function fetchRunnerHealth(signal?: AbortSignal): Promise<RunnerHea
 
 export async function fetchBlueprint(signal?: AbortSignal): Promise<BlueprintEnvelope> {
   return getJson<BlueprintEnvelope>("/blueprint/current", { signal });
+}
+
+export async function fetchProjectsDashboard(
+  signal?: AbortSignal
+): Promise<ProjectsDashboardResponse> {
+  return getJson<ProjectsDashboardResponse>("/projects", { signal });
+}
+
+export async function selectProject(projectId: string): Promise<ProjectSelectionResponse> {
+  return postJson<ProjectSelectionResponse>("/projects/select", { projectId }, "selecting project");
+}
+
+export async function syncCurrentProjectStep(stepId: string): Promise<void> {
+  const response = await fetch(`${RUNNER_BASE_URL}/projects/current-step`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      stepId
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`Runner responded with ${response.status} while syncing ${stepId}.`);
+  }
 }
 
 export async function fetchCurrentPlanningState(

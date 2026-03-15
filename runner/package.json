@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
+    "db:bootstrap": "tsx scripts/bootstrap-prisma-db.ts",
     "build": "tsup src/index.ts src/testRunner.ts src/fileManager.ts src/snapshots.ts --format esm --clean",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test --test-concurrency=1 src/activeBlueprint.test.ts src/agentLanguageModel.test.ts src/agentPersistence.test.ts src/agentPlanner.test.ts src/agentService.test.ts src/fileManager.test.ts src/snapshots.test.ts src/testRunner.test.ts src/taskLifecycle.test.ts src/workspaceMaterializer.test.ts",
@@ -16,6 +17,7 @@
     "@langchain/core": "^1.1.32",
     "@langchain/langgraph": "^1.2.2",
     "@langchain/openai": "^1.0.7",
+    "@prisma/client": "^6.16.0",
     "@neondatabase/serverless": "^1.0.1",
     "@tavily/core": "^0.7.2",
     "zod-to-json-schema": "^3.24.6",

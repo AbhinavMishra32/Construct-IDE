@@ -27,6 +27,8 @@ import {
   PlanningSessionStartRequestSchema,
   PlanningSessionStartResponseSchema,
   ProjectBlueprintSchema,
+  ProjectSelectionResponseSchema,
+  ProjectsDashboardResponseSchema,
   RuntimeGuideRequestSchema,
   RuntimeGuideResponseSchema,
   UserKnowledgeBaseSchema,
@@ -48,6 +50,8 @@ import {
   type PlanningSessionStartRequest,
   type PlanningSessionStartResponse,
   type ProjectBlueprint,
+  type ProjectSelectionResponse,
+  type ProjectsDashboardResponse,
   type RuntimeGuideRequest,
   type RuntimeGuideResponse,
   type StoredKnowledgeConcept,
@@ -467,6 +471,88 @@ export class ConstructAgentService {
     }
 
     return getActiveBlueprintPathFromFile(this.rootDirectory);
+  }
+
+  async listProjectsDashboard(): Promise<ProjectsDashboardResponse> {
+    const [projects, activeProject] = await Promise.all([
+      this.persistence.listProjects(),
+      this.persistence.getActiveProject()
+    ]);
+
+    return ProjectsDashboardResponseSchema.parse({
+      userId: getCurrentUserId(),
+      activeProjectId: activeProject?.id ?? null,
+      projects
+    });
+  }
+
+  async selectProject(projectId: string): Promise<ProjectSelectionResponse> {
+    const project = await this.persistence.setActiveProject(projectId);
+
+    if (!project) {
+      return ProjectSelectionResponseSchema.parse({
+        activeProjectId: null,
+        project: null
+      });
+    }
+
+    await setActiveBlueprintPath({
+      rootDirectory: this.rootDirectory,
+      blueprintPath: project.blueprintPath,
+      sessionId: project.id,
+      now: this.now
+    });
+
+    return ProjectSelectionResponseSchema.parse({
+      activeProjectId: project.id,
+      project
+    });
+  }
+
+  async syncProjectStepSelection(
+    canonicalBlueprintPath: string,
+    stepId: string
+  ): Promise<void> {
+    const blueprint = await loadBlueprint(canonicalBlueprintPath);
+    const stepIndex = blueprint.steps.findIndex((step) => step.id === stepId);
+    const step = stepIndex >= 0 ? blueprint.steps[stepIndex] : null;
+
+    if (!step) {
+      return;
+    }
+
+    await this.persistence.updateProjectProgress({
+      blueprintPath: canonicalBlueprintPath,
+      stepId: step.id,
+      stepTitle: step.title,
+      stepIndex,
+      totalSteps: blueprint.steps.length
+    });
+  }
+
+  async syncProjectTaskProgress(input: {
+    canonicalBlueprintPath: string;
+    stepId: string;
+    markStepCompleted?: boolean;
+    lastAttemptStatus?: "failed" | "passed" | "needs-review" | null;
+  }): Promise<void> {
+    const blueprint = await loadBlueprint(input.canonicalBlueprintPath);
+    const stepIndex = blueprint.steps.findIndex((step) => step.id === input.stepId);
+    const step = stepIndex >= 0 ? blueprint.steps[stepIndex] : null;
+
+    if (!step) {
+      return;
+    }
+
+    await this.persistence.updateProjectProgress({
+      blueprintPath: input.canonicalBlueprintPath,
+      stepId: step.id,
+      stepTitle: step.title,
+      stepIndex,
+      totalSteps: blueprint.steps.length,
+      markStepCompleted: input.markStepCompleted,
+      lastAttemptStatus: input.lastAttemptStatus ?? null
+    });
   }
 
   private getLlm(): StructuredLanguageModel {
@@ -3382,4 +3468,8 @@ function buildRuntimeGuideInstructions(): string {
     "Observations should reference the test result, constraints, or code snippet when possible.",
     "Next action must be a single practical move the learner can take immediately."
   ].join("\n");
+}
+
+function getCurrentUserId(): string {
+  return process.env.CONSTRUCT_USER_ID?.trim() || "local-user";
 }

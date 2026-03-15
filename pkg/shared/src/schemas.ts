@@ -90,6 +90,59 @@ export const ProjectBlueprintSchema = z.object({
   })
 });
 
+export const ProjectStatusSchema = z.enum([
+  "draft",
+  "in-progress",
+  "completed",
+  "archived"
+]);
+
+export const ProjectAttemptStatusSchema = z.enum([
+  "failed",
+  "passed",
+  "needs-review"
+]);
+
+export const ProjectSummarySchema = z.object({
+  id: z.string().min(1),
+  goal: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string().min(1),
+  language: z.string().min(1),
+  blueprintPath: z.string().min(1),
+  projectRoot: z.string().min(1),
+  currentStepId: z.string().min(1).nullable().default(null),
+  currentStepTitle: z.string().min(1).nullable().default(null),
+  currentStepIndex: z.number().int().nonnegative().nullable().default(null),
+  totalSteps: z.number().int().nonnegative().default(0),
+  completedStepsCount: z.number().int().nonnegative().default(0),
+  status: ProjectStatusSchema,
+  lastAttemptStatus: ProjectAttemptStatusSchema.nullable().default(null),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  lastOpenedAt: z.string().datetime().nullable().default(null),
+  isActive: z.boolean().default(false)
+});
+
+export const ProjectsDashboardResponseSchema = z.object({
+  userId: z.string().min(1),
+  activeProjectId: z.string().min(1).nullable().default(null),
+  projects: z.array(ProjectSummarySchema).default([])
+});
+
+export const ProjectSelectionRequestSchema = z.object({
+  projectId: z.string().min(1)
+});
+
+export const ProjectSelectionResponseSchema = z.object({
+  activeProjectId: z.string().min(1).nullable().default(null),
+  project: ProjectSummarySchema.nullable().default(null)
+});
+
+export const ProjectCurrentStepRequestSchema = z.object({
+  stepId: z.string().min(1)
+});
+
 export const TaskFailureSchema = z.object({
   testName: z.string().min(1),
   message: z.string().min(1),
@@ -244,6 +297,13 @@ export type WorkspaceFileEntry = z.infer<typeof WorkspaceFileEntrySchema>;
 export type ComprehensionCheck = z.infer<typeof ComprehensionCheckSchema>;
 export type BlueprintStep = z.infer<typeof BlueprintStepSchema>;
 export type ProjectBlueprint = z.infer<typeof ProjectBlueprintSchema>;
+export type ProjectStatus = z.infer<typeof ProjectStatusSchema>;
+export type ProjectAttemptStatus = z.infer<typeof ProjectAttemptStatusSchema>;
+export type ProjectSummary = z.infer<typeof ProjectSummarySchema>;
+export type ProjectsDashboardResponse = z.infer<typeof ProjectsDashboardResponseSchema>;
+export type ProjectSelectionRequest = z.infer<typeof ProjectSelectionRequestSchema>;
+export type ProjectSelectionResponse = z.infer<typeof ProjectSelectionResponseSchema>;
+export type ProjectCurrentStepRequest = z.infer<typeof ProjectCurrentStepRequestSchema>;
 export type TestAdapterKind = z.infer<typeof TestAdapterSchema>;
 export type TaskExecutionRequest = z.infer<typeof TaskExecutionRequestSchema>;
 export type BlueprintTaskRequest = z.infer<typeof BlueprintTaskRequestSchema>;

@@ -6,6 +6,36 @@ import test from "node:test";
 
 import { ConstructAgentService } from "./agentService";
 
+const previousStorageBackend = process.env.CONSTRUCT_STORAGE_BACKEND;
+const previousDatabaseUrl = process.env.DATABASE_URL;
+const previousDirectUrl = process.env.DIRECT_URL;
+
+test.before(() => {
+  process.env.CONSTRUCT_STORAGE_BACKEND = "local";
+  delete process.env.DATABASE_URL;
+  delete process.env.DIRECT_URL;
+});
+
+test.after(() => {
+  if (previousStorageBackend === undefined) {
+    delete process.env.CONSTRUCT_STORAGE_BACKEND;
+  } else {
+    process.env.CONSTRUCT_STORAGE_BACKEND = previousStorageBackend;
+  }
+
+  if (previousDatabaseUrl === undefined) {
+    delete process.env.DATABASE_URL;
+  } else {
+    process.env.DATABASE_URL = previousDatabaseUrl;
+  }
+
+  if (previousDirectUrl === undefined) {
+    delete process.env.DIRECT_URL;
+  } else {
+    process.env.DIRECT_URL = previousDirectUrl;
+  }
+});
+
 test("ConstructAgentService creates question and plan jobs and persists the resulting state", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "construct-agent-service-"));
   let tick = 0;

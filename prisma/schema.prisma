@@ -1,0 +1,50 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model ConstructState {
+  key       String   @id
+  valueJson String   @map("value_json") @db.Text
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  @@map("construct_state")
+}
+
+model Project {
+  id               String        @id @map("session_id")
+  userId           String        @default("local-user") @map("user_id")
+  goal             String
+  blueprintId      String        @map("blueprint_id")
+  blueprintPath    String        @unique @map("blueprint_path")
+  projectRoot      String        @map("project_root")
+  blueprintJson    String        @map("blueprint_json") @db.Text
+  planJson         String        @map("plan_json") @db.Text
+  bundleJson       String        @map("bundle_json") @db.Text
+  name             String        @default("")
+  slug             String        @default("")
+  description      String        @default("")
+  language         String        @default("")
+  learningStyle    String?       @map("learning_style")
+  currentStepId    String?       @map("current_step_id")
+  currentStepTitle String?       @map("current_step_title")
+  currentStepIndex Int?          @map("current_step_index")
+  totalSteps       Int           @default(0) @map("total_steps")
+  completedStepIds String        @default("[]") @map("completed_step_ids") @db.Text
+  status           String        @default("IN_PROGRESS")
+  lastAttemptStatus String?      @map("last_attempt_status")
+  createdAt        DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  lastOpenedAt     DateTime?     @map("last_opened_at") @db.Timestamptz(6)
+  isActive         Boolean       @default(false) @map("is_active")
+
+  @@index([userId, isActive])
+  @@index([userId, updatedAt])
+  @@index([userId, lastOpenedAt])
+  @@map("construct_blueprints")
+}

@@ -191,6 +191,42 @@ export type ProjectBlueprint = {
   };
 };
 
+export type ProjectStatus = "draft" | "in-progress" | "completed" | "archived";
+
+export type ProjectAttemptStatus = "failed" | "passed" | "needs-review";
+
+export type ProjectSummary = {
+  id: string;
+  goal: string;
+  name: string;
+  description: string;
+  language: string;
+  blueprintPath: string;
+  projectRoot: string;
+  currentStepId: string | null;
+  currentStepTitle: string | null;
+  currentStepIndex: number | null;
+  totalSteps: number;
+  completedStepsCount: number;
+  status: ProjectStatus;
+  lastAttemptStatus: ProjectAttemptStatus | null;
+  createdAt: string;
+  updatedAt: string;
+  lastOpenedAt: string | null;
+  isActive: boolean;
+};
+
+export type ProjectsDashboardResponse = {
+  userId: string;
+  activeProjectId: string | null;
+  projects: ProjectSummary[];
+};
+
+export type ProjectSelectionResponse = {
+  activeProjectId: string | null;
+  project: ProjectSummary | null;
+};
+
 export type BlueprintEnvelope = {
   blueprint: ProjectBlueprint | null;
   workspaceRoot: string;
