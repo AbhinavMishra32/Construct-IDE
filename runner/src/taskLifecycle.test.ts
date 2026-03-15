@@ -129,6 +129,77 @@ test("TaskLifecycleService reuses an active session and persists attempts, telem
   }
 });
 
+test("TaskLifecycleService blocks mastery on suspicious paste ratios until a rewrite attempt clears the gate", async () => {
+  const { blueprintPath, cleanup, workspaceRoot } = await createWorkspaceFixture();
+  const clock = createClock("2025-03-15T00:00:00.000Z");
+
+  try {
+    const service = new TaskLifecycleService(workspaceRoot, {
+      now: clock.now
+    });
+    const started = await service.startTask({
+      blueprintPath,
+      stepId: "step.state-merge"
+    });
+
+    clock.advance(1_800);
+    const gated = await service.submitTask({
+      blueprintPath,
+      stepId: "step.state-merge",
+      sessionId: started.session.sessionId,
+      timeoutMs: 30_000,
+      telemetry: {
+        hintsUsed: 0,
+        typedChars: 12,
+        pastedChars: 92,
+        pasteRatio: 0.88
+      }
+    });
+
+    assert.equal(gated.attempt.status, "needs-review");
+    assert.equal(gated.attempt.result.status, "passed");
+    assert.equal(gated.session.status, "active");
+    assert.ok(gated.session.rewriteGate);
+    assert.equal(gated.progress.activeSession?.rewriteGate?.requiredTypedChars, 92);
+    assert.equal(gated.attempt.postTaskSnapshot, undefined);
+    assert.deepEqual(
+      gated.learnerModel.history.map((entry) => entry.status),
+      ["started", "needs-review"]
+    );
+
+    clock.advance(2_000);
+    const cleared = await service.submitTask({
+      blueprintPath,
+      stepId: "step.state-merge",
+      sessionId: started.session.sessionId,
+      timeoutMs: 30_000,
+      telemetry: {
+        hintsUsed: 0,
+        typedChars: 104,
+        pastedChars: 0,
+        pasteRatio: 0
+      }
+    });
+    const snapshots = await new SnapshotService(workspaceRoot).listSnapshots();
+
+    assert.equal(cleared.attempt.status, "passed");
+    assert.equal(cleared.attempt.result.status, "passed");
+    assert.equal(cleared.session.status, "passed");
+    assert.equal(cleared.session.rewriteGate, null);
+    assert.equal(cleared.progress.activeSession, null);
+    assert.ok(cleared.attempt.postTaskSnapshot);
+    assert.deepEqual(
+      cleared.learnerModel.history.map((entry) => entry.status),
+      ["started", "needs-review", "passed"]
+    );
+    assert.equal(snapshots.length, 2);
+
+    service.close();
+  } finally {
+    await cleanup();
+  }
+});
+
 async function createWorkspaceFixture(): Promise<{
   workspaceRoot: string;
   blueprintPath: string;

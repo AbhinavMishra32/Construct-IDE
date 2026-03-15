@@ -31,6 +31,7 @@ import type {
   ComprehensionCheck,
   LearnerModel,
   ProjectBlueprint,
+  RewriteGate,
   RunnerHealth,
   RuntimeInfo,
   TaskProgress,
@@ -88,6 +89,7 @@ export default function App() {
   const activeRequestIdRef = useRef(0);
   const telemetryRef = useRef<TaskTelemetry>(createEmptyTelemetry());
   const pendingPasteCharsRef = useRef(0);
+  const rewriteGateRef = useRef<RewriteGate | null>(null);
 
   const activeStep = useMemo(
     () => blueprint?.steps.find((step) => step.id === activeStepId) ?? null,
@@ -133,6 +135,9 @@ export default function App() {
     activeStep && taskResult?.stepId === activeStep.id ? taskResult : null;
   const activeTaskProgress =
     activeStep && taskProgress?.stepId === activeStep.id ? taskProgress : null;
+  const activeRewriteGate =
+    activeTaskProgress?.activeSession?.rewriteGate ?? taskSession?.rewriteGate ?? null;
+  const activeAttemptStatus = activeTaskProgress?.latestAttempt?.status ?? null;
   const blueprintPath = blueprint
     ? resolveBlueprintDefinitionPath(blueprint.projectRoot)
     : "";
@@ -324,6 +329,10 @@ export default function App() {
     };
   }, [activeStepId, runnerHealth?.status]);
 
+  useEffect(() => {
+    rewriteGateRef.current = activeRewriteGate;
+  }, [activeRewriteGate]);
+
   const resetTaskTelemetry = () => {
     const emptyTelemetry = createEmptyTelemetry();
     pendingPasteCharsRef.current = 0;
@@ -487,13 +496,15 @@ export default function App() {
       setTaskProgress(submission.progress);
       setLearnerModel(submission.learnerModel);
       setTaskResult(submission.attempt.result);
-      setGuideVisible(submission.attempt.status === "failed");
+      setGuideVisible(submission.attempt.status !== "passed");
       resetTaskTelemetry();
       setRevealedHintLevel(0);
       setStatusMessage(
         submission.attempt.status === "passed"
           ? `Passed ${activeStep.title} on attempt ${submission.attempt.attempt}.`
-          : `Targeted tests failed for ${activeStep.title} on attempt ${submission.attempt.attempt}.`
+          : submission.attempt.status === "needs-review" && submission.session.rewriteGate
+            ? `Tests passed, but completion is blocked. Retype at least ${submission.session.rewriteGate.requiredTypedChars} characters without large paste and resubmit.`
+            : `Targeted tests failed for ${activeStep.title} on attempt ${submission.attempt.attempt}.`
       );
     } catch (error) {
       const message =
@@ -604,6 +615,14 @@ export default function App() {
                   const domNode = editor.getDomNode();
                   const pasteTarget = domNode?.querySelector(".inputarea") ?? domNode;
                   const handlePaste = (event: Event) => {
+                    if (rewriteGateRef.current) {
+                      event.preventDefault();
+                      setStatusMessage(
+                        "Verification rewrite is active. Retype the anchored code from memory instead of pasting."
+                      );
+                      return;
+                    }
+
                     const clipboardEvent = event as ClipboardEvent;
                     const pastedText = clipboardEvent.clipboardData?.getData("text") ?? "";
 
@@ -731,6 +750,8 @@ export default function App() {
                 }}
                 revealedHintLevel={revealedHintLevel}
                 stepHints={stepHints}
+                attemptStatus={activeAttemptStatus}
+                rewriteGate={activeRewriteGate}
                 taskProgress={activeTaskProgress}
                 taskRunState={taskRunState}
                 taskResult={activeTaskResult}
@@ -783,6 +804,8 @@ function FloatingGuideCard({
   onRevealHint,
   revealedHintLevel,
   stepHints,
+  attemptStatus,
+  rewriteGate,
   taskProgress,
   taskRunState,
   taskResult,
@@ -803,6 +826,8 @@ function FloatingGuideCard({
   onRevealHint: (level: number) => void;
   revealedHintLevel: number;
   stepHints: string[];
+  attemptStatus: "failed" | "passed" | "needs-review" | null;
+  rewriteGate: RewriteGate | null;
   taskProgress: TaskProgress | null;
   taskRunState: TaskRunState;
   taskResult: TaskResult | null;
@@ -856,6 +881,28 @@ function FloatingGuideCard({
             Recorded hints across this step: {learnerModel?.hintsUsed[activeStep.id] ?? 0}
           </p>
         </section>
+
+        {rewriteGate ? (
+          <section className="construct-verification-panel">
+            <span className="construct-panel-kicker">Verification Gate</span>
+            <p className="construct-verification-copy">
+              Tests are green, but this step stays open because the paste ratio hit{" "}
+              {Math.round(rewriteGate.pasteRatio * 100)}%. Retype the anchored implementation
+              from memory and resubmit.
+            </p>
+            <div className="construct-tag-list">
+              <span className="construct-tag">
+                type {rewriteGate.requiredTypedChars}+ chars
+              </span>
+              <span className="construct-tag">
+                keep paste under {rewriteGate.maxPastedChars} chars
+              </span>
+              <span className="construct-tag">
+                paste ratio under {Math.round(rewriteGate.requiredPasteRatio * 100)}%
+              </span>
+            </div>
+          </section>
+        ) : null}
 
         <MetadataList title="Tests" values={activeStep.tests} />
         <MetadataList title="Constraints" values={activeStep.constraints} />
@@ -951,6 +998,8 @@ function FloatingGuideCard({
         </AnimatePresence>
 
         <TaskResultPanel
+          attemptStatus={attemptStatus}
+          rewriteGate={rewriteGate}
           taskRunState={taskRunState}
           taskResult={taskResult}
           taskError={taskError}
@@ -1348,16 +1397,27 @@ function CheckCard({
 }
 
 function TaskResultPanel({
+  attemptStatus,
+  rewriteGate,
   taskRunState,
   taskResult,
   taskError,
   title
 }: {
+  attemptStatus: "failed" | "passed" | "needs-review" | null;
+  rewriteGate: RewriteGate | null;
   taskRunState: TaskRunState;
   taskResult: TaskResult | null;
   taskError: string;
   title: string;
 }) {
+  const isVerificationBlocked =
+    attemptStatus === "needs-review" &&
+    taskResult?.status === "passed" &&
+    Boolean(rewriteGate);
+  const taskStatusLabel = isVerificationBlocked ? "review" : taskResult?.status ?? "";
+  const taskStatusClassName = isVerificationBlocked ? "needs-review" : taskResult?.status ?? "";
+
   return (
     <section className="construct-task-results">
       <span className="construct-panel-kicker">Execution</span>
@@ -1375,8 +1435,8 @@ function TaskResultPanel({
       ) : (
         <div className="construct-task-result-body">
           <div className="construct-task-result-meta">
-            <span className={`construct-task-status ${taskResult.status}`}>
-              {taskResult.status}
+            <span className={`construct-task-status ${taskStatusClassName}`}>
+              {taskStatusLabel}
             </span>
             <span className="construct-brief-chip">
               {formatDuration(taskResult.durationMs)}
@@ -1394,6 +1454,11 @@ function TaskResultPanel({
                   <p>{failure.message}</p>
                 </div>
               ))}
+            </div>
+          ) : isVerificationBlocked && rewriteGate ? (
+            <div className="construct-task-warning">
+              <strong>Targeted tests passed, but verification is still open.</strong>
+              <p>{rewriteGate.guidance}</p>
             </div>
           ) : (
             <div className="construct-task-success">

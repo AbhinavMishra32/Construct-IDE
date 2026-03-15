@@ -20,7 +20,7 @@ This file tracks the implementation phases, current status, shipped scope, and v
 | 4 | Editor UI basics & anchor navigation | Implemented | The Electron renderer now loads blueprint metadata, renders a Monaco editor and file tree, opens real workspace files, and jumps to `TASK:` anchors for selected steps. |
 | 5 | Learning Surface & Guidance Console | Implemented | Each unit now opens in a technical brief with quick checks, then transitions into a focused execution mode with a persistent guidance console, deterministic hints, and targeted task submission. |
 | 6 | Task lifecycle & telemetry | Implemented | Pre-task snapshots, persisted task attempts, learner-model updates, telemetry submission, renderer-side task lifecycle wiring, and the compact native IDE shell pass are in place. |
-| 7 | Edit tracking & anti-cheat | Pending | Not started. |
+| 7 | Edit tracking & anti-cheat | Implemented | Typed-versus-pasted telemetry is now enforced through a rewrite gate that blocks completion after suspicious paste-heavy passes until the learner retypes the anchored implementation. |
 | 8 | Live Guide orchestration & LLM integration | Pending | Not started. |
 | 9 | Architect static generator | Pending | Not started. |
 | 10 | Rollback UX & snapshot management | Pending | Not started. |
@@ -30,11 +30,10 @@ This file tracks the implementation phases, current status, shipped scope, and v
 
 ## Current Changeset Scope
 
-- Implement the real Phase 6 task lifecycle in the runner: task start, pre-task snapshots, persisted attempts, learner history, and telemetry capture.
-- Wire the renderer to the lifecycle endpoints so focused work starts a task session, submits telemetry-backed attempts, and renders persisted progress.
-- Rework the workspace shell into an IDE surface: Monaco occupies the right canvas, the top chrome floats over the editor, the guide card floats in the lower-right corner, and the brief remains a full-screen overlay.
-- Tighten the renderer visual system so controls feel more tactile and native in both light and dark mode.
-- Preserve the local-only execution model. Future agent/provider work remains deferred to the LangGraph-based orchestration phase.
+- Implement Phase 7 anti-cheat enforcement on top of the Phase 6 lifecycle.
+- Persist rewrite-gate state in the runner so suspicious paste-heavy submissions cannot earn completion even when targeted tests pass.
+- Surface verification-gate guidance in the renderer and block additional paste events while the rewrite flow is active.
+- Preserve the local-only execution model. LangGraph-based guide orchestration and provider integrations remain deferred to Phase 8.
 
 ## Implemented So Far
 
@@ -61,6 +60,8 @@ This file tracks the implementation phases, current status, shipped scope, and v
 - Phase 6 shared lifecycle schemas: [`/Users/abhinavmishra/solin/socrates/pkg/shared/src/schemas.ts`](/Users/abhinavmishra/solin/socrates/pkg/shared/src/schemas.ts).
 - Phase 6 renderer task APIs and types: [`/Users/abhinavmishra/solin/socrates/app/src/renderer/lib/api.ts`](/Users/abhinavmishra/solin/socrates/app/src/renderer/lib/api.ts) and [`/Users/abhinavmishra/solin/socrates/app/src/renderer/types.ts`](/Users/abhinavmishra/solin/socrates/app/src/renderer/types.ts).
 - Phase 6 IDE shell and task experience: [`/Users/abhinavmishra/solin/socrates/app/src/renderer/App.tsx`](/Users/abhinavmishra/solin/socrates/app/src/renderer/App.tsx) and [`/Users/abhinavmishra/solin/socrates/app/src/renderer/index.css`](/Users/abhinavmishra/solin/socrates/app/src/renderer/index.css).
+- Phase 7 rewrite-gate enforcement: [`/Users/abhinavmishra/solin/socrates/runner/src/taskLifecycle.ts`](/Users/abhinavmishra/solin/socrates/runner/src/taskLifecycle.ts), [`/Users/abhinavmishra/solin/socrates/runner/src/taskLifecycle.test.ts`](/Users/abhinavmishra/solin/socrates/runner/src/taskLifecycle.test.ts), and [`/Users/abhinavmishra/solin/socrates/pkg/shared/src/schemas.ts`](/Users/abhinavmishra/solin/socrates/pkg/shared/src/schemas.ts).
+- Phase 7 renderer verification UI and paste blocking: [`/Users/abhinavmishra/solin/socrates/app/src/renderer/App.tsx`](/Users/abhinavmishra/solin/socrates/app/src/renderer/App.tsx), [`/Users/abhinavmishra/solin/socrates/app/src/renderer/index.css`](/Users/abhinavmishra/solin/socrates/app/src/renderer/index.css), and [`/Users/abhinavmishra/solin/socrates/app/src/renderer/types.ts`](/Users/abhinavmishra/solin/socrates/app/src/renderer/types.ts).
 
 ## Verification
 
@@ -87,13 +88,15 @@ This file tracks the implementation phases, current status, shipped scope, and v
 - Passed: `pnpm --filter @construct/shared typecheck`.
 - Passed: `pnpm --filter @construct/shared build`.
 - Passed: `pnpm --filter @construct/runner build`.
+- Passed: Node `v25.4.0` verification sweep covering shared typecheck/build, runner typecheck/test/task execution/build, and app typecheck/build/test.
+- Note: the default shell runtime in this workspace still points at Node `v20.19.5`, so Phase 7 verification currently relies on switching to a newer local Node with `node:sqlite` support.
 - Not run in this sandbox: a bind-based smoke test for the HTTP endpoint, because local listen attempts from the test process hit `EPERM`.
 - Pending: `pnpm dev` smoke check for the Electron app and runner.
 
 ## Blockers
 
-- None for Phase 6 implementation.
+- None for Phase 7 implementation.
 
 ## Next Phase
 
-Phase 7 starts with edit tracking and anti-cheat enforcement on top of the Phase 6 lifecycle.
+Phase 8 starts the live LangGraph-driven guide orchestration, provider-backed LLM integration, and secure developer-controlled provider configuration.

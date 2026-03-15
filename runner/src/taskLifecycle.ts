@@ -15,6 +15,7 @@ import {
   TaskSubmitResponseSchema,
   type LearnerHistoryEntry,
   type LearnerModel,
+  type RewriteGate,
   type SnapshotRecord,
   type TaskAttempt,
   type TaskProgress,
@@ -37,6 +38,7 @@ type SessionRow = {
   started_at: string;
   latest_attempt: number;
   pre_task_snapshot_json: string;
+  rewrite_gate_json: string | null;
 };
 
 type AttemptRow = {
@@ -60,6 +62,15 @@ type HistoryRow = {
   paste_ratio: number;
   recorded_at: string;
 };
+
+const REWRITE_GATE_POLICY = {
+  pasteRatioThreshold: 0.35,
+  minPastedChars: 48,
+  requiredTypedCharsFloor: 40,
+  requiredTypedCharsCeil: 140,
+  maxPastedCharsDuringRewrite: 8,
+  requiredPasteRatio: 0.1
+} as const;
 
 export class TaskLifecycleService {
   private readonly workspaceRoot: string;
@@ -113,7 +124,8 @@ export class TaskLifecycleService {
       status: "active",
       startedAt: this.now().toISOString(),
       latestAttempt: 0,
-      preTaskSnapshot
+      preTaskSnapshot,
+      rewriteGate: null
     };
 
     this.getDatabase()
@@ -126,9 +138,10 @@ export class TaskLifecycleService {
             status,
             started_at,
             latest_attempt,
-            pre_task_snapshot_json
+            pre_task_snapshot_json,
+            rewrite_gate_json
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `
       )
       .run(
@@ -138,7 +151,8 @@ export class TaskLifecycleService {
         session.status,
         session.startedAt,
         session.latestAttempt,
-        JSON.stringify(session.preTaskSnapshot)
+        JSON.stringify(session.preTaskSnapshot),
+        null
       );
 
     this.recordHistory({
@@ -185,8 +199,18 @@ export class TaskLifecycleService {
       this.now().getTime() - new Date(session.startedAt).getTime()
     );
     const telemetry = normalizeTelemetry(request.telemetry);
-    const postTaskSnapshot =
+    const nextRewriteGate =
       taskResult.status === "passed"
+        ? resolveRewriteGate(session.rewriteGate, telemetry, recordedAt)
+        : session.rewriteGate;
+    const attemptStatus =
+      taskResult.status === "failed"
+        ? "failed"
+        : nextRewriteGate
+          ? "needs-review"
+          : "passed";
+    const postTaskSnapshot =
+      attemptStatus === "passed"
         ? await this.snapshotService.commitSnapshot(
             `Post-task snapshot for ${request.stepId} (attempt ${attemptNumber})`
           )
@@ -195,7 +219,7 @@ export class TaskLifecycleService {
       attempt: attemptNumber,
       sessionId: session.sessionId,
       stepId: session.stepId,
-      status: taskResult.status,
+      status: attemptStatus,
       recordedAt,
       timeSpentMs,
       telemetry,
@@ -205,7 +229,8 @@ export class TaskLifecycleService {
     const updatedSession: TaskSession = {
       ...session,
       latestAttempt: attemptNumber,
-      status: taskResult.status === "passed" ? "passed" : "active"
+      status: attemptStatus === "passed" ? "passed" : "active",
+      rewriteGate: attemptStatus === "passed" ? null : nextRewriteGate
     };
 
     const database = this.getDatabase();
@@ -244,14 +269,20 @@ export class TaskLifecycleService {
         `
           UPDATE task_sessions
           SET status = ?, latest_attempt = ?
+            , rewrite_gate_json = ?
           WHERE session_id = ?
         `
       )
-      .run(updatedSession.status, updatedSession.latestAttempt, updatedSession.sessionId);
+      .run(
+        updatedSession.status,
+        updatedSession.latestAttempt,
+        updatedSession.rewriteGate ? JSON.stringify(updatedSession.rewriteGate) : null,
+        updatedSession.sessionId
+      );
 
     this.recordHistory({
       stepId: request.stepId,
-      status: taskResult.status,
+      status: attemptStatus,
       attempt: attemptNumber,
       timeSpentMs,
       hintsUsed: telemetry.hintsUsed,
@@ -383,7 +414,8 @@ export class TaskLifecycleService {
         status TEXT NOT NULL,
         started_at TEXT NOT NULL,
         latest_attempt INTEGER NOT NULL DEFAULT 0,
-        pre_task_snapshot_json TEXT NOT NULL
+        pre_task_snapshot_json TEXT NOT NULL,
+        rewrite_gate_json TEXT
       );
 
       CREATE UNIQUE INDEX IF NOT EXISTS task_sessions_active_step_idx
@@ -419,6 +451,7 @@ export class TaskLifecycleService {
         recorded_at TEXT NOT NULL
       );
     `);
+    ensureColumn(this.database, "task_sessions", "rewrite_gate_json", "TEXT");
   }
 
   private async resolveStep(blueprintPath: string, stepId: string): Promise<void> {
@@ -442,7 +475,8 @@ export class TaskLifecycleService {
             status,
             started_at,
             latest_attempt,
-            pre_task_snapshot_json
+            pre_task_snapshot_json,
+            rewrite_gate_json
           FROM task_sessions
           WHERE session_id = ?
           LIMIT 1
@@ -465,7 +499,8 @@ export class TaskLifecycleService {
             status,
             started_at,
             latest_attempt,
-            pre_task_snapshot_json
+            pre_task_snapshot_json,
+            rewrite_gate_json
           FROM task_sessions
           WHERE blueprint_path = ? AND step_id = ? AND status = 'active'
           ORDER BY started_at DESC
@@ -537,7 +572,10 @@ function deserializeSession(row: SessionRow): TaskSession {
     status: row.status,
     startedAt: row.started_at,
     latestAttempt: row.latest_attempt,
-    preTaskSnapshot: JSON.parse(row.pre_task_snapshot_json) as SnapshotRecord
+    preTaskSnapshot: JSON.parse(row.pre_task_snapshot_json) as SnapshotRecord,
+    rewriteGate: row.rewrite_gate_json
+      ? (JSON.parse(row.rewrite_gate_json) as RewriteGate)
+      : null
   });
 }
 
@@ -570,4 +608,71 @@ function normalizeTelemetry(telemetry: TaskTelemetry): TaskTelemetry {
     typedChars: telemetry.typedChars,
     pastedChars: telemetry.pastedChars
   };
+}
+
+function resolveRewriteGate(
+  existingGate: RewriteGate | null,
+  telemetry: TaskTelemetry,
+  recordedAt: string
+): RewriteGate | null {
+  if (existingGate) {
+    return meetsRewriteGate(existingGate, telemetry) ? null : existingGate;
+  }
+
+  return shouldRequireRewriteGate(telemetry) ? createRewriteGate(telemetry, recordedAt) : null;
+}
+
+function shouldRequireRewriteGate(telemetry: TaskTelemetry): boolean {
+  return (
+    telemetry.pasteRatio >= REWRITE_GATE_POLICY.pasteRatioThreshold &&
+    telemetry.pastedChars >= REWRITE_GATE_POLICY.minPastedChars
+  );
+}
+
+function meetsRewriteGate(gate: RewriteGate, telemetry: TaskTelemetry): boolean {
+  return (
+    telemetry.typedChars >= gate.requiredTypedChars &&
+    telemetry.pastedChars <= gate.maxPastedChars &&
+    telemetry.pasteRatio <= gate.requiredPasteRatio
+  );
+}
+
+function createRewriteGate(telemetry: TaskTelemetry, recordedAt: string): RewriteGate {
+  const requiredTypedChars = Math.max(
+    REWRITE_GATE_POLICY.requiredTypedCharsFloor,
+    Math.min(
+      REWRITE_GATE_POLICY.requiredTypedCharsCeil,
+      telemetry.pastedChars
+    )
+  );
+
+  return {
+    reason: `Paste ratio reached ${Math.round(telemetry.pasteRatio * 100)}%.`,
+    guidance:
+      "Retype the anchored implementation from memory, avoid large pastes, and resubmit to earn completion.",
+    activatedAt: recordedAt,
+    pasteRatio: telemetry.pasteRatio,
+    pasteRatioThreshold: REWRITE_GATE_POLICY.pasteRatioThreshold,
+    pastedChars: telemetry.pastedChars,
+    requiredTypedChars,
+    maxPastedChars: REWRITE_GATE_POLICY.maxPastedCharsDuringRewrite,
+    requiredPasteRatio: REWRITE_GATE_POLICY.requiredPasteRatio
+  };
+}
+
+function ensureColumn(
+  database: DatabaseSync,
+  tableName: string,
+  columnName: string,
+  definition: string
+): void {
+  const columns = database
+    .prepare(`PRAGMA table_info(${tableName})`)
+    .all() as Array<{ name: string }>;
+
+  if (columns.some((column) => column.name === columnName)) {
+    return;
+  }
+
+  database.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
 }

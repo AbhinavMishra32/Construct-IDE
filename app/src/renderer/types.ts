@@ -51,6 +51,18 @@ export type SnapshotRecord = {
   fileDiffs: string[];
 };
 
+export type RewriteGate = {
+  reason: string;
+  guidance: string;
+  activatedAt: string;
+  pasteRatio: number;
+  pasteRatioThreshold: number;
+  pastedChars: number;
+  requiredTypedChars: number;
+  maxPastedChars: number;
+  requiredPasteRatio: number;
+};
+
 export type TaskSession = {
   sessionId: string;
   stepId: string;
@@ -59,13 +71,14 @@ export type TaskSession = {
   startedAt: string;
   latestAttempt: number;
   preTaskSnapshot: SnapshotRecord;
+  rewriteGate: RewriteGate | null;
 };
 
 export type TaskAttempt = {
   attempt: number;
   sessionId: string;
   stepId: string;
-  status: "failed" | "passed";
+  status: "failed" | "passed" | "needs-review";
   recordedAt: string;
   timeSpentMs: number;
   telemetry: TaskTelemetry;

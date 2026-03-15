@@ -155,6 +155,18 @@ export const SnapshotSchema = z.object({
   fileDiffs: z.array(z.string().min(1)).default([])
 });
 
+export const RewriteGateSchema = z.object({
+  reason: z.string().min(1),
+  guidance: z.string().min(1),
+  activatedAt: z.string().datetime(),
+  pasteRatio: z.number().min(0).max(1),
+  pasteRatioThreshold: z.number().min(0).max(1),
+  pastedChars: z.number().int().nonnegative(),
+  requiredTypedChars: z.number().int().positive(),
+  maxPastedChars: z.number().int().nonnegative(),
+  requiredPasteRatio: z.number().min(0).max(1)
+});
+
 export const TaskSessionStatusSchema = z.enum(["active", "passed"]);
 
 export const TaskSessionSchema = z.object({
@@ -164,14 +176,15 @@ export const TaskSessionSchema = z.object({
   status: TaskSessionStatusSchema,
   startedAt: z.string().datetime(),
   latestAttempt: z.number().int().nonnegative().default(0),
-  preTaskSnapshot: SnapshotSchema
+  preTaskSnapshot: SnapshotSchema,
+  rewriteGate: RewriteGateSchema.nullable().default(null)
 });
 
 export const TaskAttemptSchema = z.object({
   attempt: z.number().int().positive(),
   sessionId: z.string().min(1),
   stepId: z.string().min(1),
-  status: z.enum(["failed", "passed"]),
+  status: z.enum(["failed", "passed", "needs-review"]),
   recordedAt: z.string().datetime(),
   timeSpentMs: z.number().int().nonnegative(),
   telemetry: TaskTelemetrySchema,
@@ -239,6 +252,7 @@ export type TaskTelemetry = z.infer<typeof TaskTelemetrySchema>;
 export type LearnerHistoryEntry = z.infer<typeof LearnerHistoryEntrySchema>;
 export type LearnerModel = z.infer<typeof LearnerModelSchema>;
 export type SnapshotRecord = z.infer<typeof SnapshotSchema>;
+export type RewriteGate = z.infer<typeof RewriteGateSchema>;
 export type TaskSession = z.infer<typeof TaskSessionSchema>;
 export type TaskAttempt = z.infer<typeof TaskAttemptSchema>;
 export type TaskProgress = z.infer<typeof TaskProgressSchema>;

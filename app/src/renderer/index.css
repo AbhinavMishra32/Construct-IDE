@@ -714,12 +714,23 @@ textarea {
   color: var(--success);
 }
 
+.construct-task-status.needs-review,
+.construct-task-warning {
+  color: var(--warning);
+}
+
 .construct-task-status.failed,
 .construct-check-review.needs-revision {
   color: var(--warning);
 }
 
+.construct-task-status.needs-review {
+  border-color: color-mix(in srgb, var(--warning) 36%, var(--border));
+  background: color-mix(in srgb, var(--warning) 10%, transparent);
+}
+
 .construct-task-success,
+.construct-task-warning,
 .construct-task-error,
 .construct-empty-panel,
 .construct-inline-error {
@@ -728,6 +739,22 @@ textarea {
   padding: 11px 12px;
   background: color-mix(in srgb, var(--panel-bg) 88%, transparent);
   font-size: 13px;
+}
+
+.construct-task-warning {
+  border-color: color-mix(in srgb, var(--warning) 32%, var(--border));
+  background: color-mix(in srgb, var(--warning) 10%, var(--panel-bg));
+}
+
+.construct-task-warning strong {
+  display: block;
+  font-size: 12px;
+  letter-spacing: -0.02em;
+}
+
+.construct-task-warning p {
+  margin: 8px 0 0;
+  line-height: 1.55;
 }
 
 .construct-task-error,
@@ -746,6 +773,20 @@ textarea {
   padding: 24px;
   background: var(--panel-overlay);
   backdrop-filter: blur(8px);
+}
+
+.construct-verification-panel {
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--warning) 30%, var(--border));
+  background: color-mix(in srgb, var(--warning) 10%, var(--panel-bg));
+  padding: 12px;
+}
+
+.construct-verification-copy {
+  margin: 10px 0 0;
+  color: var(--text-muted);
+  line-height: 1.55;
+  font-size: 12px;
 }
 
 .construct-brief-panel {
