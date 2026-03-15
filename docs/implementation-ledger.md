@@ -42,7 +42,8 @@ This file tracks the implementation phases, current status, shipped scope, and v
 - Persist a user knowledge base derived from prior planning sessions and feed it back into future question generation and roadmap synthesis.
 - Add an agent persistence boundary so planning sessions, learner knowledge, active generated-project selection, and generated blueprint records are stored as user data.
 - Use Neon as the remote backing store for that user data when `DATABASE_URL` is configured, while keeping the runnable local project workspace on disk.
-- Restore the saved planning goal from persisted state into the renderer instead of always falling back to the canned compiler example.
+- Open the desktop app in a fresh new-project intake by default, even when a generated blueprint already exists, so the user can always start a new Architect run first and only resume an existing workspace intentionally.
+- Expand the Architect planning flow from a single research hop into a multi-stage LangGraph with separate research passes for project shape, prerequisite skills, dependency order, and validation strategy before synthesis.
 - Replace static “Ask guide” behavior with a real runtime Guide request that analyzes the current anchored code, constraints, and latest task result.
 
 ## Implemented So Far
@@ -128,6 +129,8 @@ This file tracks the implementation phases, current status, shipped scope, and v
 - Passed: detailed agent logging verification through `PATH="$HOME/.nvm/versions/node/v25.4.0/bin:$PATH" pnpm --filter @construct/runner typecheck` and `PATH="$HOME/.nvm/versions/node/v25.4.0/bin:$PATH" pnpm --filter @construct/runner test`.
 - Passed: generated-blueprint activation verification through `PATH="$HOME/.nvm/versions/node/v25.4.0/bin:$PATH" pnpm --filter @construct/runner typecheck`, `PATH="$HOME/.nvm/versions/node/v25.4.0/bin:$PATH" pnpm --filter @construct/runner test`, `PATH="$HOME/.nvm/versions/node/v25.4.0/bin:$PATH" pnpm --filter @construct/runner build`, `pnpm --filter @construct/app typecheck`, and `pnpm --filter @construct/app build`.
 - Passed: agent persistence verification through `PATH="$HOME/.nvm/versions/node/v25.4.0/bin:$PATH" pnpm --filter @construct/runner test`, covering saved planning state, learner knowledge, active blueprint metadata, and generated blueprint record lookup through the new persistence boundary.
+- Passed: fresh-start planning UX verification through `pnpm --filter @construct/app typecheck`, confirming the renderer no longer restores a saved planning session or plan into the initial overlay.
+- Passed: multi-stage Architect graph verification through `PATH="$HOME/.nvm/versions/node/v25.4.0/bin:$PATH" pnpm --filter @construct/runner test`, covering research sub-stages for project shape, prerequisite skills, dependency order, validation strategy, and research merging.
 - Passed: learner-workspace sanity check confirmed the visible explorer surface excludes `tests/` and the materialized [`/Users/abhinavmishra/solin/socrates/blueprints/workflow-runtime/.construct/workspaces/construct.workflow-runtime.v1/src/state.ts`](/Users/abhinavmishra/solin/socrates/blueprints/workflow-runtime/.construct/workspaces/construct.workflow-runtime.v1/src/state.ts) contains the starter `throw new Error('Implement mergeState')` implementation instead of the canonical solved code.
 - Note: the default shell runtime in this workspace still points at Node `v20.19.5`, so Phase 7 verification currently relies on switching to a newer local Node with `node:sqlite` support.
 - Not run in this sandbox: a bind-based smoke test for the HTTP endpoint, because local listen attempts from the test process hit `EPERM`.
@@ -136,7 +139,7 @@ This file tracks the implementation phases, current status, shipped scope, and v
 ## Blockers
 
 - Construct now emits a first-slice generated blueprint bundle for arbitrary goals, but the output quality still depends on a single Architect generation pass and does not yet include repair loops, schema retries for bundle content, or project execution smoke tests of the generated artifact before activation.
-- The current agent fix hardens structured plan generation by compacting learner/history/research context before asking for a schema-constrained roadmap, but we still need explicit retry/fallback handling when model output does not satisfy the schema on the first attempt.
+- The Architect graph now uses multiple research stages, but blueprint generation is still a single synthesis pass after those stages; it does not yet loop through critique, repair, and verification subgraphs before activation.
 - The real agent stack requires `OPENAI_API_KEY` and `TAVILY_API_KEY` in the runner environment. Provider choice remains developer-controlled through environment configuration, not end-user UI.
 - Neon-backed persistence requires `DATABASE_URL` in the runner environment. The current implementation stores planning state, learner knowledge, active blueprint metadata, and generated blueprint records in Neon when configured, but still keeps runnable project files and task-lifecycle SQLite state local on disk because execution stays local-first.
 

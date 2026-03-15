@@ -14,7 +14,6 @@ import {
 import {
   completePlanningSession,
   fetchBlueprint,
-  fetchCurrentPlanningState,
   fetchLearnerModel,
   fetchRunnerHealth,
   fetchTaskProgress,
@@ -85,7 +84,7 @@ export default function App() {
   const [planningPlan, setPlanningPlan] = useState<GeneratedProjectPlan | null>(null);
   const [planningOverlayOpen, setPlanningOverlayOpen] = useState(false);
   const [planningEvents, setPlanningEvents] = useState<AgentEvent[]>([]);
-  const [planningGoal, setPlanningGoal] = useState("build a C compiler in Rust");
+  const [planningGoal, setPlanningGoal] = useState("");
   const [planningLearningStyle, setPlanningLearningStyle] =
     useState<LearningStyle>("concept-first");
   const [planningAnswers, setPlanningAnswers] = useState<Record<string, ConceptConfidence>>({});
@@ -205,18 +204,18 @@ export default function App() {
 
     const loadWorkspace = async () => {
       try {
-        const [health, blueprintEnvelope, planningState] = await Promise.all([
+        const [health, blueprintEnvelope] = await Promise.all([
           fetchRunnerHealth(controller.signal),
-          fetchBlueprint(controller.signal),
-          fetchCurrentPlanningState(controller.signal)
+          fetchBlueprint(controller.signal)
         ]);
 
         setRunnerHealth(health);
-        setPlanningSession(planningState.session);
-        setPlanningPlan(planningState.plan);
-        if (planningState.session?.goal) {
-          setPlanningGoal(planningState.session.goal);
-        }
+        setPlanningSession(null);
+        setPlanningPlan(null);
+        setPlanningAnswers({});
+        setPlanningEvents([]);
+        setPlanningError("");
+        setPlanningGoal("");
         setLoadError("");
 
         if (!blueprintEnvelope.blueprint) {
@@ -243,15 +242,19 @@ export default function App() {
         setBlueprintPath(blueprintEnvelope.blueprintPath);
         setWorkspaceFiles(filesEnvelope.files);
         setLearnerModel(learner);
-        setPlanningOverlayOpen(planningState.plan === null);
+        setPlanningOverlayOpen(true);
 
         const initialStep = blueprintEnvelope.blueprint.steps[0];
         if (initialStep) {
           setActiveStepId(initialStep.id);
           setSurfaceMode("brief");
-          setStatusMessage(`Loaded ${blueprintEnvelope.blueprint.name}.`);
+          setStatusMessage(
+            `Loaded ${blueprintEnvelope.blueprint.name}. Start a new project prompt or close the planner to resume this workspace.`
+          );
         } else {
-          setStatusMessage(`Loaded ${blueprintEnvelope.blueprint.name}.`);
+          setStatusMessage(
+            `Loaded ${blueprintEnvelope.blueprint.name}. Start a new project prompt or close the planner to resume this workspace.`
+          );
         }
       } catch (error) {
         if (controller.signal.aborted) {
@@ -732,6 +735,16 @@ export default function App() {
     setTheme((current) => (current === "light" ? "dark" : "light"));
   };
 
+  const openFreshPlanningOverlay = () => {
+    setPlanningSession(null);
+    setPlanningPlan(null);
+    setPlanningAnswers({});
+    setPlanningEvents([]);
+    setPlanningError("");
+    setPlanningGoal("");
+    setPlanningOverlayOpen(true);
+  };
+
   return (
     <main className="construct-app">
       <div className="construct-layout">
@@ -801,12 +814,10 @@ export default function App() {
               <div className="construct-editor-chrome-right">
                 <button
                   type="button"
-                  onClick={() => {
-                    setPlanningOverlayOpen(true);
-                  }}
+                  onClick={openFreshPlanningOverlay}
                   className="construct-secondary-button"
                 >
-                  Plan
+                  New
                 </button>
                 <button
                   type="button"
@@ -1537,7 +1548,7 @@ function PlanningOverlay({
                 <div key={event.id} className="construct-guide-event-item">
                   <strong>{event.title}</strong>
                   {event.detail ? <p>{event.detail}</p> : null}
-                  {event.stage === "research" && Array.isArray(event.payload?.sources) ? (
+                  {event.stage.startsWith("research") && Array.isArray(event.payload?.sources) ? (
                     <div className="construct-tag-list">
                       {(event.payload.sources as Array<{ title?: string }>).map((source, index) => (
                         <span

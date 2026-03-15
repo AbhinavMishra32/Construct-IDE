@@ -150,7 +150,9 @@ type QuestionGraphState = {
   jobId: string;
   request: PlanningSessionStartRequest;
   knowledgeBase: UserKnowledgeBase;
-  research: ResearchDigest | null;
+  projectShapeResearch: ResearchDigest | null;
+  prerequisiteResearch: ResearchDigest | null;
+  mergedResearch: ResearchDigest | null;
   session: PlanningSession | null;
 };
 
@@ -159,7 +161,10 @@ type PlanGraphState = {
   request: PlanningSessionCompleteRequest;
   session: PlanningSession;
   knowledgeBase: UserKnowledgeBase;
-  research: ResearchDigest | null;
+  architectureResearch: ResearchDigest | null;
+  dependencyResearch: ResearchDigest | null;
+  validationResearch: ResearchDigest | null;
+  mergedResearch: ResearchDigest | null;
   plan: GeneratedProjectPlan | null;
   activeBlueprintPath: string | null;
 };
@@ -718,7 +723,9 @@ export class ConstructAgentService {
       jobId: Annotation<string>(),
       request: Annotation<PlanningSessionStartRequest>(),
       knowledgeBase: Annotation<UserKnowledgeBase>(),
-      research: Annotation<ResearchDigest | null>(),
+      projectShapeResearch: Annotation<ResearchDigest | null>(),
+      prerequisiteResearch: Annotation<ResearchDigest | null>(),
+      mergedResearch: Annotation<ResearchDigest | null>(),
       session: Annotation<PlanningSession | null>()
     });
 
@@ -728,11 +735,26 @@ export class ConstructAgentService {
           return this.readKnowledgeBase();
         })
       }))
-      .addNode("researchGoal", async (state) => ({
-        research: await this.withStage(jobId, "research", "Researching the target project", "Fetching architecture and implementation references from Tavily.", async () => {
+      .addNode("researchProjectShape", async (state) => ({
+        projectShapeResearch: await this.withStage(jobId, "research-project-shape", "Researching the target project shape", "Fetching architecture references, major subsystems, and implementation constraints from Tavily.", async () => {
           return this.getSearch().research(
-            `Project architecture, implementation order, and prerequisites for: ${state.request.goal}`
+            `Project architecture, core subsystems, and implementation constraints for: ${state.request.goal}`
           );
+        })
+      }))
+      .addNode("researchPrerequisites", async (state) => ({
+        prerequisiteResearch: await this.withStage(jobId, "research-prerequisites", "Researching prerequisite skills", "Identifying the language, compiler, and systems concepts this project depends on.", async () => {
+          return this.getSearch().research(
+            `Prerequisite language, compiler, and systems skills needed for: ${state.request.goal}`
+          );
+        })
+      }))
+      .addNode("mergeResearch", async (state) => ({
+        mergedResearch: await this.withStage(jobId, "research-merge", "Combining research signals", "Merging architecture and prerequisite findings into a single planning context.", async () => {
+          return mergeResearchDigests("Combined project-shape and prerequisite research", [
+            state.projectShapeResearch,
+            state.prerequisiteResearch
+          ]);
         })
       }))
       .addNode("generateQuestions", async (state) => ({
@@ -746,7 +768,7 @@ export class ConstructAgentService {
                 goal: state.request.goal,
                 learningStyle: state.request.learningStyle,
                 priorKnowledge: compactKnowledgeBase(state.knowledgeBase),
-                research: compactResearchDigest(state.research)
+                research: compactResearchDigest(state.mergedResearch)
               },
               null,
               2
@@ -759,8 +781,11 @@ export class ConstructAgentService {
         })
       }))
       .addEdge(START, "loadKnowledgeBase")
-      .addEdge("loadKnowledgeBase", "researchGoal")
-      .addEdge("researchGoal", "generateQuestions")
+      .addEdge("loadKnowledgeBase", "researchProjectShape")
+      .addEdge("loadKnowledgeBase", "researchPrerequisites")
+      .addEdge("researchProjectShape", "mergeResearch")
+      .addEdge("researchPrerequisites", "mergeResearch")
+      .addEdge("mergeResearch", "generateQuestions")
       .addEdge("generateQuestions", END)
       .compile();
 
@@ -768,7 +793,9 @@ export class ConstructAgentService {
       jobId,
       request,
       knowledgeBase: emptyKnowledgeBase(this.now),
-      research: null,
+      projectShapeResearch: null,
+      prerequisiteResearch: null,
+      mergedResearch: null,
       session: null
     });
 
@@ -799,7 +826,10 @@ export class ConstructAgentService {
       request: Annotation<PlanningSessionCompleteRequest>(),
       session: Annotation<PlanningSession>(),
       knowledgeBase: Annotation<UserKnowledgeBase>(),
-      research: Annotation<ResearchDigest | null>(),
+      architectureResearch: Annotation<ResearchDigest | null>(),
+      dependencyResearch: Annotation<ResearchDigest | null>(),
+      validationResearch: Annotation<ResearchDigest | null>(),
+      mergedResearch: Annotation<ResearchDigest | null>(),
       plan: Annotation<GeneratedProjectPlan | null>(),
       activeBlueprintPath: Annotation<string | null>()
     });
@@ -811,10 +841,33 @@ export class ConstructAgentService {
         })
       }))
       .addNode("researchArchitecture", async (state) => ({
-        research: await this.withStage(jobId, "research", "Researching architecture and build order", "Fetching reference material for the requested system shape and likely dependency order.", async () => {
+        architectureResearch: await this.withStage(jobId, "research-architecture", "Researching architecture", "Fetching reference material for the requested system shape and major component boundaries.", async () => {
           return this.getSearch().research(
-            `${state.session.goal} architecture, dependency order, core modules, implementation sequence`
+            `${state.session.goal} architecture, core modules, component boundaries`
           );
+        })
+      }))
+      .addNode("researchDependencies", async (state) => ({
+        dependencyResearch: await this.withStage(jobId, "research-dependency-order", "Researching dependency order", "Tracing which modules must exist first and how the build should be sequenced.", async () => {
+          return this.getSearch().research(
+            `${state.session.goal} dependency order, implementation sequence, bootstrap plan`
+          );
+        })
+      }))
+      .addNode("researchValidation", async (state) => ({
+        validationResearch: await this.withStage(jobId, "research-validation-strategy", "Researching validation strategy", "Finding good validation seams, harness patterns, and per-component test boundaries.", async () => {
+          return this.getSearch().research(
+            `${state.session.goal} validation strategy, test harness, component-level testing approach`
+          );
+        })
+      }))
+      .addNode("mergeResearch", async (state) => ({
+        mergedResearch: await this.withStage(jobId, "research-merge", "Combining research signals", "Fusing architecture, dependency, and validation research into a single generation context.", async () => {
+          return mergeResearchDigests("Combined architecture, dependency-order, and validation research", [
+            state.architectureResearch,
+            state.dependencyResearch,
+            state.validationResearch
+          ]);
         })
       }))
       .addNode("generatePlan", async (state) => ({
@@ -828,7 +881,7 @@ export class ConstructAgentService {
                 session: state.session,
                 answers: state.request.answers,
                 priorKnowledge: compactKnowledgeBase(state.knowledgeBase),
-                research: compactResearchDigest(state.research)
+                research: compactResearchDigest(state.mergedResearch)
               },
               null,
               2
@@ -864,7 +917,7 @@ export class ConstructAgentService {
                 answers: state.request.answers,
                 plan: state.plan,
                 priorKnowledge: compactKnowledgeBase(state.knowledgeBase),
-                research: compactResearchDigest(state.research)
+                research: compactResearchDigest(state.mergedResearch)
               },
               null,
               2
@@ -878,7 +931,12 @@ export class ConstructAgentService {
       }))
       .addEdge(START, "loadKnowledgeBase")
       .addEdge("loadKnowledgeBase", "researchArchitecture")
-      .addEdge("researchArchitecture", "generatePlan")
+      .addEdge("loadKnowledgeBase", "researchDependencies")
+      .addEdge("loadKnowledgeBase", "researchValidation")
+      .addEdge("researchArchitecture", "mergeResearch")
+      .addEdge("researchDependencies", "mergeResearch")
+      .addEdge("researchValidation", "mergeResearch")
+      .addEdge("mergeResearch", "generatePlan")
       .addEdge("generatePlan", "generateBlueprint")
       .addEdge("generateBlueprint", END)
       .compile();
@@ -888,7 +946,10 @@ export class ConstructAgentService {
       request,
       session,
       knowledgeBase: emptyKnowledgeBase(this.now),
-      research: null,
+      architectureResearch: null,
+      dependencyResearch: null,
+      validationResearch: null,
+      mergedResearch: null,
       plan: null,
       activeBlueprintPath: null
     });
@@ -972,7 +1033,7 @@ export class ConstructAgentService {
 
     const result = await task();
 
-    if (stage === "research") {
+    if (stage.startsWith("research")) {
       const research = result as ResearchDigest;
       this.emitEvent(job, {
         stage,
@@ -1700,7 +1761,7 @@ function summarizeAgentEventPayload(event: AgentEvent): Record<string, unknown> 
     return null;
   }
 
-  if (event.stage === "research") {
+  if (event.stage.startsWith("research")) {
     const payload = event.payload as {
       query?: unknown;
       sources?: Array<{ title?: string; url?: string }>;
@@ -1834,6 +1895,34 @@ function compactKnowledgeBase(knowledgeBase: UserKnowledgeBase): {
         domain: goal.domain,
         lastPlannedAt: goal.lastPlannedAt
       }))
+  };
+}
+
+function mergeResearchDigests(query: string, digests: Array<ResearchDigest | null>): ResearchDigest {
+  const mergedSources = new Map<string, ResearchSource>();
+  const answerParts: string[] = [];
+
+  for (const digest of digests) {
+    if (!digest) {
+      continue;
+    }
+
+    if (digest.answer) {
+      answerParts.push(digest.answer.trim());
+    }
+
+    for (const source of digest.sources) {
+      const key = source.url || `${source.title}:${source.snippet}`;
+      if (!mergedSources.has(key)) {
+        mergedSources.set(key, source);
+      }
+    }
+  }
+
+  return {
+    query,
+    answer: answerParts.length > 0 ? answerParts.join("\n\n") : undefined,
+    sources: Array.from(mergedSources.values())
   };
 }
 

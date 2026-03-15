@@ -9,9 +9,27 @@ import { ConstructAgentService } from "./agentService";
 test("ConstructAgentService creates question and plan jobs and persists the resulting state", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "construct-agent-service-"));
   let tick = 0;
+  const loggedStages: string[] = [];
 
   const service = new ConstructAgentService(root, {
     now: () => new Date(Date.UTC(2026, 2, 15, 0, 0, tick++)),
+    logger: {
+      info(_message, context) {
+        if (typeof context?.stage === "string") {
+          loggedStages.push(context.stage);
+        }
+      },
+      warn(_message, context) {
+        if (typeof context?.stage === "string") {
+          loggedStages.push(context.stage);
+        }
+      },
+      error(_message, context) {
+        if (typeof context?.stage === "string") {
+          loggedStages.push(context.stage);
+        }
+      }
+    },
     search: {
       async research(query) {
         return {
@@ -293,6 +311,9 @@ test("ConstructAgentService creates question and plan jobs and persists the resu
 
     assert.equal(questionSession.session.detectedLanguage, "rust");
     assert.equal(questionSession.session.questions.length, 4);
+    assert.ok(loggedStages.includes("research-project-shape"));
+    assert.ok(loggedStages.includes("research-prerequisites"));
+    assert.ok(loggedStages.includes("research-merge"));
 
     const planJob = service.createPlanningPlanJob({
       sessionId: questionSession.session.sessionId,
@@ -308,6 +329,10 @@ test("ConstructAgentService creates question and plan jobs and persists the resu
 
     assert.equal(planPayload.plan.steps.length, 2);
     assert.equal(planPayload.plan.suggestedFirstStepId, "step.skill.rust-ownership");
+    assert.ok(loggedStages.includes("research-architecture"));
+    assert.ok(loggedStages.includes("research-dependency-order"));
+    assert.ok(loggedStages.includes("research-validation-strategy"));
+    assert.ok(loggedStages.includes("research-merge"));
 
     const persistedPlanningState = await service.getCurrentPlanningState();
     assert.ok(persistedPlanningState.session);
