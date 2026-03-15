@@ -12,11 +12,13 @@ export function getDefaultBlueprintPath(rootDirectory: string): string {
   return path.join(rootDirectory, "blueprints", "workflow-runtime", "project-blueprint.json");
 }
 
-export async function getActiveBlueprintPath(rootDirectory: string): Promise<string> {
+export async function getActiveBlueprintPath(
+  rootDirectory: string
+): Promise<string | null> {
   const statePath = getActiveBlueprintStatePath(rootDirectory);
 
   if (!existsSync(statePath)) {
-    return getDefaultBlueprintPath(rootDirectory);
+    return null;
   }
 
   try {
@@ -24,15 +26,13 @@ export async function getActiveBlueprintPath(rootDirectory: string): Promise<str
     const state = JSON.parse(rawState) as ActiveBlueprintState;
 
     if (typeof state.blueprintPath !== "string" || state.blueprintPath.trim().length === 0) {
-      return getDefaultBlueprintPath(rootDirectory);
+      return null;
     }
 
     const resolvedBlueprintPath = path.resolve(rootDirectory, state.blueprintPath);
-    return existsSync(resolvedBlueprintPath)
-      ? resolvedBlueprintPath
-      : getDefaultBlueprintPath(rootDirectory);
+    return existsSync(resolvedBlueprintPath) ? resolvedBlueprintPath : null;
   } catch {
-    return getDefaultBlueprintPath(rootDirectory);
+    return null;
   }
 }
 

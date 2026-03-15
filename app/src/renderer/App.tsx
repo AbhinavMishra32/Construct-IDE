@@ -205,24 +205,42 @@ export default function App() {
 
     const loadWorkspace = async () => {
       try {
-        const [health, blueprintEnvelope, filesEnvelope, learner, planningState] =
-          await Promise.all([
+        const [health, blueprintEnvelope, planningState] = await Promise.all([
           fetchRunnerHealth(controller.signal),
           fetchBlueprint(controller.signal),
-          fetchWorkspaceFiles(controller.signal),
-          fetchLearnerModel(controller.signal),
           fetchCurrentPlanningState(controller.signal)
         ]);
 
         setRunnerHealth(health);
+        setPlanningSession(planningState.session);
+        setPlanningPlan(planningState.plan);
+        setLoadError("");
+
+        if (!blueprintEnvelope.blueprint) {
+          setBlueprint(null);
+          setBlueprintPath("");
+          setWorkspaceFiles([]);
+          setLearnerModel(null);
+          setActiveStepId("");
+          setTaskProgress(null);
+          setTaskSession(null);
+          setTaskResult(null);
+          setSurfaceMode("brief");
+          setPlanningOverlayOpen(true);
+          setStatusMessage("No active blueprint yet. Start planning to generate the first project.");
+          return;
+        }
+
+        const [filesEnvelope, learner] = await Promise.all([
+          fetchWorkspaceFiles(controller.signal),
+          fetchLearnerModel(controller.signal)
+        ]);
+
         setBlueprint(blueprintEnvelope.blueprint);
         setBlueprintPath(blueprintEnvelope.blueprintPath);
         setWorkspaceFiles(filesEnvelope.files);
         setLearnerModel(learner);
-        setPlanningSession(planningState.session);
-        setPlanningPlan(planningState.plan);
         setPlanningOverlayOpen(planningState.plan === null);
-        setLoadError("");
 
         const initialStep = blueprintEnvelope.blueprint.steps[0];
         if (initialStep) {
@@ -680,6 +698,11 @@ export default function App() {
         fetchWorkspaceFiles(),
         fetchLearnerModel()
       ]);
+
+      if (!blueprintEnvelope.blueprint) {
+        throw new Error("Planning completed, but no active generated blueprint was activated.");
+      }
+
       setBlueprint(blueprintEnvelope.blueprint);
       setBlueprintPath(blueprintEnvelope.blueprintPath);
       setWorkspaceFiles(filesEnvelope.files);

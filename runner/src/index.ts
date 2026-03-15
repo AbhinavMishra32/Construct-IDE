@@ -55,8 +55,14 @@ type WorkspaceContext = {
   taskLifecycle: TaskLifecycleService;
 };
 
-async function getWorkspaceContext(): Promise<WorkspaceContext> {
+async function getWorkspaceContext(): Promise<WorkspaceContext | null> {
   const canonicalBlueprintPath = await getActiveBlueprintPath(rootDir);
+
+  if (!canonicalBlueprintPath) {
+    workspaceContextPromise = null;
+    workspaceContextBlueprintPath = "";
+    return null;
+  }
 
   if (
     workspaceContextPromise &&
@@ -145,6 +151,22 @@ const server = http.createServer(async (request, response) => {
 
     if (request.method === "GET" && request.url === "/blueprint/current") {
       const workspaceContext = await getWorkspaceContext();
+
+      if (!workspaceContext) {
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(
+          JSON.stringify({
+            blueprint: null,
+            workspaceRoot: "",
+            blueprintPath: "",
+            canonicalBlueprintPath: null,
+            defaultBlueprintPath: getDefaultBlueprintPath(rootDir),
+            hasActiveBlueprint: false
+          })
+        );
+        return;
+      }
+
       const blueprint = await loadBlueprint(workspaceContext.learnerBlueprintPath);
 
       response.writeHead(200, { "Content-Type": "application/json" });
@@ -154,7 +176,8 @@ const server = http.createServer(async (request, response) => {
           workspaceRoot: workspaceContext.workspaceRoot,
           blueprintPath: workspaceContext.learnerBlueprintPath,
           canonicalBlueprintPath: workspaceContext.canonicalBlueprintPath,
-          defaultBlueprintPath: getDefaultBlueprintPath(rootDir)
+          defaultBlueprintPath: getDefaultBlueprintPath(rootDir),
+          hasActiveBlueprint: true
         })
       );
       return;
@@ -162,6 +185,18 @@ const server = http.createServer(async (request, response) => {
 
     if (request.method === "GET" && request.url?.startsWith("/workspace/files")) {
       const workspaceContext = await getWorkspaceContext();
+
+      if (!workspaceContext) {
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(
+          JSON.stringify({
+            root: "",
+            files: []
+          })
+        );
+        return;
+      }
+
       const files = await workspaceContext.workspaceFileManager.listFiles();
 
       response.writeHead(200, { "Content-Type": "application/json" });
@@ -176,6 +211,11 @@ const server = http.createServer(async (request, response) => {
 
     if (request.method === "GET" && request.url?.startsWith("/workspace/file")) {
       const workspaceContext = await getWorkspaceContext();
+
+      if (!workspaceContext) {
+        throw new Error("No active generated blueprint. Start planning first.");
+      }
+
       const relativePath = getRequiredQueryParam(request.url, "path");
       const content = await workspaceContext.workspaceFileManager.readFile(relativePath);
 
@@ -241,6 +281,11 @@ const server = http.createServer(async (request, response) => {
 
     if (request.method === "POST" && request.url === "/workspace/file") {
       const workspaceContext = await getWorkspaceContext();
+
+      if (!workspaceContext) {
+        throw new Error("No active generated blueprint. Start planning first.");
+      }
+
       const body = JSON.parse(await readRequestBody(request)) as {
         path?: string;
         content?: string;
@@ -274,6 +319,11 @@ const server = http.createServer(async (request, response) => {
 
     if (request.method === "POST" && request.url === "/tasks/start") {
       const workspaceContext = await getWorkspaceContext();
+
+      if (!workspaceContext) {
+        throw new Error("No active generated blueprint. Start planning first.");
+      }
+
       const body = await readRequestBody(request);
       const startRequest = TaskStartRequestSchema.parse(JSON.parse(body));
       const taskSession = await workspaceContext.taskLifecycle.startTask(startRequest);
@@ -285,6 +335,11 @@ const server = http.createServer(async (request, response) => {
 
     if (request.method === "POST" && request.url === "/tasks/submit") {
       const workspaceContext = await getWorkspaceContext();
+
+      if (!workspaceContext) {
+        throw new Error("No active generated blueprint. Start planning first.");
+      }
+
       const body = await readRequestBody(request);
       const submitRequest = TaskSubmitRequestSchema.parse(JSON.parse(body));
       const taskSubmission = await workspaceContext.taskLifecycle.submitTask(submitRequest);
@@ -296,6 +351,20 @@ const server = http.createServer(async (request, response) => {
 
     if (request.method === "GET" && request.url?.startsWith("/tasks/progress")) {
       const workspaceContext = await getWorkspaceContext();
+
+      if (!workspaceContext) {
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(
+          JSON.stringify({
+            stepId: getRequiredQueryParam(request.url, "stepId"),
+            totalAttempts: 0,
+            activeSession: null,
+            latestAttempt: null
+          })
+        );
+        return;
+      }
+
       const stepId = getRequiredQueryParam(request.url, "stepId");
       const progress = await workspaceContext.taskLifecycle.getTaskProgress(
         stepId,
@@ -309,6 +378,20 @@ const server = http.createServer(async (request, response) => {
 
     if (request.method === "GET" && request.url === "/learner/model") {
       const workspaceContext = await getWorkspaceContext();
+
+      if (!workspaceContext) {
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(
+          JSON.stringify({
+            skills: {},
+            history: [],
+            hintsUsed: {},
+            reflections: {}
+          })
+        );
+        return;
+      }
+
       response.writeHead(200, { "Content-Type": "application/json" });
       response.end(JSON.stringify(await workspaceContext.taskLifecycle.getLearnerModel()));
       return;

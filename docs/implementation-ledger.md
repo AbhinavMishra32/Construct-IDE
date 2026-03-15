@@ -38,6 +38,7 @@ This file tracks the implementation phases, current status, shipped scope, and v
 - Add detailed runner-side agent logging so the server logs mirror job lifecycle, stage events, research activity, model invocations, and completion or failure summaries.
 - Add first-slice agent-generated blueprint synthesis so planning now produces a canonical project directory, masked learner files, hidden tests, and step docs/checks that the app can load directly.
 - Replace the fixed runtime sample as the always-active workspace by letting the runner resolve and materialize the latest generated blueprint on demand.
+- Remove the silent startup fallback to the fixed sample blueprint so the desktop app opens in planning mode until an agent-generated blueprint exists.
 - Persist a user knowledge base derived from prior planning sessions and feed it back into future question generation and roadmap synthesis.
 - Replace static “Ask guide” behavior with a real runtime Guide request that analyzes the current anchored code, constraints, and latest task result.
 

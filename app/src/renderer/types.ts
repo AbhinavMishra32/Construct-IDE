@@ -191,9 +191,12 @@ export type ProjectBlueprint = {
 };
 
 export type BlueprintEnvelope = {
-  blueprint: ProjectBlueprint;
+  blueprint: ProjectBlueprint | null;
   workspaceRoot: string;
   blueprintPath: string;
+  canonicalBlueprintPath?: string | null;
+  defaultBlueprintPath?: string;
+  hasActiveBlueprint: boolean;
 };
 
 export type PlanningQuestionOption = {
