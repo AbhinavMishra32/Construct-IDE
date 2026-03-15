@@ -29,11 +29,11 @@ This file tracks the implementation phases, current status, shipped scope, and v
 
 ## Current Changeset Scope
 
-- Rework the renderer into a two-stage flow: technical brief first, focused coding second.
-- Add quick comprehension checks with deterministic local review for MCQ and short-answer prompts.
-- Add a persistent Guidance Console with `Apply to workspace`, targeted test submission, guide prompts, and three local hint levels.
-- Add execution output rendering in the editor surface for targeted unit test runs.
-- Add app-side helper tests and a root verification command for the Phase 5 baseline.
+- Rework the renderer to match the production workspace direction: narrow file explorer, centered top bar, Monaco as the primary canvas, and a true floating guidance card.
+- Make the brief flow a full-screen overlay that covers the entire workspace, including the explorer and editor, before the user enters implementation mode.
+- Add light and dark theme support to the renderer and Monaco integration.
+- Keep the Phase 5 interaction model intact: quick checks, targeted task submission, guide prompts, and local hint levels.
+- Keep app-side helper tests and the Phase 5 verification path green after the UI refactor.
 
 ## Implemented So Far
 
