@@ -1,6 +1,10 @@
 import type {
   BlueprintEnvelope,
+  CurrentPlanningSessionResponse,
   LearnerModel,
+  PlanningAnswer,
+  PlanningSessionCompleteResponse,
+  PlanningSessionStartResponse,
   RunnerHealth,
   TaskProgress,
   TaskResult,
@@ -19,6 +23,50 @@ export async function fetchRunnerHealth(signal?: AbortSignal): Promise<RunnerHea
 
 export async function fetchBlueprint(signal?: AbortSignal): Promise<BlueprintEnvelope> {
   return getJson<BlueprintEnvelope>("/blueprint/current", { signal });
+}
+
+export async function fetchCurrentPlanningState(
+  signal?: AbortSignal
+): Promise<CurrentPlanningSessionResponse> {
+  return getJson<CurrentPlanningSessionResponse>("/agent/planning/current", { signal });
+}
+
+export async function startPlanningSession(input: {
+  goal: string;
+  learningStyle: "concept-first" | "build-first" | "example-first";
+}): Promise<PlanningSessionStartResponse> {
+  const response = await fetch(`${RUNNER_BASE_URL}/agent/planning/start`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(input)
+  });
+
+  if (!response.ok) {
+    throw new Error(`Runner responded with ${response.status} while starting agent planning.`);
+  }
+
+  return parseJsonResponse<PlanningSessionStartResponse>(response, "starting planning");
+}
+
+export async function completePlanningSession(input: {
+  sessionId: string;
+  answers: PlanningAnswer[];
+}): Promise<PlanningSessionCompleteResponse> {
+  const response = await fetch(`${RUNNER_BASE_URL}/agent/planning/complete`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(input)
+  });
+
+  if (!response.ok) {
+    throw new Error(`Runner responded with ${response.status} while completing agent planning.`);
+  }
+
+  return parseJsonResponse<PlanningSessionCompleteResponse>(response, "completing planning");
 }
 
 export async function fetchWorkspaceFiles(

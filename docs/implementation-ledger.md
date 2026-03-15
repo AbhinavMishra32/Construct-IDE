@@ -21,7 +21,7 @@ This file tracks the implementation phases, current status, shipped scope, and v
 | 5 | Learning Surface & Guidance Console | Implemented | Each unit now opens in a technical brief with quick checks, then transitions into a focused execution mode with a persistent guidance console, deterministic hints, and targeted task submission. |
 | 6 | Task lifecycle & telemetry | Implemented | Pre-task snapshots, persisted task attempts, learner-model updates, telemetry submission, renderer-side task lifecycle wiring, and the compact native IDE shell pass are in place. |
 | 7 | Edit tracking & anti-cheat | Implemented | Typed-versus-pasted telemetry is enforced through a rewrite gate, and the learner now works inside a materialized starter workspace where internal step tests stay hidden from the explorer. |
-| 8 | Live Guide orchestration & LLM integration | Pending | Not started. |
+| 8 | Live Guide orchestration & LLM integration | In progress | Deterministic agent-planning infrastructure is now live: goal intake, concept-level knowledge graph questions, personalized build-order planning, persisted planning state, and a planning overlay in the app. Provider-backed generation and live runtime orchestration are still pending. |
 | 9 | Architect static generator | Pending | Not started. |
 | 10 | Rollback UX & snapshot management | Pending | Not started. |
 | 11 | Multi-language adapters | Pending | Not started. |
@@ -30,11 +30,11 @@ This file tracks the implementation phases, current status, shipped scope, and v
 
 ## Current Changeset Scope
 
-- Extend Phase 7 so Construct no longer edits the canonical solved sample project directly.
-- Materialize a learner workspace from blueprint starter files while keeping canonical step tests copied into hidden internal paths.
-- Keep targeted task execution pointed at those hidden tests so future agents can generate per-step validations without exposing them in the explorer.
-- Preserve the rewrite-gate enforcement so suspicious paste-heavy submissions still require a rewrite-from-memory pass before completion.
-- Preserve the local-only execution model. LangGraph-based guide orchestration and provider integrations remain deferred to Phase 8.
+- Start Phase 8 by adding a real agent-planning layer instead of leaving “AI integration” as a placeholder.
+- Add structured intake for project goals, concept-level knowledge questions, learning-style preferences, and a generated knowledge graph.
+- Generate a personalized architecture and first-step plan from those signals using a deterministic planner that the future provider-backed Architect can replace or augment.
+- Expose that planner through runner endpoints and persist the latest planning session locally.
+- Integrate the planner into the app with a dedicated planning overlay so users can go from project goal to personalized roadmap inside Construct itself.
 
 ## Implemented So Far
 
@@ -65,6 +65,10 @@ This file tracks the implementation phases, current status, shipped scope, and v
 - Phase 7 renderer verification UI and paste blocking: [`/Users/abhinavmishra/solin/socrates/app/src/renderer/App.tsx`](/Users/abhinavmishra/solin/socrates/app/src/renderer/App.tsx), [`/Users/abhinavmishra/solin/socrates/app/src/renderer/index.css`](/Users/abhinavmishra/solin/socrates/app/src/renderer/index.css), and [`/Users/abhinavmishra/solin/socrates/app/src/renderer/types.ts`](/Users/abhinavmishra/solin/socrates/app/src/renderer/types.ts).
 - Phase 7 learner workspace materialization and hidden test surface: [`/Users/abhinavmishra/solin/socrates/runner/src/workspaceMaterializer.ts`](/Users/abhinavmishra/solin/socrates/runner/src/workspaceMaterializer.ts), [`/Users/abhinavmishra/solin/socrates/runner/src/index.ts`](/Users/abhinavmishra/solin/socrates/runner/src/index.ts), and [`/Users/abhinavmishra/solin/socrates/runner/src/fileManager.ts`](/Users/abhinavmishra/solin/socrates/runner/src/fileManager.ts).
 - Phase 7 learner workspace regression coverage: [`/Users/abhinavmishra/solin/socrates/runner/src/workspaceMaterializer.test.ts`](/Users/abhinavmishra/solin/socrates/runner/src/workspaceMaterializer.test.ts) and [`/Users/abhinavmishra/solin/socrates/runner/src/fileManager.test.ts`](/Users/abhinavmishra/solin/socrates/runner/src/fileManager.test.ts).
+- Phase 8 shared agent-planning contracts: [`/Users/abhinavmishra/solin/socrates/pkg/shared/src/agentSchemas.ts`](/Users/abhinavmishra/solin/socrates/pkg/shared/src/agentSchemas.ts) and [`/Users/abhinavmishra/solin/socrates/pkg/shared/src/index.ts`](/Users/abhinavmishra/solin/socrates/pkg/shared/src/index.ts).
+- Phase 8 runner-side planner and persistence: [`/Users/abhinavmishra/solin/socrates/runner/src/agentPlanner.ts`](/Users/abhinavmishra/solin/socrates/runner/src/agentPlanner.ts) and [`/Users/abhinavmishra/solin/socrates/runner/src/index.ts`](/Users/abhinavmishra/solin/socrates/runner/src/index.ts).
+- Phase 8 planner coverage: [`/Users/abhinavmishra/solin/socrates/runner/src/agentPlanner.test.ts`](/Users/abhinavmishra/solin/socrates/runner/src/agentPlanner.test.ts).
+- Phase 8 planning UI integration: [`/Users/abhinavmishra/solin/socrates/app/src/renderer/App.tsx`](/Users/abhinavmishra/solin/socrates/app/src/renderer/App.tsx), [`/Users/abhinavmishra/solin/socrates/app/src/renderer/index.css`](/Users/abhinavmishra/solin/socrates/app/src/renderer/index.css), [`/Users/abhinavmishra/solin/socrates/app/src/renderer/lib/api.ts`](/Users/abhinavmishra/solin/socrates/app/src/renderer/lib/api.ts), and [`/Users/abhinavmishra/solin/socrates/app/src/renderer/types.ts`](/Users/abhinavmishra/solin/socrates/app/src/renderer/types.ts).
 
 ## Verification
 
@@ -90,6 +94,13 @@ This file tracks the implementation phases, current status, shipped scope, and v
 - Passed: `pnpm --filter @construct/runner task:test`.
 - Passed: `pnpm --filter @construct/shared typecheck`.
 - Passed: `pnpm --filter @construct/shared build`.
+- Passed: `pnpm --filter @construct/shared typecheck`.
+- Passed: `pnpm --filter @construct/shared build`.
+- Passed: `pnpm --filter @construct/app typecheck`.
+- Passed: `pnpm --filter @construct/app build`.
+- Passed: `pnpm --filter @construct/runner typecheck`.
+- Passed: `pnpm --filter @construct/runner build`.
+- Passed: `export PATH="$HOME/.nvm/versions/node/v25.4.0/bin:$PATH"; pnpm --filter @construct/runner test`.
 - Passed: `pnpm --filter @construct/runner build`.
 - Passed: Node `v25.4.0` verification sweep covering shared typecheck/build, runner typecheck/test/task execution/build, and app typecheck/build/test.
 - Passed: learner-workspace sanity check confirmed the visible explorer surface excludes `tests/` and the materialized [`/Users/abhinavmishra/solin/socrates/blueprints/workflow-runtime/.construct/workspaces/construct.workflow-runtime.v1/src/state.ts`](/Users/abhinavmishra/solin/socrates/blueprints/workflow-runtime/.construct/workspaces/construct.workflow-runtime.v1/src/state.ts) contains the starter `throw new Error('Implement mergeState')` implementation instead of the canonical solved code.
@@ -99,8 +110,8 @@ This file tracks the implementation phases, current status, shipped scope, and v
 
 ## Blockers
 
-- None for Phase 7 implementation.
+- Phase 8 is still deterministic. The current planner builds personalized architecture and step order, but it does not yet emit a full generated codebase from arbitrary goals or call LangGraph/provider-backed generation flows.
 
 ## Next Phase
 
-Phase 8 starts the live LangGraph-driven guide orchestration, provider-backed LLM integration, and secure developer-controlled provider configuration.
+Continue Phase 8 by connecting the planner output to real workspace/codebase generation, adding provider-backed Architect/Guide interfaces, and turning the planning session into a generated project blueprint the learner can immediately enter.

@@ -6,6 +6,10 @@ export type RuntimeInfo = {
   platform: string;
 };
 
+export type LearningStyle = "concept-first" | "build-first" | "example-first";
+
+export type ConceptConfidence = "comfortable" | "shaky" | "new";
+
 export type RunnerHealth = {
   status: string;
   service: string;
@@ -190,6 +194,98 @@ export type BlueprintEnvelope = {
   blueprint: ProjectBlueprint;
   workspaceRoot: string;
   blueprintPath: string;
+};
+
+export type PlanningQuestionOption = {
+  id: string;
+  label: string;
+  description: string;
+  value: ConceptConfidence;
+};
+
+export type PlanningQuestion = {
+  id: string;
+  conceptId: string;
+  category: "language" | "domain" | "workflow";
+  prompt: string;
+  options: PlanningQuestionOption[];
+};
+
+export type PlanningSession = {
+  sessionId: string;
+  goal: string;
+  normalizedGoal: string;
+  learningStyle: LearningStyle;
+  detectedLanguage: string;
+  detectedDomain: string;
+  createdAt: string;
+  questions: PlanningQuestion[];
+};
+
+export type PlanningAnswer = {
+  questionId: string;
+  value: ConceptConfidence;
+};
+
+export type ConceptNode = {
+  id: string;
+  label: string;
+  category: "language" | "domain" | "workflow";
+  confidence: ConceptConfidence;
+  rationale: string;
+};
+
+export type KnowledgeGraph = {
+  concepts: ConceptNode[];
+  strengths: string[];
+  gaps: string[];
+};
+
+export type ArchitectureComponent = {
+  id: string;
+  label: string;
+  kind: "component" | "skill";
+  summary: string;
+  dependsOn: string[];
+};
+
+export type GeneratedPlanStep = {
+  id: string;
+  title: string;
+  kind: "skill" | "implementation";
+  objective: string;
+  rationale: string;
+  concepts: string[];
+  dependsOn: string[];
+  validationFocus: string[];
+  suggestedFiles: string[];
+};
+
+export type GeneratedProjectPlan = {
+  sessionId: string;
+  goal: string;
+  language: string;
+  domain: string;
+  learningStyle: LearningStyle;
+  summary: string;
+  architecture: ArchitectureComponent[];
+  knowledgeGraph: KnowledgeGraph;
+  steps: GeneratedPlanStep[];
+  suggestedFirstStepId: string;
+};
+
+export type PlanningSessionStartResponse = {
+  session: PlanningSession;
+};
+
+export type PlanningSessionCompleteResponse = {
+  session: PlanningSession;
+  plan: GeneratedProjectPlan;
+};
+
+export type CurrentPlanningSessionResponse = {
+  session: PlanningSession | null;
+  plan: GeneratedProjectPlan | null;
 };
 
 export type WorkspaceFilesEnvelope = {

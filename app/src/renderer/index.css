@@ -775,6 +775,85 @@ textarea {
   backdrop-filter: blur(8px);
 }
 
+.construct-planning-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 44;
+  padding: 24px;
+  background: color-mix(in srgb, var(--panel-overlay) 92%, transparent);
+  backdrop-filter: blur(10px);
+}
+
+.construct-planning-panel {
+  width: min(1120px, 100%);
+  max-height: 100%;
+  margin: 0 auto;
+  overflow: auto;
+  border-radius: 28px;
+  border: 1px solid var(--border);
+  background: var(--panel-muted);
+  box-shadow: var(--shadow);
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.construct-planning-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.construct-planning-header h1 {
+  margin: 12px 0 10px;
+  font-size: clamp(34px, 4vw, 52px);
+  line-height: 0.98;
+  letter-spacing: -0.06em;
+}
+
+.construct-planning-header p {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.6;
+  max-width: 760px;
+}
+
+.construct-planning-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+  gap: 16px;
+}
+
+.construct-planning-textarea {
+  min-height: 156px;
+  margin-top: 12px;
+}
+
+.construct-segmented-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.construct-planning-questions,
+.construct-planning-results {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.construct-step-list--planning {
+  margin-top: 4px;
+}
+
+.construct-planning-footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .construct-verification-panel {
   border-radius: 16px;
   border: 1px solid color-mix(in srgb, var(--warning) 30%, var(--border));

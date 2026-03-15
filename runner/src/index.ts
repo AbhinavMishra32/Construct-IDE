@@ -5,10 +5,13 @@ import { fileURLToPath } from "node:url";
 import {
   APP_NAME,
   BlueprintTaskRequestSchema,
+  PlanningSessionCompleteRequestSchema,
+  PlanningSessionStartRequestSchema,
   TaskStartRequestSchema,
   TaskSubmitRequestSchema
 } from "@construct/shared";
 
+import { AgentPlannerService } from "./agentPlanner";
 import { WorkspaceFileManager } from "./fileManager";
 import { SnapshotService } from "./snapshots";
 import { TaskLifecycleService } from "./taskLifecycle";
@@ -36,6 +39,7 @@ const workspaceFileManager = new WorkspaceFileManager(workspaceRoot, {
   ignoredFiles: ["project-blueprint.json"]
 });
 const snapshotService = new SnapshotService(workspaceRoot);
+const agentPlanner = new AgentPlannerService(rootDir);
 const taskLifecycle = new TaskLifecycleService(workspaceRoot, {
   snapshotService,
   testRunner
@@ -62,6 +66,12 @@ const server = http.createServer(async (request, response) => {
           port
         })
       );
+      return;
+    }
+
+    if (request.method === "GET" && request.url === "/agent/planning/current") {
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify(await agentPlanner.getCurrentPlanningState()));
       return;
     }
 
@@ -103,6 +113,26 @@ const server = http.createServer(async (request, response) => {
           content
         })
       );
+      return;
+    }
+
+    if (request.method === "POST" && request.url === "/agent/planning/start") {
+      const body = await readRequestBody(request);
+      const startRequest = PlanningSessionStartRequestSchema.parse(JSON.parse(body));
+      const planningSession = await agentPlanner.startPlanningSession(startRequest);
+
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify(planningSession));
+      return;
+    }
+
+    if (request.method === "POST" && request.url === "/agent/planning/complete") {
+      const body = await readRequestBody(request);
+      const completeRequest = PlanningSessionCompleteRequestSchema.parse(JSON.parse(body));
+      const planningResult = await agentPlanner.completePlanningSession(completeRequest);
+
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify(planningResult));
       return;
     }
 

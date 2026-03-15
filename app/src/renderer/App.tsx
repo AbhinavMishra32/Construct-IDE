@@ -12,13 +12,16 @@ import {
   type CheckReview
 } from "./lib/guide";
 import {
+  completePlanningSession,
   fetchBlueprint,
+  fetchCurrentPlanningState,
   fetchLearnerModel,
   fetchRunnerHealth,
   fetchTaskProgress,
   fetchWorkspaceFile,
   fetchWorkspaceFiles,
   saveWorkspaceFile,
+  startPlanningSession,
   startBlueprintTask,
   submitBlueprintTask
 } from "./lib/api";
@@ -28,7 +31,11 @@ import type {
   AnchorLocation,
   BlueprintStep,
   ComprehensionCheck,
+  ConceptConfidence,
+  GeneratedProjectPlan,
+  LearningStyle,
   LearnerModel,
+  PlanningSession,
   ProjectBlueprint,
   RewriteGate,
   RunnerHealth,
@@ -71,6 +78,15 @@ export default function App() {
   const [statusMessage, setStatusMessage] = useState("Loading Construct workspace...");
   const [surfaceMode, setSurfaceMode] = useState<SurfaceMode>("brief");
   const [theme, setTheme] = useState<ThemeMode>(() => getInitialTheme());
+  const [planningSession, setPlanningSession] = useState<PlanningSession | null>(null);
+  const [planningPlan, setPlanningPlan] = useState<GeneratedProjectPlan | null>(null);
+  const [planningOverlayOpen, setPlanningOverlayOpen] = useState(false);
+  const [planningGoal, setPlanningGoal] = useState("build a C compiler in Rust");
+  const [planningLearningStyle, setPlanningLearningStyle] =
+    useState<LearningStyle>("concept-first");
+  const [planningAnswers, setPlanningAnswers] = useState<Record<string, ConceptConfidence>>({});
+  const [planningBusy, setPlanningBusy] = useState(false);
+  const [planningError, setPlanningError] = useState("");
   const [filterQuery, setFilterQuery] = useState("");
   const [expandedDirectories, setExpandedDirectories] = useState<Record<string, boolean>>({});
   const [checkResponses, setCheckResponses] = useState<Record<string, string>>({});
@@ -131,6 +147,13 @@ export default function App() {
       activeStep.checks.every((check) => hasAnsweredCheck(check, checkResponses[check.id]))
     );
   }, [activeStep, checkResponses]);
+  const canCompletePlanning = useMemo(() => {
+    if (!planningSession) {
+      return false;
+    }
+
+    return planningSession.questions.every((question) => Boolean(planningAnswers[question.id]));
+  }, [planningAnswers, planningSession]);
   const activeTaskResult =
     activeStep && taskResult?.stepId === activeStep.id ? taskResult : null;
   const activeTaskProgress =
@@ -166,11 +189,13 @@ export default function App() {
 
     const loadWorkspace = async () => {
       try {
-        const [health, blueprintEnvelope, filesEnvelope, learner] = await Promise.all([
+        const [health, blueprintEnvelope, filesEnvelope, learner, planningState] =
+          await Promise.all([
           fetchRunnerHealth(controller.signal),
           fetchBlueprint(controller.signal),
           fetchWorkspaceFiles(controller.signal),
-          fetchLearnerModel(controller.signal)
+          fetchLearnerModel(controller.signal),
+          fetchCurrentPlanningState(controller.signal)
         ]);
 
         setRunnerHealth(health);
@@ -178,6 +203,9 @@ export default function App() {
         setBlueprintPath(blueprintEnvelope.blueprintPath);
         setWorkspaceFiles(filesEnvelope.files);
         setLearnerModel(learner);
+        setPlanningSession(planningState.session);
+        setPlanningPlan(planningState.plan);
+        setPlanningOverlayOpen(planningState.plan === null);
         setLoadError("");
 
         const initialStep = blueprintEnvelope.blueprint.steps[0];
@@ -515,6 +543,62 @@ export default function App() {
     }
   };
 
+  const handleStartPlanning = async () => {
+    setPlanningBusy(true);
+    setPlanningError("");
+
+    try {
+      const started = await startPlanningSession({
+        goal: planningGoal,
+        learningStyle: planningLearningStyle
+      });
+
+      setPlanningSession(started.session);
+      setPlanningPlan(null);
+      setPlanningAnswers({});
+      setPlanningOverlayOpen(true);
+      setStatusMessage(`Started planning for ${started.session.goal}.`);
+    } catch (error) {
+      setPlanningError(
+        error instanceof Error ? error.message : "Failed to start the planning session."
+      );
+    } finally {
+      setPlanningBusy(false);
+    }
+  };
+
+  const handleCompletePlanning = async () => {
+    if (!planningSession) {
+      return;
+    }
+
+    setPlanningBusy(true);
+    setPlanningError("");
+
+    try {
+      const completed = await completePlanningSession({
+        sessionId: planningSession.sessionId,
+        answers: planningSession.questions.map((question) => ({
+          questionId: question.id,
+          value: planningAnswers[question.id]!
+        }))
+      });
+
+      setPlanningSession(completed.session);
+      setPlanningPlan(completed.plan);
+      setPlanningOverlayOpen(true);
+      setStatusMessage(
+        `Generated a ${completed.plan.steps.length}-step personalized plan for ${completed.plan.goal}.`
+      );
+    } catch (error) {
+      setPlanningError(
+        error instanceof Error ? error.message : "Failed to complete the planning session."
+      );
+    } finally {
+      setPlanningBusy(false);
+    }
+  };
+
   const toggleTheme = () => {
     setTheme((current) => (current === "light" ? "dark" : "light"));
   };
@@ -586,6 +670,15 @@ export default function App() {
               </div>
 
               <div className="construct-editor-chrome-right">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPlanningOverlayOpen(true);
+                  }}
+                  className="construct-secondary-button"
+                >
+                  Plan
+                </button>
                 <button
                   type="button"
                   onClick={toggleTheme}
@@ -764,6 +857,36 @@ export default function App() {
       </div>
 
       <AnimatePresence>
+        {planningOverlayOpen ? (
+          <PlanningOverlay
+            planningBusy={planningBusy}
+            planningError={planningError}
+            planningGoal={planningGoal}
+            planningLearningStyle={planningLearningStyle}
+            planningPlan={planningPlan}
+            planningAnswers={planningAnswers}
+            planningSession={planningSession}
+            onClose={() => {
+              setPlanningOverlayOpen(false);
+            }}
+            onGoalChange={setPlanningGoal}
+            onLearningStyleChange={setPlanningLearningStyle}
+            onAnswerChange={(questionId, value) => {
+              setPlanningAnswers((current) => ({
+                ...current,
+                [questionId]: value
+              }));
+            }}
+            onStartPlanning={() => {
+              void handleStartPlanning();
+            }}
+            onCompletePlanning={() => {
+              void handleCompletePlanning();
+            }}
+            canCompletePlanning={canCompletePlanning}
+          />
+        ) : null}
+
         {overlayVisible && activeStep ? (
           <BriefOverlay
             key={activeStep.id}
@@ -1006,6 +1129,228 @@ function FloatingGuideCard({
         />
       </div>
     </motion.aside>
+  );
+}
+
+function PlanningOverlay({
+  planningBusy,
+  planningError,
+  planningGoal,
+  planningLearningStyle,
+  planningPlan,
+  planningAnswers,
+  planningSession,
+  onClose,
+  onGoalChange,
+  onLearningStyleChange,
+  onAnswerChange,
+  onStartPlanning,
+  onCompletePlanning,
+  canCompletePlanning
+}: {
+  planningBusy: boolean;
+  planningError: string;
+  planningGoal: string;
+  planningLearningStyle: LearningStyle;
+  planningPlan: GeneratedProjectPlan | null;
+  planningAnswers: Record<string, ConceptConfidence>;
+  planningSession: PlanningSession | null;
+  onClose: () => void;
+  onGoalChange: (value: string) => void;
+  onLearningStyleChange: (value: LearningStyle) => void;
+  onAnswerChange: (questionId: string, value: ConceptConfidence) => void;
+  onStartPlanning: () => void;
+  onCompletePlanning: () => void;
+  canCompletePlanning: boolean;
+}) {
+  const isQuestionPhase = planningSession && !planningPlan;
+
+  return (
+    <motion.div
+      className="construct-planning-overlay"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.18, ease: "easeOut" }}
+    >
+      <motion.section
+        className="construct-planning-panel"
+        initial={{ opacity: 0, y: 16, scale: 0.985 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 12, scale: 0.985 }}
+        transition={{ duration: 0.22, ease: "easeOut" }}
+      >
+        <header className="construct-planning-header">
+          <div>
+            <span className="construct-brief-kicker">Agent Planning</span>
+            <h1>Generate the first personalized build path.</h1>
+            <p>
+              Construct profiles the learner, maps project dependencies, and drafts the
+              first project path before the live guide takes over.
+            </p>
+          </div>
+          <button type="button" onClick={onClose} className="construct-secondary-button">
+            Close
+          </button>
+        </header>
+
+        {!planningSession ? (
+          <div className="construct-planning-grid">
+            <section className="construct-info-panel">
+              <span className="construct-panel-kicker">Target Goal</span>
+              <textarea
+                value={planningGoal}
+                onChange={(event) => {
+                  onGoalChange(event.target.value);
+                }}
+                className="construct-check-textarea construct-planning-textarea"
+                placeholder="build a C compiler in Rust"
+              />
+            </section>
+
+            <section className="construct-metadata-panel">
+              <span className="construct-panel-kicker">Learning style</span>
+              <div className="construct-segmented-list">
+                {(
+                  [
+                    ["concept-first", "Concept first"],
+                    ["build-first", "Build first"],
+                    ["example-first", "Example first"]
+                  ] satisfies Array<[LearningStyle, string]>
+                ).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => {
+                      onLearningStyleChange(value);
+                    }}
+                    className={`construct-check-option ${
+                      planningLearningStyle === value ? "is-selected" : ""
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <p className="construct-muted-copy">
+                This determines whether missing concepts are front-loaded, inserted just in
+                time, or explained through concrete examples first.
+              </p>
+            </section>
+          </div>
+        ) : null}
+
+        {isQuestionPhase ? (
+          <section className="construct-planning-questions">
+            <div className="construct-brief-section-header">
+              <div>
+                <span className="construct-brief-kicker">Knowledge Graph</span>
+                <h2>
+                  Answer the targeted concept questions for{" "}
+                  {formatDetectedLabel(planningSession.detectedDomain)} in{" "}
+                  {formatDetectedLabel(planningSession.detectedLanguage)}.
+                </h2>
+              </div>
+            </div>
+
+            <div className="construct-check-list">
+              {planningSession.questions.map((question) => (
+                <section key={question.id} className="construct-check-card">
+                  <div className="construct-check-header">
+                    <span className="construct-panel-kicker">
+                      {formatDetectedLabel(question.category)}
+                    </span>
+                    <h3>{question.prompt}</h3>
+                  </div>
+                  <div className="construct-check-options">
+                    {question.options.map((option) => (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() => {
+                          onAnswerChange(question.id, option.value);
+                        }}
+                        className={`construct-check-option ${
+                          planningAnswers[question.id] === option.value ? "is-selected" : ""
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        {planningPlan ? (
+          <section className="construct-planning-results">
+            <div className="construct-brief-grid">
+              <div className="construct-brief-column">
+                <InfoPanel title="Plan summary" body={planningPlan.summary} />
+                <MetadataList
+                  title="Strengths"
+                  values={planningPlan.knowledgeGraph.strengths}
+                />
+                <MetadataList title="Gaps" values={planningPlan.knowledgeGraph.gaps} />
+              </div>
+
+              <div className="construct-brief-column">
+                <MetadataList
+                  title="Architecture"
+                  values={planningPlan.architecture.map((component) => component.label)}
+                />
+                <MetadataList
+                  title="First validations"
+                  values={planningPlan.steps[0]?.validationFocus ?? []}
+                />
+              </div>
+            </div>
+
+            <section className="construct-step-list construct-step-list--planning">
+              {planningPlan.steps.map((step, index) => (
+                <div key={step.id} className="construct-step-list-item is-active">
+                  <span className="construct-step-list-index">{index + 1}</span>
+                  <div>
+                    <strong>{step.title}</strong>
+                    <span>{step.objective}</span>
+                  </div>
+                </div>
+              ))}
+            </section>
+          </section>
+        ) : null}
+
+        {planningError ? <div className="construct-inline-error">{planningError}</div> : null}
+
+        <footer className="construct-planning-footer">
+          {!planningSession ? (
+            <button
+              type="button"
+              onClick={onStartPlanning}
+              disabled={planningBusy || planningGoal.trim().length < 3}
+              className="construct-primary-button"
+            >
+              {planningBusy ? "Starting..." : "Start planning"}
+            </button>
+          ) : !planningPlan ? (
+            <button
+              type="button"
+              onClick={onCompletePlanning}
+              disabled={planningBusy || !canCompletePlanning}
+              className="construct-primary-button"
+            >
+              {planningBusy ? "Generating..." : "Generate personalized plan"}
+            </button>
+          ) : (
+            <button type="button" onClick={onClose} className="construct-primary-button">
+              Continue to workspace
+            </button>
+          )}
+        </footer>
+      </motion.section>
+    </motion.div>
   );
 }
 
@@ -1602,6 +1947,14 @@ function languageForPath(filePath: string): string {
   }
 
   return "plaintext";
+}
+
+function formatDetectedLabel(value: string): string {
+  return value
+    .split(/[-.]/)
+    .filter(Boolean)
+    .map((part) => part[0].toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function formatDuration(durationMs: number): string {
