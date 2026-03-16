@@ -457,17 +457,16 @@ class PrismaAgentPersistence implements AgentPersistence {
           blueprintPath: resolvedBlueprintPath
         };
 
-    await this.prisma.$transaction(async (transaction) => {
-      await transaction.project.updateMany({
+    await this.prisma.$transaction([
+      this.prisma.project.updateMany({
         where: {
           userId: this.userId
         },
         data: {
           isActive: false
         }
-      });
-
-      await transaction.project.updateMany({
+      }),
+      this.prisma.project.updateMany({
         where: {
           userId: this.userId,
           ...activeProjectWhere
@@ -476,8 +475,8 @@ class PrismaAgentPersistence implements AgentPersistence {
           isActive: true,
           lastOpenedAt: new Date(state.updatedAt)
         }
-      });
-    });
+      })
+    ]);
   }
 
   async getGeneratedBlueprintRecord(
@@ -499,26 +498,32 @@ class PrismaAgentPersistence implements AgentPersistence {
     const parsed = PersistedGeneratedBlueprintRecordSchema.parse(record);
     const projectRecord = buildProjectRecordFromGeneratedRecord(parsed);
 
-    await this.prisma.$transaction(async (transaction) => {
-      if (parsed.isActive) {
-        await transaction.project.updateMany({
+    const operations = [];
+
+    if (parsed.isActive) {
+      operations.push(
+        this.prisma.project.updateMany({
           where: {
             userId: this.userId
           },
           data: {
             isActive: false
           }
-        });
-      }
+        })
+      );
+    }
 
-      await transaction.project.upsert({
+    operations.push(
+      this.prisma.project.upsert({
         where: {
           id: projectRecord.id
         },
         create: mapProjectCreateInput(this.userId, projectRecord),
         update: mapProjectUpdateInput(projectRecord)
-      });
-    });
+      })
+    );
+
+    await this.prisma.$transaction(operations);
   }
 
   async listProjects(): Promise<ProjectSummary[]> {
@@ -567,17 +572,16 @@ class PrismaAgentPersistence implements AgentPersistence {
   async setActiveProject(projectId: string): Promise<ProjectSummary | null> {
     const timestamp = new Date();
 
-    await this.prisma.$transaction(async (transaction) => {
-      await transaction.project.updateMany({
+    await this.prisma.$transaction([
+      this.prisma.project.updateMany({
         where: {
           userId: this.userId
         },
         data: {
           isActive: false
         }
-      });
-
-      await transaction.project.updateMany({
+      }),
+      this.prisma.project.updateMany({
         where: {
           userId: this.userId,
           id: projectId
@@ -586,8 +590,8 @@ class PrismaAgentPersistence implements AgentPersistence {
           isActive: true,
           lastOpenedAt: timestamp
         }
-      });
-    });
+      })
+    ]);
 
     return this.getProject(projectId);
   }

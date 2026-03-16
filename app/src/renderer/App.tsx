@@ -1663,13 +1663,14 @@ function ProjectsHome({
 
   return (
     <section className="construct-home">
+      <div className="construct-home-shine" aria-hidden="true" />
       <header className="construct-home-header">
-        <div>
+        <div className="construct-home-header-copy">
           <span className="construct-home-kicker">Projects</span>
-          <h1 className="construct-home-title">Resume a project or start a new one.</h1>
+          <h1 className="construct-home-title">Build, learn, and jump back in without losing context.</h1>
           <p className="construct-home-copy">
-            Construct keeps project progress in the backend so you can jump back into the
-            exact step you were on.
+            Construct keeps every project, active step, and lesson state in the backend so
+            you can return to the exact point where you left off.
           </p>
         </div>
 
@@ -1697,7 +1698,7 @@ function ProjectsHome({
 
       {activeProject ? (
         <section className="construct-home-hero">
-          <div>
+          <div className="construct-home-hero-copy">
             <span className="construct-home-section-kicker">Continue</span>
             <h2>{activeProject.name}</h2>
             <p>{activeProject.description}</p>
@@ -1710,14 +1711,18 @@ function ProjectsHome({
                   : 1}
                 /{Math.max(activeProject.totalSteps, 1)}
               </span>
+              <span>{activeProject.completedStepsCount} completed</span>
               <span>
-                {activeProject.completedStepsCount} completed
+                {formatProjectTimestamp(activeProject.lastOpenedAt ?? activeProject.updatedAt)}
               </span>
-              <span>{formatProjectTimestamp(activeProject.lastOpenedAt ?? activeProject.updatedAt)}</span>
             </div>
           </div>
 
           <div className="construct-home-hero-actions">
+            <div className="construct-home-hero-stat">
+              <span className="construct-home-section-kicker">Current step</span>
+              <strong>{activeProject.currentStepTitle ?? "Ready to begin"}</strong>
+            </div>
             <button
               type="button"
               onClick={() => {
@@ -1728,13 +1733,30 @@ function ProjectsHome({
             >
               {dashboardBusy ? "Opening..." : "Resume project"}
             </button>
-            <div className="construct-home-current-step">
-              <span className="construct-home-section-kicker">Current step</span>
-              <strong>{activeProject.currentStepTitle ?? "Ready to begin"}</strong>
-            </div>
           </div>
         </section>
-      ) : null}
+      ) : (
+        <section className="construct-home-hero construct-home-hero--empty">
+          <div className="construct-home-hero-copy">
+            <span className="construct-home-section-kicker">Start</span>
+            <h2>Create a new project path with the Architect.</h2>
+            <p>
+              Tell Construct what you want to build. It will tailor the project, lessons,
+              checks, and implementation path around your goal and pace.
+            </p>
+          </div>
+          <div className="construct-home-hero-actions">
+            <button
+              type="button"
+              onClick={onStartProject}
+              className="construct-primary-button"
+              disabled={dashboardBusy}
+            >
+              New project
+            </button>
+          </div>
+        </section>
+      )}
 
       <div className="construct-home-grid">
         <section className="construct-home-panel">
@@ -1865,6 +1887,23 @@ function PlanningOverlay({
         hasPlanningAnswer(planningAnswers[question.id])
       ).length
     : 0;
+  const [activeQuestionIndex, setActiveQuestionIndex] = useState(0);
+  const questionCount = planningSession?.questions.length ?? 0;
+  const currentQuestion = isQuestionPhase ? planningSession.questions[activeQuestionIndex] : null;
+  const currentAnswer = currentQuestion ? planningAnswers[currentQuestion.id] : undefined;
+  const currentQuestionAnswered = currentQuestion ? hasPlanningAnswer(currentAnswer) : false;
+
+  useEffect(() => {
+    if (!planningSession || planningPlan) {
+      setActiveQuestionIndex(0);
+      return;
+    }
+
+    const nextIndex = planningSession.questions.findIndex((question) =>
+      !hasPlanningAnswer(planningAnswers[question.id])
+    );
+    setActiveQuestionIndex(nextIndex === -1 ? planningSession.questions.length - 1 : nextIndex);
+  }, [planningSession, planningPlan, planningAnswers]);
 
   return (
     <motion.div
@@ -1882,162 +1921,164 @@ function PlanningOverlay({
         transition={{ duration: 0.22, ease: "easeOut" }}
       >
         <header className="construct-planning-header">
-          <div>
-            <span className="construct-brief-kicker">Agent Planning</span>
-            <h1>Generate the first personalized build path.</h1>
+          <div className="construct-planning-header-copy">
+            <span className="construct-brief-kicker">Architect</span>
+            <h1>Create a project path that actually fits the learner.</h1>
             <p>
-              Construct profiles the learner, maps project dependencies, and drafts the
-              first project path before the live guide takes over.
+              We start with the project goal, shape the teaching path, then generate the
+              real codebase, hidden tests, and course flow around it.
             </p>
           </div>
-          <button type="button" onClick={onClose} className="construct-secondary-button">
-            Close
-          </button>
+          <div className="construct-planning-header-actions">
+            <span className="construct-toolbar-pill">
+              {planningSession
+                ? `${answeredQuestionCount}/${planningSession.questions.length} tailored`
+                : "new project"}
+            </span>
+            <button type="button" onClick={onClose} className="construct-secondary-button">
+              Close
+            </button>
+          </div>
         </header>
 
         {!planningSession ? (
-          <div className="construct-planning-grid">
-            <section className="construct-info-panel">
-              <span className="construct-panel-kicker">Target Goal</span>
+          <div className="construct-planning-start">
+            <section className="construct-planning-composer">
+              <div className="construct-planning-composer-glow" aria-hidden="true" />
+              <span className="construct-panel-kicker">Project goal</span>
+              <h2>What do you want to build and learn through?</h2>
+              <p>
+                Describe the real project. The Architect will tailor the implementation
+                path, lesson depth, and validation flow around this goal.
+              </p>
               <textarea
                 value={planningGoal}
                 onChange={(event) => {
                   onGoalChange(event.target.value);
                 }}
                 className="construct-check-textarea construct-planning-textarea"
-                placeholder="build a C compiler in Rust"
+                placeholder="Build a TypeScript dependency graph visualizer from scratch and teach me enough parsing and graph basics to implement it myself."
               />
+              <div className="construct-planning-style-row">
+                <div className="construct-planning-style-copy">
+                  <span className="construct-panel-kicker">Learning style</span>
+                  <p>
+                    This guides how front-loaded the teaching should be before the learner
+                    starts implementing real code.
+                  </p>
+                </div>
+                <div className="construct-segmented-list construct-segmented-list--inline">
+                  {(
+                    [
+                      ["concept-first", "Concept first"],
+                      ["build-first", "Build first"],
+                      ["example-first", "Example first"]
+                    ] satisfies Array<[LearningStyle, string]>
+                  ).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => {
+                        onLearningStyleChange(value);
+                      }}
+                      className={`construct-check-option ${
+                        planningLearningStyle === value ? "is-selected" : ""
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="construct-planning-composer-actions">
+                <button
+                  type="button"
+                  onClick={onStartPlanning}
+                  disabled={planningBusy || planningGoal.trim().length < 3}
+                  className="construct-primary-button"
+                >
+                  {planningBusy ? "Starting..." : "Start project creation"}
+                </button>
+              </div>
             </section>
 
-            <section className="construct-metadata-panel">
-              <span className="construct-panel-kicker">Learning style</span>
-              <div className="construct-segmented-list">
-                {(
-                  [
-                    ["concept-first", "Concept first"],
-                    ["build-first", "Build first"],
-                    ["example-first", "Example first"]
-                  ] satisfies Array<[LearningStyle, string]>
-                ).map(([value, label]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => {
-                      onLearningStyleChange(value);
-                    }}
-                    className={`construct-check-option ${
-                      planningLearningStyle === value ? "is-selected" : ""
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-              <p className="construct-muted-copy">
-                This determines whether missing concepts are front-loaded, inserted just in
-                time, or explained through concrete examples first.
-              </p>
-            </section>
+            <aside className="construct-planning-sidepanel">
+              <section className="construct-info-panel">
+                <span className="construct-panel-kicker">What the Architect will produce</span>
+                <div className="construct-tag-list">
+                  <span className="construct-tag">project path</span>
+                  <span className="construct-tag">lesson slides</span>
+                  <span className="construct-tag">concept checks</span>
+                  <span className="construct-tag">real code tasks</span>
+                  <span className="construct-tag">hidden tests</span>
+                </div>
+                <p>
+                  The agent creates a full project, then teaches the learner through it in
+                  a docs-like course flow before handing off to the editor.
+                </p>
+              </section>
+
+              {planningEvents.length > 0 ? (
+                <section className="construct-planning-event-log">
+                  <div className="construct-brief-section-header">
+                    <div>
+                      <span className="construct-brief-kicker">Agent Activity</span>
+                      <h2>What the Architect is doing right now.</h2>
+                    </div>
+                  </div>
+                  <ArchitectTaskBoard events={planningEvents} />
+                </section>
+              ) : null}
+            </aside>
           </div>
         ) : null}
 
         {isQuestionPhase ? (
-          <section className="construct-planning-questions">
-            <div className="construct-brief-section-header">
-              <div>
-                <span className="construct-brief-kicker">Project Tailoring</span>
-                <h2>
-                  Help the Architect tailor {formatDetectedLabel(planningSession.detectedDomain)}{" "}
-                  in {formatDetectedLabel(planningSession.detectedLanguage)} to your real
-                  experience and preferred pace.
-                </h2>
-              </div>
-            </div>
-
+          <div
+            className={`construct-planning-start ${
+              planningBusy ? "" : "construct-planning-start--question"
+            }`}
+          >
             <section className="construct-info-panel">
-              <span className="construct-panel-kicker">Architect status</span>
+              <span className="construct-panel-kicker">Project brief</span>
+              <h2 className="construct-modal-underlay-title">{planningGoal.trim()}</h2>
               <p>
-                The first agent run is complete. Construct has finished researching the
-                project and generated a few tailoring questions. Answer these{" "}
-                {planningSession.questions.length} prompts so the Architect can shape the
-                real codebase, teaching depth, hidden tests, and project path around how
-                you want to learn and where you want more support.
+                Construct has finished the first pass and is now tailoring the project
+                path, teaching depth, and hidden tests before it generates the real
+                workspace.
               </p>
               <div className="construct-tag-list">
                 <span className="construct-tag">
-                  {answeredQuestionCount} / {planningSession.questions.length} answered
+                  {formatDetectedLabel(planningSession.detectedDomain)}
                 </span>
                 <span className="construct-tag">
-                  Next: codebase + masking + hidden tests
+                  {formatDetectedLabel(planningSession.detectedLanguage)}
                 </span>
+                <span className="construct-tag">{planningLearningStyle}</span>
               </div>
+              {planningBusy ? (
+                <p className="construct-muted-copy">
+                  The Architect is generating the project path, course flow, codebase, and
+                  hidden tests now. This screen stays visible so you can follow the live
+                  activity without the UI looking paused.
+                </p>
+              ) : null}
             </section>
 
-            <div className="construct-check-list">
-              {planningSession.questions.map((question) => {
-                const currentAnswer = planningAnswers[question.id];
-                const selectedOptionId =
-                  currentAnswer?.answerType === "option" ? currentAnswer.optionId : "";
-                const customResponse =
-                  currentAnswer?.answerType === "custom" ? currentAnswer.customResponse : "";
-
-                return (
-                  <section key={question.id} className="construct-check-card">
-                    <div className="construct-check-header">
-                      <span className="construct-panel-kicker">
-                        {formatPlanningQuestionCategory(question.category)}
-                      </span>
-                      <h3>{question.prompt}</h3>
+            <aside className="construct-planning-sidepanel">
+              {planningEvents.length > 0 ? (
+                <section className="construct-planning-event-log">
+                  <div className="construct-brief-section-header">
+                    <div>
+                      <span className="construct-brief-kicker">Agent Activity</span>
+                      <h2>What the Architect has already done.</h2>
                     </div>
-                    <div className="construct-check-options">
-                      {question.options.map((option) => (
-                        <button
-                          key={option.id}
-                          type="button"
-                          onClick={() => {
-                            onOptionAnswerChange(question.id, option.id);
-                          }}
-                          className={`construct-check-option ${
-                            selectedOptionId === option.id ? "is-selected" : ""
-                          }`}
-                        >
-                          <strong>{option.label}</strong>
-                          <span>{option.description}</span>
-                        </button>
-                      ))}
-                      <div
-                        className={`construct-check-option construct-check-option--custom ${
-                          currentAnswer?.answerType === "custom" ? "is-selected" : ""
-                        }`}
-                      >
-                        <div className="construct-check-option-header">
-                          <strong>Tell the Architect in your own words</strong>
-                          <span>
-                            Use this when none of the generated options fits. Construct
-                            will send your exact wording to the Architect so it can tailor
-                            the project around your real situation.
-                          </span>
-                        </div>
-                        <textarea
-                          value={customResponse}
-                          onFocus={() => {
-                            if (currentAnswer?.answerType !== "custom") {
-                              onCustomAnswerChange(question.id, "");
-                            }
-                          }}
-                          onChange={(event) => {
-                            onCustomAnswerChange(question.id, event.target.value);
-                          }}
-                          className="construct-check-textarea construct-check-textarea--compact"
-                          placeholder="Describe your background, preferences, likely blockers, or the kind of support you want in your own words."
-                        />
-                      </div>
-                    </div>
-                  </section>
-                );
-              })}
-            </div>
-          </section>
+                  </div>
+                  <ArchitectTaskBoard events={planningEvents} />
+                </section>
+              ) : null}
+            </aside>
+          </div>
         ) : null}
 
         {planningPlan ? (
@@ -2088,7 +2129,7 @@ function PlanningOverlay({
           </section>
         ) : null}
 
-        {planningEvents.length > 0 ? (
+        {planningEvents.length > 0 && !(!planningPlan && isQuestionPhase) && !(!planningSession) ? (
           <section className="construct-planning-event-log">
             <div className="construct-brief-section-header">
               <div>
@@ -2101,44 +2142,171 @@ function PlanningOverlay({
           </section>
         ) : null}
 
+        {isQuestionPhase && currentQuestion && !planningBusy ? (
+          <div className="construct-planning-question-layer">
+            <div className="construct-planning-question-dim" aria-hidden="true" />
+            <motion.section
+              className="construct-planning-question-modal"
+              initial={{ opacity: 0, y: 18, scale: 0.985 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.985 }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
+            >
+              <div className="construct-planning-question-header">
+                <div>
+                  <span className="construct-panel-kicker">Project tailoring</span>
+                  <h2>
+                    Help the Architect shape {formatDetectedLabel(planningSession.detectedDomain)}{" "}
+                    in {formatDetectedLabel(planningSession.detectedLanguage)} around the
+                    learner.
+                  </h2>
+                  <p>
+                    These are not assessment questions. They help Construct decide where to
+                    slow down, what to explain more carefully, and how much support the
+                    project should provide as the learner builds it.
+                  </p>
+                </div>
+                <div className="construct-tag-list">
+                  <span className="construct-tag">
+                    Question {activeQuestionIndex + 1} / {questionCount}
+                  </span>
+                  <span className="construct-tag">{answeredQuestionCount} answered</span>
+                </div>
+              </div>
+
+              <div className="construct-planning-question-progress">
+                {planningSession.questions.map((question, index) => (
+                  <button
+                    key={question.id}
+                    type="button"
+                    onClick={() => {
+                      setActiveQuestionIndex(index);
+                    }}
+                    className={`construct-question-dot ${
+                      index === activeQuestionIndex ? "is-active" : ""
+                    } ${hasPlanningAnswer(planningAnswers[question.id]) ? "is-complete" : ""}`}
+                    aria-label={`Question ${index + 1}`}
+                  />
+                ))}
+              </div>
+
+              <section className="construct-check-card construct-check-card--question-modal">
+                <div className="construct-check-header">
+                  <span className="construct-panel-kicker">
+                    {formatPlanningQuestionCategory(currentQuestion.category)}
+                  </span>
+                  <h3>{currentQuestion.prompt}</h3>
+                </div>
+
+                <div className="construct-check-options">
+                  {currentQuestion.options.map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => {
+                        onOptionAnswerChange(currentQuestion.id, option.id);
+                      }}
+                      className={`construct-check-option ${
+                        currentAnswer?.answerType === "option" &&
+                        currentAnswer.optionId === option.id
+                          ? "is-selected"
+                          : ""
+                      }`}
+                    >
+                      <strong>{option.label}</strong>
+                      <span>{option.description}</span>
+                    </button>
+                  ))}
+
+                  <div
+                    className={`construct-check-option construct-check-option--custom ${
+                      currentAnswer?.answerType === "custom" ? "is-selected" : ""
+                    }`}
+                  >
+                    <div className="construct-check-option-header">
+                      <strong>Tell the Architect in your own words</strong>
+                      <span>
+                        Use this when none of the generated options fit. Your exact wording
+                        goes back into the Architect so the project path can adapt to the
+                        learner’s real background and preferences.
+                      </span>
+                    </div>
+                    <textarea
+                      value={
+                        currentAnswer?.answerType === "custom"
+                          ? currentAnswer.customResponse
+                          : ""
+                      }
+                      onFocus={() => {
+                        if (currentAnswer?.answerType !== "custom") {
+                          onCustomAnswerChange(currentQuestion.id, "");
+                        }
+                      }}
+                      onChange={(event) => {
+                        onCustomAnswerChange(currentQuestion.id, event.target.value);
+                      }}
+                      className="construct-check-textarea construct-check-textarea--compact"
+                      placeholder="Describe the learner’s actual background, blockers, or the type of support the project should provide."
+                    />
+                  </div>
+                </div>
+              </section>
+
+              <footer className="construct-planning-question-footer">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveQuestionIndex((current) => Math.max(0, current - 1));
+                  }}
+                  className="construct-secondary-button"
+                  disabled={activeQuestionIndex === 0}
+                >
+                  Previous
+                </button>
+
+                <div className="construct-planning-question-footer-actions">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (activeQuestionIndex < questionCount - 1) {
+                        setActiveQuestionIndex((current) =>
+                          Math.min(questionCount - 1, current + 1)
+                        );
+                      } else {
+                        onCompletePlanning();
+                      }
+                    }}
+                    disabled={
+                      planningBusy ||
+                      (!currentQuestionAnswered && activeQuestionIndex < questionCount - 1) ||
+                      (activeQuestionIndex === questionCount - 1 && !canCompletePlanning)
+                    }
+                    className="construct-primary-button"
+                  >
+                    {planningBusy
+                      ? "Generating project..."
+                      : activeQuestionIndex < questionCount - 1
+                        ? "Next question"
+                        : canCompletePlanning
+                          ? "Generate project"
+                          : `Answer ${questionCount - answeredQuestionCount} more question${
+                              questionCount - answeredQuestionCount === 1 ? "" : "s"
+                            }`}
+                  </button>
+                </div>
+              </footer>
+            </motion.section>
+          </div>
+        ) : null}
+
         {planningError ? <div className="construct-inline-error">{planningError}</div> : null}
 
         <footer className="construct-planning-footer">
-          {!planningSession ? (
-            <button
-              type="button"
-              onClick={onStartPlanning}
-              disabled={planningBusy || planningGoal.trim().length < 3}
-              className="construct-primary-button"
-            >
-              {planningBusy ? "Starting..." : "Start planning"}
-            </button>
-          ) : !planningPlan ? (
-            <div className="construct-planning-footer-stack">
-              <p className="construct-muted-copy">
-                Construct only generates the full project, masking, and hidden tests after
-                these answers are complete.
-              </p>
-              <button
-                type="button"
-                onClick={onCompletePlanning}
-                disabled={planningBusy || !canCompletePlanning}
-                className="construct-primary-button"
-              >
-                {planningBusy
-                  ? "Generating codebase..."
-                  : canCompletePlanning
-                    ? "Generate codebase, tasks, and tests"
-                    : `Answer ${planningSession.questions.length - answeredQuestionCount} more question${
-                        planningSession.questions.length - answeredQuestionCount === 1 ? "" : "s"
-                      }`}
-              </button>
-            </div>
-          ) : (
+          {planningPlan ? (
             <button type="button" onClick={onClose} className="construct-primary-button">
               Continue to workspace
             </button>
-          )}
+          ) : null}
         </footer>
       </motion.section>
     </motion.div>
