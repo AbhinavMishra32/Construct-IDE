@@ -18,6 +18,7 @@ import {
 } from "@construct/shared";
 import { z } from "zod";
 
+import { createEmptyKnowledgeBase } from "./knowledgeGraph";
 import { getPrismaClient } from "./prisma";
 
 const ActiveBlueprintStateSchema = z.object({
@@ -163,7 +164,14 @@ class LocalFileAgentPersistence implements AgentPersistence {
     }
 
     const raw = await readFile(this.knowledgeBasePath, "utf8");
-    return UserKnowledgeBaseSchema.parse(JSON.parse(raw));
+    const parsed = UserKnowledgeBaseSchema.safeParse(JSON.parse(raw));
+    if (parsed.success) {
+      return parsed.data;
+    }
+
+    const reset = createEmptyKnowledgeBase(new Date().toISOString());
+    await this.setKnowledgeBase(reset);
+    return reset;
   }
 
   async setKnowledgeBase(knowledgeBase: UserKnowledgeBase): Promise<void> {
@@ -400,7 +408,18 @@ class PrismaAgentPersistence implements AgentPersistence {
       }
     });
 
-    return row ? UserKnowledgeBaseSchema.parse(JSON.parse(row.valueJson)) : null;
+    if (!row) {
+      return null;
+    }
+
+    const parsed = UserKnowledgeBaseSchema.safeParse(JSON.parse(row.valueJson));
+    if (parsed.success) {
+      return parsed.data;
+    }
+
+    const reset = createEmptyKnowledgeBase(new Date().toISOString());
+    await this.setKnowledgeBase(reset);
+    return reset;
   }
 
   async setKnowledgeBase(knowledgeBase: UserKnowledgeBase): Promise<void> {

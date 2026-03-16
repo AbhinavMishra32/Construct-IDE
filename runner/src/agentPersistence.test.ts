@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -181,6 +181,63 @@ test("local agent persistence stores planning state, knowledge, generated bluepr
     const updatedProject = await persistence.getProject("session-1");
     assert.equal(updatedProject?.completedStepsCount, 1);
     assert.equal(updatedProject?.status, "completed");
+  } finally {
+    if (previousBackend) {
+      process.env.CONSTRUCT_STORAGE_BACKEND = previousBackend;
+    } else {
+      delete process.env.CONSTRUCT_STORAGE_BACKEND;
+    }
+
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("local agent persistence resets an invalid knowledge base to the new recursive shape", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "construct-agent-persistence-invalid-kb-"));
+  const previousBackend = process.env.CONSTRUCT_STORAGE_BACKEND;
+  delete process.env.DATABASE_URL;
+  process.env.CONSTRUCT_STORAGE_BACKEND = "local";
+
+  const persistence = createAgentPersistence({
+    rootDirectory: root,
+    logger: {
+      info() {},
+      warn() {},
+      error() {}
+    }
+  });
+
+  try {
+    const stateDirectory = path.join(root, ".construct", "state");
+    const knowledgeBasePath = path.join(stateDirectory, "user-knowledge.json");
+    await mkdir(stateDirectory, { recursive: true });
+    await writeFile(
+      knowledgeBasePath,
+      `${JSON.stringify(
+        {
+          updatedAt: "2026-03-16T00:00:00.000Z",
+          concepts: [
+            {
+              id: "typescript.interfaces",
+              label: "Interfaces",
+              category: "language"
+            }
+          ],
+          goals: []
+        },
+        null,
+        2
+      )}\n`,
+      "utf8"
+    );
+
+    const knowledgeBase = await persistence.getKnowledgeBase();
+    const persistedRaw = JSON.parse(await readFile(knowledgeBasePath, "utf8"));
+
+    assert.deepEqual(knowledgeBase?.concepts, []);
+    assert.deepEqual(knowledgeBase?.goals, []);
+    assert.deepEqual(persistedRaw.concepts, []);
+    assert.deepEqual(persistedRaw.goals, []);
   } finally {
     if (previousBackend) {
       process.env.CONSTRUCT_STORAGE_BACKEND = previousBackend;

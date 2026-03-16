@@ -454,14 +454,11 @@ const server = http.createServer(async (request, response) => {
         ? await workspaceContext.taskLifecycle.getLearnerModel()
         : null;
 
-      response.writeHead(200, { "Content-Type": "application/json" });
-      response.end(
-        JSON.stringify(
-          LearnerProfileResponseSchema.parse(
-            await getConstructAgent().getLearnerProfile(learnerModel)
-          )
-        )
+      const profile = LearnerProfileResponseSchema.parse(
+        await getConstructAgent().getLearnerProfile(learnerModel)
       );
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify(profile));
       return;
     }
 
@@ -472,6 +469,11 @@ const server = http.createServer(async (request, response) => {
       `[construct-runner] ${request.method ?? "UNKNOWN"} ${request.url ?? "<unknown>"}`,
       error
     );
+
+    if (response.headersSent) {
+      response.end();
+      return;
+    }
 
     const statusCode =
       error instanceof SyntaxError ||
