@@ -3758,6 +3758,29 @@ export class OpenAIStructuredLanguageModel implements StructuredLanguageModel {
           break;
         }
 
+        if (isStructuredOutputParsingFailure(lastError)) {
+          this.logger.warn(
+            "Structured output returned malformed JSON. Attempting repair before fallback.",
+            {
+              model: this.model,
+              schemaName: input.schemaName,
+              attempt,
+              error: lastError.message
+            }
+          );
+
+          const repaired = await this.repairStructuredOutputFailure(input, lastError);
+          this.logger.info("Completed OpenAI structured generation.", {
+            model: this.model,
+            schemaName: input.schemaName,
+            durationMs: Date.now() - startedAt,
+            attempt,
+            mode: "structured-repair",
+            response: summarizeStructuredOutput(input.schemaName, repaired)
+          });
+          return repaired;
+        }
+
         if (attempt >= 2 || !isRetryableModelError(lastError)) {
           throw lastError;
         }
@@ -3969,6 +3992,36 @@ export class OpenAIStructuredLanguageModel implements StructuredLanguageModel {
     });
     const repairedPayload = JSON.parse(extractJsonObject(repairedText));
     return input.schema.parse(repairedPayload);
+  }
+
+  private async repairStructuredOutputFailure<T extends z.ZodTypeAny>(
+    input: {
+      schema: T;
+      schemaName: string;
+      instructions: string;
+      prompt: string;
+      maxOutputTokens?: number;
+      verbosity?: "low" | "medium" | "high";
+      stream?: {
+        stage: string;
+        label: string;
+        onToken?: (chunk: string) => void;
+        onComplete?: () => void;
+      };
+    },
+    error: Error
+  ): Promise<z.infer<T>> {
+    const malformedDraft = extractStructuredFailureDraft(error);
+
+    if (!malformedDraft) {
+      throw error;
+    }
+
+    return this.repairJsonFallbackResponse(
+      input,
+      zodToJsonSchema(input.schema, input.schemaName),
+      malformedDraft
+    );
   }
 
   private buildStreamingCallbacks(input: {
@@ -4237,6 +4290,16 @@ function isRetryableModelError(error: Error): boolean {
   );
 }
 
+function isStructuredOutputParsingFailure(error: Error): boolean {
+  const message = error.message.toLowerCase();
+
+  return (
+    message.includes("output_parsing_failure") ||
+    (message.includes("failed to parse") && message.includes("text:")) ||
+    (message.includes("unexpected token") && message.includes("not valid json"))
+  );
+}
+
 function extractModelText(content: unknown): string {
   if (typeof content === "string") {
     return content;
@@ -4281,6 +4344,32 @@ function extractJsonObject(text: string): string {
   }
 
   throw new Error("Model fallback response did not contain a JSON object.");
+}
+
+function extractStructuredFailureDraft(error: Error): string | null {
+  const message = error.message;
+  const textMarker = "Text:";
+  const errorMarker = ". Error:";
+  const textIndex = message.indexOf(textMarker);
+
+  if (textIndex < 0) {
+    return null;
+  }
+
+  const errorIndex = message.indexOf(errorMarker, textIndex);
+  const rawDraft = message
+    .slice(textIndex + textMarker.length, errorIndex >= 0 ? errorIndex : undefined)
+    .trim();
+
+  if (!rawDraft) {
+    return null;
+  }
+
+  if (rawDraft.startsWith("\"") && rawDraft.endsWith("\"")) {
+    return rawDraft.slice(1, -1);
+  }
+
+  return rawDraft;
 }
 
 function summarizeAgentEventPayload(event: AgentEvent): Record<string, unknown> | null {

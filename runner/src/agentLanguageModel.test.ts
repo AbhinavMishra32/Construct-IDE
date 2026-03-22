@@ -180,3 +180,65 @@ test("OpenAIStructuredLanguageModel repairs malformed JSON fallback output", asy
   assert.equal(fallbackCalls, 1);
   assert.equal(repairCalls, 1);
 });
+
+test("OpenAIStructuredLanguageModel repairs malformed structured-output drafts without restarting the whole generation", async () => {
+  let structuredCalls = 0;
+  let fallbackCalls = 0;
+  let repairCalls = 0;
+
+  const model = new OpenAIStructuredLanguageModel({
+    apiKey: "test-key",
+    model: "gpt-5-mini",
+    logger: {
+      info() {},
+      warn() {},
+      error() {},
+      debug() {},
+      trace() {}
+    },
+    client: {
+      withStructuredOutput() {
+        return {
+          async invoke() {
+            structuredCalls += 1;
+            throw new Error(
+              'Failed to parse. Text: "{\\"value\\": broken}". Error: SyntaxError: Unexpected token b in JSON at position 10'
+            );
+          }
+        };
+      },
+      async invoke(_messages, config) {
+        const mode = String(config?.metadata?.mode ?? "");
+
+        if (mode === "json-repair") {
+          repairCalls += 1;
+          return {
+            content: JSON.stringify({
+              value: "recovered"
+            })
+          };
+        }
+
+        if (mode === "json-fallback") {
+          fallbackCalls += 1;
+        }
+
+        throw new Error(`Unexpected invoke mode: ${mode}`);
+      }
+    }
+  });
+
+  const parsed = await model.parse({
+    schema: z.object({
+      value: z.string().min(1)
+    }),
+    schemaName: "test_structured_repair",
+    instructions: "Return test data.",
+    prompt: "Generate a payload."
+  });
+
+  assert.equal(parsed.value, "recovered");
+  assert.equal(structuredCalls, 1);
+  assert.equal(repairCalls, 1);
+  assert.equal(fallbackCalls, 0);
+});
