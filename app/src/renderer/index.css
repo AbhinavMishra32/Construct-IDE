@@ -6500,6 +6500,14 @@ textarea {
   color: var(--text);
 }
 
+:root[data-construct-theme="dark"] .construct-floating-card {
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.42);
+}
+
+:root[data-construct-theme="dark"] .construct-floating-card-minibar {
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.36);
+}
+
 @media (max-width: 1080px) {
   .construct-auth-stage {
     padding: 1.5rem;
