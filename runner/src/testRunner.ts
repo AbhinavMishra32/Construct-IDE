@@ -503,7 +503,7 @@ async function runPytestCommand(
   request: TaskExecutionRequest
 ): Promise<{ command: string; result: ProcessExecutionResult }> {
   const pytestArguments = ["-m", "pytest", "-q", ...request.tests];
-  const pythonCommands = ["python3", "python"];
+  const pythonCommands = resolvePythonCommandCandidates(request.projectRoot);
 
   for (const command of pythonCommands) {
     try {
@@ -528,6 +528,15 @@ async function runPytestCommand(
   throw new BlueprintResolutionError(
     "Unable to locate a Python interpreter in PATH for this project."
   );
+}
+
+function resolvePythonCommandCandidates(projectRoot: string): string[] {
+  const localVenvCandidates = [
+    findUpwardPath(projectRoot, path.join(".construct", "tooling", "pytest-env", "bin", "python3")),
+    findUpwardPath(projectRoot, path.join(".construct", "tooling", "pytest-env", "bin", "python"))
+  ].filter((candidate): candidate is string => Boolean(candidate));
+
+  return [...localVenvCandidates, "python3", "python"];
 }
 
 async function runProcess(
