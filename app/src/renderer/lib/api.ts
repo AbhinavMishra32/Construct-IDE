@@ -3,6 +3,8 @@ import type {
   BlueprintDeepDiveRequest,
   BlueprintDeepDiveResponse,
   BlueprintBuildDetailResponse,
+  AuthSessionCreateResponse,
+  AuthSessionView,
   BlueprintBuildEventRecord,
   BlueprintBuildListResponse,
   BlueprintBuildStage,
@@ -22,6 +24,7 @@ import type {
   RuntimeGuideRequest,
   RuntimeGuideResponse,
   RunnerHealth,
+  ProviderConnectionsResponse,
   TaskProgress,
   TaskResult,
   TaskStartResponse,
@@ -32,6 +35,88 @@ import type {
 } from "../types";
 
 export const RUNNER_BASE_URL = "http://127.0.0.1:43110";
+const RUNNER_SESSION_STORAGE_KEY = "construct.auth.sessionToken";
+
+export function getStoredSessionToken(): string | null {
+  const value = window.localStorage.getItem(RUNNER_SESSION_STORAGE_KEY)?.trim();
+  return value && value.length > 0 ? value : null;
+}
+
+export function setStoredSessionToken(sessionToken: string | null): void {
+  if (!sessionToken) {
+    window.localStorage.removeItem(RUNNER_SESSION_STORAGE_KEY);
+    return;
+  }
+
+  window.localStorage.setItem(RUNNER_SESSION_STORAGE_KEY, sessionToken);
+}
+
+export async function fetchAuthSession(signal?: AbortSignal): Promise<AuthSessionView> {
+  return getJson<AuthSessionView>("/auth/session", { signal });
+}
+
+export async function signUpWithPassword(input: {
+  email: string;
+  password: string;
+  displayName: string;
+}): Promise<AuthSessionCreateResponse> {
+  return postJson<AuthSessionCreateResponse>("/auth/signup", input, "creating your account", {
+    withAuth: false
+  });
+}
+
+export async function loginWithPassword(input: {
+  email: string;
+  password: string;
+}): Promise<AuthSessionCreateResponse> {
+  return postJson<AuthSessionCreateResponse>("/auth/login", input, "signing in", {
+    withAuth: false
+  });
+}
+
+export async function logoutCurrentSession(): Promise<void> {
+  await postJson<{ ok: true }>("/auth/logout", {}, "signing out");
+  setStoredSessionToken(null);
+}
+
+export async function updateAccount(input: {
+  displayName: string;
+}): Promise<AuthSessionView> {
+  return postJson<AuthSessionView>("/auth/account", input, "updating your profile");
+}
+
+export async function fetchProviderConnections(
+  signal?: AbortSignal
+): Promise<ProviderConnectionsResponse> {
+  return getJson<ProviderConnectionsResponse>("/auth/connections", { signal });
+}
+
+export async function saveProviderApiKey(input: {
+  provider: "openai" | "codex" | "anthropic" | "tavily" | "langsmith" | "exa";
+  label?: string;
+  apiKey: string;
+  baseUrl?: string;
+}): Promise<ProviderConnectionsResponse> {
+  return postJson<ProviderConnectionsResponse>(
+    "/auth/connections",
+    {
+      ...input,
+      authType: "api-key"
+    },
+    `saving ${input.provider} credentials`
+  );
+}
+
+export async function removeProviderConnection(input: {
+  provider: "openai" | "codex" | "anthropic" | "tavily" | "langsmith" | "exa";
+  authType: "api-key" | "oauth";
+}): Promise<ProviderConnectionsResponse> {
+  return postJson<ProviderConnectionsResponse>(
+    "/auth/connections/remove",
+    input,
+    `removing ${input.provider} credentials`
+  );
+}
 
 export async function fetchRunnerHealth(signal?: AbortSignal): Promise<RunnerHealth> {
   return getJson<RunnerHealth>("/health", { signal });
@@ -55,7 +140,8 @@ export async function syncCurrentProjectStep(stepId: string): Promise<void> {
   const response = await fetch(`${RUNNER_BASE_URL}/projects/current-step`, {
     method: "POST",
     headers: {
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
+      ...buildAuthHeaders()
     },
     body: JSON.stringify({
       stepId
@@ -99,7 +185,9 @@ export function openBlueprintBuildStream(
   }
 ): () => void {
   const stream = new EventSource(
-    `${RUNNER_BASE_URL}/debug/blueprints/${encodeURIComponent(buildId)}/stream`
+    withSessionTokenQuery(
+      `${RUNNER_BASE_URL}/debug/blueprints/${encodeURIComponent(buildId)}/stream`
+    )
   );
   let closed = false;
 
@@ -213,7 +301,8 @@ export async function saveWorkspaceFile(
   const response = await fetch(`${RUNNER_BASE_URL}/workspace/file`, {
     method: "POST",
     headers: {
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
+      ...buildAuthHeaders()
     },
     body: JSON.stringify({
       path: filePath,
@@ -233,7 +322,8 @@ export async function executeBlueprintTask(
   const response = await fetch(`${RUNNER_BASE_URL}/tasks/execute`, {
     method: "POST",
     headers: {
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
+      ...buildAuthHeaders()
     },
     body: JSON.stringify({
       blueprintPath,
@@ -255,7 +345,8 @@ export async function startBlueprintTask(
   const response = await fetch(`${RUNNER_BASE_URL}/tasks/start`, {
     method: "POST",
     headers: {
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
+      ...buildAuthHeaders()
     },
     body: JSON.stringify({
       blueprintPath,
@@ -280,7 +371,8 @@ export async function submitBlueprintTask(input: {
   const response = await fetch(`${RUNNER_BASE_URL}/tasks/submit`, {
     method: "POST",
     headers: {
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
+      ...buildAuthHeaders()
     },
     body: JSON.stringify(input)
   });
@@ -317,7 +409,7 @@ export async function reviewStepCheck(
 }
 
 async function getJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${RUNNER_BASE_URL}${path}`, init);
+  const response = await fetch(`${RUNNER_BASE_URL}${path}`, withAuthInit(init));
 
   if (!response.ok) {
     throw new Error(`Runner responded with ${response.status} for ${path}.`);
@@ -334,7 +426,7 @@ async function runAgentJob<T>(
   const created = await postJson<AgentJobCreatedResponse>(path, input, `starting ${path}`);
 
   return new Promise<T>((resolve, reject) => {
-    const stream = new EventSource(`${RUNNER_BASE_URL}${created.streamPath}`);
+    const stream = new EventSource(withSessionTokenQuery(`${RUNNER_BASE_URL}${created.streamPath}`));
     let settled = false;
     let recoveryInFlight = false;
 
@@ -476,12 +568,16 @@ async function recoverAgentJob(
 async function postJson<T>(
   path: string,
   input: unknown,
-  context: string
+  context: string,
+  options: {
+    withAuth?: boolean;
+  } = {}
 ): Promise<T> {
   const response = await fetch(`${RUNNER_BASE_URL}${path}`, {
     method: "POST",
     headers: {
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
+      ...(options.withAuth === false ? {} : buildAuthHeaders())
     },
     body: JSON.stringify(input)
   });
@@ -491,6 +587,53 @@ async function postJson<T>(
   }
 
   return parseJsonResponse<T>(response, context);
+}
+
+function withAuthInit(init?: RequestInit): RequestInit | undefined {
+  if (!init) {
+    const headers = buildAuthHeaders();
+    return Object.keys(headers).length > 0 ? { headers } : undefined;
+  }
+
+  return {
+    ...init,
+    headers: {
+      ...(init.headers ? normalizeHeaders(init.headers) : {}),
+      ...buildAuthHeaders()
+    }
+  };
+}
+
+function buildAuthHeaders(): Record<string, string> {
+  const token = getStoredSessionToken();
+  return token
+    ? {
+        Authorization: `Bearer ${token}`
+      }
+    : {};
+}
+
+function withSessionTokenQuery(url: string): string {
+  const token = getStoredSessionToken();
+  if (!token) {
+    return url;
+  }
+
+  const resolved = new URL(url);
+  resolved.searchParams.set("sessionToken", token);
+  return resolved.toString();
+}
+
+function normalizeHeaders(headers: HeadersInit): Record<string, string> {
+  if (headers instanceof Headers) {
+    return Object.fromEntries(headers.entries());
+  }
+
+  if (Array.isArray(headers)) {
+    return Object.fromEntries(headers);
+  }
+
+  return headers;
 }
 
 async function parseJsonResponse<T>(response: Response, context: string): Promise<T> {

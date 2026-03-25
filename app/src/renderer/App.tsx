@@ -49,9 +49,6 @@ import {
   CardTitle
 } from "@/components/ui/card";
 import {
-  DialogHeader,
-} from "@/components/ui/dialog";
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,
@@ -103,6 +100,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
+import { AccountSettingsPanel } from "./components/account-settings-panel";
+import { AuthScreen } from "./components/auth-screen";
 import { BlueprintDebugView } from "./components/blueprint-debug-view";
 import { findAnchorLocation } from "./lib/anchors";
 import {
@@ -112,6 +111,7 @@ import {
 } from "./lib/guide";
 import {
   completePlanningSession,
+  fetchAuthSession,
   fetchBlueprint,
   fetchCurrentPlanningState,
   fetchLearnerProfile,
@@ -121,24 +121,33 @@ import {
   fetchTaskProgress,
   fetchWorkspaceFile,
   fetchWorkspaceFiles,
+  loginWithPassword,
+  logoutCurrentSession,
+  removeProviderConnection,
   requestBlueprintDeepDive,
   requestRuntimeGuide,
   reviewStepCheck,
   saveWorkspaceFile,
+  saveProviderApiKey,
   selectProject,
+  setStoredSessionToken,
+  signUpWithPassword,
   startPlanningSession,
   startBlueprintTask,
   submitBlueprintTask,
-  syncCurrentProjectStep
+  syncCurrentProjectStep,
+  updateAccount
 } from "./lib/api";
 import { buildWorkspaceTree } from "./lib/tree";
 import { monaco } from "./monaco";
 import type {
   AgentEvent,
   AnchorLocation,
+  AuthSessionView,
   BlueprintDeepDiveResponse,
   BlueprintStep,
   CheckReview,
+  ConnectedProvider,
   ComprehensionCheck,
   GeneratedProjectPlan,
   LessonSlide,
@@ -416,6 +425,22 @@ export default function App() {
     parseAppRoute(window.location.hash)
   );
   const [runnerHealth, setRunnerHealth] = useState<RunnerHealth | null>(null);
+  const [authSession, setAuthSession] = useState<AuthSessionView | null>(null);
+  const [authMode, setAuthMode] = useState<"login" | "signup">("login");
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authError, setAuthError] = useState("");
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [signupDisplayName, setSignupDisplayName] = useState("");
+  const [signupEmail, setSignupEmail] = useState("");
+  const [signupPassword, setSignupPassword] = useState("");
+  const [accountPanelOpen, setAccountPanelOpen] = useState(false);
+  const [displayNameDraft, setDisplayNameDraft] = useState("");
+  const [profileBusy, setProfileBusy] = useState(false);
+  const [providerBusy, setProviderBusy] = useState<ConnectedProvider | null>(null);
+  const [providerDrafts, setProviderDrafts] = useState<
+    Partial<Record<ConnectedProvider, { apiKey: string; baseUrl: string }>>
+  >({});
   const [projectsDashboard, setProjectsDashboard] =
     useState<ProjectsDashboardResponse | null>(null);
   const [dashboardOpen, setDashboardOpen] = useState(true);
@@ -558,6 +583,8 @@ export default function App() {
   const activeRewriteGate =
     activeTaskProgress?.activeSession?.rewriteGate ?? taskSession?.rewriteGate ?? null;
   const activeAttemptStatus = activeTaskProgress?.latestAttempt?.status ?? null;
+  const authReady = runnerHealth?.authReady ?? false;
+  const isAuthenticated = Boolean(authSession?.user && authSession?.session);
   const overlayVisible = surfaceMode === "brief" && Boolean(activeStep);
   const explorerIsFiltered = filterQuery.trim().length > 0;
   const editorTheme = theme === "dark" ? "vs-dark" : "vs";
@@ -599,24 +626,28 @@ export default function App() {
 
     const loadDashboard = async () => {
       try {
-        const [health, projects, profile, planningState] = await Promise.all([
+        const [health, session] = await Promise.all([
           fetchRunnerHealth(controller.signal),
-          fetchProjectsDashboard(controller.signal),
-          fetchLearnerProfile(controller.signal),
-          fetchCurrentPlanningState(controller.signal)
+          fetchAuthSession(controller.signal)
         ]);
 
+        if (controller.signal.aborted) {
+          return;
+        }
+
         setRunnerHealth(health);
-        setProjectsDashboard(projects);
-        setLearnerProfile(profile);
-        setPlanningSession(planningState.session);
-        setPlanningPlan(planningState.plan);
-        setPlanningAnswers(toPlanningAnswerDrafts(planningState.answers));
+        setAuthSession(session);
+        setAuthError("");
         setPlanningEvents([]);
         setPlanningError("");
         setPlanningGoal("");
         setLoadError("");
         setProjectsError("");
+        setProjectsDashboard(null);
+        setLearnerProfile(null);
+        setPlanningSession(null);
+        setPlanningPlan(null);
+        setPlanningAnswers({});
         setBlueprint(null);
         setBlueprintPath("");
         setCanonicalBlueprintPath("");
@@ -633,12 +664,37 @@ export default function App() {
         setSurfaceMode("brief");
         setPlanningOverlayOpen(false);
         setDashboardOpen(true);
+
+        if (!session.user || !session.session) {
+          setStatusMessage(
+            health.authReady
+              ? "Sign in to unlock your projects, saved credentials, and build path."
+              : "Configure DATABASE_URL to enable Construct accounts and saved provider settings."
+          );
+          return;
+        }
+
+        const [projects, profile, planningState] = await Promise.all([
+          fetchProjectsDashboard(controller.signal),
+          fetchLearnerProfile(controller.signal),
+          fetchCurrentPlanningState(controller.signal)
+        ]);
+
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        setProjectsDashboard(projects);
+        setLearnerProfile(profile);
+        setPlanningSession(planningState.session);
+        setPlanningPlan(planningState.plan);
+        setPlanningAnswers(toPlanningAnswerDrafts(planningState.answers));
         setStatusMessage(
           planningState.session
             ? "Resume the in-progress Architect run or open an existing project."
             : projects.projects.length > 0
-            ? "Choose a project to resume or start a new one."
-            : "Start the first project to generate a guided build."
+              ? "Choose a project to resume or start a new one."
+              : "Start the first project to generate a guided build."
         );
       } catch (error) {
         if (controller.signal.aborted) {
@@ -650,6 +706,7 @@ export default function App() {
         setLoadError(message);
         setProjectsError(message);
         setLearnerProfile(null);
+        setAuthSession(null);
         setStatusMessage("Construct is waiting for the local runner.");
       }
     };
@@ -660,6 +717,15 @@ export default function App() {
       controller.abort();
     };
   }, []);
+
+  useEffect(() => {
+    setDisplayNameDraft(authSession?.user?.displayName ?? "");
+
+    if (!authSession?.user) {
+      setAccountPanelOpen(false);
+      setProviderDrafts({});
+    }
+  }, [authSession?.user?.displayName, authSession?.user]);
 
   useEffect(() => {
     if (!activeFilePath || editorValue === savedValue) {
@@ -814,6 +880,198 @@ export default function App() {
 
   const appendRuntimeGuideEvent = (event: AgentEvent) => {
     setRuntimeGuideEvents((current) => appendAgentEvent(current, event));
+  };
+
+  const refreshAuthState = async () => {
+    const session = await fetchAuthSession();
+    setAuthSession(session);
+    return session;
+  };
+
+  const loadAuthenticatedDashboard = async () => {
+    const [projects, profile, planningState] = await Promise.all([
+      fetchProjectsDashboard(),
+      fetchLearnerProfile(),
+      fetchCurrentPlanningState()
+    ]);
+
+    setProjectsDashboard(projects);
+    setLearnerProfile(profile);
+    setPlanningSession(planningState.session);
+    setPlanningPlan(planningState.plan);
+    setPlanningAnswers(toPlanningAnswerDrafts(planningState.answers));
+    setProjectsError("");
+    setPlanningError("");
+    setDashboardOpen(true);
+    setPlanningOverlayOpen(false);
+    setStatusMessage(
+      planningState.session
+        ? "Resume the in-progress Architect run or open an existing project."
+        : projects.projects.length > 0
+          ? "Choose a project to resume or start a new one."
+          : "Start the first project to generate a guided build."
+    );
+  };
+
+  const resetAuthenticatedWorkspaceState = () => {
+    setProjectsDashboard(null);
+    setLearnerProfile(null);
+    setPlanningSession(null);
+    setPlanningPlan(null);
+    setPlanningAnswers({});
+    setPlanningEvents([]);
+    setPlanningError("");
+    setPlanningGoal("");
+    setBlueprint(null);
+    setBlueprintPath("");
+    setCanonicalBlueprintPath("");
+    setWorkspaceFiles([]);
+    setLearnerModel(null);
+    setActiveStepId("");
+    setTaskProgress(null);
+    setTaskSession(null);
+    setTaskResult(null);
+    setActiveFilePath("");
+    setEditorValue("");
+    setSavedValue("");
+    setAnchorLocation(null);
+    setGuideVisible(false);
+    setGuideMinimized(false);
+    setRuntimeGuide(null);
+    setRuntimeGuideEvents([]);
+    setSurfaceMode("brief");
+    setAccountPanelOpen(false);
+  };
+
+  const handleLogin = async () => {
+    setAuthBusy(true);
+    setAuthError("");
+
+    try {
+      const session = await loginWithPassword({
+        email: loginEmail,
+        password: loginPassword
+      });
+      setStoredSessionToken(session.sessionToken);
+      setAuthSession(session);
+      setLoginPassword("");
+      await loadAuthenticatedDashboard();
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "Failed to sign in.");
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
+  const handleSignup = async () => {
+    setAuthBusy(true);
+    setAuthError("");
+
+    try {
+      const session = await signUpWithPassword({
+        displayName: signupDisplayName,
+        email: signupEmail,
+        password: signupPassword
+      });
+      setStoredSessionToken(session.sessionToken);
+      setAuthSession(session);
+      setSignupPassword("");
+      await loadAuthenticatedDashboard();
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "Failed to create your account.");
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    setAuthBusy(true);
+    setAuthError("");
+
+    try {
+      await logoutCurrentSession();
+      setAuthSession(await refreshAuthState());
+      resetAuthenticatedWorkspaceState();
+      setStatusMessage(
+        runnerHealth?.authReady
+          ? "Signed out. Sign back in to reopen your projects."
+          : "Configure DATABASE_URL to enable Construct accounts."
+      );
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "Failed to sign out.");
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
+  const handleSaveProfile = async () => {
+    setProfileBusy(true);
+    setAuthError("");
+
+    try {
+      await updateAccount({
+        displayName: displayNameDraft
+      });
+      await refreshAuthState();
+      setStatusMessage("Updated your Construct profile.");
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "Failed to update your profile.");
+    } finally {
+      setProfileBusy(false);
+    }
+  };
+
+  const handleSaveProviderConnection = async (provider: ConnectedProvider) => {
+    const draft = providerDrafts[provider];
+    if (!draft) {
+      return;
+    }
+
+    setProviderBusy(provider);
+    setAuthError("");
+
+    try {
+      await saveProviderApiKey({
+        provider,
+        apiKey: draft.apiKey,
+        baseUrl: draft.baseUrl
+      });
+      await refreshAuthState();
+      setProviderDrafts((current) => ({
+        ...current,
+        [provider]: {
+          apiKey: "",
+          baseUrl: draft.baseUrl
+        }
+      }));
+      setStatusMessage(`Saved ${provider} credentials.`);
+    } catch (error) {
+      setAuthError(
+        error instanceof Error ? error.message : `Failed to save ${provider} credentials.`
+      );
+    } finally {
+      setProviderBusy(null);
+    }
+  };
+
+  const handleRemoveProviderConnection = async (provider: ConnectedProvider) => {
+    setProviderBusy(provider);
+    setAuthError("");
+
+    try {
+      await removeProviderConnection({
+        provider,
+        authType: "api-key"
+      });
+      await refreshAuthState();
+      setStatusMessage(`Removed ${provider} credentials.`);
+    } catch (error) {
+      setAuthError(
+        error instanceof Error ? error.message : `Failed to remove ${provider} credentials.`
+      );
+    } finally {
+      setProviderBusy(null);
+    }
   };
 
   const hydrateWorkspace = async (preferredStepId?: string | null) => {
@@ -1406,6 +1664,36 @@ export default function App() {
   const showAppSidebar = currentView !== "code";
   const editorBreadcrumb = buildEditorBreadcrumb(blueprint?.name ?? "Project", activeFilePath);
 
+  if (!isAuthenticated) {
+    return (
+      <AuthScreen
+        mode={authMode}
+        onModeChange={setAuthMode}
+        providerOptions={authSession?.providerOptions ?? []}
+        runnerHealth={runnerHealth}
+        authError={authError}
+        authBusy={authBusy}
+        authReady={authReady}
+        loginEmail={loginEmail}
+        loginPassword={loginPassword}
+        signupDisplayName={signupDisplayName}
+        signupEmail={signupEmail}
+        signupPassword={signupPassword}
+        onLoginEmailChange={setLoginEmail}
+        onLoginPasswordChange={setLoginPassword}
+        onSignupDisplayNameChange={setSignupDisplayName}
+        onSignupEmailChange={setSignupEmail}
+        onSignupPasswordChange={setSignupPassword}
+        onSubmitLogin={() => {
+          void handleLogin();
+        }}
+        onSubmitSignup={() => {
+          void handleSignup();
+        }}
+      />
+    );
+  }
+
   return (
     <main className="construct-app">
       <div className={`construct-shell ${showAppSidebar ? "" : "is-code-view"}`.trim()}>
@@ -1413,6 +1701,7 @@ export default function App() {
           <AppSidebar
             projectsDashboard={projectsDashboard}
             runnerHealth={runnerHealth}
+            authSession={authSession}
             dashboardBusy={dashboardBusy}
             currentView={currentView}
             activeStep={activeStep}
@@ -1444,6 +1733,12 @@ export default function App() {
               );
             }}
             onStartProject={openFreshPlanningOverlay}
+            onOpenAccount={() => {
+              setAccountPanelOpen(true);
+            }}
+            onLogout={() => {
+              void handleLogout();
+            }}
           />
         ) : null}
 
@@ -1455,6 +1750,7 @@ export default function App() {
             activeFilePath={activeFilePath}
             runnerHealth={runnerHealth}
             saveStateLabel={saveStateLabel}
+            authSession={authSession}
             onOpenProjects={() => {
               setDashboardOpen(true);
               setPlanningOverlayOpen(false);
@@ -1479,6 +1775,12 @@ export default function App() {
               );
             }}
             onStartProject={openFreshPlanningOverlay}
+            onOpenAccount={() => {
+              setAccountPanelOpen(true);
+            }}
+            onLogout={() => {
+              void handleLogout();
+            }}
             onThemeChange={setThemeMode}
             theme={theme}
           />
@@ -1908,6 +2210,37 @@ export default function App() {
           />
         ) : null}
       </AnimatePresence>
+
+      <AccountSettingsPanel
+        open={accountPanelOpen}
+        authSession={authSession}
+        displayNameDraft={displayNameDraft}
+        onDisplayNameDraftChange={setDisplayNameDraft}
+        profileBusy={profileBusy}
+        providerDrafts={providerDrafts}
+        providerBusy={providerBusy}
+        onProviderDraftChange={(provider, next) => {
+          setProviderDrafts((current) => ({
+            ...current,
+            [provider]: {
+              apiKey: next.apiKey ?? current[provider]?.apiKey ?? "",
+              baseUrl: next.baseUrl ?? current[provider]?.baseUrl ?? ""
+            }
+          }));
+        }}
+        onSaveDisplayName={() => {
+          void handleSaveProfile();
+        }}
+        onSaveConnection={(provider) => {
+          void handleSaveProviderConnection(provider);
+        }}
+        onRemoveConnection={(provider) => {
+          void handleRemoveProviderConnection(provider);
+        }}
+        onClose={() => {
+          setAccountPanelOpen(false);
+        }}
+      />
     </main>
   );
 }
@@ -2276,6 +2609,7 @@ function FloatingGuideCard({
 function AppSidebar({
   projectsDashboard,
   runnerHealth,
+  authSession,
   dashboardBusy,
   currentView,
   activeStep,
@@ -2284,10 +2618,13 @@ function AppSidebar({
   onOpenProjects,
   onOpenLesson,
   onOpenCode,
-  onStartProject
+  onStartProject,
+  onOpenAccount,
+  onLogout
 }: {
   projectsDashboard: ProjectsDashboardResponse | null;
   runnerHealth: RunnerHealth | null;
+  authSession: AuthSessionView | null;
   dashboardBusy: boolean;
   currentView: "projects" | "lesson" | "code";
   activeStep: BlueprintStep | null;
@@ -2297,6 +2634,8 @@ function AppSidebar({
   onOpenLesson: () => void;
   onOpenCode: () => void;
   onStartProject: () => void;
+  onOpenAccount: () => void;
+  onLogout: () => void;
 }) {
   const recentProjects = (projectsDashboard?.projects ?? []).slice(0, 5);
 
@@ -2422,6 +2761,22 @@ function AppSidebar({
         </SidebarContent>
 
         <SidebarFooter className="construct-app-sidebar-section construct-app-sidebar-section--meta">
+          {authSession?.user ? (
+            <div className="construct-app-account-card">
+              <div>
+                <strong>{authSession.user.displayName}</strong>
+                <span>{authSession.user.email}</span>
+              </div>
+              <div className="construct-app-account-actions">
+                <Button type="button" variant="ghost" size="sm" onClick={onOpenAccount}>
+                  Account
+                </Button>
+                <Button type="button" variant="ghost" size="sm" onClick={onLogout}>
+                  Sign out
+                </Button>
+              </div>
+            </div>
+          ) : null}
           <div className="construct-app-meta-row">
             <span>Runner</span>
             <ToolbarPill variant="outline">{runnerHealth?.status ?? "offline"}</ToolbarPill>
@@ -2445,10 +2800,13 @@ function WorkbenchTopbar({
   activeFilePath,
   runnerHealth,
   saveStateLabel,
+  authSession,
   onOpenProjects,
   onOpenLesson,
   onOpenCode,
   onStartProject,
+  onOpenAccount,
+  onLogout,
   onThemeChange,
   theme
 }: {
@@ -2458,10 +2816,13 @@ function WorkbenchTopbar({
   activeFilePath: string | null;
   runnerHealth: RunnerHealth | null;
   saveStateLabel: string;
+  authSession: AuthSessionView | null;
   onOpenProjects: () => void;
   onOpenLesson: () => void;
   onOpenCode: () => void;
   onStartProject: () => void;
+  onOpenAccount: () => void;
+  onLogout: () => void;
   onThemeChange: (theme: ThemeMode) => void;
   theme: ThemeMode;
 }) {
@@ -2517,8 +2878,17 @@ function WorkbenchTopbar({
       </div>
 
       <div className="construct-workbench-topbar-actions">
+        {authSession?.user ? (
+          <ToolbarPill variant="outline">{authSession.user.displayName}</ToolbarPill>
+        ) : null}
         <ToolbarPill>{runnerHealth?.status ?? "offline"}</ToolbarPill>
         <ToolbarPill variant="outline">{saveStateLabel}</ToolbarPill>
+        <SecondaryButton type="button" onClick={onOpenAccount}>
+          Account
+        </SecondaryButton>
+        <Button type="button" variant="ghost" onClick={onLogout}>
+          Sign out
+        </Button>
         <SecondaryButton type="button" onClick={onStartProject}>
           New
         </SecondaryButton>

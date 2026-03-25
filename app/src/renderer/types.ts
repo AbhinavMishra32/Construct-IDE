@@ -14,10 +14,96 @@ export type RunnerHealth = {
   status: string;
   service: string;
   port: number;
+  authReady: boolean;
   debugMode: boolean;
   debugBlueprintsPath: string | null;
   langSmithEnabled: boolean;
   langSmithProject: string | null;
+};
+
+export type AuthIdentityProvider = "password" | "openai" | "codex";
+
+export type ConnectedProvider =
+  | "openai"
+  | "codex"
+  | "anthropic"
+  | "tavily"
+  | "langsmith"
+  | "exa";
+
+export type ConnectedProviderAuthType = "api-key" | "oauth";
+
+export type ProviderConnectionStatus = "configured" | "pending" | "error" | "revoked";
+
+export type UserAccount = {
+  id: string;
+  email: string;
+  displayName: string;
+  avatarUrl: string | null;
+  createdAt: string;
+  updatedAt: string;
+  lastLoginAt: string | null;
+};
+
+export type UserAuthSession = {
+  id: string;
+  userId: string;
+  createdAt: string;
+  lastSeenAt: string;
+  expiresAt: string;
+};
+
+export type AuthProviderOption = {
+  id: AuthIdentityProvider;
+  kind: "password" | "oauth";
+  label: string;
+  description: string;
+  enabled: boolean;
+  comingSoon: boolean;
+  buttonLabel: string;
+};
+
+export type LinkedAuthIdentity = {
+  id: string;
+  provider: AuthIdentityProvider;
+  providerUserId: string;
+  email: string | null;
+  displayName: string | null;
+  linkedAt: string;
+  updatedAt: string;
+};
+
+export type ProviderConnection = {
+  id: string;
+  provider: ConnectedProvider;
+  authType: ConnectedProviderAuthType;
+  status: ProviderConnectionStatus;
+  label: string;
+  hasSecret: boolean;
+  last4: string | null;
+  baseUrl: string | null;
+  externalAccountId: string | null;
+  externalEmail: string | null;
+  scopes: string[];
+  createdAt: string;
+  updatedAt: string;
+  lastValidatedAt: string | null;
+};
+
+export type AuthSessionView = {
+  user: UserAccount | null;
+  session: UserAuthSession | null;
+  identities: LinkedAuthIdentity[];
+  providerOptions: AuthProviderOption[];
+  connections: ProviderConnection[];
+};
+
+export type AuthSessionCreateResponse = AuthSessionView & {
+  sessionToken: string;
+};
+
+export type ProviderConnectionsResponse = {
+  connections: ProviderConnection[];
 };
 
 export type WorkspaceFileEntry = {

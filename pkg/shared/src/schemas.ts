@@ -2,6 +2,150 @@ import { z } from "zod";
 
 export const APP_NAME = "Construct";
 
+export const AuthIdentityProviderSchema = z.enum([
+  "password",
+  "openai",
+  "codex"
+]);
+
+export const ConnectedProviderSchema = z.enum([
+  "openai",
+  "codex",
+  "anthropic",
+  "tavily",
+  "langsmith",
+  "exa"
+]);
+
+export const ConnectedProviderAuthTypeSchema = z.enum([
+  "api-key",
+  "oauth"
+]);
+
+export const ProviderConnectionStatusSchema = z.enum([
+  "configured",
+  "pending",
+  "error",
+  "revoked"
+]);
+
+export const UserAccountSchema = z.object({
+  id: z.string().min(1),
+  email: z.string().email(),
+  displayName: z.string().min(1),
+  avatarUrl: z.string().url().nullable().default(null),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  lastLoginAt: z.string().datetime().nullable().default(null)
+});
+
+export const UserAuthSessionSchema = z.object({
+  id: z.string().min(1),
+  userId: z.string().min(1),
+  createdAt: z.string().datetime(),
+  lastSeenAt: z.string().datetime(),
+  expiresAt: z.string().datetime()
+});
+
+export const AuthProviderOptionSchema = z.object({
+  id: AuthIdentityProviderSchema,
+  kind: z.enum(["password", "oauth"]),
+  label: z.string().min(1),
+  description: z.string().min(1),
+  enabled: z.boolean().default(false),
+  comingSoon: z.boolean().default(false),
+  buttonLabel: z.string().min(1)
+});
+
+export const LinkedAuthIdentitySchema = z.object({
+  id: z.string().min(1),
+  provider: AuthIdentityProviderSchema,
+  providerUserId: z.string().min(1),
+  email: z.string().email().nullable().default(null),
+  displayName: z.string().min(1).nullable().default(null),
+  linkedAt: z.string().datetime(),
+  updatedAt: z.string().datetime()
+});
+
+export const ProviderConnectionSchema = z.object({
+  id: z.string().min(1),
+  provider: ConnectedProviderSchema,
+  authType: ConnectedProviderAuthTypeSchema,
+  status: ProviderConnectionStatusSchema,
+  label: z.string().min(1),
+  hasSecret: z.boolean().default(false),
+  last4: z.string().min(1).nullable().default(null),
+  baseUrl: z.string().min(1).nullable().default(null),
+  externalAccountId: z.string().min(1).nullable().default(null),
+  externalEmail: z.string().email().nullable().default(null),
+  scopes: z.array(z.string().min(1)).default([]),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  lastValidatedAt: z.string().datetime().nullable().default(null)
+});
+
+export const AuthSessionViewSchema = z.object({
+  user: UserAccountSchema.nullable().default(null),
+  session: UserAuthSessionSchema.nullable().default(null),
+  identities: z.array(LinkedAuthIdentitySchema).default([]),
+  providerOptions: z.array(AuthProviderOptionSchema).default([]),
+  connections: z.array(ProviderConnectionSchema).default([])
+});
+
+export const AuthSignupRequestSchema = z.object({
+  email: z.string().trim().email(),
+  password: z.string().min(10).max(256),
+  displayName: z.string().trim().min(2).max(80)
+});
+
+export const AuthLoginRequestSchema = z.object({
+  email: z.string().trim().email(),
+  password: z.string().min(1).max(256)
+});
+
+export const AuthSessionCreateResponseSchema = AuthSessionViewSchema.extend({
+  sessionToken: z.string().min(1)
+});
+
+export const AuthLogoutResponseSchema = z.object({
+  ok: z.boolean().default(true)
+});
+
+export const UpdateUserAccountRequestSchema = z.object({
+  displayName: z.string().trim().min(2).max(80)
+});
+
+export const UpsertProviderConnectionRequestSchema = z.discriminatedUnion("authType", [
+  z.object({
+    provider: ConnectedProviderSchema,
+    authType: z.literal("api-key"),
+    label: z.string().trim().min(1).max(80).optional(),
+    apiKey: z.string().trim().min(3).max(4_096),
+    baseUrl: z.string().trim().min(1).max(2_000).optional()
+  }),
+  z.object({
+    provider: ConnectedProviderSchema,
+    authType: z.literal("oauth"),
+    label: z.string().trim().min(1).max(80).optional(),
+    accessToken: z.string().trim().min(3).max(8_192),
+    refreshToken: z.string().trim().min(1).max(8_192).optional(),
+    externalAccountId: z.string().trim().min(1).max(256).optional(),
+    externalEmail: z.string().trim().email().optional(),
+    scopes: z.array(z.string().trim().min(1)).default([]),
+    expiresAt: z.string().datetime().nullable().optional(),
+    baseUrl: z.string().trim().min(1).max(2_000).optional()
+  })
+]);
+
+export const DeleteProviderConnectionRequestSchema = z.object({
+  provider: ConnectedProviderSchema,
+  authType: ConnectedProviderAuthTypeSchema
+});
+
+export const ProviderConnectionsResponseSchema = z.object({
+  connections: z.array(ProviderConnectionSchema).default([])
+});
+
 export const AnchorSchema = z.object({
   file: z.string().min(1),
   marker: z.string().min(1),

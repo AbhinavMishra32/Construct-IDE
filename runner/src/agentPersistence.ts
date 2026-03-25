@@ -31,6 +31,7 @@ import { z } from "zod";
 
 import { createEmptyKnowledgeBase } from "./knowledgeGraph";
 import { getPrismaClient } from "./prisma";
+import { getCurrentUserId } from "./authContext";
 
 const ActiveBlueprintStateSchema = z.object({
   blueprintPath: z.string().min(1),
@@ -574,18 +575,17 @@ class LocalFileAgentPersistence implements AgentPersistence {
 
 class PrismaAgentPersistence implements AgentPersistence {
   private readonly prisma = getPrismaClient();
-  private readonly userId: string;
   private readonly logger: AgentPersistenceLogger;
 
   constructor(logger: AgentPersistenceLogger) {
-    this.userId = getCurrentUserId();
     this.logger = logger;
   }
 
   async getPlanningState(): Promise<CurrentPlanningSessionResponse | null> {
+    const userId = getCurrentUserId();
     const row = await this.prisma.constructState.findUnique({
       where: {
-        key: toStateKey(this.userId, "planning_state")
+        key: toStateKey(userId, "planning_state")
       }
     });
 
@@ -593,12 +593,13 @@ class PrismaAgentPersistence implements AgentPersistence {
   }
 
   async setPlanningState(state: CurrentPlanningSessionResponse): Promise<void> {
+    const userId = getCurrentUserId();
     await this.prisma.constructState.upsert({
       where: {
-        key: toStateKey(this.userId, "planning_state")
+        key: toStateKey(userId, "planning_state")
       },
       create: {
-        key: toStateKey(this.userId, "planning_state"),
+        key: toStateKey(userId, "planning_state"),
         valueJson: JSON.stringify(state)
       },
       update: {
@@ -608,9 +609,10 @@ class PrismaAgentPersistence implements AgentPersistence {
   }
 
   async getPlanningBuildCheckpoint(sessionId: string): Promise<unknown | null> {
+    const userId = getCurrentUserId();
     const row = await this.prisma.constructState.findUnique({
       where: {
-        key: toStateKey(this.userId, `planning_build_checkpoint:${sessionId}`)
+        key: toStateKey(userId, `planning_build_checkpoint:${sessionId}`)
       }
     });
 
@@ -623,7 +625,7 @@ class PrismaAgentPersistence implements AgentPersistence {
     } catch (error) {
       this.logger.warn("Stored planning build checkpoint could not be read. Clearing it.", {
         backend: "prisma",
-        userId: this.userId,
+        userId,
         sessionId,
         error: error instanceof Error ? error.message : String(error)
       });
@@ -633,12 +635,13 @@ class PrismaAgentPersistence implements AgentPersistence {
   }
 
   async setPlanningBuildCheckpoint(sessionId: string, checkpoint: unknown): Promise<void> {
+    const userId = getCurrentUserId();
     await this.prisma.constructState.upsert({
       where: {
-        key: toStateKey(this.userId, `planning_build_checkpoint:${sessionId}`)
+        key: toStateKey(userId, `planning_build_checkpoint:${sessionId}`)
       },
       create: {
-        key: toStateKey(this.userId, `planning_build_checkpoint:${sessionId}`),
+        key: toStateKey(userId, `planning_build_checkpoint:${sessionId}`),
         valueJson: JSON.stringify(checkpoint)
       },
       update: {
@@ -648,17 +651,19 @@ class PrismaAgentPersistence implements AgentPersistence {
   }
 
   async clearPlanningBuildCheckpoint(sessionId: string): Promise<void> {
+    const userId = getCurrentUserId();
     await this.prisma.constructState.deleteMany({
       where: {
-        key: toStateKey(this.userId, `planning_build_checkpoint:${sessionId}`)
+        key: toStateKey(userId, `planning_build_checkpoint:${sessionId}`)
       }
     });
   }
 
   async getKnowledgeBase(): Promise<UserKnowledgeBase | null> {
+    const userId = getCurrentUserId();
     const row = await this.prisma.constructState.findUnique({
       where: {
-        key: toStateKey(this.userId, "knowledge_base")
+        key: toStateKey(userId, "knowledge_base")
       }
     });
 
@@ -674,13 +679,13 @@ class PrismaAgentPersistence implements AgentPersistence {
 
       this.logger.warn("Stored knowledge base was invalid. Resetting to empty recursive graph.", {
         backend: "prisma",
-        userId: this.userId,
+        userId,
         issueCount: parsed.error.issues.length
       });
     } catch (error) {
       this.logger.warn("Stored knowledge base could not be read. Resetting to empty recursive graph.", {
         backend: "prisma",
-        userId: this.userId,
+        userId,
         error: error instanceof Error ? error.message : String(error)
       });
     }
@@ -691,12 +696,13 @@ class PrismaAgentPersistence implements AgentPersistence {
   }
 
   async setKnowledgeBase(knowledgeBase: UserKnowledgeBase): Promise<void> {
+    const userId = getCurrentUserId();
     await this.prisma.constructState.upsert({
       where: {
-        key: toStateKey(this.userId, "knowledge_base")
+        key: toStateKey(userId, "knowledge_base")
       },
       create: {
-        key: toStateKey(this.userId, "knowledge_base"),
+        key: toStateKey(userId, "knowledge_base"),
         valueJson: JSON.stringify(knowledgeBase)
       },
       update: {
@@ -706,9 +712,10 @@ class PrismaAgentPersistence implements AgentPersistence {
   }
 
   async getActiveBlueprintState(): Promise<ActiveBlueprintState | null> {
+    const userId = getCurrentUserId();
     const project = await this.prisma.project.findFirst({
       where: {
-        userId: this.userId,
+        userId,
         isActive: true
       },
       orderBy: {
@@ -728,6 +735,7 @@ class PrismaAgentPersistence implements AgentPersistence {
   }
 
   async setActiveBlueprintState(state: ActiveBlueprintState): Promise<void> {
+    const userId = getCurrentUserId();
     const resolvedBlueprintPath = path.resolve(state.blueprintPath);
     const activeProjectWhere = state.sessionId
       ? {
@@ -747,7 +755,7 @@ class PrismaAgentPersistence implements AgentPersistence {
     await this.prisma.$transaction([
       this.prisma.project.updateMany({
         where: {
-          userId: this.userId
+          userId
         },
         data: {
           isActive: false
@@ -755,7 +763,7 @@ class PrismaAgentPersistence implements AgentPersistence {
       }),
       this.prisma.project.updateMany({
         where: {
-          userId: this.userId,
+          userId,
           ...activeProjectWhere
         },
         data: {
@@ -769,9 +777,10 @@ class PrismaAgentPersistence implements AgentPersistence {
   async getGeneratedBlueprintRecord(
     sessionId: string
   ): Promise<PersistedGeneratedBlueprintRecord | null> {
+    const userId = getCurrentUserId();
     const project = await this.prisma.project.findFirst({
       where: {
-        userId: this.userId,
+        userId,
         id: sessionId
       }
     });
@@ -783,9 +792,10 @@ class PrismaAgentPersistence implements AgentPersistence {
     record: PersistedGeneratedBlueprintRecord
   ): Promise<void> {
     const parsed = PersistedGeneratedBlueprintRecordSchema.parse(record);
+    const userId = getCurrentUserId();
     const existingProject = await this.prisma.project.findFirst({
       where: {
-        userId: this.userId,
+        userId,
         id: parsed.sessionId
       }
     });
@@ -800,7 +810,7 @@ class PrismaAgentPersistence implements AgentPersistence {
       operations.push(
         this.prisma.project.updateMany({
           where: {
-            userId: this.userId
+            userId
           },
           data: {
             isActive: false
@@ -814,7 +824,7 @@ class PrismaAgentPersistence implements AgentPersistence {
         where: {
           id: projectRecord.id
         },
-        create: mapProjectCreateInput(this.userId, projectRecord),
+        create: mapProjectCreateInput(userId, projectRecord),
         update: mapProjectUpdateInput(projectRecord)
       })
     );
@@ -823,9 +833,10 @@ class PrismaAgentPersistence implements AgentPersistence {
   }
 
   async listProjects(): Promise<ProjectSummary[]> {
+    const userId = getCurrentUserId();
     const projects = await this.prisma.project.findMany({
       where: {
-        userId: this.userId
+        userId
       },
       orderBy: [
         {
@@ -841,9 +852,10 @@ class PrismaAgentPersistence implements AgentPersistence {
   }
 
   async getActiveProject(): Promise<ProjectSummary | null> {
+    const userId = getCurrentUserId();
     const project = await this.prisma.project.findFirst({
       where: {
-        userId: this.userId,
+        userId,
         isActive: true
       },
       orderBy: {
@@ -855,9 +867,10 @@ class PrismaAgentPersistence implements AgentPersistence {
   }
 
   async getProject(projectId: string): Promise<ProjectSummary | null> {
+    const userId = getCurrentUserId();
     const project = await this.prisma.project.findFirst({
       where: {
-        userId: this.userId,
+        userId,
         id: projectId
       }
     });
@@ -867,11 +880,12 @@ class PrismaAgentPersistence implements AgentPersistence {
 
   async setActiveProject(projectId: string): Promise<ProjectSummary | null> {
     const timestamp = new Date();
+    const userId = getCurrentUserId();
 
     await this.prisma.$transaction([
       this.prisma.project.updateMany({
         where: {
-          userId: this.userId
+          userId
         },
         data: {
           isActive: false
@@ -879,7 +893,7 @@ class PrismaAgentPersistence implements AgentPersistence {
       }),
       this.prisma.project.updateMany({
         where: {
-          userId: this.userId,
+          userId,
           id: projectId
         },
         data: {
@@ -894,9 +908,10 @@ class PrismaAgentPersistence implements AgentPersistence {
 
   async updateProjectProgress(update: ProjectProgressUpdate): Promise<ProjectSummary | null> {
     const resolvedBlueprintPath = path.resolve(update.blueprintPath);
+    const userId = getCurrentUserId();
     const project = await this.prisma.project.findFirst({
       where: {
-        userId: this.userId,
+        userId,
         blueprintPath: resolvedBlueprintPath
       }
     });
@@ -932,9 +947,10 @@ class PrismaAgentPersistence implements AgentPersistence {
   }
 
   async getBlueprintBuild(buildId: string): Promise<BlueprintBuild | null> {
+    const userId = getCurrentUserId();
     const build = await this.prisma.blueprintBuild.findFirst({
       where: {
-        userId: this.userId,
+        userId,
         id: buildId
       }
     });
@@ -943,9 +959,10 @@ class PrismaAgentPersistence implements AgentPersistence {
   }
 
   async getBlueprintBuildBySession(sessionId: string): Promise<BlueprintBuild | null> {
+    const userId = getCurrentUserId();
     const build = await this.prisma.blueprintBuild.findFirst({
       where: {
-        userId: this.userId,
+        userId,
         sessionId
       }
     });
@@ -989,17 +1006,18 @@ class PrismaAgentPersistence implements AgentPersistence {
   }
 
   async getBlueprintBuildDetail(buildId: string): Promise<BlueprintBuildDetailResponse> {
+    const userId = getCurrentUserId();
     const [build, stages, events] = await Promise.all([
       this.prisma.blueprintBuild.findFirst({
         where: {
-          userId: this.userId,
+          userId,
           id: buildId
         }
       }),
       this.prisma.blueprintBuildStage.findMany({
         where: {
           build: {
-            userId: this.userId
+            userId
           },
           buildId
         },
@@ -1015,7 +1033,7 @@ class PrismaAgentPersistence implements AgentPersistence {
       this.prisma.blueprintBuildEvent.findMany({
         where: {
           build: {
-            userId: this.userId
+            userId
           },
           buildId
         },
@@ -1033,9 +1051,10 @@ class PrismaAgentPersistence implements AgentPersistence {
   }
 
   async listBlueprintBuilds(): Promise<BlueprintBuildSummary[]> {
+    const userId = getCurrentUserId();
     const builds = await this.prisma.blueprintBuild.findMany({
       where: {
-        userId: this.userId
+        userId
       },
       orderBy: [
         {
@@ -1786,10 +1805,6 @@ function resolveBlueprintProgress(
 
 function toStateKey(userId: string, key: string): string {
   return `${userId}:${key}`;
-}
-
-function getCurrentUserId(): string {
-  return process.env.CONSTRUCT_USER_ID?.trim() || "local-user";
 }
 
 function slugify(value: string): string {

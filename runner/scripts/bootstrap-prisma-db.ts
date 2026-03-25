@@ -193,6 +193,105 @@ await sql`
   ON construct_blueprint_build_events (build_id, timestamp DESC)
 `;
 
+await sql`
+  CREATE TABLE IF NOT EXISTS construct_users (
+    id TEXT PRIMARY KEY,
+    email TEXT NOT NULL UNIQUE,
+    display_name TEXT NOT NULL,
+    avatar_url TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_login_at TIMESTAMPTZ
+  )
+`;
+
+await sql`
+  CREATE TABLE IF NOT EXISTS construct_password_credentials (
+    user_id TEXT PRIMARY KEY REFERENCES construct_users(id) ON DELETE CASCADE,
+    password_hash TEXT NOT NULL,
+    password_salt TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )
+`;
+
+await sql`
+  CREATE TABLE IF NOT EXISTS construct_auth_sessions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES construct_users(id) ON DELETE CASCADE,
+    token_hash TEXT NOT NULL UNIQUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at TIMESTAMPTZ NOT NULL,
+    revoked_at TIMESTAMPTZ
+  )
+`;
+
+await sql`
+  CREATE TABLE IF NOT EXISTS construct_auth_identities (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES construct_users(id) ON DELETE CASCADE,
+    provider TEXT NOT NULL,
+    provider_user_id TEXT NOT NULL,
+    email TEXT,
+    display_name TEXT,
+    access_token_encrypted TEXT,
+    refresh_token_encrypted TEXT,
+    scopes_json TEXT NOT NULL DEFAULT '[]',
+    metadata_json TEXT,
+    token_expires_at TIMESTAMPTZ,
+    linked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (provider, provider_user_id)
+  )
+`;
+
+await sql`
+  CREATE TABLE IF NOT EXISTS construct_provider_connections (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES construct_users(id) ON DELETE CASCADE,
+    provider TEXT NOT NULL,
+    auth_type TEXT NOT NULL,
+    status TEXT NOT NULL,
+    label TEXT NOT NULL DEFAULT '',
+    has_secret BOOLEAN NOT NULL DEFAULT FALSE,
+    secret_encrypted TEXT,
+    refresh_token_encrypted TEXT,
+    last4 TEXT,
+    base_url TEXT,
+    external_account_id TEXT,
+    external_email TEXT,
+    scopes_json TEXT NOT NULL DEFAULT '[]',
+    metadata_json TEXT,
+    expires_at TIMESTAMPTZ,
+    last_validated_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (user_id, provider, auth_type)
+  )
+`;
+
+await sql`
+  CREATE INDEX IF NOT EXISTS construct_auth_sessions_user_revoked_idx
+  ON construct_auth_sessions (user_id, revoked_at)
+`;
+
+await sql`
+  CREATE INDEX IF NOT EXISTS construct_auth_sessions_user_expires_idx
+  ON construct_auth_sessions (user_id, expires_at DESC)
+`;
+
+await sql`
+  CREATE INDEX IF NOT EXISTS construct_auth_identities_user_provider_idx
+  ON construct_auth_identities (user_id, provider)
+`;
+
+await sql`
+  CREATE INDEX IF NOT EXISTS construct_provider_connections_user_provider_idx
+  ON construct_provider_connections (user_id, provider)
+`;
+
 console.log("Construct Prisma backend schema bootstrapped.");
 
 function loadEnv(rootDirectory: string): void {

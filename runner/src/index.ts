@@ -5,10 +5,13 @@ import { fileURLToPath } from "node:url";
 import {
   APP_NAME,
   AgentJobSnapshotSchema,
+  AuthLoginRequestSchema,
+  AuthSignupRequestSchema,
   BlueprintDeepDiveRequestSchema,
   BlueprintTaskRequestSchema,
   CheckReviewRequestSchema,
   CheckReviewResponseSchema,
+  DeleteProviderConnectionRequestSchema,
   getBlueprintVisibleFilePaths,
   LearnerProfileResponseSchema,
   ProjectCurrentStepRequestSchema,
@@ -17,10 +20,14 @@ import {
   PlanningSessionStartRequestSchema,
   RuntimeGuideRequestSchema,
   TaskStartRequestSchema,
-  TaskSubmitRequestSchema
+  TaskSubmitRequestSchema,
+  UpdateUserAccountRequestSchema,
+  UpsertProviderConnectionRequestSchema
 } from "@construct/shared";
 
 import { ConstructAgentService } from "./agentService";
+import { runWithRequestAuthContext, type RequestAuthContext } from "./authContext";
+import { AuthError, ConstructAuthService } from "./authService";
 import { WorkspaceFileManager } from "./fileManager";
 import { SnapshotService } from "./snapshots";
 import { TaskLifecycleService } from "./taskLifecycle";
@@ -38,6 +45,7 @@ loadRunnerEnvironment(rootDir);
 const port = Number(process.env.CONSTRUCT_RUNNER_PORT ?? 43110);
 const testRunner = new TestRunnerManager();
 let constructAgent: ConstructAgentService | null = null;
+let constructAuth: ConstructAuthService | null = null;
 let workspaceContextPromise: Promise<WorkspaceContext> | null = null;
 let workspaceContextBlueprintPath = "";
 
@@ -47,6 +55,14 @@ function getConstructAgent(): ConstructAgentService {
   }
 
   return constructAgent;
+}
+
+function getConstructAuth(): ConstructAuthService {
+  if (!constructAuth) {
+    constructAuth = new ConstructAuthService(rootDir);
+  }
+
+  return constructAuth;
 }
 
 type WorkspaceContext = {
@@ -109,7 +125,7 @@ async function createWorkspaceContext(
 const server = http.createServer(async (request, response) => {
   response.setHeader("Access-Control-Allow-Origin", "*");
   response.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-  response.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  response.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 
   try {
     if (request.method === "OPTIONS") {
@@ -125,6 +141,7 @@ const server = http.createServer(async (request, response) => {
           status: "ready",
           service: `${APP_NAME} Runner`,
           port,
+          authReady: Boolean(process.env.DATABASE_URL?.trim()),
           debugMode: isDebugModeEnabled(),
           debugBlueprintsPath: isDebugModeEnabled() ? "#/debug/blueprints" : null,
           langSmithEnabled: isLangSmithEnabled(),
@@ -133,6 +150,106 @@ const server = http.createServer(async (request, response) => {
       );
       return;
     }
+
+    const sessionToken = extractSessionToken(request);
+    const authSession = await getConstructAuth().getSessionView(sessionToken);
+    const requestAuthContext: RequestAuthContext = {
+      user: authSession.user
+        ? {
+            id: authSession.user.id,
+            email: authSession.user.email,
+            displayName: authSession.user.displayName
+          }
+        : null,
+      sessionId: authSession.session?.id ?? null,
+      sessionToken
+    };
+
+    await runWithRequestAuthContext(requestAuthContext, async () => {
+      if (request.method === "GET" && request.url === "/auth/session") {
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(JSON.stringify(authSession));
+        return;
+      }
+
+      if (request.method === "POST" && request.url === "/auth/signup") {
+        const body = await readRequestBody(request);
+        const signupRequest = AuthSignupRequestSchema.parse(JSON.parse(body));
+        const session = await getConstructAuth().signUp(signupRequest);
+
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(JSON.stringify(session));
+        return;
+      }
+
+      if (request.method === "POST" && request.url === "/auth/login") {
+        const body = await readRequestBody(request);
+        const loginRequest = AuthLoginRequestSchema.parse(JSON.parse(body));
+        const session = await getConstructAuth().login(loginRequest);
+
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(JSON.stringify(session));
+        return;
+      }
+
+      if (request.method === "POST" && request.url === "/auth/logout") {
+        const result = await getConstructAuth().logout(sessionToken);
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(JSON.stringify(result));
+        return;
+      }
+
+      if (request.method === "POST" && request.url === "/auth/account") {
+        const authenticatedUser = requireAuthenticatedUser(authSession);
+        const body = await readRequestBody(request);
+        const updateRequest = UpdateUserAccountRequestSchema.parse(JSON.parse(body));
+        const updated = await getConstructAuth().updateAccount(authenticatedUser.id, updateRequest);
+
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(JSON.stringify(updated));
+        return;
+      }
+
+      if (request.method === "GET" && request.url === "/auth/connections") {
+        const authenticatedUser = requireAuthenticatedUser(authSession);
+        const connections = await getConstructAuth().listProviderConnections(authenticatedUser.id);
+
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(JSON.stringify(connections));
+        return;
+      }
+
+      if (request.method === "POST" && request.url === "/auth/connections") {
+        const authenticatedUser = requireAuthenticatedUser(authSession);
+        const body = await readRequestBody(request);
+        const upsertRequest = UpsertProviderConnectionRequestSchema.parse(JSON.parse(body));
+        const connections = await getConstructAuth().upsertProviderConnection(
+          authenticatedUser.id,
+          upsertRequest
+        );
+        getConstructAgent().clearResolvedUserConfig(authenticatedUser.id);
+
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(JSON.stringify(connections));
+        return;
+      }
+
+      if (request.method === "POST" && request.url === "/auth/connections/remove") {
+        const authenticatedUser = requireAuthenticatedUser(authSession);
+        const body = await readRequestBody(request);
+        const deleteRequest = DeleteProviderConnectionRequestSchema.parse(JSON.parse(body));
+        const connections = await getConstructAuth().deleteProviderConnection(
+          authenticatedUser.id,
+          deleteRequest
+        );
+        getConstructAgent().clearResolvedUserConfig(authenticatedUser.id);
+
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(JSON.stringify(connections));
+        return;
+      }
+
+      requireAuthenticatedUser(authSession);
 
     if (request.method === "GET" && request.url === "/debug/blueprints") {
       assertDebugModeEnabled();
@@ -508,6 +625,7 @@ const server = http.createServer(async (request, response) => {
 
     response.writeHead(404, { "Content-Type": "application/json" });
     response.end(JSON.stringify({ error: "Not found." }));
+    });
   } catch (error) {
     console.error(
       `[construct-runner] ${request.method ?? "UNKNOWN"} ${request.url ?? "<unknown>"}`,
@@ -522,11 +640,13 @@ const server = http.createServer(async (request, response) => {
     }
 
     const statusCode =
-      error instanceof SyntaxError ||
-      error instanceof BlueprintResolutionError ||
-      (error instanceof Error && error.name === "ZodError")
-        ? 400
-        : 500;
+      error instanceof AuthError
+        ? error.statusCode
+        : error instanceof SyntaxError ||
+          error instanceof BlueprintResolutionError ||
+          (error instanceof Error && error.name === "ZodError")
+          ? 400
+          : 500;
 
     response.writeHead(statusCode, { "Content-Type": "application/json" });
     response.end(
@@ -554,6 +674,32 @@ async function readRequestBody(request: http.IncomingMessage): Promise<string> {
     });
     request.on("error", reject);
   });
+}
+
+function extractSessionToken(request: http.IncomingMessage): string | null {
+  const authorization = request.headers.authorization?.trim();
+  if (authorization?.toLowerCase().startsWith("bearer ")) {
+    const token = authorization.slice("bearer ".length).trim();
+    return token.length > 0 ? token : null;
+  }
+
+  if (!request.url) {
+    return null;
+  }
+
+  const url = new URL(request.url, "http://127.0.0.1");
+  const queryToken = url.searchParams.get("sessionToken")?.trim();
+  return queryToken && queryToken.length > 0 ? queryToken : null;
+}
+
+function requireAuthenticatedUser(
+  authSession: Awaited<ReturnType<ConstructAuthService["getSessionView"]>>
+) {
+  if (!authSession.user || !authSession.session) {
+    throw new AuthError("Authentication is required.", 401);
+  }
+
+  return authSession.user;
 }
 
 function getRequiredQueryParam(requestUrl: string, key: string): string {

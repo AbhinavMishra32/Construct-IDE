@@ -78,6 +78,8 @@ import {
   type AgentPersistence,
   type PersistedGeneratedBlueprintRecord
 } from "./agentPersistence";
+import { getCurrentUserId } from "./authContext";
+import { ConstructAuthService } from "./authService";
 import {
   getActiveBlueprintPath as getActiveBlueprintPathFromFile,
   setActiveBlueprintPath
@@ -107,6 +109,7 @@ type BuildListener = (eventName: string, payload: unknown) => void;
 
 type AgentJobRecord = {
   jobId: string;
+  userId: string;
   kind: AgentJobKind;
   status: "queued" | "running" | "completed" | "failed";
   createdAt: string;
@@ -146,6 +149,7 @@ type AgentDependencies = {
   search?: SearchProvider;
   logger?: AgentLogger;
   persistence?: AgentPersistence;
+  auth?: ConstructAuthService;
   projectInstaller?: ProjectInstaller;
 };
 
@@ -512,12 +516,13 @@ export class ConstructAgentService {
   private readonly now: () => Date;
   private readonly logger: AgentLogger;
   private readonly persistence: AgentPersistence;
+  private readonly auth: ConstructAuthService;
   private readonly llmOverride: StructuredLanguageModel | null;
   private readonly searchOverride: SearchProvider | null;
   private readonly installerOverride: ProjectInstaller | null;
-  private resolvedConfig: AgentConfig | null = null;
-  private llm: StructuredLanguageModel | null = null;
-  private search: SearchProvider | null = null;
+  private readonly resolvedConfigByUserId = new Map<string, AgentConfig>();
+  private readonly llmByUserId = new Map<string, StructuredLanguageModel>();
+  private readonly searchByUserId = new Map<string, SearchProvider>();
   private projectInstaller: ProjectInstaller | null = null;
   private readonly jobs = new Map<string, AgentJobRecord>();
   private readonly blueprintBuildListeners = new Map<string, Set<BuildListener>>();
@@ -547,10 +552,17 @@ export class ConstructAgentService {
       createAgentPersistence({
         rootDirectory,
         logger: this.logger
-    });
+      });
+    this.auth = dependencies.auth ?? new ConstructAuthService(rootDirectory);
     this.llmOverride = dependencies.llm ?? null;
     this.searchOverride = dependencies.search ?? null;
     this.installerOverride = dependencies.projectInstaller ?? null;
+  }
+
+  clearResolvedUserConfig(userId: string): void {
+    this.resolvedConfigByUserId.delete(userId);
+    this.llmByUserId.delete(userId);
+    this.searchByUserId.delete(userId);
   }
 
   async getCurrentPlanningState(): Promise<PlanningStateFile> {
@@ -1036,7 +1048,7 @@ export class ConstructAgentService {
         ])
       ])
     );
-    const draft = await this.getLlm().parse({
+    const draft = await (await this.getLlm()).parse({
       schema: GENERATED_FRONTIER_DRAFT_SCHEMA,
       schemaName: "construct_generated_adaptive_frontier",
       instructions: buildAdaptiveFrontierGenerationInstructions(),
@@ -1318,7 +1330,7 @@ export class ConstructAgentService {
   private async reviewShortAnswerCheck(
     input: CheckReviewRequest
   ): Promise<CheckReviewResponse> {
-    const draft = await this.getLlm().parse({
+    const draft = await (await this.getLlm()).parse({
       schema: SHORT_ANSWER_CHECK_REVIEW_DRAFT_SCHEMA,
       schemaName: "construct_short_answer_check_review",
       instructions: buildShortAnswerCheckReviewInstructions(),
@@ -1433,40 +1445,50 @@ export class ConstructAgentService {
       });
   }
 
-  private getLlm(): StructuredLanguageModel {
+  private async getLlm(): Promise<StructuredLanguageModel> {
     if (this.llmOverride) {
       return this.llmOverride;
     }
 
-    if (!this.llm) {
-      const config = this.getAgentConfig();
-      this.llm = new OpenAIStructuredLanguageModel({
+    const userId = getCurrentUserId();
+    const existing = this.llmByUserId.get(userId);
+    if (existing) {
+      return existing;
+    }
+
+    const config = await this.getAgentConfig();
+    const llm = new OpenAIStructuredLanguageModel({
         apiKey: config.openAiApiKey,
         baseUrl: config.openAiBaseUrl,
         model: config.openAiModel,
         logger: this.logger
       });
-    }
+    this.llmByUserId.set(userId, llm);
 
-    return this.llm;
+    return llm;
   }
 
-  private getSearch(): SearchProvider {
+  private async getSearch(): Promise<SearchProvider> {
     if (this.searchOverride) {
       return this.searchOverride;
     }
 
-    if (!this.search) {
-      const config = this.getAgentConfig();
-      this.search = buildSearchProvider({
+    const userId = getCurrentUserId();
+    const existing = this.searchByUserId.get(userId);
+    if (existing) {
+      return existing;
+    }
+
+    const config = await this.getAgentConfig();
+    const search = buildSearchProvider({
         provider: config.searchProvider,
         tavilyApiKey: config.tavilyApiKey,
         depth: config.tavilySearchDepth,
         logger: this.logger
       });
-    }
+    this.searchByUserId.set(userId, search);
 
-    return this.search;
+    return search;
   }
 
   private getProjectInstaller(): ProjectInstaller {
@@ -1481,12 +1503,34 @@ export class ConstructAgentService {
     return this.projectInstaller;
   }
 
-  private getAgentConfig(): AgentConfig {
-    if (!this.resolvedConfig) {
-      this.resolvedConfig = resolveAgentConfig();
+  private async getAgentConfig(): Promise<AgentConfig> {
+    const userId = getCurrentUserId();
+    const cached = this.resolvedConfigByUserId.get(userId);
+    if (cached) {
+      return cached;
     }
 
-    return this.resolvedConfig;
+    const envConfig = resolveAgentConfig();
+    const [openAiConnection, tavilyConnection] = await Promise.all([
+      this.auth.resolveProviderSecret({
+        userId,
+        provider: "openai"
+      }),
+      this.auth.resolveProviderSecret({
+        userId,
+        provider: "tavily"
+      })
+    ]);
+
+    const resolved = {
+      ...envConfig,
+      openAiApiKey: openAiConnection.secret ?? envConfig.openAiApiKey,
+      openAiBaseUrl: openAiConnection.baseUrl ?? envConfig.openAiBaseUrl,
+      tavilyApiKey: tavilyConnection.secret ?? envConfig.tavilyApiKey
+    } satisfies AgentConfig;
+
+    this.resolvedConfigByUserId.set(userId, resolved);
+    return resolved;
   }
 
   createPlanningQuestionsJob(
@@ -1606,11 +1650,7 @@ export class ConstructAgentService {
   }
 
   getJob(jobId: string): AgentJobSnapshot {
-    const job = this.jobs.get(jobId);
-
-    if (!job) {
-      throw new Error(`Unknown agent job ${jobId}.`);
-    }
+    const job = this.getOwnedJob(jobId);
 
     return AgentJobSnapshotSchema.parse({
       jobId: job.jobId,
@@ -1624,11 +1664,7 @@ export class ConstructAgentService {
   }
 
   openJobStream(jobId: string, response: http.ServerResponse): void {
-    const job = this.jobs.get(jobId);
-
-    if (!job) {
-      throw new Error(`Unknown agent job ${jobId}.`);
-    }
+    const job = this.getOwnedJob(jobId);
 
     response.writeHead(200, {
       "Content-Type": "text/event-stream",
@@ -2075,6 +2111,7 @@ export class ConstructAgentService {
     const timestamp = this.now().toISOString();
     const record: AgentJobRecord = {
       jobId: randomUUID(),
+      userId: getCurrentUserId(),
       kind,
       status: "queued",
       createdAt: timestamp,
@@ -2086,6 +2123,16 @@ export class ConstructAgentService {
 
     this.jobs.set(record.jobId, record);
     return record;
+  }
+
+  private getOwnedJob(jobId: string): AgentJobRecord {
+    const job = this.jobs.get(jobId);
+
+    if (!job || job.userId !== getCurrentUserId()) {
+      throw new Error(`Unknown agent job ${jobId}.`);
+    }
+
+    return job;
   }
 
   private async runJob<T>(job: AgentJobRecord, task: () => Promise<T>): Promise<void> {
@@ -2273,7 +2320,7 @@ export class ConstructAgentService {
               `Local-scope shape for: ${state.request.goal}`
             )
           : await this.withStage(jobId, "research-project-shape", "Researching the target project shape", "Fetching architecture references, major subsystems, and implementation constraints from Tavily.", async () => {
-              return this.getSearch().research(
+              return (await this.getSearch()).research(
                 `Project architecture, core subsystems, and implementation constraints for: ${state.request.goal}`
               );
             })
@@ -2288,7 +2335,7 @@ export class ConstructAgentService {
               `Local-scope prerequisites for: ${state.request.goal}`
             )
           : await this.withStage(jobId, "research-prerequisites", "Researching prerequisite skills", "Identifying the language, compiler, and systems concepts this project depends on.", async () => {
-              return this.getSearch().research(
+              return (await this.getSearch()).research(
                 `Prerequisite language, compiler, and systems skills needed for: ${state.request.goal}`
               );
             })
@@ -2305,7 +2352,7 @@ export class ConstructAgentService {
         session: await this.withStage(jobId, "question-generation", "Generating project-tailoring questions", "OpenAI is turning the goal and stored knowledge into collaborative intake questions that tailor the project path.", async () => {
           const stream = this.createModelStreamForwarder(jobId, "question-generation", "question generation");
           try {
-            const questionDraft = await this.getLlm().parse({
+            const questionDraft = await (await this.getLlm()).parse({
               schema: PLANNING_QUESTION_DRAFT_SCHEMA,
               schemaName: "construct_planning_question_draft",
               instructions: buildQuestionGenerationInstructions(),
@@ -2467,7 +2514,7 @@ export class ConstructAgentService {
               `Local architecture outline for: ${state.session.goal}`
             )
           : await this.withStage(jobId, "research-architecture", "Researching architecture", "Fetching reference material for the requested system shape and major component boundaries.", async () => {
-              return this.getSearch().research(
+              return (await this.getSearch()).research(
                 `${state.session.goal} architecture, core modules, component boundaries`
               );
             })
@@ -2482,7 +2529,7 @@ export class ConstructAgentService {
               `Local dependency order for: ${state.session.goal}`
             )
           : await this.withStage(jobId, "research-dependency-order", "Researching dependency order", "Tracing which modules must exist first and how the build should be sequenced.", async () => {
-              return this.getSearch().research(
+              return (await this.getSearch()).research(
                 `${state.session.goal} dependency order, implementation sequence, first real behavior to implement`
               );
             })
@@ -2497,7 +2544,7 @@ export class ConstructAgentService {
               `Local validation seams for: ${state.session.goal}`
             )
           : await this.withStage(jobId, "research-validation-strategy", "Researching validation strategy", "Finding good validation seams, harness patterns, and per-component test boundaries.", async () => {
-              return this.getSearch().research(
+              return (await this.getSearch()).research(
                 `${state.session.goal} validation strategy, test harness, component-level testing approach`
               );
             })
@@ -2525,7 +2572,7 @@ export class ConstructAgentService {
           : await this.withStage(jobId, "plan-generation", "Synthesizing the personalized roadmap", "OpenAI is merging the project dependencies, learner profile, and research into a detailed build path.", async () => {
           const stream = this.createModelStreamForwarder(jobId, "plan-generation", "plan generation");
           try {
-            const planDraft = await this.getLlm().parse({
+            const planDraft = await (await this.getLlm()).parse({
               schema: GENERATED_PROJECT_PLAN_DRAFT_SCHEMA,
               schemaName: "construct_generated_project_plan",
               instructions: buildPlanGenerationInstructions(),
@@ -2651,7 +2698,7 @@ export class ConstructAgentService {
             "project bundle synthesis"
           );
 
-          const initialBundleDraft = await this.getLlm().parse({
+          const initialBundleDraft = await (await this.getLlm()).parse({
             schema: GENERATED_BLUEPRINT_BUNDLE_DRAFT_SCHEMA,
             schemaName: "construct_generated_blueprint_bundle",
             instructions: buildBlueprintGenerationInstructions(),
@@ -2826,7 +2873,7 @@ export class ConstructAgentService {
               `lesson chapter authoring for ${step.title}`
             );
 
-            const authoredStep = await this.getLlm().parse({
+            const authoredStep = await (await this.getLlm()).parse({
               schema: LESSON_AUTHORED_STEP_DRAFT_SCHEMA,
               schemaName: "construct_authored_blueprint_step",
               instructions: buildLessonAuthoringInstructions({
@@ -3025,7 +3072,7 @@ export class ConstructAgentService {
           );
 
           try {
-            return this.getLlm().parse({
+            return (await this.getLlm()).parse({
               schema: RuntimeGuideResponseSchema,
               schemaName: "construct_runtime_guide",
               instructions: buildRuntimeGuideInstructions(),
@@ -3108,7 +3155,7 @@ export class ConstructAgentService {
             "deep dive generation"
           );
           try {
-            return this.getLlm().parse({
+            return (await this.getLlm()).parse({
               schema: GENERATED_DEEP_DIVE_DRAFT_SCHEMA,
               schemaName: "construct_blueprint_deep_dive",
               instructions: buildBlueprintDeepDiveInstructions(),
@@ -3358,7 +3405,7 @@ export class ConstructAgentService {
     learningStyle: LearningStyle
   ): Promise<GoalScope> {
     try {
-      return await this.getLlm().parse({
+      return await (await this.getLlm()).parse({
         schema: GOAL_SCOPE_DRAFT_SCHEMA,
         schemaName: "construct_goal_scope",
         instructions: buildGoalScopeInstructions(),
@@ -4087,7 +4134,7 @@ export class ConstructAgentService {
     learningStyle: LearningStyle
   ): Promise<UserKnowledgeBase> {
     const timestamp = this.now().toISOString();
-    const draft = await this.getLlm().parse({
+    const draft = await (await this.getLlm()).parse({
       schema: EXPLICIT_GOAL_SELF_REPORT_DRAFT_SCHEMA,
       schemaName: "construct_goal_self_report_signals",
       instructions: buildGoalSelfReportExtractionInstructions(),
@@ -6510,8 +6557,4 @@ function buildRuntimeGuideInstructions(): string {
     "Observations should reference the test result, constraints, or code snippet when possible.",
     "Next action must be a single practical move the learner can take immediately."
   ].join("\n");
-}
-
-function getCurrentUserId(): string {
-  return process.env.CONSTRUCT_USER_ID?.trim() || "local-user";
 }
