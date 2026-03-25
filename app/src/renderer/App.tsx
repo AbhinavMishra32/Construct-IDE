@@ -113,6 +113,7 @@ import { cn } from "@/lib/utils";
 import { AccountSettingsPanel } from "./components/account-settings-panel";
 import { AuthScreen } from "./components/auth-screen";
 import { BlueprintDebugView } from "./components/blueprint-debug-view";
+import { ComingSoonLanding } from "./components/coming-soon-landing";
 import { findAnchorLocation } from "./lib/anchors";
 import {
   buildGuidancePrompts,
@@ -196,6 +197,9 @@ type ThemeMode = "light" | "dark";
 type TaskRunState = "idle" | "running";
 type AppRoute =
   | {
+      kind: "landing";
+    }
+  | {
       kind: "workspace";
     }
   | {
@@ -221,9 +225,15 @@ const SAVE_DEBOUNCE_MS = 450;
 function parseAppRoute(hash: string): AppRoute {
   const normalized = hash.replace(/^#/, "");
 
+  if (!normalized || normalized === "/") {
+    return {
+      kind: "landing"
+    };
+  }
+
   if (!normalized.startsWith("/debug/blueprints")) {
     return {
-      kind: "workspace"
+      kind: normalized.startsWith("/workspace") ? "workspace" : "landing"
     };
   }
 
@@ -234,6 +244,10 @@ function parseAppRoute(hash: string): AppRoute {
     kind: "debug-blueprints",
     buildId
   };
+}
+
+function formatWorkspaceRoute(): string {
+  return "#/workspace";
 }
 
 function formatBlueprintDebugRoute(buildId: string | null = null): string {
@@ -1737,13 +1751,27 @@ export default function App() {
           langSmithProject={runnerHealth?.langSmithProject ?? null}
           initialBuildId={appRoute.buildId}
           onClose={() => {
-            window.location.hash = "";
+            window.location.hash = formatWorkspaceRoute();
           }}
           onNavigateToBuild={(buildId) => {
             window.location.hash = formatBlueprintDebugRoute(buildId);
           }}
         />
       </main>
+    );
+  }
+
+  if (appRoute.kind === "landing") {
+    return (
+      <ComingSoonLanding
+        themeControl={
+          <ThemeDropdown
+            theme={theme}
+            onThemeChange={setThemeMode}
+            className="construct-coming-soon-theme-toggle"
+          />
+        }
+      />
     );
   }
 
