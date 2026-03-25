@@ -2452,6 +2452,12 @@ function FloatingGuideCard({
   taskError: string;
   taskTelemetry: TaskTelemetry;
 }) {
+  const taskAttemptCount = taskProgress?.totalAttempts ?? 0;
+  const recordedHintCount = learnerModel?.hintsUsed[activeStep.id] ?? taskTelemetry.hintsUsed;
+  const pastePercentage = Math.round(taskTelemetry.pasteRatio * 100);
+  const hiddenValidationCount = activeStep.tests.length;
+  const constraintCount = activeStep.constraints.length;
+
   if (minimized) {
     return (
       <motion.aside
@@ -2508,32 +2514,48 @@ function FloatingGuideCard({
       </div>
 
       <div className="construct-floating-card-body">
-        <section className="construct-metadata-panel">
-          <span className="construct-panel-kicker">Telemetry</span>
-          <div className="construct-session-metrics">
-            <MetricPill
-              label="Attempts"
-              value={`${taskProgress?.totalAttempts ?? 0}`}
-            />
-            <MetricPill
-              label="Hints"
-              value={`${taskTelemetry.hintsUsed}`}
-            />
-            <MetricPill
-              label="Paste"
-              value={`${Math.round(taskTelemetry.pasteRatio * 100)}%`}
-            />
-            <MetricPill
-              label="Snapshot"
-              value={
-                taskSession ? formatCommitId(taskSession.preTaskSnapshot.commitId) : "pending"
-              }
-            />
-          </div>
-          <p className="construct-muted-copy">
-            Recorded hints across this step: {learnerModel?.hintsUsed[activeStep.id] ?? 0}
-          </p>
-        </section>
+        <div className="construct-guide-status-strip">
+          {taskAttemptCount > 0 ? (
+            <ToolbarPill variant="outline" className="construct-guide-status-pill">
+              {taskAttemptCount} attempt{taskAttemptCount === 1 ? "" : "s"}
+            </ToolbarPill>
+          ) : null}
+          {recordedHintCount > 0 ? (
+            <ToolbarPill variant="outline" className="construct-guide-status-pill">
+              {recordedHintCount} hint{recordedHintCount === 1 ? "" : "s"}
+            </ToolbarPill>
+          ) : null}
+          {pastePercentage > 0 ? (
+            <ToolbarPill variant="outline" className="construct-guide-status-pill">
+              {pastePercentage}% paste
+            </ToolbarPill>
+          ) : null}
+          {taskSession ? (
+            <ToolbarPill variant="outline" className="construct-guide-status-pill">
+              {formatCommitId(taskSession.preTaskSnapshot.commitId)}
+            </ToolbarPill>
+          ) : null}
+          {hiddenValidationCount > 0 ? (
+            <DetailPopover
+              label="Hidden validations"
+              description={summarizeCompactList(activeStep.tests)}
+            >
+              <ToolbarPill variant="outline" className="construct-guide-status-pill">
+                {hiddenValidationCount} check{hiddenValidationCount === 1 ? "" : "s"}
+              </ToolbarPill>
+            </DetailPopover>
+          ) : null}
+          {constraintCount > 0 ? (
+            <DetailPopover
+              label="Constraints"
+              description={summarizeCompactList(activeStep.constraints)}
+            >
+              <ToolbarPill variant="outline" className="construct-guide-status-pill">
+                {constraintCount} constraint{constraintCount === 1 ? "" : "s"}
+              </ToolbarPill>
+            </DetailPopover>
+          ) : null}
+        </div>
 
         {rewriteGate ? (
           <section className="construct-verification-panel">
@@ -2557,9 +2579,6 @@ function FloatingGuideCard({
           </section>
         ) : null}
 
-        <MetadataList title="Tests" values={activeStep.tests} />
-        <MetadataList title="Constraints" values={activeStep.constraints} />
-
         <div className="construct-floating-card-actions">
           <div className="construct-action-cluster">
             <PrimaryButton
@@ -2577,25 +2596,25 @@ function FloatingGuideCard({
               )}
             </PrimaryButton>
             <SecondaryButton type="button" onClick={onOpenBrief}>
-              Open brief
+              Brief
             </SecondaryButton>
           </div>
 
           <div className="construct-action-cluster is-compact">
             <SecondaryButton type="button" onClick={onRefocus}>
-              Refocus anchor
+              Refocus
             </SecondaryButton>
             <SecondaryButton type="button" onClick={onToggleGuide}>
               {runtimeGuideBusy
                 ? (
                     <>
                       <Spinner data-icon="inline-start" />
-                      Guide is thinking...
+                      Thinking...
                     </>
                   )
                 : guideVisible
                   ? "Hide guide"
-                  : "Ask guide"}
+                  : "Guide"}
             </SecondaryButton>
           </div>
         </div>
@@ -2605,8 +2624,8 @@ function FloatingGuideCard({
             <div>
               <span className="construct-panel-kicker">Need more support?</span>
               <p className="construct-muted-copy">
-                Construct can deepen this step with extra concept slides and a tighter
-                quiz before you retry the implementation.
+                Construct can break this step down and add a tighter walkthrough before
+                you retry.
               </p>
             </div>
             <SecondaryButton
@@ -2617,10 +2636,10 @@ function FloatingGuideCard({
               {deepDiveBusy ? (
                 <>
                   <Spinner data-icon="inline-start" />
-                  Building deeper walkthrough...
+                  Deepening step...
                 </>
               ) : (
-                "Need a deeper walkthrough?"
+                "Deepen this step"
               )}
             </SecondaryButton>
             {deepDiveError ? <InlineError>{deepDiveError}</InlineError> : null}
@@ -2658,7 +2677,7 @@ function FloatingGuideCard({
             </div>
           ) : (
             <p className="construct-muted-copy">
-              Reveal hints only after you have tried the implementation.
+              Unlock a hint after you have tried the implementation.
             </p>
           )}
         </div>
@@ -5587,15 +5606,16 @@ function MetadataList({ title, values }: { title: string; values: string[] }) {
   );
 }
 
-function MetricPill({ label, value }: { label: string; value: string }) {
-  return (
-    <Card className="construct-session-metric" size="sm">
-      <CardContent className="flex items-center justify-between gap-3 px-3 py-2">
-        <span>{label}</span>
-        <strong>{value}</strong>
-      </CardContent>
-    </Card>
-  );
+function summarizeCompactList(values: string[]) {
+  if (values.length === 0) {
+    return "No details recorded.";
+  }
+
+  if (values.length <= 2) {
+    return values.join(" • ");
+  }
+
+  return `${values.slice(0, 2).join(" • ")} • +${values.length - 2} more`;
 }
 
 function CheckCard({

@@ -6508,6 +6508,125 @@ textarea {
   box-shadow: 0 14px 30px rgba(0, 0, 0, 0.36);
 }
 
+.construct-floating-card-header {
+  padding: 11px 12px 10px;
+}
+
+.construct-floating-card-title {
+  margin: 6px 0 4px;
+  font-size: 16px;
+  line-height: 1.16;
+  letter-spacing: -0.02em;
+}
+
+.construct-floating-card-summary {
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.construct-floating-card-body {
+  gap: 10px;
+  padding: 10px 12px 12px;
+}
+
+.construct-guide-status-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.construct-guide-status-pill {
+  min-height: 22px;
+}
+
+.construct-verification-panel {
+  padding: 10px 11px;
+}
+
+.construct-verification-copy {
+  margin-top: 8px;
+}
+
+.construct-floating-card-actions {
+  gap: 8px;
+}
+
+.construct-action-cluster {
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  backdrop-filter: none;
+}
+
+.construct-action-cluster .construct-primary-button,
+.construct-action-cluster .construct-secondary-button {
+  min-height: 32px;
+  border-radius: 10px;
+  font-size: 12px;
+}
+
+.construct-escalation-panel {
+  gap: 8px;
+  padding: 10px 11px;
+}
+
+.construct-muted-copy {
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.construct-floating-hints {
+  padding: 10px 11px;
+}
+
+.construct-floating-hints-header {
+  font-size: 12px;
+}
+
+.construct-hint-actions {
+  gap: 5px;
+}
+
+.construct-hint-button {
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 9px;
+  font-size: 11px;
+}
+
+.construct-hint-list {
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.construct-hint-item,
+.construct-guide-prompt,
+.construct-task-failure {
+  padding: 9px 10px;
+}
+
+.construct-hint-item p,
+.construct-guide-prompt,
+.construct-task-failure p,
+.construct-guide-runtime-summary p,
+.construct-guide-next-action p,
+.construct-guide-event-item p {
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.construct-guide-prompts {
+  gap: 8px;
+}
+
+.construct-guide-runtime-summary,
+.construct-guide-next-action,
+.construct-guide-event-log {
+  gap: 8px;
+  padding: 10px;
+}
+
 .construct-coming-soon {
   position: relative;
   overflow: hidden;
