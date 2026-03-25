@@ -39,6 +39,7 @@ import {
 } from "react-syntax-highlighter/dist/esm/styles/prism";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -387,11 +388,11 @@ function ThemeDropdown({
           aria-label="Theme options"
         >
           {theme === "light" ? (
-            <MoonStarIcon data-icon="inline-start" />
-          ) : (
             <SunIcon data-icon="inline-start" />
+          ) : (
+            <MoonStarIcon data-icon="inline-start" />
           )}
-          {theme === "light" ? "Dark" : "Light"}
+          {theme === "light" ? "Light" : "Dark"}
           <ChevronDownIcon data-icon="inline-end" />
         </Button>
       </DropdownMenuTrigger>
@@ -1869,9 +1870,6 @@ export default function App() {
             onOpenAccount={() => {
               setAccountPanelOpen(true);
             }}
-            onLogout={() => {
-              void handleLogout();
-            }}
             onThemeChange={setThemeMode}
             theme={theme}
           />
@@ -1966,49 +1964,56 @@ export default function App() {
                       <section className="construct-editor-shell">
                         <header className="construct-editor-header">
                           <div className="construct-editor-tabs">
-                            <span className="construct-editor-tab construct-editor-tab--context">
+                            <ToolbarPill
+                              variant="outline"
+                              className="construct-editor-tab construct-editor-tab--context"
+                            >
                               Code
-                            </span>
+                            </ToolbarPill>
                             <span className="construct-editor-tab is-active">
                               {labelForEditorPath(activeFilePath)}
                             </span>
                             {activeStep ? (
-                              <span className="construct-editor-tab">
+                              <ToolbarPill
+                                variant="outline"
+                                className="construct-editor-tab construct-editor-tab--meta"
+                              >
                                 Step {activeStepIndex + 1}
-                              </span>
+                              </ToolbarPill>
                             ) : null}
                           </div>
 
                           <div className="construct-editor-header-actions">
-                            <ToolbarPill>
+                            <ToolbarPill variant="outline" className="construct-editor-status-pill">
                               {runnerHealth?.status ?? "offline"}
                             </ToolbarPill>
-                            <DetailPopover
-                              label="Attempts"
-                              description={`Construct has recorded ${activeTaskProgress?.totalAttempts ?? 0} targeted run${
-                                activeTaskProgress?.totalAttempts === 1 ? "" : "s"
-                              } for this step.`}
-                            >
-                              <ToolbarPill>{taskAttemptLabel}</ToolbarPill>
-                            </DetailPopover>
-                            <DetailPopover
-                              label="Snapshot"
-                              description={
-                                taskSession
-                                  ? `The pre-task snapshot for this step is ${taskSession.preTaskSnapshot.commitId}.`
-                                  : "A pre-task snapshot will appear after the step is focused."
-                              }
-                            >
-                              <ToolbarPill>{snapshotLabel}</ToolbarPill>
-                            </DetailPopover>
+                            {activeTaskProgress && activeTaskProgress.totalAttempts > 0 ? (
+                              <DetailPopover
+                                label="Attempts"
+                                description={`Construct has recorded ${activeTaskProgress.totalAttempts} targeted run${
+                                  activeTaskProgress.totalAttempts === 1 ? "" : "s"
+                                } for this step.`}
+                              >
+                                <ToolbarPill variant="outline">{taskAttemptLabel}</ToolbarPill>
+                              </DetailPopover>
+                            ) : null}
+                            {taskSession ? (
+                              <DetailPopover
+                                label="Snapshot"
+                                description={`The pre-task snapshot for this step is ${taskSession.preTaskSnapshot.commitId}.`}
+                              >
+                                <ToolbarPill variant="outline">{snapshotLabel}</ToolbarPill>
+                              </DetailPopover>
+                            ) : null}
                             {activeStep ? (
                               <SecondaryButton
+                                className="construct-editor-brief-button"
                                 onClick={() => {
                                   setSurfaceMode("brief");
                                   setStatusMessage(`Opened brief for ${activeStep.title}.`);
                                 }}
                               >
-                                Open brief
+                                Brief
                               </SecondaryButton>
                             ) : null}
                           </div>
@@ -2913,7 +2918,6 @@ function WorkbenchTopbar({
   onOpenCode,
   onStartProject,
   onOpenAccount,
-  onLogout,
   onThemeChange,
   theme
 }: {
@@ -2929,21 +2933,23 @@ function WorkbenchTopbar({
   onOpenCode: () => void;
   onStartProject: () => void;
   onOpenAccount: () => void;
-  onLogout: () => void;
   onThemeChange: (theme: ThemeMode) => void;
   theme: ThemeMode;
 }) {
+  const contextLabel =
+    currentView === "projects" ? "Workspace" : activeProjectName ?? "Workspace";
+  const contextTitle =
+    currentView === "projects"
+      ? activeProjectName ?? "Projects"
+      : activeFilePath ?? activeStepTitle ?? activeProjectName ?? "No file focused";
+  const userDisplayName = authSession?.user?.displayName?.trim() ?? "";
+  const shouldShowSaveState = currentView === "code";
+
   return (
     <header className="construct-workbench-topbar">
       <div className="construct-workbench-topbar-context">
-        <span className="construct-panel-kicker">
-          {currentView === "projects" ? "Projects" : activeProjectName ?? "Workspace"}
-        </span>
-        <strong>
-          {currentView === "projects"
-            ? "Return to any saved project and keep building."
-            : activeFilePath ?? activeStepTitle ?? activeProjectName ?? "No file focused"}
-        </strong>
+        <span className="construct-panel-kicker">{contextLabel}</span>
+        <strong>{contextTitle}</strong>
       </div>
 
       <div className="construct-workbench-mode-switch" role="tablist" aria-label="Current view">
@@ -2986,20 +2992,38 @@ function WorkbenchTopbar({
 
       <div className="construct-workbench-topbar-actions">
         {authSession?.user ? (
-          <ToolbarPill variant="outline">{authSession.user.displayName}</ToolbarPill>
+          <Button
+            type="button"
+            variant="ghost"
+            className="construct-workbench-user-chip"
+            onClick={onOpenAccount}
+          >
+            <Avatar size="sm" className="construct-workbench-user-avatar">
+              <AvatarFallback>{initialsForName(userDisplayName)}</AvatarFallback>
+            </Avatar>
+            <span>{userDisplayName}</span>
+          </Button>
         ) : null}
-        <ToolbarPill>{runnerHealth?.status ?? "offline"}</ToolbarPill>
-        <ToolbarPill variant="outline">{saveStateLabel}</ToolbarPill>
-        <SecondaryButton type="button" onClick={onOpenAccount}>
-          Account
-        </SecondaryButton>
-        <Button type="button" variant="ghost" onClick={onLogout}>
-          Sign out
-        </Button>
-        <SecondaryButton type="button" onClick={onStartProject}>
+        <ToolbarPill variant="outline" className="construct-workbench-status-pill">
+          {runnerHealth?.status ?? "offline"}
+        </ToolbarPill>
+        {shouldShowSaveState ? (
+          <ToolbarPill variant="outline" className="construct-workbench-status-pill">
+            {saveStateLabel}
+          </ToolbarPill>
+        ) : null}
+        <SecondaryButton
+          type="button"
+          onClick={onStartProject}
+          className="construct-workbench-new-button"
+        >
           New
         </SecondaryButton>
-        <ThemeDropdown theme={theme} onThemeChange={onThemeChange} />
+        <ThemeDropdown
+          theme={theme}
+          onThemeChange={onThemeChange}
+          className="construct-workbench-theme-button"
+        />
       </div>
     </header>
   );
@@ -5296,6 +5320,21 @@ function labelForEditorPath(filePath: string | null) {
 
   const segments = filePath.split("/");
   return segments[segments.length - 1] ?? filePath;
+}
+
+function initialsForName(name: string) {
+  const normalized = name.trim();
+
+  if (!normalized) {
+    return "CU";
+  }
+
+  const segments = normalized.split(/\s+/).filter(Boolean);
+
+  return segments
+    .slice(0, 2)
+    .map((segment) => segment[0]?.toUpperCase() ?? "")
+    .join("");
 }
 
 function buildEditorBreadcrumb(projectName: string, filePath: string | null) {
