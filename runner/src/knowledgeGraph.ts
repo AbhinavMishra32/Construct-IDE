@@ -17,6 +17,17 @@ type KnowledgeSignal = {
   source: KnowledgeSource;
   recordedAt: string;
   labelPath?: string[];
+  evidenceTitle?: string | null;
+  projectId?: string | null;
+  projectName?: string | null;
+  projectGoal?: string | null;
+  stepId?: string | null;
+  stepTitle?: string | null;
+  filePath?: string | null;
+  anchorMarker?: string | null;
+  revisionNotes?: string[];
+  codeExample?: string | null;
+  revisitPrompt?: string | null;
 };
 
 export type KnowledgeGraphStats = {
@@ -337,14 +348,34 @@ function upsertKnowledgeNode(
     node.rationale = signal.rationale;
     node.source = signal.source;
     node.updatedAt = signal.recordedAt;
+    const nextEvidence = {
+      source: signal.source,
+      score: clampKnowledgeScore(signal.score),
+      summary: signal.rationale,
+      recordedAt: signal.recordedAt,
+      title: signal.evidenceTitle ?? null,
+      projectId: signal.projectId ?? null,
+      projectName: signal.projectName ?? null,
+      projectGoal: signal.projectGoal ?? null,
+      stepId: signal.stepId ?? null,
+      stepTitle: signal.stepTitle ?? null,
+      filePath: signal.filePath ?? null,
+      anchorMarker: signal.anchorMarker ?? null,
+      revisionNotes: signal.revisionNotes ?? [],
+      codeExample: signal.codeExample ?? null,
+      revisitPrompt: signal.revisitPrompt ?? null
+    };
     node.evidence = [
-      {
-        source: signal.source,
-        score: clampKnowledgeScore(signal.score),
-        summary: signal.rationale,
-        recordedAt: signal.recordedAt
-      },
-      ...node.evidence
+      nextEvidence,
+      ...node.evidence.filter((entry) =>
+        !(
+          entry.recordedAt === nextEvidence.recordedAt &&
+          entry.summary === nextEvidence.summary &&
+          entry.title === nextEvidence.title &&
+          entry.projectId === nextEvidence.projectId &&
+          entry.stepId === nextEvidence.stepId
+        )
+      )
     ].slice(0, 12);
     return node;
   }

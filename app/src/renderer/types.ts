@@ -218,6 +218,17 @@ export type StoredKnowledgeConcept = {
     score: number;
     summary: string;
     recordedAt: string;
+    title: string | null;
+    projectId: string | null;
+    projectName: string | null;
+    projectGoal: string | null;
+    stepId: string | null;
+    stepTitle: string | null;
+    filePath: string | null;
+    anchorMarker: string | null;
+    revisionNotes: string[];
+    codeExample: string | null;
+    revisitPrompt: string | null;
   }>;
   children: StoredKnowledgeConcept[];
 };
@@ -227,6 +238,8 @@ export type StoredKnowledgeGoal = {
   language: string;
   domain: string;
   lastPlannedAt: string;
+  projectId: string | null;
+  projectName: string | null;
 };
 
 export type UserKnowledgeBase = {

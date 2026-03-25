@@ -102,6 +102,7 @@ import {
   SidebarProvider
 } from "@/components/ui/sidebar";
 import { Spinner } from "@/components/ui/spinner";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
@@ -171,6 +172,7 @@ import type {
   RuntimeInfo,
   RuntimeGuideResponse,
   StoredKnowledgeConcept,
+  StoredKnowledgeGoal,
   TaskProgress,
   TaskResult,
   TaskSession,
@@ -1158,7 +1160,10 @@ export default function App() {
     return projects;
   };
 
-  const openProject = async (project: ProjectSummary) => {
+  const openProject = async (
+    project: ProjectSummary,
+    preferredStepId: string | null = null
+  ) => {
     setDashboardBusy(true);
     setProjectsError("");
 
@@ -1167,12 +1172,12 @@ export default function App() {
       const dashboardState = await refreshDashboardState();
       const selectedProject =
         dashboardState.projects.find((entry) => entry.id === selection.activeProjectId) ?? project;
-      await hydrateWorkspace(selectedProject.currentStepId);
+      await hydrateWorkspace(preferredStepId ?? selectedProject.currentStepId);
       setDashboardOpen(false);
       setPlanningOverlayOpen(false);
       setStatusMessage(
         `Resumed ${selectedProject.name} at ${
-          selectedProject.currentStepTitle ?? "the current step"
+          preferredStepId ?? selectedProject.currentStepTitle ?? "the current step"
         }.`
       );
     } catch (error) {
@@ -2949,7 +2954,7 @@ function ProjectsHome({
   planningSession: PlanningSession | null;
   planningPlan: GeneratedProjectPlan | null;
   onResumeCreation: () => void;
-  onOpenProject: (project: ProjectSummary) => void;
+  onOpenProject: (project: ProjectSummary, preferredStepId?: string | null) => void;
   onStartProject: () => void;
 }) {
   const projects = projectsDashboard?.projects ?? [];
@@ -2975,6 +2980,58 @@ function ProjectsHome({
         .sort((left, right) => right.lastPlannedAt.localeCompare(left.lastPlannedAt))
         .slice(0, 5)
     : [];
+  const projectLookup = useMemo(
+    () => new Map(projects.map((project) => [project.id, project])),
+    [projects]
+  );
+  const goalLookup = useMemo(
+    () =>
+      new Map(
+        (knowledgeBase?.goals ?? [])
+          .filter((goal) => goal.projectId)
+          .map((goal) => [goal.projectId!, goal])
+      ),
+    [knowledgeBase?.goals]
+  );
+  const knowledgeProjectGroups = useMemo(
+    () => buildKnowledgeProjectGroups(knowledgeRoots, projects, knowledgeBase?.goals ?? []),
+    [knowledgeRoots, projects, knowledgeBase?.goals]
+  );
+  const linkedProjectCount = useMemo(() => {
+    const keys = new Set<string>();
+
+    for (const concept of knowledgeConcepts) {
+      for (const evidence of concept.evidence) {
+        const key =
+          evidence.projectId ??
+          evidence.projectName?.trim().toLowerCase() ??
+          evidence.projectGoal?.trim().toLowerCase() ??
+          null;
+
+        if (key) {
+          keys.add(key);
+        }
+      }
+    }
+
+    return keys.size;
+  }, [knowledgeConcepts]);
+  const revisionArtifactCount = useMemo(
+    () =>
+      knowledgeConcepts.reduce(
+        (total, concept) =>
+          total +
+          concept.evidence.filter(
+            (evidence) =>
+              evidence.stepId ||
+              evidence.codeExample ||
+              evidence.revisionNotes.length > 0 ||
+              evidence.projectId
+          ).length,
+        0
+      ),
+    [knowledgeConcepts]
+  );
   const historyEntries = learnerProfile?.learnerModel?.history ?? [];
   const totalHintsUsed = Object.values(learnerProfile?.learnerModel?.hintsUsed ?? {}).reduce(
     (sum, value) => sum + value,
@@ -2990,8 +3047,12 @@ function ProjectsHome({
   const strugglingAttempts = historyEntries.filter(
     (entry) => entry.status === "failed" || entry.status === "needs-review"
   ).length;
+  const [knowledgeView, setKnowledgeView] = useState<"concepts" | "projects">("concepts");
   const [expandedKnowledgeIds, setExpandedKnowledgeIds] = useState<Record<string, boolean>>({});
-  const [selectedKnowledgeConceptId, setSelectedKnowledgeConceptId] = useState<string | null>(null);
+  const [expandedKnowledgeProjectIds, setExpandedKnowledgeProjectIds] = useState<
+    Record<string, boolean>
+  >({});
+  const [selectedKnowledgeItemKey, setSelectedKnowledgeItemKey] = useState<string | null>(null);
 
   useEffect(() => {
     const expandableIds = collectExpandableKnowledgeIds(knowledgeRoots);
@@ -3011,13 +3072,24 @@ function ProjectsHome({
   }, [knowledgeRoots]);
 
   useEffect(() => {
-    if (
-      selectedKnowledgeConceptId &&
-      !knowledgeConcepts.some((concept) => concept.id === selectedKnowledgeConceptId)
-    ) {
-      setSelectedKnowledgeConceptId(null);
-    }
-  }, [knowledgeConcepts, selectedKnowledgeConceptId]);
+    setExpandedKnowledgeProjectIds((current) => {
+      const next = { ...current };
+      let changed = false;
+
+      for (const group of knowledgeProjectGroups) {
+        if (!(group.key in next)) {
+          next[group.key] = true;
+          changed = true;
+        }
+      }
+
+      return changed ? next : current;
+    });
+  }, [knowledgeProjectGroups]);
+
+  useEffect(() => {
+    setSelectedKnowledgeItemKey(null);
+  }, [knowledgeView, knowledgeBase?.updatedAt]);
 
   return (
     <section className="construct-home">
@@ -3193,30 +3265,97 @@ function ProjectsHome({
           </div>
 
           {knowledgeRoots.length > 0 ? (
-            <ScrollArea className="construct-knowledge-explorer-scroll">
-              <div className="construct-home-knowledge-tree">
-                {knowledgeRoots.map((concept) => (
-                  <KnowledgeExplorerNodeView
-                    key={concept.id}
-                    concept={concept}
-                    depth={0}
-                    expandedKnowledgeIds={expandedKnowledgeIds}
-                    selectedKnowledgeConceptId={selectedKnowledgeConceptId}
-                    onToggleKnowledge={(conceptId) => {
-                      setExpandedKnowledgeIds((current) => ({
-                        ...current,
-                        [conceptId]: !(current[conceptId] ?? true)
-                      }));
-                    }}
-                    onSelectKnowledge={(conceptId) => {
-                      setSelectedKnowledgeConceptId((current) =>
-                        current === conceptId ? null : conceptId
-                      );
-                    }}
-                  />
-                ))}
+            <Tabs
+              value={knowledgeView}
+              onValueChange={(value) =>
+                setKnowledgeView(value === "projects" ? "projects" : "concepts")
+              }
+              className="construct-knowledge-shell"
+            >
+              <div className="construct-knowledge-toolbar">
+                <TabsList variant="line" className="construct-knowledge-tabs">
+                  <TabsTrigger value="concepts">Concepts</TabsTrigger>
+                  <TabsTrigger value="projects">Projects</TabsTrigger>
+                </TabsList>
+
+                <div className="construct-home-knowledge-summary">
+                  <span>
+                    <strong>{linkedProjectCount}</strong> linked project
+                    {linkedProjectCount === 1 ? "" : "s"}
+                  </span>
+                  <span>
+                    <strong>{revisionArtifactCount}</strong> revision anchor
+                    {revisionArtifactCount === 1 ? "" : "s"}
+                  </span>
+                </div>
               </div>
-            </ScrollArea>
+
+              <TabsContent value="concepts">
+                <ScrollArea className="construct-knowledge-explorer-scroll">
+                  <div className="construct-home-knowledge-tree">
+                    {knowledgeRoots.map((concept) => (
+                      <KnowledgeExplorerNodeView
+                        key={concept.id}
+                        concept={concept}
+                        depth={0}
+                        expandedKnowledgeIds={expandedKnowledgeIds}
+                        selectedKnowledgeItemKey={selectedKnowledgeItemKey}
+                        projectLookup={projectLookup}
+                        goalLookup={goalLookup}
+                        onToggleKnowledge={(conceptId) => {
+                          setExpandedKnowledgeIds((current) => ({
+                            ...current,
+                            [conceptId]: !(current[conceptId] ?? true)
+                          }));
+                        }}
+                        onSelectKnowledge={(itemKey) => {
+                          setSelectedKnowledgeItemKey((current) =>
+                            current === itemKey ? null : itemKey
+                          );
+                        }}
+                        onOpenProject={onOpenProject}
+                      />
+                    ))}
+                  </div>
+                </ScrollArea>
+              </TabsContent>
+
+              <TabsContent value="projects">
+                {knowledgeProjectGroups.length > 0 ? (
+                  <ScrollArea className="construct-knowledge-explorer-scroll">
+                    <div className="construct-knowledge-project-groups">
+                      {knowledgeProjectGroups.map((group) => (
+                        <KnowledgeProjectGroupView
+                          key={group.key}
+                          group={group}
+                          isExpanded={expandedKnowledgeProjectIds[group.key] ?? true}
+                          selectedKnowledgeItemKey={selectedKnowledgeItemKey}
+                          onToggleProjectGroup={(groupKey) => {
+                            setExpandedKnowledgeProjectIds((current) => ({
+                              ...current,
+                              [groupKey]: !(current[groupKey] ?? true)
+                            }));
+                          }}
+                          onSelectKnowledge={(itemKey) => {
+                            setSelectedKnowledgeItemKey((current) =>
+                              current === itemKey ? null : itemKey
+                            );
+                          }}
+                          onOpenProject={onOpenProject}
+                          projectLookup={projectLookup}
+                          goalLookup={goalLookup}
+                        />
+                      ))}
+                    </div>
+                  </ScrollArea>
+                ) : (
+                  <div className="construct-home-empty">
+                    Project-linked revision anchors will show up here once Construct has
+                    enough step-level history to connect concepts back to actual work.
+                  </div>
+                )}
+              </TabsContent>
+            </Tabs>
           ) : (
             <div className="construct-home-empty">
               No stored learner knowledge yet. Start a project and answer the Architect's
@@ -3340,6 +3479,31 @@ function formatKnowledgeExplorerId(id: string): string {
   return compact.length > 16 ? `${compact.slice(0, 16)}...` : compact;
 }
 
+type KnowledgeArtifactRecord = {
+  key: string;
+  conceptId: string;
+  conceptLabel: string;
+  conceptCategory: StoredKnowledgeConcept["category"];
+  conceptScore: number;
+  artifact: StoredKnowledgeConcept["evidence"][number];
+};
+
+type KnowledgeProjectGroup = {
+  key: string;
+  projectId: string | null;
+  projectName: string;
+  projectGoal: string | null;
+  project: ProjectSummary | null;
+  goal: StoredKnowledgeGoal | null;
+  conceptEntries: Array<{
+    concept: StoredKnowledgeConcept;
+    artifacts: KnowledgeArtifactRecord[];
+    latestArtifact: StoredKnowledgeConcept["evidence"][number] | null;
+  }>;
+  artifactCount: number;
+  latestUpdatedAt: string;
+};
+
 function getKnowledgeTone(score: number): "strong" | "developing" | "support" {
   if (score >= 75) {
     return "strong";
@@ -3356,21 +3520,27 @@ function KnowledgeExplorerNodeView({
   concept,
   depth,
   expandedKnowledgeIds,
-  selectedKnowledgeConceptId,
+  selectedKnowledgeItemKey,
+  projectLookup,
+  goalLookup,
   onToggleKnowledge,
-  onSelectKnowledge
+  onSelectKnowledge,
+  onOpenProject
 }: {
   concept: StoredKnowledgeConcept;
   depth: number;
   expandedKnowledgeIds: Record<string, boolean>;
-  selectedKnowledgeConceptId: string | null;
+  selectedKnowledgeItemKey: string | null;
+  projectLookup: Map<string, ProjectSummary>;
+  goalLookup: Map<string, StoredKnowledgeGoal>;
   onToggleKnowledge: (conceptId: string) => void;
-  onSelectKnowledge: (conceptId: string) => void;
+  onSelectKnowledge: (itemKey: string) => void;
+  onOpenProject: (project: ProjectSummary, preferredStepId?: string | null) => void;
 }) {
   const hasChildren = concept.children.length > 0;
   const isExpanded = expandedKnowledgeIds[concept.id] ?? true;
-  const isSelected = selectedKnowledgeConceptId === concept.id;
-  const latestEvidence = concept.evidence[0] ?? null;
+  const itemKey = `concept:${concept.id}`;
+  const isSelected = selectedKnowledgeItemKey === itemKey;
   const tone = getKnowledgeTone(concept.score);
   const GroupIcon = depth === 0 ? FolderTreeIcon : FolderOpenIcon;
   const ItemIcon =
@@ -3413,7 +3583,7 @@ function KnowledgeExplorerNodeView({
           open={isSelected}
           onOpenChange={(open) => {
             if (!open && isSelected) {
-              onSelectKnowledge(concept.id);
+              onSelectKnowledge(itemKey);
             }
           }}
         >
@@ -3422,7 +3592,7 @@ function KnowledgeExplorerNodeView({
               type="button"
               className="construct-knowledge-trigger"
               onClick={() => {
-                onSelectKnowledge(concept.id);
+                onSelectKnowledge(itemKey);
               }}
             >
               {hasChildren ? (
@@ -3486,13 +3656,12 @@ function KnowledgeExplorerNodeView({
               </span>
             </div>
 
-            {latestEvidence ? (
-              <div className="construct-knowledge-popover-evidence">
-                <strong>{latestEvidence.source}</strong>
-                <span>{latestEvidence.summary}</span>
-                <span>{formatProjectTimestamp(latestEvidence.recordedAt)}</span>
-              </div>
-            ) : null}
+            <KnowledgeArtifactList
+              artifacts={collectKnowledgeArtifactsForConcept(concept)}
+              projectLookup={projectLookup}
+              goalLookup={goalLookup}
+              onOpenProject={onOpenProject}
+            />
           </PopoverContent>
         </Popover>
 
@@ -3511,15 +3680,401 @@ function KnowledgeExplorerNodeView({
               concept={child}
               depth={depth + 1}
               expandedKnowledgeIds={expandedKnowledgeIds}
-              selectedKnowledgeConceptId={selectedKnowledgeConceptId}
+              selectedKnowledgeItemKey={selectedKnowledgeItemKey}
+              projectLookup={projectLookup}
+              goalLookup={goalLookup}
               onToggleKnowledge={onToggleKnowledge}
               onSelectKnowledge={onSelectKnowledge}
+              onOpenProject={onOpenProject}
             />
           ))}
         </div>
       ) : null}
     </div>
   );
+}
+
+function KnowledgeProjectGroupView({
+  group,
+  isExpanded,
+  selectedKnowledgeItemKey,
+  onToggleProjectGroup,
+  onSelectKnowledge,
+  onOpenProject,
+  projectLookup,
+  goalLookup
+}: {
+  group: KnowledgeProjectGroup;
+  isExpanded: boolean;
+  selectedKnowledgeItemKey: string | null;
+  onToggleProjectGroup: (groupKey: string) => void;
+  onSelectKnowledge: (itemKey: string) => void;
+  onOpenProject: (project: ProjectSummary, preferredStepId?: string | null) => void;
+  projectLookup: Map<string, ProjectSummary>;
+  goalLookup: Map<string, StoredKnowledgeGoal>;
+}) {
+  return (
+    <div className="construct-knowledge-project-group">
+      <div className="construct-knowledge-project-group-header">
+        <button
+          type="button"
+          className="construct-knowledge-project-toggle"
+          onClick={() => {
+            onToggleProjectGroup(group.key);
+          }}
+        >
+          {isExpanded ? (
+            <ChevronDownIcon className="size-4" />
+          ) : (
+            <ChevronRightIcon className="size-4" />
+          )}
+          <span className="construct-knowledge-project-title-wrap">
+            <strong>{group.projectName}</strong>
+            <span>{group.projectGoal ?? group.project?.goal ?? "Project-linked revision anchors"}</span>
+          </span>
+        </button>
+
+        <div className="construct-knowledge-project-header-meta">
+          <span className="construct-knowledge-count-pill">{group.conceptEntries.length}</span>
+          {group.project ? (
+            <Button
+              type="button"
+              variant="ghost"
+              className="construct-knowledge-link-button"
+              onClick={() => {
+                onOpenProject(group.project!);
+              }}
+            >
+              Open project
+            </Button>
+          ) : null}
+        </div>
+      </div>
+
+      {isExpanded ? (
+        <div className="construct-knowledge-project-rows">
+          {group.conceptEntries.map((entry) => {
+            const itemKey = `project:${group.key}:${entry.concept.id}`;
+            const tone = getKnowledgeTone(entry.concept.score);
+            const isSelected = selectedKnowledgeItemKey === itemKey;
+
+            return (
+              <div key={`${group.key}:${entry.concept.id}`} className="construct-knowledge-project-row">
+                <Popover
+                  open={isSelected}
+                  onOpenChange={(open) => {
+                    if (!open && isSelected) {
+                      onSelectKnowledge(itemKey);
+                    }
+                  }}
+                >
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      className={cn(
+                        "construct-knowledge-project-trigger",
+                        isSelected ? "is-selected" : ""
+                      )}
+                      onClick={() => {
+                        onSelectKnowledge(itemKey);
+                      }}
+                    >
+                      <span className={cn("construct-knowledge-dot", `is-${tone}`)}>
+                        <CircleIcon className="size-2.5 fill-current" />
+                      </span>
+                      <span className="construct-knowledge-icon construct-knowledge-icon--leaf">
+                        {entry.concept.category === "workflow" ? (
+                          <ListTodoIcon className="size-4" />
+                        ) : entry.concept.category === "language" ? (
+                          <FileTextIcon className="size-4" />
+                        ) : (
+                          <BookOpenTextIcon className="size-4" />
+                        )}
+                      </span>
+                      <span className="construct-knowledge-project-trigger-copy">
+                        <strong>{entry.concept.label}</strong>
+                        <span>
+                          {entry.latestArtifact?.stepTitle ??
+                            entry.latestArtifact?.title ??
+                            "Revision anchor"}
+                        </span>
+                      </span>
+                      <span className="construct-knowledge-project-trigger-meta">
+                        {entry.artifacts.length} anchor{entry.artifacts.length === 1 ? "" : "s"}
+                      </span>
+                    </button>
+                  </PopoverTrigger>
+
+                  <PopoverContent
+                    side="right"
+                    align="start"
+                    sideOffset={12}
+                    className="construct-knowledge-popover"
+                  >
+                    <div className="construct-knowledge-popover-head">
+                      <div>
+                        <strong>{entry.concept.label}</strong>
+                        <span>{entry.concept.id}</span>
+                      </div>
+                      <span className={cn("construct-knowledge-popover-score", `is-${tone}`)}>
+                        {entry.concept.score}
+                      </span>
+                    </div>
+
+                    <div className="construct-knowledge-popover-meta">
+                      <span>{group.projectName}</span>
+                      <span>{entry.concept.category}</span>
+                      <span>{formatProjectTimestamp(group.latestUpdatedAt)}</span>
+                    </div>
+
+                    <p>{entry.concept.rationale}</p>
+
+                    <KnowledgeArtifactList
+                      artifacts={entry.artifacts}
+                      projectLookup={projectLookup}
+                      goalLookup={goalLookup}
+                      onOpenProject={onOpenProject}
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function KnowledgeArtifactList({
+  artifacts,
+  projectLookup,
+  goalLookup,
+  onOpenProject
+}: {
+  artifacts: KnowledgeArtifactRecord[];
+  projectLookup: Map<string, ProjectSummary>;
+  goalLookup: Map<string, StoredKnowledgeGoal>;
+  onOpenProject: (project: ProjectSummary, preferredStepId?: string | null) => void;
+}) {
+  if (artifacts.length === 0) {
+    return (
+      <div className="construct-knowledge-artifact-empty">
+        No revision anchors yet. Future project work will attach reusable notes and code
+        examples here.
+      </div>
+    );
+  }
+
+  return (
+    <div className="construct-knowledge-artifact-list">
+      {artifacts.slice(0, 4).map(({ key, artifact, conceptLabel }) => {
+        const linkedProject =
+          (artifact.projectId ? projectLookup.get(artifact.projectId) ?? null : null) ?? null;
+        const linkedGoal =
+          (artifact.projectId ? goalLookup.get(artifact.projectId) ?? null : null) ?? null;
+        const projectLabel =
+          artifact.projectName ??
+          linkedProject?.name ??
+          linkedGoal?.projectName ??
+          linkedGoal?.goal ??
+          artifact.projectGoal ??
+          "Project link pending";
+
+        return (
+          <div key={key} className="construct-knowledge-artifact-card">
+            <div className="construct-knowledge-artifact-head">
+              <div>
+                <strong>{artifact.title ?? conceptLabel}</strong>
+                <span>{artifact.stepTitle ?? projectLabel}</span>
+              </div>
+              <span>{formatProjectTimestamp(artifact.recordedAt)}</span>
+            </div>
+
+            <div className="construct-knowledge-artifact-meta">
+              <span>{artifact.source.replace("-", " ")}</span>
+              {artifact.filePath ? <span>{artifact.filePath}</span> : null}
+              {artifact.anchorMarker ? <span>{artifact.anchorMarker}</span> : null}
+            </div>
+
+            <p>{artifact.summary}</p>
+
+            {artifact.revisionNotes.length > 0 ? (
+              <ul className="construct-knowledge-artifact-notes">
+                {artifact.revisionNotes.slice(0, 3).map((note) => (
+                  <li key={`${key}:${note}`}>{note}</li>
+                ))}
+              </ul>
+            ) : null}
+
+            {artifact.codeExample ? (
+              <pre className="construct-knowledge-artifact-code">
+                <code>{artifact.codeExample}</code>
+              </pre>
+            ) : null}
+
+            <div className="construct-knowledge-artifact-footer">
+              <span>{artifact.revisitPrompt ?? `Revisit ${conceptLabel} from this project step.`}</span>
+              {linkedProject ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="construct-knowledge-link-button"
+                  onClick={() => {
+                    onOpenProject(linkedProject, artifact.stepId);
+                  }}
+                >
+                  {artifact.stepId ? "Open step" : "Open project"}
+                </Button>
+              ) : null}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function collectKnowledgeArtifactsForConcept(
+  concept: StoredKnowledgeConcept
+): KnowledgeArtifactRecord[] {
+  return concept.evidence
+    .map((artifact) => ({
+      key: `${concept.id}:${artifact.recordedAt}:${artifact.projectId ?? artifact.projectName ?? "none"}:${artifact.stepId ?? "step"}`,
+      conceptId: concept.id,
+      conceptLabel: concept.label,
+      conceptCategory: concept.category,
+      conceptScore: concept.score,
+      artifact
+    }))
+    .sort((left, right) => right.artifact.recordedAt.localeCompare(left.artifact.recordedAt));
+}
+
+function buildKnowledgeProjectGroups(
+  concepts: StoredKnowledgeConcept[],
+  projects: ProjectSummary[],
+  goals: StoredKnowledgeGoal[]
+): KnowledgeProjectGroup[] {
+  const projectLookup = new Map(projects.map((project) => [project.id, project]));
+  const goalLookup = new Map(
+    goals
+      .filter((goal) => goal.projectId)
+      .map((goal) => [goal.projectId!, goal])
+  );
+  const groupMap = new Map<
+    string,
+    {
+      projectId: string | null;
+      projectName: string;
+      projectGoal: string | null;
+      project: ProjectSummary | null;
+      goal: StoredKnowledgeGoal | null;
+      conceptEntries: Map<
+        string,
+        {
+          concept: StoredKnowledgeConcept;
+          artifacts: KnowledgeArtifactRecord[];
+        }
+      >;
+      artifactCount: number;
+      latestUpdatedAt: string;
+    }
+  >();
+
+  for (const concept of flattenKnowledgeConceptsForUi(concepts)) {
+    for (const artifact of collectKnowledgeArtifactsForConcept(concept)) {
+      const rawKey =
+        artifact.artifact.projectId ??
+        artifact.artifact.projectName?.trim().toLowerCase() ??
+        artifact.artifact.projectGoal?.trim().toLowerCase() ??
+        null;
+
+      if (!rawKey) {
+        continue;
+      }
+
+      const project =
+        (artifact.artifact.projectId
+          ? projectLookup.get(artifact.artifact.projectId) ?? null
+          : null) ?? null;
+      const goal =
+        (artifact.artifact.projectId ? goalLookup.get(artifact.artifact.projectId) ?? null : null) ??
+        null;
+      const key = artifact.artifact.projectId
+        ? `project:${artifact.artifact.projectId}`
+        : `project-name:${rawKey}`;
+      const existing =
+        groupMap.get(key) ??
+        {
+          projectId: artifact.artifact.projectId,
+          projectName:
+            artifact.artifact.projectName ??
+            project?.name ??
+            goal?.projectName ??
+            goal?.goal ??
+            "Project-linked knowledge",
+          projectGoal: artifact.artifact.projectGoal ?? project?.goal ?? goal?.goal ?? null,
+          project,
+          goal,
+          conceptEntries: new Map(),
+          artifactCount: 0,
+          latestUpdatedAt: artifact.artifact.recordedAt
+        };
+
+      const conceptEntry =
+        existing.conceptEntries.get(concept.id) ??
+        {
+          concept,
+          artifacts: []
+        };
+
+      conceptEntry.artifacts.push(artifact);
+      existing.conceptEntries.set(concept.id, conceptEntry);
+      existing.artifactCount += 1;
+
+      if (artifact.artifact.recordedAt > existing.latestUpdatedAt) {
+        existing.latestUpdatedAt = artifact.artifact.recordedAt;
+      }
+
+      groupMap.set(key, existing);
+    }
+  }
+
+  return Array.from(groupMap.entries())
+    .map(([key, group]) => ({
+      key,
+      projectId: group.projectId,
+      projectName: group.projectName,
+      projectGoal: group.projectGoal,
+      project: group.project,
+      goal: group.goal,
+      artifactCount: group.artifactCount,
+      latestUpdatedAt: group.latestUpdatedAt,
+      conceptEntries: Array.from(group.conceptEntries.values())
+        .map((entry) => ({
+          concept: entry.concept,
+          artifacts: entry.artifacts.sort((left, right) =>
+            right.artifact.recordedAt.localeCompare(left.artifact.recordedAt)
+          ),
+          latestArtifact:
+            entry.artifacts
+              .slice()
+              .sort((left, right) =>
+                right.artifact.recordedAt.localeCompare(left.artifact.recordedAt)
+              )[0]?.artifact ?? null
+        }))
+        .sort((left, right) => {
+          const leftTime = left.latestArtifact?.recordedAt ?? left.concept.updatedAt;
+          const rightTime = right.latestArtifact?.recordedAt ?? right.concept.updatedAt;
+
+          if (rightTime !== leftTime) {
+            return rightTime.localeCompare(leftTime);
+          }
+
+          return right.concept.score - left.concept.score;
+        })
+    }))
+    .sort((left, right) => right.latestUpdatedAt.localeCompare(left.latestUpdatedAt));
 }
 
 function PlanningOverlay({

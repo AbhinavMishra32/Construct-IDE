@@ -3409,6 +3409,39 @@ textarea {
   line-height: 1.65;
 }
 
+.construct-knowledge-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.construct-knowledge-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.construct-knowledge-tabs {
+  padding: 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--panel-soft) 72%, transparent);
+}
+
+.construct-knowledge-tabs [data-slot="tabs-trigger"] {
+  min-width: 88px;
+  border-radius: 999px;
+  padding-inline: 12px;
+  color: var(--text-soft);
+  font-size: 12px;
+}
+
+.construct-knowledge-tabs [data-slot="tabs-trigger"][data-state="active"] {
+  background: var(--panel-bg);
+  color: var(--text);
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--border-strong) 48%, transparent);
+}
+
 .construct-home-knowledge-tree {
   display: flex;
   flex-direction: column;
@@ -3597,9 +3630,9 @@ textarea {
 }
 
 .construct-knowledge-popover {
-  width: 320px;
+  width: min(430px, calc(100vw - 32px));
   display: grid;
-  gap: 12px;
+  gap: 14px;
 }
 
 .construct-knowledge-popover-head {
@@ -3667,6 +3700,96 @@ textarea {
   line-height: 1.65;
 }
 
+.construct-knowledge-artifact-list {
+  display: grid;
+  gap: 10px;
+}
+
+.construct-knowledge-artifact-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--panel-soft) 40%, transparent);
+}
+
+.construct-knowledge-artifact-head,
+.construct-knowledge-artifact-footer {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.construct-knowledge-artifact-head strong {
+  display: block;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.construct-knowledge-artifact-head span,
+.construct-knowledge-artifact-footer > span {
+  color: var(--text-soft);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.construct-knowledge-artifact-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  color: var(--text-soft);
+  font-size: 11px;
+  line-height: 1.5;
+  text-transform: capitalize;
+}
+
+.construct-knowledge-artifact-card > p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.construct-knowledge-artifact-notes {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.construct-knowledge-artifact-code {
+  margin: 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel-bg) 88%, black 4%);
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.construct-knowledge-artifact-empty {
+  padding: 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--panel-soft) 42%, transparent);
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.construct-knowledge-link-button {
+  height: 28px;
+  padding-inline: 10px;
+  border-radius: 999px;
+  font-size: 11px;
+}
+
 .construct-knowledge-popover-evidence {
   display: grid;
   gap: 4px;
@@ -3692,6 +3815,120 @@ textarea {
   align-items: center;
   gap: 10px;
   padding-top: 4px;
+}
+
+.construct-knowledge-project-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.construct-knowledge-project-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 4px;
+}
+
+.construct-knowledge-project-group + .construct-knowledge-project-group {
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.construct-knowledge-project-group-header,
+.construct-knowledge-project-header-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.construct-knowledge-project-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.construct-knowledge-project-title-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.construct-knowledge-project-title-wrap strong {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.construct-knowledge-project-title-wrap span {
+  color: var(--text-soft);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.construct-knowledge-project-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-left: 8px;
+}
+
+.construct-knowledge-project-row {
+  min-width: 0;
+}
+
+.construct-knowledge-project-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--panel-soft) 34%, transparent);
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 0.18s ease, border-color 0.18s ease;
+}
+
+.construct-knowledge-project-trigger:hover,
+.construct-knowledge-project-trigger.is-selected {
+  background: color-mix(in srgb, var(--panel-soft) 74%, transparent);
+  border-color: color-mix(in srgb, var(--border-strong) 54%, transparent);
+}
+
+.construct-knowledge-project-trigger-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.construct-knowledge-project-trigger-copy strong {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.4;
+  font-weight: 600;
+}
+
+.construct-knowledge-project-trigger-copy span,
+.construct-knowledge-project-trigger-meta {
+  color: var(--text-soft);
+  font-size: 11px;
+  line-height: 1.55;
 }
 
 .construct-home-knowledge-groups {
@@ -3848,6 +4085,14 @@ textarea {
     align-items: flex-start;
   }
 
+  .construct-knowledge-toolbar,
+  .construct-knowledge-project-group-header,
+  .construct-knowledge-artifact-head,
+  .construct-knowledge-artifact-footer {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
   .construct-knowledge-row {
     gap: 6px;
   }
@@ -3856,8 +4101,8 @@ textarea {
     margin-left: auto;
   }
 
-  .construct-knowledge-popover {
-    width: min(320px, calc(100vw - 32px));
+  .construct-knowledge-project-header-meta {
+    width: 100%;
   }
 }
 

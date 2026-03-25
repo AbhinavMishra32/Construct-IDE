@@ -632,11 +632,30 @@ test("ConstructAgentService creates question and plan jobs and persists the resu
     );
     const knowledgeBase = JSON.parse(knowledgeBaseRaw) as {
       concepts: StoredKnowledgeConcept[];
-      goals: Array<{ goal: string }>;
+      goals: Array<{ goal: string; projectId: string | null; projectName: string | null }>;
     };
 
-    assert.ok(findKnowledgeConcept(knowledgeBase.concepts, "rust.ownership"));
+    const ownershipConcept = findKnowledgeConcept(knowledgeBase.concepts, "rust.ownership");
+
+    assert.ok(ownershipConcept);
     assert.equal(knowledgeBase.goals[0]?.goal, "build a C compiler in Rust");
+    assert.equal(knowledgeBase.goals[0]?.projectId, questionSession.session.sessionId);
+    assert.equal(knowledgeBase.goals[0]?.projectName, "build a C compiler in Rust");
+    assert.ok(
+      ownershipConcept?.evidence.some(
+        (entry) =>
+          entry.projectId === questionSession.session.sessionId &&
+          (entry.stepTitle !== null || entry.projectGoal === "build a C compiler in Rust")
+      )
+    );
+    assert.ok(
+      ownershipConcept?.evidence.some(
+        (entry) =>
+          entry.revisionNotes.length > 0 ||
+          entry.codeExample !== null ||
+          entry.revisitPrompt !== null
+      )
+    );
 
     const resumedService = new ConstructAgentService(root, {
       now: () => new Date("2026-03-15T00:00:00.000Z")
@@ -1567,8 +1586,13 @@ test("ConstructAgentService skips broad research for small local goals", async (
     const classesConcept = findKnowledgeConcept(knowledgeBase.concepts, "python.classes");
 
     assert.ok(classesConcept);
-    assert.equal(classesConcept?.source, "self-report");
-    assert.match(classesConcept?.rationale ?? "", /built one tiny CLI before/i);
+    assert.ok(
+      classesConcept?.evidence.some(
+        (entry) =>
+          entry.source === "self-report" &&
+          /built one tiny CLI before/i.test(entry.summary)
+      )
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }

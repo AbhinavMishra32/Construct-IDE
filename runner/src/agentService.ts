@@ -734,7 +734,10 @@ export class ConstructAgentService {
       concepts: input.concepts,
       check: input.check,
       review: review.review,
-      attemptCount: input.attemptCount
+      attemptCount: input.attemptCount,
+      stepId: input.stepId,
+      stepTitle: input.stepTitle,
+      stepSummary: input.stepSummary
     });
 
     await this.recordAdaptiveFrontierDiagnostic({
@@ -1362,6 +1365,12 @@ export class ConstructAgentService {
   }): Promise<void> {
     const knowledgeBase = await this.readKnowledgeBase();
     const timestamp = this.now().toISOString();
+    const projectContext = await this.getKnowledgeProjectContext({
+      stepId: input.step.id,
+      stepTitle: input.step.title,
+      fallbackFilePath: input.step.anchor.file,
+      fallbackAnchorMarker: input.step.anchor.marker
+    });
     const score = taskOutcomeToScore({
       status: input.status,
       hintsUsed: input.telemetry.hintsUsed,
@@ -1374,7 +1383,23 @@ export class ConstructAgentService {
         score,
         source: "task-performance",
         recordedAt: timestamp,
-        rationale: `${input.step.title}: ${input.status} with hints=${input.telemetry.hintsUsed}, pasteRatio=${input.telemetry.pasteRatio.toFixed(2)}.`
+        rationale: `${input.step.title} ended ${input.status}. Hidden-test telemetry recorded hints=${input.telemetry.hintsUsed} and pasteRatio=${input.telemetry.pasteRatio.toFixed(2)}.`,
+        title: `Worked on ${input.step.title}`,
+        projectId: projectContext.projectId,
+        projectName: projectContext.projectName,
+        projectGoal: projectContext.projectGoal,
+        stepId: input.step.id,
+        stepTitle: input.step.title,
+        filePath: projectContext.filePath,
+        anchorMarker: projectContext.anchorMarker,
+        revisionNotes: [
+          input.step.summary,
+          `Submission status: ${input.status}.`,
+          input.telemetry.hintsUsed > 0 ? `Hints used: ${input.telemetry.hintsUsed}.` : "",
+          input.telemetry.pasteRatio > 0 ? `Paste ratio: ${input.telemetry.pasteRatio.toFixed(2)}.` : ""
+        ],
+        codeExample: projectContext.codeExample,
+        revisitPrompt: `Re-open ${input.step.title} and inspect the anchored implementation path.`
       }
     );
 
@@ -1390,9 +1415,16 @@ export class ConstructAgentService {
     check: ComprehensionCheck;
     review: CheckReviewResponse["review"];
     attemptCount: number;
+    stepId: string;
+    stepTitle: string;
+    stepSummary: string;
   }): Promise<void> {
     const knowledgeBase = await this.readKnowledgeBase();
     const timestamp = this.now().toISOString();
+    const projectContext = await this.getKnowledgeProjectContext({
+      stepId: input.stepId,
+      stepTitle: input.stepTitle
+    });
     const score = input.review.status === "complete"
       ? Math.max(58, 80 - input.attemptCount * 6)
       : Math.max(18, 42 - input.attemptCount * 4);
@@ -1403,7 +1435,22 @@ export class ConstructAgentService {
         score,
         source: "quiz-review",
         recordedAt: timestamp,
-        rationale: `${input.check.prompt} ${input.review.message}`
+        rationale: `${input.stepTitle}: ${input.review.message}`,
+        title: `Review ${input.stepTitle}`,
+        projectId: projectContext.projectId,
+        projectName: projectContext.projectName,
+        projectGoal: projectContext.projectGoal,
+        stepId: input.stepId,
+        stepTitle: input.stepTitle,
+        filePath: projectContext.filePath,
+        anchorMarker: projectContext.anchorMarker,
+        revisionNotes: [
+          input.stepSummary,
+          input.check.prompt,
+          input.review.message
+        ],
+        codeExample: projectContext.codeExample,
+        revisitPrompt: `Revisit ${input.stepTitle} and answer why ${input.check.prompt}`
       }
     );
 
@@ -1422,6 +1469,17 @@ export class ConstructAgentService {
       source: "self-report" | "agent-inferred" | "task-performance" | "quiz-review" | "runtime-guide";
       recordedAt: string;
       rationale: string;
+      title?: string | null;
+      projectId?: string | null;
+      projectName?: string | null;
+      projectGoal?: string | null;
+      stepId?: string | null;
+      stepTitle?: string | null;
+      filePath?: string | null;
+      anchorMarker?: string | null;
+      revisionNotes?: string[];
+      codeExample?: string | null;
+      revisitPrompt?: string | null;
     }
   ) {
     const flattened = flattenKnowledgeConcepts(knowledgeBase.concepts);
@@ -1440,9 +1498,75 @@ export class ConstructAgentService {
           rationale: input.rationale,
           source: input.source,
           recordedAt: input.recordedAt,
-          labelPath: getKnowledgeConceptLabelPath(knowledgeBase.concepts, conceptId) ?? undefined
+          labelPath: getKnowledgeConceptLabelPath(knowledgeBase.concepts, conceptId) ?? undefined,
+          evidenceTitle: input.title ?? null,
+          projectId: input.projectId ?? null,
+          projectName: input.projectName ?? null,
+          projectGoal: input.projectGoal ?? null,
+          stepId: input.stepId ?? null,
+          stepTitle: input.stepTitle ?? null,
+          filePath: input.filePath ?? null,
+          anchorMarker: input.anchorMarker ?? null,
+          revisionNotes: input.revisionNotes?.filter(Boolean) ?? [],
+          codeExample: input.codeExample ?? null,
+          revisitPrompt: input.revisitPrompt ?? null
         };
       });
+  }
+
+  private async getKnowledgeProjectContext(input: {
+    stepId?: string | null;
+    stepTitle?: string | null;
+    fallbackFilePath?: string | null;
+    fallbackAnchorMarker?: string | null;
+  }): Promise<{
+    projectId: string | null;
+    projectName: string | null;
+    projectGoal: string | null;
+    stepId: string | null;
+    stepTitle: string | null;
+    filePath: string | null;
+    anchorMarker: string | null;
+    codeExample: string | null;
+  }> {
+    const activeProject = await this.persistence.getActiveProject();
+    const base = {
+      projectId: activeProject?.id ?? null,
+      projectName: activeProject?.name ?? null,
+      projectGoal: activeProject?.goal ?? null,
+      stepId: input.stepId ?? activeProject?.currentStepId ?? null,
+      stepTitle: input.stepTitle ?? activeProject?.currentStepTitle ?? null,
+      filePath: input.fallbackFilePath ?? null,
+      anchorMarker: input.fallbackAnchorMarker ?? null,
+      codeExample: null as string | null
+    };
+
+    if (!activeProject?.blueprintPath || !base.stepId) {
+      return base;
+    }
+
+    try {
+      const blueprint = await loadBlueprint(activeProject.blueprintPath);
+      const step =
+        getBlueprintRuntimeSteps(blueprint).find((entry) => entry.id === base.stepId) ?? null;
+
+      if (!step) {
+        return base;
+      }
+
+      return {
+        ...base,
+        stepTitle: step.title,
+        filePath: step.anchor.file,
+        anchorMarker: step.anchor.marker,
+        codeExample: extractKnowledgeCodeExample(
+          blueprint.files[step.anchor.file] ?? "",
+          step.anchor.marker
+        )
+      };
+    } catch {
+      return base;
+    }
   }
 
   private async getLlm(): Promise<StructuredLanguageModel> {
@@ -4057,6 +4181,7 @@ export class ConstructAgentService {
       completedAt: this.now().toISOString(),
       lastError: null
     }));
+    await this.recordBlueprintKnowledgeArtifacts(session, blueprint);
     this.logger.info("Persisted generated blueprint and activated it.", {
       sessionId: session.sessionId,
       blueprintPath,
@@ -4183,7 +4308,11 @@ export class ConstructAgentService {
         rationale: signal.rationale,
         source: "self-report" as const,
         recordedAt: timestamp,
-        labelPath: signal.labelPath
+        labelPath: signal.labelPath,
+        evidenceTitle: `Project brief signal for ${signal.label}`,
+        projectGoal: goal,
+        revisionNotes: [signal.rationale],
+        revisitPrompt: `Revisit the original project brief to remember why ${signal.label} matters here.`
       }))
     );
 
@@ -4208,52 +4337,98 @@ export class ConstructAgentService {
       goal: session.goal,
       language: session.detectedLanguage,
       domain: session.detectedDomain,
-      lastPlannedAt: timestamp
+      lastPlannedAt: timestamp,
+      projectId: session.sessionId,
+      projectName: session.goal
     };
 
     const answerSignals = resolvedAnswers.flatMap((answer) => {
+      const conceptLabel =
+        getKnowledgeConceptLabelPath(current.concepts, answer.conceptId)?.at(-1) ??
+        labelForConceptId(answer.conceptId);
+      const linkedStep =
+        plan.steps.find((step) => step.concepts.includes(answer.conceptId)) ?? null;
+
       if (answer.selectedOption) {
         return [
           {
             conceptId: answer.conceptId,
-            label: answer.prompt,
+            label: conceptLabel,
             category: answer.category,
             score: confidenceToScore(answer.selectedOption.confidenceSignal),
-            rationale: `${answer.prompt} Answered: ${answer.selectedOption.label}. ${answer.selectedOption.description}`,
+            rationale: `${answer.selectedOption.label}. ${answer.selectedOption.description}`,
             source: "self-report" as const,
-            recordedAt: timestamp
+            recordedAt: timestamp,
+            evidenceTitle: `Project intake for ${conceptLabel}`,
+            projectId: session.sessionId,
+            projectName: session.goal,
+            projectGoal: session.goal,
+            stepId: linkedStep?.id ?? null,
+            stepTitle: linkedStep?.title ?? null,
+            filePath: linkedStep?.suggestedFiles[0] ?? null,
+            revisionNotes: [answer.prompt, linkedStep?.objective ?? ""].filter(Boolean),
+            revisitPrompt: answer.prompt
           }
         ];
       }
 
-      if (!answer.customResponse) {
+      if (answer.answerType === "skipped" || !answer.customResponse) {
         return [];
       }
 
       return [
         {
           conceptId: answer.conceptId,
-          label: answer.prompt,
+          label: conceptLabel,
           category: answer.category,
           score: scoreCustomSelfReport(answer.customResponse),
-          rationale: `${answer.prompt} Learner described their experience in their own words: ${answer.customResponse}`,
+          rationale: answer.customResponse,
           source: "self-report" as const,
           recordedAt: timestamp,
-          labelPath: getKnowledgeConceptLabelPath(current.concepts, answer.conceptId) ?? undefined
+          labelPath: getKnowledgeConceptLabelPath(current.concepts, answer.conceptId) ?? undefined,
+          evidenceTitle: `Project intake for ${conceptLabel}`,
+          projectId: session.sessionId,
+          projectName: session.goal,
+          projectGoal: session.goal,
+          stepId: linkedStep?.id ?? null,
+          stepTitle: linkedStep?.title ?? null,
+          filePath: linkedStep?.suggestedFiles[0] ?? null,
+          revisionNotes: [answer.prompt, linkedStep?.objective ?? ""].filter(Boolean),
+          revisitPrompt: answer.prompt
         }
       ];
     });
 
-    const planSignals = plan.knowledgeGraph.concepts.map((concept) => ({
-      conceptId: concept.id,
-      label: concept.label,
-      category: concept.category,
-      score: concept.masteryScore ?? confidenceToScore(concept.confidence ?? "shaky"),
-      rationale: concept.rationale,
-      source: "agent-inferred" as const,
-      recordedAt: timestamp,
-      labelPath: concept.labelPath
-    }));
+    const planSignals = plan.knowledgeGraph.concepts.map((concept) => {
+      const linkedStep =
+        plan.steps.find((step) => step.concepts.includes(concept.id)) ?? null;
+
+      return {
+        conceptId: concept.id,
+        label: concept.label,
+        category: concept.category,
+        score: concept.masteryScore ?? confidenceToScore(concept.confidence ?? "shaky"),
+        rationale: linkedStep?.objective ?? concept.rationale,
+        source: "agent-inferred" as const,
+        recordedAt: timestamp,
+        labelPath: concept.labelPath,
+        evidenceTitle: linkedStep ? `Project step: ${linkedStep.title}` : `Project map: ${concept.label}`,
+        projectId: session.sessionId,
+        projectName: session.goal,
+        projectGoal: session.goal,
+        stepId: linkedStep?.id ?? null,
+        stepTitle: linkedStep?.title ?? null,
+        filePath: linkedStep?.suggestedFiles[0] ?? null,
+        revisionNotes: [
+          concept.rationale,
+          linkedStep?.rationale ?? "",
+          ...(linkedStep?.implementationNotes ?? []).slice(0, 2)
+        ].filter(Boolean),
+        revisitPrompt:
+          linkedStep?.objective ??
+          `Revisit how ${concept.label} fits into ${session.goal}.`
+      };
+    });
 
     const nextKnowledgeBase = applyKnowledgeSignals(
       current,
@@ -4268,6 +4443,59 @@ export class ConstructAgentService {
       conceptCount: countKnowledgeConceptNodes(nextKnowledgeBase.concepts),
       goalCount: nextKnowledgeBase.goals.length
     });
+  }
+
+  private async recordBlueprintKnowledgeArtifacts(
+    session: PlanningSession,
+    blueprint: ProjectBlueprint
+  ): Promise<void> {
+    const knowledgeBase = await this.readKnowledgeBase();
+    const timestamp = this.now().toISOString();
+    const flattenedConcepts = new Map(
+      flattenKnowledgeConcepts(knowledgeBase.concepts).map((concept) => [concept.id, concept])
+    );
+    const runtimeSteps = getBlueprintRuntimeSteps(blueprint);
+    const signals = runtimeSteps.flatMap((step) =>
+      step.concepts.map((conceptId) => {
+        const existing = flattenedConcepts.get(conceptId) ?? null;
+        const codeExample = extractKnowledgeCodeExample(
+          blueprint.files[step.anchor.file] ?? "",
+          step.anchor.marker
+        );
+
+        return {
+          conceptId,
+          label: existing?.label ?? labelForConceptId(conceptId),
+          category: existing?.category ?? inferKnowledgeCategory(conceptId),
+          score: existing?.score ?? 58,
+          rationale: step.summary,
+          source: "agent-inferred" as const,
+          recordedAt: timestamp,
+          labelPath: getKnowledgeConceptLabelPath(knowledgeBase.concepts, conceptId) ?? undefined,
+          evidenceTitle: `Revision anchor: ${step.title}`,
+          projectId: session.sessionId,
+          projectName: blueprint.name,
+          projectGoal: session.goal,
+          stepId: step.id,
+          stepTitle: step.title,
+          filePath: step.anchor.file,
+          anchorMarker: step.anchor.marker,
+          revisionNotes: [
+            step.summary,
+            ...step.constraints.slice(0, 2),
+            ...step.tests.slice(0, 1).map((testPath) => `Validation lives in ${testPath}.`)
+          ].filter(Boolean),
+          codeExample,
+          revisitPrompt: `Open ${step.title} to revisit ${existing?.label ?? labelForConceptId(conceptId)}.`
+        };
+      })
+    );
+
+    if (signals.length === 0) {
+      return;
+    }
+
+    await this.persistence.setKnowledgeBase(applyKnowledgeSignals(knowledgeBase, signals));
   }
 
   private async runDependencyInstallStage(
@@ -5286,6 +5514,23 @@ function labelForConceptId(conceptId: string): string {
     .filter(Boolean)
     .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
     .join(" ");
+}
+
+function extractKnowledgeCodeExample(content: string, marker: string): string | null {
+  if (!content.trim()) {
+    return null;
+  }
+
+  const lines = content.split("\n");
+  const markerIndex = lines.findIndex((line) => line.includes(marker));
+  const start = markerIndex === -1 ? 0 : Math.max(0, markerIndex - 1);
+  const end = markerIndex === -1 ? Math.min(lines.length, 8) : Math.min(lines.length, markerIndex + 7);
+  const snippet = lines
+    .slice(start, end)
+    .join("\n")
+    .trim();
+
+  return snippet.length > 0 ? snippet : null;
 }
 
 function inferKnowledgeCategory(conceptId: string): "language" | "domain" | "workflow" {

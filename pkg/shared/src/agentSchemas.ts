@@ -149,7 +149,18 @@ export const KnowledgeEvidenceSchema = z.object({
   source: KnowledgeSourceSchema,
   score: KnowledgeMasteryScoreSchema,
   summary: z.string().min(1),
-  recordedAt: z.string().datetime()
+  recordedAt: z.string().datetime(),
+  title: z.string().min(1).nullable().default(null),
+  projectId: z.string().min(1).nullable().default(null),
+  projectName: z.string().min(1).nullable().default(null),
+  projectGoal: z.string().min(1).nullable().default(null),
+  stepId: z.string().min(1).nullable().default(null),
+  stepTitle: z.string().min(1).nullable().default(null),
+  filePath: z.string().min(1).nullable().default(null),
+  anchorMarker: z.string().min(1).nullable().default(null),
+  revisionNotes: z.array(z.string().min(1)).default([]),
+  codeExample: z.string().min(1).nullable().default(null),
+  revisitPrompt: z.string().min(1).nullable().default(null)
 });
 
 type StoredKnowledgeConceptShape = {
@@ -165,7 +176,16 @@ type StoredKnowledgeConceptShape = {
   children: StoredKnowledgeConceptShape[];
 };
 
-export const StoredKnowledgeConceptSchema: z.ZodType<StoredKnowledgeConceptShape> = z.lazy(() =>
+type StoredKnowledgeConceptInputShape = Omit<StoredKnowledgeConceptShape, "evidence" | "children"> & {
+  evidence: Array<z.input<typeof KnowledgeEvidenceSchema>>;
+  children: StoredKnowledgeConceptInputShape[];
+};
+
+export const StoredKnowledgeConceptSchema: z.ZodType<
+  StoredKnowledgeConceptShape,
+  z.ZodTypeDef,
+  StoredKnowledgeConceptInputShape
+> = z.lazy(() =>
   z.object({
     id: z.string().min(1),
     label: z.string().min(1),
@@ -184,7 +204,9 @@ export const StoredKnowledgeGoalSchema = z.object({
   goal: z.string().min(3),
   language: z.string().min(1),
   domain: z.string().min(1),
-  lastPlannedAt: z.string().datetime()
+  lastPlannedAt: z.string().datetime(),
+  projectId: z.string().min(1).nullable().default(null),
+  projectName: z.string().min(1).nullable().default(null)
 });
 
 export const UserKnowledgeBaseSchema = z.object({
