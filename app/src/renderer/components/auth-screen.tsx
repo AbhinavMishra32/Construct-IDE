@@ -1,31 +1,18 @@
 import {
-  ActivityIcon,
   DatabaseIcon,
   KeyRoundIcon,
   Layers3Icon,
-  LockKeyholeIcon,
-  SparklesIcon,
-  WaypointsIcon
+  ShieldCheckIcon,
+  SparklesIcon
 } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 import type { AuthProviderOption, RunnerHealth } from "../types";
@@ -76,315 +63,220 @@ export function AuthScreen({
   return (
     <div className="construct-auth-shell">
       <div className="construct-auth-backdrop" />
-      <section className="construct-auth-window">
-        <header className="construct-auth-window-bar">
-          <div className="construct-auth-window-title">
-            <div className="construct-auth-window-dots" aria-hidden="true">
-              <span />
-              <span />
-              <span />
-            </div>
-            <div className="construct-auth-window-copy">
-              <strong>Construct IDE</strong>
-              <span>Account access for your local workspace</span>
-            </div>
+      <section className="construct-auth-stage">
+        <aside className="construct-auth-hero">
+          <Badge variant="outline" className="construct-auth-badge">
+            Native accounts + provider-ready auth
+          </Badge>
+
+          <div className="construct-auth-copy">
+            <h1>{mode === "login" ? "Sign in to Construct." : "Create your Construct account."}</h1>
+            <p>
+              Keep your projects, saved provider credentials, and future external account links
+              behind one native account system without rewriting auth again later.
+            </p>
           </div>
 
-          <div className="construct-auth-window-status">
-            <Badge variant="outline">Runner {runnerHealth?.status ?? "offline"}</Badge>
-            <Badge variant={authReady ? "secondary" : "outline"}>
-              {authReady ? "Account storage ready" : "Database setup needed"}
+          <div className="construct-auth-feature-list">
+            <FeatureCard
+              icon={<ShieldCheckIcon className="size-4" />}
+              title="Own auth system"
+              description="Email/password accounts, durable sessions, and no external auth vendor lock-in."
+            />
+            <FeatureCard
+              icon={<Layers3Icon className="size-4" />}
+              title="Provider foundation"
+              description="OpenAI, Codex, Tavily, LangSmith, and future providers fit the same connection model."
+            />
+            <FeatureCard
+              icon={<KeyRoundIcon className="size-4" />}
+              title="Encrypted secrets"
+              description="API keys and future OAuth tokens stay behind the runner encryption layer."
+            />
+          </div>
+
+          <div className="construct-auth-status-row">
+            <Badge variant="outline" className="construct-auth-status-pill">
+              Runner {runnerHealth?.status ?? "offline"}
+            </Badge>
+            <Badge variant={authReady ? "secondary" : "outline"} className="construct-auth-status-pill">
+              {authReady ? "Database auth ready" : "Database setup needed"}
             </Badge>
           </div>
-        </header>
+        </aside>
 
-        <div className="construct-auth-stage">
-          <aside className="construct-auth-sidebar">
-            <ScrollArea className="construct-auth-sidebar-scroll">
-              <div className="construct-auth-sidebar-stack">
-                <Card className="construct-auth-panel-card">
-                  <CardHeader>
-                    <div className="construct-auth-panel-headline">
-                      <Avatar size="lg">
-                        <AvatarFallback>CI</AvatarFallback>
-                      </Avatar>
-                      <div className="construct-auth-panel-copy">
-                        <CardTitle>Open your build workspace</CardTitle>
-                        <CardDescription>
-                          Construct is a desktop workbench. Your account unlocks projects,
-                          encrypted provider connections, and resumable agent runs without
-                          turning the app into a browser dashboard.
-                        </CardDescription>
-                      </div>
+        <Card className="construct-auth-card">
+          <CardHeader className="construct-auth-card-header">
+            <div className="construct-auth-card-kicker">
+              <SparklesIcon className="size-4" />
+              <span>{mode === "login" ? "Welcome back" : "Create your account"}</span>
+            </div>
+            <CardTitle>
+              {mode === "login" ? "Sign in to continue" : "Create a Construct account"}
+            </CardTitle>
+            <CardDescription>
+              {mode === "login"
+                ? "Use your Construct account now. External OpenAI and Codex login can plug in here later."
+                : "This account will own your projects, provider links, and saved credentials."}
+            </CardDescription>
+          </CardHeader>
+
+          <CardContent className="construct-auth-card-body">
+            <Tabs
+              value={mode}
+              onValueChange={(value) => {
+                if (value === "login" || value === "signup") {
+                  onModeChange(value);
+                }
+              }}
+              className="construct-auth-tabs"
+            >
+              <TabsList className="construct-auth-tabs-list">
+                <TabsTrigger value="login">Sign in</TabsTrigger>
+                <TabsTrigger value="signup">Create account</TabsTrigger>
+              </TabsList>
+
+              <div className="construct-auth-provider-stack">
+                {oauthProviders.map((provider) => (
+                  <Button
+                    key={provider.id}
+                    type="button"
+                    variant="outline"
+                    className="construct-auth-provider-button"
+                    disabled
+                  >
+                    <div className="construct-auth-provider-copy">
+                      <strong>{provider.label}</strong>
+                      <span>{provider.description}</span>
                     </div>
-                  </CardHeader>
-                  <CardContent className="construct-auth-panel-grid">
-                    <PanelMetric
-                      icon={<Layers3Icon className="size-4" />}
-                      label="Project state"
-                      value="Synced across sessions"
-                    />
-                    <PanelMetric
-                      icon={<KeyRoundIcon className="size-4" />}
-                      label="Provider auth"
-                      value="API keys now, OAuth later"
-                    />
-                    <PanelMetric
-                      icon={<WaypointsIcon className="size-4" />}
-                      label="Agent continuity"
-                      value="Ready for resumable runs"
-                    />
-                  </CardContent>
-                </Card>
-
-                <Card size="sm" className="construct-auth-panel-card">
-                  <CardHeader>
-                    <CardTitle>What the account layer owns</CardTitle>
-                    <CardDescription>
-                      The runner stays local. The account system gives it durable ownership and
-                      safer credential handling.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="construct-auth-workspace-list">
-                    <SidebarRow
-                      icon={<DatabaseIcon className="size-4" />}
-                      title="Saved project state"
-                      description="Planning sessions, generated paths, and future user ownership."
-                    />
-                    <SidebarRow
-                      icon={<LockKeyholeIcon className="size-4" />}
-                      title="Encrypted provider secrets"
-                      description="Stored behind the runner encryption layer instead of loose env vars."
-                    />
-                    <SidebarRow
-                      icon={<ActivityIcon className="size-4" />}
-                      title="Per-user agent runtime"
-                      description="LangGraph provider config resolves per authenticated session."
-                    />
-                  </CardContent>
-                </Card>
-
-                <Card size="sm" className="construct-auth-panel-card">
-                  <CardHeader>
-                    <CardTitle>External provider entry points</CardTitle>
-                    <CardDescription>
-                      These providers already have a place in the auth model, so OAuth can land
-                      without another architecture rewrite.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="construct-auth-provider-list">
-                    {oauthProviders.map((provider) => (
-                      <ProviderPreviewCard key={provider.id} provider={provider} />
-                    ))}
-                  </CardContent>
-                </Card>
+                    <Badge variant="outline">
+                      {provider.comingSoon ? "Coming soon" : provider.buttonLabel}
+                    </Badge>
+                  </Button>
+                ))}
               </div>
-            </ScrollArea>
-          </aside>
 
-          <div className="construct-auth-card-shell">
-            <Card className="construct-auth-card">
-              <CardHeader className="construct-auth-card-header">
-                <div className="construct-auth-card-kicker">
-                  <SparklesIcon className="size-4" />
-                  <span>{mode === "login" ? "Workspace access" : "Account bootstrap"}</span>
-                </div>
-                <CardTitle>
-                  {mode === "login" ? "Sign in to continue" : "Create your Construct account"}
-                </CardTitle>
-                <CardDescription>
-                  {mode === "login"
-                    ? "Pick up your projects, provider links, and saved runner state right where you left them."
-                    : "This creates the native account layer that future OpenAI and Codex login flows will attach to."}
-                </CardDescription>
-              </CardHeader>
+              {!authReady ? (
+                <Alert className="construct-auth-alert">
+                  <DatabaseIcon className="size-4" />
+                  <AlertTitle>Database setup is still needed</AlertTitle>
+                  <AlertDescription>
+                    Configure `DATABASE_URL` so Construct can persist users, sessions, and encrypted
+                    provider settings.
+                  </AlertDescription>
+                </Alert>
+              ) : null}
 
-              <CardContent className="construct-auth-card-body">
-                <Tabs
-                  value={mode}
-                  onValueChange={(value) => {
-                    if (value === "login" || value === "signup") {
-                      onModeChange(value);
-                    }
-                  }}
-                  className="construct-auth-tabs"
-                >
-                  <TabsList className="construct-auth-tabs-list">
-                    <TabsTrigger value="login">Sign in</TabsTrigger>
-                    <TabsTrigger value="signup">Create account</TabsTrigger>
-                  </TabsList>
+              {authError ? (
+                <Alert variant="destructive" className="construct-auth-alert">
+                  <ShieldCheckIcon className="size-4" />
+                  <AlertTitle>Authentication failed</AlertTitle>
+                  <AlertDescription>{authError}</AlertDescription>
+                </Alert>
+              ) : null}
 
-                  <div className="construct-auth-provider-stack">
-                    {oauthProviders.map((provider) => (
-                      <Button
-                        key={provider.id}
-                        type="button"
-                        variant="outline"
-                        className="construct-auth-provider-button"
-                        disabled
-                      >
-                        <div className="construct-auth-provider-copy">
-                          <strong>{provider.label}</strong>
-                          <span>{provider.description}</span>
-                        </div>
-                        <Badge variant="outline">
-                          {provider.comingSoon ? "Coming soon" : provider.buttonLabel}
-                        </Badge>
-                      </Button>
-                    ))}
-                  </div>
+              <TabsContent value="login">
+                <FieldGroup className="construct-auth-form">
+                  <Field>
+                    <FieldLabel>Email</FieldLabel>
+                    <Input
+                      value={loginEmail}
+                      onChange={(event) => {
+                        onLoginEmailChange(event.target.value);
+                      }}
+                      placeholder="you@company.com"
+                      autoComplete="email"
+                      disabled={authBusy}
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel>Password</FieldLabel>
+                    <Input
+                      type="password"
+                      value={loginPassword}
+                      onChange={(event) => {
+                        onLoginPasswordChange(event.target.value);
+                      }}
+                      placeholder="Enter your password"
+                      autoComplete="current-password"
+                      disabled={authBusy}
+                    />
+                  </Field>
+                  <Button
+                    type="button"
+                    className="construct-auth-submit"
+                    disabled={authBusy || !authReady}
+                    onClick={onSubmitLogin}
+                  >
+                    {authBusy ? "Signing in..." : "Sign in"}
+                  </Button>
+                </FieldGroup>
+              </TabsContent>
 
-                  <Separator />
-
-                  {!authReady ? (
-                    <Alert>
-                      <DatabaseIcon className="size-4" />
-                      <AlertTitle>Database setup is still needed</AlertTitle>
-                      <AlertDescription>
-                        Configure `DATABASE_URL` so Construct can persist users, sessions, and
-                        encrypted provider settings.
-                      </AlertDescription>
-                    </Alert>
-                  ) : null}
-
-                  {authError ? (
-                    <Alert variant="destructive">
-                      <LockKeyholeIcon className="size-4" />
-                      <AlertTitle>Authentication failed</AlertTitle>
-                      <AlertDescription>{authError}</AlertDescription>
-                    </Alert>
-                  ) : null}
-
-                  <TabsContent value="login">
-                    <FieldGroup className="construct-auth-form">
-                      <Field>
-                        <FieldLabel>Email</FieldLabel>
-                        <Input
-                          value={loginEmail}
-                          onChange={(event) => {
-                            onLoginEmailChange(event.target.value);
-                          }}
-                          placeholder="you@company.com"
-                          autoComplete="email"
-                          disabled={authBusy}
-                        />
-                      </Field>
-                      <Field>
-                        <FieldLabel>Password</FieldLabel>
-                        <Input
-                          type="password"
-                          value={loginPassword}
-                          onChange={(event) => {
-                            onLoginPasswordChange(event.target.value);
-                          }}
-                          placeholder="Enter your password"
-                          autoComplete="current-password"
-                          disabled={authBusy}
-                        />
-                      </Field>
-                      <Button
-                        type="button"
-                        className="construct-auth-submit"
-                        disabled={authBusy || !authReady}
-                        onClick={onSubmitLogin}
-                      >
-                        {authBusy ? "Signing in..." : "Sign in"}
-                      </Button>
-                    </FieldGroup>
-                  </TabsContent>
-
-                  <TabsContent value="signup">
-                    <FieldGroup className="construct-auth-form">
-                      <Field>
-                        <FieldLabel>Display name</FieldLabel>
-                        <Input
-                          value={signupDisplayName}
-                          onChange={(event) => {
-                            onSignupDisplayNameChange(event.target.value);
-                          }}
-                          placeholder="Abhinav"
-                          autoComplete="name"
-                          disabled={authBusy}
-                        />
-                        <FieldDescription>
-                          This name shows up in the workspace and account panel.
-                        </FieldDescription>
-                      </Field>
-                      <Field>
-                        <FieldLabel>Email</FieldLabel>
-                        <Input
-                          value={signupEmail}
-                          onChange={(event) => {
-                            onSignupEmailChange(event.target.value);
-                          }}
-                          placeholder="you@company.com"
-                          autoComplete="email"
-                          disabled={authBusy}
-                        />
-                      </Field>
-                      <Field>
-                        <FieldLabel>Password</FieldLabel>
-                        <Input
-                          type="password"
-                          value={signupPassword}
-                          onChange={(event) => {
-                            onSignupPasswordChange(event.target.value);
-                          }}
-                          placeholder="Use at least 10 characters"
-                          autoComplete="new-password"
-                          disabled={authBusy}
-                        />
-                        <FieldDescription>
-                          Construct stores a password hash, never the raw password.
-                        </FieldDescription>
-                      </Field>
-                      <Button
-                        type="button"
-                        className="construct-auth-submit"
-                        disabled={authBusy || !authReady}
-                        onClick={onSubmitSignup}
-                      >
-                        {authBusy ? "Creating account..." : "Create account"}
-                      </Button>
-                    </FieldGroup>
-                  </TabsContent>
-                </Tabs>
-              </CardContent>
-
-              <CardFooter className="construct-auth-card-footer">
-                <span>Desktop-first auth foundation</span>
-                <Separator orientation="vertical" className="construct-auth-card-footer-separator" />
-                <span>External provider login slots already reserved</span>
-              </CardFooter>
-            </Card>
-          </div>
-        </div>
+              <TabsContent value="signup">
+                <FieldGroup className="construct-auth-form">
+                  <Field>
+                    <FieldLabel>Display name</FieldLabel>
+                    <Input
+                      value={signupDisplayName}
+                      onChange={(event) => {
+                        onSignupDisplayNameChange(event.target.value);
+                      }}
+                      placeholder="Abhinav"
+                      autoComplete="name"
+                      disabled={authBusy}
+                    />
+                    <FieldDescription>
+                      This is what Construct shows in the workspace and account panel.
+                    </FieldDescription>
+                  </Field>
+                  <Field>
+                    <FieldLabel>Email</FieldLabel>
+                    <Input
+                      value={signupEmail}
+                      onChange={(event) => {
+                        onSignupEmailChange(event.target.value);
+                      }}
+                      placeholder="you@company.com"
+                      autoComplete="email"
+                      disabled={authBusy}
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel>Password</FieldLabel>
+                    <Input
+                      type="password"
+                      value={signupPassword}
+                      onChange={(event) => {
+                        onSignupPasswordChange(event.target.value);
+                      }}
+                      placeholder="Use at least 10 characters"
+                      autoComplete="new-password"
+                      disabled={authBusy}
+                    />
+                    <FieldDescription>
+                      Construct stores a password hash, not the raw password.
+                    </FieldDescription>
+                  </Field>
+                  <Button
+                    type="button"
+                    className="construct-auth-submit"
+                    disabled={authBusy || !authReady}
+                    onClick={onSubmitSignup}
+                  >
+                    {authBusy ? "Creating account..." : "Create account"}
+                  </Button>
+                </FieldGroup>
+              </TabsContent>
+            </Tabs>
+          </CardContent>
+        </Card>
       </section>
     </div>
   );
 }
 
-function PanelMetric({
-  icon,
-  label,
-  value
-}: {
-  icon: ReactNode;
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="construct-auth-panel-metric">
-      <span className="construct-auth-panel-metric-icon">{icon}</span>
-      <div>
-        <strong>{label}</strong>
-        <span>{value}</span>
-      </div>
-    </div>
-  );
-}
-
-function SidebarRow({
+function FeatureCard({
   icon,
   title,
   description
@@ -394,24 +286,12 @@ function SidebarRow({
   description: string;
 }) {
   return (
-    <div className="construct-auth-sidebar-row">
-      <span className="construct-auth-sidebar-row-icon">{icon}</span>
-      <div className="construct-auth-sidebar-row-copy">
+    <div className="construct-auth-feature-card">
+      <div className="construct-auth-feature-icon">{icon}</div>
+      <div className="construct-auth-feature-copy">
         <strong>{title}</strong>
         <span>{description}</span>
       </div>
-    </div>
-  );
-}
-
-function ProviderPreviewCard({ provider }: { provider: AuthProviderOption }) {
-  return (
-    <div className="construct-auth-provider-preview">
-      <div className="construct-auth-provider-preview-copy">
-        <strong>{provider.label}</strong>
-        <span>{provider.description}</span>
-      </div>
-      <Badge variant="outline">{provider.comingSoon ? "OAuth soon" : provider.buttonLabel}</Badge>
     </div>
   );
 }
