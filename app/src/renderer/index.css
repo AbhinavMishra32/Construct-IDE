@@ -5809,6 +5809,236 @@ textarea {
   margin-top: 0.15rem;
 }
 
+.construct-planning-start--minimal {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+  align-content: start;
+}
+
+.construct-planning-composer--minimal {
+  max-width: 880px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.construct-planning-composer--minimal h2 {
+  margin: 8px 0 10px;
+  font-size: 24px;
+  line-height: 1.08;
+  letter-spacing: -0.035em;
+}
+
+.construct-planning-composer--minimal p {
+  max-width: 64ch;
+}
+
+.construct-planning-brief-strip {
+  margin-top: 16px;
+}
+
+.construct-planning-event-log--minimal {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 92%, transparent);
+}
+
+.construct-planning-event-log--minimal .construct-brief-section-header h2 {
+  margin: 4px 0 0;
+  font-size: 14px;
+  line-height: 1.45;
+  letter-spacing: -0.01em;
+}
+
+.construct-agent-outline {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.construct-agent-outline-group {
+  position: relative;
+}
+
+.construct-agent-outline-node {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.construct-agent-outline-rail {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 100%;
+}
+
+.construct-agent-outline-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 88%, transparent);
+  background: color-mix(in srgb, var(--border-strong) 68%, transparent);
+  margin-top: 6px;
+}
+
+.construct-agent-outline-group.is-active .construct-agent-outline-dot,
+.construct-agent-outline-group.is-working .construct-agent-outline-dot {
+  background: var(--text);
+  border-color: var(--text);
+}
+
+.construct-agent-outline-group.is-warning .construct-agent-outline-dot {
+  background: color-mix(in srgb, var(--warning) 82%, transparent);
+  border-color: color-mix(in srgb, var(--warning) 82%, transparent);
+}
+
+.construct-agent-outline-group.is-error .construct-agent-outline-dot {
+  background: color-mix(in srgb, var(--error) 82%, transparent);
+  border-color: color-mix(in srgb, var(--error) 82%, transparent);
+}
+
+.construct-agent-outline-stem {
+  width: 1px;
+  flex: 1;
+  margin-top: 8px;
+  background: color-mix(in srgb, var(--border) 92%, transparent);
+}
+
+.construct-agent-outline-content {
+  min-width: 0;
+}
+
+.construct-agent-outline-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.construct-agent-outline-row-main {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.construct-agent-outline-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-soft);
+  flex-shrink: 0;
+}
+
+.construct-agent-outline-label,
+.construct-agent-outline-child-label {
+  font-family: var(--course-font-mono);
+  font-size: 11px;
+  line-height: 1.4;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.construct-agent-outline-label {
+  color: var(--text-soft);
+}
+
+.construct-agent-outline-group.is-active .construct-agent-outline-label,
+.construct-agent-outline-row:hover .construct-agent-outline-label {
+  color: var(--text);
+}
+
+.construct-agent-outline-chevron {
+  color: var(--text-soft);
+  flex-shrink: 0;
+}
+
+.construct-agent-outline-panel {
+  display: grid;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.construct-agent-outline-children {
+  position: relative;
+  display: grid;
+  gap: 10px;
+  margin-left: 10px;
+  padding-left: 18px;
+}
+
+.construct-agent-outline-children::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  bottom: 10px;
+  left: 0;
+  width: 1px;
+  background: color-mix(in srgb, var(--border) 92%, transparent);
+}
+
+.construct-agent-outline-child {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 22px;
+}
+
+.construct-agent-outline-child::before {
+  content: "";
+  position: absolute;
+  left: -18px;
+  top: 50%;
+  width: 14px;
+  height: 10px;
+  border-bottom-left-radius: 12px;
+  border-left: 1px solid color-mix(in srgb, var(--border) 92%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 92%, transparent);
+  transform: translateY(-50%);
+}
+
+.construct-agent-outline-child-bullet {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 88%, transparent);
+  background: var(--panel-bg);
+  flex-shrink: 0;
+}
+
+.construct-agent-outline-child-label {
+  color: var(--text-soft);
+}
+
+.construct-agent-outline-body {
+  margin-left: 10px;
+  padding-left: 18px;
+  border-left: 1px solid color-mix(in srgb, var(--border) 92%, transparent);
+}
+
+.construct-agent-outline-body p {
+  margin: 0;
+  max-width: 66ch;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.72;
+  letter-spacing: -0.01em;
+}
+
 @media (max-width: 1080px) {
   .construct-auth-stage {
     padding: 1.5rem;
