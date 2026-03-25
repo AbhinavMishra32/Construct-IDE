@@ -206,6 +206,9 @@ type PlanningAnswerDraft =
   | {
       answerType: "custom";
       customResponse: string;
+    }
+  | {
+      answerType: "skipped";
     };
 
 const runtimeInfo = window.construct.getRuntimeInfo();
@@ -238,9 +241,15 @@ function hasPlanningAnswer(answer: PlanningAnswerDraft | undefined): answer is P
     return false;
   }
 
-  return answer.answerType === "option"
-    ? Boolean(answer.optionId)
-    : answer.customResponse.trim().length > 0;
+  if (answer.answerType === "option") {
+    return Boolean(answer.optionId);
+  }
+
+  if (answer.answerType === "custom") {
+    return answer.customResponse.trim().length > 0;
+  }
+
+  return true;
 }
 
 function toPlanningAnswerDrafts(
@@ -253,6 +262,10 @@ function toPlanningAnswerDrafts(
             answerType: "custom",
             customResponse: answer.customResponse
           }
+        : answer.answerType === "skipped"
+          ? {
+              answerType: "skipped"
+            }
         : {
             answerType: "option",
             optionId: answer.optionId
@@ -1574,6 +1587,11 @@ export default function App() {
               answerType: "custom",
               customResponse: answer.customResponse.trim()
             }
+          : answer.answerType === "skipped"
+            ? {
+                questionId: question.id,
+                answerType: "skipped"
+              }
           : {
               questionId: question.id,
               answerType: "option",
@@ -2173,6 +2191,14 @@ export default function App() {
                 [questionId]: {
                   answerType: "custom",
                   customResponse
+                }
+              }));
+            }}
+            onSkipAnswerChange={(questionId) => {
+              setPlanningAnswers((current) => ({
+                ...current,
+                [questionId]: {
+                  answerType: "skipped"
                 }
               }));
             }}
@@ -3510,6 +3536,7 @@ function PlanningOverlay({
   onLearningStyleChange,
   onOptionAnswerChange,
   onCustomAnswerChange,
+  onSkipAnswerChange,
   onStartPlanning,
   onCompletePlanning,
   canCompletePlanning,
@@ -3528,6 +3555,7 @@ function PlanningOverlay({
   onLearningStyleChange: (value: LearningStyle) => void;
   onOptionAnswerChange: (questionId: string, optionId: string) => void;
   onCustomAnswerChange: (questionId: string, customResponse: string) => void;
+  onSkipAnswerChange: (questionId: string) => void;
   onStartPlanning: () => void;
   onCompletePlanning: () => void;
   canCompletePlanning: boolean;
@@ -3932,6 +3960,26 @@ function PlanningOverlay({
                 </SecondaryButton>
 
                 <div className="construct-planning-question-footer-actions">
+                  <SecondaryButton
+                    type="button"
+                    onClick={() => {
+                      onSkipAnswerChange(currentQuestion.id);
+
+                      if (activeQuestionIndex < questionCount - 1) {
+                        setActiveQuestionIndex((current) =>
+                          Math.min(questionCount - 1, current + 1)
+                        );
+                      }
+                    }}
+                    className={cn(
+                      currentAnswer?.answerType === "skipped"
+                        ? "construct-planning-skip-button is-selected"
+                        : "construct-planning-skip-button"
+                    )}
+                    disabled={planningBusy}
+                  >
+                    Skip for now
+                  </SecondaryButton>
                   <PrimaryButton
                     type="button"
                     onClick={() => {

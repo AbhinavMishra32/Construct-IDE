@@ -65,6 +65,10 @@ export const PlanningAnswerSchema = z.discriminatedUnion("answerType", [
     questionId: z.string().min(1),
     answerType: z.literal("custom"),
     customResponse: z.string().trim().min(1).max(2_000)
+  }),
+  z.object({
+    questionId: z.string().min(1),
+    answerType: z.literal("skipped")
   })
 ]);
 

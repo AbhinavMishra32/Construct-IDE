@@ -5854,6 +5854,11 @@ textarea {
   letter-spacing: -0.01em;
 }
 
+.construct-planning-skip-button.is-selected {
+  background: color-mix(in srgb, var(--panel-soft) 82%, transparent);
+  color: var(--text);
+}
+
 .construct-agent-outline {
   display: flex;
   flex-direction: column;

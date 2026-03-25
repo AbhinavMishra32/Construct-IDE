@@ -253,7 +253,7 @@ type ResolvedPlanningAnswer = {
   conceptId: string;
   category: "language" | "domain" | "workflow";
   prompt: string;
-  answerType: "option" | "custom";
+  answerType: "option" | "custom" | "skipped";
   selectedOption: {
     id: string;
     label: string;
@@ -3651,6 +3651,24 @@ export class ConstructAgentService {
           answerType: "custom",
           selectedOption: null,
           customResponse: answer.customResponse.trim(),
+          availableOptions: question.options.map((option) => ({
+            id: option.id,
+            label: option.label,
+            description: option.description,
+            confidenceSignal: option.confidenceSignal
+          }))
+        };
+      }
+
+      if (answer.answerType === "skipped") {
+        return {
+          questionId: question.id,
+          conceptId: question.conceptId,
+          category: question.category,
+          prompt: question.prompt,
+          answerType: "skipped",
+          selectedOption: null,
+          customResponse: null,
           availableOptions: question.options.map((option) => ({
             id: option.id,
             label: option.label,

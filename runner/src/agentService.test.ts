@@ -544,8 +544,14 @@ test("ConstructAgentService creates question and plan jobs and persists the resu
       sessionId: questionSession.session.sessionId,
       answers: questionSession.session.questions.map((question, index) => ({
         questionId: question.id,
-        answerType: "option" as const,
-        optionId: index === 0 ? "blocked" : "partial"
+        ...(index === 0
+          ? {
+              answerType: "skipped" as const
+            }
+          : {
+              answerType: "option" as const,
+              optionId: "partial"
+            })
       }))
     });
     const planResult = await waitForJobCompletion(service, planJob.jobId);
@@ -572,6 +578,7 @@ test("ConstructAgentService creates question and plan jobs and persists the resu
     assert.ok(persistedPlanningState.session);
     assert.ok(persistedPlanningState.plan);
     assert.equal(persistedPlanningState.answers.length, 4);
+    assert.equal(persistedPlanningState.answers[0]?.answerType, "skipped");
 
     const blueprintBuilds = await service.listBlueprintBuilds();
     const activeBuild =

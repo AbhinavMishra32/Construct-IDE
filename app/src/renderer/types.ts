@@ -481,6 +481,10 @@ export type PlanningAnswer =
       questionId: string;
       answerType: "custom";
       customResponse: string;
+    }
+  | {
+      questionId: string;
+      answerType: "skipped";
     };
 
 export type ConceptNode = {
