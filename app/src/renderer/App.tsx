@@ -227,13 +227,19 @@ function parseAppRoute(hash: string): AppRoute {
 
   if (!normalized || normalized === "/") {
     return {
+      kind: "workspace"
+    };
+  }
+
+  if (normalized === "/landing" || normalized === "landing") {
+    return {
       kind: "landing"
     };
   }
 
   if (!normalized.startsWith("/debug/blueprints")) {
     return {
-      kind: normalized.startsWith("/workspace") ? "workspace" : "landing"
+      kind: "workspace"
     };
   }
 
