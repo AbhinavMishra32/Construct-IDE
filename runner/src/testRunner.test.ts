@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   TestRunnerManager,
+  findUpwardJestBinaryPath,
   inferAdapterFromBlueprint,
   loadBlueprint,
   resolveBlueprintStepRequest
@@ -80,6 +81,38 @@ test("inferAdapterFromBlueprint supports TypeScript, Python, and Rust labels", a
   assert.equal(inferAdapterFromBlueprint({ ...blueprint, language: "python" }), "pytest");
   assert.equal(inferAdapterFromBlueprint({ ...blueprint, language: "Rust" }), "cargo");
   assert.equal(inferAdapterFromBlueprint({ ...blueprint, language: "rust" }), "cargo");
+});
+
+test("findUpwardJestBinaryPath resolves pnpm-installed jest from a nested generated workspace", async () => {
+  const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "construct-jest-binary-"));
+
+  try {
+    const workspaceRoot = path.join(
+      temporaryDirectory,
+      ".construct",
+      "workspaces",
+      "project"
+    );
+    const pnpmJestBinaryPath = path.join(
+      temporaryDirectory,
+      "node_modules",
+      ".pnpm",
+      "jest@29.7.0",
+      "node_modules",
+      "jest",
+      "bin",
+      "jest.js"
+    );
+
+    await mkdir(path.dirname(pnpmJestBinaryPath), { recursive: true });
+    await writeFile(pnpmJestBinaryPath, "console.log('jest');", { encoding: "utf8" });
+
+    const resolvedBinaryPath = findUpwardJestBinaryPath(workspaceRoot);
+
+    assert.equal(resolvedBinaryPath, pnpmJestBinaryPath);
+  } finally {
+    await rm(temporaryDirectory, { recursive: true, force: true });
+  }
 });
 
 test("TestRunnerManager returns a passing structured result for a blueprint step", async () => {

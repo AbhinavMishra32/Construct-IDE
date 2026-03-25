@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, readdirSync, realpathSync } from "node:fs";
 import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -94,11 +94,8 @@ export class JestTestAdapter implements TestAdapter {
     );
     const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "construct-jest-results-"));
     const outputFile = path.join(outputDirectory, "results.json");
-    const jestBinaryPath = findUpwardPath(
-      normalizedRequest.projectRoot,
-      path.join("node_modules", "jest", "bin", "jest.js")
-    );
-    const jestConfigPath = findFirstExistingPath(
+    const jestBinaryPath = findUpwardJestBinaryPath(normalizedRequest.projectRoot);
+    const jestConfigPath = findFirstUpwardExistingPath(
       normalizedRequest.projectRoot,
       JEST_CONFIG_CANDIDATES
     );
@@ -788,6 +785,89 @@ async function walkDirectory(
 function findFirstExistingPath(rootDirectory: string, candidates: string[]): string | undefined {
   for (const candidate of candidates) {
     const candidatePath = path.join(rootDirectory, candidate);
+
+    if (existsSync(candidatePath)) {
+      return candidatePath;
+    }
+  }
+
+  return undefined;
+}
+
+function findFirstUpwardExistingPath(
+  startDirectory: string,
+  candidates: string[]
+): string | undefined {
+  let currentDirectory = path.resolve(startDirectory);
+
+  while (true) {
+    const candidatePath = findFirstExistingPath(currentDirectory, candidates);
+
+    if (candidatePath) {
+      return candidatePath;
+    }
+
+    const nextDirectory = path.dirname(currentDirectory);
+
+    if (nextDirectory === currentDirectory) {
+      return undefined;
+    }
+
+    currentDirectory = nextDirectory;
+  }
+}
+
+export function findUpwardJestBinaryPath(startDirectory: string): string | undefined {
+  let currentDirectory = path.resolve(startDirectory);
+
+  while (true) {
+    const directBinaryPath = path.join(
+      currentDirectory,
+      "node_modules",
+      "jest",
+      "bin",
+      "jest.js"
+    );
+
+    if (existsSync(directBinaryPath)) {
+      return directBinaryPath;
+    }
+
+    const pnpmBinaryPath = findPnpmPackageBinaryPath(
+      path.join(currentDirectory, "node_modules", ".pnpm"),
+      "jest",
+      path.join("node_modules", "jest", "bin", "jest.js")
+    );
+
+    if (pnpmBinaryPath) {
+      return pnpmBinaryPath;
+    }
+
+    const nextDirectory = path.dirname(currentDirectory);
+
+    if (nextDirectory === currentDirectory) {
+      return undefined;
+    }
+
+    currentDirectory = nextDirectory;
+  }
+}
+
+function findPnpmPackageBinaryPath(
+  pnpmStoreDirectory: string,
+  packageName: string,
+  binaryRelativePath: string
+): string | undefined {
+  if (!existsSync(pnpmStoreDirectory)) {
+    return undefined;
+  }
+
+  for (const entry of readdirSync(pnpmStoreDirectory, { withFileTypes: true })) {
+    if (!entry.isDirectory() || !entry.name.startsWith(`${packageName}@`)) {
+      continue;
+    }
+
+    const candidatePath = path.join(pnpmStoreDirectory, entry.name, binaryRelativePath);
 
     if (existsSync(candidatePath)) {
       return candidatePath;
