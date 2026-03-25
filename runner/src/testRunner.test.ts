@@ -1,9 +1,16 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { TestRunnerManager, resolveBlueprintStepRequest } from "./testRunner";
+import {
+  TestRunnerManager,
+  inferAdapterFromBlueprint,
+  loadBlueprint,
+  resolveBlueprintStepRequest
+} from "./testRunner";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const blueprintPath = path.join(
@@ -38,6 +45,41 @@ test("resolveBlueprintStepRequest maps a blueprint step to a targeted Jest run",
   assert.equal(path.basename(request.projectRoot), "workflow-runtime");
   assert.deepEqual(request.tests, ["tests/state.test.ts"]);
   assert.equal(request.timeoutMs, 4_000);
+});
+
+test("resolveBlueprintStepRequest accepts generated blueprints that use TypeScript casing", async () => {
+  const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "construct-blueprint-"));
+
+  try {
+    const blueprint = await loadBlueprint(blueprintPath);
+    const temporaryBlueprintPath = path.join(temporaryDirectory, "project-blueprint.json");
+
+    await writeFile(
+      temporaryBlueprintPath,
+      JSON.stringify({ ...blueprint, language: "TypeScript" }, null, 2)
+    );
+
+    const request = await resolveBlueprintStepRequest({
+      blueprintPath: temporaryBlueprintPath,
+      stepId: "step.state-merge",
+      timeoutMs: 4_000
+    });
+
+    assert.equal(request.adapter, "jest");
+  } finally {
+    await rm(temporaryDirectory, { recursive: true, force: true });
+  }
+});
+
+test("inferAdapterFromBlueprint supports TypeScript, Python, and Rust labels", async () => {
+  const blueprint = await loadBlueprint(blueprintPath);
+
+  assert.equal(inferAdapterFromBlueprint({ ...blueprint, language: "TypeScript" }), "jest");
+  assert.equal(inferAdapterFromBlueprint({ ...blueprint, language: "typescript" }), "jest");
+  assert.equal(inferAdapterFromBlueprint({ ...blueprint, language: "Python" }), "pytest");
+  assert.equal(inferAdapterFromBlueprint({ ...blueprint, language: "python" }), "pytest");
+  assert.equal(inferAdapterFromBlueprint({ ...blueprint, language: "Rust" }), "cargo");
+  assert.equal(inferAdapterFromBlueprint({ ...blueprint, language: "rust" }), "cargo");
 });
 
 test("TestRunnerManager returns a passing structured result for a blueprint step", async () => {
@@ -87,4 +129,3 @@ test("TestRunnerManager marks timed-out task runs explicitly", async () => {
   assert.equal(result.timedOut, true);
   assert.match(result.failures[0].message, /timed out/i);
 });
-

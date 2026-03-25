@@ -62,6 +62,14 @@ interface JestJsonOutput {
   testResults?: JestJsonTestResult[];
 }
 
+interface ProcessExecutionResult {
+  durationMs: number;
+  exitCode: number | null;
+  stderr: string;
+  stdout: string;
+  timedOut: boolean;
+}
+
 export class BlueprintResolutionError extends Error {
   constructor(message: string) {
     super(message);
@@ -255,10 +263,92 @@ export class JestTestAdapter implements TestAdapter {
   }
 }
 
+export class PytestTestAdapter implements TestAdapter {
+  readonly kind = "pytest" as const;
+
+  async run(request: TaskExecutionRequest): Promise<TaskResult> {
+    const normalizedRequest = normalizeTaskExecutionRequest(request);
+    const testsRun = normalizedRequest.tests.map((testPath) =>
+      path.relative(normalizedRequest.projectRoot, testPath) || path.basename(testPath)
+    );
+
+    const { result } = await runPytestCommand(normalizedRequest);
+    const failures = collectPytestFailures(normalizedRequest, result);
+    const status = !result.timedOut && result.exitCode === 0 ? "passed" : "failed";
+
+    return TaskResultSchema.parse({
+      stepId: normalizedRequest.stepId,
+      adapter: this.kind,
+      status,
+      durationMs: result.durationMs,
+      testsRun,
+      failures,
+      exitCode: result.exitCode,
+      timedOut: result.timedOut,
+      stdout: result.stdout.trim(),
+      stderr: result.stderr.trim()
+    });
+  }
+}
+
+export class CargoTestAdapter implements TestAdapter {
+  readonly kind = "cargo" as const;
+
+  async run(request: TaskExecutionRequest): Promise<TaskResult> {
+    const normalizedRequest = normalizeTaskExecutionRequest(request);
+    const testsRun = normalizedRequest.tests.map((testPath) =>
+      path.relative(normalizedRequest.projectRoot, testPath) || path.basename(testPath)
+    );
+    const cargoTestArgs = buildCargoTestArgs(normalizedRequest);
+    let result: ProcessExecutionResult;
+
+    try {
+      result = await runProcess("cargo", cargoTestArgs, {
+        cwd: normalizedRequest.projectRoot,
+        timeoutMs: normalizedRequest.timeoutMs,
+        env: {
+          CARGO_TERM_COLOR: "never",
+          CI: "1"
+        }
+      });
+    } catch (error) {
+      if (isMissingBinaryError(error)) {
+        throw new BlueprintResolutionError(
+          "Unable to locate Cargo in PATH for this Rust project."
+        );
+      }
+
+      throw error;
+    }
+
+    const failures = collectCargoFailures(normalizedRequest, result);
+    const status = !result.timedOut && result.exitCode === 0 ? "passed" : "failed";
+
+    return TaskResultSchema.parse({
+      stepId: normalizedRequest.stepId,
+      adapter: this.kind,
+      status,
+      durationMs: result.durationMs,
+      testsRun,
+      failures,
+      exitCode: result.exitCode,
+      timedOut: result.timedOut,
+      stdout: result.stdout.trim(),
+      stderr: result.stderr.trim()
+    });
+  }
+}
+
 export class TestRunnerManager {
   private readonly adapters: Map<TestAdapterKind, TestAdapter>;
 
-  constructor(adapters: TestAdapter[] = [new JestTestAdapter()]) {
+  constructor(
+    adapters: TestAdapter[] = [
+      new JestTestAdapter(),
+      new PytestTestAdapter(),
+      new CargoTestAdapter()
+    ]
+  ) {
     this.adapters = new Map(adapters.map((adapter) => [adapter.kind, adapter]));
   }
 
@@ -329,14 +419,24 @@ export async function loadBlueprint(blueprintPath: string): Promise<ProjectBluep
   return ProjectBlueprintSchema.parse(JSON.parse(rawBlueprint));
 }
 
-function inferAdapterFromBlueprint(blueprint: ProjectBlueprint): TestAdapterKind {
-  switch (blueprint.language) {
+export function inferAdapterFromBlueprint(blueprint: ProjectBlueprint): TestAdapterKind {
+  switch (normalizeBlueprintLanguage(blueprint.language)) {
     case "javascript":
+    case "js":
+    case "jsx":
     case "typescript":
+    case "ts":
+    case "tsx":
       return "jest";
+    case "python":
+    case "py":
+      return "pytest";
+    case "rust":
+    case "rs":
+      return "cargo";
     default:
       throw new BlueprintResolutionError(
-        `No adapter mapping exists yet for blueprint language ${blueprint.language}.`
+        `No adapter mapping exists yet for blueprint language ${blueprint.language}. Supported languages currently map to jest (JavaScript/TypeScript), pytest (Python), or cargo (Rust).`
       );
   }
 }
@@ -389,6 +489,271 @@ function summarizeFailureMessage(message: string): string {
     .filter(Boolean);
 
   return lines[0] ?? "Test execution failed.";
+}
+
+function normalizeBlueprintLanguage(language: string): string {
+  return language.trim().toLowerCase();
+}
+
+function isMissingBinaryError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error && error.code === "ENOENT";
+}
+
+async function runPytestCommand(
+  request: TaskExecutionRequest
+): Promise<{ command: string; result: ProcessExecutionResult }> {
+  const pytestArguments = ["-m", "pytest", "-q", ...request.tests];
+  const pythonCommands = ["python3", "python"];
+
+  for (const command of pythonCommands) {
+    try {
+      const result = await runProcess(command, pytestArguments, {
+        cwd: request.projectRoot,
+        timeoutMs: request.timeoutMs,
+        env: {
+          CI: "1"
+        }
+      });
+
+      return { command, result };
+    } catch (error) {
+      if (isMissingBinaryError(error)) {
+        continue;
+      }
+
+      throw error;
+    }
+  }
+
+  throw new BlueprintResolutionError(
+    "Unable to locate a Python interpreter in PATH for this project."
+  );
+}
+
+async function runProcess(
+  command: string,
+  args: string[],
+  options: {
+    cwd: string;
+    env?: Record<string, string>;
+    timeoutMs: number;
+  }
+): Promise<ProcessExecutionResult> {
+  const startedAt = Date.now();
+  let timedOut = false;
+  let stdout = "";
+  let stderr = "";
+
+  const child = spawn(command, args, {
+    cwd: options.cwd,
+    env: {
+      ...process.env,
+      ...options.env
+    },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+
+  child.stdout.on("data", (chunk: Buffer | string) => {
+    stdout += chunk.toString();
+  });
+
+  child.stderr.on("data", (chunk: Buffer | string) => {
+    stderr += chunk.toString();
+  });
+
+  const exitCode = await new Promise<number | null>((resolve, reject) => {
+    const timeoutHandle = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGTERM");
+      setTimeout(() => child.kill("SIGKILL"), 1_000).unref();
+    }, options.timeoutMs);
+
+    timeoutHandle.unref();
+
+    child.once("error", (error) => {
+      clearTimeout(timeoutHandle);
+      reject(error);
+    });
+
+    child.once("close", (code) => {
+      clearTimeout(timeoutHandle);
+      resolve(code);
+    });
+  });
+
+  return {
+    durationMs: Date.now() - startedAt,
+    exitCode,
+    stderr,
+    stdout,
+    timedOut
+  };
+}
+
+function collectPytestFailures(
+  request: TaskExecutionRequest,
+  result: ProcessExecutionResult
+): TaskFailure[] {
+  const combinedOutput = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
+  const failures = combinedOutput
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .flatMap((line) => {
+      const match = /^FAILED\s+(.+?)(?:\s+-\s+(.+))?$/.exec(line);
+
+      if (!match) {
+        return [];
+      }
+
+      return [
+        {
+          testName: match[1],
+          message:
+            match[2]?.trim() ||
+            `Pytest reported a failure in ${match[1]}.`,
+          stackTrace: combinedOutput || undefined
+        }
+      ];
+    });
+
+  if (failures.length > 0) {
+    return failures;
+  }
+
+  if (result.timedOut) {
+    return [
+      {
+        testName: request.stepId,
+        message: `The pytest process timed out after ${request.timeoutMs}ms.`,
+        stackTrace: combinedOutput || undefined
+      }
+    ];
+  }
+
+  if (result.exitCode !== 0) {
+    return [
+      {
+        testName: request.stepId,
+        message:
+          summarizeFailureMessage(combinedOutput) ||
+          "The pytest run failed.",
+        stackTrace: combinedOutput || undefined
+      }
+    ];
+  }
+
+  return [];
+}
+
+function buildCargoTestArgs(request: TaskExecutionRequest): string[] {
+  const integrationTests = extractCargoIntegrationTestNames(request);
+  const cargoTestArgs = ["test", "--color", "never"];
+
+  if (integrationTests.length > 0) {
+    for (const integrationTest of integrationTests) {
+      cargoTestArgs.push("--test", integrationTest);
+    }
+  }
+
+  return cargoTestArgs;
+}
+
+function extractCargoIntegrationTestNames(request: TaskExecutionRequest): string[] {
+  const integrationTests: string[] = [];
+
+  for (const testPath of request.tests) {
+    const relativePath = path
+      .relative(request.projectRoot, testPath)
+      .split(path.sep)
+      .join("/");
+
+    if (!relativePath.startsWith("tests/") || !relativePath.endsWith(".rs")) {
+      return [];
+    }
+
+    const testName = relativePath.slice("tests/".length, -".rs".length);
+
+    if (testName.includes("/")) {
+      return [];
+    }
+
+    integrationTests.push(testName);
+  }
+
+  return Array.from(new Set(integrationTests));
+}
+
+function collectCargoFailures(
+  request: TaskExecutionRequest,
+  result: ProcessExecutionResult
+): TaskFailure[] {
+  const combinedOutput = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
+  const failingTestNames = Array.from(
+    new Set(
+      combinedOutput
+        .split("\n")
+        .map((line) => line.trim())
+        .flatMap((line) => {
+          const match = /^test\s+(.+?)\s+\.\.\.\s+FAILED$/.exec(line);
+          return match ? [match[1]] : [];
+        })
+    )
+  );
+
+  const failures = failingTestNames.map((testName) => ({
+    testName,
+    message: findCargoFailureMessage(combinedOutput, testName),
+    stackTrace: extractCargoFailureStackTrace(combinedOutput, testName)
+  }));
+
+  if (failures.length > 0) {
+    return failures;
+  }
+
+  if (result.timedOut) {
+    return [
+      {
+        testName: request.stepId,
+        message: `The cargo test process timed out after ${request.timeoutMs}ms.`,
+        stackTrace: combinedOutput || undefined
+      }
+    ];
+  }
+
+  if (result.exitCode !== 0) {
+    return [
+      {
+        testName: request.stepId,
+        message:
+          summarizeFailureMessage(combinedOutput) ||
+          "The cargo test run failed.",
+        stackTrace: combinedOutput || undefined
+      }
+    ];
+  }
+
+  return [];
+}
+
+function findCargoFailureMessage(combinedOutput: string, testName: string): string {
+  const stackTrace = extractCargoFailureStackTrace(combinedOutput, testName);
+  return summarizeFailureMessage(stackTrace || `Cargo reported a failure in ${testName}.`);
+}
+
+function extractCargoFailureStackTrace(
+  combinedOutput: string,
+  testName: string
+): string | undefined {
+  const sectionHeader = `---- ${testName} stdout ----`;
+  const headerIndex = combinedOutput.indexOf(sectionHeader);
+
+  if (headerIndex === -1) {
+    return undefined;
+  }
+
+  const section = combinedOutput.slice(headerIndex).split("\n---- ")[0]?.trim();
+  return section || undefined;
 }
 
 async function walkDirectory(
