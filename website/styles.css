@@ -162,7 +162,7 @@ button {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 14px;
+  gap: 12px;
   padding: clamp(12px, 3vw, 24px);
   text-align: center;
 }
@@ -175,23 +175,6 @@ button {
   background: radial-gradient(circle at 50% 120%, color-mix(in srgb, var(--shine-mid) 10%, transparent), transparent 54%);
   filter: blur(18px);
   pointer-events: none;
-}
-
-.coming-soon__eyebrow {
-  position: relative;
-  z-index: 1;
-  display: inline-flex;
-  align-items: center;
-  min-height: 28px;
-  padding: 0 12px;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--border) 92%, transparent);
-  background: color-mix(in srgb, var(--glass-bg) 72%, transparent);
-  color: var(--text-muted);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
 }
 
 .coming-soon__title {
@@ -221,33 +204,10 @@ button {
   margin: 0;
   position: relative;
   z-index: 1;
-  max-width: 60ch;
+  max-width: 56ch;
   color: var(--text-muted);
   font-size: 15px;
   line-height: 1.7;
-}
-
-.coming-soon__chips {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 8px;
-}
-
-.chip {
-  display: inline-flex;
-  align-items: center;
-  min-height: 28px;
-  padding: 0 12px;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--border) 92%, transparent);
-  background: color-mix(in srgb, var(--glass-bg) 72%, transparent);
-  color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 500;
 }
 
 @media (max-width: 720px) {
