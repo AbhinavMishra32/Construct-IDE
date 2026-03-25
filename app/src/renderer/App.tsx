@@ -72,6 +72,7 @@ import {
   EmptyMedia,
   EmptyTitle
 } from "@/components/ui/empty";
+import { Tree, type TreeViewElement } from "@/components/ui/file-tree";
 import {
   Field,
   FieldDescription,
@@ -532,6 +533,10 @@ export default function App() {
     () => filterTreeNodes(workspaceTree, filterQuery),
     [filterQuery, workspaceTree]
   );
+  const workspaceTreeLookup = useMemo(
+    () => buildTreeNodeLookup(workspaceTree),
+    [workspaceTree]
+  );
   const guidePrompts = useMemo(
     () => (activeStep ? buildGuidancePrompts(activeStep) : []),
     [activeStep]
@@ -609,6 +614,17 @@ export default function App() {
   const isAuthenticated = Boolean(authSession?.user && authSession?.session);
   const overlayVisible = surfaceMode === "brief" && Boolean(activeStep);
   const explorerIsFiltered = filterQuery.trim().length > 0;
+  const expandedWorkspaceTreeIds = useMemo(
+    () =>
+      explorerIsFiltered
+        ? collectDirectoryPaths(filteredTree)
+        : collectExpandedDirectoryIds(workspaceTree, expandedDirectories),
+    [expandedDirectories, explorerIsFiltered, filteredTree, workspaceTree]
+  );
+  const workspaceTreeElements = useMemo(
+    () => buildWorkspaceTreeElements(filteredTree),
+    [filteredTree]
+  );
   const editorTheme = theme === "dark" ? "vs-dark" : "vs";
   const saveStateLabel =
     saveState === "saving"
@@ -1905,26 +1921,36 @@ export default function App() {
                       </InputGroup>
                     </div>
 
-                    <ScrollArea className="construct-explorer-scroll">
-                      {filteredTree.length > 0 ? (
-                        <nav className="construct-tree" aria-label="Workspace files">
-                          {filteredTree.map((node) => (
-                            <ExplorerTreeNode
-                              key={node.path}
-                              node={node}
-                              activeFilePath={activeFilePath}
-                              onSelectFile={handleFileClick}
-                              expandedDirectories={expandedDirectories}
-                              onToggleDirectory={(path) => {
-                                setExpandedDirectories((current) => ({
-                                  ...current,
-                                  [path]: !(current[path] ?? true)
-                                }));
-                              }}
-                              forceExpanded={explorerIsFiltered}
-                            />
-                          ))}
-                        </nav>
+                    <div className="construct-explorer-scroll">
+                      {workspaceTreeElements.length > 0 ? (
+                        <Tree
+                          className="construct-workspace-file-tree"
+                          elements={workspaceTreeElements}
+                          selectedId={activeFilePath || undefined}
+                          expandedItems={expandedWorkspaceTreeIds}
+                          onExpandedItemsChange={(nextExpandedItems: string[]) => {
+                            const directoryIds = collectDirectoryPaths(workspaceTree);
+                            setExpandedDirectories((current) => {
+                              const next = { ...current };
+
+                              for (const directoryId of directoryIds) {
+                                next[directoryId] = nextExpandedItems.includes(directoryId);
+                              }
+
+                              return next;
+                            });
+                          }}
+                          onSelectChange={(selectedId: string) => {
+                            const selectedNode = workspaceTreeLookup.get(selectedId) ?? null;
+
+                            if (selectedNode?.kind === "file") {
+                              void handleFileClick(selectedId);
+                            }
+                          }}
+                          initialSelectedId={activeFilePath || undefined}
+                          indicator
+                          sort="none"
+                        />
                       ) : (
                         <div className="construct-explorer-empty">
                           {filterQuery.trim().length > 0
@@ -1932,7 +1958,7 @@ export default function App() {
                             : "No files loaded yet."}
                         </div>
                       )}
-                    </ScrollArea>
+                    </div>
                   </aside>
 
                   <section className="construct-stage">
@@ -5249,86 +5275,6 @@ function normalizeLessonSlideToMarkdown(slide: string | LessonSlide): string {
     .join("\n\n");
 }
 
-function ExplorerTreeNode({
-  node,
-  activeFilePath,
-  onSelectFile,
-  expandedDirectories,
-  onToggleDirectory,
-  forceExpanded,
-  depth = 0
-}: {
-  node: TreeNode;
-  activeFilePath: string;
-  onSelectFile: (filePath: string) => void;
-  expandedDirectories: Record<string, boolean>;
-  onToggleDirectory: (path: string) => void;
-  forceExpanded: boolean;
-  depth?: number;
-}) {
-  const isDirectory = node.kind === "directory";
-  const isExpanded = forceExpanded || expandedDirectories[node.path] !== false;
-  const isActive = !isDirectory && node.path === activeFilePath;
-
-  return (
-    <div className="construct-tree-node">
-      <Button
-        type="button"
-        variant="ghost"
-        onClick={() => {
-          if (isDirectory) {
-            onToggleDirectory(node.path);
-            return;
-          }
-
-          onSelectFile(node.path);
-        }}
-        className={`construct-tree-row ${isActive ? "is-active" : ""}`}
-        style={{ paddingLeft: `${16 + depth * 24}px` }}
-      >
-        <span className="construct-tree-chevron">
-          {isDirectory ? (isExpanded ? "⌄" : "›") : ""}
-        </span>
-        <span className="construct-tree-icon">
-          {isDirectory ? <FolderIcon /> : <FileIcon filePath={node.path} />}
-        </span>
-        <span className="construct-tree-label">{node.name}</span>
-      </Button>
-
-      {isDirectory && isExpanded ? (
-        <div className="construct-tree-children">
-          {node.children.map((child) => (
-            <ExplorerTreeNode
-              key={child.path}
-              node={child}
-              activeFilePath={activeFilePath}
-              onSelectFile={onSelectFile}
-              expandedDirectories={expandedDirectories}
-              onToggleDirectory={onToggleDirectory}
-              forceExpanded={forceExpanded}
-              depth={depth + 1}
-            />
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function FolderIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <path
-        d="M2.75 5.5h4.1l1.2 1.5h9.2v7.25a1 1 0 0 1-1 1H3.75a1 1 0 0 1-1-1V5.5Z"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
 function FileIcon({ filePath }: { filePath: string }) {
   const extension = filePath.split(".").pop()?.toLowerCase();
   const label =
@@ -5899,6 +5845,42 @@ function collectDirectoryPaths(nodes: TreeNode[]): string[] {
   }
 
   return directories;
+}
+
+function collectExpandedDirectoryIds(
+  nodes: TreeNode[],
+  expandedDirectories: Record<string, boolean>
+): string[] {
+  return collectDirectoryPaths(nodes).filter((path) => expandedDirectories[path] !== false);
+}
+
+function buildWorkspaceTreeElements(nodes: TreeNode[]): TreeViewElement[] {
+  return nodes.map((node) => ({
+    id: node.path,
+    name: node.name,
+    type: node.kind === "directory" ? "folder" : "file",
+    isSelectable: true,
+    icon: node.kind === "file" ? <FileIcon filePath={node.path} /> : undefined,
+    children:
+      node.kind === "directory" ? buildWorkspaceTreeElements(node.children) : undefined
+  }));
+}
+
+function buildTreeNodeLookup(nodes: TreeNode[]): Map<string, TreeNode> {
+  const lookup = new Map<string, TreeNode>();
+
+  const visit = (entries: TreeNode[]) => {
+    for (const entry of entries) {
+      lookup.set(entry.path, entry);
+
+      if (entry.children.length > 0) {
+        visit(entry.children);
+      }
+    }
+  };
+
+  visit(nodes);
+  return lookup;
 }
 
 function getAncestorDirectoryPaths(filePath: string): string[] {
