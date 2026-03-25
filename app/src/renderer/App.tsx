@@ -711,6 +711,7 @@ export default function App() {
         setPlanningSession(planningState.session);
         setPlanningPlan(planningState.plan);
         setPlanningAnswers(toPlanningAnswerDrafts(planningState.answers));
+        setPlanningGoal(planningState.session?.goal ?? "");
         setStatusMessage(
           planningState.session
             ? "Resume the in-progress Architect run or open an existing project."
@@ -922,6 +923,7 @@ export default function App() {
     setPlanningSession(planningState.session);
     setPlanningPlan(planningState.plan);
     setPlanningAnswers(toPlanningAnswerDrafts(planningState.answers));
+    setPlanningGoal(planningState.session?.goal ?? "");
     setProjectsError("");
     setPlanningError("");
     setDashboardOpen(true);
@@ -1569,6 +1571,33 @@ export default function App() {
     }
   };
 
+  const handleResumeCreation = async () => {
+    setDashboardBusy(true);
+    setPlanningError("");
+
+    try {
+      const planningState = await fetchCurrentPlanningState();
+      setPlanningSession(planningState.session);
+      setPlanningPlan(planningState.plan);
+      setPlanningAnswers(toPlanningAnswerDrafts(planningState.answers));
+      setPlanningGoal(planningState.session?.goal ?? "");
+      setPlanningOverlayOpen(true);
+      setStatusMessage(
+        planningState.plan
+          ? "Resume project generation from the last saved stage."
+          : "Continue the intake and generate the project when you're ready."
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to load the current planning session.";
+      setProjectsError(message);
+      setPlanningError(message);
+      setStatusMessage(message);
+    } finally {
+      setDashboardBusy(false);
+    }
+  };
+
   const handleCompletePlanning = async () => {
     if (!planningSession) {
       return;
@@ -1640,9 +1669,25 @@ export default function App() {
         `Generated ${openedBlueprint.name}. Review the next build step, then move into the workspace when the implementation handoff opens.`
       );
     } catch (error) {
-      setPlanningError(
-        error instanceof Error ? error.message : "Failed to complete the planning session."
-      );
+      const message =
+        error instanceof Error ? error.message : "Failed to complete the planning session.";
+      setPlanningError(message);
+
+      try {
+        const planningState = await fetchCurrentPlanningState();
+        setPlanningSession(planningState.session);
+        setPlanningPlan(planningState.plan);
+        setPlanningAnswers(toPlanningAnswerDrafts(planningState.answers));
+        setPlanningGoal(planningState.session?.goal ?? "");
+        setPlanningOverlayOpen(true);
+        setStatusMessage(
+          planningState.plan
+            ? "Project generation paused. Resume from the last saved stage."
+            : message
+        );
+      } catch {
+        setStatusMessage(message);
+      }
     } finally {
       setPlanningBusy(false);
     }
@@ -1826,7 +1871,7 @@ export default function App() {
                 planningSession={planningSession}
                 planningPlan={planningPlan}
                 onResumeCreation={() => {
-                  setPlanningOverlayOpen(true);
+                  void handleResumeCreation();
                 }}
                 onOpenProject={(project) => {
                   void openProject(project);

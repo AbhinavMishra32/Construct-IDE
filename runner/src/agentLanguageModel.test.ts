@@ -242,3 +242,54 @@ test("OpenAIStructuredLanguageModel repairs malformed structured-output drafts w
   assert.equal(repairCalls, 1);
   assert.equal(fallbackCalls, 0);
 });
+
+test("OpenAIStructuredLanguageModel extracts the first valid JSON object when repair output has trailing text", async () => {
+  let repairCalls = 0;
+
+  const model = new OpenAIStructuredLanguageModel({
+    apiKey: "test-key",
+    model: "gpt-5-mini",
+    logger: {
+      info() {},
+      warn() {},
+      error() {},
+      debug() {},
+      trace() {}
+    },
+    client: {
+      withStructuredOutput() {
+        return {
+          async invoke() {
+            throw new Error(
+              'Failed to parse. Text: "{\\"value\\": broken}". Error: SyntaxError: Unexpected token b in JSON at position 10'
+            );
+          }
+        };
+      },
+      async invoke(_messages, config) {
+        const mode = String(config?.metadata?.mode ?? "");
+
+        if (mode === "json-repair") {
+          repairCalls += 1;
+          return {
+            content: '{"value":"recovered"}\nRecovered from malformed draft.'
+          };
+        }
+
+        throw new Error(`Unexpected invoke mode: ${mode}`);
+      }
+    }
+  });
+
+  const parsed = await model.parse({
+    schema: z.object({
+      value: z.string().min(1)
+    }),
+    schemaName: "test_structured_repair_trailing_text",
+    instructions: "Return test data.",
+    prompt: "Generate a payload."
+  });
+
+  assert.equal(parsed.value, "recovered");
+  assert.equal(repairCalls, 1);
+});

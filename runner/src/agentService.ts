@@ -5259,17 +5259,91 @@ function extractModelText(content: unknown): string {
 
 function extractJsonObject(text: string): string {
   const trimmed = text.trim();
+  const unwrapped = unwrapQuotedJsonCandidate(trimmed);
+  const start = findFirstJsonStart(unwrapped);
 
-  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
-    return trimmed;
+  if (start < 0) {
+    throw new Error("Model fallback response did not contain a JSON object.");
   }
 
-  const jsonStart = trimmed.indexOf("{");
-  if (jsonStart >= 0) {
-    return trimmed.slice(jsonStart);
+  const stack: string[] = [];
+  let inString = false;
+  let escaped = false;
+
+  for (let index = start; index < unwrapped.length; index += 1) {
+    const char = unwrapped[index];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+
+      if (char === "\\") {
+        escaped = true;
+        continue;
+      }
+
+      if (char === "\"") {
+        inString = false;
+      }
+
+      continue;
+    }
+
+    if (char === "\"") {
+      inString = true;
+      continue;
+    }
+
+    if (char === "{") {
+      stack.push("}");
+      continue;
+    }
+
+    if (char === "[") {
+      stack.push("]");
+      continue;
+    }
+
+    if ((char === "}" || char === "]") && stack[stack.length - 1] === char) {
+      stack.pop();
+
+      if (stack.length === 0) {
+        return unwrapped.slice(start, index + 1);
+      }
+    }
   }
 
-  throw new Error("Model fallback response did not contain a JSON object.");
+  return unwrapped.slice(start);
+}
+
+function unwrapQuotedJsonCandidate(text: string): string {
+  if (!text.startsWith("\"")) {
+    return text;
+  }
+
+  try {
+    const parsed = JSON.parse(text);
+    return typeof parsed === "string" ? parsed.trim() : text;
+  } catch {
+    return text;
+  }
+}
+
+function findFirstJsonStart(text: string): number {
+  const objectIndex = text.indexOf("{");
+  const arrayIndex = text.indexOf("[");
+
+  if (objectIndex < 0) {
+    return arrayIndex;
+  }
+
+  if (arrayIndex < 0) {
+    return objectIndex;
+  }
+
+  return Math.min(objectIndex, arrayIndex);
 }
 
 function extractStructuredFailureDraft(error: Error): string | null {
