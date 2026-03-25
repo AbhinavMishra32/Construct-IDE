@@ -10,7 +10,10 @@ function createWindow(): void {
   const window = new BrowserWindow({
     width: 1440,
     height: 920,
+    transparent: isMacOS,
     backgroundColor: isMacOS ? "#00000000" : "#08111f",
+    vibrancy: isMacOS ? "sidebar" : undefined,
+    visualEffectState: isMacOS ? "active" : undefined,
     title: "Construct",
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
@@ -21,6 +24,9 @@ function createWindow(): void {
 
   if (isMacOS) {
     window.setVibrancy("sidebar", { animationDuration: 160 });
+    window.once("ready-to-show", () => {
+      window.invalidateShadow();
+    });
   }
 
   if (isDev && process.env.VITE_DEV_SERVER_URL) {

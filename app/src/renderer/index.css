@@ -5847,14 +5847,14 @@ body:has(.construct-app[data-platform="darwin"]),
 }
 
 .construct-app[data-platform="darwin"] {
-  --construct-macos-sidebar-bg: rgba(54, 52, 51, 0.76);
-  --construct-macos-sidebar-surface: rgba(255, 255, 255, 0.075);
-  --construct-macos-sidebar-hover: rgba(255, 255, 255, 0.09);
-  --construct-macos-sidebar-active: rgba(255, 255, 255, 0.135);
-  --construct-macos-sidebar-border: rgba(255, 255, 255, 0.09);
+  --construct-macos-sidebar-bg: transparent;
+  --construct-macos-sidebar-surface: rgba(255, 255, 255, 0.045);
+  --construct-macos-sidebar-hover: rgba(255, 255, 255, 0.065);
+  --construct-macos-sidebar-active: rgba(255, 255, 255, 0.11);
+  --construct-macos-sidebar-border: rgba(255, 255, 255, 0.085);
   --construct-macos-sidebar-text: rgba(255, 255, 255, 0.94);
   --construct-macos-sidebar-muted: rgba(255, 255, 255, 0.58);
-  --construct-macos-sidebar-shadow: 0 18px 44px rgba(0, 0, 0, 0.16);
+  --construct-macos-sidebar-shadow: none;
   background: transparent;
 }
 
@@ -5881,10 +5881,9 @@ body:has(.construct-app[data-platform="darwin"]),
   overflow: hidden;
   background: var(--construct-macos-sidebar-bg);
   color: var(--construct-macos-sidebar-text);
-  box-shadow:
-    inset -1px 0 0 var(--construct-macos-sidebar-border),
-    var(--construct-macos-sidebar-shadow);
-  backdrop-filter: blur(30px) saturate(180%);
+  box-shadow: inset -1px 0 0 var(--construct-macos-sidebar-border);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
 }
 
 .construct-app[data-platform="darwin"] .construct-app-sidebar::before {
@@ -5893,8 +5892,8 @@ body:has(.construct-app[data-platform="darwin"]),
   inset: 0;
   pointer-events: none;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.095), rgba(255, 255, 255, 0.018) 16%),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.02), transparent 24%);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.038), rgba(255, 255, 255, 0.012) 20%, transparent 38%),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.018), transparent 24%);
 }
 
 .construct-app[data-platform="darwin"] .construct-app-sidebar > * {
@@ -5936,13 +5935,13 @@ body:has(.construct-app[data-platform="darwin"]),
   border-radius: 10px;
   background: var(--construct-macos-sidebar-surface);
   color: var(--construct-macos-sidebar-text);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
   font-size: 13px;
   font-weight: 560;
 }
 
 .construct-app[data-platform="darwin"] .construct-app-sidebar-primary:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .construct-app[data-platform="darwin"] .construct-app-sidebar .construct-panel-kicker {
