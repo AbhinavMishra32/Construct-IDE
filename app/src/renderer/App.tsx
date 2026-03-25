@@ -3,8 +3,12 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   BookOpenTextIcon,
   ChevronDownIcon,
+  ChevronRightIcon,
+  CircleIcon,
+  FileTextIcon,
   FolderOpenIcon,
   FolderTreeIcon,
+  ListTodoIcon,
   MoonStarIcon,
   PlusIcon,
   SearchIcon,
@@ -2938,27 +2942,6 @@ function ProjectsHome({
 
       return right.updatedAt.localeCompare(left.updatedAt);
     });
-  const knowledgeStats = learnerProfile?.knowledgeStats ?? {
-    rootConceptCount: knowledgeRoots.length,
-    totalConceptCount: knowledgeConcepts.length,
-    leafConceptCount: knowledgeConcepts.filter((concept) => concept.children.length === 0).length,
-    maxDepth: knowledgeConcepts.reduce(
-      (depth, concept) => Math.max(depth, concept.id.split(".").length),
-      0
-    ),
-    averageScore:
-      knowledgeConcepts.length > 0
-        ? Math.round(
-            knowledgeConcepts.reduce((sum, concept) => sum + concept.score, 0) /
-              knowledgeConcepts.length
-          )
-        : 0,
-    strongConceptCount: knowledgeConcepts.filter((concept) => concept.score >= 75).length,
-    developingConceptCount: knowledgeConcepts.filter(
-      (concept) => concept.score >= 45 && concept.score < 75
-    ).length,
-    weakConceptCount: knowledgeConcepts.filter((concept) => concept.score < 45).length
-  };
   const recentGoals = knowledgeBase
     ? knowledgeBase.goals
         .slice()
@@ -2980,6 +2963,34 @@ function ProjectsHome({
   const strugglingAttempts = historyEntries.filter(
     (entry) => entry.status === "failed" || entry.status === "needs-review"
   ).length;
+  const [expandedKnowledgeIds, setExpandedKnowledgeIds] = useState<Record<string, boolean>>({});
+  const [selectedKnowledgeConceptId, setSelectedKnowledgeConceptId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const expandableIds = collectExpandableKnowledgeIds(knowledgeRoots);
+    setExpandedKnowledgeIds((current) => {
+      const next = { ...current };
+      let changed = false;
+
+      for (const conceptId of expandableIds) {
+        if (!(conceptId in next)) {
+          next[conceptId] = true;
+          changed = true;
+        }
+      }
+
+      return changed ? next : current;
+    });
+  }, [knowledgeRoots]);
+
+  useEffect(() => {
+    if (
+      selectedKnowledgeConceptId &&
+      !knowledgeConcepts.some((concept) => concept.id === selectedKnowledgeConceptId)
+    ) {
+      setSelectedKnowledgeConceptId(null);
+    }
+  }, [knowledgeConcepts, selectedKnowledgeConceptId]);
 
   return (
     <section className="construct-home">
@@ -3154,56 +3165,31 @@ function ProjectsHome({
             <ToolbarPill>{knowledgeConcepts.length}</ToolbarPill>
           </div>
 
-          <p className="construct-home-surface-copy">
-            This is the real learner knowledge graph Construct stores and uses while
-            planning. Topics can nest as deeply as needed, parent scores roll up from
-            child concepts, and runtime signals update the exact subtopic the learner is
-            struggling with or mastering.
-          </p>
-
-          <div className="construct-home-profile-stats">
-            <div className="construct-home-profile-stat">
-              <span>Concepts</span>
-              <strong>{knowledgeStats.totalConceptCount}</strong>
-            </div>
-            <div className="construct-home-profile-stat">
-              <span>Roots</span>
-              <strong>{knowledgeStats.rootConceptCount}</strong>
-            </div>
-            <div className="construct-home-profile-stat">
-              <span>Leaves</span>
-              <strong>{knowledgeStats.leafConceptCount}</strong>
-            </div>
-            <div className="construct-home-profile-stat">
-              <span>Depth</span>
-              <strong>{knowledgeStats.maxDepth}</strong>
-            </div>
-          </div>
-
-          <div className="construct-home-knowledge-summary">
-            <span>
-              Average score <strong>{knowledgeStats.averageScore}</strong>
-            </span>
-            <span>
-              Strong <strong>{knowledgeStats.strongConceptCount}</strong>
-            </span>
-            <span>
-              Developing <strong>{knowledgeStats.developingConceptCount}</strong>
-            </span>
-            <span>
-              Needs support <strong>{knowledgeStats.weakConceptCount}</strong>
-            </span>
-            <span>
-              Goals tracked <strong>{recentGoals.length}</strong>
-            </span>
-          </div>
-
           {knowledgeRoots.length > 0 ? (
-            <div className="construct-home-knowledge-tree">
-              {knowledgeRoots.map((concept) => (
-                <KnowledgeTreeNodeView key={concept.id} concept={concept} depth={0} />
-              ))}
-            </div>
+            <ScrollArea className="construct-knowledge-explorer-scroll">
+              <div className="construct-home-knowledge-tree">
+                {knowledgeRoots.map((concept) => (
+                  <KnowledgeExplorerNodeView
+                    key={concept.id}
+                    concept={concept}
+                    depth={0}
+                    expandedKnowledgeIds={expandedKnowledgeIds}
+                    selectedKnowledgeConceptId={selectedKnowledgeConceptId}
+                    onToggleKnowledge={(conceptId) => {
+                      setExpandedKnowledgeIds((current) => ({
+                        ...current,
+                        [conceptId]: !(current[conceptId] ?? true)
+                      }));
+                    }}
+                    onSelectKnowledge={(conceptId) => {
+                      setSelectedKnowledgeConceptId((current) =>
+                        current === conceptId ? null : conceptId
+                      );
+                    }}
+                  />
+                ))}
+              </div>
+            </ScrollArea>
           ) : (
             <div className="construct-home-empty">
               No stored learner knowledge yet. Start a project and answer the Architect's
@@ -3314,56 +3300,194 @@ function flattenKnowledgeConceptsForUi(
   ]);
 }
 
-function KnowledgeTreeNodeView({
+function collectExpandableKnowledgeIds(concepts: StoredKnowledgeConcept[]): string[] {
+  return concepts.flatMap((concept) =>
+    concept.children.length > 0
+      ? [concept.id, ...collectExpandableKnowledgeIds(concept.children)]
+      : []
+  );
+}
+
+function formatKnowledgeExplorerId(id: string): string {
+  const compact = id.split(".").at(-1) ?? id;
+  return compact.length > 16 ? `${compact.slice(0, 16)}...` : compact;
+}
+
+function getKnowledgeTone(score: number): "strong" | "developing" | "support" {
+  if (score >= 75) {
+    return "strong";
+  }
+
+  if (score >= 45) {
+    return "developing";
+  }
+
+  return "support";
+}
+
+function KnowledgeExplorerNodeView({
   concept,
-  depth
+  depth,
+  expandedKnowledgeIds,
+  selectedKnowledgeConceptId,
+  onToggleKnowledge,
+  onSelectKnowledge
 }: {
   concept: StoredKnowledgeConcept;
   depth: number;
+  expandedKnowledgeIds: Record<string, boolean>;
+  selectedKnowledgeConceptId: string | null;
+  onToggleKnowledge: (conceptId: string) => void;
+  onSelectKnowledge: (conceptId: string) => void;
 }) {
-  const scoreLabel =
-    concept.score >= 75 ? "strong" : concept.score >= 45 ? "developing" : "needs support";
+  const hasChildren = concept.children.length > 0;
+  const isExpanded = expandedKnowledgeIds[concept.id] ?? true;
+  const isSelected = selectedKnowledgeConceptId === concept.id;
   const latestEvidence = concept.evidence[0] ?? null;
+  const tone = getKnowledgeTone(concept.score);
+  const GroupIcon = depth === 0 ? FolderTreeIcon : FolderOpenIcon;
+  const ItemIcon =
+    concept.category === "workflow"
+      ? ListTodoIcon
+      : concept.category === "language"
+        ? FileTextIcon
+        : BookOpenTextIcon;
 
   return (
-    <div className="construct-knowledge-node" style={{ "--depth": depth } as CSSProperties}>
-      <div className="construct-knowledge-node-row">
-        <div className="construct-knowledge-node-copy">
-          <div className="construct-knowledge-node-head">
-            <strong>{concept.label}</strong>
-            <span className="construct-knowledge-node-category">{concept.category}</span>
-          </div>
-          <div className="construct-knowledge-node-subhead">
-            <span>{concept.id}</span>
-            <span>
-              {concept.children.length > 0
-                ? `${concept.children.length} subtopic${concept.children.length === 1 ? "" : "s"}`
-                : concept.selfScore === null
-                  ? "No direct score yet"
-                  : `leaf score ${concept.selfScore}`}
-            </span>
-          </div>
-          <p>{concept.rationale}</p>
-          {latestEvidence ? (
-            <div className="construct-knowledge-node-evidence">
-              <span className="construct-knowledge-node-source">{latestEvidence.source}</span>
-              <span>{latestEvidence.summary}</span>
+    <div className="construct-knowledge-row-shell" style={{ "--depth": depth } as CSSProperties}>
+      <div
+        className={cn(
+          "construct-knowledge-row",
+          hasChildren ? "is-group" : "is-leaf",
+          depth === 0 ? "is-root" : "",
+          isSelected ? "is-selected" : ""
+        )}
+      >
+        {hasChildren ? (
+          <button
+            type="button"
+            className="construct-knowledge-toggle"
+            onClick={() => {
+              onToggleKnowledge(concept.id);
+            }}
+            aria-label={isExpanded ? "Collapse knowledge section" : "Expand knowledge section"}
+          >
+            {isExpanded ? (
+              <ChevronDownIcon className="size-4" />
+            ) : (
+              <ChevronRightIcon className="size-4" />
+            )}
+          </button>
+        ) : (
+          <span className="construct-knowledge-toggle construct-knowledge-toggle--placeholder" />
+        )}
+
+        <Popover
+          open={isSelected}
+          onOpenChange={(open) => {
+            if (!open && isSelected) {
+              onSelectKnowledge(concept.id);
+            }
+          }}
+        >
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className="construct-knowledge-trigger"
+              onClick={() => {
+                onSelectKnowledge(concept.id);
+              }}
+            >
+              {hasChildren ? (
+                <>
+                  <span className="construct-knowledge-icon construct-knowledge-icon--group">
+                    <GroupIcon className="size-4" />
+                  </span>
+                  <span className="construct-knowledge-group-label">{concept.label}</span>
+                </>
+              ) : (
+                <>
+                  <span className={cn("construct-knowledge-dot", `is-${tone}`)}>
+                    <CircleIcon className="size-2.5 fill-current" />
+                  </span>
+                  <span className="construct-knowledge-icon construct-knowledge-icon--leaf">
+                    <ItemIcon className="size-4" />
+                  </span>
+                  <span className="construct-knowledge-item-id" title={concept.id}>
+                    {formatKnowledgeExplorerId(concept.id)}
+                  </span>
+                  <span className="construct-knowledge-item-label">{concept.label}</span>
+                </>
+              )}
+            </button>
+          </PopoverTrigger>
+
+          <PopoverContent
+            side="right"
+            align="start"
+            sideOffset={12}
+            className="construct-knowledge-popover"
+          >
+            <div className="construct-knowledge-popover-head">
+              <div>
+                <strong>{concept.label}</strong>
+                <span>{concept.id}</span>
+              </div>
+              <span className={cn("construct-knowledge-popover-score", `is-${tone}`)}>
+                {concept.score}
+              </span>
             </div>
-          ) : null}
-        </div>
-        <div className="construct-knowledge-node-meta">
-          <span className={`construct-knowledge-score is-${scoreLabel.replace(" ", "-")}`}>
-            {concept.score}
-          </span>
-          <span>{concept.evidence.length} signal{concept.evidence.length === 1 ? "" : "s"}</span>
-          <span>{formatProjectTimestamp(concept.updatedAt)}</span>
-        </div>
+
+            <div className="construct-knowledge-popover-meta">
+              <span>{concept.category}</span>
+              <span>{concept.source}</span>
+              <span>{formatProjectTimestamp(concept.updatedAt)}</span>
+            </div>
+
+            <p>{concept.rationale}</p>
+
+            <div className="construct-knowledge-popover-facts">
+              <span>
+                {hasChildren
+                  ? `${concept.children.length} nested item${concept.children.length === 1 ? "" : "s"}`
+                  : concept.selfScore === null
+                    ? "No direct self score"
+                    : `Self score ${concept.selfScore}`}
+              </span>
+              <span>
+                {concept.evidence.length} signal{concept.evidence.length === 1 ? "" : "s"}
+              </span>
+            </div>
+
+            {latestEvidence ? (
+              <div className="construct-knowledge-popover-evidence">
+                <strong>{latestEvidence.source}</strong>
+                <span>{latestEvidence.summary}</span>
+                <span>{formatProjectTimestamp(latestEvidence.recordedAt)}</span>
+              </div>
+            ) : null}
+          </PopoverContent>
+        </Popover>
+
+        {hasChildren ? (
+          <span className="construct-knowledge-count-pill">{concept.children.length}</span>
+        ) : (
+          <span className="construct-knowledge-row-spacer" />
+        )}
       </div>
 
-      {concept.children.length > 0 ? (
-        <div className="construct-knowledge-node-children">
+      {hasChildren && isExpanded ? (
+        <div className="construct-knowledge-children">
           {concept.children.map((child) => (
-            <KnowledgeTreeNodeView key={child.id} concept={child} depth={depth + 1} />
+            <KnowledgeExplorerNodeView
+              key={child.id}
+              concept={child}
+              depth={depth + 1}
+              expandedKnowledgeIds={expandedKnowledgeIds}
+              selectedKnowledgeConceptId={selectedKnowledgeConceptId}
+              onToggleKnowledge={onToggleKnowledge}
+              onSelectKnowledge={onSelectKnowledge}
+            />
           ))}
         </div>
       ) : null}
