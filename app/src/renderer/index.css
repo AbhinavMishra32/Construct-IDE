@@ -5381,8 +5381,7 @@ textarea {
   min-height: 100vh;
   overflow: hidden;
   background:
-    radial-gradient(circle at top left, color-mix(in srgb, var(--primary) 14%, transparent), transparent 34%),
-    radial-gradient(circle at bottom right, color-mix(in srgb, var(--panel-soft) 18%, transparent), transparent 36%),
+    radial-gradient(circle at top center, color-mix(in srgb, var(--panel-soft) 24%, transparent), transparent 36%),
     linear-gradient(180deg, color-mix(in srgb, var(--background) 96%, transparent), var(--app-bg));
 }
 
@@ -5400,104 +5399,40 @@ textarea {
 .construct-auth-stage {
   position: relative;
   z-index: 1;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(380px, 520px);
-  gap: 2rem;
+  display: flex;
   align-items: center;
-  max-width: 1160px;
+  justify-content: center;
   min-height: 100vh;
-  margin: 0 auto;
   padding: 2.5rem;
 }
 
-.construct-auth-hero {
+.construct-auth-panel {
+  width: min(460px, 100%);
+  display: grid;
+  gap: 1rem;
+}
+
+.construct-auth-brand {
   display: flex;
-  flex-direction: column;
-  gap: 1.4rem;
-  padding: 1rem 0;
-}
-
-.construct-auth-badge {
-  width: fit-content;
-  padding-inline: 0.85rem;
-}
-
-.construct-auth-copy {
-  display: grid;
-  gap: 0.85rem;
-  max-width: 38rem;
-}
-
-.construct-auth-copy h1 {
-  margin: 0;
-  font-size: clamp(2.3rem, 4vw, 3.8rem);
-  line-height: 0.98;
-  letter-spacing: -0.035em;
-}
-
-.construct-auth-copy p {
-  margin: 0;
-  max-width: 34rem;
-  color: var(--muted-foreground);
-  font-size: 1rem;
-  line-height: 1.7;
-}
-
-.construct-auth-feature-list {
-  display: grid;
-  gap: 0.9rem;
-  max-width: 40rem;
-}
-
-.construct-auth-feature-card {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 0.85rem;
-  padding: 1rem 1.05rem;
-  border-radius: 1.1rem;
-  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
-  background: color-mix(in srgb, var(--card) 90%, transparent);
-  box-shadow: 0 18px 48px -42px color-mix(in srgb, var(--foreground) 28%, transparent);
-}
-
-.construct-auth-feature-icon {
-  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 2.4rem;
-  height: 2.4rem;
-  border-radius: 0.9rem;
-  background: color-mix(in srgb, var(--primary) 14%, transparent);
-  color: var(--primary);
+  justify-content: space-between;
+  gap: 1rem;
 }
 
-.construct-auth-feature-copy {
-  display: grid;
-  gap: 0.22rem;
+.construct-auth-brand strong {
+  font-size: 1.7rem;
+  line-height: 1;
+  letter-spacing: -0.03em;
 }
 
-.construct-auth-feature-copy strong {
-  font-size: 0.96rem;
-}
-
-.construct-auth-feature-copy span {
-  color: var(--muted-foreground);
-  line-height: 1.55;
-}
-
-.construct-auth-status-row {
+.construct-auth-brand-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
-}
-
-.construct-auth-status-pill {
-  padding-inline: 0.9rem;
-  padding-block: 0.5rem;
+  justify-content: flex-end;
+  gap: 0.5rem;
 }
 
 .construct-auth-card {
-  align-self: center;
   border-radius: 1.5rem;
   border-color: color-mix(in srgb, var(--border) 82%, transparent);
   background: color-mix(in srgb, var(--card) 95%, transparent);
@@ -5529,6 +5464,10 @@ textarea {
   display: grid;
   width: 100%;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.construct-auth-tab-content {
+  margin-top: 0;
 }
 
 .construct-auth-provider-stack,
@@ -5572,6 +5511,20 @@ textarea {
 
 .construct-auth-submit {
   margin-top: 0.35rem;
+}
+
+.construct-auth-meta {
+  display: flex;
+  justify-content: center;
+}
+
+.construct-auth-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: var(--muted-foreground);
+  font-size: 0.9rem;
+  text-align: center;
 }
 
 .construct-app-account-card {
@@ -5694,8 +5647,6 @@ textarea {
 
 @media (max-width: 1080px) {
   .construct-auth-stage {
-    grid-template-columns: 1fr;
-    gap: 1.5rem;
     padding: 1.5rem;
   }
 }
@@ -5705,15 +5656,17 @@ textarea {
     padding: 1rem;
   }
 
+  .construct-auth-panel {
+    width: 100%;
+  }
+
+  .construct-auth-brand,
+  .construct-auth-brand-meta,
   .construct-auth-provider-button,
   .construct-account-provider-title-row,
   .construct-account-header {
     flex-direction: column;
     align-items: stretch;
-  }
-
-  .construct-auth-copy h1 {
-    font-size: 2.45rem;
   }
 
   .construct-account-panel {
