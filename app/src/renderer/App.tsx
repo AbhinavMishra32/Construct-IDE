@@ -35,7 +35,6 @@ import {
 } from "react-syntax-highlighter/dist/esm/styles/prism";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -2647,20 +2646,6 @@ function AppSidebar({
     <SidebarProvider className="construct-app-sidebar-provider">
       <Sidebar collapsible="none" className="construct-app-sidebar">
         <SidebarHeader className="construct-app-sidebar-top">
-          <div className="construct-app-brand">
-            <div className="flex items-center gap-3">
-              <Avatar className="size-10 rounded-xl border border-border/80 bg-background/70">
-                <AvatarFallback className="rounded-xl bg-transparent text-sm font-semibold">
-                  CT
-                </AvatarFallback>
-              </Avatar>
-              <div className="flex min-w-0 flex-col gap-1">
-                <span className="construct-app-brand-kicker">Construct</span>
-                <strong>{activeProjectName ?? "Construction IDE"}</strong>
-              </div>
-            </div>
-          </div>
-
           <PrimaryButton
             type="button"
             onClick={onStartProject}
@@ -2731,7 +2716,7 @@ function AppSidebar({
 
             <SidebarGroupContent>
               {recentProjects.length > 0 ? (
-                <ScrollArea className="max-h-[40vh]">
+                <ScrollArea className="construct-app-recent-scroll">
                   <div className="construct-app-recent-list">
                     {recentProjects.map((project) => (
                       <Button
@@ -2767,15 +2752,27 @@ function AppSidebar({
         <SidebarFooter className="construct-app-sidebar-section construct-app-sidebar-section--meta">
           {authSession?.user ? (
             <div className="construct-app-account-card">
-              <div>
+              <div className="construct-app-account-copy">
                 <strong>{authSession.user.displayName}</strong>
                 <span>{authSession.user.email}</span>
               </div>
               <div className="construct-app-account-actions">
-                <Button type="button" variant="ghost" size="sm" onClick={onOpenAccount}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="construct-app-account-action"
+                  onClick={onOpenAccount}
+                >
                   Account
                 </Button>
-                <Button type="button" variant="ghost" size="sm" onClick={onLogout}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="construct-app-account-action"
+                  onClick={onLogout}
+                >
                   Sign out
                 </Button>
               </div>
