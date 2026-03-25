@@ -3,13 +3,14 @@ import path from "node:path";
 import { app, BrowserWindow } from "electron";
 
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
+const isMacOS = process.platform === "darwin";
 const shouldOpenDevTools = process.env.CONSTRUCT_OPEN_DEVTOOLS === "1";
 
 function createWindow(): void {
   const window = new BrowserWindow({
     width: 1440,
     height: 920,
-    backgroundColor: "#08111f",
+    backgroundColor: isMacOS ? "#00000000" : "#08111f",
     title: "Construct",
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
@@ -17,6 +18,10 @@ function createWindow(): void {
       nodeIntegration: false
     }
   });
+
+  if (isMacOS) {
+    window.setVibrancy("sidebar", { animationDuration: 160 });
+  }
 
   if (isDev && process.env.VITE_DEV_SERVER_URL) {
     void window.loadURL(process.env.VITE_DEV_SERVER_URL);

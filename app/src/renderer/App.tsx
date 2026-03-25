@@ -35,6 +35,7 @@ import {
 } from "react-syntax-highlighter/dist/esm/styles/prism";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -227,6 +228,20 @@ function parseAppRoute(hash: string): AppRoute {
 
 function formatBlueprintDebugRoute(buildId: string | null = null): string {
   return buildId ? `#/debug/blueprints/${encodeURIComponent(buildId)}` : "#/debug/blueprints";
+}
+
+function getDisplayInitials(value: string): string {
+  const parts = value
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2);
+
+  if (parts.length === 0) {
+    return "CT";
+  }
+
+  return parts.map((part) => part[0]?.toUpperCase() ?? "").join("");
 }
 
 function hasPlanningAnswer(answer: PlanningAnswerDraft | undefined): answer is PlanningAnswerDraft {
@@ -1641,7 +1656,7 @@ export default function App() {
 
   if (appRoute.kind === "debug-blueprints") {
     return (
-      <main className="construct-app">
+      <main className="construct-app" data-platform={runtimeInfo.platform}>
         <BlueprintDebugView
           debugMode={runnerHealth?.debugMode ?? false}
           langSmithEnabled={runnerHealth?.langSmithEnabled ?? false}
@@ -1698,7 +1713,7 @@ export default function App() {
   }
 
   return (
-    <main className="construct-app">
+    <main className="construct-app" data-platform={runtimeInfo.platform}>
       <div className={`construct-shell ${showAppSidebar ? "" : "is-code-view"}`.trim()}>
         {showAppSidebar ? (
           <AppSidebar
@@ -2643,7 +2658,10 @@ function AppSidebar({
   const recentProjects = (projectsDashboard?.projects ?? []).slice(0, 5);
 
   return (
-    <SidebarProvider className="construct-app-sidebar-provider">
+    <SidebarProvider
+      className="construct-app-sidebar-provider"
+      style={{ "--sidebar-width": "244px" } as CSSProperties}
+    >
       <Sidebar collapsible="none" className="construct-app-sidebar">
         <SidebarHeader className="construct-app-sidebar-top">
           <PrimaryButton
@@ -2732,7 +2750,15 @@ function AppSidebar({
                         )}
                         disabled={dashboardBusy}
                       >
-                        <strong>{project.name}</strong>
+                        <div className="construct-app-recent-item-row">
+                          <div className="construct-app-recent-item-title">
+                            <FolderOpenIcon />
+                            <strong>{project.name}</strong>
+                          </div>
+                          <span className="construct-app-recent-item-timestamp">
+                            {formatProjectTimestamp(project.lastOpenedAt ?? project.updatedAt)}
+                          </span>
+                        </div>
                         <span>{project.currentStepTitle ?? project.description}</span>
                       </Button>
                     ))}
@@ -2751,42 +2777,51 @@ function AppSidebar({
 
         <SidebarFooter className="construct-app-sidebar-section construct-app-sidebar-section--meta">
           {authSession?.user ? (
-            <div className="construct-app-account-card">
+            <div className="construct-app-account-row">
+              <Avatar className="construct-app-account-avatar">
+                <AvatarFallback className="construct-app-account-avatar-fallback">
+                  {getDisplayInitials(authSession.user.displayName)}
+                </AvatarFallback>
+              </Avatar>
               <div className="construct-app-account-copy">
                 <strong>{authSession.user.displayName}</strong>
                 <span>{authSession.user.email}</span>
               </div>
-              <div className="construct-app-account-actions">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="construct-app-account-action"
-                  onClick={onOpenAccount}
-                >
-                  Account
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="construct-app-account-action"
-                  onClick={onLogout}
-                >
-                  Sign out
-                </Button>
-              </div>
             </div>
           ) : null}
-          <div className="construct-app-meta-row">
-            <span>Runner</span>
-            <ToolbarPill variant="outline">{runnerHealth?.status ?? "offline"}</ToolbarPill>
-          </div>
-          <div className="construct-app-meta-row">
-            <span>Projects</span>
-            <ToolbarPill variant="outline">
-              {projectsDashboard?.projects.length ?? 0}
-            </ToolbarPill>
+          {authSession?.user ? (
+            <div className="construct-app-account-actions">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="construct-app-account-action"
+                onClick={onOpenAccount}
+              >
+                Account
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="construct-app-account-action"
+                onClick={onLogout}
+              >
+                Sign out
+              </Button>
+            </div>
+          ) : null}
+          <div className="construct-app-meta-stack">
+            <div className="construct-app-meta-row">
+              <span>Runner</span>
+              <ToolbarPill variant="outline">{runnerHealth?.status ?? "offline"}</ToolbarPill>
+            </div>
+            <div className="construct-app-meta-row">
+              <span>Projects</span>
+              <ToolbarPill variant="outline">
+                {projectsDashboard?.projects.length ?? 0}
+              </ToolbarPill>
+            </div>
           </div>
         </SidebarFooter>
       </Sidebar>
