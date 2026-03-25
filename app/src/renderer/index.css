@@ -6631,13 +6631,13 @@ textarea {
   position: relative;
   overflow: hidden;
   background:
-    radial-gradient(circle at 16% 14%, color-mix(in srgb, var(--course-accent) 14%, transparent), transparent 28%),
-    radial-gradient(circle at 84% 20%, color-mix(in srgb, var(--success) 12%, transparent), transparent 32%),
-    radial-gradient(circle at 52% 100%, color-mix(in srgb, var(--warning) 10%, transparent), transparent 40%),
+    radial-gradient(circle at 18% 16%, color-mix(in srgb, var(--course-accent) 12%, transparent), transparent 26%),
+    radial-gradient(circle at 84% 24%, color-mix(in srgb, var(--success) 10%, transparent), transparent 28%),
+    radial-gradient(circle at 50% 96%, color-mix(in srgb, var(--warning) 8%, transparent), transparent 34%),
     linear-gradient(
       180deg,
-      color-mix(in srgb, var(--panel-bg) 94%, var(--app-bg)) 0%,
-      color-mix(in srgb, var(--app-bg) 96%, var(--panel-soft)) 100%
+      color-mix(in srgb, var(--panel-bg) 96%, var(--app-bg)) 0%,
+      color-mix(in srgb, var(--app-bg) 98%, var(--panel-soft)) 100%
     );
 }
 
@@ -6652,25 +6652,25 @@ textarea {
   background-image:
     linear-gradient(
       to right,
-      color-mix(in srgb, var(--border) 26%, transparent) 1px,
+      color-mix(in srgb, var(--border) 20%, transparent) 1px,
       transparent 1px
     ),
     linear-gradient(
       to bottom,
-      color-mix(in srgb, var(--border) 22%, transparent) 1px,
+      color-mix(in srgb, var(--border) 16%, transparent) 1px,
       transparent 1px
     );
   background-position: center;
-  background-size: clamp(56px, 8vw, 96px) clamp(56px, 8vw, 96px);
-  mask-image: radial-gradient(circle at center, black 22%, transparent 78%);
-  opacity: 0.45;
+  background-size: 72px 72px;
+  mask-image: radial-gradient(circle at center, black 26%, transparent 82%);
+  opacity: 0.34;
 }
 
 .construct-coming-soon-orb {
   position: absolute;
   border-radius: 999px;
-  filter: blur(10px);
-  opacity: 0.82;
+  filter: blur(18px);
+  opacity: 0.68;
 }
 
 .construct-coming-soon-orb--north {
@@ -6715,18 +6715,17 @@ textarea {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  padding: clamp(18px, 3vw, 32px);
+  padding: clamp(20px, 3vw, 36px);
 }
 
 .construct-coming-soon-toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 12px;
   flex-wrap: wrap;
 }
 
-.construct-coming-soon-brand,
 .construct-coming-soon-theme-toggle {
   min-height: 36px;
   padding-inline: 12px;
@@ -6737,11 +6736,6 @@ textarea {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.42);
 }
 
-.construct-coming-soon-brand {
-  gap: 6px;
-  color: var(--text);
-}
-
 .construct-coming-soon-theme-toggle {
   gap: 8px;
 }
@@ -6750,97 +6744,50 @@ textarea {
   flex: 1;
   display: grid;
   place-items: center;
-  padding-block: clamp(32px, 8vh, 72px);
+  padding-block: clamp(32px, 7vh, 64px);
 }
 
-.construct-coming-soon-card-wrap {
-  width: min(100%, 760px);
-}
-
-.construct-coming-soon-card {
+.construct-coming-soon-copy {
   position: relative;
-  overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
-  border-radius: clamp(24px, 4vw, 36px);
-  box-shadow:
-    0 32px 72px rgba(17, 17, 16, 0.12),
-    inset 0 1px 0 rgba(255, 255, 255, 0.54);
-}
-
-.construct-coming-soon-card::before {
-  content: "";
-  position: absolute;
-  inset: 1px;
-  border-radius: inherit;
-  background:
-    linear-gradient(
-      135deg,
-      color-mix(in srgb, var(--glass-strong) 94%, transparent),
-      color-mix(in srgb, var(--glass-bg) 84%, transparent)
-    ),
-    radial-gradient(
-      circle at top right,
-      color-mix(in srgb, var(--course-accent) 12%, transparent),
-      transparent 38%
-    );
-}
-
-.construct-coming-soon-card-content {
-  position: relative;
-  min-height: clamp(320px, 54vh, 520px);
+  width: min(100%, 1020px);
+  min-height: clamp(180px, 26vh, 220px);
   display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 40px;
-  padding: clamp(28px, 6vw, 56px);
+  align-items: center;
+  justify-content: center;
+  padding: clamp(12px, 3vw, 24px);
 }
 
-.construct-coming-soon-card-content::after {
+.construct-coming-soon-copy::after {
   content: "";
   position: absolute;
-  inset: auto -10% -24% 34%;
-  height: 18rem;
+  inset: auto 22% -24% 22%;
+  height: 8rem;
   background: radial-gradient(
-    circle,
-    color-mix(in srgb, var(--shine-mid) 46%, transparent),
-    transparent 72%
+    circle at 50% 120%,
+    color-mix(in srgb, var(--shine-mid) 10%, transparent),
+    transparent 54%
   );
-  filter: blur(16px);
-}
-
-.construct-coming-soon-kicker {
-  align-self: flex-start;
-  min-height: 34px;
-  padding-inline: 14px;
-  border-radius: 999px;
-  border-color: color-mix(in srgb, var(--border) 86%, transparent);
-  background: color-mix(in srgb, var(--panel-bg) 76%, transparent);
-  color: var(--text-muted);
-  font-size: 11px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
+  filter: blur(18px);
+  pointer-events: none;
 }
 
 .construct-coming-soon-title {
   margin: 0;
-  max-width: 7ch;
-  font-size: clamp(3.5rem, 11vw, 7.25rem);
-  line-height: 0.88;
-  letter-spacing: -0.09em;
+  font-family: "Geist", "Avenir Next", "Futura", sans-serif;
+  position: relative;
+  z-index: 1;
+  font-size: clamp(3rem, 7.2vw, 5.8rem);
+  font-weight: 280;
+  font-variation-settings: "wght" 280;
+  line-height: 1;
+  letter-spacing: -0.07em;
   color: var(--text);
-  text-wrap: balance;
+  white-space: nowrap;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
-:root[data-construct-theme="dark"] .construct-coming-soon-brand,
-:root[data-construct-theme="dark"] .construct-coming-soon-theme-toggle,
-:root[data-construct-theme="dark"] .construct-coming-soon-kicker {
+:root[data-construct-theme="dark"] .construct-coming-soon-theme-toggle {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
-}
-
-:root[data-construct-theme="dark"] .construct-coming-soon-card {
-  box-shadow:
-    0 34px 84px rgba(0, 0, 0, 0.44),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 @media (max-width: 1080px) {
@@ -6855,17 +6802,16 @@ textarea {
   }
 
   .construct-coming-soon-toolbar {
-    justify-content: space-between;
+    justify-content: flex-end;
   }
 
-  .construct-coming-soon-card-content {
-    min-height: 24rem;
-    padding: 24px;
+  .construct-coming-soon-copy {
+    min-height: 10rem;
+    padding: 12px;
   }
 
   .construct-coming-soon-title {
-    max-width: 5ch;
-    font-size: clamp(3rem, 18vw, 4.75rem);
+    font-size: clamp(2.35rem, 11vw, 3.8rem);
   }
 
   .construct-coming-soon-grid {
