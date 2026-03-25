@@ -6,14 +6,18 @@ import {
   ChevronRightIcon,
   CircleIcon,
   FileTextIcon,
+  FlaskConicalIcon,
   FolderOpenIcon,
   FolderTreeIcon,
+  GitBranchPlusIcon,
+  LightbulbIcon,
   ListTodoIcon,
   MoonStarIcon,
   PlusIcon,
   SearchIcon,
   SparklesIcon,
-  SunIcon
+  SunIcon,
+  WrenchIcon
 } from "lucide-react";
 import type { editor as MonacoEditor } from "monaco-editor";
 import {
@@ -3588,7 +3592,7 @@ function PlanningOverlay({
         </header>
 
         {!planningSession ? (
-          <div className="construct-planning-start">
+          <div className="construct-planning-start construct-planning-start--minimal">
             <section className="construct-planning-composer">
               <span className="construct-panel-kicker">Project goal</span>
               <h2>Describe the project.</h2>
@@ -3673,46 +3677,27 @@ function PlanningOverlay({
               </div>
             </section>
 
-            <aside className="construct-planning-sidepanel">
-              <section className="construct-info-panel">
-                <span className="construct-panel-kicker">What the Architect will produce</span>
-                <div className="construct-tag-list">
-                  <TagChip>project path</TagChip>
-                  <TagChip>project spine</TagChip>
-                  <TagChip>adaptive frontier</TagChip>
-                  <TagChip>concept checks</TagChip>
-                  <TagChip>real code tasks</TagChip>
-                  <TagChip>hidden tests</TagChip>
-                </div>
-                <p>
-                  Construct creates the project spine, prepares the first visible slice,
-                  wires hidden tests, and then hands the learner into the workspace at the
-                  right step.
-                </p>
-              </section>
-
-              {planningEvents.length > 0 ? (
-                <section className="construct-planning-event-log">
-                  <div className="construct-brief-section-header">
-                    <div>
-                      <span className="construct-brief-kicker">Agent Activity</span>
-                      <h2>What the Architect is doing right now.</h2>
-                    </div>
+            {planningEvents.length > 0 ? (
+              <section className="construct-planning-event-log construct-planning-event-log--minimal">
+                <div className="construct-brief-section-header">
+                  <div>
+                    <span className="construct-brief-kicker">Agent Activity</span>
+                    <h2>What the Architect is doing right now.</h2>
                   </div>
-                  <ArchitectTaskBoard events={planningEvents} />
-                </section>
-              ) : null}
-            </aside>
+                </div>
+                <ArchitectTaskBoard events={planningEvents} />
+              </section>
+            ) : null}
           </div>
         ) : null}
 
         {isQuestionPhase ? (
           <div
-            className={`construct-planning-start ${
+            className={`construct-planning-start construct-planning-start--minimal ${
               planningBusy ? "" : "construct-planning-start--question"
             }`}
           >
-            <section className="construct-info-panel">
+            <section className="construct-info-panel construct-planning-brief-panel">
               <span className="construct-panel-kicker">Project brief</span>
               <h2 className="construct-modal-underlay-title">{planningGoal.trim()}</h2>
               <p>
@@ -3738,19 +3723,17 @@ function PlanningOverlay({
               ) : null}
             </section>
 
-            <aside className="construct-planning-sidepanel">
-              {planningEvents.length > 0 ? (
-                <section className="construct-planning-event-log">
-                  <div className="construct-brief-section-header">
-                    <div>
-                      <span className="construct-brief-kicker">Agent Activity</span>
-                      <h2>What the Architect has already done.</h2>
-                    </div>
+            {planningEvents.length > 0 ? (
+              <section className="construct-planning-event-log construct-planning-event-log--minimal">
+                <div className="construct-brief-section-header">
+                  <div>
+                    <span className="construct-brief-kicker">Agent Activity</span>
+                    <h2>What the Architect has already done.</h2>
                   </div>
-                  <ArchitectTaskBoard events={planningEvents} />
-                </section>
-              ) : null}
-            </aside>
+                </div>
+                <ArchitectTaskBoard events={planningEvents} />
+              </section>
+            ) : null}
           </div>
         ) : null}
 
@@ -5372,89 +5355,208 @@ function isStreamAgentEvent(event: AgentEvent): boolean {
 type ArchitectTaskGroup = {
   key: string;
   label: string;
-  eyebrow: string;
   status: "working" | "done" | "warning" | "error";
   events: AgentEvent[];
   latestEvent: AgentEvent;
   streamChunkCount: number;
 };
 
+type ArchitectTaskChild = {
+  key: string;
+  label: string;
+};
+
 function ArchitectTaskBoard({ events }: { events: AgentEvent[] }) {
   const groups = buildArchitectTaskGroups(events);
   const latestActiveGroup =
     groups.find((group) => group.status === "working") ?? groups.at(-1) ?? null;
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    setExpandedGroups((current) => {
+      const next = { ...current };
+      let changed = false;
+
+      for (const group of groups) {
+        if (next[group.key] === undefined) {
+          next[group.key] = group.key === latestActiveGroup?.key || group.status === "error";
+          changed = true;
+        }
+      }
+
+      return changed ? next : current;
+    });
+  }, [groups, latestActiveGroup]);
 
   return (
-    <div className="construct-agent-task-board">
-      {latestActiveGroup ? (
-        <section className="construct-agent-live-banner">
-          <div>
-            <span className="construct-brief-kicker">Live Architect step</span>
-            <h3>{latestActiveGroup.label}</h3>
-            <p>
-              {isStreamAgentEvent(latestActiveGroup.latestEvent)
-                ? "The Architect is actively generating the current stage."
-                : latestActiveGroup.latestEvent.detail ?? latestActiveGroup.latestEvent.title}
-            </p>
-          </div>
-          <span className={`construct-agent-task-pill is-${latestActiveGroup.status}`}>
-            {formatArchitectStatus(latestActiveGroup.status)}
-          </span>
-        </section>
-      ) : null}
+    <div className="construct-agent-outline">
+      {groups.map((group, index) => {
+        const isActive = latestActiveGroup?.key === group.key;
+        const childItems = buildArchitectTaskChildren(group);
+        const body =
+          group.latestEvent.detail ??
+          (isActive && isStreamAgentEvent(group.latestEvent)
+            ? "Construct is actively generating this stage."
+            : "");
+        const isExpandable = childItems.length > 0 || body.length > 0;
+        const isExpanded =
+          isExpandable &&
+          (expandedGroups[group.key] ?? (isActive || group.status === "error"));
 
-      <div className="construct-agent-task-grid">
-        {groups.map((group) => (
-          <section key={group.key} className="construct-agent-task-card">
-            <div className="construct-agent-task-card-header">
-              <div>
-                <span className="construct-brief-kicker">{group.eyebrow}</span>
-                <h3>{group.label}</h3>
-              </div>
-              <span className={`construct-agent-task-pill is-${group.status}`}>
-                {formatArchitectStatus(group.status)}
-              </span>
-            </div>
-
-            <div className="construct-guide-event-meta">
-              <span className="construct-task-status">
-                {formatAgentStageLabel(group.latestEvent.stage)}
-              </span>
-              <span className={`construct-task-status ${group.latestEvent.level}`}>
-                {group.latestEvent.level}
-              </span>
-            </div>
-
-            {!isStreamAgentEvent(group.latestEvent) ? (
-              <>
-                <strong>{group.latestEvent.title}</strong>
-                {group.latestEvent.detail ? <p>{group.latestEvent.detail}</p> : null}
-              </>
-            ) : (
-              <strong>{group.latestEvent.title}</strong>
+        return (
+          <section
+            key={group.key}
+            className={cn(
+              "construct-agent-outline-group",
+              isActive ? "is-active" : "",
+              `is-${group.status}`
             )}
+          >
+            <div className="construct-agent-outline-node">
+              <span className="construct-agent-outline-rail" aria-hidden="true">
+                <span className="construct-agent-outline-dot" />
+                {index < groups.length - 1 ? (
+                  <span className="construct-agent-outline-stem" />
+                ) : null}
+              </span>
 
-            {group.streamChunkCount > 0 ? (
-              <LiveAgentResponseIndicator
-                label="Architect is still responding"
-                chunkCount={group.streamChunkCount}
-              />
-            ) : null}
+              <div className="construct-agent-outline-content">
+                {isExpandable ? (
+                  <button
+                    type="button"
+                    className="construct-agent-outline-row"
+                    onClick={() => {
+                      setExpandedGroups((current) => ({
+                        ...current,
+                        [group.key]: !isExpanded
+                      }));
+                    }}
+                  >
+                    <span className="construct-agent-outline-row-main">
+                      <span className="construct-agent-outline-icon">
+                        {renderArchitectGroupIcon(group.key)}
+                      </span>
+                      <span className="construct-agent-outline-label">{group.label}</span>
+                    </span>
+                    <span className="construct-agent-outline-chevron" aria-hidden="true">
+                      {isExpanded ? (
+                        <ChevronDownIcon className="size-3.5" />
+                      ) : (
+                        <ChevronRightIcon className="size-3.5" />
+                      )}
+                    </span>
+                  </button>
+                ) : (
+                  <div className="construct-agent-outline-row">
+                    <span className="construct-agent-outline-row-main">
+                      <span className="construct-agent-outline-icon">
+                        {renderArchitectGroupIcon(group.key)}
+                      </span>
+                      <span className="construct-agent-outline-label">{group.label}</span>
+                    </span>
+                  </div>
+                )}
 
-            {buildPlanningEventTags(group.latestEvent).length > 0 ? (
-              <div className="construct-tag-list">
-                {buildPlanningEventTags(group.latestEvent).map((tag) => (
-                  <TagChip key={`${group.key}-${tag}`}>
-                    {tag}
-                  </TagChip>
-                ))}
+                {isExpanded ? (
+                  <div className="construct-agent-outline-panel">
+                    {childItems.length > 0 ? (
+                      <div className="construct-agent-outline-children">
+                        {childItems.map((item) => (
+                          <div key={item.key} className="construct-agent-outline-child">
+                            <span className="construct-agent-outline-child-bullet" aria-hidden="true" />
+                            <span className="construct-agent-outline-child-label">
+                              {item.label}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+
+                    {body ? (
+                      <div className="construct-agent-outline-body">
+                        <p>{body}</p>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
-            ) : null}
+            </div>
           </section>
-        ))}
-      </div>
+        );
+      })}
     </div>
   );
+}
+
+function buildArchitectTaskChildren(group: ArchitectTaskGroup): ArchitectTaskChild[] {
+  const items: ArchitectTaskChild[] = [];
+  const seen = new Set<string>();
+
+  for (const event of group.events) {
+    if (isStreamAgentEvent(event)) {
+      continue;
+    }
+
+    const label = event.title.trim();
+    const normalized = label.toLowerCase();
+
+    if (!label || seen.has(normalized)) {
+      continue;
+    }
+
+    seen.add(normalized);
+    items.push({
+      key: event.id,
+      label
+    });
+  }
+
+  if (items.length === 0) {
+    for (const tag of buildPlanningEventTags(group.latestEvent).slice(0, 3)) {
+      items.push({
+        key: `${group.key}-${tag}`,
+        label: tag
+      });
+    }
+  }
+
+  if (group.streamChunkCount > 0) {
+    items.push({
+      key: `${group.key}-stream`,
+      label: `Receiving live updates (${group.streamChunkCount})`
+    });
+  }
+
+  return items.slice(-4);
+}
+
+function renderArchitectGroupIcon(stage: string): ReactNode {
+  if (stage.startsWith("research") || stage === "plan-generation") {
+    return <LightbulbIcon className="size-3.5" />;
+  }
+
+  if (stage.includes("hidden-tests")) {
+    return <FlaskConicalIcon className="size-3.5" />;
+  }
+
+  if (stage.includes("dependency-install")) {
+    return <WrenchIcon className="size-3.5" />;
+  }
+
+  if (
+    stage === "blueprint-generation" ||
+    stage === "blueprint-synthesis" ||
+    stage.includes("canonical-files") ||
+    stage.includes("learner-mask")
+  ) {
+    return <GitBranchPlusIcon className="size-3.5" />;
+  }
+
+  if (stage.includes("support-files") || stage.includes("activation") || stage.includes("layout")) {
+    return <FolderOpenIcon className="size-3.5" />;
+  }
+
+  return <SparklesIcon className="size-3.5" />;
 }
 
 function buildArchitectTaskGroups(events: AgentEvent[]): ArchitectTaskGroup[] {
@@ -5541,59 +5643,51 @@ function normalizeArchitectTaskKey(stage: string): string {
   return stage.replace(/-stream$/, "");
 }
 
-function describeArchitectTask(key: string): { label: string; eyebrow: string } {
+function describeArchitectTask(key: string): { label: string } {
   if (key.startsWith("research-")) {
     return {
-      label: formatAgentStageLabel(key),
-      eyebrow: "Research"
+      label: formatAgentStageLabel(key)
     };
   }
 
   if (key === "plan-generation") {
     return {
-      label: "Personalized roadmap synthesis",
-      eyebrow: "Planning"
+      label: "Personalized roadmap synthesis"
     };
   }
 
   if (key === "blueprint-generation" || key === "blueprint-synthesis") {
     return {
-      label: "Runnable project generation",
-      eyebrow: "Generation"
+      label: "Runnable project generation"
     };
   }
 
   if (key.includes("support-files") || key.includes("canonical-files") || key.includes("learner-mask")) {
     return {
-      label: formatAgentStageLabel(key),
-      eyebrow: "Files"
+      label: formatAgentStageLabel(key)
     };
   }
 
   if (key.includes("hidden-tests")) {
     return {
-      label: "Hidden validation creation",
-      eyebrow: "Validation"
+      label: "Hidden validation creation"
     };
   }
 
   if (key.includes("dependency-install")) {
     return {
-      label: "Dependency preparation",
-      eyebrow: "Install"
+      label: "Dependency preparation"
     };
   }
 
   if (key.includes("activation") || key.includes("layout")) {
     return {
-      label: formatAgentStageLabel(key),
-      eyebrow: "Workspace"
+      label: formatAgentStageLabel(key)
     };
   }
 
   return {
-    label: formatAgentStageLabel(key),
-    eyebrow: "Architect"
+    label: formatAgentStageLabel(key)
   };
 }
 
@@ -5613,19 +5707,6 @@ function architectStatusFromLevel(
   }
 
   return "working";
-}
-
-function formatArchitectStatus(status: ArchitectTaskGroup["status"]): string {
-  switch (status) {
-    case "done":
-      return "Done";
-    case "warning":
-      return "Needs attention";
-    case "error":
-      return "Failed";
-    default:
-      return "Working";
-  }
 }
 
 function buildAnchorSnippet(
