@@ -1,4 +1,23 @@
 import Editor from "@monaco-editor/react";
+import {
+  ArrowClockwise as PhArrowClockwise,
+  ArrowSquareIn as PhArrowSquareIn,
+  ArrowsInSimple as PhArrowsInSimple,
+  ArrowsOutSimple as PhArrowsOutSimple,
+  BookOpenText as PhBookOpenText,
+  Brain as PhBrain,
+  CompassTool as PhCompassTool,
+  EyeSlash as PhEyeSlash,
+  Flask as PhFlask,
+  Lightbulb as PhLightbulb,
+  MagicWand as PhMagicWand,
+  PaperPlaneTilt as PhPaperPlaneTilt,
+  SidebarSimple as PhSidebarSimple,
+  Sparkle as PhSparkle,
+  Stack as PhStack,
+  Target as PhTarget,
+  TestTube as PhTestTube
+} from "@phosphor-icons/react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   BookOpenTextIcon,
@@ -473,6 +492,62 @@ function DetailPopover({
         </div>
       </PopoverContent>
     </Popover>
+  );
+}
+
+function GuideSectionLabel({
+  icon,
+  children,
+  className
+}: {
+  icon: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <span className={cn("construct-guide-section-label", className)}>
+      <span className="construct-guide-section-label-icon">{icon}</span>
+      <span>{children}</span>
+    </span>
+  );
+}
+
+function GuideStatusPill({
+  icon,
+  className,
+  children
+}: {
+  icon: ReactNode;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <ToolbarPill variant="outline" className={cn("construct-guide-status-pill", className)}>
+      <span className="construct-guide-status-pill-icon">{icon}</span>
+      <span>{children}</span>
+    </ToolbarPill>
+  );
+}
+
+function GuideActionButton({
+  icon,
+  className,
+  children,
+  active = false,
+  ...props
+}: ComponentProps<typeof Button> & {
+  icon: ReactNode;
+  active?: boolean;
+}) {
+  return (
+    <Button
+      variant="outline"
+      className={cn("construct-guide-action-button", active && "is-active", className)}
+      {...props}
+    >
+      <span className="construct-guide-action-button-icon">{icon}</span>
+      <span>{children}</span>
+    </Button>
   );
 }
 
@@ -2487,10 +2562,16 @@ function FloatingGuideCard({
           className="construct-floating-card-minibar"
           aria-label={`Expand guide for ${activeStep.title}`}
         >
+          <span className="construct-floating-card-minibar-icon" aria-hidden="true">
+            <PhSidebarSimple size={16} weight="duotone" />
+          </span>
           <span className="construct-floating-card-minibar-kicker">Guide</span>
           <strong>{activeStep.title}</strong>
           <span className="construct-floating-card-minibar-meta">
             Step {activeStepIndex + 1}
+          </span>
+          <span className="construct-floating-card-minibar-expand" aria-hidden="true">
+            <PhArrowsOutSimple size={14} weight="bold" />
           </span>
         </Button>
       </motion.aside>
@@ -2508,19 +2589,30 @@ function FloatingGuideCard({
       <div className="construct-floating-card-header">
         <div className="construct-floating-card-meta">
           <div className="construct-floating-card-meta-copy">
-            <span className="construct-floating-card-kicker">Guide</span>
+            <GuideSectionLabel
+              icon={<PhBrain size={14} weight="duotone" />}
+              className="construct-floating-card-kicker"
+            >
+              Guide
+            </GuideSectionLabel>
             <span className="construct-floating-card-step">
               Step {activeStepIndex + 1} / {getRuntimeSteps(blueprint).length}
             </span>
           </div>
-          <SecondaryButton
-            type="button"
-            onClick={onMinimize}
-            className="construct-guide-minimize-button"
-            aria-label="Minimize tutor"
-          >
-            Minimize
-          </SecondaryButton>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onMinimize}
+                className="construct-guide-minimize-button"
+                aria-label="Minimize guide"
+              >
+                <PhArrowsInSimple size={14} weight="bold" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Minimize guide</TooltipContent>
+          </Tooltip>
         </div>
         <h2 className="construct-floating-card-title">{activeStep.title}</h2>
         <p className="construct-floating-card-summary">{activeStep.summary}</p>
@@ -2529,33 +2621,33 @@ function FloatingGuideCard({
       <div className="construct-floating-card-body">
         <div className="construct-guide-status-strip">
           {taskAttemptCount > 0 ? (
-            <ToolbarPill variant="outline" className="construct-guide-status-pill">
+            <GuideStatusPill icon={<PhArrowClockwise size={12} weight="bold" />}>
               {taskAttemptCount} attempt{taskAttemptCount === 1 ? "" : "s"}
-            </ToolbarPill>
+            </GuideStatusPill>
           ) : null}
           {recordedHintCount > 0 ? (
-            <ToolbarPill variant="outline" className="construct-guide-status-pill">
+            <GuideStatusPill icon={<PhLightbulb size={12} weight="fill" />}>
               {recordedHintCount} hint{recordedHintCount === 1 ? "" : "s"}
-            </ToolbarPill>
+            </GuideStatusPill>
           ) : null}
           {pastePercentage > 0 ? (
-            <ToolbarPill variant="outline" className="construct-guide-status-pill">
+            <GuideStatusPill icon={<PhArrowSquareIn size={12} weight="bold" />}>
               {pastePercentage}% paste
-            </ToolbarPill>
+            </GuideStatusPill>
           ) : null}
           {taskSession ? (
-            <ToolbarPill variant="outline" className="construct-guide-status-pill">
+            <GuideStatusPill icon={<PhStack size={12} weight="duotone" />}>
               {formatCommitId(taskSession.preTaskSnapshot.commitId)}
-            </ToolbarPill>
+            </GuideStatusPill>
           ) : null}
           {hiddenValidationCount > 0 ? (
             <DetailPopover
               label="Hidden validations"
               description={summarizeCompactList(activeStep.tests)}
             >
-              <ToolbarPill variant="outline" className="construct-guide-status-pill">
+              <GuideStatusPill icon={<PhTestTube size={12} weight="duotone" />}>
                 {hiddenValidationCount} check{hiddenValidationCount === 1 ? "" : "s"}
-              </ToolbarPill>
+              </GuideStatusPill>
             </DetailPopover>
           ) : null}
           {constraintCount > 0 ? (
@@ -2563,9 +2655,9 @@ function FloatingGuideCard({
               label="Constraints"
               description={summarizeCompactList(activeStep.constraints)}
             >
-              <ToolbarPill variant="outline" className="construct-guide-status-pill">
+              <GuideStatusPill icon={<PhCompassTool size={12} weight="duotone" />}>
                 {constraintCount} constraint{constraintCount === 1 ? "" : "s"}
-              </ToolbarPill>
+              </GuideStatusPill>
             </DetailPopover>
           ) : null}
         </div>
@@ -2593,42 +2685,59 @@ function FloatingGuideCard({
         ) : null}
 
         <div className="construct-floating-card-actions">
-          <div className="construct-action-cluster">
-            <PrimaryButton
-              type="button"
-              onClick={onSubmitTask}
-              disabled={taskRunState === "running"}
-            >
-              {taskRunState === "running" ? (
-                <>
-                  <Spinner data-icon="inline-start" />
-                  Running tests...
-                </>
-              ) : (
-                "Submit"
-              )}
-            </PrimaryButton>
-            <SecondaryButton type="button" onClick={onOpenBrief}>
-              Brief
-            </SecondaryButton>
-          </div>
+          <PrimaryButton
+            type="button"
+            onClick={onSubmitTask}
+            disabled={taskRunState === "running"}
+            className="construct-guide-submit-button"
+          >
+            {taskRunState === "running" ? (
+              <>
+                <Spinner data-icon="inline-start" />
+                Running tests...
+              </>
+            ) : (
+              <>
+                <PhPaperPlaneTilt size={15} weight="fill" />
+                Submit
+              </>
+            )}
+          </PrimaryButton>
 
-          <div className="construct-action-cluster is-compact">
-            <SecondaryButton type="button" onClick={onRefocus}>
+          <div className="construct-guide-secondary-actions">
+            <GuideActionButton
+              type="button"
+              onClick={onOpenBrief}
+              icon={<PhBookOpenText size={15} weight="duotone" />}
+              className="is-brief"
+            >
+              Brief
+            </GuideActionButton>
+            <GuideActionButton
+              type="button"
+              onClick={onRefocus}
+              icon={<PhTarget size={15} weight="duotone" />}
+              className="is-refocus"
+            >
               Refocus
-            </SecondaryButton>
-            <SecondaryButton type="button" onClick={onToggleGuide}>
-              {runtimeGuideBusy
-                ? (
-                    <>
-                      <Spinner data-icon="inline-start" />
-                      Thinking...
-                    </>
-                  )
-                : guideVisible
-                  ? "Hide guide"
-                  : "Guide"}
-            </SecondaryButton>
+            </GuideActionButton>
+            <GuideActionButton
+              type="button"
+              onClick={onToggleGuide}
+              icon={
+                runtimeGuideBusy ? (
+                  <Spinner data-icon="inline-start" />
+                ) : guideVisible ? (
+                  <PhEyeSlash size={15} weight="duotone" />
+                ) : (
+                  <PhBrain size={15} weight="duotone" />
+                )
+              }
+              className="is-guide"
+              active={guideVisible && !runtimeGuideBusy}
+            >
+              {runtimeGuideBusy ? "Thinking..." : guideVisible ? "Hide guide" : "Guide"}
+            </GuideActionButton>
           </div>
         </div>
 
@@ -2645,6 +2754,7 @@ function FloatingGuideCard({
               type="button"
               onClick={onRequestDeepDive}
               disabled={deepDiveBusy}
+              className="construct-guide-deep-dive-button"
             >
               {deepDiveBusy ? (
                 <>
@@ -2652,7 +2762,10 @@ function FloatingGuideCard({
                   Deepening step...
                 </>
               ) : (
-                "Deepen this step"
+                <>
+                  <PhMagicWand size={15} weight="duotone" />
+                  Deepen this step
+                </>
               )}
             </SecondaryButton>
             {deepDiveError ? <InlineError>{deepDiveError}</InlineError> : null}
@@ -2661,7 +2774,9 @@ function FloatingGuideCard({
 
         <div className="construct-floating-hints">
           <div className="construct-floating-hints-header">
-            <span>Hints</span>
+            <GuideSectionLabel icon={<PhLightbulb size={14} weight="duotone" />}>
+              Hints
+            </GuideSectionLabel>
             <div className="construct-hint-actions">
               {[1, 2, 3].map((level) => (
                 <Button
@@ -2673,6 +2788,7 @@ function FloatingGuideCard({
                   variant={revealedHintLevel >= level ? "secondary" : "outline"}
                   className="construct-hint-button"
                 >
+                  <PhSparkle size={12} weight={revealedHintLevel >= level ? "fill" : "regular"} />
                   L{level}
                 </Button>
               ))}
@@ -2706,7 +2822,9 @@ function FloatingGuideCard({
             >
               {runtimeGuide ? (
                 <div className="construct-guide-runtime-summary">
-                  <span className="construct-panel-kicker">Live Guide</span>
+                  <GuideSectionLabel icon={<PhBrain size={14} weight="duotone" />}>
+                    Live Guide
+                  </GuideSectionLabel>
                   <p>{runtimeGuide.summary}</p>
                   {runtimeGuide.observations.length > 0 ? (
                     <div className="construct-tag-list">
@@ -2738,14 +2856,18 @@ function FloatingGuideCard({
 
               {runtimeGuide?.nextAction ? (
                 <div className="construct-guide-next-action">
-                  <span className="construct-panel-kicker">Next action</span>
+                  <GuideSectionLabel icon={<PhTarget size={14} weight="duotone" />}>
+                    Next action
+                  </GuideSectionLabel>
                   <p>{runtimeGuide.nextAction}</p>
                 </div>
               ) : null}
 
               {runtimeGuideEvents.length > 0 ? (
                 <div className="construct-guide-event-log">
-                  <span className="construct-panel-kicker">Agent activity</span>
+                  <GuideSectionLabel icon={<PhSparkle size={14} weight="duotone" />}>
+                    Agent activity
+                  </GuideSectionLabel>
                   {runtimeGuideEvents.slice(-4).map((event) => (
                     <div key={event.id} className="construct-guide-event-item">
                       <strong>{event.title}</strong>
@@ -5738,7 +5860,9 @@ function TaskResultPanel({
   return (
     <Card className="construct-task-results">
       <CardHeader className="gap-2">
-        <span className="construct-panel-kicker">Execution</span>
+        <GuideSectionLabel icon={<PhFlask size={14} weight="duotone" />}>
+          Execution
+        </GuideSectionLabel>
       </CardHeader>
 
       <CardContent>
@@ -5758,9 +5882,11 @@ function TaskResultPanel({
           <div className="construct-task-result-body">
             <div className="construct-task-result-meta">
               <ToolbarPill className={`construct-task-status ${taskStatusClassName}`}>
+                <PhTestTube size={12} weight="duotone" />
                 {taskStatusLabel}
               </ToolbarPill>
               <ToolbarPill variant="outline" className="construct-brief-chip">
+                <PhArrowClockwise size={12} weight="bold" />
                 {formatDuration(taskResult.durationMs)}
               </ToolbarPill>
             </div>
