@@ -1303,7 +1303,8 @@ export default function App() {
 
   const openProject = async (
     project: ProjectSummary,
-    preferredStepId: string | null = null
+    preferredStepId: string | null = null,
+    destination: "brief" | "focus" = "brief"
   ) => {
     setDashboardBusy(true);
     setProjectsError("");
@@ -1313,13 +1314,52 @@ export default function App() {
       const dashboardState = await refreshDashboardState();
       const selectedProject =
         dashboardState.projects.find((entry) => entry.id === selection.activeProjectId) ?? project;
-      await hydrateWorkspace(preferredStepId ?? selectedProject.currentStepId);
+      const openedBlueprint = await hydrateWorkspace(preferredStepId ?? selectedProject.currentStepId);
+      const targetStep =
+        openedBlueprint
+          ? (
+              preferredStepId ?? selectedProject.currentStepId
+                ? getRuntimeSteps(openedBlueprint).find(
+                    (step) => step.id === (preferredStepId ?? selectedProject.currentStepId)
+                  ) ?? null
+                : null
+            ) ?? getRuntimeSteps(openedBlueprint)[0] ?? null
+          : null;
+
+      if (destination === "focus") {
+        if (targetStep) {
+          await openToAnchor(targetStep, {
+            setActiveFilePath,
+            setEditorValue,
+            setSavedValue,
+            setActiveStepId,
+            setAnchorLocation,
+            setLoadError,
+            setStatusMessage,
+            activeRequestIdRef
+          });
+        }
+
+        setSurfaceMode("focus");
+        setGuideMinimized(false);
+        setGuideVisible(false);
+        setRuntimeGuide(null);
+        setRuntimeGuideEvents([]);
+        setRuntimeGuideError("");
+        setTaskError("");
+        resetTaskTelemetry();
+      }
+
       setDashboardOpen(false);
       setPlanningOverlayOpen(false);
       setStatusMessage(
-        `Resumed ${selectedProject.name} at ${
-          preferredStepId ?? selectedProject.currentStepTitle ?? "the current step"
-        }.`
+        destination === "focus"
+          ? targetStep
+            ? `Opened workspace for ${selectedProject.name} at ${targetStep.title}.`
+            : `Opened workspace for ${selectedProject.name}.`
+          : `Resumed ${selectedProject.name} at ${
+              preferredStepId ?? selectedProject.currentStepTitle ?? "the current step"
+            }.`
       );
     } catch (error) {
       const message =
@@ -1652,16 +1692,19 @@ export default function App() {
       setLearnerModel(submission.learnerModel);
       setLearnerProfile(await fetchLearnerProfile());
       setTaskResult(submission.attempt.result);
-      setGuideVisible(submission.attempt.status !== "passed");
+      setGuideVisible(false);
+      setGuideMinimized(false);
+      setRuntimeGuide(null);
+      setRuntimeGuideEvents([]);
+      setRuntimeGuideError("");
       resetTaskTelemetry();
       setRevealedHintLevel(0);
 
       if (submission.attempt.status !== "passed") {
-        void loadRuntimeGuide(submission.attempt.result);
         setStatusMessage(
           submission.attempt.status === "needs-review" && submission.session.rewriteGate
             ? `Tests passed, but completion is blocked. Retype at least ${submission.session.rewriteGate.requiredTypedChars} characters without large paste and resubmit.`
-            : `Targeted tests failed for ${activeStep.title} on attempt ${submission.attempt.attempt}.`
+            : `Targeted tests failed for ${activeStep.title} on attempt ${submission.attempt.attempt}. Click Get help if you want guidance.`
         );
       } else {
         setStatusMessage(`Passed ${activeStep.title} on attempt ${submission.attempt.attempt}. Updating path...`);
@@ -1858,18 +1901,37 @@ export default function App() {
         null;
 
       if (activeProject) {
-        await openProject(activeProject, activeProject.currentStepId);
+        await openProject(activeProject, activeProject.currentStepId, "focus");
         return;
       }
 
       if (blueprint) {
         setPlanningOverlayOpen(false);
         setDashboardOpen(false);
-        setSurfaceMode("brief");
+        if (activeStep) {
+          await openToAnchor(activeStep, {
+            setActiveFilePath,
+            setEditorValue,
+            setSavedValue,
+            setActiveStepId,
+            setAnchorLocation,
+            setLoadError,
+            setStatusMessage,
+            activeRequestIdRef
+          });
+        }
+        setSurfaceMode("focus");
+        setGuideMinimized(false);
+        setGuideVisible(false);
+        setRuntimeGuide(null);
+        setRuntimeGuideEvents([]);
+        setRuntimeGuideError("");
+        setTaskError("");
+        resetTaskTelemetry();
         setStatusMessage(
           activeStep
-            ? `Returned to the workspace for ${activeStep.title}.`
-            : "Returned to the workspace."
+            ? `Opened workspace for ${activeStep.title}.`
+            : "Opened workspace."
         );
         return;
       }
@@ -2792,7 +2854,7 @@ function FloatingGuideCard({
               className="is-guide"
               active={guideVisible && !runtimeGuideBusy}
             >
-              {runtimeGuideBusy ? "Thinking..." : guideVisible ? "Hide guide" : "Guide"}
+              {runtimeGuideBusy ? "Thinking..." : guideVisible ? "Hide guide" : "Get help"}
             </GuideActionButton>
           </div>
         </div>
