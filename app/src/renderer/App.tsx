@@ -1849,6 +1849,42 @@ export default function App() {
     setPlanningOverlayOpen(true);
   };
 
+  const handleContinueToWorkspace = async () => {
+    try {
+      const dashboardState = projectsDashboard ?? (await refreshDashboardState());
+      const activeProject =
+        dashboardState.projects.find((project) => project.id === dashboardState.activeProjectId) ??
+        dashboardState.projects.find((project) => project.isActive) ??
+        null;
+
+      if (activeProject) {
+        await openProject(activeProject, activeProject.currentStepId);
+        return;
+      }
+
+      if (blueprint) {
+        setPlanningOverlayOpen(false);
+        setDashboardOpen(false);
+        setSurfaceMode("brief");
+        setStatusMessage(
+          activeStep
+            ? `Returned to the workspace for ${activeStep.title}.`
+            : "Returned to the workspace."
+        );
+        return;
+      }
+
+      setPlanningError(
+        "Construct couldn't find an active generated workspace yet. Reopen the project from the dashboard."
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to open the workspace.";
+      setPlanningError(message);
+      setStatusMessage(message);
+    }
+  };
+
   if (appRoute.kind === "debug-blueprints") {
     return (
       <main className="construct-app">
@@ -2388,6 +2424,9 @@ export default function App() {
             planningSession={planningSession}
             onClose={() => {
               setPlanningOverlayOpen(false);
+            }}
+            onContinueToWorkspace={() => {
+              void handleContinueToWorkspace();
             }}
             onGoalChange={setPlanningGoal}
             onOptionAnswerChange={(questionId, optionId) => {
@@ -4286,6 +4325,7 @@ function PlanningOverlay({
   planningAnswers,
   planningSession,
   onClose,
+  onContinueToWorkspace,
   onGoalChange,
   onOptionAnswerChange,
   onCustomAnswerChange,
@@ -4303,6 +4343,7 @@ function PlanningOverlay({
   planningAnswers: Record<string, PlanningAnswerDraft>;
   planningSession: PlanningSession | null;
   onClose: () => void;
+  onContinueToWorkspace: () => void;
   onGoalChange: (value: string) => void;
   onOptionAnswerChange: (questionId: string, optionId: string) => void;
   onCustomAnswerChange: (questionId: string, customResponse: string) => void;
@@ -4747,7 +4788,7 @@ function PlanningOverlay({
                 )}
               </PrimaryButton>
             ) : (
-              <PrimaryButton type="button" onClick={onClose}>
+              <PrimaryButton type="button" onClick={onContinueToWorkspace}>
                 Continue to workspace
               </PrimaryButton>
             )
