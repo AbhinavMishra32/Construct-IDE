@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
+import { Script } from "node:vm";
 
 import {
   BlueprintTaskRequestSchema,
@@ -690,6 +691,25 @@ async function runNodeValidationScript(
   logger: TestRunnerLogger,
   logContext: Record<string, unknown>
 ): Promise<ProcessExecutionResult> {
+  const validationScript = path.relative(projectRoot, scriptPath) || path.basename(scriptPath);
+  const preflightFailure = await preflightNodeValidationScript(scriptPath, validationScript);
+
+  if (preflightFailure) {
+    logger.warn("Skipped invalid hidden validation script.", {
+      ...logContext,
+      validationScript,
+      reason: preflightFailure
+    });
+
+    return {
+      durationMs: 0,
+      exitCode: 1,
+      stderr: `[CONSTRUCT] ${preflightFailure}`,
+      stdout: "",
+      timedOut: false
+    };
+  }
+
   const wrapperSource = [
     "const fs = require('node:fs');",
     "const path = require('node:path');",
@@ -714,7 +734,7 @@ async function runNodeValidationScript(
       logger,
       logContext: {
         ...logContext,
-        validationScript: path.relative(projectRoot, scriptPath) || path.basename(scriptPath)
+        validationScript
       }
     });
   } catch (error) {
@@ -774,6 +794,43 @@ function collectNodeValidationFailures(
   return [];
 }
 
+async function preflightNodeValidationScript(
+  scriptPath: string,
+  validationScript: string
+): Promise<string | null> {
+  const source = await readFile(scriptPath, "utf8");
+
+  if (looksLikePlaceholderValidationSource(source)) {
+    return `Hidden validation script ${validationScript} contains placeholder content.`;
+  }
+
+  try {
+    new Script(source, {
+      filename: validationScript
+    });
+  } catch (error) {
+    return `Hidden validation script ${validationScript} contains invalid JavaScript: ${
+      error instanceof Error ? error.message : String(error)
+    }`;
+  }
+
+  return null;
+}
+
+function looksLikePlaceholderValidationSource(source: string): boolean {
+  const normalized = source.trim().toLowerCase();
+
+  if (normalized === ".placeholder" || normalized === "placeholder") {
+    return true;
+  }
+
+  if (/placeholder for hidden validation/i.test(source)) {
+    return true;
+  }
+
+  return /^\s*(?:\/\/|#|\/\*)\s*placeholder\b/im.test(source);
+}
+
 function deriveNodeValidationComparison(message: string): Pick<
   TaskFailure,
   "expectedOutput" | "actualOutput"
@@ -817,6 +874,26 @@ function deriveNodeValidationComparison(message: string): Pick<
     return {
       expectedOutput: `${unreadable[1]} is readable`,
       actualOutput: normalized
+    };
+  }
+
+  const placeholderValidation =
+    /^Hidden validation script\s+(.+?)\s+contains placeholder content$/i.exec(normalized);
+  if (placeholderValidation?.[1]) {
+    const fileName = path.basename(placeholderValidation[1]);
+    return {
+      expectedOutput: `${fileName} contains a real runnable validation`,
+      actualOutput: `${fileName} contains placeholder content`
+    };
+  }
+
+  const invalidValidation =
+    /^Hidden validation script\s+(.+?)\s+contains invalid JavaScript:/i.exec(normalized);
+  if (invalidValidation?.[1]) {
+    const fileName = path.basename(invalidValidation[1]);
+    return {
+      expectedOutput: `${fileName} contains valid runnable JavaScript`,
+      actualOutput: `${fileName} contains invalid JavaScript`
     };
   }
 

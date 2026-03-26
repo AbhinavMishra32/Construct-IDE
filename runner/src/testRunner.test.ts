@@ -264,3 +264,83 @@ test("TestRunnerManager hides internal validation wrapper paths when a hidden va
     await rm(temporaryDirectory, { recursive: true, force: true });
   }
 });
+
+test("TestRunnerManager reports placeholder hidden validations cleanly", async () => {
+  const temporaryDirectory = await mkdtemp(
+    path.join(os.tmpdir(), "construct-node-validation-placeholder-")
+  );
+
+  try {
+    await mkdir(path.join(temporaryDirectory, "hidden_tests"), { recursive: true });
+    await writeFile(
+      path.join(temporaryDirectory, "hidden_tests", "placeholder_validation.js"),
+      ".placeholder\n",
+      "utf8"
+    );
+
+    const manager = new TestRunnerManager();
+    const result = await manager.runTask({
+      stepId: "fixture.node-validation-placeholder",
+      adapter: "jest",
+      projectRoot: temporaryDirectory,
+      tests: ["hidden_tests/placeholder_validation.js"],
+      timeoutMs: 10_000
+    });
+
+    assert.equal(result.status, "failed");
+    assert.equal(result.failures.length, 1);
+    assert.equal(
+      result.failures[0].message,
+      "Hidden validation script hidden_tests/placeholder_validation.js contains placeholder content."
+    );
+    assert.equal(
+      result.failures[0].expectedOutput,
+      "placeholder_validation.js contains a real runnable validation"
+    );
+    assert.equal(
+      result.failures[0].actualOutput,
+      "placeholder_validation.js contains placeholder content"
+    );
+  } finally {
+    await rm(temporaryDirectory, { recursive: true, force: true });
+  }
+});
+
+test("TestRunnerManager reports invalid hidden validation JavaScript cleanly", async () => {
+  const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "construct-node-validation-invalid-"));
+
+  try {
+    await mkdir(path.join(temporaryDirectory, "hidden_tests"), { recursive: true });
+    await writeFile(
+      path.join(temporaryDirectory, "hidden_tests", "invalid_validation.js"),
+      "const broken = ;\n",
+      "utf8"
+    );
+
+    const manager = new TestRunnerManager();
+    const result = await manager.runTask({
+      stepId: "fixture.node-validation-invalid-js",
+      adapter: "jest",
+      projectRoot: temporaryDirectory,
+      tests: ["hidden_tests/invalid_validation.js"],
+      timeoutMs: 10_000
+    });
+
+    assert.equal(result.status, "failed");
+    assert.equal(result.failures.length, 1);
+    assert.match(
+      result.failures[0].message,
+      /Hidden validation script hidden_tests\/invalid_validation\.js contains invalid JavaScript:/
+    );
+    assert.equal(
+      result.failures[0].expectedOutput,
+      "invalid_validation.js contains valid runnable JavaScript"
+    );
+    assert.equal(
+      result.failures[0].actualOutput,
+      "invalid_validation.js contains invalid JavaScript"
+    );
+  } finally {
+    await rm(temporaryDirectory, { recursive: true, force: true });
+  }
+});
