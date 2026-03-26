@@ -2870,7 +2870,7 @@ function AppSidebar({
             </SidebarGroupContent>
           </SidebarGroup>
 
-          <SidebarGroup className="construct-app-sidebar-section">
+          <SidebarGroup className="construct-app-sidebar-section construct-app-sidebar-section--recents">
             <div className="construct-app-sidebar-section-header">
               <SidebarGroupLabel className="construct-panel-kicker">
                 Recents
@@ -2878,7 +2878,7 @@ function AppSidebar({
               <ToolbarPill>{recentProjects.length}</ToolbarPill>
             </div>
 
-            <SidebarGroupContent>
+            <SidebarGroupContent className="construct-app-sidebar-recents-content">
               {recentProjects.length > 0 ? (
                 <ScrollArea className="construct-app-recent-scroll">
                   <div className="construct-app-recent-list">

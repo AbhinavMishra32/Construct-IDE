@@ -4996,6 +4996,11 @@ textarea {
   height: 100%;
 }
 
+.construct-shell-main,
+.construct-shell-content {
+  overflow: hidden;
+}
+
 .construct-app-sidebar {
   height: 100%;
   gap: 12px;
@@ -5041,11 +5046,36 @@ textarea {
 }
 
 .construct-app-sidebar-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   overflow: hidden;
 }
 
+.construct-app-sidebar-section {
+  min-height: 0;
+}
+
+.construct-app-sidebar-section--recents {
+  flex: 1;
+}
+
+.construct-app-sidebar-recents-content {
+  min-height: 0;
+  height: 100%;
+}
+
 .construct-app-recent-scroll {
-  max-height: none;
+  height: 100%;
+  max-height: 100%;
+}
+
+.construct-shell-content {
+  overflow: auto;
+}
+
+.construct-home {
+  overflow: auto;
 }
 
 .construct-workbench-topbar {
