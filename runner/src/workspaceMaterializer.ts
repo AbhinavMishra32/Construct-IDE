@@ -8,6 +8,8 @@ import {
   type ProjectBlueprint
 } from "@construct/shared";
 
+import { sanitizeMaterializedFileContent, sanitizeMaterializedFiles } from "./materializedFiles";
+
 export type PreparedWorkspace = {
   blueprint: ProjectBlueprint;
   canonicalBlueprintPath: string;
@@ -57,6 +59,8 @@ async function materializeWorkspace(input: {
   learnerWorkspaceRoot: string;
   learnerBlueprintPath: string;
 }): Promise<void> {
+  const sanitizedFiles = sanitizeMaterializedFiles(input.blueprint.files);
+
   await rm(input.learnerWorkspaceRoot, { recursive: true, force: true });
   await mkdir(input.learnerWorkspaceRoot, { recursive: true });
 
@@ -73,14 +77,19 @@ async function materializeWorkspace(input: {
     });
   }
 
-  for (const [relativePath, contents] of Object.entries(input.blueprint.files)) {
+  for (const [relativePath, contents] of Object.entries(sanitizedFiles)) {
     const destinationPath = path.join(input.learnerWorkspaceRoot, relativePath);
     await mkdir(path.dirname(destinationPath), { recursive: true });
-    await writeFile(destinationPath, contents, "utf8");
+    await writeFile(
+      destinationPath,
+      sanitizeMaterializedFileContent(relativePath, contents),
+      "utf8"
+    );
   }
 
   const learnerBlueprint = {
     ...input.blueprint,
+    files: sanitizedFiles,
     projectRoot: input.learnerWorkspaceRoot
   };
 

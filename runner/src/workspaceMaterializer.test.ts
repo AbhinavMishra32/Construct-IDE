@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -41,6 +41,54 @@ test("prepareLearnerWorkspace materializes starter files while retaining hidden 
       prepared.learnerBlueprintPath,
       path.join(prepared.learnerWorkspaceRoot, "project-blueprint.json")
     );
+  } finally {
+    await rm(isolatedRoot, { recursive: true, force: true });
+  }
+});
+
+test("prepareLearnerWorkspace strips trailing task comments from generated JSON files", async () => {
+  const isolatedRoot = await mkdtemp(path.join(os.tmpdir(), "construct-materialize-json-"));
+  const isolatedBlueprintRoot = path.join(isolatedRoot, "blueprints", "json-comments");
+  const isolatedBlueprintPath = path.join(isolatedBlueprintRoot, "project-blueprint.json");
+
+  try {
+    await mkdir(isolatedBlueprintRoot, { recursive: true });
+    const canonicalBlueprint = JSON.parse(await readFile(canonicalBlueprintPath, "utf8")) as {
+      files: Record<string, string>;
+      projectRoot: string;
+      sourceProjectRoot: string;
+    };
+
+    await writeFile(
+      isolatedBlueprintPath,
+      `${JSON.stringify(
+        {
+          ...canonicalBlueprint,
+          projectRoot: isolatedBlueprintRoot,
+          sourceProjectRoot: isolatedBlueprintRoot,
+          files: {
+            ...canonicalBlueprint.files,
+            "package.json": "{\n  \"name\": \"json-comments\"\n}\n// TASK: keep valid JSON\n",
+            "src/index.ts": "export const ready = true;\n"
+          }
+        },
+        null,
+        2
+      )}\n`,
+      "utf8"
+    );
+
+    const prepared = await prepareLearnerWorkspace(isolatedBlueprintPath);
+    const materializedPackageJson = await readFile(
+      path.join(prepared.learnerWorkspaceRoot, "package.json"),
+      "utf8"
+    );
+    const learnerBlueprint = JSON.parse(
+      await readFile(prepared.learnerBlueprintPath, "utf8")
+    ) as { files: Record<string, string> };
+
+    assert.equal(materializedPackageJson, '{\n  "name": "json-comments"\n}\n');
+    assert.equal(learnerBlueprint.files["package.json"], '{\n  "name": "json-comments"\n}\n');
   } finally {
     await rm(isolatedRoot, { recursive: true, force: true });
   }

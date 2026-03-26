@@ -94,6 +94,7 @@ import {
   summarizeKnowledgeBase,
   taskOutcomeToScore
 } from "./knowledgeGraph";
+import { sanitizeMaterializedFileContent, sanitizeMaterializedFiles } from "./materializedFiles";
 import { loadBlueprint } from "./testRunner";
 import { zodToJsonSchema } from "zod-to-json-schema";
 
@@ -4190,7 +4191,12 @@ export class ConstructAgentService {
     blueprintPath: string,
     blueprint: ProjectBlueprint
   ): Promise<void> {
-    await writeFile(blueprintPath, `${JSON.stringify(blueprint, null, 2)}\n`, "utf8");
+    const sanitizedBlueprint = {
+      ...blueprint,
+      files: sanitizeMaterializedFiles(blueprint.files)
+    };
+
+    await writeFile(blueprintPath, `${JSON.stringify(sanitizedBlueprint, null, 2)}\n`, "utf8");
   }
 
   private async writeProjectFiles(
@@ -4200,7 +4206,11 @@ export class ConstructAgentService {
     for (const [relativePath, contents] of Object.entries(files)) {
       const destinationPath = path.join(projectRoot, relativePath);
       await mkdir(path.dirname(destinationPath), { recursive: true });
-      await writeFile(destinationPath, contents, "utf8");
+      await writeFile(
+        destinationPath,
+        sanitizeMaterializedFileContent(relativePath, contents),
+        "utf8"
+      );
     }
   }
 

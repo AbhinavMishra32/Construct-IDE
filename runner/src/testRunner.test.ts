@@ -200,3 +200,38 @@ test("TestRunnerManager runs hidden validation scripts and derives expected vs c
   assert.equal(turboFailure.expectedOutput, "turbo.json exists");
   assert.equal(turboFailure.actualOutput, "turbo.json missing");
 });
+
+test("TestRunnerManager derives invalid JSON comparisons from hidden validation output", async () => {
+  const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "construct-node-validation-json-"));
+
+  try {
+    await mkdir(path.join(temporaryDirectory, "hidden_tests"), { recursive: true });
+    await writeFile(
+      path.join(temporaryDirectory, "hidden_tests", "invalid_json_validation.js"),
+      [
+        "const path = require('node:path');",
+        "console.error(",
+        "  `[STEP1] Cannot parse ${path.join(process.cwd(), 'package.json')} as JSON: Unexpected non-whitespace character after JSON at position 282`",
+        ");",
+        "process.exit(1);"
+      ].join("\n"),
+      "utf8"
+    );
+
+    const manager = new TestRunnerManager();
+    const result = await manager.runTask({
+      stepId: "fixture.node-validation-invalid-json",
+      adapter: "jest",
+      projectRoot: temporaryDirectory,
+      tests: ["hidden_tests/invalid_json_validation.js"],
+      timeoutMs: 10_000
+    });
+
+    assert.equal(result.status, "failed");
+    assert.equal(result.failures.length, 1);
+    assert.equal(result.failures[0].expectedOutput, "package.json contains valid JSON");
+    assert.equal(result.failures[0].actualOutput, "package.json contains invalid JSON");
+  } finally {
+    await rm(temporaryDirectory, { recursive: true, force: true });
+  }
+});

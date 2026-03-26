@@ -740,6 +740,15 @@ function deriveNodeValidationComparison(message: string): Pick<
   "expectedOutput" | "actualOutput"
 > {
   const normalized = message.trim().replace(/\.$/, "");
+  const invalidJsonMatch = /^Cannot parse\s+(.+?)\s+as JSON:/i.exec(normalized);
+
+  if (invalidJsonMatch?.[1]) {
+    const fileName = path.basename(invalidJsonMatch[1]);
+    return {
+      expectedOutput: `${fileName} contains valid JSON`,
+      actualOutput: `${fileName} contains invalid JSON`
+    };
+  }
 
   if (/workspaces missing/i.test(normalized)) {
     return {
