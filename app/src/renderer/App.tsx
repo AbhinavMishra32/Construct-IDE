@@ -2883,10 +2883,9 @@ function AppSidebar({
                 <ScrollArea className="construct-app-recent-scroll">
                   <div className="construct-app-recent-list">
                     {recentProjects.map((project) => (
-                      <Button
+                      <button
                         key={project.id}
                         type="button"
-                        variant="ghost"
                         onClick={() => {
                           onOpenProject(project);
                         }}
@@ -2898,7 +2897,7 @@ function AppSidebar({
                       >
                         <strong>{project.name}</strong>
                         <span>{project.currentStepTitle ?? project.description}</span>
-                      </Button>
+                      </button>
                     ))}
                   </div>
                 </ScrollArea>

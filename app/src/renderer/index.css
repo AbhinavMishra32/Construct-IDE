@@ -2749,6 +2749,11 @@ textarea {
   background: var(--panel-soft);
 }
 
+.construct-app-recent-item:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .construct-app-recent-item strong {
   font-size: 13px;
   line-height: 1.35;
