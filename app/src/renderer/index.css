@@ -4974,9 +4974,11 @@ textarea {
 }
 
 .construct-shell {
+  display: flex;
+  height: 100vh;
   min-height: 100vh;
-  grid-template-columns: 244px minmax(0, 1fr);
   background: var(--app-bg);
+  overflow: hidden;
 }
 
 .construct-shell-main,
@@ -5001,16 +5003,14 @@ textarea {
   overflow: hidden;
 }
 
-.construct-app-sidebar {
-  height: 100%;
+.construct-app-sidebar [data-slot="sidebar-inner"] {
+  display: flex;
+  flex-direction: column;
   gap: 12px;
   padding: 12px 14px 14px;
   background: color-mix(in srgb, var(--panel-bg) 98%, transparent);
-  overflow: hidden;
-}
-
-.construct-app-sidebar [data-slot="sidebar-inner"] {
   border-right: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  overflow: hidden;
 }
 
 .construct-app-sidebar-top {
