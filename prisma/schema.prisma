@@ -126,7 +126,6 @@ model Project {
   slug             String        @default("")
   description      String        @default("")
   language         String        @default("")
-  learningStyle    String?       @map("learning_style")
   currentStepId    String?       @map("current_step_id")
   currentStepTitle String?       @map("current_step_title")
   currentStepIndex Int?          @map("current_step_index")
@@ -150,7 +149,6 @@ model BlueprintBuild {
   sessionId          String?               @unique @map("session_id")
   userId             String                @default("local-user") @map("user_id")
   goal               String
-  learningStyle      String?               @map("learning_style")
   detectedLanguage   String?               @map("detected_language")
   detectedDomain     String?               @map("detected_domain")
   status             String

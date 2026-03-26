@@ -6,8 +6,6 @@ export type RuntimeInfo = {
   platform: string;
 };
 
-export type LearningStyle = "concept-first" | "build-first" | "example-first";
-
 export type ConceptConfidence = "comfortable" | "shaky" | "new";
 
 export type RunnerHealth = {
@@ -477,7 +475,6 @@ export type PlanningSession = {
   sessionId: string;
   goal: string;
   normalizedGoal: string;
-  learningStyle: LearningStyle;
   detectedLanguage: string;
   detectedDomain: string;
   createdAt: string;
@@ -542,7 +539,6 @@ export type GeneratedProjectPlan = {
   goal: string;
   language: string;
   domain: string;
-  learningStyle: LearningStyle;
   summary: string;
   architecture: ArchitectureComponent[];
   knowledgeGraph: KnowledgeGraph;
@@ -626,7 +622,6 @@ export type BlueprintBuild = {
   sessionId: string | null;
   userId: string;
   goal: string;
-  learningStyle: LearningStyle | null;
   detectedLanguage: string | null;
   detectedDomain: string | null;
   status: BlueprintBuildStatus;
@@ -657,7 +652,6 @@ export type BlueprintBuildSummary = Pick<
   | "sessionId"
   | "userId"
   | "goal"
-  | "learningStyle"
   | "detectedLanguage"
   | "detectedDomain"
   | "status"

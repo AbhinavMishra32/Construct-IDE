@@ -43,11 +43,6 @@ await sql`
 
 await sql`
   ALTER TABLE construct_blueprints
-  ADD COLUMN IF NOT EXISTS learning_style TEXT
-`;
-
-await sql`
-  ALTER TABLE construct_blueprints
   ADD COLUMN IF NOT EXISTS current_step_id TEXT
 `;
 
@@ -102,12 +97,16 @@ await sql`
 `;
 
 await sql`
+  ALTER TABLE construct_blueprints
+  DROP COLUMN IF EXISTS learning_style
+`;
+
+await sql`
   CREATE TABLE IF NOT EXISTS construct_blueprint_builds (
     id TEXT PRIMARY KEY,
     session_id TEXT UNIQUE,
     user_id TEXT NOT NULL DEFAULT 'local-user',
     goal TEXT NOT NULL,
-    learning_style TEXT,
     detected_language TEXT,
     detected_domain TEXT,
     status TEXT NOT NULL,
@@ -181,6 +180,11 @@ await sql`
 await sql`
   CREATE INDEX IF NOT EXISTS construct_blueprint_builds_user_last_event_idx
   ON construct_blueprint_builds (user_id, last_event_at DESC)
+`;
+
+await sql`
+  ALTER TABLE construct_blueprint_builds
+  DROP COLUMN IF EXISTS learning_style
 `;
 
 await sql`

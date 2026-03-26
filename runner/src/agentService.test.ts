@@ -526,8 +526,7 @@ test("ConstructAgentService creates question and plan jobs and persists the resu
 
   try {
     const questionJob = service.createPlanningQuestionsJob({
-      goal: "build a C compiler in Rust",
-      learningStyle: "concept-first"
+      goal: "build a C compiler in Rust"
     });
     const questionResult = await waitForJobCompletion(service, questionJob.jobId);
     const questionSession = questionResult.result as {
@@ -1136,8 +1135,7 @@ test("ConstructAgentService advances the adaptive frontier after a passed step a
 
   try {
     const questionJob = service.createPlanningQuestionsJob({
-      goal: "build a tiny module graph parser",
-      learningStyle: "build-first"
+      goal: "build a tiny module graph parser"
     });
     const questionResult = await waitForJobCompletion(service, questionJob.jobId);
     const questionSession = questionResult.result as {
@@ -1534,8 +1532,7 @@ test("ConstructAgentService skips broad research for small local goals", async (
 
   try {
     const questionJob = service.createPlanningQuestionsJob({
-      goal: "small python todo class",
-      learningStyle: "build-first"
+      goal: "small python todo class"
     });
     const questionResult = await waitForJobCompletion(service, questionJob.jobId);
     const questionSession = questionResult.result as {
@@ -1875,8 +1872,7 @@ test("ConstructAgentService generates lesson-first blueprints without a repair l
 
   try {
     const questionJob = service.createPlanningQuestionsJob({
-      goal: "small python class that reports macOS system details",
-      learningStyle: "concept-first"
+      goal: "small python class that reports macOS system details"
     });
     const questionResult = await waitForJobCompletion(service, questionJob.jobId);
     const questionSession = questionResult.result as {
@@ -2265,8 +2261,7 @@ test("ConstructAgentService resumes blueprint creation from the last saved stage
 
   try {
     const questionJob = service.createPlanningQuestionsJob({
-      goal: "small typescript parser utility",
-      learningStyle: "concept-first"
+      goal: "small typescript parser utility"
     });
     const questionResult = await waitForJobCompletion(service, questionJob.jobId);
     const questionSession = questionResult.result as {

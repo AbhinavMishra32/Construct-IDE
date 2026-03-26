@@ -61,7 +61,6 @@ const PersistedProjectRecordSchema = ProjectSummarySchema.omit({
   completedStepsCount: true
 }).extend({
   blueprintId: z.string().min(1),
-  learningStyle: z.string().min(1).nullable().default(null),
   completedStepIds: z.array(z.string().min(1)).default([]),
   blueprintJson: z.string().min(1),
   planJson: z.string().min(1),
@@ -1106,7 +1105,6 @@ function buildProjectRecordFromGeneratedRecord(
     blueprintId: record.blueprintId,
     blueprintPath: path.resolve(record.blueprintPath),
     projectRoot: path.resolve(record.projectRoot),
-    learningStyle: plan.learningStyle,
     currentStepId: progress.id,
     currentStepTitle: progress.title,
     currentStepIndex: progress.index,
@@ -1233,7 +1231,6 @@ function mapProjectCreateInput(userId: string, record: PersistedProjectRecord) {
     blueprintId: record.blueprintId,
     blueprintPath: path.resolve(record.blueprintPath),
     projectRoot: path.resolve(record.projectRoot),
-    learningStyle: record.learningStyle,
     currentStepId: record.currentStepId,
     currentStepTitle: record.currentStepTitle,
     currentStepIndex: record.currentStepIndex,
@@ -1261,7 +1258,6 @@ function mapProjectUpdateInput(record: PersistedProjectRecord) {
     blueprintId: record.blueprintId,
     blueprintPath: path.resolve(record.blueprintPath),
     projectRoot: path.resolve(record.projectRoot),
-    learningStyle: record.learningStyle,
     currentStepId: record.currentStepId,
     currentStepTitle: record.currentStepTitle,
     currentStepIndex: record.currentStepIndex,
@@ -1347,7 +1343,6 @@ function toPersistedProjectRecordFromPrisma(project: {
   blueprintId: string;
   blueprintPath: string;
   projectRoot: string;
-  learningStyle: string | null;
   currentStepId: string | null;
   currentStepTitle: string | null;
   currentStepIndex: number | null;
@@ -1372,7 +1367,6 @@ function toPersistedProjectRecordFromPrisma(project: {
     blueprintId: project.blueprintId,
     blueprintPath: project.blueprintPath,
     projectRoot: project.projectRoot,
-    learningStyle: project.learningStyle,
     currentStepId: project.currentStepId,
     currentStepTitle: project.currentStepTitle,
     currentStepIndex: project.currentStepIndex,
@@ -1452,7 +1446,6 @@ function mapBlueprintBuildCreateInput(build: BlueprintBuild) {
     sessionId: build.sessionId,
     userId: build.userId,
     goal: build.goal,
-    learningStyle: build.learningStyle,
     detectedLanguage: build.detectedLanguage,
     detectedDomain: build.detectedDomain,
     status: build.status,
@@ -1485,7 +1478,6 @@ function mapBlueprintBuildUpdateInput(build: BlueprintBuild) {
     sessionId: build.sessionId,
     userId: build.userId,
     goal: build.goal,
-    learningStyle: build.learningStyle,
     detectedLanguage: build.detectedLanguage,
     detectedDomain: build.detectedDomain,
     status: build.status,
@@ -1567,7 +1559,6 @@ function toBlueprintBuildFromPrisma(build: {
   sessionId: string | null;
   userId: string;
   goal: string;
-  learningStyle: string | null;
   detectedLanguage: string | null;
   detectedDomain: string | null;
   status: string;
@@ -1596,7 +1587,6 @@ function toBlueprintBuildFromPrisma(build: {
     sessionId: build.sessionId,
     userId: build.userId,
     goal: build.goal,
-    learningStyle: build.learningStyle,
     detectedLanguage: build.detectedLanguage,
     detectedDomain: build.detectedDomain,
     status: build.status,

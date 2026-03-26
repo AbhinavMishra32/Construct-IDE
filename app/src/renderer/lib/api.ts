@@ -242,7 +242,6 @@ export function openBlueprintBuildStream(
 
 export async function startPlanningSession(input: {
   goal: string;
-  learningStyle: "concept-first" | "build-first" | "example-first";
 }, onEvent?: (event: AgentEvent) => void): Promise<PlanningSessionStartResponse> {
   return runAgentJob<PlanningSessionStartResponse>(
     "/agent/planning/start-job",

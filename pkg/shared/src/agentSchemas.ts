@@ -7,12 +7,6 @@ import {
   TaskResultSchema
 } from "./schemas";
 
-export const LearningStyleSchema = z.enum([
-  "concept-first",
-  "build-first",
-  "example-first"
-]);
-
 export const ConceptConfidenceSchema = z.enum(["comfortable", "shaky", "new"]);
 export const KnowledgeCategorySchema = z.enum(["language", "domain", "workflow"]);
 export const KnowledgeSourceSchema = z.enum([
@@ -40,15 +34,13 @@ export const PlanningQuestionSchema = z.object({
 });
 
 export const PlanningSessionStartRequestSchema = z.object({
-  goal: z.string().min(3),
-  learningStyle: LearningStyleSchema.default("concept-first")
+  goal: z.string().min(3)
 });
 
 export const PlanningSessionSchema = z.object({
   sessionId: z.string().min(1),
   goal: z.string().min(3),
   normalizedGoal: z.string().min(3),
-  learningStyle: LearningStyleSchema,
   detectedLanguage: z.string().min(1),
   detectedDomain: z.string().min(1),
   createdAt: z.string().datetime(),
@@ -117,7 +109,6 @@ export const GeneratedProjectPlanSchema = z.object({
   goal: z.string().min(3),
   language: z.string().min(1),
   domain: z.string().min(1),
-  learningStyle: LearningStyleSchema,
   summary: z.string().min(1),
   architecture: z.array(ArchitectureComponentSchema).min(1),
   knowledgeGraph: KnowledgeGraphSchema,
@@ -343,7 +334,6 @@ export const BlueprintBuildSchema = z.object({
   sessionId: z.string().min(1).nullable().default(null),
   userId: z.string().min(1),
   goal: z.string().min(1),
-  learningStyle: LearningStyleSchema.nullable().default(null),
   detectedLanguage: z.string().min(1).nullable().default(null),
   detectedDomain: z.string().min(1).nullable().default(null),
   status: BlueprintBuildStatusSchema,
@@ -373,7 +363,6 @@ export const BlueprintBuildSummarySchema = BlueprintBuildSchema.pick({
   sessionId: true,
   userId: true,
   goal: true,
-  learningStyle: true,
   detectedLanguage: true,
   detectedDomain: true,
   status: true,
@@ -443,7 +432,6 @@ export const BlueprintDeepDiveResponseSchema = z.object({
   note: z.string().min(1)
 });
 
-export type LearningStyle = z.infer<typeof LearningStyleSchema>;
 export type ConceptConfidence = z.infer<typeof ConceptConfidenceSchema>;
 export type KnowledgeCategory = z.infer<typeof KnowledgeCategorySchema>;
 export type KnowledgeSource = z.infer<typeof KnowledgeSourceSchema>;

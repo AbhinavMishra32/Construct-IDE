@@ -63,7 +63,7 @@ This file tracks the implementation phases, current status, shipped scope, and v
 - Replace free-form file maps in the generated-blueprint schema with explicit `{ path, content }` arrays so OpenAI Structured Outputs accepts the blueprint contract during Architect generation.
 - Expand schema-compatibility fallback detection so invalid response-format schema errors also trigger JSON fallback instead of immediately failing the Architect run.
 - Replace static “Ask guide” behavior with a real runtime Guide request that analyzes the current anchored code, constraints, and latest task result.
-- Strengthen the Architect lesson-generation instructions so the first lesson is concept-first, explanation-heavy, and tightly scoped to the requested artifact instead of drifting into setup-heavy or validation-only steps.
+- Strengthen the Architect lesson-generation instructions so the first lesson is explanation-heavy and tightly scoped to the requested artifact instead of drifting into setup-heavy or validation-only steps.
 
 ## Implemented So Far
 

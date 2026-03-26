@@ -6134,29 +6134,59 @@ textarea {
   margin-top: 0.15rem;
 }
 
-.construct-planning-start--minimal {
+.construct-planning-panel--compact {
+  width: min(760px, calc(100vw - 32px));
+  max-width: min(760px, calc(100vw - 32px));
+  min-height: 0;
+  max-height: min(680px, calc(100vh - 32px));
+  border-radius: 18px;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.construct-planning-header--compact {
+  padding: 16px 18px 12px;
+}
+
+.construct-planning-header--compact .construct-planning-header-copy {
+  max-width: 500px;
+}
+
+.construct-planning-header--compact h1 {
+  margin: 4px 0 6px;
+  font-size: 16px;
+  line-height: 1.15;
+}
+
+.construct-planning-header--compact p {
+  max-width: 44ch;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.construct-planning-start--compact {
   grid-template-columns: minmax(0, 1fr);
-  gap: 20px;
+  gap: 0;
+  padding: 0 18px 18px;
   align-content: start;
 }
 
-.construct-planning-composer--minimal {
-  max-width: 880px;
+.construct-planning-composer--compact {
   padding: 0;
   border: 0;
   background: transparent;
   box-shadow: none;
 }
 
-.construct-planning-composer--minimal h2 {
-  margin: 8px 0 10px;
-  font-size: 24px;
-  line-height: 1.08;
-  letter-spacing: -0.035em;
+.construct-planning-composer--compact .construct-panel-kicker {
+  margin-bottom: 6px;
 }
 
-.construct-planning-composer--minimal p {
-  max-width: 64ch;
+.construct-planning-composer--compact .construct-planning-textarea {
+  margin-top: 10px;
+}
+
+.construct-planning-composer--compact .construct-planning-composer-actions {
+  margin-top: 16px;
 }
 
 .construct-planning-brief-strip {

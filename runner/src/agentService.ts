@@ -54,7 +54,6 @@ import {
   type KnowledgeGraph,
   type LearnerModel,
   type LearnerProfileResponse,
-  type LearningStyle,
   type PlanningQuestion,
   type PlanningSession,
   type PlanningSessionCompleteRequest,
@@ -1666,7 +1665,6 @@ export class ConstructAgentService {
       jobId: job.jobId,
       kind: job.kind,
       goal: request.goal,
-      learningStyle: request.learningStyle
     });
 
     void this.runJob(job, async () => {
@@ -1898,7 +1896,6 @@ export class ConstructAgentService {
       id: randomUUID(),
       sessionId: null,
       goal: request.goal.trim(),
-      learningStyle: request.learningStyle,
       detectedLanguage: null,
       detectedDomain: null,
       status: "running",
@@ -1929,7 +1926,6 @@ export class ConstructAgentService {
       id: session.sessionId,
       sessionId: session.sessionId,
       goal: session.goal,
-      learningStyle: session.learningStyle,
       detectedLanguage: session.detectedLanguage,
       detectedDomain: session.detectedDomain,
       status: "running",
@@ -1950,7 +1946,6 @@ export class ConstructAgentService {
       ...build,
       sessionId: session.sessionId,
       goal: session.goal,
-      learningStyle: session.learningStyle,
       detectedLanguage: session.detectedLanguage,
       detectedDomain: session.detectedDomain,
       status: "running",
@@ -2052,7 +2047,6 @@ export class ConstructAgentService {
           id: buildId,
           sessionId: null,
           goal: event.title,
-          learningStyle: null,
           detectedLanguage: null,
           detectedDomain: null,
           status: "running",
@@ -2137,7 +2131,6 @@ export class ConstructAgentService {
           id: buildId,
           sessionId: null,
           goal: input.title,
-          learningStyle: null,
           detectedLanguage: null,
           detectedDomain: null,
           status: "running",
@@ -2182,7 +2175,6 @@ export class ConstructAgentService {
           id: buildId,
           sessionId: null,
           goal: "Project creation",
-          learningStyle: null,
           detectedLanguage: null,
           detectedDomain: null,
           status: "failed",
@@ -2425,13 +2417,12 @@ export class ConstructAgentService {
           return this.extractGoalSelfReportKnowledge(
             state.knowledgeBase,
             state.request.goal,
-            state.request.learningStyle
           );
         })
       }))
       .addNode("determineScope", async (state) => ({
         goalScope: await this.withStage(jobId, "scope-analysis", "Scoping the request", "The Architect is deciding how large the project should be and whether broad external research is justified.", async () => {
-          return this.determineGoalScope(state.request.goal, state.request.learningStyle);
+          return this.determineGoalScope(state.request.goal);
         })
       }))
       .addNode("researchProjectShape", async (state) => ({
@@ -2484,7 +2475,6 @@ export class ConstructAgentService {
                 {
                   goal: state.request.goal,
                   goalScope: state.goalScope,
-                  learningStyle: state.request.learningStyle,
                   priorKnowledge: serializeKnowledgeBaseForPrompt(state.knowledgeBase),
                   research: compactResearchDigest(state.mergedResearch)
                 },
@@ -2530,7 +2520,6 @@ export class ConstructAgentService {
         metadata: {
           buildId: this.buildIdsByJobId.get(jobId) ?? null,
           goal: request.goal,
-          learningStyle: request.learningStyle,
           langSmithProject: resolveLangSmithProjectName()
         }
       }
@@ -2548,7 +2537,6 @@ export class ConstructAgentService {
           id: result.session?.sessionId ?? randomUUID(),
           sessionId: result.session?.sessionId ?? null,
           goal: request.goal,
-          learningStyle: request.learningStyle,
           detectedLanguage: result.session?.detectedLanguage ?? null,
           detectedDomain: result.session?.detectedDomain ?? null,
           status: "questions-ready",
@@ -2560,7 +2548,6 @@ export class ConstructAgentService {
         })),
       sessionId: result.session?.sessionId ?? current?.sessionId ?? null,
       goal: result.session?.goal ?? request.goal,
-      learningStyle: result.session?.learningStyle ?? request.learningStyle,
       detectedLanguage: result.session?.detectedLanguage ?? current?.detectedLanguage ?? null,
       detectedDomain: result.session?.detectedDomain ?? current?.detectedDomain ?? null,
       status: "questions-ready",
@@ -2625,7 +2612,7 @@ export class ConstructAgentService {
       }))
       .addNode("determineScope", async (state) => ({
         goalScope: await this.withStage(jobId, "scope-analysis", "Scoping the request", "The Architect is deciding how large the generated project should be before it spends tokens on research and blueprint synthesis.", async () => {
-          return this.determineGoalScope(state.session.goal, state.session.learningStyle);
+          return this.determineGoalScope(state.session.goal);
         })
       }))
       .addNode("researchArchitecture", async (state) => ({
@@ -2729,7 +2716,6 @@ export class ConstructAgentService {
                   id: state.session.sessionId,
                   sessionId: state.session.sessionId,
                   goal: state.session.goal,
-                  learningStyle: state.session.learningStyle,
                   detectedLanguage: state.session.detectedLanguage,
                   detectedDomain: state.session.detectedDomain,
                   status: "running",
@@ -2887,7 +2873,6 @@ export class ConstructAgentService {
                 id: state.session.sessionId,
                 sessionId: state.session.sessionId,
                 goal: state.session.goal,
-                learningStyle: state.session.learningStyle,
                 detectedLanguage: state.session.detectedLanguage,
                 detectedDomain: state.session.detectedDomain,
                 status: "running",
@@ -3065,7 +3050,6 @@ export class ConstructAgentService {
                 id: state.session.sessionId,
                 sessionId: state.session.sessionId,
                 goal: state.session.goal,
-                learningStyle: state.session.learningStyle,
                 detectedLanguage: state.session.detectedLanguage,
                 detectedDomain: state.session.detectedDomain,
                 status: "running",
@@ -3157,7 +3141,6 @@ export class ConstructAgentService {
           buildId: this.buildIdsByJobId.get(jobId) ?? null,
           sessionId: session.sessionId,
           goal: session.goal,
-          learningStyle: session.learningStyle,
           checkpointStage: planningCheckpoint?.stage ?? null,
           langSmithProject: resolveLangSmithProjectName()
         }
@@ -3524,10 +3507,7 @@ export class ConstructAgentService {
     }
   }
 
-  private async determineGoalScope(
-    goal: string,
-    learningStyle: LearningStyle
-  ): Promise<GoalScope> {
+  private async determineGoalScope(goal: string): Promise<GoalScope> {
     try {
       return await (await this.getLlm()).parse({
         schema: GOAL_SCOPE_DRAFT_SCHEMA,
@@ -3535,8 +3515,7 @@ export class ConstructAgentService {
         instructions: buildGoalScopeInstructions(),
         prompt: JSON.stringify(
           {
-            goal,
-            learningStyle
+            goal
           },
           null,
           2
@@ -3548,7 +3527,6 @@ export class ConstructAgentService {
       const fallback = inferGoalScopeFallback(goal);
       this.logger.warn("Goal-scope analysis failed. Falling back to heuristic scope.", {
         goal,
-        learningStyle,
         error: error instanceof Error ? error.message : "Unknown scope-analysis failure.",
         fallback
       });
@@ -3719,7 +3697,6 @@ export class ConstructAgentService {
       sessionId: randomUUID(),
       goal: normalizedGoal,
       normalizedGoal,
-      learningStyle: request.learningStyle,
       detectedLanguage: questionDraft.detectedLanguage,
       detectedDomain: questionDraft.detectedDomain,
       createdAt: this.now().toISOString(),
@@ -3746,7 +3723,6 @@ export class ConstructAgentService {
       goal: session.goal,
       language: session.detectedLanguage,
       domain: session.detectedDomain,
-      learningStyle: session.learningStyle,
       summary: draft.summary,
       knowledgeGraph: draft.knowledgeGraph,
       architecture: draft.architecture,
@@ -4062,7 +4038,6 @@ export class ConstructAgentService {
           id: session.sessionId,
           sessionId: session.sessionId,
           goal: session.goal,
-          learningStyle: session.learningStyle,
           detectedLanguage: session.detectedLanguage,
           detectedDomain: session.detectedDomain,
           status: "running",
@@ -4155,7 +4130,6 @@ export class ConstructAgentService {
           id: session.sessionId,
           sessionId: session.sessionId,
           goal: session.goal,
-          learningStyle: session.learningStyle,
           detectedLanguage: session.detectedLanguage,
           detectedDomain: session.detectedDomain,
           status: "completed",
@@ -4273,8 +4247,7 @@ export class ConstructAgentService {
 
   private async extractGoalSelfReportKnowledge(
     current: UserKnowledgeBase,
-    goal: string,
-    learningStyle: LearningStyle
+    goal: string
   ): Promise<UserKnowledgeBase> {
     const timestamp = this.now().toISOString();
     const draft = await (await this.getLlm()).parse({
@@ -4284,7 +4257,6 @@ export class ConstructAgentService {
       prompt: JSON.stringify(
         {
           goal,
-          learningStyle,
           priorKnowledge: serializeKnowledgeBaseForPrompt(current)
         },
         null,
@@ -6458,7 +6430,6 @@ function createBlueprintBuildRecord(input: Partial<BlueprintBuild> & {
     sessionId: input.sessionId ?? null,
     userId: input.userId ?? getCurrentUserId(),
     goal: input.goal,
-    learningStyle: input.learningStyle ?? null,
     detectedLanguage: input.detectedLanguage ?? null,
     detectedDomain: input.detectedDomain ?? null,
     status: input.status ?? "queued",

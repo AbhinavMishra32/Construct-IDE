@@ -27,7 +27,6 @@ test("local agent persistence stores planning state, knowledge, generated bluepr
         sessionId: "session-1",
         goal: "build a C compiler in Rust",
         normalizedGoal: "build a C compiler in Rust",
-        learningStyle: "concept-first",
         detectedLanguage: "rust",
         detectedDomain: "compiler",
         createdAt: "2026-03-15T00:00:00.000Z",
@@ -96,7 +95,6 @@ test("local agent persistence stores planning state, knowledge, generated bluepr
         goal: "build a C compiler in Rust",
         language: "Rust",
         domain: "compiler",
-        learningStyle: "concept-first",
         summary: "Learn compiler fundamentals in order.",
         architecture: [
           {
@@ -174,7 +172,6 @@ test("local agent persistence stores planning state, knowledge, generated bluepr
       sessionId: "session-1",
       userId: "local-user",
       goal: "build a C compiler in Rust",
-      learningStyle: "concept-first",
       detectedLanguage: "rust",
       detectedDomain: "compiler",
       status: "running",

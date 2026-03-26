@@ -48,7 +48,6 @@ import {
   BreadcrumbSeparator
 } from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
-import { ButtonGroup } from "@/components/ui/button-group";
 import {
   Card,
   CardContent,
@@ -162,7 +161,6 @@ import type {
   ComprehensionCheck,
   GeneratedProjectPlan,
   LessonSlide,
-  LearningStyle,
   LearnerProfileResponse,
   LearnerModel,
   PlanningAnswer,
@@ -509,8 +507,6 @@ export default function App() {
   const [planningOverlayOpen, setPlanningOverlayOpen] = useState(false);
   const [planningEvents, setPlanningEvents] = useState<AgentEvent[]>([]);
   const [planningGoal, setPlanningGoal] = useState("");
-  const [planningLearningStyle, setPlanningLearningStyle] =
-    useState<LearningStyle>("concept-first");
   const [planningAnswers, setPlanningAnswers] = useState<Record<string, PlanningAnswerDraft>>({});
   const [planningBusy, setPlanningBusy] = useState(false);
   const [planningError, setPlanningError] = useState("");
@@ -1590,8 +1586,7 @@ export default function App() {
 
     try {
       const started = await startPlanningSession({
-        goal: planningGoal,
-        learningStyle: planningLearningStyle
+        goal: planningGoal
       }, appendPlanningEvent);
 
       setPlanningSession(started.session);
@@ -2282,7 +2277,6 @@ export default function App() {
             planningEvents={planningEvents}
             planningError={planningError}
             planningGoal={planningGoal}
-            planningLearningStyle={planningLearningStyle}
             planningPlan={planningPlan}
             planningAnswers={planningAnswers}
             planningSession={planningSession}
@@ -2290,7 +2284,6 @@ export default function App() {
               setPlanningOverlayOpen(false);
             }}
             onGoalChange={setPlanningGoal}
-            onLearningStyleChange={setPlanningLearningStyle}
             onOptionAnswerChange={(questionId, optionId) => {
               setPlanningAnswers((current) => ({
                 ...current,
@@ -4136,13 +4129,11 @@ function PlanningOverlay({
   planningEvents,
   planningError,
   planningGoal,
-  planningLearningStyle,
   planningPlan,
   planningAnswers,
   planningSession,
   onClose,
   onGoalChange,
-  onLearningStyleChange,
   onOptionAnswerChange,
   onCustomAnswerChange,
   onSkipAnswerChange,
@@ -4155,13 +4146,11 @@ function PlanningOverlay({
   planningEvents: AgentEvent[];
   planningError: string;
   planningGoal: string;
-  planningLearningStyle: LearningStyle;
   planningPlan: GeneratedProjectPlan | null;
   planningAnswers: Record<string, PlanningAnswerDraft>;
   planningSession: PlanningSession | null;
   onClose: () => void;
   onGoalChange: (value: string) => void;
-  onLearningStyleChange: (value: LearningStyle) => void;
   onOptionAnswerChange: (questionId: string, optionId: string) => void;
   onCustomAnswerChange: (questionId: string, customResponse: string) => void;
   onSkipAnswerChange: (questionId: string) => void;
@@ -4171,6 +4160,7 @@ function PlanningOverlay({
   canResumePlanningGeneration: boolean;
 }) {
   const isQuestionPhase = planningSession && !planningPlan;
+  const isStartPhase = !planningSession;
   const answeredQuestionCount = planningSession
     ? planningSession.questions.filter((question) =>
         hasPlanningAnswer(planningAnswers[question.id])
@@ -4202,26 +4192,38 @@ function PlanningOverlay({
         aria-label="Close project creation"
         onClick={onClose}
       />
-      <section className="construct-planning-panel max-w-none gap-0 border border-border bg-background p-0 text-foreground shadow-2xl ring-1 ring-foreground/10 sm:max-w-[calc(100vw-24px)]">
+      <section
+        className={cn(
+          "construct-planning-panel max-w-none gap-0 border border-border bg-background p-0 text-foreground shadow-2xl ring-1 ring-foreground/10 sm:max-w-[calc(100vw-24px)]",
+          isStartPhase ? "construct-planning-panel--compact" : ""
+        )}
+      >
         <div className="sr-only" aria-hidden="false">
           <h1>Create a new project</h1>
           <p>Work with the Architect to tailor and generate a real project workspace.</p>
         </div>
-        <header className="construct-planning-header">
+        <header
+          className={cn(
+            "construct-planning-header",
+            isStartPhase ? "construct-planning-header--compact" : ""
+          )}
+        >
           <div className="construct-planning-header-copy">
             <span className="construct-brief-kicker">Architect</span>
             <h1>Create a new project.</h1>
             <p>
-              Describe the project once, then Construct will build the project spine,
-              shape the first frontier, and prepare the hidden validations around the learner.
+              Describe the project once. Construct will generate the project plan,
+              first build step, and hidden validations around that goal.
             </p>
           </div>
           <div className="construct-planning-header-actions">
-            <ToolbarPill>
-              {planningSession
-                ? `${answeredQuestionCount}/${planningSession.questions.length} tailored`
-                : "new project"}
-            </ToolbarPill>
+            {!isStartPhase ? (
+              <ToolbarPill>
+                {planningSession
+                  ? `${answeredQuestionCount}/${planningSession.questions.length} tailored`
+                  : "new project"}
+              </ToolbarPill>
+            ) : null}
             <SecondaryButton type="button" onClick={onClose}>
               Close
             </SecondaryButton>
@@ -4229,21 +4231,14 @@ function PlanningOverlay({
         </header>
 
         {!planningSession ? (
-          <div className="construct-planning-start construct-planning-start--minimal">
-            <section className="construct-planning-composer construct-planning-composer--minimal">
-              <span className="construct-panel-kicker">Project goal</span>
-              <h2>Describe the project.</h2>
-              <p>
-                Tell Construct what you want to build. The Architect will shape the
-                next-step context, implementation order, and hidden validation around this
-                goal.
-              </p>
+          <div className="construct-planning-start construct-planning-start--compact">
+            <section className="construct-planning-composer construct-planning-composer--compact">
               <FieldGroup>
                 <Field>
                   <FieldLabel htmlFor="planning-goal">Project brief</FieldLabel>
                   <FieldDescription>
-                    Capture the app, domain, and the concepts you want Construct to teach
-                    through the implementation itself.
+                    Keep it short and concrete. Include what you want to build and any
+                    important constraints.
                   </FieldDescription>
                   <InputGroup className="construct-check-textarea construct-planning-textarea">
                     <InputGroupAddon align="block-start">
@@ -4263,39 +4258,6 @@ function PlanningOverlay({
                   </InputGroup>
                 </Field>
               </FieldGroup>
-              <div className="construct-planning-style-row">
-                <div className="construct-planning-style-copy">
-                  <span className="construct-panel-kicker">Learning style</span>
-                  <p>
-                    This guides how much context should come before the learner starts
-                    writing code in the real project.
-                  </p>
-                </div>
-                <ButtonGroup className="construct-segmented-list construct-segmented-list--inline">
-                  {(
-                    [
-                      ["concept-first", "Concept first"],
-                      ["build-first", "Build first"],
-                      ["example-first", "Example first"]
-                    ] satisfies Array<[LearningStyle, string]>
-                  ).map(([value, label]) => (
-                    <Button
-                      key={value}
-                      type="button"
-                      onClick={() => {
-                        onLearningStyleChange(value);
-                      }}
-                      variant={planningLearningStyle === value ? "secondary" : "outline"}
-                      className={cn(
-                        "construct-check-option",
-                        planningLearningStyle === value ? "is-selected" : ""
-                      )}
-                    >
-                      {label}
-                    </Button>
-                  ))}
-                </ButtonGroup>
-              </div>
               <div className="construct-planning-composer-actions">
                 <PrimaryButton
                   type="button"
@@ -4318,17 +4280,7 @@ function PlanningOverlay({
                 <TagChip>hidden tests</TagChip>
                 <TagChip>real code tasks</TagChip>
               </div>
-              {planningEvents.length > 0 ? (
-                <section className="construct-planning-event-log construct-planning-event-log--minimal">
-                  <div className="construct-brief-section-header">
-                    <div>
-                      <span className="construct-brief-kicker">Agent Activity</span>
-                      <h2>What the Architect is doing right now.</h2>
-                    </div>
-                  </div>
-                  <ArchitectTaskBoard events={planningEvents} />
-                </section>
-              ) : null}
+              {planningError ? <InlineError>{planningError}</InlineError> : null}
             </section>
           </div>
         ) : null}
@@ -4354,7 +4306,6 @@ function PlanningOverlay({
                 <TagChip>
                   {formatDetectedLabel(planningSession.detectedLanguage)}
                 </TagChip>
-                <TagChip>{planningLearningStyle}</TagChip>
               </div>
               {planningBusy ? (
                 <p className="construct-muted-copy">

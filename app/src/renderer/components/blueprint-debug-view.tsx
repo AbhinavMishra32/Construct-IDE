@@ -342,7 +342,6 @@ export function BlueprintDebugView({
                   <div className="construct-debug-section-meta">
                     <span>{selectedBuild.detectedLanguage ?? "unknown language"}</span>
                     <span>{selectedBuild.detectedDomain ?? "unknown domain"}</span>
-                    <span>{selectedBuild.learningStyle ?? "unknown style"}</span>
                   </div>
                 </div>
 
@@ -587,7 +586,6 @@ function toBuildSummary(build: BlueprintBuild): BlueprintBuildSummary {
     sessionId: build.sessionId,
     userId: build.userId,
     goal: build.goal,
-    learningStyle: build.learningStyle,
     detectedLanguage: build.detectedLanguage,
     detectedDomain: build.detectedDomain,
     status: build.status,
