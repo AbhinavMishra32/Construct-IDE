@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { Script } from "node:vm";
 
 import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
 import { BaseCallbackHandler } from "@langchain/core/callbacks/base";
@@ -5890,6 +5891,8 @@ function normalizeDraftLessonSlides(
 function normalizeGeneratedBlueprintDraft(
   draft: GeneratedBlueprintBundleDraft
 ): GeneratedBlueprintBundleDraft {
+  validateGeneratedHiddenTests(draft.hiddenTests, "Generated blueprint draft");
+
   return {
     ...draft,
     steps: draft.steps.map((step) => ({
@@ -5902,6 +5905,8 @@ function normalizeGeneratedBlueprintDraft(
 function normalizeGeneratedFrontierDraft(
   draft: GeneratedFrontierDraft
 ): GeneratedFrontierDraft {
+  validateGeneratedHiddenTests(draft.hiddenTests, "Generated frontier draft");
+
   return {
     ...draft,
     steps: draft.steps.map((step) => ({
@@ -5922,6 +5927,55 @@ function mergeLessonAuthoredStepDraft(
     lessonSlides: normalizeDraftLessonSlides(authoredStep.lessonSlides, authoredStep.doc),
     checks: authoredStep.checks
   };
+}
+
+function validateGeneratedHiddenTests(
+  hiddenTests: Array<{ path: string; content: string }>,
+  context: string
+): void {
+  for (const hiddenTest of hiddenTests) {
+    validateGeneratedHiddenTest(hiddenTest, context);
+  }
+}
+
+function validateGeneratedHiddenTest(
+  hiddenTest: { path: string; content: string },
+  context: string
+): void {
+  const normalizedPath = normalizePathValue(hiddenTest.path);
+  const trimmedContent = hiddenTest.content.trim();
+
+  if (looksLikePlaceholderHiddenTest(trimmedContent)) {
+    throw new Error(
+      `${context} returned placeholder hidden test content for ${normalizedPath}. Hidden tests must contain real runnable validations.`
+    );
+  }
+
+  if (!normalizedPath.endsWith(".js")) {
+    return;
+  }
+
+  try {
+    new Script(hiddenTest.content, {
+      filename: normalizedPath
+    });
+  } catch (error) {
+    throw new Error(
+      `${context} returned invalid JavaScript for hidden test ${normalizedPath}: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+  }
+}
+
+function looksLikePlaceholderHiddenTest(content: string): boolean {
+  const normalizedContent = content.trim().toLowerCase();
+
+  if (normalizedContent === ".placeholder" || normalizedContent === "placeholder") {
+    return true;
+  }
+
+  return /^(?:\/\/|#|\/\*)\s*placeholder\b/.test(normalizedContent);
 }
 
 function normalizeGeneratedBlueprintSteps(
@@ -6700,6 +6754,8 @@ function buildBlueprintGenerationInstructions(): string {
     "canonicalFiles are the solved versions of the learner-owned implementation files.",
     "learnerFiles must only cover the current frontierPlanSteps and must correspond to the same file paths as the canonical implementation for those frontier capabilities, but with focused TASK markers and incomplete implementations the learner must fill in.",
     "hiddenTests must only cover the current frontierPlanSteps and stay runnable without exposing full solutions in the learnerFiles.",
+    "hiddenTests must never contain placeholder bodies, placeholder comments, sentinel strings like `.placeholder`, or comment-only stubs.",
+    "If a hidden test path ends in `.js`, return valid runnable JavaScript immediately.",
     "The answers payload includes the original question, the available options, and either a selected option or a custom freeform learner response. Use that context to tune scope, docs, checks, and task ordering.",
     "Every returned step must point to a real learnerFile anchor in the current frontier and include lessonSlides, doc text, comprehension checks, constraints, and targeted tests.",
     "Do not deeply author every future step in the spine. Only the frontierPlanSteps should come back as learnerFiles, hiddenTests, and steps.",
@@ -6763,6 +6819,8 @@ function buildAdaptiveFrontierGenerationInstructions(): string {
     "learnerFiles must preserve the current working project state while introducing only the next masked implementation targets.",
     "If a selected frontier step extends a file the learner already touched, carry forward the working code from currentWorkspaceFiles and add only the next focused TASK marker or placeholder region.",
     "hiddenTests must validate only the currently selected frontier steps.",
+    "hiddenTests must never contain placeholder bodies, placeholder comments, sentinel strings like `.placeholder`, or comment-only stubs.",
+    "If a hidden test path ends in `.js`, return valid runnable JavaScript immediately.",
     "Every returned step must include a real anchor, substantial explanation slides, grounded checks, constraints, and targeted tests.",
     "Use priorKnowledge, the current frontier, and the stated reason to decide how much hand-holding or decomposition the learner now needs.",
     "The selectedFrontierSteps are the only steps that should be deeply authored right now. Do not author the rest of the spine.",
