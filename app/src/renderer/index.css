@@ -6456,34 +6456,51 @@ textarea {
   position: sticky;
   top: 0;
   z-index: 10;
-  min-height: 52px;
+  min-height: 48px;
   display: grid;
   grid-template-columns: minmax(220px, 1fr) auto minmax(260px, 1fr);
   align-items: center;
-  gap: 12px;
-  padding: 8px 14px;
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
-  background: color-mix(in srgb, var(--panel-bg) 98%, transparent);
-  backdrop-filter: blur(12px);
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--panel-bg) 99%, transparent),
+      color-mix(in srgb, var(--panel-bg) 96%, transparent)
+    );
+  backdrop-filter: blur(18px);
 }
 
 .construct-workbench-topbar-lead {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+  min-height: 36px;
+  padding: 3px 12px 3px 4px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--border) 74%, transparent);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--panel-bg) 96%, transparent),
+      color-mix(in srgb, var(--panel-muted) 54%, transparent)
+    );
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--panel-bg) 44%, transparent);
 }
 
 .construct-workbench-context-badge {
   flex-shrink: 0;
-  height: 24px;
-  padding-inline: 8px;
+  height: 28px;
+  padding-inline: 10px;
   border-radius: 999px;
   font-size: 10px;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--text-soft);
-  background: color-mix(in srgb, var(--panel-muted) 52%, transparent);
+  color: var(--text-muted);
+  border: 0;
+  background: color-mix(in srgb, var(--panel-soft) 62%, transparent);
 }
 
 .construct-workbench-topbar-context {
@@ -6498,7 +6515,7 @@ textarea {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.2;
   font-weight: 600;
   letter-spacing: -0.02em;
@@ -6510,30 +6527,37 @@ textarea {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text-soft);
-  font-size: 11px;
+  font-size: 10px;
   line-height: 1.2;
 }
 
 .construct-workbench-nav {
+  display: flex;
   align-items: center;
+  justify-content: center;
 }
 
 .construct-workbench-mode-switch {
   gap: 0;
   min-height: 36px;
   padding: 3px;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--border) 90%, transparent);
-  background: color-mix(in srgb, var(--panel-muted) 80%, transparent);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--panel-bg) 48%, transparent);
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--border) 74%, transparent);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--panel-bg) 96%, transparent),
+      color-mix(in srgb, var(--panel-muted) 54%, transparent)
+    );
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--panel-bg) 44%, transparent);
 }
 
 .construct-workbench-mode-button {
-  min-width: 68px;
+  min-width: 64px;
   min-height: 28px;
-  padding: 0 12px;
-  border-radius: 999px;
-  font-size: 11px;
+  padding: 0 11px;
+  border-radius: 11px;
+  font-size: 10.5px;
   font-weight: 500;
   letter-spacing: -0.015em;
   color: var(--text-soft);
@@ -6542,9 +6566,7 @@ textarea {
 .construct-workbench-mode-switch [data-slot="tabs-trigger"][data-state="active"] {
   background: color-mix(in srgb, var(--panel-bg) 98%, transparent);
   color: var(--text);
-  box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--border) 88%, transparent),
-    0 1px 2px color-mix(in srgb, var(--text) 8%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 56%, transparent);
 }
 
 .construct-workbench-mode-switch [data-slot="tabs-trigger"]::after {
@@ -6555,7 +6577,7 @@ textarea {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
 }
 
@@ -6563,29 +6585,40 @@ textarea {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: 34px;
+  min-height: 36px;
   padding: 3px;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--border) 90%, transparent);
-  background: color-mix(in srgb, var(--panel-muted) 66%, transparent);
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--border) 74%, transparent);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--panel-bg) 96%, transparent),
+      color-mix(in srgb, var(--panel-muted) 54%, transparent)
+    );
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--panel-bg) 44%, transparent);
 }
 
 .construct-workbench-action-cluster--primary {
-  background: color-mix(in srgb, var(--panel-bg) 98%, transparent);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--panel-bg) 98%, transparent),
+      color-mix(in srgb, var(--panel-muted) 44%, transparent)
+    );
 }
 
 .construct-workbench-action-separator {
   height: 18px;
-  background: color-mix(in srgb, var(--border) 86%, transparent);
+  background: color-mix(in srgb, var(--border) 54%, transparent);
 }
 
 .construct-workbench-user-chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: 28px;
+  min-height: 26px;
   padding: 0 8px 0 5px;
-  border-radius: 999px;
+  border-radius: 10px;
   border: 0;
   background: transparent;
   color: var(--text);
@@ -6594,11 +6627,11 @@ textarea {
 }
 
 .construct-workbench-user-chip:hover {
-  background: color-mix(in srgb, var(--panel-muted) 86%, transparent);
+  background: color-mix(in srgb, var(--panel-soft) 62%, transparent);
 }
 
 .construct-workbench-user-avatar {
-  background: color-mix(in srgb, var(--panel-bg) 86%, transparent);
+  background: color-mix(in srgb, var(--panel-bg) 82%, transparent);
 }
 
 .construct-workbench-user-avatar [data-slot="avatar-fallback"] {
@@ -6609,20 +6642,29 @@ textarea {
 
 .construct-workbench-status-pill {
   min-width: 0;
-  height: 28px;
-  padding-inline: 9px;
-  border-radius: 999px;
-  font-size: 11px;
-  background: color-mix(in srgb, var(--panel-bg) 90%, transparent);
+  height: 26px;
+  padding-inline: 10px;
+  border-radius: 10px;
+  border: 0;
+  font-size: 10.5px;
+  background: color-mix(in srgb, var(--panel-bg) 82%, transparent);
+  color: var(--text-soft);
+  box-shadow: none;
 }
 
 .construct-workbench-new-button,
 .construct-workbench-theme-button,
 .construct-editor-brief-button {
-  min-height: 28px;
+  min-height: 26px;
   padding: 0 10px;
-  border-radius: 999px;
-  font-size: 11px;
+  border-radius: 10px;
+  border: 0;
+  font-size: 10.5px;
+  box-shadow: none;
+}
+
+.construct-workbench-new-button {
+  background: transparent;
 }
 
 .construct-workbench-theme-button {
@@ -6633,8 +6675,9 @@ textarea {
 }
 
 .construct-workbench-theme-button:hover,
-.construct-workbench-new-button:hover {
-  background: color-mix(in srgb, var(--panel-muted) 90%, transparent);
+.construct-workbench-new-button:hover,
+.construct-editor-brief-button:hover {
+  background: color-mix(in srgb, var(--panel-soft) 62%, transparent);
 }
 
 .construct-editor-header {
@@ -6642,10 +6685,15 @@ textarea {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  min-height: 46px;
-  padding: 0 10px;
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
-  background: color-mix(in srgb, var(--panel-bg) 98%, transparent);
+  min-height: 0;
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 58%, transparent);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--panel-bg) 99%, transparent),
+      color-mix(in srgb, var(--panel-bg) 95%, transparent)
+    );
 }
 
 .construct-editor-tabs {
@@ -6654,42 +6702,55 @@ textarea {
   gap: 6px;
   min-width: 0;
   overflow: auto;
+  min-height: 36px;
+  padding: 3px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--panel-bg) 96%, transparent),
+      color-mix(in srgb, var(--panel-muted) 52%, transparent)
+    );
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--panel-bg) 42%, transparent);
 }
 
 .construct-editor-tab {
   display: inline-flex;
   align-items: center;
-  min-height: 26px;
+  min-height: 28px;
   padding: 0 10px;
-  border-radius: 9px;
-  border: 1px solid transparent;
+  border-radius: 10px;
+  border: 0;
   background: transparent;
   color: var(--text-soft);
   white-space: nowrap;
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 500;
 }
 
 .construct-editor-tab.is-active {
-  background: color-mix(in srgb, var(--editor-bg) 98%, transparent);
+  background: color-mix(in srgb, var(--panel-bg) 92%, transparent);
   color: var(--text);
-  border-color: color-mix(in srgb, var(--border) 88%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 52%, transparent);
 }
 
 .construct-editor-tab--context,
 .construct-editor-tab--meta {
-  min-height: 22px;
+  min-height: 24px;
   padding: 0 8px;
-  border-radius: 999px;
+  border-radius: 9px;
   font-size: 10px;
 }
 
 .construct-editor-tab--context {
-  background: color-mix(in srgb, var(--panel-muted) 64%, transparent);
+  background: color-mix(in srgb, var(--panel-soft) 54%, transparent);
+  color: var(--text-muted);
 }
 
 .construct-editor-tab--meta {
   color: var(--text-muted);
+  background: color-mix(in srgb, var(--panel-bg) 76%, transparent);
 }
 
 .construct-editor-header-actions {
@@ -6698,16 +6759,52 @@ textarea {
   justify-content: flex-end;
   gap: 6px;
   flex-wrap: wrap;
+  min-height: 36px;
+  padding: 3px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--panel-bg) 96%, transparent),
+      color-mix(in srgb, var(--panel-muted) 52%, transparent)
+    );
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--panel-bg) 42%, transparent);
+}
+
+.construct-editor-header-actions .construct-toolbar-pill,
+.construct-editor-brief-button {
+  min-height: 26px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 0;
+  background: color-mix(in srgb, var(--panel-bg) 82%, transparent);
+  color: var(--text-soft);
+  box-shadow: none;
+}
+
+.construct-editor-header-actions .construct-toolbar-pill {
+  font-size: 10.5px;
+}
+
+.construct-editor-brief-button {
+  color: var(--text);
+}
+
+.construct-editor-header-actions .construct-toolbar-pill:hover,
+.construct-editor-brief-button:hover {
+  background: color-mix(in srgb, var(--panel-soft) 62%, transparent);
+  color: var(--text);
 }
 
 .construct-editor-breadcrumb {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 34px;
-  padding: 0 12px;
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
-  background: color-mix(in srgb, var(--panel-bg) 94%, var(--editor-bg));
+  min-height: 32px;
+  padding: 0 14px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 46%, transparent);
+  background: color-mix(in srgb, var(--panel-bg) 88%, var(--editor-bg));
   color: var(--text-soft);
   font-size: 11px;
   white-space: nowrap;
