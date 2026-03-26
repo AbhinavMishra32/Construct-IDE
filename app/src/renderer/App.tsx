@@ -2,10 +2,22 @@ import Editor from "@monaco-editor/react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   BookOpenTextIcon,
+  BracesIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   CircleIcon,
+  CodeXmlIcon,
+  FileArchiveIcon,
+  FileCodeIcon,
+  FileCogIcon,
+  FileImageIcon,
+  FileLockIcon,
+  FileQuestionMarkIcon,
+  FileSpreadsheetIcon,
+  FileStackIcon,
+  FileTerminalIcon,
   FileTextIcon,
+  FileVideoCameraIcon,
   FlaskConicalIcon,
   FolderOpenIcon,
   FolderTreeIcon,
@@ -13,8 +25,10 @@ import {
   LightbulbIcon,
   ListTodoIcon,
   MoonStarIcon,
+  Package2Icon,
   PlusIcon,
   SearchIcon,
+  Settings2Icon,
   SparklesIcon,
   SunIcon,
   WrenchIcon
@@ -5210,17 +5224,117 @@ function normalizeLessonSlideToMarkdown(slide: string | LessonSlide): string {
 }
 
 function FileIcon({ filePath }: { filePath: string }) {
-  const extension = filePath.split(".").pop()?.toLowerCase();
-  const label =
-    extension === "ts" || extension === "tsx"
-      ? "TS"
-      : extension === "sql"
-        ? "SQL"
-        : extension === "json"
-          ? "{}"
-          : "</>";
+  const normalizedPath = filePath.toLowerCase();
+  const fileName = normalizedPath.split("/").pop() ?? normalizedPath;
+  const extension = fileName.includes(".") ? fileName.split(".").pop() ?? "" : "";
 
-  return <span className="construct-file-badge">{label}</span>;
+  const isPackageManifest =
+    fileName === "package.json" ||
+    fileName === "composer.json" ||
+    fileName === "cargo.toml" ||
+    fileName === "gemfile";
+  const isLockFile =
+    fileName === "package-lock.json" ||
+    fileName === "pnpm-lock.yaml" ||
+    fileName === "yarn.lock" ||
+    fileName === "bun.lockb" ||
+    fileName === "cargo.lock";
+  const isConfigFile =
+    fileName === "turbo.json" ||
+    fileName === "dockerfile" ||
+    fileName === "compose.yaml" ||
+    fileName === "compose.yml" ||
+    fileName === ".gitignore" ||
+    fileName === ".gitattributes" ||
+    fileName === ".gitmodules" ||
+    fileName.startsWith(".env") ||
+    fileName.startsWith(".prettierrc") ||
+    fileName.startsWith(".eslintrc") ||
+    fileName.startsWith("tsconfig") ||
+    fileName.startsWith("jsconfig") ||
+    fileName.endsWith(".config.js") ||
+    fileName.endsWith(".config.cjs") ||
+    fileName.endsWith(".config.mjs") ||
+    fileName.endsWith(".config.ts") ||
+    fileName.endsWith(".config.jsx") ||
+    fileName.endsWith(".config.tsx");
+
+  let IconComponent = FileQuestionMarkIcon;
+  let toneClass = "is-generic";
+
+  if (isLockFile) {
+    IconComponent = FileLockIcon;
+    toneClass = "is-lock";
+  } else if (isPackageManifest) {
+    IconComponent = Package2Icon;
+    toneClass = "is-package";
+  } else if (isConfigFile) {
+    IconComponent = Settings2Icon;
+    toneClass = "is-config";
+  } else if (
+    fileName.endsWith(".d.ts") ||
+    [
+      "ts",
+      "tsx",
+      "mts",
+      "cts",
+      "js",
+      "jsx",
+      "mjs",
+      "cjs",
+      "py",
+      "rs",
+      "go",
+      "java",
+      "kt",
+      "rb",
+      "php",
+      "swift",
+      "cs"
+    ].includes(extension)
+  ) {
+    IconComponent = FileCodeIcon;
+    toneClass = "is-code";
+  } else if (["json", "jsonc"].includes(extension)) {
+    IconComponent = BracesIcon;
+    toneClass = "is-data";
+  } else if (["css", "scss", "sass", "less", "pcss"].includes(extension)) {
+    IconComponent = CodeXmlIcon;
+    toneClass = "is-style";
+  } else if (["html", "xml", "svg"].includes(extension)) {
+    IconComponent = CodeXmlIcon;
+    toneClass = "is-markup";
+  } else if (["sql", "prisma"].includes(extension)) {
+    IconComponent = FileStackIcon;
+    toneClass = "is-data";
+  } else if (["yml", "yaml", "toml", "ini"].includes(extension)) {
+    IconComponent = FileCogIcon;
+    toneClass = "is-config";
+  } else if (["sh", "bash", "zsh", "fish"].includes(extension)) {
+    IconComponent = FileTerminalIcon;
+    toneClass = "is-terminal";
+  } else if (["md", "mdx", "txt"].includes(extension)) {
+    IconComponent = FileTextIcon;
+    toneClass = "is-doc";
+  } else if (["csv", "tsv"].includes(extension)) {
+    IconComponent = FileSpreadsheetIcon;
+    toneClass = "is-data";
+  } else if (["png", "jpg", "jpeg", "gif", "webp", "avif", "ico", "bmp"].includes(extension)) {
+    IconComponent = FileImageIcon;
+    toneClass = "is-media";
+  } else if (["mp4", "mov", "webm", "mkv", "avi"].includes(extension)) {
+    IconComponent = FileVideoCameraIcon;
+    toneClass = "is-media";
+  } else if (["zip", "tar", "gz", "tgz", "rar", "7z"].includes(extension)) {
+    IconComponent = FileArchiveIcon;
+    toneClass = "is-archive";
+  }
+
+  return (
+    <span className={cn("construct-file-type-icon", toneClass)} aria-hidden="true">
+      <IconComponent className="size-3.5" strokeWidth={1.9} />
+    </span>
+  );
 }
 
 function labelForEditorPath(filePath: string | null) {

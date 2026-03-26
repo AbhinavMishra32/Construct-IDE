@@ -278,19 +278,57 @@ textarea {
   border-left: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
 }
 
-.construct-file-badge {
+.construct-file-type-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 18px;
-  height: 14px;
-  padding: 0 3px;
-  border-radius: 5px;
-  background: var(--panel-soft);
+  width: 18px;
+  height: 18px;
   color: var(--text-soft);
-  font-size: 8px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
+}
+
+.construct-file-type-icon.is-code {
+  color: color-mix(in srgb, #5ea8ff 72%, var(--text) 28%);
+}
+
+.construct-file-type-icon.is-style {
+  color: color-mix(in srgb, #f472b6 68%, var(--text) 32%);
+}
+
+.construct-file-type-icon.is-markup {
+  color: color-mix(in srgb, #fb923c 68%, var(--text) 32%);
+}
+
+.construct-file-type-icon.is-data {
+  color: color-mix(in srgb, #facc15 70%, var(--text) 30%);
+}
+
+.construct-file-type-icon.is-package {
+  color: color-mix(in srgb, #f59e0b 74%, var(--text) 26%);
+}
+
+.construct-file-type-icon.is-config {
+  color: color-mix(in srgb, #a78bfa 72%, var(--text) 28%);
+}
+
+.construct-file-type-icon.is-terminal {
+  color: color-mix(in srgb, #34d399 72%, var(--text) 28%);
+}
+
+.construct-file-type-icon.is-doc {
+  color: color-mix(in srgb, #94a3b8 76%, var(--text) 24%);
+}
+
+.construct-file-type-icon.is-lock {
+  color: color-mix(in srgb, #f97316 74%, var(--text) 26%);
+}
+
+.construct-file-type-icon.is-media {
+  color: color-mix(in srgb, #22d3ee 72%, var(--text) 28%);
+}
+
+.construct-file-type-icon.is-archive {
+  color: color-mix(in srgb, #c084fc 72%, var(--text) 28%);
 }
 
 .construct-tree-label {
