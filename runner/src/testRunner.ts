@@ -92,6 +92,11 @@ export class JestTestAdapter implements TestAdapter {
     const testsRun = normalizedRequest.tests.map((testPath) =>
       path.relative(normalizedRequest.projectRoot, testPath) || path.basename(testPath)
     );
+
+    if (shouldRunNodeValidationScripts(normalizedRequest.tests)) {
+      return runNodeValidationScripts(normalizedRequest, this.kind, testsRun);
+    }
+
     const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "construct-jest-results-"));
     const outputFile = path.join(outputDirectory, "results.json");
     const jestBinaryPath = findUpwardJestBinaryPath(normalizedRequest.projectRoot);
@@ -586,6 +591,188 @@ function extractLabeledOutput(message: string, label: string): string | undefine
 
 function normalizeBlueprintLanguage(language: string): string {
   return language.trim().toLowerCase();
+}
+
+function shouldRunNodeValidationScripts(tests: string[]): boolean {
+  return (
+    tests.length > 0 &&
+    tests.every((testPath) => {
+      const normalized = testPath.replace(/\\/g, "/");
+      return normalized.includes("/hidden_tests/") && normalized.endsWith(".js");
+    })
+  );
+}
+
+async function runNodeValidationScripts(
+  request: TaskExecutionRequest,
+  adapter: TestAdapterKind,
+  testsRun: string[]
+): Promise<TaskResult> {
+  const startedAt = Date.now();
+  const failures: TaskFailure[] = [];
+  const stdoutChunks: string[] = [];
+  const stderrChunks: string[] = [];
+  let timedOut = false;
+  let exitCode = 0;
+
+  for (const testPath of request.tests) {
+    const result = await runNodeValidationScript(testPath, request.projectRoot, request.timeoutMs);
+
+    if (result.stdout.trim()) {
+      stdoutChunks.push(result.stdout.trim());
+    }
+
+    if (result.stderr.trim()) {
+      stderrChunks.push(result.stderr.trim());
+    }
+
+    failures.push(...collectNodeValidationFailures(request, testPath, result));
+
+    if (result.timedOut) {
+      timedOut = true;
+      exitCode = result.exitCode ?? 1;
+      break;
+    }
+
+    if ((result.exitCode ?? 0) !== 0) {
+      exitCode = result.exitCode ?? 1;
+    }
+  }
+
+  return TaskResultSchema.parse({
+    stepId: request.stepId,
+    adapter,
+    status: !timedOut && exitCode === 0 ? "passed" : "failed",
+    durationMs: Date.now() - startedAt,
+    testsRun,
+    failures,
+    exitCode,
+    timedOut,
+    stdout: stdoutChunks.join("\n").trim(),
+    stderr: stderrChunks.join("\n").trim()
+  });
+}
+
+async function runNodeValidationScript(
+  scriptPath: string,
+  projectRoot: string,
+  timeoutMs: number
+): Promise<ProcessExecutionResult> {
+  const wrapperSource = [
+    "const fs = require('node:fs');",
+    "const path = require('node:path');",
+    "const Module = require('node:module');",
+    "const [projectRoot, scriptPath] = process.argv.slice(1);",
+    "process.chdir(projectRoot);",
+    "const source = fs.readFileSync(scriptPath, 'utf8');",
+    "const virtualEntry = path.join(projectRoot, '__construct_hidden_validation__.js');",
+    "const validationModule = new Module(virtualEntry);",
+    "validationModule.filename = virtualEntry;",
+    "validationModule.paths = Module._nodeModulePaths(projectRoot);",
+    "validationModule._compile(source, virtualEntry);"
+  ].join("\n");
+
+  try {
+    return await runProcess(process.execPath, ["-e", wrapperSource, projectRoot, scriptPath], {
+      cwd: projectRoot,
+      timeoutMs,
+      env: {
+        CI: "1"
+      }
+    });
+  } catch (error) {
+    if (isMissingBinaryError(error)) {
+      throw new BlueprintResolutionError("Unable to locate Node.js in PATH for validation scripts.");
+    }
+
+    throw error;
+  }
+}
+
+function collectNodeValidationFailures(
+  request: TaskExecutionRequest,
+  testPath: string,
+  result: ProcessExecutionResult
+): TaskFailure[] {
+  const combinedOutput = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
+  const validationMessages = combinedOutput
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => /^\[[^\]]+\]\s+/.test(line))
+    .map((line) => line.replace(/^\[[^\]]+\]\s+/, "").trim());
+
+  if (validationMessages.length > 0) {
+    return validationMessages.map((message) => ({
+      testName: path.basename(testPath),
+      message,
+      ...deriveNodeValidationComparison(message),
+      stackTrace: combinedOutput || undefined
+    }));
+  }
+
+  if (result.timedOut) {
+    return [
+      {
+        testName: path.basename(testPath),
+        message: `The validation script timed out after ${request.timeoutMs}ms.`,
+        stackTrace: combinedOutput || undefined
+      }
+    ];
+  }
+
+  if ((result.exitCode ?? 0) !== 0) {
+    return [
+      {
+        testName: path.basename(testPath),
+        message: summarizeFailureMessage(combinedOutput) || `Validation failed in ${path.basename(testPath)}.`,
+        ...extractOutputComparison(combinedOutput),
+        stackTrace: combinedOutput || undefined
+      }
+    ];
+  }
+
+  return [];
+}
+
+function deriveNodeValidationComparison(message: string): Pick<
+  TaskFailure,
+  "expectedOutput" | "actualOutput"
+> {
+  const normalized = message.trim().replace(/\.$/, "");
+
+  if (/workspaces missing/i.test(normalized)) {
+    return {
+      expectedOutput: "root package.json defines workspaces",
+      actualOutput: normalized
+    };
+  }
+
+  const missingAtStart = /^missing\s+(.+)$/i.exec(normalized);
+  if (missingAtStart?.[1]) {
+    return {
+      expectedOutput: `${missingAtStart[1]} exists`,
+      actualOutput: normalized
+    };
+  }
+
+  const missingAtEnd = /^(.+?)\s+missing$/i.exec(normalized);
+  if (missingAtEnd?.[1]) {
+    return {
+      expectedOutput: `${missingAtEnd[1]} exists`,
+      actualOutput: normalized
+    };
+  }
+
+  const unreadable = /^(.+?)\s+unreadable$/i.exec(normalized);
+  if (unreadable?.[1]) {
+    return {
+      expectedOutput: `${unreadable[1]} is readable`,
+      actualOutput: normalized
+    };
+  }
+
+  return {};
 }
 
 function isMissingBinaryError(error: unknown): error is NodeJS.ErrnoException {

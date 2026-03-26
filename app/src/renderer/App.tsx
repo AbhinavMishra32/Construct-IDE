@@ -2663,6 +2663,28 @@ function FloatingGuideCard({
   const pastePercentage = Math.round(taskTelemetry.pasteRatio * 100);
   const hiddenValidationCount = activeStep.tests.length;
   const constraintCount = activeStep.constraints.length;
+  const taskResultPanelRef = useRef<HTMLDivElement | null>(null);
+  const previousTaskResultRef = useRef<TaskResult | null>(taskResult);
+
+  useEffect(() => {
+    const resultChanged = previousTaskResultRef.current !== taskResult;
+    previousTaskResultRef.current = taskResult;
+
+    if (!taskResultPanelRef.current) {
+      return;
+    }
+
+    if (taskRunState !== "running" && !resultChanged && !taskError) {
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      taskResultPanelRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest"
+      });
+    });
+  }, [taskError, taskResult, taskRunState]);
 
   if (minimized) {
     return (
@@ -2859,6 +2881,17 @@ function FloatingGuideCard({
           </div>
         </div>
 
+        <div ref={taskResultPanelRef}>
+          <TaskResultPanel
+            attemptStatus={attemptStatus}
+            rewriteGate={rewriteGate}
+            taskRunState={taskRunState}
+            taskResult={taskResult}
+            taskError={taskError}
+            title={activeStep.title}
+          />
+        </div>
+
         {attemptStatus !== "passed" && (taskProgress?.totalAttempts ?? 0) >= 2 ? (
           <div className="construct-escalation-panel">
             <div>
@@ -3006,15 +3039,6 @@ function FloatingGuideCard({
             </motion.div>
           ) : null}
         </AnimatePresence>
-
-        <TaskResultPanel
-          attemptStatus={attemptStatus}
-          rewriteGate={rewriteGate}
-          taskRunState={taskRunState}
-          taskResult={taskResult}
-          taskError={taskError}
-          title={activeStep.title}
-        />
       </div>
     </motion.aside>
   );

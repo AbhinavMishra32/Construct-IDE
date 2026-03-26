@@ -34,6 +34,13 @@ const timeoutFixtureRoot = path.join(
   "test-fixtures",
   "jest-timeout"
 );
+const nodeValidationFixtureRoot = path.join(
+  rootDir,
+  "blueprints",
+  "workflow-runtime",
+  "test-fixtures",
+  "node-validation"
+);
 
 test("resolveBlueprintStepRequest maps a blueprint step to a targeted Jest run", async () => {
   const request = await resolveBlueprintStepRequest({
@@ -163,4 +170,33 @@ test("TestRunnerManager marks timed-out task runs explicitly", async () => {
   assert.equal(result.status, "failed");
   assert.equal(result.timedOut, true);
   assert.match(result.failures[0].message, /timed out/i);
+});
+
+test("TestRunnerManager runs hidden validation scripts and derives expected vs current output", async () => {
+  const manager = new TestRunnerManager();
+  const result = await manager.runTask({
+    stepId: "fixture.node-validation",
+    adapter: "jest",
+    projectRoot: nodeValidationFixtureRoot,
+    tests: ["hidden_tests/step1_validation.js"],
+    timeoutMs: 10_000
+  });
+
+  assert.equal(result.status, "failed");
+  assert.equal(result.adapter, "jest");
+  assert.equal(result.failures.length > 0, true);
+
+  const workspaceFailure = result.failures.find(
+    (failure) => failure.message === "workspaces missing in root package.json"
+  );
+  assert.ok(workspaceFailure);
+  assert.equal(workspaceFailure.expectedOutput, "root package.json defines workspaces");
+  assert.equal(workspaceFailure.actualOutput, "workspaces missing in root package.json");
+
+  const turboFailure = result.failures.find(
+    (failure) => failure.message === "turbo.json missing"
+  );
+  assert.ok(turboFailure);
+  assert.equal(turboFailure.expectedOutput, "turbo.json exists");
+  assert.equal(turboFailure.actualOutput, "turbo.json missing");
 });
