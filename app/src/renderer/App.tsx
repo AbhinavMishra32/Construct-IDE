@@ -98,11 +98,9 @@ import {
   SidebarGroupContent,
   SidebarGroupLabel,
   SidebarHeader,
-  SidebarInset,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarRail,
   SidebarProvider
 } from "@/components/ui/sidebar";
 import { Spinner } from "@/components/ui/spinner";
@@ -1824,7 +1822,7 @@ export default function App() {
 
   return (
     <main className="construct-app">
-      <SidebarProvider className={`construct-shell ${showAppSidebar ? "" : "is-code-view"}`.trim()}>
+      <div className={`construct-shell ${showAppSidebar ? "" : "is-code-view"}`.trim()}>
         {showAppSidebar ? (
           <AppSidebar
             projectsDashboard={projectsDashboard}
@@ -1870,7 +1868,7 @@ export default function App() {
           />
         ) : null}
 
-        <SidebarInset className="construct-shell-main">
+        <section className="construct-shell-main">
           <WorkbenchTopbar
             currentView={currentView}
             activeProjectName={blueprint?.name ?? null}
@@ -2274,8 +2272,8 @@ export default function App() {
               </div>
             )}
           </div>
-        </SidebarInset>
-      </SidebarProvider>
+        </section>
+      </div>
 
       <AnimatePresence>
         {planningOverlayOpen ? (
@@ -2809,153 +2807,154 @@ function AppSidebar({
   const recentProjects = (projectsDashboard?.projects ?? []).slice(0, 5);
 
   return (
-    <Sidebar collapsible="offcanvas" className="construct-app-sidebar">
-      <SidebarHeader className="construct-app-sidebar-top">
-        <PrimaryButton
-          type="button"
-          onClick={onStartProject}
-          className="construct-app-sidebar-primary"
-          disabled={dashboardBusy}
-        >
-          <PlusIcon data-icon="inline-start" />
-          New project
-        </PrimaryButton>
-      </SidebarHeader>
+    <SidebarProvider className="construct-app-sidebar-provider">
+      <Sidebar collapsible="none" className="construct-app-sidebar">
+        <SidebarHeader className="construct-app-sidebar-top">
+          <PrimaryButton
+            type="button"
+            onClick={onStartProject}
+            className="construct-app-sidebar-primary"
+            disabled={dashboardBusy}
+          >
+            <PlusIcon data-icon="inline-start" />
+            New project
+          </PrimaryButton>
+        </SidebarHeader>
 
-      <SidebarContent className="construct-app-sidebar-content">
-        <SidebarGroup className="construct-app-sidebar-section">
-          <SidebarGroupLabel className="construct-panel-kicker">
-            Workspace
-          </SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu className="construct-app-nav">
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  type="button"
-                  onClick={onOpenProjects}
-                  isActive={currentView === "projects"}
-                  className="construct-app-nav-item"
-                  tooltip="Projects"
-                >
-                  <FolderTreeIcon />
-                  <span>Projects</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  type="button"
-                  onClick={onOpenLesson}
-                  isActive={currentView === "lesson"}
-                  className="construct-app-nav-item"
-                  tooltip="Step context"
-                  disabled={!activeStep}
-                >
-                  <BookOpenTextIcon />
-                  <span>Step</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  type="button"
-                  onClick={onOpenCode}
-                  isActive={currentView === "code"}
-                  className="construct-app-nav-item"
-                  tooltip="Code"
-                  disabled={!activeStep}
-                >
-                  <FolderOpenIcon />
-                  <span>Code</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        <SidebarGroup className="construct-app-sidebar-section construct-app-sidebar-section--recents">
-          <div className="construct-app-sidebar-section-header">
+        <SidebarContent className="construct-app-sidebar-content">
+          <SidebarGroup className="construct-app-sidebar-section">
             <SidebarGroupLabel className="construct-panel-kicker">
-              Recents
+              Workspace
             </SidebarGroupLabel>
-            <ToolbarPill>{recentProjects.length}</ToolbarPill>
-          </div>
+            <SidebarGroupContent>
+              <SidebarMenu className="construct-app-nav">
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    type="button"
+                    onClick={onOpenProjects}
+                    isActive={currentView === "projects"}
+                    className="construct-app-nav-item"
+                    tooltip="Projects"
+                  >
+                    <FolderTreeIcon />
+                    <span>Projects</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    type="button"
+                    onClick={onOpenLesson}
+                    isActive={currentView === "lesson"}
+                    className="construct-app-nav-item"
+                    tooltip="Step context"
+                    disabled={!activeStep}
+                  >
+                    <BookOpenTextIcon />
+                    <span>Step</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    type="button"
+                    onClick={onOpenCode}
+                    isActive={currentView === "code"}
+                    className="construct-app-nav-item"
+                    tooltip="Code"
+                    disabled={!activeStep}
+                  >
+                    <FolderOpenIcon />
+                    <span>Code</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
 
-          <SidebarGroupContent className="construct-app-sidebar-recents-content">
-            {recentProjects.length > 0 ? (
-              <ScrollArea className="construct-app-recent-scroll">
-                <div className="construct-app-recent-list">
-                  {recentProjects.map((project) => (
-                    <Button
-                      key={project.id}
-                      type="button"
-                      variant="ghost"
-                      onClick={() => {
-                        onOpenProject(project);
-                      }}
-                      className={cn(
-                        "construct-app-recent-item",
-                        projectsDashboard?.activeProjectId === project.id ? "is-active" : ""
-                      )}
-                      disabled={dashboardBusy}
-                    >
-                      <strong>{project.name}</strong>
-                      <span>{project.currentStepTitle ?? project.description}</span>
-                    </Button>
-                  ))}
-                </div>
-              </ScrollArea>
-            ) : (
-              <Empty className="construct-app-sidebar-empty border-none bg-transparent p-0 text-left">
-                <EmptyContent className="items-start">
-                  <EmptyDescription>No projects yet.</EmptyDescription>
-                </EmptyContent>
-              </Empty>
-            )}
-          </SidebarGroupContent>
-        </SidebarGroup>
-      </SidebarContent>
+          <SidebarGroup className="construct-app-sidebar-section construct-app-sidebar-section--recents">
+            <div className="construct-app-sidebar-section-header">
+              <SidebarGroupLabel className="construct-panel-kicker">
+                Recents
+              </SidebarGroupLabel>
+              <ToolbarPill>{recentProjects.length}</ToolbarPill>
+            </div>
 
-      <SidebarFooter className="construct-app-sidebar-section construct-app-sidebar-section--meta">
-        {authSession?.user ? (
-          <div className="construct-app-account-card">
-            <div className="construct-app-account-copy">
-              <strong>{authSession.user.displayName}</strong>
-              <span>{authSession.user.email}</span>
+            <SidebarGroupContent className="construct-app-sidebar-recents-content">
+              {recentProjects.length > 0 ? (
+                <ScrollArea className="construct-app-recent-scroll">
+                  <div className="construct-app-recent-list">
+                    {recentProjects.map((project) => (
+                      <Button
+                        key={project.id}
+                        type="button"
+                        variant="ghost"
+                        onClick={() => {
+                          onOpenProject(project);
+                        }}
+                        className={cn(
+                          "construct-app-recent-item",
+                          projectsDashboard?.activeProjectId === project.id ? "is-active" : ""
+                        )}
+                        disabled={dashboardBusy}
+                      >
+                        <strong>{project.name}</strong>
+                        <span>{project.currentStepTitle ?? project.description}</span>
+                      </Button>
+                    ))}
+                  </div>
+                </ScrollArea>
+              ) : (
+                <Empty className="construct-app-sidebar-empty border-none bg-transparent p-0 text-left">
+                  <EmptyContent className="items-start">
+                    <EmptyDescription>No projects yet.</EmptyDescription>
+                  </EmptyContent>
+                </Empty>
+              )}
+            </SidebarGroupContent>
+          </SidebarGroup>
+        </SidebarContent>
+
+        <SidebarFooter className="construct-app-sidebar-section construct-app-sidebar-section--meta">
+          {authSession?.user ? (
+            <div className="construct-app-account-card">
+              <div className="construct-app-account-copy">
+                <strong>{authSession.user.displayName}</strong>
+                <span>{authSession.user.email}</span>
+              </div>
+              <div className="construct-app-account-actions">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="construct-app-account-action"
+                  onClick={onOpenAccount}
+                >
+                  Account
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="construct-app-account-action"
+                  onClick={onLogout}
+                >
+                  Sign out
+                </Button>
+              </div>
             </div>
-            <div className="construct-app-account-actions">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="construct-app-account-action"
-                onClick={onOpenAccount}
-              >
-                Account
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="construct-app-account-action"
-                onClick={onLogout}
-              >
-                Sign out
-              </Button>
-            </div>
+          ) : null}
+          <div className="construct-app-meta-row">
+            <span>Runner</span>
+            <ToolbarPill variant="outline">{runnerHealth?.status ?? "offline"}</ToolbarPill>
           </div>
-        ) : null}
-        <div className="construct-app-meta-row">
-          <span>Runner</span>
-          <ToolbarPill variant="outline">{runnerHealth?.status ?? "offline"}</ToolbarPill>
-        </div>
-        <div className="construct-app-meta-row">
-          <span>Projects</span>
-          <ToolbarPill variant="outline">
-            {projectsDashboard?.projects.length ?? 0}
-          </ToolbarPill>
-        </div>
-      </SidebarFooter>
-      <SidebarRail />
-    </Sidebar>
+          <div className="construct-app-meta-row">
+            <span>Projects</span>
+            <ToolbarPill variant="outline">
+              {projectsDashboard?.projects.length ?? 0}
+            </ToolbarPill>
+          </div>
+        </SidebarFooter>
+      </Sidebar>
+    </SidebarProvider>
   );
 }
 

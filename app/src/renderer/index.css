@@ -4974,11 +4974,8 @@ textarea {
 }
 
 .construct-shell {
-  display: flex;
-  height: 100vh;
   min-height: 100vh;
   background: var(--app-bg);
-  overflow: hidden;
 }
 
 .construct-shell-main,
@@ -5003,13 +5000,11 @@ textarea {
   overflow: hidden;
 }
 
-.construct-app-sidebar [data-slot="sidebar-inner"] {
-  display: flex;
-  flex-direction: column;
+.construct-app-sidebar {
+  height: 100%;
   gap: 12px;
   padding: 12px 14px 14px;
   background: color-mix(in srgb, var(--panel-bg) 98%, transparent);
-  border-right: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
   overflow: hidden;
 }
 
@@ -5047,6 +5042,7 @@ textarea {
 .construct-app-recent-item {
   align-items: flex-start;
   justify-content: flex-start;
+  min-height: auto;
   min-width: 0;
   width: 100%;
   border-radius: 10px;
@@ -5071,7 +5067,7 @@ textarea {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
 }
 
 .construct-app-sidebar-section {
@@ -5092,10 +5088,6 @@ textarea {
   max-height: 100%;
 }
 
-.construct-app-sidebar [data-slot="scroll-area-viewport"] > div {
-  display: block !important;
-  min-width: 100%;
-}
 
 .construct-shell-content {
   overflow: auto;
