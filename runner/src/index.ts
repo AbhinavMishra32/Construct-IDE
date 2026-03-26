@@ -34,6 +34,7 @@ import { TaskLifecycleService } from "./taskLifecycle";
 import {
   BlueprintResolutionError,
   TestRunnerManager,
+  createConsoleTestRunnerLogger,
   loadBlueprint
 } from "./testRunner";
 import { getDefaultBlueprintPath } from "./activeBlueprint";
@@ -43,7 +44,7 @@ const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../.
 loadRunnerEnvironment(rootDir);
 
 const port = Number(process.env.CONSTRUCT_RUNNER_PORT ?? 43110);
-const testRunner = new TestRunnerManager();
+const testRunner = new TestRunnerManager(undefined, createConsoleTestRunnerLogger());
 let constructAgent: ConstructAgentService | null = null;
 let constructAuth: ConstructAuthService | null = null;
 let workspaceContextPromise: Promise<WorkspaceContext> | null = null;
@@ -531,6 +532,11 @@ const server = http.createServer(async (request, response) => {
 
       const body = await readRequestBody(request);
       const submitRequest = TaskSubmitRequestSchema.parse(JSON.parse(body));
+      logRunnerInfo("Received task submission.", {
+        blueprintPath: submitRequest.blueprintPath,
+        sessionId: submitRequest.sessionId,
+        stepId: submitRequest.stepId
+      });
       const taskSubmission = await workspaceContext.taskLifecycle.submitTask(submitRequest);
       const frontierUpdated = await getConstructAgent().syncProjectTaskProgress({
         canonicalBlueprintPath: workspaceContext.canonicalBlueprintPath,
@@ -543,6 +549,14 @@ const server = http.createServer(async (request, response) => {
       if (frontierUpdated) {
         invalidateWorkspaceContext();
       }
+
+      logRunnerInfo("Completed task submission.", {
+        attempt: taskSubmission.attempt.attempt,
+        frontierUpdated,
+        sessionId: taskSubmission.session.sessionId,
+        status: taskSubmission.attempt.status,
+        stepId: submitRequest.stepId
+      });
 
       response.writeHead(200, { "Content-Type": "application/json" });
       response.end(JSON.stringify(taskSubmission));
@@ -711,6 +725,21 @@ function getRequiredQueryParam(requestUrl: string, key: string): string {
   }
 
   return value;
+}
+
+function logRunnerInfo(message: string, context?: Record<string, unknown>): void {
+  const timestamp = new Date().toISOString();
+
+  if (!context || Object.keys(context).length === 0) {
+    console.log(`[construct-runner] ${timestamp} INFO ${message}`);
+    return;
+  }
+
+  console.log(
+    `[construct-runner] ${timestamp} INFO ${message} ${Object.entries(context)
+      .map(([key, value]) => `${key}=${JSON.stringify(value)}`)
+      .join(" ")}`
+  );
 }
 
 function loadRunnerEnvironment(projectRoot: string): void {

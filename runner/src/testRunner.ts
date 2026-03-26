@@ -39,7 +39,7 @@ const defaultBlueprintPath = path.join(
 
 interface TestAdapter {
   readonly kind: TestAdapterKind;
-  run(request: TaskExecutionRequest): Promise<TaskResult>;
+  run(request: TaskExecutionRequest, logger: TestRunnerLogger): Promise<TaskResult>;
 }
 
 interface JestJsonAssertionResult {
@@ -70,6 +70,12 @@ interface ProcessExecutionResult {
   timedOut: boolean;
 }
 
+export type TestRunnerLogger = {
+  info(message: string, context?: Record<string, unknown>): void;
+  warn(message: string, context?: Record<string, unknown>): void;
+  error(message: string, context?: Record<string, unknown>): void;
+};
+
 export class BlueprintResolutionError extends Error {
   constructor(message: string) {
     super(message);
@@ -87,14 +93,14 @@ export class UnsupportedAdapterError extends Error {
 export class JestTestAdapter implements TestAdapter {
   readonly kind = "jest" as const;
 
-  async run(request: TaskExecutionRequest): Promise<TaskResult> {
+  async run(request: TaskExecutionRequest, logger: TestRunnerLogger): Promise<TaskResult> {
     const normalizedRequest = normalizeTaskExecutionRequest(request);
     const testsRun = normalizedRequest.tests.map((testPath) =>
       path.relative(normalizedRequest.projectRoot, testPath) || path.basename(testPath)
     );
 
     if (shouldRunNodeValidationScripts(normalizedRequest.tests)) {
-      return runNodeValidationScripts(normalizedRequest, this.kind, testsRun);
+      return runNodeValidationScripts(normalizedRequest, this.kind, testsRun, logger);
     }
 
     const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "construct-jest-results-"));
@@ -126,70 +132,42 @@ export class JestTestAdapter implements TestAdapter {
       ...normalizedRequest.tests
     );
 
-    const startedAt = Date.now();
-    let timedOut = false;
-    let stdout = "";
-    let stderr = "";
-    let exitCode: number | null = null;
-
     try {
-      const child = spawn(process.execPath, jestArguments, {
+      const processResult = await runProcess(process.execPath, jestArguments, {
         cwd: normalizedRequest.projectRoot,
+        timeoutMs: normalizedRequest.timeoutMs,
         env: {
-          ...process.env,
           CI: "1"
         },
-        stdio: ["ignore", "pipe", "pipe"]
-      });
-
-      child.stdout.on("data", (chunk: Buffer | string) => {
-        stdout += chunk.toString();
-      });
-
-      child.stderr.on("data", (chunk: Buffer | string) => {
-        stderr += chunk.toString();
-      });
-
-      exitCode = await new Promise<number | null>((resolve, reject) => {
-        const timeoutHandle = setTimeout(() => {
-          timedOut = true;
-          child.kill("SIGTERM");
-          setTimeout(() => child.kill("SIGKILL"), 1_000).unref();
-        }, normalizedRequest.timeoutMs);
-
-        timeoutHandle.unref();
-
-        child.once("error", (error) => {
-          clearTimeout(timeoutHandle);
-          reject(error);
-        });
-
-        child.once("close", (code) => {
-          clearTimeout(timeoutHandle);
-          resolve(code);
-        });
+        logger,
+        logContext: {
+          adapter: this.kind,
+          stepId: normalizedRequest.stepId,
+          testsRun
+        }
       });
 
       const failures = await this.collectFailures(
         outputFile,
         normalizedRequest,
-        stderr,
-        timedOut,
-        exitCode
+        processResult.stderr,
+        processResult.timedOut,
+        processResult.exitCode
       );
-      const status = !timedOut && exitCode === 0 ? "passed" : "failed";
+      const status =
+        !processResult.timedOut && processResult.exitCode === 0 ? "passed" : "failed";
 
       return TaskResultSchema.parse({
         stepId: normalizedRequest.stepId,
         adapter: this.kind,
         status,
-        durationMs: Date.now() - startedAt,
+        durationMs: processResult.durationMs,
         testsRun,
         failures,
-        exitCode,
-        timedOut,
-        stdout: stdout.trim(),
-        stderr: stderr.trim()
+        exitCode: processResult.exitCode,
+        timedOut: processResult.timedOut,
+        stdout: processResult.stdout.trim(),
+        stderr: processResult.stderr.trim()
       });
     } finally {
       await rm(outputDirectory, { recursive: true, force: true });
@@ -274,13 +252,13 @@ export class JestTestAdapter implements TestAdapter {
 export class PytestTestAdapter implements TestAdapter {
   readonly kind = "pytest" as const;
 
-  async run(request: TaskExecutionRequest): Promise<TaskResult> {
+  async run(request: TaskExecutionRequest, logger: TestRunnerLogger): Promise<TaskResult> {
     const normalizedRequest = normalizeTaskExecutionRequest(request);
     const testsRun = normalizedRequest.tests.map((testPath) =>
       path.relative(normalizedRequest.projectRoot, testPath) || path.basename(testPath)
     );
 
-    const { result } = await runPytestCommand(normalizedRequest);
+    const { result } = await runPytestCommand(normalizedRequest, logger, testsRun);
     const failures = collectPytestFailures(normalizedRequest, result);
     const status = !result.timedOut && result.exitCode === 0 ? "passed" : "failed";
 
@@ -302,7 +280,7 @@ export class PytestTestAdapter implements TestAdapter {
 export class CargoTestAdapter implements TestAdapter {
   readonly kind = "cargo" as const;
 
-  async run(request: TaskExecutionRequest): Promise<TaskResult> {
+  async run(request: TaskExecutionRequest, logger: TestRunnerLogger): Promise<TaskResult> {
     const normalizedRequest = normalizeTaskExecutionRequest(request);
     const testsRun = normalizedRequest.tests.map((testPath) =>
       path.relative(normalizedRequest.projectRoot, testPath) || path.basename(testPath)
@@ -317,6 +295,12 @@ export class CargoTestAdapter implements TestAdapter {
         env: {
           CARGO_TERM_COLOR: "never",
           CI: "1"
+        },
+        logger,
+        logContext: {
+          adapter: this.kind,
+          stepId: normalizedRequest.stepId,
+          testsRun
         }
       });
     } catch (error) {
@@ -349,15 +333,19 @@ export class CargoTestAdapter implements TestAdapter {
 
 export class TestRunnerManager {
   private readonly adapters: Map<TestAdapterKind, TestAdapter>;
+  private readonly logger: TestRunnerLogger;
 
   constructor(
-    adapters: TestAdapter[] = [
+    adapters?: TestAdapter[],
+    logger: TestRunnerLogger = createSilentTestRunnerLogger()
+  ) {
+    const resolvedAdapters = adapters ?? [
       new JestTestAdapter(),
       new PytestTestAdapter(),
       new CargoTestAdapter()
-    ]
-  ) {
-    this.adapters = new Map(adapters.map((adapter) => [adapter.kind, adapter]));
+    ];
+    this.adapters = new Map(resolvedAdapters.map((adapter) => [adapter.kind, adapter]));
+    this.logger = logger;
   }
 
   async runTask(request: TaskExecutionRequest): Promise<TaskResult> {
@@ -368,7 +356,38 @@ export class TestRunnerManager {
       throw new UnsupportedAdapterError(normalizedRequest.adapter);
     }
 
-    return adapter.run(normalizedRequest);
+    const testsRun = normalizedRequest.tests.map((testPath) =>
+      path.relative(normalizedRequest.projectRoot, testPath) || path.basename(testPath)
+    );
+
+    this.logger.info("Starting targeted test execution.", {
+      adapter: normalizedRequest.adapter,
+      cwd: normalizedRequest.projectRoot,
+      stepId: normalizedRequest.stepId,
+      testsRun
+    });
+
+    try {
+      const result = await adapter.run(normalizedRequest, this.logger);
+      this.logger.info("Completed targeted test execution.", {
+        adapter: normalizedRequest.adapter,
+        durationMs: result.durationMs,
+        exitCode: result.exitCode,
+        failureCount: result.failures.length,
+        status: result.status,
+        stepId: normalizedRequest.stepId,
+        timedOut: result.timedOut
+      });
+      return result;
+    } catch (error) {
+      this.logger.error("Targeted test execution failed.", {
+        adapter: normalizedRequest.adapter,
+        error: error instanceof Error ? error.message : String(error),
+        stepId: normalizedRequest.stepId,
+        testsRun
+      });
+      throw error;
+    }
   }
 
   async runBlueprintStep(request: BlueprintTaskRequest): Promise<TaskResult> {
@@ -606,7 +625,8 @@ function shouldRunNodeValidationScripts(tests: string[]): boolean {
 async function runNodeValidationScripts(
   request: TaskExecutionRequest,
   adapter: TestAdapterKind,
-  testsRun: string[]
+  testsRun: string[],
+  logger: TestRunnerLogger
 ): Promise<TaskResult> {
   const startedAt = Date.now();
   const failures: TaskFailure[] = [];
@@ -616,7 +636,17 @@ async function runNodeValidationScripts(
   let exitCode = 0;
 
   for (const testPath of request.tests) {
-    const result = await runNodeValidationScript(testPath, request.projectRoot, request.timeoutMs);
+    const result = await runNodeValidationScript(
+      testPath,
+      request.projectRoot,
+      request.timeoutMs,
+      logger,
+      {
+        adapter,
+        stepId: request.stepId,
+        testsRun
+      }
+    );
 
     if (result.stdout.trim()) {
       stdoutChunks.push(result.stdout.trim());
@@ -656,7 +686,9 @@ async function runNodeValidationScripts(
 async function runNodeValidationScript(
   scriptPath: string,
   projectRoot: string,
-  timeoutMs: number
+  timeoutMs: number,
+  logger: TestRunnerLogger,
+  logContext: Record<string, unknown>
 ): Promise<ProcessExecutionResult> {
   const wrapperSource = [
     "const fs = require('node:fs');",
@@ -678,6 +710,11 @@ async function runNodeValidationScript(
       timeoutMs,
       env: {
         CI: "1"
+      },
+      logger,
+      logContext: {
+        ...logContext,
+        validationScript: path.relative(projectRoot, scriptPath) || path.basename(scriptPath)
       }
     });
   } catch (error) {
@@ -789,7 +826,9 @@ function isMissingBinaryError(error: unknown): error is NodeJS.ErrnoException {
 }
 
 async function runPytestCommand(
-  request: TaskExecutionRequest
+  request: TaskExecutionRequest,
+  logger: TestRunnerLogger,
+  testsRun: string[]
 ): Promise<{ command: string; result: ProcessExecutionResult }> {
   const pytestArguments = ["-m", "pytest", "-q", ...request.tests];
   const pythonCommands = resolvePythonCommandCandidates(request.projectRoot);
@@ -801,6 +840,12 @@ async function runPytestCommand(
         timeoutMs: request.timeoutMs,
         env: {
           CI: "1"
+        },
+        logger,
+        logContext: {
+          adapter: "pytest",
+          stepId: request.stepId,
+          testsRun
         }
       });
 
@@ -834,6 +879,8 @@ async function runProcess(
   options: {
     cwd: string;
     env?: Record<string, string>;
+    logContext?: Record<string, unknown>;
+    logger?: TestRunnerLogger;
     timeoutMs: number;
   }
 ): Promise<ProcessExecutionResult> {
@@ -841,6 +888,14 @@ async function runProcess(
   let timedOut = false;
   let stdout = "";
   let stderr = "";
+  const logger = options.logger ?? createSilentTestRunnerLogger();
+  const logContext = {
+    command: formatCommand(command, args),
+    cwd: options.cwd,
+    ...(options.logContext ?? {})
+  };
+
+  logger.info("Starting test command.", logContext);
 
   const child = spawn(command, args, {
     cwd: options.cwd,
@@ -853,10 +908,12 @@ async function runProcess(
 
   child.stdout.on("data", (chunk: Buffer | string) => {
     stdout += chunk.toString();
+    logProcessChunk(logger, "stdout", chunk, logContext);
   });
 
   child.stderr.on("data", (chunk: Buffer | string) => {
     stderr += chunk.toString();
+    logProcessChunk(logger, "stderr", chunk, logContext);
   });
 
   const exitCode = await new Promise<number | null>((resolve, reject) => {
@@ -879,13 +936,62 @@ async function runProcess(
     });
   });
 
-  return {
+  const result = {
     durationMs: Date.now() - startedAt,
     exitCode,
     stderr,
     stdout,
     timedOut
   };
+
+  logger.info("Completed test command.", {
+    ...logContext,
+    durationMs: result.durationMs,
+    exitCode: result.exitCode,
+    timedOut: result.timedOut
+  });
+
+  return result;
+}
+
+function logProcessChunk(
+  logger: TestRunnerLogger,
+  stream: "stdout" | "stderr",
+  chunk: Buffer | string,
+  context: Record<string, unknown>
+): void {
+  const text = chunk.toString().replace(/\r/g, "");
+
+  for (const rawLine of text.split("\n")) {
+    const line = rawLine.trimEnd();
+
+    if (!line.trim()) {
+      continue;
+    }
+
+    if (stream === "stderr") {
+      logger.warn("Test command output.", {
+        ...context,
+        line,
+        stream
+      });
+      continue;
+    }
+
+    logger.info("Test command output.", {
+      ...context,
+      line,
+      stream
+    });
+  }
+}
+
+function formatCommand(command: string, args: string[]): string {
+  return [command, ...args].map(formatCommandSegment).join(" ");
+}
+
+function formatCommandSegment(segment: string): string {
+  return /[\s"'\\]/.test(segment) ? JSON.stringify(segment) : segment;
 }
 
 function collectPytestFailures(
@@ -1199,6 +1305,48 @@ function resolveToRealPath(candidatePath: string): string {
   } catch {
     return resolvedPath;
   }
+}
+
+function createSilentTestRunnerLogger(): TestRunnerLogger {
+  return {
+    info() {},
+    warn() {},
+    error() {}
+  };
+}
+
+export function createConsoleTestRunnerLogger(): TestRunnerLogger {
+  return {
+    info(message, context) {
+      console.log(formatTestRunnerLogLine("INFO", message, context));
+    },
+    warn(message, context) {
+      console.warn(formatTestRunnerLogLine("WARN", message, context));
+    },
+    error(message, context) {
+      console.error(formatTestRunnerLogLine("ERROR", message, context));
+    }
+  };
+}
+
+function formatTestRunnerLogLine(
+  level: "INFO" | "WARN" | "ERROR",
+  message: string,
+  context?: Record<string, unknown>
+): string {
+  const timestamp = new Date().toISOString();
+
+  if (!context || Object.keys(context).length === 0) {
+    return `[construct-tests] ${timestamp} ${level} ${message}`;
+  }
+
+  return `[construct-tests] ${timestamp} ${level} ${message} ${formatTestRunnerLogContext(context)}`;
+}
+
+function formatTestRunnerLogContext(context: Record<string, unknown>): string {
+  return Object.entries(context)
+    .map(([key, value]) => `${key}=${JSON.stringify(value)}`)
+    .join(" ");
 }
 
 async function runFromCli(): Promise<void> {
