@@ -71,6 +71,7 @@ import {
   type UserKnowledgeBase
 } from "@construct/shared";
 import { tavily } from "@tavily/core";
+import ts from "typescript";
 import { z } from "zod";
 
 import {
@@ -5891,7 +5892,7 @@ function normalizeDraftLessonSlides(
 function normalizeGeneratedBlueprintDraft(
   draft: GeneratedBlueprintBundleDraft
 ): GeneratedBlueprintBundleDraft {
-  validateGeneratedHiddenTests(draft.hiddenTests, "Generated blueprint draft");
+  validateGeneratedBlueprintDraftIntegrity(draft, "Generated blueprint draft");
 
   return {
     ...draft,
@@ -5905,7 +5906,7 @@ function normalizeGeneratedBlueprintDraft(
 function normalizeGeneratedFrontierDraft(
   draft: GeneratedFrontierDraft
 ): GeneratedFrontierDraft {
-  validateGeneratedHiddenTests(draft.hiddenTests, "Generated frontier draft");
+  validateGeneratedFrontierDraftIntegrity(draft, "Generated frontier draft");
 
   return {
     ...draft,
@@ -5935,6 +5936,165 @@ function validateGeneratedHiddenTests(
 ): void {
   for (const hiddenTest of hiddenTests) {
     validateGeneratedHiddenTest(hiddenTest, context);
+  }
+}
+
+function validateGeneratedBlueprintDraftIntegrity(
+  draft: GeneratedBlueprintBundleDraft,
+  context: string
+): void {
+  const supportFiles = validateGeneratedFileEntries(draft.supportFiles, "supportFiles", context);
+  const canonicalFiles = validateGeneratedFileEntries(draft.canonicalFiles, "canonicalFiles", context);
+  const learnerFiles = validateGeneratedFileEntries(draft.learnerFiles, "learnerFiles", context);
+  const hiddenTests = validateGeneratedFileEntries(draft.hiddenTests, "hiddenTests", context);
+  const supportPaths = new Set(supportFiles.keys());
+  const canonicalPaths = new Set(canonicalFiles.keys());
+  const learnerPaths = new Set(learnerFiles.keys());
+  const hiddenTestPaths = new Set(hiddenTests.keys());
+
+  validateNoGeneratedPathOverlap(supportPaths, canonicalPaths, "supportFiles", "canonicalFiles", context);
+  validateNoGeneratedPathOverlap(supportPaths, learnerPaths, "supportFiles", "learnerFiles", context);
+  validateNoGeneratedPathOverlap(supportPaths, hiddenTestPaths, "supportFiles", "hiddenTests", context);
+  validateNoGeneratedPathOverlap(canonicalPaths, hiddenTestPaths, "canonicalFiles", "hiddenTests", context);
+  validateNoGeneratedPathOverlap(learnerPaths, hiddenTestPaths, "learnerFiles", "hiddenTests", context);
+
+  const missingCanonicalPaths = [...learnerPaths].filter((filePath) => !canonicalPaths.has(filePath));
+  if (missingCanonicalPaths.length > 0) {
+    throw new Error(
+      `${context} returned learnerFiles without matching canonicalFiles for ${missingCanonicalPaths.join(", ")}.`
+    );
+  }
+
+  const materializedPaths = new Set([
+    ...supportPaths,
+    ...canonicalPaths,
+    ...learnerPaths
+  ]);
+
+  for (const entrypoint of draft.entrypoints.map((entry) => normalizePathValue(entry))) {
+    if (!materializedPaths.has(entrypoint)) {
+      throw new Error(
+        `${context} returned entrypoint ${entrypoint} that does not exist in supportFiles, canonicalFiles, or learnerFiles.`
+      );
+    }
+  }
+
+  validateGeneratedStepReferences(draft.steps, learnerFiles, hiddenTestPaths, context);
+}
+
+function validateGeneratedFrontierDraftIntegrity(
+  draft: GeneratedFrontierDraft,
+  context: string
+): void {
+  const learnerFiles = validateGeneratedFileEntries(draft.learnerFiles, "learnerFiles", context);
+  const hiddenTests = validateGeneratedFileEntries(draft.hiddenTests, "hiddenTests", context);
+  const learnerPaths = new Set(learnerFiles.keys());
+  const hiddenTestPaths = new Set(hiddenTests.keys());
+
+  validateNoGeneratedPathOverlap(learnerPaths, hiddenTestPaths, "learnerFiles", "hiddenTests", context);
+  validateGeneratedStepReferences(draft.steps, learnerFiles, hiddenTestPaths, context);
+}
+
+function validateGeneratedFileEntries(
+  files: Array<{ path: string; content: string }>,
+  group: "supportFiles" | "canonicalFiles" | "learnerFiles" | "hiddenTests",
+  context: string
+): Map<string, string> {
+  const normalizedFiles = new Map<string, string>();
+
+  for (const file of files) {
+    const normalizedPath = normalizePathValue(file.path);
+
+    if (normalizedFiles.has(normalizedPath)) {
+      throw new Error(`${context} returned duplicate ${group} path ${normalizedPath}.`);
+    }
+
+    validateGeneratedFileEntry(file, group, context);
+    normalizedFiles.set(normalizedPath, file.content);
+  }
+
+  return normalizedFiles;
+}
+
+function validateGeneratedFileEntry(
+  file: { path: string; content: string },
+  group: "supportFiles" | "canonicalFiles" | "learnerFiles" | "hiddenTests",
+  context: string
+): void {
+  const normalizedPath = normalizePathValue(file.path);
+  const trimmedContent = file.content.trim();
+
+  if (group === "hiddenTests") {
+    validateGeneratedHiddenTest(file, context);
+    return;
+  }
+
+  if (looksLikePlaceholderGeneratedArtifact(normalizedPath, trimmedContent)) {
+    throw new Error(
+      `${context} returned placeholder ${group} content for ${normalizedPath}. ${group} must contain concrete project files.`
+    );
+  }
+
+  if (normalizedPath.endsWith(".json")) {
+    try {
+      JSON.parse(file.content);
+    } catch (error) {
+      throw new Error(
+        `${context} returned invalid JSON for ${group} file ${normalizedPath}: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+  }
+
+  validateGeneratedSourceSyntax(file, group, context);
+}
+
+function validateNoGeneratedPathOverlap(
+  leftPaths: Set<string>,
+  rightPaths: Set<string>,
+  leftLabel: string,
+  rightLabel: string,
+  context: string
+): void {
+  const overlappingPaths = [...leftPaths].filter((filePath) => rightPaths.has(filePath));
+
+  if (overlappingPaths.length > 0) {
+    throw new Error(
+      `${context} returned overlapping paths in ${leftLabel} and ${rightLabel}: ${overlappingPaths.join(", ")}.`
+    );
+  }
+}
+
+function validateGeneratedStepReferences(
+  steps: GeneratedBlueprintBundleDraft["steps"] | GeneratedFrontierDraft["steps"],
+  learnerFiles: Map<string, string>,
+  hiddenTestPaths: Set<string>,
+  context: string
+): void {
+  for (const step of steps) {
+    const anchorFile = normalizePathValue(step.anchor.file);
+    const anchorContent = learnerFiles.get(anchorFile);
+
+    if (anchorContent === undefined) {
+      throw new Error(
+        `${context} step ${step.id} anchors ${anchorFile}, but that file is missing from learnerFiles.`
+      );
+    }
+
+    if (!anchorContent.includes(step.anchor.marker)) {
+      throw new Error(
+        `${context} step ${step.id} anchor marker ${step.anchor.marker} is missing from learner file ${anchorFile}.`
+      );
+    }
+
+    for (const testPath of step.tests.map((value) => normalizePathValue(value))) {
+      if (!hiddenTestPaths.has(testPath)) {
+        throw new Error(
+          `${context} step ${step.id} references missing hidden test ${testPath}.`
+        );
+      }
+    }
   }
 }
 
@@ -5968,6 +6128,72 @@ function validateGeneratedHiddenTest(
   }
 }
 
+function validateGeneratedSourceSyntax(
+  file: { path: string; content: string },
+  group: "supportFiles" | "canonicalFiles" | "learnerFiles",
+  context: string
+): void {
+  const normalizedPath = normalizePathValue(file.path);
+  const scriptKind = getGeneratedSourceScriptKind(normalizedPath);
+
+  if (scriptKind === null) {
+    return;
+  }
+
+  const sourceFile = ts.createSourceFile(
+    normalizedPath,
+    file.content,
+    ts.ScriptTarget.Latest,
+    true,
+    scriptKind
+  );
+  const syntaxError = (
+    sourceFile as ts.SourceFile & {
+      parseDiagnostics?: readonly ts.DiagnosticWithLocation[];
+    }
+  ).parseDiagnostics?.find((diagnostic) => diagnostic.category === ts.DiagnosticCategory.Error);
+
+  if (!syntaxError) {
+    return;
+  }
+
+  throw new Error(
+    `${context} returned invalid source syntax for ${group} file ${normalizedPath}: ${ts.flattenDiagnosticMessageText(
+      syntaxError.messageText,
+      "\n"
+    )}`
+  );
+}
+
+function getGeneratedSourceScriptKind(normalizedPath: string): ts.ScriptKind | null {
+  if (normalizedPath.endsWith(".tsx")) {
+    return ts.ScriptKind.TSX;
+  }
+
+  if (
+    normalizedPath.endsWith(".ts") ||
+    normalizedPath.endsWith(".mts") ||
+    normalizedPath.endsWith(".cts") ||
+    normalizedPath.endsWith(".d.ts")
+  ) {
+    return ts.ScriptKind.TS;
+  }
+
+  if (normalizedPath.endsWith(".jsx")) {
+    return ts.ScriptKind.JSX;
+  }
+
+  if (
+    normalizedPath.endsWith(".js") ||
+    normalizedPath.endsWith(".mjs") ||
+    normalizedPath.endsWith(".cjs")
+  ) {
+    return ts.ScriptKind.JS;
+  }
+
+  return null;
+}
+
 function looksLikePlaceholderHiddenTest(content: string): boolean {
   const normalizedContent = content.trim().toLowerCase();
 
@@ -5976,6 +6202,28 @@ function looksLikePlaceholderHiddenTest(content: string): boolean {
   }
 
   return /^(?:\/\/|#|\/\*)\s*placeholder\b/.test(normalizedContent);
+}
+
+function looksLikePlaceholderGeneratedArtifact(pathValue: string, content: string): boolean {
+  const normalizedContent = content.trim().toLowerCase();
+
+  if (normalizedContent === ".placeholder" || normalizedContent === "placeholder") {
+    return true;
+  }
+
+  if (/\.(md|mdx|txt)$/i.test(pathValue)) {
+    return false;
+  }
+
+  if (/placeholder draft/i.test(content)) {
+    return true;
+  }
+
+  if (/final version lives in canonicalfiles/i.test(normalizedContent)) {
+    return true;
+  }
+
+  return /^(?:\/\/|#|\/\*)\s*(?:placeholder|stub|replace me)\b/im.test(content);
 }
 
 function normalizeGeneratedBlueprintSteps(
@@ -6753,9 +7001,13 @@ function buildBlueprintGenerationInstructions(): string {
     "supportFiles are unmasked project files such as package.json, pyproject.toml, tsconfig, helper modules, and fixed runtime scaffolding.",
     "canonicalFiles are the solved versions of the learner-owned implementation files.",
     "learnerFiles must only cover the current frontierPlanSteps and must correspond to the same file paths as the canonical implementation for those frontier capabilities, but with focused TASK markers and incomplete implementations the learner must fill in.",
+    "supportFiles, canonicalFiles, and learnerFiles must not contain placeholder bodies, placeholder comments, placeholder drafts, 'final version lives elsewhere' stubs, or comment-only skeletons.",
+    "If any returned supportFiles, canonicalFiles, or learnerFiles path ends in .ts, .tsx, .js, .jsx, .mts, .cts, .mjs, or .cjs, return syntactically valid source code immediately.",
     "hiddenTests must only cover the current frontierPlanSteps and stay runnable without exposing full solutions in the learnerFiles.",
     "hiddenTests must never contain placeholder bodies, placeholder comments, sentinel strings like `.placeholder`, or comment-only stubs.",
     "If a hidden test path ends in `.js`, return valid runnable JavaScript immediately.",
+    "Every .json file in any returned file group must be parseable JSON.",
+    "Every step anchor.file must exist in learnerFiles, every step anchor.marker must appear literally inside that learner file, every step test path must exist in hiddenTests, and every entrypoint must exist in supportFiles, canonicalFiles, or learnerFiles.",
     "The answers payload includes the original question, the available options, and either a selected option or a custom freeform learner response. Use that context to tune scope, docs, checks, and task ordering.",
     "Every returned step must point to a real learnerFile anchor in the current frontier and include lessonSlides, doc text, comprehension checks, constraints, and targeted tests.",
     "Do not deeply author every future step in the spine. Only the frontierPlanSteps should come back as learnerFiles, hiddenTests, and steps.",
@@ -6818,9 +7070,12 @@ function buildAdaptiveFrontierGenerationInstructions(): string {
     "Return only learnerFiles, hiddenTests, and steps for the selectedFrontierSteps in the prompt.",
     "learnerFiles must preserve the current working project state while introducing only the next masked implementation targets.",
     "If a selected frontier step extends a file the learner already touched, carry forward the working code from currentWorkspaceFiles and add only the next focused TASK marker or placeholder region.",
+    "learnerFiles must not contain placeholder bodies, placeholder comments, placeholder drafts, or comment-only skeletons outside the intentional TASK regions.",
+    "If any returned learnerFiles path ends in .ts, .tsx, .js, .jsx, .mts, .cts, .mjs, or .cjs, return syntactically valid source code immediately.",
     "hiddenTests must validate only the currently selected frontier steps.",
     "hiddenTests must never contain placeholder bodies, placeholder comments, sentinel strings like `.placeholder`, or comment-only stubs.",
     "If a hidden test path ends in `.js`, return valid runnable JavaScript immediately.",
+    "Every step anchor.file must exist in learnerFiles, every step anchor.marker must appear literally inside that learner file, and every step test path must exist in hiddenTests.",
     "Every returned step must include a real anchor, substantial explanation slides, grounded checks, constraints, and targeted tests.",
     "Use priorKnowledge, the current frontier, and the stated reason to decide how much hand-holding or decomposition the learner now needs.",
     "The selectedFrontierSteps are the only steps that should be deeply authored right now. Do not author the rest of the spine.",
