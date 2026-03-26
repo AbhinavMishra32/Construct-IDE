@@ -1237,7 +1237,11 @@ export default function App() {
     }
   };
 
-  const hydrateWorkspace = async (preferredStepId?: string | null) => {
+  const hydrateWorkspace = async (
+    preferredStepId?: string | null,
+    options?: { surfaceMode?: SurfaceMode }
+  ) => {
+    const nextSurfaceMode = options?.surfaceMode ?? "brief";
     const [blueprintEnvelope, filesEnvelope, learner] = await Promise.all([
       fetchBlueprint(),
       fetchWorkspaceFiles(),
@@ -1258,7 +1262,7 @@ export default function App() {
       setEditorValue("");
       setSavedValue("");
       setAnchorLocation(null);
-      setSurfaceMode("brief");
+      setSurfaceMode(nextSurfaceMode);
       return null;
     }
 
@@ -1279,7 +1283,7 @@ export default function App() {
     setTaskProgress(null);
     setTaskSession(null);
     setTaskResult(null);
-    setSurfaceMode("brief");
+    setSurfaceMode(nextSurfaceMode);
 
     if (preferredStep) {
       setActiveStepId(preferredStep.id);
@@ -1708,13 +1712,30 @@ export default function App() {
         );
       } else {
         setStatusMessage(`Passed ${activeStep.title} on attempt ${submission.attempt.attempt}. Updating path...`);
-        const refreshedBlueprint = await hydrateWorkspace();
+        const previousStepId = activeStep.id;
+        const refreshedBlueprint = await hydrateWorkspace(undefined, {
+          surfaceMode: "focus"
+        });
         const nextStep = refreshedBlueprint ? getRuntimeSteps(refreshedBlueprint)[0] ?? null : null;
+
+        if (nextStep) {
+          await openToAnchor(nextStep, {
+            setActiveFilePath,
+            setEditorValue,
+            setSavedValue,
+            setActiveStepId,
+            setAnchorLocation,
+            setLoadError,
+            setStatusMessage,
+            activeRequestIdRef
+          });
+        }
+
         setGuideVisible(false);
-        setSurfaceMode("brief");
+        setSurfaceMode("focus");
         setStatusMessage(
-          nextStep && nextStep.id !== activeStep.id
-            ? `Passed ${activeStep.title}. Next capability: ${nextStep.title}.`
+          nextStep && nextStep.id !== previousStepId
+            ? `Passed ${activeStep.title}. Opened ${nextStep.title} in the workspace.`
             : `Passed ${activeStep.title} on attempt ${submission.attempt.attempt}.`
         );
       }
