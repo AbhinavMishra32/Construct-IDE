@@ -3310,11 +3310,7 @@ textarea {
 }
 
 .construct-home-dashboard {
-  grid-template-columns: minmax(0, 1.08fr) minmax(360px, 0.92fr);
-}
-
-.construct-home-dashboard-secondary {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1.08fr) minmax(380px, 0.92fr);
 }
 
 .construct-home-surface {
@@ -4215,9 +4211,11 @@ textarea {
 }
 
 .construct-shell {
+  height: 100vh;
   min-height: 100vh;
   grid-template-columns: 244px minmax(0, 1fr);
   background: var(--app-bg);
+  overflow: hidden;
 }
 
 .construct-shell.is-code-view {
@@ -4988,10 +4986,22 @@ textarea {
   background: var(--editor-bg);
 }
 
+.construct-shell-main,
+.construct-shell-content,
+.construct-workbench,
+.construct-stage,
+.construct-app-sidebar-provider,
+.construct-home {
+  min-height: 0;
+  height: 100%;
+}
+
 .construct-app-sidebar {
+  height: 100%;
   gap: 12px;
   padding: 12px 14px 14px;
   background: color-mix(in srgb, var(--panel-bg) 98%, transparent);
+  overflow: hidden;
 }
 
 .construct-app-sidebar-top {
@@ -5028,6 +5038,14 @@ textarea {
 .construct-app-recent-item {
   border-radius: 10px;
   padding: 10px;
+}
+
+.construct-app-sidebar-content {
+  overflow: hidden;
+}
+
+.construct-app-recent-scroll {
+  max-height: none;
 }
 
 .construct-workbench-topbar {

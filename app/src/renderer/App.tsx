@@ -2821,7 +2821,7 @@ function AppSidebar({
           </PrimaryButton>
         </SidebarHeader>
 
-        <SidebarContent>
+        <SidebarContent className="construct-app-sidebar-content">
           <SidebarGroup className="construct-app-sidebar-section">
             <SidebarGroupLabel className="construct-panel-kicker">
               Workspace
@@ -3122,12 +3122,6 @@ function ProjectsHome({
 
       return right.updatedAt.localeCompare(left.updatedAt);
     });
-  const recentGoals = knowledgeBase
-    ? knowledgeBase.goals
-        .slice()
-        .sort((left, right) => right.lastPlannedAt.localeCompare(left.lastPlannedAt))
-        .slice(0, 5)
-    : [];
   const projectLookup = useMemo(
     () => new Map(projects.map((project) => [project.id, project])),
     [projects]
@@ -3180,21 +3174,12 @@ function ProjectsHome({
       ),
     [knowledgeConcepts]
   );
-  const historyEntries = learnerProfile?.learnerModel?.history ?? [];
-  const totalHintsUsed = Object.values(learnerProfile?.learnerModel?.hintsUsed ?? {}).reduce(
-    (sum, value) => sum + value,
-    0
-  );
   const resumeCreationAvailable = Boolean(planningSession);
   const resumeProgressLabel = planningPlan
     ? `${planningPlan.steps.length} planned steps`
     : planningSession
       ? `${planningSession.questions.length} tailoring questions`
       : "";
-  const passedAttempts = historyEntries.filter((entry) => entry.status === "passed").length;
-  const strugglingAttempts = historyEntries.filter(
-    (entry) => entry.status === "failed" || entry.status === "needs-review"
-  ).length;
   const [knowledgeView, setKnowledgeView] = useState<"concepts" | "projects">("concepts");
   const [expandedKnowledgeIds, setExpandedKnowledgeIds] = useState<Record<string, boolean>>({});
   const [expandedKnowledgeProjectIds, setExpandedKnowledgeProjectIds] = useState<
@@ -3513,94 +3498,6 @@ function ProjectsHome({
         </section>
       </div>
 
-      <div className="construct-home-dashboard-secondary">
-        <section className="construct-home-surface">
-          <div className="construct-home-surface-header">
-            <div>
-              <span className="construct-home-section-kicker">Goal history</span>
-              <h2>Recent planned goals</h2>
-            </div>
-          </div>
-
-          {recentGoals.length > 0 ? (
-            <div className="construct-home-goal-list">
-              {recentGoals.map((goal) => (
-                <div key={`${goal.goal}-${goal.lastPlannedAt}`} className="construct-home-goal-item">
-                  <div className="construct-home-goal-head">
-                    <strong>{goal.goal}</strong>
-                    <span>{formatProjectTimestamp(goal.lastPlannedAt)}</span>
-                  </div>
-                  <p>
-                    {goal.language} · {goal.domain}
-                  </p>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="construct-home-empty">
-              Planned goals will accumulate here once the Architect has tailored a few
-              projects around the learner.
-            </div>
-          )}
-        </section>
-
-        <section className="construct-home-surface">
-          <div className="construct-home-surface-header">
-            <div>
-              <span className="construct-home-section-kicker">Learning signals</span>
-              <h2>Runtime evidence</h2>
-            </div>
-          </div>
-
-          <div className="construct-home-signal-grid">
-            <div className="construct-home-fact">
-              <span>Attempt history</span>
-              <strong>{historyEntries.length}</strong>
-            </div>
-            <div className="construct-home-fact">
-              <span>Passed attempts</span>
-              <strong>{passedAttempts}</strong>
-            </div>
-            <div className="construct-home-fact">
-              <span>Needs work</span>
-              <strong>{strugglingAttempts}</strong>
-            </div>
-            <div className="construct-home-fact">
-              <span>Hints used</span>
-              <strong>{totalHintsUsed}</strong>
-            </div>
-          </div>
-
-          {historyEntries.length > 0 ? (
-            <div className="construct-home-signal-list">
-              {historyEntries
-                .slice()
-                .reverse()
-                .slice(0, 5)
-                .map((entry) => (
-                  <div
-                    key={`${entry.stepId}-${entry.recordedAt}-${entry.attempt}`}
-                    className="construct-home-signal-item"
-                  >
-                    <div className="construct-home-signal-head">
-                      <strong>{entry.stepId}</strong>
-                      <span>{formatProjectTimestamp(entry.recordedAt)}</span>
-                    </div>
-                    <p>
-                      {entry.status} · attempt {entry.attempt} · {entry.timeSpentMs} ms ·
-                      hints {entry.hintsUsed}
-                    </p>
-                  </div>
-                ))}
-            </div>
-          ) : (
-            <div className="construct-home-empty">
-              Task execution signals will appear here as the learner moves through code
-              steps and hidden tests.
-            </div>
-          )}
-        </section>
-      </div>
     </section>
   );
 }
