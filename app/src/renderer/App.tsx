@@ -2995,88 +2995,98 @@ function WorkbenchTopbar({
     currentView === "projects"
       ? activeProjectName ?? "Projects"
       : activeFilePath ?? activeStepTitle ?? activeProjectName ?? "No file focused";
+  const contextMeta =
+    currentView === "projects"
+      ? "Desktop workspace overview"
+      : activeProjectName ?? "Construct workspace";
   const userDisplayName = authSession?.user?.displayName?.trim() ?? "";
   const shouldShowSaveState = currentView === "code";
 
   return (
     <header className="construct-workbench-topbar">
-      <div className="construct-workbench-topbar-context">
-        <span className="construct-panel-kicker">{contextLabel}</span>
-        <strong>{contextTitle}</strong>
+      <div className="construct-workbench-topbar-lead">
+        <Badge variant="outline" className="construct-workbench-context-badge">
+          {contextLabel}
+        </Badge>
+        <div className="construct-workbench-topbar-context">
+          <strong>{contextTitle}</strong>
+          <span>{contextMeta}</span>
+        </div>
       </div>
 
-      <div className="construct-workbench-mode-switch" role="tablist" aria-label="Current view">
-        <ButtonGroup className="construct-workbench-mode-switch">
-          <Button
-            type="button"
-            variant={currentView === "projects" ? "secondary" : "ghost"}
-            className={cn(
-              "construct-workbench-mode-button",
-              currentView === "projects" ? "is-active" : ""
-            )}
-            onClick={onOpenProjects}
-          >
+      <Tabs
+        value={currentView}
+        onValueChange={(value) => {
+          if (value === "projects") {
+            onOpenProjects();
+            return;
+          }
+
+          if (value === "lesson") {
+            onOpenLesson();
+            return;
+          }
+
+          onOpenCode();
+        }}
+        className="construct-workbench-nav"
+      >
+        <TabsList className="construct-workbench-mode-switch" aria-label="Current view">
+          <TabsTrigger value="projects" className="construct-workbench-mode-button">
             Projects
-          </Button>
-          <Button
-            type="button"
-            variant={currentView === "lesson" ? "secondary" : "ghost"}
-            className={cn(
-              "construct-workbench-mode-button",
-              currentView === "lesson" ? "is-active" : ""
-            )}
-            onClick={onOpenLesson}
-          >
+          </TabsTrigger>
+          <TabsTrigger value="lesson" className="construct-workbench-mode-button">
             Step
-          </Button>
-          <Button
-            type="button"
-            variant={currentView === "code" ? "secondary" : "ghost"}
-            className={cn(
-              "construct-workbench-mode-button",
-              currentView === "code" ? "is-active" : ""
-            )}
-            onClick={onOpenCode}
-          >
+          </TabsTrigger>
+          <TabsTrigger value="code" className="construct-workbench-mode-button">
             Code
-          </Button>
-        </ButtonGroup>
-      </div>
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
 
       <div className="construct-workbench-topbar-actions">
-        {authSession?.user ? (
+        <div className="construct-workbench-action-cluster">
+          {authSession?.user ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="construct-workbench-user-chip"
+              onClick={onOpenAccount}
+            >
+              <Avatar size="sm" className="construct-workbench-user-avatar">
+                <AvatarFallback>{initialsForName(userDisplayName)}</AvatarFallback>
+              </Avatar>
+              <span>{userDisplayName}</span>
+            </Button>
+          ) : null}
+          <ToolbarPill variant="outline" className="construct-workbench-status-pill">
+            {runnerHealth?.status ?? "offline"}
+          </ToolbarPill>
+          {shouldShowSaveState ? (
+            <ToolbarPill variant="outline" className="construct-workbench-status-pill">
+              {saveStateLabel}
+            </ToolbarPill>
+          ) : null}
+        </div>
+        <div className="construct-workbench-action-cluster construct-workbench-action-cluster--primary">
           <Button
             type="button"
-            variant="ghost"
-            className="construct-workbench-user-chip"
-            onClick={onOpenAccount}
+            variant="outline"
+            size="sm"
+            onClick={onStartProject}
+            className="construct-workbench-new-button"
           >
-            <Avatar size="sm" className="construct-workbench-user-avatar">
-              <AvatarFallback>{initialsForName(userDisplayName)}</AvatarFallback>
-            </Avatar>
-            <span>{userDisplayName}</span>
+            <PlusIcon data-icon="inline-start" />
+            New
           </Button>
-        ) : null}
-        <ToolbarPill variant="outline" className="construct-workbench-status-pill">
-          {runnerHealth?.status ?? "offline"}
-        </ToolbarPill>
-        {shouldShowSaveState ? (
-          <ToolbarPill variant="outline" className="construct-workbench-status-pill">
-            {saveStateLabel}
-          </ToolbarPill>
-        ) : null}
-        <SecondaryButton
-          type="button"
-          onClick={onStartProject}
-          className="construct-workbench-new-button"
-        >
-          New
-        </SecondaryButton>
-        <ThemeDropdown
-          theme={theme}
-          onThemeChange={onThemeChange}
-          className="construct-workbench-theme-button"
-        />
+          <Separator orientation="vertical" className="construct-workbench-action-separator" />
+          <ThemeDropdown
+            theme={theme}
+            onThemeChange={onThemeChange}
+            className="construct-workbench-theme-button"
+          />
+        </div>
       </div>
     </header>
   );
