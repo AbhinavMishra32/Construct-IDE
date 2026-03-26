@@ -762,7 +762,9 @@ function collectNodeValidationFailures(
     return [
       {
         testName: path.basename(testPath),
-        message: summarizeFailureMessage(combinedOutput) || `Validation failed in ${path.basename(testPath)}.`,
+        message:
+          summarizeNodeValidationCrash(combinedOutput) ||
+          `Validation failed in ${path.basename(testPath)}.`,
         ...extractOutputComparison(combinedOutput),
         stackTrace: combinedOutput || undefined
       }
@@ -819,6 +821,36 @@ function deriveNodeValidationComparison(message: string): Pick<
   }
 
   return {};
+}
+
+function summarizeNodeValidationCrash(message: string): string | undefined {
+  const lines = message
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const explicitErrorLine = lines.find((line) =>
+    /(?:SyntaxError|ReferenceError|TypeError|RangeError|EvalError|URIError|Error):/i.test(line)
+  );
+
+  if (explicitErrorLine) {
+    return explicitErrorLine;
+  }
+
+  const firstMeaningfulLine = lines.find(
+    (line) =>
+      !/^at\s+/i.test(line) &&
+      !/^node:internal\//i.test(line) &&
+      !/^Node\.js v/i.test(line) &&
+      !/^[\^~]+$/.test(line) &&
+      !looksLikeValidationWrapperPath(line)
+  );
+
+  return firstMeaningfulLine;
+}
+
+function looksLikeValidationWrapperPath(line: string): boolean {
+  return /(?:^|[\\/])__construct_hidden_validation__\.js:\d+/.test(line);
 }
 
 function isMissingBinaryError(error: unknown): error is NodeJS.ErrnoException {

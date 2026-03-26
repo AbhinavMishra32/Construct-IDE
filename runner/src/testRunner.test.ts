@@ -235,3 +235,32 @@ test("TestRunnerManager derives invalid JSON comparisons from hidden validation 
     await rm(temporaryDirectory, { recursive: true, force: true });
   }
 });
+
+test("TestRunnerManager hides internal validation wrapper paths when a hidden validation crashes", async () => {
+  const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "construct-node-validation-crash-"));
+
+  try {
+    await mkdir(path.join(temporaryDirectory, "hidden_tests"), { recursive: true });
+    await writeFile(
+      path.join(temporaryDirectory, "hidden_tests", "crash_validation.js"),
+      "throw new Error('Hidden validation crashed');\n",
+      "utf8"
+    );
+
+    const manager = new TestRunnerManager();
+    const result = await manager.runTask({
+      stepId: "fixture.node-validation-crash",
+      adapter: "jest",
+      projectRoot: temporaryDirectory,
+      tests: ["hidden_tests/crash_validation.js"],
+      timeoutMs: 10_000
+    });
+
+    assert.equal(result.status, "failed");
+    assert.equal(result.failures.length, 1);
+    assert.equal(result.failures[0].message, "Error: Hidden validation crashed");
+    assert.doesNotMatch(result.failures[0].message, /__construct_hidden_validation__/);
+  } finally {
+    await rm(temporaryDirectory, { recursive: true, force: true });
+  }
+});
