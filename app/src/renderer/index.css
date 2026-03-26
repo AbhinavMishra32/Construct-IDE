@@ -5009,6 +5009,10 @@ textarea {
   overflow: hidden;
 }
 
+.construct-app-sidebar [data-slot="sidebar-inner"] {
+  border-right: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+}
+
 .construct-app-sidebar-top {
   gap: 12px;
   padding-bottom: 12px;
@@ -5041,15 +5045,33 @@ textarea {
 }
 
 .construct-app-recent-item {
+  align-items: flex-start;
+  justify-content: flex-start;
+  min-width: 0;
+  width: 100%;
   border-radius: 10px;
   padding: 10px;
+}
+
+.construct-app-recent-item strong,
+.construct-app-recent-item span {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+}
+
+.construct-app-recent-item strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .construct-app-sidebar-content {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  overflow: hidden;
+  overflow: auto;
 }
 
 .construct-app-sidebar-section {
@@ -5068,6 +5090,11 @@ textarea {
 .construct-app-recent-scroll {
   height: 100%;
   max-height: 100%;
+}
+
+.construct-app-sidebar [data-slot="scroll-area-viewport"] > div {
+  display: block !important;
+  min-width: 100%;
 }
 
 .construct-shell-content {

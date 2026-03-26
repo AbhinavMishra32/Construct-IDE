@@ -101,6 +101,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarRail,
   SidebarProvider
 } from "@/components/ui/sidebar";
 import { Spinner } from "@/components/ui/spinner";
@@ -2808,7 +2809,7 @@ function AppSidebar({
 
   return (
     <SidebarProvider className="construct-app-sidebar-provider">
-      <Sidebar collapsible="none" className="construct-app-sidebar">
+      <Sidebar collapsible="offcanvas" className="construct-app-sidebar">
         <SidebarHeader className="construct-app-sidebar-top">
           <PrimaryButton
             type="button"
@@ -2953,6 +2954,7 @@ function AppSidebar({
             </ToolbarPill>
           </div>
         </SidebarFooter>
+        <SidebarRail />
       </Sidebar>
     </SidebarProvider>
   );
