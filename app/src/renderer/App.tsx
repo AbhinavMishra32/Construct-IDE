@@ -551,6 +551,23 @@ function GuideActionButton({
   );
 }
 
+function TaskOutputBlock({
+  label,
+  value,
+  tone
+}: {
+  label: string;
+  value: string;
+  tone: "expected" | "actual";
+}) {
+  return (
+    <div className={cn("construct-task-output-block", `is-${tone}`)}>
+      <span className="construct-task-output-label">{label}</span>
+      <pre className="construct-task-output-value">{value}</pre>
+    </div>
+  );
+}
+
 export default function App() {
   const [appRoute, setAppRoute] = useState<AppRoute>(() =>
     parseAppRoute(window.location.hash)
@@ -5902,6 +5919,24 @@ function TaskResultPanel({
                     <AlertDescription>
                       <strong>{failure.testName}</strong>
                       <p>{failure.message}</p>
+                      {failure.expectedOutput || failure.actualOutput ? (
+                        <div className="construct-task-output-grid">
+                          {failure.expectedOutput ? (
+                            <TaskOutputBlock
+                              label="Expected output"
+                              value={failure.expectedOutput}
+                              tone="expected"
+                            />
+                          ) : null}
+                          {failure.actualOutput ? (
+                            <TaskOutputBlock
+                              label="Current output"
+                              value={failure.actualOutput}
+                              tone="actual"
+                            />
+                          ) : null}
+                        </div>
+                      ) : null}
                     </AlertDescription>
                   </Alert>
                 ))}

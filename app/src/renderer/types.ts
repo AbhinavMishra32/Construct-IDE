@@ -113,6 +113,8 @@ export type WorkspaceFileEntry = {
 export type TaskFailure = {
   testName: string;
   message: string;
+  expectedOutput?: string;
+  actualOutput?: string;
   stackTrace?: string;
 };
 

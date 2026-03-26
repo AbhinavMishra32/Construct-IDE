@@ -208,6 +208,9 @@ export class JestTestAdapter implements TestAdapter {
       if (assertionFailures.length > 0) {
         for (const assertionFailure of assertionFailures) {
           const stackTrace = assertionFailure.failureMessages?.join("\n").trim();
+          const comparison = extractOutputComparison(
+            stackTrace ?? testResult.message ?? "The Jest assertion failed."
+          );
           failures.push({
             testName:
               assertionFailure.fullName ??
@@ -216,6 +219,7 @@ export class JestTestAdapter implements TestAdapter {
             message: summarizeFailureMessage(
               stackTrace ?? testResult.message ?? "The Jest assertion failed."
             ),
+            ...comparison,
             stackTrace
           });
         }
@@ -224,9 +228,11 @@ export class JestTestAdapter implements TestAdapter {
       }
 
       if (testResult.status === "failed" && testResult.message) {
+        const comparison = extractOutputComparison(testResult.message);
         failures.push({
           testName: path.basename(testResult.name),
           message: summarizeFailureMessage(testResult.message),
+          ...comparison,
           stackTrace: testResult.message.trim()
         });
       }
@@ -488,6 +494,96 @@ function summarizeFailureMessage(message: string): string {
   return lines[0] ?? "Test execution failed.";
 }
 
+function extractOutputComparison(message: string): Pick<
+  TaskFailure,
+  "expectedOutput" | "actualOutput"
+> {
+  const normalized = message.replace(/\r\n/g, "\n");
+  const jestComparison = {
+    expectedOutput: extractLabeledOutput(normalized, "Expected:"),
+    actualOutput: extractLabeledOutput(normalized, "Received:")
+  };
+
+  if (jestComparison.expectedOutput || jestComparison.actualOutput) {
+    return jestComparison;
+  }
+
+  const cargoComparison = {
+    expectedOutput: extractLabeledOutput(normalized, "right:"),
+    actualOutput: extractLabeledOutput(normalized, "left:")
+  };
+
+  if (cargoComparison.expectedOutput || cargoComparison.actualOutput) {
+    return cargoComparison;
+  }
+
+  const pytestLine = normalized
+    .split("\n")
+    .map((line) => line.trim())
+    .find((line) => /^E\s+assert\s+.+\s==\s.+$/.test(line));
+
+  if (!pytestLine) {
+    return {};
+  }
+
+  const pytestMatch = /^E\s+assert\s+(.+?)\s*==\s*(.+)$/.exec(pytestLine);
+
+  if (!pytestMatch) {
+    return {};
+  }
+
+  return {
+    actualOutput: pytestMatch[1].trim(),
+    expectedOutput: pytestMatch[2].trim()
+  };
+}
+
+function extractLabeledOutput(message: string, label: string): string | undefined {
+  const lines = message.split("\n");
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    const labelIndex = line.indexOf(label);
+
+    if (labelIndex === -1) {
+      continue;
+    }
+
+    const inlineValue = line.slice(labelIndex + label.length).trim();
+
+    if (inlineValue) {
+      return inlineValue;
+    }
+
+    const collected: string[] = [];
+
+    for (let offset = index + 1; offset < lines.length; offset += 1) {
+      const candidate = lines[offset] ?? "";
+      const trimmedCandidate = candidate.trim();
+
+      if (!trimmedCandidate) {
+        if (collected.length > 0) {
+          break;
+        }
+
+        continue;
+      }
+
+      if (/^(Expected:|Received:|left:|right:)/.test(trimmedCandidate)) {
+        break;
+      }
+
+      collected.push(candidate.replace(/^\s+/, ""));
+    }
+
+    if (collected.length > 0) {
+      return collected.join("\n").trim();
+    }
+  }
+
+  return undefined;
+}
+
 function normalizeBlueprintLanguage(language: string): string {
   return language.trim().toLowerCase();
 }
@@ -618,6 +714,7 @@ function collectPytestFailures(
           message:
             match[2]?.trim() ||
             `Pytest reported a failure in ${match[1]}.`,
+          ...extractOutputComparison(combinedOutput),
           stackTrace: combinedOutput || undefined
         }
       ];
@@ -710,6 +807,7 @@ function collectCargoFailures(
   const failures = failingTestNames.map((testName) => ({
     testName,
     message: findCargoFailureMessage(combinedOutput, testName),
+    ...extractOutputComparison(extractCargoFailureStackTrace(combinedOutput, testName) ?? ""),
     stackTrace: extractCargoFailureStackTrace(combinedOutput, testName)
   }));
 

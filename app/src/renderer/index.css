@@ -953,6 +953,10 @@ textarea {
   gap: 10px;
 }
 
+.construct-task-result-meta .construct-toolbar-pill {
+  gap: 6px;
+}
+
 .construct-task-status {
   display: inline-flex;
   align-items: center;
@@ -1015,6 +1019,56 @@ textarea {
 .construct-task-warning p {
   margin: 8px 0 0;
   line-height: 1.55;
+}
+
+.construct-task-output-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.construct-task-output-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  background: color-mix(in srgb, var(--panel-bg) 94%, transparent);
+}
+
+.construct-task-output-block.is-expected {
+  border-color: color-mix(in srgb, var(--success) 28%, var(--border));
+  background: color-mix(in srgb, var(--success) 8%, var(--panel-bg));
+}
+
+.construct-task-output-block.is-actual {
+  border-color: color-mix(in srgb, var(--warning) 28%, var(--border));
+  background: color-mix(in srgb, var(--warning) 9%, var(--panel-bg));
+}
+
+.construct-task-output-label {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.construct-task-output-value {
+  margin: 0;
+  min-height: 52px;
+  padding: 10px 11px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--editor-surface) 90%, transparent);
+  color: var(--text);
+  font: 11px/1.65 var(--course-font-mono);
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .construct-task-error,

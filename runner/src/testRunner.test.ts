@@ -145,6 +145,8 @@ test("TestRunnerManager captures failing assertions as structured task failures"
   assert.equal(result.failures.length > 0, true);
   assert.match(result.failures[0].testName, /reports a structured failure/i);
   assert.equal(result.failures[0].message.length > 0, true);
+  assert.equal(result.failures[0].expectedOutput, "3");
+  assert.equal(result.failures[0].actualOutput, "2");
   assert.equal(result.timedOut, false);
 });
 

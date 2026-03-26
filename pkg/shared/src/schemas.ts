@@ -523,6 +523,8 @@ export const ProjectCurrentStepRequestSchema = z.object({
 export const TaskFailureSchema = z.object({
   testName: z.string().min(1),
   message: z.string().min(1),
+  expectedOutput: z.string().min(1).optional(),
+  actualOutput: z.string().min(1).optional(),
   stackTrace: z.string().min(1).optional()
 });
 
