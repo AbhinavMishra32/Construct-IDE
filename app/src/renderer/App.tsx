@@ -4139,7 +4139,9 @@ function PlanningOverlay({
 }) {
   const isQuestionPhase = planningSession && !planningPlan;
   const isStartPhase = !planningSession;
+  const isResumeGenerationPhase = Boolean(planningSession && planningPlan && canResumePlanningGeneration);
   const isBusyGenerationPhase = Boolean(isQuestionPhase && planningBusy && planningSession);
+  const planningGoalLabel = planningSession?.goal?.trim() || planningGoal.trim();
   const answeredQuestionCount = planningSession
     ? planningSession.questions.filter((question) =>
         hasPlanningAnswer(planningAnswers[question.id])
@@ -4229,6 +4231,93 @@ function PlanningOverlay({
 
             {planningError ? <InlineError>{planningError}</InlineError> : null}
           </div>
+        </section>
+      </div>
+    );
+  }
+
+  if (isResumeGenerationPhase && planningSession && planningPlan) {
+    return (
+      <div className="construct-planning-overlay-shell" role="dialog" aria-modal="true" aria-label="Resume project creation">
+        <button
+          type="button"
+          className="construct-planning-overlay-backdrop"
+          aria-label="Close project creation"
+          onClick={onClose}
+        />
+        <section
+          className={cn(
+            "construct-planning-panel max-w-none gap-0 border border-border bg-background p-0 text-foreground shadow-2xl ring-1 ring-foreground/10 sm:max-w-[calc(100vw-24px)]",
+            "construct-planning-panel--compact"
+          )}
+        >
+          <div className="sr-only" aria-hidden="false">
+            <h1>Resume project creation</h1>
+            <p>Continue the saved Architect run from the last successful planning stage.</p>
+          </div>
+          <header className={cn("construct-planning-header", "construct-planning-header--compact")}>
+            <div className="construct-planning-header-copy">
+              <span className="construct-brief-kicker">Architect</span>
+              <h1>Resume project creation.</h1>
+              <p>
+                Construct already saved the tailoring answers, project plan, and the latest
+                recoverable architect state. Continue from the failed generation step instead
+                of starting over.
+              </p>
+            </div>
+            <div className="construct-planning-header-actions">
+              <ToolbarPill>{`${answeredQuestionCount}/${questionCount} tailored`}</ToolbarPill>
+              <SecondaryButton type="button" onClick={onClose}>
+                Close
+              </SecondaryButton>
+            </div>
+          </header>
+
+          <div className="construct-planning-start construct-planning-start--compact construct-planning-start--busy">
+            <section className="construct-info-panel">
+              <span className="construct-panel-kicker">Project brief</span>
+              <h2 className="construct-modal-underlay-title construct-modal-underlay-title--compact">
+                {planningGoalLabel}
+              </h2>
+              <p>
+                The Architect can resume from the saved project plan and retry only the failed
+                blueprint-generation path. You should not need to answer the tailoring
+                questions again.
+              </p>
+              <div className="construct-tag-list">
+                <TagChip>{formatDetectedLabel(planningSession.detectedDomain)}</TagChip>
+                <TagChip>{formatDetectedLabel(planningSession.detectedLanguage)}</TagChip>
+                <TagChip>{`${planningPlan.steps.length} planned steps`}</TagChip>
+              </div>
+            </section>
+
+            {planningEvents.length > 0 ? (
+              <section className="construct-planning-event-log construct-planning-event-log--minimal">
+                <div className="construct-brief-section-header">
+                  <div>
+                    <span className="construct-brief-kicker">Agent Activity</span>
+                    <h2>What the Architect was doing before the failure.</h2>
+                  </div>
+                </div>
+                <ArchitectTaskBoard events={planningEvents} />
+              </section>
+            ) : null}
+
+            {planningError ? <InlineError>{planningError}</InlineError> : null}
+          </div>
+
+          <footer className="construct-planning-footer">
+            <PrimaryButton type="button" onClick={onCompletePlanning} disabled={planningBusy}>
+              {planningBusy ? (
+                <>
+                  <Spinner data-icon="inline-start" />
+                  Resuming generation...
+                </>
+              ) : (
+                "Resume generation"
+              )}
+            </PrimaryButton>
+          </footer>
         </section>
       </div>
     );
