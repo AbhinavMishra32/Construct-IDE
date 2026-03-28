@@ -7717,6 +7717,10 @@ textarea {
   scrollbar-color: color-mix(in srgb, var(--border-strong) 78%, transparent) transparent;
 }
 
+.construct-floating-card-body > * {
+  flex-shrink: 0;
+}
+
 .construct-floating-card-body::-webkit-scrollbar {
   width: 10px;
 }
@@ -7735,4 +7739,9 @@ textarea {
 .construct-floating-card-body::-webkit-scrollbar-thumb:hover {
   background: color-mix(in srgb, var(--text-muted) 74%, transparent);
   background-clip: content-box;
+}
+
+.construct-task-results {
+  flex-shrink: 0;
+  min-height: fit-content;
 }
