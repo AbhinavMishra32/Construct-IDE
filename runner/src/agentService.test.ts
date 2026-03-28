@@ -3213,6 +3213,363 @@ test("ConstructAgentService resumes blueprint creation from the last saved stage
   }
 });
 
+test("ConstructAgentService repairs a saved invalid blueprint draft instead of rerunning plan generation", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "construct-agent-blueprint-draft-repair-"));
+  let planCalls = 0;
+  let blueprintCalls = 0;
+  let blueprintRepairCalls = 0;
+  let lessonAuthoringCalls = 0;
+
+  const persistence = createAgentPersistence({
+    rootDirectory: root,
+    logger: {
+      info() {},
+      warn() {},
+      error() {}
+    }
+  });
+
+  const validBundle = {
+    projectName: "tiny-module-graph",
+    projectSlug: "tiny-module-graph",
+    description: "A tiny TypeScript project that extracts import edges from one file.",
+    language: "typescript",
+    entrypoints: ["src/parser.ts"],
+    supportFiles: [
+      {
+        path: "package.json",
+        content: "{\n  \"name\": \"tiny-module-graph\"\n}\n"
+      }
+    ],
+    canonicalFiles: [
+      {
+        path: "src/parser.ts",
+        content: "export function parseImports(source: string): string[] {\n  return Array.from(source.matchAll(/from\\s+['\\\"]([^'\\\"]+)['\\\"]/g)).map((match) => match[1] ?? \"\");\n}\n"
+      }
+    ],
+    learnerFiles: [
+      {
+        path: "src/parser.ts",
+        content: "export function parseImports(source: string): string[] {\n  // TASK:parse-imports\n  throw new Error(\"Implement parseImports\");\n}\n"
+      }
+    ],
+    hiddenTests: [
+      {
+        path: "tests/parser.test.ts",
+        content: "import { parseImports } from '../src/parser';\n\ntest('captures a single import path', () => {\n  expect(parseImports(\"import { x } from './dep';\")).toEqual(['./dep']);\n});\n"
+      }
+    ],
+    steps: [
+      {
+        id: "step.parse-imports",
+        title: "Parse imports from one file",
+        summary: "Teach the first import edge and implement the parser function.",
+        doc: "Edit `src/parser.ts` and implement `parseImports`.",
+        lessonSlides: [
+          markdownSlide("## Start with one edge\n\nWe only need one file and one import edge for the first pass."),
+          markdownSlide("## Keep the parser tiny\n\nA narrow regex is fine for this educational step.")
+        ],
+        anchor: {
+          file: "src/parser.ts",
+          marker: "TASK:parse-imports",
+          startLine: null,
+          endLine: null
+        },
+        tests: ["tests/parser.test.ts"],
+        concepts: ["typescript.functions", "domain.module-graph"],
+        constraints: ["Keep the implementation intentionally small."],
+        checks: [
+          {
+            id: "check.import-edge",
+            type: "mcq",
+            prompt: "What does the first parser return?",
+            options: [
+              { id: "a", label: "A list of import paths", rationale: null },
+              { id: "b", label: "A full AST", rationale: null }
+            ],
+            answer: "a"
+          }
+        ],
+        estimatedMinutes: 15,
+        difficulty: "intro"
+      }
+    ],
+    dependencyGraph: {
+      nodes: [
+        { id: "component.parser", label: "Import parser", kind: "component" }
+      ],
+      edges: []
+    },
+    tags: ["typescript", "parser"]
+  };
+
+  const service = new ConstructAgentService(root, {
+    now: () => new Date("2026-03-29T01:00:00.000Z"),
+    persistence,
+    logger: {
+      info() {},
+      debug() {},
+      trace() {},
+      warn() {},
+      error() {}
+    },
+    search: {
+      async research(query) {
+        return {
+          query,
+          answer: "Start with the first meaningful project behavior and keep the initial scope small.",
+          sources: []
+        };
+      }
+    },
+    projectInstaller: {
+      async install() {
+        return {
+          status: "skipped",
+          packageManager: "none",
+          detail: "No install step needed for the regression."
+        };
+      }
+    },
+    llm: {
+      async parse({ schemaName, schema, prompt }) {
+        if (schemaName === "construct_goal_self_report_signals") {
+          return schema.parse({ signals: [] });
+        }
+
+        if (schemaName === "construct_goal_scope") {
+          return schema.parse({
+            scopeSummary: "Small single-module project",
+            artifactShape: "single file module",
+            complexityScore: 15,
+            shouldResearch: false,
+            recommendedQuestionCount: 2,
+            recommendedMinSteps: 1,
+            recommendedMaxSteps: 3,
+            rationale: "The project is compact enough to avoid broad external research."
+          });
+        }
+
+        if (schemaName === "construct_planning_question_draft") {
+          return schema.parse({
+            detectedLanguage: "typescript",
+            detectedDomain: "tiny parser utility",
+            questions: [
+              {
+                conceptId: "typescript.functions",
+                category: "language",
+                prompt: "How comfortable are you with small TypeScript utility functions?",
+                options: [
+                  {
+                    id: "solid",
+                    label: "I write them comfortably",
+                    description: "I can work with small functions and types without much help.",
+                    confidenceSignal: "comfortable"
+                  },
+                  {
+                    id: "partial",
+                    label: "I know the basics but still want guidance",
+                    description: "I can follow examples, but I still want support while implementing.",
+                    confidenceSignal: "shaky"
+                  },
+                  {
+                    id: "new",
+                    label: "This is still new to me",
+                    description: "I need the fundamentals taught clearly before I code.",
+                    confidenceSignal: "new"
+                  }
+                ]
+              },
+              {
+                conceptId: "domain.module-graph",
+                category: "domain",
+                prompt: "How familiar are you with a simple module graph?",
+                options: [
+                  {
+                    id: "solid",
+                    label: "I know the idea well",
+                    description: "I understand modules, imports, and dependency edges clearly.",
+                    confidenceSignal: "comfortable"
+                  },
+                  {
+                    id: "partial",
+                    label: "I know the idea but need examples",
+                    description: "I understand the concept, but I still want concrete walkthroughs.",
+                    confidenceSignal: "shaky"
+                  },
+                  {
+                    id: "new",
+                    label: "This is new to me",
+                    description: "I need the project to teach the concept from scratch.",
+                    confidenceSignal: "new"
+                  }
+                ]
+              }
+            ]
+          });
+        }
+
+        if (schemaName === "construct_generated_project_plan") {
+          planCalls += 1;
+          return schema.parse({
+            summary: "Teach a tiny module-graph parser and then implement the first real function.",
+            knowledgeGraph: {
+              concepts: [
+                {
+                  id: "typescript.functions",
+                  label: "TypeScript utility functions",
+                  category: "language",
+                  path: ["typescript", "functions"],
+                  labelPath: ["TypeScript", "Functions"],
+                  confidence: "shaky",
+                  rationale: "The learner wants guidance on small function design."
+                }
+              ],
+              strengths: [],
+              gaps: ["Module graph basics"]
+            },
+            architecture: [
+              {
+                id: "component.parser",
+                label: "Import parser",
+                kind: "component",
+                summary: "Parses import edges from a tiny TypeScript file.",
+                dependsOn: []
+              }
+            ],
+            steps: [
+              {
+                id: "step.parse-imports",
+                title: "Parse imports from one file",
+                kind: "implementation",
+                objective: "Teach the import-extraction concept and implement the first parser function.",
+                rationale: "The first step should produce the first real dependency edge.",
+                concepts: ["typescript.functions", "domain.module-graph"],
+                dependsOn: [],
+                validationFocus: ["returns an import edge for one import"],
+                suggestedFiles: ["src/parser.ts"],
+                implementationNotes: ["Keep the regex narrow and educational."],
+                quizFocus: ["Can explain what an import edge represents."],
+                hiddenValidationFocus: ["single import path is captured"]
+              }
+            ],
+            suggestedFirstStepId: "step.parse-imports"
+          });
+        }
+
+        if (schemaName === "construct_generated_blueprint_bundle") {
+          const repairPrompt = typeof prompt === "string" && prompt.includes("\"previousDraft\"");
+
+          if (repairPrompt) {
+            blueprintRepairCalls += 1;
+            return schema.parse(validBundle);
+          }
+
+          blueprintCalls += 1;
+          return schema.parse({
+            ...validBundle,
+            supportFiles: [
+              ...validBundle.supportFiles,
+              {
+                path: "src/parser.ts",
+                content: "export const sharedSupport = true;\n"
+              }
+            ]
+          });
+        }
+
+        if (schemaName === "construct_authored_blueprint_step") {
+          lessonAuthoringCalls += 1;
+          return schema.parse({
+            summary: "Teach one import edge and then implement the parser function.",
+            doc: "Edit `src/parser.ts` at the `TASK:parse-imports` anchor. Implement `parseImports(source)` so it returns the relative import paths it finds in the source text. The hidden test checks a single import first, so the goal is one correct edge, not a production parser.",
+            lessonSlides: [
+              markdownSlide("## What this function is really doing\n\nA module graph starts when one file points to another. In this first step, the parser only needs to discover that edge."),
+              markdownSlide("## Why a tiny regex is acceptable here\n\nWe are teaching the shape of the problem first, not building a production TypeScript parser."),
+              markdownSlide("## How the exercise connects\n\nOnce you can return one import path from one source string, the next steps can scale that idea into a graph.")
+            ],
+            checks: [
+              {
+                id: "check.import-edge",
+                type: "mcq",
+                prompt: "What should the first parser return?",
+                options: [
+                  { id: "a", label: "A list of import paths", rationale: null },
+                  { id: "b", label: "A full syntax tree", rationale: null }
+                ],
+                answer: "a"
+              }
+            ]
+          });
+        }
+
+        throw new Error(`Unexpected schema request: ${schemaName}`);
+      }
+    }
+  });
+
+  try {
+    const questionJob = service.createPlanningQuestionsJob({
+      goal: "small typescript parser utility"
+    });
+    const questionResult = await waitForJobCompletion(service, questionJob.jobId);
+    const questionSession = questionResult.result as {
+      session: { sessionId: string; questions: Array<{ id: string; options: Array<{ id: string }> }> };
+    };
+
+    const request = {
+      sessionId: questionSession.session.sessionId,
+      answers: questionSession.session.questions.map((question) => ({
+        questionId: question.id,
+        answerType: "option" as const,
+        optionId: question.options[1]?.id ?? question.options[0]!.id
+      }))
+    };
+
+    const firstPlanJob = service.createPlanningPlanJob(request);
+    await assert.rejects(
+      () => waitForJobCompletion(service, firstPlanJob.jobId),
+      /overlapping paths in supportFiles and canonicalFiles/i
+    );
+
+    const savedCheckpoint = await persistence.getPlanningBuildCheckpoint(
+      questionSession.session.sessionId
+    ) as {
+      stage?: string;
+      failure?: { message?: string };
+      blueprintDraft?: { supportFiles?: Array<{ path: string }> };
+    } | null;
+
+    assert.ok(savedCheckpoint);
+    assert.equal(savedCheckpoint?.stage, "blueprint-draft-invalid");
+    assert.match(savedCheckpoint?.failure?.message ?? "", /overlapping paths/i);
+    assert.ok(
+      savedCheckpoint?.blueprintDraft?.supportFiles?.some((file) => file.path === "src/parser.ts")
+    );
+    assert.equal(planCalls, 1);
+    assert.equal(blueprintCalls, 1);
+    assert.equal(blueprintRepairCalls, 0);
+    assert.equal(lessonAuthoringCalls, 0);
+
+    const retryPlanJob = service.createPlanningPlanJob(request);
+    const retryResult = await waitForJobCompletion(service, retryPlanJob.jobId);
+    const planPayload = retryResult.result as { plan: { steps: Array<{ id: string }> } };
+
+    assert.equal(planPayload.plan.steps.length, 1);
+    assert.equal(planCalls, 1);
+    assert.equal(blueprintCalls, 1);
+    assert.equal(blueprintRepairCalls, 1);
+    assert.equal(lessonAuthoringCalls, 1);
+    assert.equal(
+      await persistence.getPlanningBuildCheckpoint(questionSession.session.sessionId),
+      null
+    );
+    assert.ok(await service.getActiveBlueprintPath());
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 async function waitForJobCompletion(
   service: ConstructAgentService,
   jobId: string

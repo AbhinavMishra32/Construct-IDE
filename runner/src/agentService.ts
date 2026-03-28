@@ -240,7 +240,13 @@ type PlanGraphState = {
   mergedResearch: ResearchDigest | null;
   plan: GeneratedProjectPlan | null;
   blueprintDraft: GeneratedBlueprintBundleDraft | null;
-  checkpointStage: "plan-generated" | "blueprint-drafted" | "lessons-authored" | null;
+  checkpointStage:
+    | "plan-generated"
+    | "blueprint-draft-invalid"
+    | "blueprint-drafted"
+    | "lessons-authored"
+    | null;
+  checkpointFailure: PlanningBuildCheckpoint["failure"];
   activeBlueprintPath: string | null;
 };
 
@@ -455,13 +461,26 @@ const LESSON_AUTHORED_STEP_DRAFT_SCHEMA = z.object({
   checks: z.array(GENERATED_COMPREHENSION_CHECK_DRAFT_SCHEMA).max(4)
 });
 
+const PLANNING_BUILD_CHECKPOINT_FAILURE_SCHEMA = z.object({
+  stage: z.string().min(1),
+  message: z.string().min(1),
+  recoverable: z.boolean().default(true),
+  recordedAt: z.string().datetime()
+});
+
 const PLANNING_BUILD_CHECKPOINT_SCHEMA = z.object({
   sessionId: z.string().min(1),
   answersSignature: z.string().min(1),
   updatedAt: z.string().datetime(),
-  stage: z.enum(["plan-generated", "blueprint-drafted", "lessons-authored"]),
+  stage: z.enum([
+    "plan-generated",
+    "blueprint-draft-invalid",
+    "blueprint-drafted",
+    "lessons-authored"
+  ]),
   plan: GeneratedProjectPlanSchema,
-  blueprintDraft: GENERATED_BLUEPRINT_BUNDLE_DRAFT_SCHEMA.nullable()
+  blueprintDraft: GENERATED_BLUEPRINT_BUNDLE_DRAFT_SCHEMA.nullable(),
+  failure: PLANNING_BUILD_CHECKPOINT_FAILURE_SCHEMA.nullable().default(null)
 }).superRefine((value, context) => {
   if (value.stage === "plan-generated" && value.blueprintDraft !== null) {
     context.addIssue({
@@ -476,6 +495,22 @@ const PLANNING_BUILD_CHECKPOINT_SCHEMA = z.object({
       code: z.ZodIssueCode.custom,
       path: ["blueprintDraft"],
       message: "blueprintDraft is required once blueprint generation has completed."
+    });
+  }
+
+  if (value.stage === "blueprint-draft-invalid" && value.failure === null) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["failure"],
+      message: "failure is required for blueprint-draft-invalid checkpoints."
+    });
+  }
+
+  if (value.stage !== "blueprint-draft-invalid" && value.failure !== null) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["failure"],
+      message: "failure must be null once the checkpoint is no longer in a failed blueprint stage."
     });
   }
 });
@@ -2531,8 +2566,14 @@ export class ConstructAgentService {
       detectedLanguage: session.detectedLanguage,
       detectedDomain: session.detectedDomain,
       status: "running",
-      currentStage: build.currentStage ?? "plan-generation",
-      currentStageTitle: build.currentStageTitle ?? "Synthesizing project plan",
+      currentStage:
+        build.currentStage && build.currentStage !== "failed"
+          ? build.currentStage
+          : "plan-generation",
+      currentStageTitle:
+        build.currentStageTitle && build.currentStage !== "failed"
+          ? build.currentStageTitle
+          : "Synthesizing project plan",
       currentStageStatus: "running",
       updatedAt: timestamp,
       completedAt: null,
@@ -3183,6 +3224,7 @@ export class ConstructAgentService {
       plan: Annotation<GeneratedProjectPlan | null>(),
       blueprintDraft: Annotation<GeneratedBlueprintBundleDraft | null>(),
       checkpointStage: Annotation<PlanGraphState["checkpointStage"]>(),
+      checkpointFailure: Annotation<PlanningBuildCheckpoint["failure"]>(),
       activeBlueprintPath: Annotation<string | null>()
     });
 
@@ -3349,142 +3391,33 @@ export class ConstructAgentService {
               );
               return state.blueprintDraft;
             })()
-          : await this.withStage(jobId, "blueprint-generation", "Generating the runnable project blueprint", "Construct is generating the canonical project, masked learner files, and hidden tests for the personalized path.", async () => {
-          if (!state.plan) {
-            throw new Error("Cannot generate a blueprint before the project plan exists.");
-          }
-
-          const initialFrontierPlanSteps = selectPlanFrontierSteps(state.plan, {
-            startStepId: state.plan.suggestedFirstStepId,
-            maxSteps: 3
-          });
-
-          const blueprintRequestContext = {
-            stepCount: state.plan.steps.length,
-            architectureNodeCount: state.plan.architecture.length,
-            suggestedFirstStepId: state.plan.suggestedFirstStepId,
-            firstStepTitle: initialFrontierPlanSteps[0]?.title ?? state.plan.steps[0]?.title ?? null,
-            frontierStepCount: initialFrontierPlanSteps.length
-          };
-
-          const job = this.jobs.get(jobId);
-          if (job) {
-            this.emitEvent(job, {
-              stage: "blueprint-synthesis",
-              title: "Drafting the project bundle",
-              detail: "The Architect is asking the model to write the completed project files, derive the learner-owned files, and attach hidden tests to each task.",
-              level: "info",
-              payload: blueprintRequestContext
-            });
-          }
-          this.logger.info("Submitting blueprint synthesis request.", {
-            jobId,
-            sessionId: state.session.sessionId,
-            goal: state.session.goal,
-            ...blueprintRequestContext
-          });
-
-          const stream = this.createModelStreamForwarder(
-            jobId,
-            "blueprint-synthesis",
-            "project bundle synthesis"
-          );
-
-          const initialBundleDraft = await (await this.getLlm()).parse({
-            schema: GENERATED_BLUEPRINT_BUNDLE_DRAFT_SCHEMA,
-            schemaName: "construct_generated_blueprint_bundle",
-            instructions: buildBlueprintGenerationInstructions(),
-            prompt: JSON.stringify(
-                {
-                  session: state.session,
-                  goalScope: state.goalScope,
-                  answers: resolvedAnswers,
-                  planSpine: state.plan,
-                  frontierPlanSteps: initialFrontierPlanSteps,
-                  priorKnowledge: serializeKnowledgeBaseForPrompt(state.knowledgeBase),
-                  research: compactResearchDigest(state.mergedResearch)
-                },
-                null,
-                2
-            ),
-            maxOutputTokens: 20_000,
-            verbosity: "medium",
-            stream
-          }).finally(() => {
-            stream.onComplete?.();
-          });
-
-          const bundleDraft = trimGeneratedBundleDraftToFrontier(
-            normalizeGeneratedBlueprintDraft(initialBundleDraft),
-            initialFrontierPlanSteps
-          );
-
-          if (job) {
-            this.emitEvent(job, {
-              stage: "blueprint-synthesis",
-              title: "Project bundle drafted",
-              detail: "The Architect has returned a candidate project bundle and Construct is now materializing it into a runnable workspace.",
-              level: "success",
-              payload: {
-                supportFileCount: bundleDraft.supportFiles.length,
-                canonicalFileCount: bundleDraft.canonicalFiles.length,
-                learnerFileCount: bundleDraft.learnerFiles.length,
-                hiddenTestCount: bundleDraft.hiddenTests.length,
-                stepCount: bundleDraft.steps.length
-              }
-            });
-          }
-          this.logger.info("Received blueprint synthesis response.", {
-            jobId,
-            sessionId: state.session.sessionId,
-            supportFileCount: bundleDraft.supportFiles.length,
-            canonicalFileCount: bundleDraft.canonicalFiles.length,
-            learnerFileCount: bundleDraft.learnerFiles.length,
-            hiddenTestCount: bundleDraft.hiddenTests.length,
-            stepCount: bundleDraft.steps.length
-          });
-          await this.writePlanningBuildCheckpoint(state.session.sessionId, {
-            answersSignature,
-            stage: "blueprint-drafted",
-            plan: state.plan,
-            blueprintDraft: bundleDraft
-          });
-          await this.mutateBlueprintBuildForJob(jobId, (current) => ({
-            ...(current ??
-              createBlueprintBuildRecord({
-                id: state.session.sessionId,
-                sessionId: state.session.sessionId,
-                goal: state.session.goal,
-                detectedLanguage: state.session.detectedLanguage,
-                detectedDomain: state.session.detectedDomain,
-                status: "running",
-                currentStage: "blueprint-generation",
-                currentStageTitle: "Project bundle drafted",
-                currentStageStatus: "completed",
-                createdAt: this.now().toISOString(),
-                updatedAt: this.now().toISOString()
-              })),
-            planningSession: state.session,
-            answers: request.answers,
-            plan: state.plan,
-            blueprintDraft: bundleDraft,
-            supportFiles: toBlueprintArtifactFiles(bundleDraft.supportFiles, "support"),
-            canonicalFiles: toBlueprintArtifactFiles(bundleDraft.canonicalFiles, "canonical"),
-            learnerFiles: toBlueprintArtifactFiles(bundleDraft.learnerFiles, "learner"),
-            hiddenTests: toBlueprintArtifactFiles(bundleDraft.hiddenTests, "hidden-tests"),
-            status: "running",
-            currentStage: "blueprint-generation",
-            currentStageTitle: "Project bundle drafted",
-            currentStageStatus: "completed",
-            updatedAt: this.now().toISOString(),
-            lastError: null
-          }));
-
-          return bundleDraft;
-        }),
+          : state.blueprintDraft && state.checkpointStage === "blueprint-draft-invalid"
+            ? await this.repairPlanningBlueprintDraft({
+                jobId,
+                session: state.session,
+                plan: state.plan,
+                goalScope: state.goalScope,
+                answers: resolvedAnswers,
+                knowledgeBase: state.knowledgeBase,
+                mergedResearch: state.mergedResearch,
+                failedDraft: state.blueprintDraft,
+                failure: state.checkpointFailure,
+                answersSignature,
+                requestAnswers: request.answers
+              })
+            : await this.generatePlanningBlueprintDraft({
+                jobId,
+                session: state.session,
+                plan: state.plan,
+                goalScope: state.goalScope,
+                answers: resolvedAnswers,
+                knowledgeBase: state.knowledgeBase,
+                mergedResearch: state.mergedResearch,
+                answersSignature,
+                requestAnswers: request.answers
+              }),
         checkpointStage:
-          state.blueprintDraft &&
-          (state.checkpointStage === "blueprint-drafted" || state.checkpointStage === "lessons-authored")
+          state.blueprintDraft && state.checkpointStage === "lessons-authored"
             ? state.checkpointStage
             : "blueprint-drafted"
       }))
@@ -3714,6 +3647,7 @@ export class ConstructAgentService {
         plan: planningCheckpoint?.plan ?? null,
         blueprintDraft: planningCheckpoint?.blueprintDraft ?? null,
         checkpointStage: planningCheckpoint?.stage ?? null,
+        checkpointFailure: planningCheckpoint?.failure ?? null,
         activeBlueprintPath: null
       },
       {
@@ -4444,6 +4378,7 @@ export class ConstructAgentService {
       stage: PlanningBuildCheckpoint["stage"];
       plan: GeneratedProjectPlan;
       blueprintDraft: GeneratedBlueprintBundleDraft | null;
+      failure?: PlanningBuildCheckpoint["failure"];
     }
   ): Promise<void> {
     await this.persistence.setPlanningBuildCheckpoint(
@@ -4454,9 +4389,366 @@ export class ConstructAgentService {
         updatedAt: this.now().toISOString(),
         stage: input.stage,
         plan: input.plan,
-        blueprintDraft: input.blueprintDraft
+        blueprintDraft: input.blueprintDraft,
+        failure: input.failure ?? null
       })
     );
+  }
+
+  private async generatePlanningBlueprintDraft(input: {
+    jobId: string;
+    session: PlanningSession;
+    plan: GeneratedProjectPlan | null;
+    goalScope: GoalScope | null;
+    answers: ResolvedPlanningAnswer[];
+    knowledgeBase: UserKnowledgeBase;
+    mergedResearch: ResearchDigest | null;
+    answersSignature: string;
+    requestAnswers: PlanningSessionCompleteRequest["answers"];
+  }): Promise<GeneratedBlueprintBundleDraft> {
+    if (!input.plan) {
+      throw new Error("Cannot generate a blueprint before the project plan exists.");
+    }
+
+    const frontierPlanSteps = selectPlanFrontierSteps(input.plan, {
+      startStepId: input.plan.suggestedFirstStepId,
+      maxSteps: 3
+    });
+    const blueprintRequestContext = {
+      stepCount: input.plan.steps.length,
+      architectureNodeCount: input.plan.architecture.length,
+      suggestedFirstStepId: input.plan.suggestedFirstStepId,
+      firstStepTitle: frontierPlanSteps[0]?.title ?? input.plan.steps[0]?.title ?? null,
+      frontierStepCount: frontierPlanSteps.length
+    };
+
+    const job = this.jobs.get(input.jobId);
+    if (job) {
+      this.emitEvent(job, {
+        stage: "blueprint-synthesis",
+        title: "Drafting the project bundle",
+        detail: "The Architect is asking the model to write the completed project files, derive the learner-owned files, and attach hidden tests to each task.",
+        level: "info",
+        payload: blueprintRequestContext
+      });
+    }
+
+    this.logger.info("Submitting blueprint synthesis request.", {
+      jobId: input.jobId,
+      sessionId: input.session.sessionId,
+      goal: input.session.goal,
+      ...blueprintRequestContext
+    });
+
+    const stream = this.createModelStreamForwarder(
+      input.jobId,
+      "blueprint-synthesis",
+      "project bundle synthesis"
+    );
+
+    const initialBundleDraft = await (await this.getLlm()).parse({
+      schema: GENERATED_BLUEPRINT_BUNDLE_DRAFT_SCHEMA,
+      schemaName: "construct_generated_blueprint_bundle",
+      instructions: buildBlueprintGenerationInstructions(),
+      prompt: JSON.stringify(
+        {
+          session: input.session,
+          goalScope: input.goalScope,
+          answers: input.answers,
+          planSpine: input.plan,
+          frontierPlanSteps,
+          priorKnowledge: serializeKnowledgeBaseForPrompt(input.knowledgeBase),
+          research: compactResearchDigest(input.mergedResearch)
+        },
+        null,
+        2
+      ),
+      maxOutputTokens: 20_000,
+      verbosity: "medium",
+      stream
+    }).finally(() => {
+      stream.onComplete?.();
+    });
+
+    const rawFrontierDraft = filterGeneratedBundleDraftToFrontier(
+      initialBundleDraft,
+      frontierPlanSteps
+    );
+
+    return this.finalizePlanningBlueprintDraft({
+      jobId: input.jobId,
+      stage: "blueprint-generation",
+      stageTitle: "Project bundle drafted",
+      session: input.session,
+      plan: input.plan,
+      requestAnswers: input.requestAnswers,
+      answersSignature: input.answersSignature,
+      rawDraft: rawFrontierDraft,
+      successLogContext: "Received blueprint synthesis response.",
+      successEventTitle: "Project bundle drafted",
+      successEventDetail: "The Architect has returned a candidate project bundle and Construct is now materializing it into a runnable workspace."
+    });
+  }
+
+  private async repairPlanningBlueprintDraft(input: {
+    jobId: string;
+    session: PlanningSession;
+    plan: GeneratedProjectPlan | null;
+    goalScope: GoalScope | null;
+    answers: ResolvedPlanningAnswer[];
+    knowledgeBase: UserKnowledgeBase;
+    mergedResearch: ResearchDigest | null;
+    failedDraft: GeneratedBlueprintBundleDraft;
+    failure: PlanningBuildCheckpoint["failure"];
+    answersSignature: string;
+    requestAnswers: PlanningSessionCompleteRequest["answers"];
+  }): Promise<GeneratedBlueprintBundleDraft> {
+    if (!input.plan) {
+      throw new Error("Cannot repair a blueprint before the project plan exists.");
+    }
+
+    const frontierPlanSteps = selectPlanFrontierSteps(input.plan, {
+      startStepId: input.plan.suggestedFirstStepId,
+      maxSteps: 3
+    });
+    const repairContext = {
+      failedStage: input.failure?.stage ?? "blueprint-generation",
+      failureMessage:
+        input.failure?.message ??
+        "The saved project bundle draft failed validation and needs to be repaired.",
+      frontierStepCount: frontierPlanSteps.length,
+      firstStepTitle: frontierPlanSteps[0]?.title ?? input.plan.steps[0]?.title ?? null
+    };
+
+    this.logger.info("Repairing blueprint synthesis draft from saved checkpoint.", {
+      jobId: input.jobId,
+      sessionId: input.session.sessionId,
+      goal: input.session.goal,
+      ...repairContext
+    });
+
+    const stream = this.createModelStreamForwarder(
+      input.jobId,
+      "blueprint-repair",
+      "project bundle repair"
+    );
+
+    const repairedBundleDraft = await this.withStage(
+      input.jobId,
+      "blueprint-repair",
+      "Repairing the saved project bundle",
+      "Construct is resuming from the saved architect draft and repairing only the broken blueprint bundle instead of restarting the whole planning run.",
+      async () =>
+        (await this.getLlm()).parse({
+          schema: GENERATED_BLUEPRINT_BUNDLE_DRAFT_SCHEMA,
+          schemaName: "construct_generated_blueprint_bundle",
+          instructions: buildBlueprintRepairInstructions(),
+          prompt: JSON.stringify(
+            {
+              session: input.session,
+              goalScope: input.goalScope,
+              answers: input.answers,
+              planSpine: input.plan,
+              frontierPlanSteps,
+              priorKnowledge: serializeKnowledgeBaseForPrompt(input.knowledgeBase),
+              research: compactResearchDigest(input.mergedResearch),
+              previousDraft: input.failedDraft,
+              validationFailure: repairContext
+            },
+            null,
+            2
+          ),
+          maxOutputTokens: 20_000,
+          verbosity: "medium",
+          stream
+        }).finally(() => {
+          stream.onComplete?.();
+        })
+    );
+
+    const rawFrontierDraft = filterGeneratedBundleDraftToFrontier(
+      repairedBundleDraft,
+      frontierPlanSteps
+    );
+
+    return this.finalizePlanningBlueprintDraft({
+      jobId: input.jobId,
+      stage: "blueprint-repair",
+      stageTitle: "Saved project bundle repaired",
+      session: input.session,
+      plan: input.plan,
+      requestAnswers: input.requestAnswers,
+      answersSignature: input.answersSignature,
+      rawDraft: rawFrontierDraft,
+      successLogContext: "Recovered blueprint bundle from saved checkpoint.",
+      successEventTitle: "Saved project bundle repaired",
+      successEventDetail: "Construct repaired the saved architect draft and is continuing from the last good planning state."
+    });
+  }
+
+  private async finalizePlanningBlueprintDraft(input: {
+    jobId: string;
+    stage: string;
+    stageTitle: string;
+    session: PlanningSession;
+    plan: GeneratedProjectPlan;
+    requestAnswers: PlanningSessionCompleteRequest["answers"];
+    answersSignature: string;
+    rawDraft: GeneratedBlueprintBundleDraft;
+    successLogContext: string;
+    successEventTitle: string;
+    successEventDetail: string;
+  }): Promise<GeneratedBlueprintBundleDraft> {
+    const job = this.jobs.get(input.jobId);
+
+    await this.mutateBlueprintBuildForJob(input.jobId, (current) => ({
+      ...(current ??
+        createBlueprintBuildRecord({
+          id: input.session.sessionId,
+          sessionId: input.session.sessionId,
+          goal: input.session.goal,
+          detectedLanguage: input.session.detectedLanguage,
+          detectedDomain: input.session.detectedDomain,
+          status: "running",
+          currentStage: input.stage,
+          currentStageTitle: input.stageTitle,
+          currentStageStatus: "running",
+          createdAt: this.now().toISOString(),
+          updatedAt: this.now().toISOString()
+        })),
+      planningSession: input.session,
+      answers: input.requestAnswers,
+      plan: input.plan,
+      blueprintDraft: input.rawDraft,
+      supportFiles: toBlueprintArtifactFiles(input.rawDraft.supportFiles, "support"),
+      canonicalFiles: toBlueprintArtifactFiles(input.rawDraft.canonicalFiles, "canonical"),
+      learnerFiles: toBlueprintArtifactFiles(input.rawDraft.learnerFiles, "learner"),
+      hiddenTests: toBlueprintArtifactFiles(input.rawDraft.hiddenTests, "hidden-tests"),
+      status: "running",
+      currentStage: input.stage,
+      currentStageTitle: input.stageTitle,
+      currentStageStatus: "running",
+      updatedAt: this.now().toISOString(),
+      lastError: null
+    }));
+
+    let bundleDraft: GeneratedBlueprintBundleDraft;
+
+    try {
+      bundleDraft = normalizeGeneratedBlueprintDraft(input.rawDraft);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const failure = {
+        stage: input.stage,
+        message: errorMessage,
+        recoverable: true,
+        recordedAt: this.now().toISOString()
+      } satisfies NonNullable<PlanningBuildCheckpoint["failure"]>;
+
+      await this.writePlanningBuildCheckpoint(input.session.sessionId, {
+        answersSignature: input.answersSignature,
+        stage: "blueprint-draft-invalid",
+        plan: input.plan,
+        blueprintDraft: input.rawDraft,
+        failure
+      });
+      await this.mutateBlueprintBuildForJob(input.jobId, (current) => ({
+        ...(current ??
+          createBlueprintBuildRecord({
+            id: input.session.sessionId,
+            sessionId: input.session.sessionId,
+            goal: input.session.goal,
+            detectedLanguage: input.session.detectedLanguage,
+            detectedDomain: input.session.detectedDomain,
+            status: "failed",
+            currentStage: input.stage,
+            currentStageTitle: "Saved blueprint draft needs repair",
+            currentStageStatus: "failed",
+            createdAt: this.now().toISOString(),
+            updatedAt: this.now().toISOString()
+          })),
+        planningSession: input.session,
+        answers: input.requestAnswers,
+        plan: input.plan,
+        blueprintDraft: input.rawDraft,
+        supportFiles: toBlueprintArtifactFiles(input.rawDraft.supportFiles, "support"),
+        canonicalFiles: toBlueprintArtifactFiles(input.rawDraft.canonicalFiles, "canonical"),
+        learnerFiles: toBlueprintArtifactFiles(input.rawDraft.learnerFiles, "learner"),
+        hiddenTests: toBlueprintArtifactFiles(input.rawDraft.hiddenTests, "hidden-tests"),
+        currentStage: input.stage,
+        currentStageTitle: "Saved blueprint draft needs repair",
+        currentStageStatus: "failed",
+        updatedAt: this.now().toISOString(),
+        lastError: errorMessage
+      }));
+      throw error;
+    }
+
+    if (job) {
+      this.emitEvent(job, {
+        stage: "blueprint-synthesis",
+        title: input.successEventTitle,
+        detail: input.successEventDetail,
+        level: "success",
+        payload: {
+          supportFileCount: bundleDraft.supportFiles.length,
+          canonicalFileCount: bundleDraft.canonicalFiles.length,
+          learnerFileCount: bundleDraft.learnerFiles.length,
+          hiddenTestCount: bundleDraft.hiddenTests.length,
+          stepCount: bundleDraft.steps.length
+        }
+      });
+    }
+
+    this.logger.info(input.successLogContext, {
+      jobId: input.jobId,
+      sessionId: input.session.sessionId,
+      supportFileCount: bundleDraft.supportFiles.length,
+      canonicalFileCount: bundleDraft.canonicalFiles.length,
+      learnerFileCount: bundleDraft.learnerFiles.length,
+      hiddenTestCount: bundleDraft.hiddenTests.length,
+      stepCount: bundleDraft.steps.length
+    });
+
+    await this.writePlanningBuildCheckpoint(input.session.sessionId, {
+      answersSignature: input.answersSignature,
+      stage: "blueprint-drafted",
+      plan: input.plan,
+      blueprintDraft: bundleDraft,
+      failure: null
+    });
+    await this.mutateBlueprintBuildForJob(input.jobId, (current) => ({
+      ...(current ??
+        createBlueprintBuildRecord({
+          id: input.session.sessionId,
+          sessionId: input.session.sessionId,
+          goal: input.session.goal,
+          detectedLanguage: input.session.detectedLanguage,
+          detectedDomain: input.session.detectedDomain,
+          status: "running",
+          currentStage: input.stage,
+          currentStageTitle: input.stageTitle,
+          currentStageStatus: "completed",
+          createdAt: this.now().toISOString(),
+          updatedAt: this.now().toISOString()
+        })),
+      planningSession: input.session,
+      answers: input.requestAnswers,
+      plan: input.plan,
+      blueprintDraft: bundleDraft,
+      supportFiles: toBlueprintArtifactFiles(bundleDraft.supportFiles, "support"),
+      canonicalFiles: toBlueprintArtifactFiles(bundleDraft.canonicalFiles, "canonical"),
+      learnerFiles: toBlueprintArtifactFiles(bundleDraft.learnerFiles, "learner"),
+      hiddenTests: toBlueprintArtifactFiles(bundleDraft.hiddenTests, "hidden-tests"),
+      status: "running",
+      currentStage: input.stage,
+      currentStageTitle: input.stageTitle,
+      currentStageStatus: "completed",
+      updatedAt: this.now().toISOString(),
+      lastError: null
+    }));
+
+    return bundleDraft;
   }
 
   private async resumePlanningCheckpointStage(
@@ -7016,6 +7308,15 @@ function trimGeneratedBundleDraftToFrontier(
   draft: GeneratedBlueprintBundleDraft,
   frontierPlanSteps: GeneratedProjectPlan["steps"]
 ): GeneratedBlueprintBundleDraft {
+  return normalizeGeneratedBlueprintDraft(
+    filterGeneratedBundleDraftToFrontier(draft, frontierPlanSteps)
+  );
+}
+
+function filterGeneratedBundleDraftToFrontier(
+  draft: GeneratedBlueprintBundleDraft,
+  frontierPlanSteps: GeneratedProjectPlan["steps"]
+): GeneratedBlueprintBundleDraft {
   if (frontierPlanSteps.length === 0) {
     return draft;
   }
@@ -7039,12 +7340,12 @@ function trimGeneratedBundleDraftToFrontier(
     (file) => allowedTestPaths.size === 0 || allowedTestPaths.has(normalizePathValue(file.path))
   );
 
-  return normalizeGeneratedBlueprintDraft({
+  return {
     ...draft,
     learnerFiles: filteredLearnerFiles.length > 0 ? filteredLearnerFiles : draft.learnerFiles,
     hiddenTests: filteredHiddenTests.length > 0 ? filteredHiddenTests : draft.hiddenTests,
     steps: resolvedSteps
-  });
+  };
 }
 
 function trimGeneratedFrontierDraftToPlan(
@@ -7648,6 +7949,22 @@ function buildBlueprintGenerationInstructions(): string {
     "Choose build order from true project dependencies and the learner profile, not a generic tutorial order.",
     "For TypeScript and JavaScript projects, generate Jest tests and the minimum package/tooling files required to run them.",
     "Do not emit placeholder prose instead of code. Return concrete file contents."
+  ].join("\n");
+}
+
+function buildBlueprintRepairInstructions(): string {
+  return [
+    "You are Construct's Architect agent.",
+    "Repair a previously generated project blueprint draft without restarting the whole project design.",
+    "You will receive previousDraft plus validationFailure describing exactly why the saved draft was rejected.",
+    "Keep the same project goal, step order, teaching intent, and visible frontier unless the validationFailure makes a local rewrite necessary.",
+    "Return the full corrected blueprint bundle again as supportFiles, canonicalFiles, learnerFiles, hiddenTests, steps, entrypoints, dependencyGraph, and tags.",
+    "Resolve every validationFailure completely. Do not repeat the broken file separation, duplicate paths, invalid JSON, invalid source syntax, missing anchors, or missing hidden test references.",
+    "supportFiles, canonicalFiles, learnerFiles, and hiddenTests must each contain unique paths, and the groups must not overlap.",
+    "Every learnerFile must still have a matching canonicalFile for the same path.",
+    "Every step anchor.file must exist in learnerFiles, every step anchor.marker must appear literally inside that learner file, every step test path must exist in hiddenTests, and every entrypoint must exist in supportFiles, canonicalFiles, or learnerFiles.",
+    "If a previous file is already valid, preserve its intent instead of rewriting it gratuitously.",
+    "Do not emit placeholder prose instead of code. Return concrete, runnable file contents and valid JSON only."
   ].join("\n");
 }
 
