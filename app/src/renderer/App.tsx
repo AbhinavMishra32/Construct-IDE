@@ -4093,6 +4093,7 @@ function PlanningOverlay({
 }) {
   const isQuestionPhase = planningSession && !planningPlan;
   const isStartPhase = !planningSession;
+  const isBusyGenerationPhase = Boolean(isQuestionPhase && planningBusy && planningSession);
   const answeredQuestionCount = planningSession
     ? planningSession.questions.filter((question) =>
         hasPlanningAnswer(planningAnswers[question.id])
@@ -4115,6 +4116,77 @@ function PlanningOverlay({
     );
     setActiveQuestionIndex(nextIndex === -1 ? planningSession.questions.length - 1 : nextIndex);
   }, [planningSession, planningPlan, planningAnswers]);
+
+  if (isBusyGenerationPhase && planningSession) {
+    return (
+      <div className="construct-planning-overlay-shell" role="dialog" aria-modal="true" aria-label="Generating project">
+        <button
+          type="button"
+          className="construct-planning-overlay-backdrop"
+          aria-label="Close project creation"
+          onClick={onClose}
+        />
+        <section
+          className={cn(
+            "construct-planning-panel max-w-none gap-0 border border-border bg-background p-0 text-foreground shadow-2xl ring-1 ring-foreground/10 sm:max-w-[calc(100vw-24px)]",
+            "construct-planning-panel--compact"
+          )}
+        >
+          <div className="sr-only" aria-hidden="false">
+            <h1>Generating project</h1>
+            <p>Construct is materializing the project workspace and hidden validations.</p>
+          </div>
+          <header className={cn("construct-planning-header", "construct-planning-header--compact")}>
+            <div className="construct-planning-header-copy">
+              <span className="construct-brief-kicker">Architect</span>
+              <h1>Generating your project.</h1>
+              <p>
+                Construct has finished the tailoring pass and is now materializing the
+                project spine, first build slice, codebase, and hidden tests.
+              </p>
+            </div>
+            <div className="construct-planning-header-actions">
+              <ToolbarPill>{`${answeredQuestionCount}/${questionCount} tailored`}</ToolbarPill>
+              <SecondaryButton type="button" onClick={onClose}>
+                Close
+              </SecondaryButton>
+            </div>
+          </header>
+
+          <div className="construct-planning-start construct-planning-start--compact construct-planning-start--busy">
+            <section className="construct-info-panel">
+              <span className="construct-panel-kicker">Project brief</span>
+              <h2 className="construct-modal-underlay-title construct-modal-underlay-title--compact">
+                {planningGoal.trim()}
+              </h2>
+              <p>
+                The Architect is generating the project path and workspace now. This stays
+                small and centered while you watch the live activity.
+              </p>
+              <div className="construct-tag-list">
+                <TagChip>{formatDetectedLabel(planningSession.detectedDomain)}</TagChip>
+                <TagChip>{formatDetectedLabel(planningSession.detectedLanguage)}</TagChip>
+              </div>
+            </section>
+
+            {planningEvents.length > 0 ? (
+              <section className="construct-planning-event-log construct-planning-event-log--minimal">
+                <div className="construct-brief-section-header">
+                  <div>
+                    <span className="construct-brief-kicker">Agent Activity</span>
+                    <h2>What the Architect is doing right now.</h2>
+                  </div>
+                </div>
+                <ArchitectTaskBoard events={planningEvents} />
+              </section>
+            ) : null}
+
+            {planningError ? <InlineError>{planningError}</InlineError> : null}
+          </div>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="construct-planning-overlay-shell" role="dialog" aria-modal="true" aria-label="Create a new project">
@@ -4231,53 +4303,7 @@ function PlanningOverlay({
         ) : null}
 
         {isQuestionPhase ? (
-          planningBusy ? (
-            <section
-              className="construct-planning-question-shell"
-              aria-label="Generating project"
-            >
-              <div className="construct-planning-question-modal construct-planning-question-modal--busy w-[min(760px,calc(100vw-32px))] max-w-none gap-0 border border-border bg-background p-0 text-foreground shadow-2xl ring-1 ring-foreground/10">
-                <div className="construct-planning-question-header">
-                  <div>
-                    <span className="construct-panel-kicker">Architect</span>
-                    <h2>Generating your project.</h2>
-                    <p>
-                      Construct has finished the tailoring pass and is now materializing
-                      the project spine, first build slice, codebase, and hidden tests.
-                    </p>
-                  </div>
-                  <div className="construct-tag-list">
-                    <TagChip>{`${answeredQuestionCount}/${questionCount} tailored`}</TagChip>
-                    <TagChip>{formatDetectedLabel(planningSession.detectedDomain)}</TagChip>
-                    <TagChip>{formatDetectedLabel(planningSession.detectedLanguage)}</TagChip>
-                  </div>
-                </div>
-
-                <section className="construct-info-panel">
-                  <span className="construct-panel-kicker">Project brief</span>
-                  <h2 className="construct-modal-underlay-title construct-modal-underlay-title--compact">
-                    {planningGoal.trim()}
-                  </h2>
-                  <p>
-                    The Architect is generating the project path and workspace now. This
-                    stays small and centered while you watch the live activity.
-                  </p>
-                </section>
-
-                {planningEvents.length > 0 ? (
-                  <section className="construct-planning-event-log construct-planning-event-log--minimal">
-                    <div className="construct-brief-section-header">
-                      <div>
-                        <span className="construct-brief-kicker">Agent Activity</span>
-                        <h2>What the Architect is doing right now.</h2>
-                      </div>
-                    </div>
-                    <ArchitectTaskBoard events={planningEvents} />
-                  </section>
-                ) : null}
-              </div>
-            </section>
-          ) : (
+          !planningBusy ? (
             <div className="construct-planning-start construct-planning-start--question">
               <section className="construct-info-panel">
                 <span className="construct-panel-kicker">Project brief</span>
@@ -4311,7 +4337,7 @@ function PlanningOverlay({
                 ) : null}
               </aside>
             </div>
-          )
+          ) : null
         ) : null}
 
         {planningPlan ? (

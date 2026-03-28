@@ -6450,6 +6450,12 @@ textarea {
   align-content: start;
 }
 
+.construct-planning-start--busy {
+  min-height: 0;
+  overflow: auto;
+  gap: 16px;
+}
+
 .construct-planning-composer--compact {
   padding: 0;
   border: 0;
