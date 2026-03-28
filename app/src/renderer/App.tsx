@@ -1,17 +1,50 @@
 import Editor from "@monaco-editor/react";
+import {
+  ArrowClockwise as PhArrowClockwise,
+  ArrowSquareIn as PhArrowSquareIn,
+  ArrowsInSimple as PhArrowsInSimple,
+  ArrowsOutSimple as PhArrowsOutSimple,
+  BookOpenText as PhBookOpenText,
+  Brain as PhBrain,
+  CompassTool as PhCompassTool,
+  EyeSlash as PhEyeSlash,
+  Flask as PhFlask,
+  Lightbulb as PhLightbulb,
+  MagicWand as PhMagicWand,
+  PaperPlaneTilt as PhPaperPlaneTilt,
+  SidebarSimple as PhSidebarSimple,
+  Sparkle as PhSparkle,
+  Stack as PhStack,
+  Target as PhTarget,
+  TestTube as PhTestTube
+} from "@phosphor-icons/react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   BookOpenTextIcon,
+  BracesIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   CircleIcon,
+  CodeXmlIcon,
+  FileArchiveIcon,
+  FileCodeIcon,
+  FileCogIcon,
+  FileImageIcon,
+  FileLockIcon,
+  FileQuestionMarkIcon,
+  FileSpreadsheetIcon,
+  FileStackIcon,
+  FileTerminalIcon,
   FileTextIcon,
+  FileVideoCameraIcon,
   FolderOpenIcon,
   FolderTreeIcon,
   ListTodoIcon,
   MoonStarIcon,
+  Package2Icon,
   PlusIcon,
   SearchIcon,
+  Settings2Icon,
   SparklesIcon,
   SunIcon
 } from "lucide-react";
@@ -72,6 +105,7 @@ import {
   EmptyMedia,
   EmptyTitle
 } from "@/components/ui/empty";
+import { Tree, type TreeViewElement } from "@/components/ui/file-tree";
 import {
   Field,
   FieldDescription,
@@ -427,6 +461,79 @@ function DetailPopover({
   );
 }
 
+function GuideSectionLabel({
+  icon,
+  children,
+  className
+}: {
+  icon: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <span className={cn("construct-guide-section-label", className)}>
+      <span className="construct-guide-section-label-icon">{icon}</span>
+      <span>{children}</span>
+    </span>
+  );
+}
+
+function GuideStatusPill({
+  icon,
+  className,
+  children
+}: {
+  icon: ReactNode;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <ToolbarPill variant="outline" className={cn("construct-guide-status-pill", className)}>
+      <span className="construct-guide-status-pill-icon">{icon}</span>
+      <span>{children}</span>
+    </ToolbarPill>
+  );
+}
+
+function GuideActionButton({
+  icon,
+  className,
+  children,
+  active = false,
+  ...props
+}: ComponentProps<typeof Button> & {
+  icon: ReactNode;
+  active?: boolean;
+}) {
+  return (
+    <Button
+      variant="outline"
+      className={cn("construct-guide-action-button", active && "is-active", className)}
+      {...props}
+    >
+      <span className="construct-guide-action-button-icon">{icon}</span>
+      <span>{children}</span>
+    </Button>
+  );
+}
+
+function TaskOutputBlock({
+  label,
+  value,
+  tone
+}: {
+  label: string;
+  value: string;
+  tone: "expected" | "actual";
+}) {
+  return (
+    <div className={cn("construct-task-output-block", `is-${tone}`)}>
+      <span className="construct-task-output-label">{label}</span>
+      <pre className="construct-task-output-value">{value}</pre>
+    </div>
+  );
+}
+
 export default function App() {
   const [appRoute, setAppRoute] = useState<AppRoute>(() =>
     parseAppRoute(window.location.hash)
@@ -500,6 +607,10 @@ export default function App() {
   const filteredTree = useMemo(
     () => filterTreeNodes(workspaceTree, filterQuery),
     [filterQuery, workspaceTree]
+  );
+  const workspaceTreeLookup = useMemo(
+    () => buildTreeNodeLookup(workspaceTree),
+    [workspaceTree]
   );
   const guidePrompts = useMemo(
     () => (activeStep ? buildGuidancePrompts(activeStep) : []),
@@ -576,6 +687,17 @@ export default function App() {
   const activeAttemptStatus = activeTaskProgress?.latestAttempt?.status ?? null;
   const overlayVisible = surfaceMode === "brief" && Boolean(activeStep);
   const explorerIsFiltered = filterQuery.trim().length > 0;
+  const expandedWorkspaceTreeIds = useMemo(
+    () =>
+      explorerIsFiltered
+        ? collectDirectoryPaths(filteredTree)
+        : collectExpandedDirectoryIds(workspaceTree, expandedDirectories),
+    [expandedDirectories, explorerIsFiltered, filteredTree, workspaceTree]
+  );
+  const workspaceTreeElements = useMemo(
+    () => buildWorkspaceTreeElements(filteredTree),
+    [filteredTree]
+  );
   const editorTheme = theme === "dark" ? "vs-dark" : "vs";
   const saveStateLabel =
     saveState === "saving"
@@ -1727,26 +1849,36 @@ export default function App() {
                       </InputGroup>
                     </div>
 
-                    <ScrollArea className="construct-explorer-scroll">
-                      {filteredTree.length > 0 ? (
-                        <nav className="construct-tree" aria-label="Workspace files">
-                          {filteredTree.map((node) => (
-                            <ExplorerTreeNode
-                              key={node.path}
-                              node={node}
-                              activeFilePath={activeFilePath}
-                              onSelectFile={handleFileClick}
-                              expandedDirectories={expandedDirectories}
-                              onToggleDirectory={(path) => {
-                                setExpandedDirectories((current) => ({
-                                  ...current,
-                                  [path]: !(current[path] ?? true)
-                                }));
-                              }}
-                              forceExpanded={explorerIsFiltered}
-                            />
-                          ))}
-                        </nav>
+                    <div className="construct-explorer-scroll">
+                      {workspaceTreeElements.length > 0 ? (
+                        <Tree
+                          className="construct-workspace-file-tree"
+                          elements={workspaceTreeElements}
+                          selectedId={activeFilePath || undefined}
+                          expandedItems={expandedWorkspaceTreeIds}
+                          onExpandedItemsChange={(nextExpandedItems: string[]) => {
+                            const directoryIds = collectDirectoryPaths(workspaceTree);
+                            setExpandedDirectories((current) => {
+                              const next = { ...current };
+
+                              for (const directoryId of directoryIds) {
+                                next[directoryId] = nextExpandedItems.includes(directoryId);
+                              }
+
+                              return next;
+                            });
+                          }}
+                          onSelectChange={(selectedId: string) => {
+                            const selectedNode = workspaceTreeLookup.get(selectedId) ?? null;
+
+                            if (selectedNode?.kind === "file") {
+                              void handleFileClick(selectedId);
+                            }
+                          }}
+                          initialSelectedId={activeFilePath || undefined}
+                          indicator
+                          sort="none"
+                        />
                       ) : (
                         <div className="construct-explorer-empty">
                           {filterQuery.trim().length > 0
@@ -1754,7 +1886,7 @@ export default function App() {
                             : "No files loaded yet."}
                         </div>
                       )}
-                    </ScrollArea>
+                    </div>
                   </aside>
 
                   <section className="construct-stage">
@@ -2230,6 +2362,12 @@ function FloatingGuideCard({
   taskError: string;
   taskTelemetry: TaskTelemetry;
 }) {
+  const taskAttemptCount = taskProgress?.totalAttempts ?? 0;
+  const recordedHintCount = learnerModel?.hintsUsed[activeStep.id] ?? taskTelemetry.hintsUsed;
+  const pastePercentage = Math.round(taskTelemetry.pasteRatio * 100);
+  const hiddenValidationCount = activeStep.tests.length;
+  const constraintCount = activeStep.constraints.length;
+
   if (minimized) {
     return (
       <motion.aside
@@ -2246,10 +2384,16 @@ function FloatingGuideCard({
           className="construct-floating-card-minibar"
           aria-label={`Expand guide for ${activeStep.title}`}
         >
+          <span className="construct-floating-card-minibar-icon" aria-hidden="true">
+            <PhSidebarSimple size={16} weight="duotone" />
+          </span>
           <span className="construct-floating-card-minibar-kicker">Guide</span>
           <strong>{activeStep.title}</strong>
           <span className="construct-floating-card-minibar-meta">
             Step {activeStepIndex + 1}
+          </span>
+          <span className="construct-floating-card-minibar-expand" aria-hidden="true">
+            <PhArrowsOutSimple size={14} weight="bold" />
           </span>
         </Button>
       </motion.aside>
@@ -2267,51 +2411,78 @@ function FloatingGuideCard({
       <div className="construct-floating-card-header">
         <div className="construct-floating-card-meta">
           <div className="construct-floating-card-meta-copy">
-            <span className="construct-floating-card-kicker">Guide</span>
+            <GuideSectionLabel
+              icon={<PhBrain size={14} weight="duotone" />}
+              className="construct-floating-card-kicker"
+            >
+              Guide
+            </GuideSectionLabel>
             <span className="construct-floating-card-step">
               Step {activeStepIndex + 1} / {getRuntimeSteps(blueprint).length}
             </span>
           </div>
-          <SecondaryButton
-            type="button"
-            onClick={onMinimize}
-            className="construct-guide-minimize-button"
-            aria-label="Minimize tutor"
-          >
-            Minimize
-          </SecondaryButton>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onMinimize}
+                className="construct-guide-minimize-button"
+                aria-label="Minimize guide"
+              >
+                <PhArrowsInSimple size={14} weight="bold" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Minimize guide</TooltipContent>
+          </Tooltip>
         </div>
         <h2 className="construct-floating-card-title">{activeStep.title}</h2>
         <p className="construct-floating-card-summary">{activeStep.summary}</p>
       </div>
 
       <div className="construct-floating-card-body">
-        <section className="construct-metadata-panel">
-          <span className="construct-panel-kicker">Telemetry</span>
-          <div className="construct-session-metrics">
-            <MetricPill
-              label="Attempts"
-              value={`${taskProgress?.totalAttempts ?? 0}`}
-            />
-            <MetricPill
-              label="Hints"
-              value={`${taskTelemetry.hintsUsed}`}
-            />
-            <MetricPill
-              label="Paste"
-              value={`${Math.round(taskTelemetry.pasteRatio * 100)}%`}
-            />
-            <MetricPill
-              label="Snapshot"
-              value={
-                taskSession ? formatCommitId(taskSession.preTaskSnapshot.commitId) : "pending"
-              }
-            />
-          </div>
-          <p className="construct-muted-copy">
-            Recorded hints across this step: {learnerModel?.hintsUsed[activeStep.id] ?? 0}
-          </p>
-        </section>
+        <div className="construct-guide-status-strip">
+          {taskAttemptCount > 0 ? (
+            <GuideStatusPill icon={<PhArrowClockwise size={12} weight="bold" />}>
+              {taskAttemptCount} attempt{taskAttemptCount === 1 ? "" : "s"}
+            </GuideStatusPill>
+          ) : null}
+          {recordedHintCount > 0 ? (
+            <GuideStatusPill icon={<PhLightbulb size={12} weight="fill" />}>
+              {recordedHintCount} hint{recordedHintCount === 1 ? "" : "s"}
+            </GuideStatusPill>
+          ) : null}
+          {pastePercentage > 0 ? (
+            <GuideStatusPill icon={<PhArrowSquareIn size={12} weight="bold" />}>
+              {pastePercentage}% paste
+            </GuideStatusPill>
+          ) : null}
+          {taskSession ? (
+            <GuideStatusPill icon={<PhStack size={12} weight="duotone" />}>
+              {formatCommitId(taskSession.preTaskSnapshot.commitId)}
+            </GuideStatusPill>
+          ) : null}
+          {hiddenValidationCount > 0 ? (
+            <DetailPopover
+              label="Hidden validations"
+              description={summarizeCompactList(activeStep.tests)}
+            >
+              <GuideStatusPill icon={<PhTestTube size={12} weight="duotone" />}>
+                {hiddenValidationCount} check{hiddenValidationCount === 1 ? "" : "s"}
+              </GuideStatusPill>
+            </DetailPopover>
+          ) : null}
+          {constraintCount > 0 ? (
+            <DetailPopover
+              label="Constraints"
+              description={summarizeCompactList(activeStep.constraints)}
+            >
+              <GuideStatusPill icon={<PhCompassTool size={12} weight="duotone" />}>
+                {constraintCount} constraint{constraintCount === 1 ? "" : "s"}
+              </GuideStatusPill>
+            </DetailPopover>
+          ) : null}
+        </div>
 
         {rewriteGate ? (
           <section className="construct-verification-panel">
@@ -2335,46 +2506,60 @@ function FloatingGuideCard({
           </section>
         ) : null}
 
-        <MetadataList title="Tests" values={activeStep.tests} />
-        <MetadataList title="Constraints" values={activeStep.constraints} />
-
         <div className="construct-floating-card-actions">
-          <div className="construct-action-cluster">
-            <PrimaryButton
-              type="button"
-              onClick={onSubmitTask}
-              disabled={taskRunState === "running"}
-            >
-              {taskRunState === "running" ? (
-                <>
-                  <Spinner data-icon="inline-start" />
-                  Running tests...
-                </>
-              ) : (
-                "Submit"
-              )}
-            </PrimaryButton>
-            <SecondaryButton type="button" onClick={onOpenBrief}>
-              Open brief
-            </SecondaryButton>
-          </div>
+          <PrimaryButton
+            type="button"
+            onClick={onSubmitTask}
+            disabled={taskRunState === "running"}
+            className="construct-guide-submit-button"
+          >
+            {taskRunState === "running" ? (
+              <>
+                <Spinner data-icon="inline-start" />
+                Running tests...
+              </>
+            ) : (
+              <>
+                <PhPaperPlaneTilt size={15} weight="fill" />
+                Submit
+              </>
+            )}
+          </PrimaryButton>
 
-          <div className="construct-action-cluster is-compact">
-            <SecondaryButton type="button" onClick={onRefocus}>
-              Refocus anchor
-            </SecondaryButton>
-            <SecondaryButton type="button" onClick={onToggleGuide}>
-              {runtimeGuideBusy
-                ? (
-                    <>
-                      <Spinner data-icon="inline-start" />
-                      Guide is thinking...
-                    </>
-                  )
-                : guideVisible
-                  ? "Hide guide"
-                  : "Ask guide"}
-            </SecondaryButton>
+          <div className="construct-guide-secondary-actions">
+            <GuideActionButton
+              type="button"
+              onClick={onOpenBrief}
+              icon={<PhBookOpenText size={15} weight="duotone" />}
+              className="is-brief"
+            >
+              Brief
+            </GuideActionButton>
+            <GuideActionButton
+              type="button"
+              onClick={onRefocus}
+              icon={<PhTarget size={15} weight="duotone" />}
+              className="is-refocus"
+            >
+              Refocus
+            </GuideActionButton>
+            <GuideActionButton
+              type="button"
+              onClick={onToggleGuide}
+              icon={
+                runtimeGuideBusy ? (
+                  <Spinner data-icon="inline-start" />
+                ) : guideVisible ? (
+                  <PhEyeSlash size={15} weight="duotone" />
+                ) : (
+                  <PhBrain size={15} weight="duotone" />
+                )
+              }
+              className="is-guide"
+              active={guideVisible && !runtimeGuideBusy}
+            >
+              {runtimeGuideBusy ? "Thinking..." : guideVisible ? "Hide help" : "Get help"}
+            </GuideActionButton>
           </div>
         </div>
 
@@ -2383,22 +2568,26 @@ function FloatingGuideCard({
             <div>
               <span className="construct-panel-kicker">Need more support?</span>
               <p className="construct-muted-copy">
-                Construct can deepen this step with extra concept slides and a tighter
-                quiz before you retry the implementation.
+                Construct can break this step down and add a tighter walkthrough before
+                you retry.
               </p>
             </div>
             <SecondaryButton
               type="button"
               onClick={onRequestDeepDive}
               disabled={deepDiveBusy}
+              className="construct-guide-deep-dive-button"
             >
               {deepDiveBusy ? (
                 <>
                   <Spinner data-icon="inline-start" />
-                  Building deeper walkthrough...
+                  Deepening step...
                 </>
               ) : (
-                "Need a deeper walkthrough?"
+                <>
+                  <PhMagicWand size={15} weight="duotone" />
+                  Deepen this step
+                </>
               )}
             </SecondaryButton>
             {deepDiveError ? <InlineError>{deepDiveError}</InlineError> : null}
@@ -2407,7 +2596,9 @@ function FloatingGuideCard({
 
         <div className="construct-floating-hints">
           <div className="construct-floating-hints-header">
-            <span>Hints</span>
+            <GuideSectionLabel icon={<PhLightbulb size={14} weight="duotone" />}>
+              Hints
+            </GuideSectionLabel>
             <div className="construct-hint-actions">
               {[1, 2, 3].map((level) => (
                 <Button
@@ -2419,6 +2610,7 @@ function FloatingGuideCard({
                   variant={revealedHintLevel >= level ? "secondary" : "outline"}
                   className="construct-hint-button"
                 >
+                  <PhSparkle size={12} weight={revealedHintLevel >= level ? "fill" : "regular"} />
                   L{level}
                 </Button>
               ))}
@@ -2452,7 +2644,9 @@ function FloatingGuideCard({
             >
               {runtimeGuide ? (
                 <div className="construct-guide-runtime-summary">
-                  <span className="construct-panel-kicker">Live Guide</span>
+                  <GuideSectionLabel icon={<PhBrain size={14} weight="duotone" />}>
+                    Live Guide
+                  </GuideSectionLabel>
                   <p>{runtimeGuide.summary}</p>
                   {runtimeGuide.observations.length > 0 ? (
                     <div className="construct-tag-list">
@@ -2484,14 +2678,18 @@ function FloatingGuideCard({
 
               {runtimeGuide?.nextAction ? (
                 <div className="construct-guide-next-action">
-                  <span className="construct-panel-kicker">Next action</span>
+                  <GuideSectionLabel icon={<PhTarget size={14} weight="duotone" />}>
+                    Next action
+                  </GuideSectionLabel>
                   <p>{runtimeGuide.nextAction}</p>
                 </div>
               ) : null}
 
               {runtimeGuideEvents.length > 0 ? (
                 <div className="construct-guide-event-log">
-                  <span className="construct-panel-kicker">Agent activity</span>
+                  <GuideSectionLabel icon={<PhSparkle size={14} weight="duotone" />}>
+                    Agent activity
+                  </GuideSectionLabel>
                   {runtimeGuideEvents.slice(-4).map((event) => (
                     <div key={event.id} className="construct-guide-event-item">
                       <strong>{event.title}</strong>
@@ -2842,12 +3040,6 @@ function ProjectsHome({
     ).length,
     weakConceptCount: knowledgeConcepts.filter((concept) => concept.score < 45).length
   };
-  const recentGoals = knowledgeBase
-    ? knowledgeBase.goals
-        .slice()
-        .sort((left, right) => right.lastPlannedAt.localeCompare(left.lastPlannedAt))
-        .slice(0, 5)
-    : [];
   const projectLookup = useMemo(
     () => new Map(projects.map((project) => [project.id, project])),
     [projects]
@@ -2900,21 +3092,12 @@ function ProjectsHome({
       ),
     [knowledgeConcepts]
   );
-  const historyEntries = learnerProfile?.learnerModel?.history ?? [];
-  const totalHintsUsed = Object.values(learnerProfile?.learnerModel?.hintsUsed ?? {}).reduce(
-    (sum, value) => sum + value,
-    0
-  );
   const resumeCreationAvailable = Boolean(planningSession);
   const resumeProgressLabel = planningPlan
     ? `${planningPlan.steps.length} planned steps`
     : planningSession
       ? `${planningSession.questions.length} tailoring questions`
       : "";
-  const passedAttempts = historyEntries.filter((entry) => entry.status === "passed").length;
-  const strugglingAttempts = historyEntries.filter(
-    (entry) => entry.status === "failed" || entry.status === "needs-review"
-  ).length;
   const [knowledgeView, setKnowledgeView] = useState<"concepts" | "projects">("concepts");
   const [expandedKnowledgeIds, setExpandedKnowledgeIds] = useState<Record<string, boolean>>({});
   const [expandedKnowledgeProjectIds, setExpandedKnowledgeProjectIds] = useState<
@@ -3171,9 +3354,6 @@ function ProjectsHome({
             <span>
               Needs support <strong>{knowledgeStats.weakConceptCount}</strong>
             </span>
-            <span>
-              Goals tracked <strong>{recentGoals.length}</strong>
-            </span>
           </div>
 
           {knowledgeRoots.length > 0 ? (
@@ -3272,95 +3452,6 @@ function ProjectsHome({
             <div className="construct-home-empty">
               No stored learner knowledge yet. Start a project and answer the Architect's
               tailoring questions so Construct can build a concept-level profile.
-            </div>
-          )}
-        </section>
-      </div>
-
-      <div className="construct-home-dashboard-secondary">
-        <section className="construct-home-surface">
-          <div className="construct-home-surface-header">
-            <div>
-              <span className="construct-home-section-kicker">Goal history</span>
-              <h2>Recent planned goals</h2>
-            </div>
-          </div>
-
-          {recentGoals.length > 0 ? (
-            <div className="construct-home-goal-list">
-              {recentGoals.map((goal) => (
-                <div key={`${goal.goal}-${goal.lastPlannedAt}`} className="construct-home-goal-item">
-                  <div className="construct-home-goal-head">
-                    <strong>{goal.goal}</strong>
-                    <span>{formatProjectTimestamp(goal.lastPlannedAt)}</span>
-                  </div>
-                  <p>
-                    {goal.language} · {goal.domain}
-                  </p>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="construct-home-empty">
-              Planned goals will accumulate here once the Architect has tailored a few
-              projects around the learner.
-            </div>
-          )}
-        </section>
-
-        <section className="construct-home-surface">
-          <div className="construct-home-surface-header">
-            <div>
-              <span className="construct-home-section-kicker">Learning signals</span>
-              <h2>Runtime evidence</h2>
-            </div>
-          </div>
-
-          <div className="construct-home-signal-grid">
-            <div className="construct-home-fact">
-              <span>Attempt history</span>
-              <strong>{historyEntries.length}</strong>
-            </div>
-            <div className="construct-home-fact">
-              <span>Passed attempts</span>
-              <strong>{passedAttempts}</strong>
-            </div>
-            <div className="construct-home-fact">
-              <span>Needs work</span>
-              <strong>{strugglingAttempts}</strong>
-            </div>
-            <div className="construct-home-fact">
-              <span>Hints used</span>
-              <strong>{totalHintsUsed}</strong>
-            </div>
-          </div>
-
-          {historyEntries.length > 0 ? (
-            <div className="construct-home-signal-list">
-              {historyEntries
-                .slice()
-                .reverse()
-                .slice(0, 5)
-                .map((entry) => (
-                  <div
-                    key={`${entry.stepId}-${entry.recordedAt}-${entry.attempt}`}
-                    className="construct-home-signal-item"
-                  >
-                    <div className="construct-home-signal-head">
-                      <strong>{entry.stepId}</strong>
-                      <span>{formatProjectTimestamp(entry.recordedAt)}</span>
-                    </div>
-                    <p>
-                      {entry.status} · attempt {entry.attempt} · {entry.timeSpentMs} ms ·
-                      hints {entry.hintsUsed}
-                    </p>
-                  </div>
-                ))}
-            </div>
-          ) : (
-            <div className="construct-home-empty">
-              Task execution signals will appear here as the learner moves through code
-              steps and hidden tests.
             </div>
           )}
         </section>
@@ -5075,98 +5166,118 @@ function normalizeLessonSlideToMarkdown(slide: string | LessonSlide): string {
     .join("\n\n");
 }
 
-function ExplorerTreeNode({
-  node,
-  activeFilePath,
-  onSelectFile,
-  expandedDirectories,
-  onToggleDirectory,
-  forceExpanded,
-  depth = 0
-}: {
-  node: TreeNode;
-  activeFilePath: string;
-  onSelectFile: (filePath: string) => void;
-  expandedDirectories: Record<string, boolean>;
-  onToggleDirectory: (path: string) => void;
-  forceExpanded: boolean;
-  depth?: number;
-}) {
-  const isDirectory = node.kind === "directory";
-  const isExpanded = forceExpanded || expandedDirectories[node.path] !== false;
-  const isActive = !isDirectory && node.path === activeFilePath;
-
-  return (
-    <div className="construct-tree-node">
-      <Button
-        type="button"
-        variant="ghost"
-        onClick={() => {
-          if (isDirectory) {
-            onToggleDirectory(node.path);
-            return;
-          }
-
-          onSelectFile(node.path);
-        }}
-        className={`construct-tree-row ${isActive ? "is-active" : ""}`}
-        style={{ paddingLeft: `${16 + depth * 24}px` }}
-      >
-        <span className="construct-tree-chevron">
-          {isDirectory ? (isExpanded ? "⌄" : "›") : ""}
-        </span>
-        <span className="construct-tree-icon">
-          {isDirectory ? <FolderIcon /> : <FileIcon filePath={node.path} />}
-        </span>
-        <span className="construct-tree-label">{node.name}</span>
-      </Button>
-
-      {isDirectory && isExpanded ? (
-        <div className="construct-tree-children">
-          {node.children.map((child) => (
-            <ExplorerTreeNode
-              key={child.path}
-              node={child}
-              activeFilePath={activeFilePath}
-              onSelectFile={onSelectFile}
-              expandedDirectories={expandedDirectories}
-              onToggleDirectory={onToggleDirectory}
-              forceExpanded={forceExpanded}
-              depth={depth + 1}
-            />
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function FolderIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <path
-        d="M2.75 5.5h4.1l1.2 1.5h9.2v7.25a1 1 0 0 1-1 1H3.75a1 1 0 0 1-1-1V5.5Z"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
 function FileIcon({ filePath }: { filePath: string }) {
-  const extension = filePath.split(".").pop()?.toLowerCase();
-  const label =
-    extension === "ts" || extension === "tsx"
-      ? "TS"
-      : extension === "sql"
-        ? "SQL"
-        : extension === "json"
-          ? "{}"
-          : "</>";
+  const normalizedPath = filePath.toLowerCase();
+  const fileName = normalizedPath.split("/").pop() ?? normalizedPath;
+  const extension = fileName.includes(".") ? fileName.split(".").pop() ?? "" : "";
 
-  return <span className="construct-file-badge">{label}</span>;
+  const isPackageManifest =
+    fileName === "package.json" ||
+    fileName === "composer.json" ||
+    fileName === "cargo.toml" ||
+    fileName === "gemfile";
+  const isLockFile =
+    fileName === "package-lock.json" ||
+    fileName === "pnpm-lock.yaml" ||
+    fileName === "yarn.lock" ||
+    fileName === "bun.lockb" ||
+    fileName === "cargo.lock";
+  const isConfigFile =
+    fileName === "turbo.json" ||
+    fileName === "dockerfile" ||
+    fileName === "compose.yaml" ||
+    fileName === "compose.yml" ||
+    fileName === ".gitignore" ||
+    fileName === ".gitattributes" ||
+    fileName === ".gitmodules" ||
+    fileName.startsWith(".env") ||
+    fileName.startsWith(".prettierrc") ||
+    fileName.startsWith(".eslintrc") ||
+    fileName.startsWith("tsconfig") ||
+    fileName.startsWith("jsconfig") ||
+    fileName.endsWith(".config.js") ||
+    fileName.endsWith(".config.cjs") ||
+    fileName.endsWith(".config.mjs") ||
+    fileName.endsWith(".config.ts") ||
+    fileName.endsWith(".config.jsx") ||
+    fileName.endsWith(".config.tsx");
+
+  let IconComponent = FileQuestionMarkIcon;
+  let toneClass = "is-generic";
+
+  if (isLockFile) {
+    IconComponent = FileLockIcon;
+    toneClass = "is-lock";
+  } else if (isPackageManifest) {
+    IconComponent = Package2Icon;
+    toneClass = "is-package";
+  } else if (isConfigFile) {
+    IconComponent = Settings2Icon;
+    toneClass = "is-config";
+  } else if (
+    fileName.endsWith(".d.ts") ||
+    [
+      "ts",
+      "tsx",
+      "mts",
+      "cts",
+      "js",
+      "jsx",
+      "mjs",
+      "cjs",
+      "py",
+      "rs",
+      "go",
+      "java",
+      "kt",
+      "rb",
+      "php",
+      "swift",
+      "cs"
+    ].includes(extension)
+  ) {
+    IconComponent = FileCodeIcon;
+    toneClass = "is-code";
+  } else if (["json", "jsonc"].includes(extension)) {
+    IconComponent = BracesIcon;
+    toneClass = "is-data";
+  } else if (["css", "scss", "sass", "less", "pcss"].includes(extension)) {
+    IconComponent = CodeXmlIcon;
+    toneClass = "is-style";
+  } else if (["html", "xml", "svg"].includes(extension)) {
+    IconComponent = CodeXmlIcon;
+    toneClass = "is-markup";
+  } else if (["sql", "prisma"].includes(extension)) {
+    IconComponent = FileStackIcon;
+    toneClass = "is-data";
+  } else if (["yml", "yaml", "toml", "ini"].includes(extension)) {
+    IconComponent = FileCogIcon;
+    toneClass = "is-config";
+  } else if (["sh", "bash", "zsh", "fish"].includes(extension)) {
+    IconComponent = FileTerminalIcon;
+    toneClass = "is-terminal";
+  } else if (["md", "mdx", "txt"].includes(extension)) {
+    IconComponent = FileTextIcon;
+    toneClass = "is-doc";
+  } else if (["csv", "tsv"].includes(extension)) {
+    IconComponent = FileSpreadsheetIcon;
+    toneClass = "is-data";
+  } else if (["png", "jpg", "jpeg", "gif", "webp", "avif", "ico", "bmp"].includes(extension)) {
+    IconComponent = FileImageIcon;
+    toneClass = "is-media";
+  } else if (["mp4", "mov", "webm", "mkv", "avi"].includes(extension)) {
+    IconComponent = FileVideoCameraIcon;
+    toneClass = "is-media";
+  } else if (["zip", "tar", "gz", "tgz", "rar", "7z"].includes(extension)) {
+    IconComponent = FileArchiveIcon;
+    toneClass = "is-archive";
+  }
+
+  return (
+    <span className={cn("construct-file-type-icon", toneClass)} aria-hidden="true">
+      <IconComponent className="size-3.5" strokeWidth={1.9} />
+    </span>
+  );
 }
 
 function labelForEditorPath(filePath: string | null) {
@@ -5400,15 +5511,16 @@ function MetadataList({ title, values }: { title: string; values: string[] }) {
   );
 }
 
-function MetricPill({ label, value }: { label: string; value: string }) {
-  return (
-    <Card className="construct-session-metric" size="sm">
-      <CardContent className="flex items-center justify-between gap-3 px-3 py-2">
-        <span>{label}</span>
-        <strong>{value}</strong>
-      </CardContent>
-    </Card>
-  );
+function summarizeCompactList(values: string[]) {
+  if (values.length === 0) {
+    return "No details recorded.";
+  }
+
+  if (values.length <= 2) {
+    return values.join(" • ");
+  }
+
+  return `${values.slice(0, 2).join(" • ")} • +${values.length - 2} more`;
 }
 
 function CheckCard({
@@ -5554,7 +5666,9 @@ function TaskResultPanel({
   return (
     <Card className="construct-task-results">
       <CardHeader className="gap-2">
-        <span className="construct-panel-kicker">Execution</span>
+        <GuideSectionLabel icon={<PhFlask size={14} weight="duotone" />}>
+          Execution
+        </GuideSectionLabel>
       </CardHeader>
 
       <CardContent>
@@ -5574,9 +5688,11 @@ function TaskResultPanel({
           <div className="construct-task-result-body">
             <div className="construct-task-result-meta">
               <ToolbarPill className={`construct-task-status ${taskStatusClassName}`}>
+                <PhTestTube size={12} weight="duotone" />
                 {taskStatusLabel}
               </ToolbarPill>
               <ToolbarPill variant="outline" className="construct-brief-chip">
+                <PhArrowClockwise size={12} weight="bold" />
                 {formatDuration(taskResult.durationMs)}
               </ToolbarPill>
             </div>
@@ -5592,6 +5708,24 @@ function TaskResultPanel({
                     <AlertDescription>
                       <strong>{failure.testName}</strong>
                       <p>{failure.message}</p>
+                      {failure.expectedOutput || failure.actualOutput ? (
+                        <div className="construct-task-output-grid">
+                          {failure.expectedOutput ? (
+                            <TaskOutputBlock
+                              label="Expected output"
+                              value={failure.expectedOutput}
+                              tone="expected"
+                            />
+                          ) : null}
+                          {failure.actualOutput ? (
+                            <TaskOutputBlock
+                              label="Current output"
+                              value={failure.actualOutput}
+                              tone="actual"
+                            />
+                          ) : null}
+                        </div>
+                      ) : null}
                     </AlertDescription>
                   </Alert>
                 ))}
@@ -5725,6 +5859,42 @@ function collectDirectoryPaths(nodes: TreeNode[]): string[] {
   }
 
   return directories;
+}
+
+function collectExpandedDirectoryIds(
+  nodes: TreeNode[],
+  expandedDirectories: Record<string, boolean>
+): string[] {
+  return collectDirectoryPaths(nodes).filter((path) => expandedDirectories[path] !== false);
+}
+
+function buildWorkspaceTreeElements(nodes: TreeNode[]): TreeViewElement[] {
+  return nodes.map((node) => ({
+    id: node.path,
+    name: node.name,
+    type: node.kind === "directory" ? "folder" : "file",
+    isSelectable: true,
+    icon: node.kind === "file" ? <FileIcon filePath={node.path} /> : undefined,
+    children:
+      node.kind === "directory" ? buildWorkspaceTreeElements(node.children) : undefined
+  }));
+}
+
+function buildTreeNodeLookup(nodes: TreeNode[]): Map<string, TreeNode> {
+  const lookup = new Map<string, TreeNode>();
+
+  const visit = (entries: TreeNode[]) => {
+    for (const entry of entries) {
+      lookup.set(entry.path, entry);
+
+      if (entry.children.length > 0) {
+        visit(entry.children);
+      }
+    }
+  };
+
+  visit(nodes);
+  return lookup;
 }
 
 function getAncestorDirectoryPaths(filePath: string): string[] {
