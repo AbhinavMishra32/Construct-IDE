@@ -28,6 +28,11 @@ function markdownSlide(markdown: string) {
 }
 
 async function createAdaptiveFrontierHarness(options: {
+  onAdaptiveDecision?: (input: {
+    schema: { parse: (value: unknown) => unknown };
+    prompt: string;
+    callCount: number;
+  }) => unknown;
   onAdaptiveFrontier: (input: {
     schema: { parse: (value: unknown) => unknown };
     prompt: string;
@@ -36,6 +41,7 @@ async function createAdaptiveFrontierHarness(options: {
 }) {
   const root = await mkdtemp(path.join(os.tmpdir(), "construct-agent-frontier-"));
   let tick = 0;
+  let adaptiveDecisionCallCount = 0;
   let adaptiveFrontierCallCount = 0;
   const adaptiveFrontierPrompts: string[] = [];
 
@@ -378,6 +384,26 @@ async function createAdaptiveFrontierHarness(options: {
                 answer: "a"
               }
             ]
+          });
+        }
+
+        if (schemaName === "construct_adaptive_frontier_update_decision") {
+          adaptiveDecisionCallCount += 1;
+          if (options.onAdaptiveDecision) {
+            return options.onAdaptiveDecision({
+              schema,
+              prompt: String(prompt ?? ""),
+              callCount: adaptiveDecisionCallCount
+            });
+          }
+
+          return schema.parse({
+            shouldUpdate: true,
+            updateMode: String(prompt ?? "").includes("\"preferredUpdateMode\": \"advance-frontier\"")
+              ? "advance-frontier"
+              : "refresh-current-frontier",
+            reason: "The latest learner evidence should update the visible adaptive frontier.",
+            detail: "Construct is updating the visible project path using this latest learner signal."
           });
         }
 
@@ -1419,6 +1445,15 @@ test("ConstructAgentService advances the adaptive frontier after a passed step a
           });
         }
 
+        if (schemaName === "construct_adaptive_frontier_update_decision") {
+          return schema.parse({
+            shouldUpdate: true,
+            updateMode: "advance-frontier",
+            reason: "The learner cleared the current code milestone and the next visible steps should advance now.",
+            detail: "Construct is advancing the visible project path using this passing implementation evidence."
+          });
+        }
+
         if (schemaName === "construct_generated_adaptive_frontier") {
           return schema.parse({
             learnerFiles: [
@@ -1731,7 +1766,10 @@ test("ConstructAgentService rewrites the current frontier from quiz recovery evi
     const firstImprovement = await service.syncProjectCheckProgress({
       canonicalBlueprintPath: generatedBlueprintPath,
       stepId: "step.parse-imports",
-      review: firstReview.review
+      review: firstReview.review,
+      check,
+      response: "b",
+      attemptCount: 0
     });
 
     assert.equal(firstImprovement.updatedBlueprint, true);
@@ -1749,7 +1787,10 @@ test("ConstructAgentService rewrites the current frontier from quiz recovery evi
     const secondImprovement = await service.syncProjectCheckProgress({
       canonicalBlueprintPath: generatedBlueprintPath,
       stepId: "step.parse-imports",
-      review: secondReview.review
+      review: secondReview.review,
+      check,
+      response: "a",
+      attemptCount: 1
     });
 
     assert.equal(secondImprovement.updatedBlueprint, true);
@@ -1772,6 +1813,62 @@ test("ConstructAgentService rewrites the current frontier from quiz recovery evi
     const activeFrontierStep =
       updatedBlueprint.frontier?.steps.find((step) => step.id === "step.parse-imports") ?? null;
     assert.match(activeFrontierStep?.doc ?? "", /recovered source-order mental model/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("ConstructAgentService can record a single quiz signal without rewriting the frontier", async () => {
+  const { root, service, generatedBlueprintPath, adaptiveFrontierPrompts } =
+    await createAdaptiveFrontierHarness({
+      onAdaptiveDecision({ schema }) {
+        return schema.parse({
+          shouldUpdate: false,
+          updateMode: "keep-path",
+          reason: "A single isolated quiz answer does not justify rewriting the visible frontier yet.",
+          detail: "Construct recorded this answer and kept the current project path unchanged for now."
+        });
+      },
+      onAdaptiveFrontier() {
+        throw new Error("Adaptive frontier rewrite should not run for this recorded-only quiz signal.");
+      }
+    });
+
+  try {
+    const check = {
+      id: "check.imports.1",
+      type: "mcq" as const,
+      prompt: "Why should the parser keep import lines in order?",
+      options: [
+        { id: "a", label: "Later stages depend on source order." },
+        { id: "b", label: "It only affects formatting." }
+      ],
+      answer: "a"
+    };
+
+    const review = await service.reviewCheck({
+      stepId: "step.parse-imports",
+      stepTitle: "Parse import lines",
+      stepSummary: "Implement the first staged parser capability.",
+      concepts: ["typescript.functions", "domain.parsers"],
+      check,
+      response: "b",
+      attemptCount: 0
+    });
+
+    const improvement = await service.syncProjectCheckProgress({
+      canonicalBlueprintPath: generatedBlueprintPath,
+      stepId: "step.parse-imports",
+      review: review.review,
+      check,
+      response: "b",
+      attemptCount: 0
+    });
+
+    assert.equal(improvement.updatedBlueprint, false);
+    assert.equal(improvement.status, "recorded");
+    assert.equal(adaptiveFrontierPrompts.length, 0);
+    assert.match(improvement.detail, /kept the current project path unchanged/i);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

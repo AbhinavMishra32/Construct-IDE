@@ -1354,7 +1354,7 @@ export default function App() {
     setProjectImprovementState({
       trigger: "check-review",
       stepTitle: currentStep.title,
-      detail: "Construct is improving the project according to your knowledge and latest check response."
+      detail: "Construct is deciding whether this answer should change the current project path or simply be recorded for later adaptation."
     });
 
     try {

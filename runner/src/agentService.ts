@@ -140,6 +140,7 @@ type AgentConfig = {
   provider: "openai";
   searchProvider: "tavily" | "exa";
   openAiModel: string;
+  openAiFastModel: string;
   openAiApiKey: string;
   openAiBaseUrl?: string;
   tavilyApiKey: string;
@@ -558,6 +559,21 @@ const SHORT_ANSWER_CHECK_REVIEW_DRAFT_SCHEMA = z.object({
   missingCriteria: z.array(z.string().min(1)).default([])
 });
 
+const ADAPTIVE_FRONTIER_UPDATE_DECISION_SCHEMA = z.object({
+  shouldUpdate: z.boolean(),
+  updateMode: z.enum(["keep-path", "refresh-current-frontier", "advance-frontier"]),
+  reason: z.string().min(1),
+  detail: z.string().min(1)
+}).superRefine((value, context) => {
+  if (!value.shouldUpdate && value.updateMode !== "keep-path") {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["updateMode"],
+      message: "updateMode must be keep-path when shouldUpdate is false."
+    });
+  }
+});
+
 type GeneratedBlueprintBundleDraft = z.infer<typeof GENERATED_BLUEPRINT_BUNDLE_DRAFT_SCHEMA>;
 type GeneratedBlueprintStepDraft = z.infer<typeof GENERATED_BLUEPRINT_STEP_DRAFT_SCHEMA>;
 type GeneratedFrontierDraft = z.infer<typeof GENERATED_FRONTIER_DRAFT_SCHEMA>;
@@ -576,6 +592,7 @@ export class ConstructAgentService {
   private readonly installerOverride: ProjectInstaller | null;
   private readonly resolvedConfigByUserId = new Map<string, AgentConfig>();
   private readonly llmByUserId = new Map<string, StructuredLanguageModel>();
+  private readonly fastLlmByUserId = new Map<string, StructuredLanguageModel>();
   private readonly searchByUserId = new Map<string, SearchProvider>();
   private projectInstaller: ProjectInstaller | null = null;
   private readonly jobs = new Map<string, AgentJobRecord>();
@@ -616,6 +633,7 @@ export class ConstructAgentService {
   clearResolvedUserConfig(userId: string): void {
     this.resolvedConfigByUserId.delete(userId);
     this.llmByUserId.delete(userId);
+    this.fastLlmByUserId.delete(userId);
     this.searchByUserId.delete(userId);
   }
 
@@ -896,6 +914,9 @@ export class ConstructAgentService {
     canonicalBlueprintPath: string;
     stepId: string;
     review: CheckReviewResponse["review"];
+    check: CheckReviewRequest["check"];
+    response: string;
+    attemptCount: number;
   }): Promise<ProjectImprovement> {
     const blueprint = await loadBlueprint(input.canonicalBlueprintPath);
     const step =
@@ -914,7 +935,10 @@ export class ConstructAgentService {
       return await this.applyCheckOutcomeToAdaptiveFrontier({
         canonicalBlueprintPath: input.canonicalBlueprintPath,
         step,
-        review: input.review
+        review: input.review,
+        check: input.check,
+        response: input.response,
+        attemptCount: input.attemptCount
       });
     } catch (error) {
       this.logger.warn("Adaptive frontier update failed after check review. Keeping the existing path.", {
@@ -1002,6 +1026,9 @@ export class ConstructAgentService {
     canonicalBlueprintPath: string;
     step: ProjectBlueprint["steps"][number];
     review: CheckReviewResponse["review"];
+    check: CheckReviewRequest["check"];
+    response: string;
+    attemptCount: number;
   }): Promise<ProjectImprovement> {
     const context = await this.loadAdaptiveFrontierMutationContext(input.canonicalBlueprintPath);
     if (!context?.blueprint.frontier || !context.blueprint.spine) {
@@ -1014,22 +1041,74 @@ export class ConstructAgentService {
       });
     }
 
+    const intervention =
+      input.review.status === "complete"
+        ? {
+            kind: "continue-to-code",
+            summary: "The current step is ready to continue in code.",
+            reason: "The latest check shows the learner can carry the concept back into the implementation."
+          } as const
+        : {
+            kind: "targeted-check",
+            summary: "Construct is holding on the current concept before moving further.",
+            reason: "The latest check response still missed a concept this implementation depends on."
+          } as const;
+
+    const decision = await this.decideAdaptiveFrontierUpdate({
+      context,
+      step: input.step,
+      trigger: "check-review",
+      latestSignal: input.review.message,
+      intervention,
+      preferredUpdateMode: "refresh-current-frontier",
+      latestInteraction: {
+        kind: "check-review",
+        status: input.review.status,
+        attemptCount: input.attemptCount,
+        response: input.response,
+        check: {
+          id: input.check.id,
+          type: input.check.type,
+          prompt: input.check.prompt,
+          answer:
+            input.check.type === "mcq"
+              ? input.check.answer
+              : input.check.rubric,
+          options:
+            input.check.type === "mcq"
+              ? input.check.options.map((option) => ({
+                  id: option.id,
+                  label: option.label
+                }))
+              : []
+        }
+      }
+    });
+
+    if (!decision.shouldUpdate) {
+      return this.createProjectImprovementResult({
+        trigger: "check-review",
+        status: "recorded",
+        title:
+          input.review.status === "complete"
+            ? `Recorded the recovered check for ${input.step.title}`
+            : `Recorded the latest check signal for ${input.step.title}`,
+        detail: decision.detail,
+        activeStepId: input.step.id,
+        evidenceCount: decision.evidenceCount
+      });
+    }
+
     return this.regenerateCurrentAdaptiveFrontier({
       context,
       step: input.step,
       trigger: "check-review",
-      reason:
-        input.review.status === "complete"
-          ? `Refresh the current build path after the learner recovered ${input.step.title} in the latest comprehension check.`
-          : `Refresh the current build path after the learner struggled with ${input.step.title} in the latest comprehension check.`,
+      reason: decision.reason,
       title:
         input.review.status === "complete"
           ? `Updated ${input.step.title} around your recovered understanding`
           : `Updated ${input.step.title} around your latest check response`,
-      detail:
-        input.review.status === "complete"
-          ? "Construct rewrote the current project slice using the latest quiz evidence, including the recovery from earlier misses."
-          : "Construct rewrote the current project slice using the latest quiz evidence so the next steps better match what still needs reinforcement.",
+      detail: decision.detail,
       latestSignal: input.review.message,
       intervention:
         input.review.status === "complete"
@@ -1042,7 +1121,8 @@ export class ConstructAgentService {
               kind: "deepen-explanation",
               summary: "Construct refreshed the current capability around the learner's latest blocker.",
               reason: "The latest check shows the learner still needs more grounded support before the current path should feel fixed."
-            }
+            },
+      evidenceCountOverride: decision.evidenceCount
     });
   }
 
@@ -1090,6 +1170,32 @@ export class ConstructAgentService {
     } satisfies NonNullable<ProjectBlueprint["frontier"]>["diagnostics"][number];
 
     if (input.markStepCompleted && input.lastAttemptStatus === "passed") {
+      const decision = await this.decideAdaptiveFrontierUpdate({
+        context,
+        step: input.step,
+        trigger: "task-submit",
+        latestSignal: taskDiagnostic.evidence,
+        intervention: taskOutcome.intervention,
+        preferredUpdateMode: "advance-frontier",
+        latestInteraction: {
+          kind: "task-submit",
+          status: input.lastAttemptStatus,
+          markStepCompleted: input.markStepCompleted,
+          telemetry: input.telemetry
+        }
+      });
+
+      if (!decision.shouldUpdate) {
+        return this.createProjectImprovementResult({
+          trigger: "task-submit",
+          status: "recorded",
+          title: `Recorded the passing submission for ${input.step.title}`,
+          detail: decision.detail,
+          activeStepId: input.step.id,
+          evidenceCount: decision.evidenceCount
+        });
+      }
+
       const remainingFrontierSteps = context.blueprint.frontier.steps.filter(
         (step) => step.id !== input.step.id
       );
@@ -1106,7 +1212,7 @@ export class ConstructAgentService {
           ? await this.generateAdaptiveFrontierDraft({
               context,
               frontierPlanSteps: nextPlanSteps,
-              reason: `Advance the build path after ${input.step.title} passed.`,
+              reason: decision.reason,
               evidenceContext: {
                 trigger: "task-submit",
                 step: input.step,
@@ -1227,11 +1333,14 @@ export class ConstructAgentService {
             : "Completed the adaptive project path",
         detail:
           nextFrontierSteps.length > 0
-            ? `Construct advanced the blueprint using your latest implementation evidence and prepared ${nextFrontierSteps[0]?.title ?? "the next capability"}.`
+            ? decision.detail
             : "Construct folded the latest evidence into the blueprint and reached the end of the active frontier.",
         updatedBlueprint: true,
         activeStepId: nextBlueprint.frontier?.activeStepId ?? null,
-        evidenceCount: generatedFrontierResult?.evidenceCount ?? 0
+        evidenceCount: Math.max(
+          decision.evidenceCount,
+          generatedFrontierResult?.evidenceCount ?? 0
+        )
       });
     }
 
@@ -1339,6 +1448,7 @@ export class ConstructAgentService {
     latestSignal: string;
     intervention: Exclude<NonNullable<ProjectBlueprint["frontier"]>["intervention"], null>;
     diagnostic?: NonNullable<ProjectBlueprint["frontier"]>["diagnostics"][number];
+    evidenceCountOverride?: number;
   }): Promise<ProjectImprovement> {
     const frontier = input.context.blueprint.frontier;
     const spine = input.context.blueprint.spine;
@@ -1506,8 +1616,141 @@ export class ConstructAgentService {
       detail: input.detail,
       updatedBlueprint: true,
       activeStepId: nextBlueprint.frontier?.activeStepId ?? null,
-      evidenceCount: generatedFrontierResult.evidenceCount
+      evidenceCount: input.evidenceCountOverride ?? generatedFrontierResult.evidenceCount
     });
+  }
+
+  private async decideAdaptiveFrontierUpdate(input: {
+    context: {
+      sessionId: string;
+      record: PersistedGeneratedBlueprintRecord;
+      build: BlueprintBuild | null;
+      plan: GeneratedProjectPlan;
+      bundle: GeneratedBlueprintBundleDraft;
+      blueprint: ProjectBlueprint;
+      canonicalBlueprintPath: string;
+      learnerBlueprintPath: string;
+      learnerWorkspaceRoot: string;
+      projectRoot: string;
+    };
+    step: ProjectBlueprint["steps"][number];
+    trigger: ProjectImprovement["trigger"];
+    latestSignal: string;
+    intervention: Exclude<NonNullable<ProjectBlueprint["frontier"]>["intervention"], null>;
+    preferredUpdateMode: "refresh-current-frontier" | "advance-frontier";
+    latestInteraction:
+      | {
+          kind: "check-review";
+          status: CheckReviewResponse["review"]["status"];
+          attemptCount: number;
+          response: string;
+          check: {
+            id: string;
+            type: ComprehensionCheck["type"];
+            prompt: string;
+            answer: string | string[];
+            options: Array<{ id: string; label: string }>;
+          };
+        }
+      | {
+          kind: "task-submit";
+          status: "failed" | "passed" | "needs-review";
+          markStepCompleted: boolean;
+          telemetry: TaskTelemetry | null;
+        };
+  }): Promise<{
+    shouldUpdate: boolean;
+    updateMode: "keep-path" | "refresh-current-frontier" | "advance-frontier";
+    reason: string;
+    detail: string;
+    evidenceCount: number;
+  }> {
+    const knowledgeBase = await this.readKnowledgeBase();
+    const recentCapabilityEvidence = this.buildAdaptiveFrontierEvidenceBundle({
+      knowledgeBase,
+      blueprint: input.context.blueprint,
+      step: input.step,
+      trigger: input.trigger,
+      latestSignal: input.latestSignal,
+      diagnostics: input.context.blueprint.frontier?.diagnostics ?? []
+    });
+    const focusStepIndex = getPlanStepIndex(input.context.plan, input.step.id);
+    const upcomingPlanSteps = input.context.plan.steps
+      .filter((_, index) => index > focusStepIndex)
+      .slice(0, 4)
+      .map((step) => ({
+        id: step.id,
+        title: step.title,
+        objective: step.objective,
+        concepts: step.concepts,
+        dependsOn: step.dependsOn
+      }));
+
+    try {
+      const decision = await (await this.getFastLlm()).parse({
+        schema: ADAPTIVE_FRONTIER_UPDATE_DECISION_SCHEMA,
+        schemaName: "construct_adaptive_frontier_update_decision",
+        instructions: buildAdaptiveFrontierUpdateDecisionInstructions(),
+        prompt: JSON.stringify(
+          {
+            goal: input.context.record.goal,
+            project: {
+              name: input.context.blueprint.name,
+              description: input.context.blueprint.description,
+              language: input.context.blueprint.language
+            },
+            focusStep: {
+              id: input.step.id,
+              title: input.step.title,
+              summary: input.step.summary,
+              concepts: input.step.concepts
+            },
+            currentFrontier: input.context.blueprint.frontier
+              ? {
+                  activeStepId: input.context.blueprint.frontier.activeStepId,
+                  stepIds: input.context.blueprint.frontier.stepIds,
+                  diagnosticsCount: input.context.blueprint.frontier.diagnostics.length
+                }
+              : null,
+            upcomingPlanSteps,
+            recentCapabilityEvidence,
+            preferredUpdateMode: input.preferredUpdateMode,
+            latestInteraction: input.latestInteraction,
+            currentIntervention: input.intervention
+          },
+          null,
+          2
+        ),
+        maxOutputTokens: 400,
+        verbosity: "low"
+      });
+
+      return {
+        ...decision,
+        evidenceCount: recentCapabilityEvidence.evidenceCount
+      };
+    } catch (error) {
+      this.logger.warn("Adaptive frontier decision pass failed. Falling back to the previous rewrite behavior.", {
+        trigger: input.trigger,
+        stepId: input.step.id,
+        preferredUpdateMode: input.preferredUpdateMode,
+        error: error instanceof Error ? error.message : String(error)
+      });
+
+      return {
+        shouldUpdate: true,
+        updateMode: input.preferredUpdateMode,
+        reason:
+          input.preferredUpdateMode === "advance-frontier"
+            ? `Advance the build path after ${input.step.title} based on the latest code-task evidence.`
+            : `Refresh the current build path after ${input.step.title} based on the latest learner evidence.`,
+        detail:
+          input.preferredUpdateMode === "advance-frontier"
+            ? `Construct advanced the blueprint using your latest implementation evidence and prepared the next capability.`
+            : "Construct refreshed the current project slice using the latest learner evidence.",
+        evidenceCount: recentCapabilityEvidence.evidenceCount
+      };
+    }
   }
 
   private async generateAdaptiveFrontierDraft(input: {
@@ -2220,6 +2463,29 @@ export class ConstructAgentService {
         logger: this.logger
       });
     this.llmByUserId.set(userId, llm);
+
+    return llm;
+  }
+
+  private async getFastLlm(): Promise<StructuredLanguageModel> {
+    if (this.llmOverride) {
+      return this.llmOverride;
+    }
+
+    const userId = getCurrentUserId();
+    const existing = this.fastLlmByUserId.get(userId);
+    if (existing) {
+      return existing;
+    }
+
+    const config = await this.getAgentConfig();
+    const llm = new OpenAIStructuredLanguageModel({
+      apiKey: config.openAiApiKey,
+      baseUrl: config.openAiBaseUrl,
+      model: config.openAiFastModel,
+      logger: this.logger
+    });
+    this.fastLlmByUserId.set(userId, llm);
 
     return llm;
   }
@@ -6021,6 +6287,7 @@ function resolveAgentConfig(): AgentConfig {
     openAiApiKey,
     openAiBaseUrl: process.env.CONSTRUCT_OPENAI_BASE_URL?.trim(),
     openAiModel: process.env.CONSTRUCT_OPENAI_MODEL?.trim() || "gpt-5.4",
+    openAiFastModel: process.env.CONSTRUCT_OPENAI_FAST_MODEL?.trim() || "gpt-5-nano",
     tavilyApiKey,
     tavilySearchDepth:
       (process.env.CONSTRUCT_TAVILY_SEARCH_DEPTH?.trim() as
@@ -8051,6 +8318,20 @@ function buildBlueprintRepairInstructions(): string {
     "Every step anchor.file must exist in learnerFiles, every step anchor.marker must appear literally inside that learner file, every step test path must exist in hiddenTests, and every entrypoint must exist in supportFiles, canonicalFiles, or learnerFiles.",
     "If a previous file is already valid, preserve its intent instead of rewriting it gratuitously.",
     "Do not emit placeholder prose instead of code. Return concrete, runnable file contents and valid JSON only."
+  ].join("\n");
+}
+
+function buildAdaptiveFrontierUpdateDecisionInstructions(): string {
+  return [
+    "You are Construct's fast adaptation triage agent.",
+    "Decide whether the latest learner signal requires an immediate adaptive-frontier rewrite, or whether Construct should only record the evidence and keep the current path.",
+    "Prefer keep-path for a single isolated quiz or written-answer signal when the current frontier and upcoming steps still fit the learner.",
+    "Choose refresh-current-frontier only when the visible current step or near-term support level should change right now.",
+    "Choose advance-frontier only when a cleared code milestone should immediately unlock and reshape the next visible steps.",
+    "Use the exact learner interaction, recentCapabilityEvidence, currentFrontier, and upcomingPlanSteps together.",
+    "If the signal should mainly influence later decisions instead of the current visible path, keep the path and record the evidence now.",
+    "reason should explain the architectural teaching consequence of the decision.",
+    "detail should be a short user-facing sentence in plain language."
   ].join("\n");
 }
 

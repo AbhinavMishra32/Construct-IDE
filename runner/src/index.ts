@@ -580,7 +580,10 @@ const server = http.createServer(async (request, response) => {
         ? await getConstructAgent().syncProjectCheckProgress({
             canonicalBlueprintPath: workspaceContext.canonicalBlueprintPath,
             stepId: reviewRequest.stepId,
-            review: review.review
+            review: review.review,
+            check: reviewRequest.check,
+            response: reviewRequest.response,
+            attemptCount: reviewRequest.attemptCount
           })
         : null;
 
