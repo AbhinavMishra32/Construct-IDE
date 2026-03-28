@@ -1310,6 +1310,12 @@ textarea {
   letter-spacing: -0.05em;
 }
 
+.construct-modal-underlay-title--compact {
+  font-size: clamp(20px, 2vw, 28px);
+  line-height: 1.12;
+  letter-spacing: -0.03em;
+}
+
 .construct-planning-sidepanel {
   display: flex;
   flex-direction: column;
@@ -4898,6 +4904,12 @@ textarea {
   border: 1px solid var(--border);
   background: var(--panel-bg);
   box-shadow: 0 18px 44px color-mix(in srgb, var(--text) 12%, transparent);
+}
+
+.construct-planning-question-modal--busy {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .construct-planning-question-header h2 {

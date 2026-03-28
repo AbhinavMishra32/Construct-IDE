@@ -4231,50 +4231,87 @@ function PlanningOverlay({
         ) : null}
 
         {isQuestionPhase ? (
-          <div
-            className={`construct-planning-start ${
-              planningBusy ? "" : "construct-planning-start--question"
-            }`}
-          >
-            <section className="construct-info-panel">
-              <span className="construct-panel-kicker">Project brief</span>
-              <h2 className="construct-modal-underlay-title">{planningGoal.trim()}</h2>
-              <p>
-                Construct has finished the first pass and is now tailoring the project
-                path, step depth, and hidden tests before it materializes the real
-                workspace.
-              </p>
-              <div className="construct-tag-list">
-                <TagChip>
-                  {formatDetectedLabel(planningSession.detectedDomain)}
-                </TagChip>
-                <TagChip>
-                  {formatDetectedLabel(planningSession.detectedLanguage)}
-                </TagChip>
-              </div>
-              {planningBusy ? (
-                <p className="construct-muted-copy">
-                  The Architect is generating the project spine, frontier, codebase, and
-                  hidden tests now. This screen stays visible so you can follow the live
-                  activity without the UI looking paused.
-                </p>
-              ) : null}
-            </section>
-
-            <aside className="construct-planning-sidepanel">
-              {planningEvents.length > 0 ? (
-                <section className="construct-planning-event-log">
-                  <div className="construct-brief-section-header">
-                    <div>
-                      <span className="construct-brief-kicker">Agent Activity</span>
-                      <h2>What the Architect has already done.</h2>
-                    </div>
+          planningBusy ? (
+            <section
+              className="construct-planning-question-shell"
+              aria-label="Generating project"
+            >
+              <div className="construct-planning-question-modal construct-planning-question-modal--busy w-[min(760px,calc(100vw-32px))] max-w-none gap-0 border border-border bg-background p-0 text-foreground shadow-2xl ring-1 ring-foreground/10">
+                <div className="construct-planning-question-header">
+                  <div>
+                    <span className="construct-panel-kicker">Architect</span>
+                    <h2>Generating your project.</h2>
+                    <p>
+                      Construct has finished the tailoring pass and is now materializing
+                      the project spine, first build slice, codebase, and hidden tests.
+                    </p>
                   </div>
-                  <ArchitectTaskBoard events={planningEvents} />
+                  <div className="construct-tag-list">
+                    <TagChip>{`${answeredQuestionCount}/${questionCount} tailored`}</TagChip>
+                    <TagChip>{formatDetectedLabel(planningSession.detectedDomain)}</TagChip>
+                    <TagChip>{formatDetectedLabel(planningSession.detectedLanguage)}</TagChip>
+                  </div>
+                </div>
+
+                <section className="construct-info-panel">
+                  <span className="construct-panel-kicker">Project brief</span>
+                  <h2 className="construct-modal-underlay-title construct-modal-underlay-title--compact">
+                    {planningGoal.trim()}
+                  </h2>
+                  <p>
+                    The Architect is generating the project path and workspace now. This
+                    stays small and centered while you watch the live activity.
+                  </p>
                 </section>
-              ) : null}
-            </aside>
-          </div>
+
+                {planningEvents.length > 0 ? (
+                  <section className="construct-planning-event-log construct-planning-event-log--minimal">
+                    <div className="construct-brief-section-header">
+                      <div>
+                        <span className="construct-brief-kicker">Agent Activity</span>
+                        <h2>What the Architect is doing right now.</h2>
+                      </div>
+                    </div>
+                    <ArchitectTaskBoard events={planningEvents} />
+                  </section>
+                ) : null}
+              </div>
+            </section>
+          ) : (
+            <div className="construct-planning-start construct-planning-start--question">
+              <section className="construct-info-panel">
+                <span className="construct-panel-kicker">Project brief</span>
+                <h2 className="construct-modal-underlay-title">{planningGoal.trim()}</h2>
+                <p>
+                  Construct has finished the first pass and is now tailoring the project
+                  path, step depth, and hidden tests before it materializes the real
+                  workspace.
+                </p>
+                <div className="construct-tag-list">
+                  <TagChip>
+                    {formatDetectedLabel(planningSession.detectedDomain)}
+                  </TagChip>
+                  <TagChip>
+                    {formatDetectedLabel(planningSession.detectedLanguage)}
+                  </TagChip>
+                </div>
+              </section>
+
+              <aside className="construct-planning-sidepanel">
+                {planningEvents.length > 0 ? (
+                  <section className="construct-planning-event-log">
+                    <div className="construct-brief-section-header">
+                      <div>
+                        <span className="construct-brief-kicker">Agent Activity</span>
+                        <h2>What the Architect has already done.</h2>
+                      </div>
+                    </div>
+                    <ArchitectTaskBoard events={planningEvents} />
+                  </section>
+                ) : null}
+              </aside>
+            </div>
+          )
         ) : null}
 
         {planningPlan ? (
