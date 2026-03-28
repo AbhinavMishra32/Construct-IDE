@@ -300,7 +300,7 @@ const Tree = forwardRef<HTMLDivElement, TreeViewProps>(
           direction,
         }}
       >
-        <div className={cn("size-full", className)}>
+        <div className={cn("size-full min-h-0", className)}>
           <ScrollArea
             ref={ref}
             className="construct-file-tree-scroll relative h-full px-2"
@@ -387,7 +387,7 @@ const Folder = forwardRef<
         ref={ref}
         {...props}
         value={value}
-        className="relative h-full overflow-hidden"
+        className="relative overflow-hidden"
       >
         <AccordionPrimitive.Trigger
           className={cn(
@@ -400,7 +400,8 @@ const Folder = forwardRef<
             }
           )}
           disabled={!isSelectable}
-          onClick={() => {
+          onClick={(event) => {
+            event.preventDefault()
             selectItem(value)
             handleExpand(value)
           }}
@@ -410,7 +411,7 @@ const Folder = forwardRef<
             : (closeIcon ?? icon ?? <FolderIcon className="size-4" />)}
           <span className="construct-file-tree-label">{element}</span>
         </AccordionPrimitive.Trigger>
-        <AccordionPrimitive.Content className="construct-file-tree-content data-[state=closed]:animate-accordion-up data-[state=open]:animate-accordion-down relative h-full overflow-hidden text-sm">
+        <AccordionPrimitive.Content className="construct-file-tree-content data-[state=closed]:animate-accordion-up data-[state=open]:animate-accordion-down relative overflow-hidden text-sm">
           {element && indicator && <TreeIndicator aria-hidden="true" />}
           <AccordionPrimitive.Root
             dir={direction}
