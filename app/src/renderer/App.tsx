@@ -4092,6 +4092,7 @@ function PlanningOverlay({
   canResumePlanningGeneration: boolean;
 }) {
   const isQuestionPhase = planningSession && !planningPlan;
+  const isStartPhase = !planningSession;
   const answeredQuestionCount = planningSession
     ? planningSession.questions.filter((question) =>
         hasPlanningAnswer(planningAnswers[question.id])
@@ -4123,26 +4124,39 @@ function PlanningOverlay({
         aria-label="Close project creation"
         onClick={onClose}
       />
-      <section className="construct-planning-panel max-w-none gap-0 border border-border bg-background p-0 text-foreground shadow-2xl ring-1 ring-foreground/10 sm:max-w-[calc(100vw-24px)]">
+      <section
+        className={cn(
+          "construct-planning-panel max-w-none gap-0 border border-border bg-background p-0 text-foreground shadow-2xl ring-1 ring-foreground/10 sm:max-w-[calc(100vw-24px)]",
+          isStartPhase ? "construct-planning-panel--compact" : ""
+        )}
+      >
         <div className="sr-only" aria-hidden="false">
           <h1>Create a new project</h1>
           <p>Work with the Architect to tailor and generate a real project workspace.</p>
         </div>
-        <header className="construct-planning-header">
+        <header
+          className={cn(
+            "construct-planning-header",
+            isStartPhase ? "construct-planning-header--compact" : ""
+          )}
+        >
           <div className="construct-planning-header-copy">
             <span className="construct-brief-kicker">Architect</span>
             <h1>Create a new project.</h1>
             <p>
-              Describe the project once, then Construct will build the project spine,
-              shape the first frontier, and prepare the hidden validations around the learner.
+              {isStartPhase
+                ? "Describe the project once. Construct will generate the project plan, first build step, and hidden validations around that goal."
+                : "Describe the project once, then Construct will build the project spine, shape the first frontier, and prepare the hidden validations around the learner."}
             </p>
           </div>
           <div className="construct-planning-header-actions">
-            <ToolbarPill>
-              {planningSession
-                ? `${answeredQuestionCount}/${planningSession.questions.length} tailored`
-                : "new project"}
-            </ToolbarPill>
+            {!isStartPhase ? (
+              <ToolbarPill>
+                {planningSession
+                  ? `${answeredQuestionCount}/${planningSession.questions.length} tailored`
+                  : "new project"}
+              </ToolbarPill>
+            ) : null}
             <SecondaryButton type="button" onClick={onClose}>
               Close
             </SecondaryButton>
@@ -4150,21 +4164,14 @@ function PlanningOverlay({
         </header>
 
         {!planningSession ? (
-          <div className="construct-planning-start">
-            <section className="construct-planning-composer">
-              <span className="construct-panel-kicker">Project goal</span>
-              <h2>Describe the project.</h2>
-              <p>
-                Tell Construct what you want to build. The Architect will shape the
-                next-step context, implementation order, and hidden validation around this
-                goal.
-              </p>
+          <div className="construct-planning-start construct-planning-start--compact">
+            <section className="construct-planning-composer construct-planning-composer--compact">
               <FieldGroup>
                 <Field>
                   <FieldLabel htmlFor="planning-goal">Project brief</FieldLabel>
                   <FieldDescription>
-                    Capture the app, domain, and the concepts you want Construct to teach
-                    through the implementation itself.
+                    Keep it short and concrete. Include what you want to build and any
+                    important constraints.
                   </FieldDescription>
                   <InputGroup className="construct-check-textarea construct-planning-textarea">
                     <InputGroupAddon align="block-start">
@@ -4200,38 +4207,26 @@ function PlanningOverlay({
                   )}
                 </PrimaryButton>
               </div>
+              <div className="construct-tag-list construct-planning-brief-strip">
+                <TagChip>project spine</TagChip>
+                <TagChip>adaptive frontier</TagChip>
+                <TagChip>hidden tests</TagChip>
+                <TagChip>real code tasks</TagChip>
+              </div>
+              {planningError ? <InlineError>{planningError}</InlineError> : null}
             </section>
 
-            <aside className="construct-planning-sidepanel">
-              <section className="construct-info-panel">
-                <span className="construct-panel-kicker">What the Architect will produce</span>
-                <div className="construct-tag-list">
-                  <TagChip>project path</TagChip>
-                  <TagChip>project spine</TagChip>
-                  <TagChip>adaptive frontier</TagChip>
-                  <TagChip>concept checks</TagChip>
-                  <TagChip>real code tasks</TagChip>
-                  <TagChip>hidden tests</TagChip>
-                </div>
-                <p>
-                  Construct creates the project spine, prepares the first visible slice,
-                  wires hidden tests, and then hands the learner into the workspace at the
-                  right step.
-                </p>
-              </section>
-
-              {planningEvents.length > 0 ? (
-                <section className="construct-planning-event-log">
-                  <div className="construct-brief-section-header">
-                    <div>
-                      <span className="construct-brief-kicker">Agent Activity</span>
-                      <h2>What the Architect is doing right now.</h2>
-                    </div>
+            {planningEvents.length > 0 ? (
+              <section className="construct-planning-event-log construct-planning-event-log--minimal">
+                <div className="construct-brief-section-header">
+                  <div>
+                    <span className="construct-brief-kicker">Agent Activity</span>
+                    <h2>What the Architect is doing right now.</h2>
                   </div>
-                  <ArchitectTaskBoard events={planningEvents} />
-                </section>
-              ) : null}
-            </aside>
+                </div>
+                <ArchitectTaskBoard events={planningEvents} />
+              </section>
+            ) : null}
           </div>
         ) : null}
 
@@ -4508,7 +4503,7 @@ function PlanningOverlay({
           </section>
         ) : null}
 
-        {planningError ? <InlineError>{planningError}</InlineError> : null}
+        {planningError && !isStartPhase ? <InlineError>{planningError}</InlineError> : null}
 
         <footer className="construct-planning-footer">
           {planningPlan ? (
