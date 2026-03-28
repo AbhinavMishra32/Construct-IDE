@@ -1448,6 +1448,117 @@ export default function App() {
     }
   };
 
+  const handleContinueToWorkspace = async () => {
+    setPlanningBusy(true);
+    setPlanningError("");
+
+    try {
+      const dashboardState = await refreshDashboardState();
+      const fallbackProject =
+        (dashboardState.activeProjectId
+          ? dashboardState.projects.find((project) => project.id === dashboardState.activeProjectId)
+          : null)
+        ?? (planningSession
+          ? dashboardState.projects.find((project) => project.id === planningSession.sessionId)
+          : null)
+        ?? dashboardState.projects[0]
+        ?? null;
+
+      if (fallbackProject && dashboardState.activeProjectId !== fallbackProject.id) {
+        await selectProject(fallbackProject.id);
+      }
+
+      const [blueprintEnvelope, filesEnvelope, learner] = await Promise.all([
+        fetchBlueprint(),
+        fetchWorkspaceFiles(),
+        fetchLearnerModel()
+      ]);
+
+      if (!blueprintEnvelope.blueprint) {
+        throw new Error("No generated workspace is ready yet.");
+      }
+
+      const nextRuntimeSteps = getRuntimeSteps(blueprintEnvelope.blueprint);
+      const targetStep =
+        (fallbackProject?.currentStepId
+          ? nextRuntimeSteps.find((step) => step.id === fallbackProject.currentStepId)
+          : null)
+        ?? (blueprintEnvelope.blueprint.frontier?.activeStepId
+          ? nextRuntimeSteps.find(
+              (step) => step.id === blueprintEnvelope.blueprint?.frontier?.activeStepId
+            )
+          : null)
+        ?? nextRuntimeSteps[0]
+        ?? null;
+
+      setBlueprint(blueprintEnvelope.blueprint);
+      setBlueprintPath(blueprintEnvelope.blueprintPath);
+      setCanonicalBlueprintPath(blueprintEnvelope.canonicalBlueprintPath ?? "");
+      setWorkspaceFiles(filesEnvelope.files);
+      setLearnerModel(learner);
+      setGuideMinimized(false);
+      setGuideVisible(false);
+      setRuntimeGuide(null);
+      setRuntimeGuideEvents([]);
+      setRuntimeGuideError("");
+      setDeepDiveError("");
+      setTaskError("");
+      resetTaskTelemetry();
+
+      if (targetStep) {
+        await openToAnchor(targetStep, {
+          setActiveFilePath,
+          setEditorValue,
+          setSavedValue,
+          setActiveStepId,
+          setAnchorLocation,
+          setLoadError,
+          setStatusMessage,
+          activeRequestIdRef
+        });
+
+        setSurfaceMode("focus");
+
+        try {
+          const started = await startBlueprintTask(blueprintEnvelope.blueprintPath, targetStep.id);
+          setTaskSession(started.session);
+          setTaskProgress(started.progress);
+          setLearnerModel(started.learnerModel);
+          setTaskResult(started.progress.latestAttempt?.result ?? null);
+          setStatusMessage(
+            `Opened ${blueprintEnvelope.blueprint.name} in the workspace at ${targetStep.title}.`
+          );
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : `Failed to start ${targetStep.id}.`;
+          setTaskError(message);
+          setStatusMessage(message);
+        }
+      } else {
+        setActiveStepId("");
+        setActiveFilePath("");
+        setEditorValue("");
+        setSavedValue("");
+        setAnchorLocation(null);
+        setTaskProgress(null);
+        setTaskSession(null);
+        setTaskResult(null);
+        setSurfaceMode("brief");
+        setStatusMessage(`Opened ${blueprintEnvelope.blueprint.name} in the workspace.`);
+      }
+
+      setDashboardOpen(false);
+      setPlanningOverlayOpen(false);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to continue to the workspace.";
+      setPlanningError(message);
+      setStatusMessage(message);
+    } finally {
+      setPlanningBusy(false);
+    }
+  };
+
   const toggleTheme = () => {
     setTheme((current) => (current === "light" ? "dark" : "light"));
   };
@@ -1933,6 +2044,9 @@ export default function App() {
             planningSession={planningSession}
             onClose={() => {
               setPlanningOverlayOpen(false);
+            }}
+            onContinueToWorkspace={() => {
+              void handleContinueToWorkspace();
             }}
             onGoalChange={setPlanningGoal}
             onOptionAnswerChange={(questionId, optionId) => {
@@ -3880,6 +3994,7 @@ function PlanningOverlay({
   planningAnswers,
   planningSession,
   onClose,
+  onContinueToWorkspace,
   onGoalChange,
   onOptionAnswerChange,
   onCustomAnswerChange,
@@ -3896,6 +4011,7 @@ function PlanningOverlay({
   planningAnswers: Record<string, PlanningAnswerDraft>;
   planningSession: PlanningSession | null;
   onClose: () => void;
+  onContinueToWorkspace: () => void;
   onGoalChange: (value: string) => void;
   onOptionAnswerChange: (questionId: string, optionId: string) => void;
   onCustomAnswerChange: (questionId: string, customResponse: string) => void;
@@ -4337,8 +4453,15 @@ function PlanningOverlay({
                 )}
               </PrimaryButton>
             ) : (
-              <PrimaryButton type="button" onClick={onClose}>
-                Continue to workspace
+              <PrimaryButton type="button" onClick={onContinueToWorkspace} disabled={planningBusy}>
+                {planningBusy ? (
+                  <>
+                    <Spinner data-icon="inline-start" />
+                    Opening workspace...
+                  </>
+                ) : (
+                  "Continue to workspace"
+                )}
               </PrimaryButton>
             )
           ) : null}
