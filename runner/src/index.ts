@@ -543,7 +543,8 @@ const server = http.createServer(async (request, response) => {
         stepId: submitRequest.stepId,
         markStepCompleted: taskSubmission.attempt.status === "passed",
         lastAttemptStatus: taskSubmission.attempt.status,
-        telemetry: taskSubmission.attempt.telemetry
+        telemetry: taskSubmission.attempt.telemetry,
+        autoAdvanceProject: false
       });
       const frontierUpdated = projectImprovement.updatedBlueprint;
 

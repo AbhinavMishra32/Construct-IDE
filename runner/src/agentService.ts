@@ -680,6 +680,7 @@ export class ConstructAgentService {
     markStepCompleted?: boolean;
     lastAttemptStatus?: "failed" | "passed" | "needs-review" | null;
     telemetry?: TaskTelemetry | null;
+    autoAdvanceProject?: boolean;
   }): Promise<ProjectImprovement> {
     const blueprint = await loadBlueprint(input.canonicalBlueprintPath);
     const runtimeSteps = getBlueprintRuntimeSteps(blueprint);
@@ -742,6 +743,33 @@ export class ConstructAgentService {
             input.lastAttemptStatus === "needs-review"
               ? "Construct stored this guarded submission and will use it, together with the earlier failed attempts on this step, once you fully clear the code task."
               : "Construct stored this failed submission and its errors. Once you fully clear the code task, Construct will update the project using the whole submission trail.",
+          activeStepId: step.id
+        });
+      }
+
+      if (input.lastAttemptStatus === "passed" && input.autoAdvanceProject === false) {
+        const taskOutcome = this.buildTaskOutcomeDiagnostic({
+          step,
+          status: input.lastAttemptStatus,
+          telemetry: input.telemetry ?? null
+        });
+
+        await this.recordAdaptiveFrontierDiagnostic({
+          canonicalBlueprintPath: input.canonicalBlueprintPath,
+          stepId: step.id,
+          kind: taskOutcome.diagnostic.kind,
+          summary: taskOutcome.diagnostic.summary,
+          evidence: taskOutcome.diagnostic.evidence,
+          conceptIds: step.concepts,
+          intervention: taskOutcome.intervention
+        });
+
+        return this.createProjectImprovementResult({
+          trigger: "task-submit",
+          status: "recorded",
+          title: `Recorded the passing submission for ${step.title}`,
+          detail:
+            "Construct saved this passing submission and the full attempt trail for this step. Project updates stay manual until you explicitly request one.",
           activeStepId: step.id
         });
       }

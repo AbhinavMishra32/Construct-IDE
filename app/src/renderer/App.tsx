@@ -1425,37 +1425,17 @@ export default function App() {
       setRevealedHintLevel(0);
 
       if (submission.attempt.status !== "passed") {
-        void loadRuntimeGuide(submission.attempt.result);
         setStatusMessage(
           submission.attempt.status === "needs-review" && submission.session.rewriteGate
             ? `Tests passed, but completion is blocked. Retype at least ${submission.session.rewriteGate.requiredTypedChars} characters without large paste and resubmit.`
             : `Targeted tests failed for ${currentStep.title} on attempt ${submission.attempt.attempt}.`
         );
       } else {
-        if (submission.projectImprovement?.updatedBlueprint) {
-          setProjectImprovementState({
-            trigger: "task-submit",
-            stepTitle: currentStep.title,
-            detail:
-              submission.projectImprovement.detail
-              ?? "Construct is improving the project according to your knowledge and full submission history for this step."
-          });
-        }
-        setStatusMessage(
-          submission.projectImprovement?.detail
-          ?? `Passed ${currentStep.title} on attempt ${submission.attempt.attempt}. Updating path...`
-        );
-        const refreshedBlueprint = await hydrateWorkspace(
-          submission.projectImprovement?.activeStepId ?? null
-        );
-        const nextStep = refreshedBlueprint ? getRuntimeSteps(refreshedBlueprint)[0] ?? null : null;
         setGuideVisible(false);
-        setSurfaceMode("brief");
+        setSurfaceMode("focus");
         setStatusMessage(
           submission.projectImprovement?.detail
-          ?? (nextStep && nextStep.id !== currentStep.id
-            ? `Passed ${currentStep.title}. Next capability: ${nextStep.title}.`
-            : `Passed ${currentStep.title} on attempt ${submission.attempt.attempt}.`)
+          ?? `Passed ${currentStep.title} on attempt ${submission.attempt.attempt}.`
         );
       }
     } catch (error) {

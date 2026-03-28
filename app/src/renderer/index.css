@@ -7617,3 +7617,97 @@ textarea {
     border-radius: 1.25rem;
   }
 }
+
+/* Final desktop workspace bounds */
+
+.construct-shell {
+  height: 100vh;
+}
+
+.construct-shell-main,
+.construct-shell-content,
+.construct-workbench,
+.construct-layout,
+.construct-stage,
+.construct-workspace-shell,
+.construct-editor-shell,
+.construct-editor-main,
+.construct-explorer,
+.construct-explorer-scroll,
+.construct-workspace-file-tree,
+.construct-workspace-file-tree .construct-file-tree-scroll {
+  min-height: 0;
+}
+
+.construct-shell-main {
+  height: 100vh;
+  overflow: hidden;
+}
+
+.construct-shell-content {
+  display: flex;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.construct-workbench {
+  display: flex;
+  flex: 1 1 auto;
+  height: 100%;
+  overflow: hidden;
+}
+
+.construct-layout {
+  display: grid;
+  flex: 1 1 auto;
+  height: 100%;
+  overflow: hidden;
+}
+
+.construct-explorer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.construct-explorer-scroll {
+  display: flex;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.construct-workspace-file-tree {
+  flex: 1 1 auto;
+  height: 100%;
+}
+
+.construct-workspace-file-tree .construct-file-tree-scroll {
+  height: 100%;
+}
+
+.construct-stage,
+.construct-workspace-shell {
+  height: 100%;
+  overflow: hidden;
+}
+
+.construct-workspace-shell {
+  display: flex;
+}
+
+.construct-editor-shell {
+  flex: 1 1 auto;
+  height: 100%;
+  overflow: hidden;
+}
+
+.construct-editor-main {
+  flex: 1 1 auto;
+}
+
+.construct-floating-card {
+  top: 88px;
+  bottom: 12px;
+  max-height: none;
+}
