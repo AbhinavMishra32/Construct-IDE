@@ -714,6 +714,38 @@ export class ConstructAgentService {
     }
 
     try {
+      if (input.lastAttemptStatus && input.lastAttemptStatus !== "passed") {
+        const taskOutcome = this.buildTaskOutcomeDiagnostic({
+          step,
+          status: input.lastAttemptStatus,
+          telemetry: input.telemetry ?? null
+        });
+
+        await this.recordAdaptiveFrontierDiagnostic({
+          canonicalBlueprintPath: input.canonicalBlueprintPath,
+          stepId: step.id,
+          kind: taskOutcome.diagnostic.kind,
+          summary: taskOutcome.diagnostic.summary,
+          evidence: taskOutcome.diagnostic.evidence,
+          conceptIds: step.concepts,
+          intervention: taskOutcome.intervention
+        });
+
+        return this.createProjectImprovementResult({
+          trigger: "task-submit",
+          status: "recorded",
+          title:
+            input.lastAttemptStatus === "needs-review"
+              ? `Recorded the latest guarded submit for ${step.title}`
+              : `Recorded the latest failing submit for ${step.title}`,
+          detail:
+            input.lastAttemptStatus === "needs-review"
+              ? "Construct stored this guarded submission and will use it, together with the earlier failed attempts on this step, once you fully clear the code task."
+              : "Construct stored this failed submission and its errors. Once you fully clear the code task, Construct will update the project using the whole submission trail.",
+          activeStepId: step.id
+        });
+      }
+
       return await this.applyTaskOutcomeToAdaptiveFrontier({
         canonicalBlueprintPath: input.canonicalBlueprintPath,
         step,
@@ -964,28 +996,16 @@ export class ConstructAgentService {
     }
 
     const diagnosticTimestamp = this.now().toISOString();
+    const taskOutcome = this.buildTaskOutcomeDiagnostic({
+      step: input.step,
+      status: input.lastAttemptStatus,
+      telemetry: input.telemetry
+    });
     const taskDiagnostic = {
       id: `diagnostic.${slugify(input.step.id)}.${Date.parse(diagnosticTimestamp)}`,
-      kind:
-        input.lastAttemptStatus === "passed"
-          ? "submission-result"
-          : input.lastAttemptStatus === "needs-review"
-            ? "rewrite-gate"
-            : input.telemetry && input.telemetry.hintsUsed > 0
-              ? "hint-usage"
-              : "repeat-failure",
-      summary:
-        input.lastAttemptStatus === "passed"
-          ? `Completed ${input.step.title}.`
-          : input.lastAttemptStatus === "needs-review"
-            ? `Completion is paused for ${input.step.title}.`
-            : `Construct detected a blocker in ${input.step.title}.`,
-      evidence:
-        input.lastAttemptStatus === "passed"
-          ? `Targeted validation passed with hints=${input.telemetry?.hintsUsed ?? 0} and pasteRatio=${(input.telemetry?.pasteRatio ?? 0).toFixed(2)}.`
-          : input.lastAttemptStatus === "needs-review"
-            ? "Tests passed, but the rewrite gate or validation guard still needs learner-owned typing before Construct advances."
-            : `Targeted validation failed with hints=${input.telemetry?.hintsUsed ?? 0} and pasteRatio=${(input.telemetry?.pasteRatio ?? 0).toFixed(2)}.`,
+      kind: taskOutcome.diagnostic.kind,
+      summary: taskOutcome.diagnostic.summary,
+      evidence: taskOutcome.diagnostic.evidence,
       conceptIds: input.step.concepts,
       recordedAt: diagnosticTimestamp
     } satisfies NonNullable<ProjectBlueprint["frontier"]>["diagnostics"][number];
@@ -1153,26 +1173,70 @@ export class ConstructAgentService {
           ? "Construct rewrote the current project slice using the latest rewrite-gate evidence so the next attempt better matches your current ownership of the code."
           : "Construct rewrote the current project slice using the latest failing-test evidence so the next attempt better fits the concepts that still need support.",
       latestSignal: taskDiagnostic.evidence,
-      intervention:
-        input.lastAttemptStatus === "needs-review"
-          ? {
-              kind: "deepen-explanation",
-              summary: "Construct refreshed the current capability around the rewrite gate evidence.",
-              reason: "The validation guard indicates the learner still needs a more grounded implementation pass."
-            }
-          : input.telemetry && input.telemetry.hintsUsed >= 2
-            ? {
-                kind: "diagnostic-question",
-                summary: "Construct refreshed the current capability and shifted into diagnosis mode.",
-                reason: "The learner used several hints and still hit a failing validation."
-              }
-            : {
-                kind: "targeted-check",
-                summary: "Construct refreshed the current capability around the latest failing validation.",
-                reason: "The latest task result shows the learner needs another pass before the path should advance."
-              },
+      intervention: taskOutcome.intervention,
       diagnostic: taskDiagnostic
     });
+  }
+
+  private buildTaskOutcomeDiagnostic(input: {
+    step: ProjectBlueprint["steps"][number];
+    status: "failed" | "passed" | "needs-review";
+    telemetry: TaskTelemetry | null;
+  }): {
+    diagnostic: Pick<
+      NonNullable<ProjectBlueprint["frontier"]>["diagnostics"][number],
+      "kind" | "summary" | "evidence"
+    >;
+    intervention: Exclude<NonNullable<ProjectBlueprint["frontier"]>["intervention"], null>;
+  } {
+    return {
+      diagnostic: {
+        kind:
+          input.status === "passed"
+            ? "submission-result"
+            : input.status === "needs-review"
+              ? "rewrite-gate"
+              : input.telemetry && input.telemetry.hintsUsed > 0
+                ? "hint-usage"
+                : "repeat-failure",
+        summary:
+          input.status === "passed"
+            ? `Completed ${input.step.title}.`
+            : input.status === "needs-review"
+              ? `Completion is paused for ${input.step.title}.`
+              : `Construct detected a blocker in ${input.step.title}.`,
+        evidence:
+          input.status === "passed"
+            ? `Targeted validation passed with hints=${input.telemetry?.hintsUsed ?? 0} and pasteRatio=${(input.telemetry?.pasteRatio ?? 0).toFixed(2)}.`
+            : input.status === "needs-review"
+              ? "Tests passed, but the rewrite gate or validation guard still needs learner-owned typing before Construct advances."
+              : `Targeted validation failed with hints=${input.telemetry?.hintsUsed ?? 0} and pasteRatio=${(input.telemetry?.pasteRatio ?? 0).toFixed(2)}.`
+      },
+      intervention:
+        input.status === "passed"
+          ? {
+              kind: "mutate-frontier",
+              summary: "Construct is ready to advance the build path from the learner's latest successful implementation.",
+              reason: "The learner cleared the current code task, so the adaptive frontier can now move using the full submission trail."
+            }
+          : input.status === "needs-review"
+            ? {
+                kind: "deepen-explanation",
+                summary: "Construct recorded the rewrite-gate evidence for the current capability.",
+                reason: "The validation guard indicates the learner still needs a more grounded implementation pass before the project should change."
+              }
+            : input.telemetry && input.telemetry.hintsUsed >= 2
+              ? {
+                  kind: "diagnostic-question",
+                  summary: "Construct recorded the failing validation and shifted into diagnosis mode for this step.",
+                  reason: "The learner used several hints and still hit a failing validation."
+                }
+              : {
+                  kind: "targeted-check",
+                  summary: "Construct recorded the latest failing validation on the current capability.",
+                  reason: "The latest task result shows the learner needs another pass before the path should advance."
+                }
+    };
   }
 
   private async regenerateCurrentAdaptiveFrontier(input: {

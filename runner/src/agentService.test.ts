@@ -1777,7 +1777,7 @@ test("ConstructAgentService rewrites the current frontier from quiz recovery evi
   }
 });
 
-test("ConstructAgentService rewrites the current frontier after a failed submission", async () => {
+test("ConstructAgentService records failed submission evidence without rewriting the frontier", async () => {
   const { root, service, generatedBlueprintPath, adaptiveFrontierPrompts } =
     await createAdaptiveFrontierHarness({
       onAdaptiveFrontier({ schema }) {
@@ -1860,26 +1860,140 @@ test("ConstructAgentService rewrites the current frontier after a failed submiss
       }
     });
 
-    assert.equal(improvement.updatedBlueprint, true);
-    assert.equal(improvement.status, "updated");
-    assert.equal(adaptiveFrontierPrompts.length, 1);
-
-    const prompt = JSON.parse(adaptiveFrontierPrompts[0]!);
-    assert.equal(prompt.recentCapabilityEvidence.trigger, "task-submit");
-    assert.match(prompt.recentCapabilityEvidence.latestSignal, /Targeted validation failed/);
+    assert.equal(improvement.updatedBlueprint, false);
+    assert.equal(improvement.status, "recorded");
+    assert.equal(adaptiveFrontierPrompts.length, 0);
 
     const updatedBlueprint = JSON.parse(
       await readFile(generatedBlueprintPath, "utf8")
     ) as {
-      files: Record<string, string>;
       frontier: {
-        steps: Array<{ id: string; doc: string }>;
+        diagnostics: Array<{ kind: string; evidence: string }>;
       } | null;
     };
-    assert.match(updatedBlueprint.files["src/imports.ts"] ?? "", /orderedLines/);
-    assert.match(
-      updatedBlueprint.frontier?.steps.find((step) => step.id === "step.parse-imports")?.doc ?? "",
-      /preserving source order/
+    assert.equal(
+      updatedBlueprint.frontier?.diagnostics.some((diagnostic) =>
+        diagnostic.kind === "hint-usage"
+        && /Targeted validation failed/.test(diagnostic.evidence)
+      ) ?? false,
+      true
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("ConstructAgentService rewrites the frontier on pass using earlier failed submission evidence", async () => {
+  const { root, service, generatedBlueprintPath, adaptiveFrontierPrompts } =
+    await createAdaptiveFrontierHarness({
+      onAdaptiveFrontier({ schema }) {
+        return schema.parse({
+          learnerFiles: [
+            {
+              path: "src/imports.ts",
+              content: [
+                "export function parseImports(source: string): string[] {",
+                "  // TASK:parse-imports",
+                "  const orderedLines = source.split('\\n');",
+                "  throw new Error('Implement import parsing');",
+                "}"
+              ].join("\n")
+            }
+          ],
+          hiddenTests: [
+            {
+              path: "tests/imports.test.ts",
+              content: [
+                "import { parseImports } from '../src/imports';",
+                "",
+                "test('parseImports keeps import lines in order', () => {",
+                "  expect(parseImports('import a\\nconst x = 1\\nimport b')).toEqual(['import a', 'import b']);",
+                "});"
+              ].join("\n")
+            }
+          ],
+          steps: [
+            {
+              id: "step.parse-imports",
+              title: "Parse import lines",
+              summary: "Advance the parser after the learner recovered from the earlier failing validation.",
+              doc: "Edit src/imports.ts at TASK:parse-imports and keep the next attempt grounded in the earlier failure trail.",
+              lessonSlides: [
+                markdownSlide(
+                  "## Recovery path\nThe next visible step should reflect the earlier failing validation and the final recovery."
+                )
+              ],
+              anchor: {
+                file: "src/imports.ts",
+                marker: "TASK:parse-imports",
+                startLine: null,
+                endLine: null
+              },
+              tests: ["tests/imports.test.ts"],
+              concepts: ["typescript.functions", "domain.parsers"],
+              constraints: ["Keep import lines in source order."],
+              checks: [
+                {
+                  id: "check.imports.1",
+                  type: "mcq",
+                  prompt: "Why should the parser keep import lines in order?",
+                  options: [
+                    { id: "a", label: "Later stages depend on source order.", rationale: null },
+                    { id: "b", label: "It only affects formatting.", rationale: null }
+                  ],
+                  answer: "a"
+                }
+              ],
+              estimatedMinutes: 10,
+              difficulty: "intro"
+            }
+          ]
+        });
+      }
+    });
+
+  try {
+    const firstImprovement = await service.syncProjectTaskProgress({
+      canonicalBlueprintPath: generatedBlueprintPath,
+      stepId: "step.parse-imports",
+      markStepCompleted: false,
+      lastAttemptStatus: "failed",
+      telemetry: {
+        hintsUsed: 2,
+        pasteRatio: 0.18,
+        typedChars: 42,
+        pastedChars: 9
+      }
+    });
+
+    assert.equal(firstImprovement.updatedBlueprint, false);
+    assert.equal(firstImprovement.status, "recorded");
+
+    const secondImprovement = await service.syncProjectTaskProgress({
+      canonicalBlueprintPath: generatedBlueprintPath,
+      stepId: "step.parse-imports",
+      markStepCompleted: true,
+      lastAttemptStatus: "passed",
+      telemetry: {
+        hintsUsed: 0,
+        pasteRatio: 0.02,
+        typedChars: 138,
+        pastedChars: 1
+      }
+    });
+
+    assert.equal(secondImprovement.updatedBlueprint, true);
+    assert.equal(secondImprovement.status, "updated");
+    assert.equal(adaptiveFrontierPrompts.length, 1);
+
+    const prompt = JSON.parse(adaptiveFrontierPrompts[0]!);
+    assert.equal(prompt.recentCapabilityEvidence.trigger, "task-submit");
+    assert.match(prompt.recentCapabilityEvidence.latestSignal, /Targeted validation passed/);
+    assert.equal(
+      prompt.recentCapabilityEvidence.frontierDiagnostics.some((diagnostic: { evidence: string }) =>
+        /Targeted validation failed/.test(diagnostic.evidence)
+      ),
+      true
     );
   } finally {
     await rm(root, { recursive: true, force: true });

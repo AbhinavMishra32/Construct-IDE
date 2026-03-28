@@ -1408,11 +1408,6 @@ export default function App() {
         setLearnerModel(started.learnerModel);
       }
 
-      setProjectImprovementState({
-        trigger: "task-submit",
-        stepTitle: currentStep.title,
-        detail: "Construct is improving the project according to your knowledge and latest submission evidence."
-      });
       const submission = await submitBlueprintTask({
         blueprintPath,
         stepId: currentStep.id,
@@ -1430,17 +1425,22 @@ export default function App() {
       setRevealedHintLevel(0);
 
       if (submission.attempt.status !== "passed") {
-        if (submission.projectImprovement?.updatedBlueprint) {
-          await refreshBlueprintSnapshot(submission.projectImprovement.activeStepId ?? currentStep.id);
-        }
         void loadRuntimeGuide(submission.attempt.result);
         setStatusMessage(
-          submission.projectImprovement?.detail
-            ?? (submission.attempt.status === "needs-review" && submission.session.rewriteGate
-              ? `Tests passed, but completion is blocked. Retype at least ${submission.session.rewriteGate.requiredTypedChars} characters without large paste and resubmit.`
-              : `Targeted tests failed for ${currentStep.title} on attempt ${submission.attempt.attempt}.`)
+          submission.attempt.status === "needs-review" && submission.session.rewriteGate
+            ? `Tests passed, but completion is blocked. Retype at least ${submission.session.rewriteGate.requiredTypedChars} characters without large paste and resubmit.`
+            : `Targeted tests failed for ${currentStep.title} on attempt ${submission.attempt.attempt}.`
         );
       } else {
+        if (submission.projectImprovement?.updatedBlueprint) {
+          setProjectImprovementState({
+            trigger: "task-submit",
+            stepTitle: currentStep.title,
+            detail:
+              submission.projectImprovement.detail
+              ?? "Construct is improving the project according to your knowledge and full submission history for this step."
+          });
+        }
         setStatusMessage(
           submission.projectImprovement?.detail
           ?? `Passed ${currentStep.title} on attempt ${submission.attempt.attempt}. Updating path...`
