@@ -1055,6 +1055,35 @@ export default function App() {
     return projects;
   };
 
+  const syncPlanningStateFromRunner = async (signal?: AbortSignal) => {
+    const planningState = await fetchCurrentPlanningState(signal);
+    setPlanningSession(planningState.session);
+    setPlanningPlan(planningState.plan);
+    setPlanningAnswers(toPlanningAnswerDrafts(planningState.answers));
+    return planningState;
+  };
+
+  const openResumePlanningOverlay = async () => {
+    setDashboardBusy(true);
+    setProjectsError("");
+
+    try {
+      await Promise.all([
+        refreshDashboardState(),
+        syncPlanningStateFromRunner()
+      ]);
+      setPlanningOverlayOpen(true);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to reload the saved planning session.";
+      setProjectsError(message);
+      setPlanningError(message);
+      setPlanningOverlayOpen(true);
+    } finally {
+      setDashboardBusy(false);
+    }
+  };
+
   const openProject = async (project: ProjectSummary) => {
     setDashboardBusy(true);
     setProjectsError("");
@@ -1542,9 +1571,26 @@ export default function App() {
         `Generated ${openedBlueprint.name}. Review the next build step, then move into the workspace when the implementation handoff opens.`
       );
     } catch (error) {
-      setPlanningError(
-        error instanceof Error ? error.message : "Failed to complete the planning session."
-      );
+      const message =
+        error instanceof Error ? error.message : "Failed to complete the planning session.";
+
+      try {
+        const [planningState] = await Promise.all([
+          syncPlanningStateFromRunner(),
+          refreshDashboardState()
+        ]);
+
+        if (planningState.plan) {
+          setPlanningError(
+            `${message} Your saved planning progress is still intact. Use Resume generation to continue from the failed architect step.`
+          );
+          setStatusMessage("Saved planning progress recovered. Resume generation to continue.");
+        } else {
+          setPlanningError(message);
+        }
+      } catch {
+        setPlanningError(message);
+      }
     } finally {
       setPlanningBusy(false);
     }
@@ -1795,7 +1841,7 @@ export default function App() {
                 planningSession={planningSession}
                 planningPlan={planningPlan}
                 onResumeCreation={() => {
-                  setPlanningOverlayOpen(true);
+                  void openResumePlanningOverlay();
                 }}
                 onOpenProject={(project) => {
                   void openProject(project);
