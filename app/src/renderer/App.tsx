@@ -1,56 +1,19 @@
 import Editor from "@monaco-editor/react";
-import {
-  ArrowClockwise as PhArrowClockwise,
-  ArrowSquareIn as PhArrowSquareIn,
-  ArrowsInSimple as PhArrowsInSimple,
-  ArrowsOutSimple as PhArrowsOutSimple,
-  BookOpenText as PhBookOpenText,
-  Brain as PhBrain,
-  CompassTool as PhCompassTool,
-  EyeSlash as PhEyeSlash,
-  Flask as PhFlask,
-  Lightbulb as PhLightbulb,
-  MagicWand as PhMagicWand,
-  PaperPlaneTilt as PhPaperPlaneTilt,
-  SidebarSimple as PhSidebarSimple,
-  Sparkle as PhSparkle,
-  Stack as PhStack,
-  Target as PhTarget,
-  TestTube as PhTestTube
-} from "@phosphor-icons/react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   BookOpenTextIcon,
-  BracesIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   CircleIcon,
-  CodeXmlIcon,
-  FileArchiveIcon,
-  FileCodeIcon,
-  FileCogIcon,
-  FileImageIcon,
-  FileLockIcon,
-  FileQuestionMarkIcon,
-  FileSpreadsheetIcon,
-  FileStackIcon,
-  FileTerminalIcon,
   FileTextIcon,
-  FileVideoCameraIcon,
-  FlaskConicalIcon,
   FolderOpenIcon,
   FolderTreeIcon,
-  GitBranchPlusIcon,
-  LightbulbIcon,
   ListTodoIcon,
   MoonStarIcon,
-  Package2Icon,
   PlusIcon,
   SearchIcon,
-  Settings2Icon,
   SparklesIcon,
-  SunIcon,
-  WrenchIcon
+  SunIcon
 } from "lucide-react";
 import type { editor as MonacoEditor } from "monaco-editor";
 import {
@@ -81,6 +44,7 @@ import {
   BreadcrumbSeparator
 } from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
+import { ButtonGroup } from "@/components/ui/button-group";
 import {
   Card,
   CardContent,
@@ -88,6 +52,9 @@ import {
   CardHeader,
   CardTitle
 } from "@/components/ui/card";
+import {
+  DialogHeader,
+} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -105,7 +72,6 @@ import {
   EmptyMedia,
   EmptyTitle
 } from "@/components/ui/empty";
-import { Tree, type TreeViewElement } from "@/components/ui/file-tree";
 import {
   Field,
   FieldDescription,
@@ -142,10 +108,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
-import { AccountSettingsPanel } from "./components/account-settings-panel";
-import { AuthScreen } from "./components/auth-screen";
 import { BlueprintDebugView } from "./components/blueprint-debug-view";
-import { ComingSoonLanding } from "./components/coming-soon-landing";
 import { findAnchorLocation } from "./lib/anchors";
 import {
   buildGuidancePrompts,
@@ -154,7 +117,6 @@ import {
 } from "./lib/guide";
 import {
   completePlanningSession,
-  fetchAuthSession,
   fetchBlueprint,
   fetchCurrentPlanningState,
   fetchLearnerProfile,
@@ -164,33 +126,24 @@ import {
   fetchTaskProgress,
   fetchWorkspaceFile,
   fetchWorkspaceFiles,
-  loginWithPassword,
-  logoutCurrentSession,
-  removeProviderConnection,
   requestBlueprintDeepDive,
   requestRuntimeGuide,
   reviewStepCheck,
   saveWorkspaceFile,
-  saveProviderApiKey,
   selectProject,
-  setStoredSessionToken,
-  signUpWithPassword,
   startPlanningSession,
   startBlueprintTask,
   submitBlueprintTask,
-  syncCurrentProjectStep,
-  updateAccount
+  syncCurrentProjectStep
 } from "./lib/api";
 import { buildWorkspaceTree } from "./lib/tree";
 import { monaco } from "./monaco";
 import type {
   AgentEvent,
   AnchorLocation,
-  AuthSessionView,
   BlueprintDeepDiveResponse,
   BlueprintStep,
   CheckReview,
-  ConnectedProvider,
   ComprehensionCheck,
   GeneratedProjectPlan,
   LessonSlide,
@@ -200,6 +153,7 @@ import type {
   PlanningSession,
   ProjectSummary,
   ProjectBlueprint,
+  ProjectImprovement,
   ProjectsDashboardResponse,
   RewriteGate,
   RunnerHealth,
@@ -228,9 +182,6 @@ type ThemeMode = "light" | "dark";
 type TaskRunState = "idle" | "running";
 type AppRoute =
   | {
-      kind: "landing";
-    }
-  | {
       kind: "workspace";
     }
   | {
@@ -245,28 +196,18 @@ type PlanningAnswerDraft =
   | {
       answerType: "custom";
       customResponse: string;
-    }
-  | {
-      answerType: "skipped";
     };
+type ProjectImprovementPhase = {
+  trigger: ProjectImprovement["trigger"];
+  stepTitle: string;
+  detail: string;
+};
 
 const runtimeInfo = window.construct.getRuntimeInfo();
 const SAVE_DEBOUNCE_MS = 450;
 
 function parseAppRoute(hash: string): AppRoute {
   const normalized = hash.replace(/^#/, "");
-
-  if (!normalized || normalized === "/") {
-    return {
-      kind: "workspace"
-    };
-  }
-
-  if (normalized === "/landing" || normalized === "landing") {
-    return {
-      kind: "landing"
-    };
-  }
 
   if (!normalized.startsWith("/debug/blueprints")) {
     return {
@@ -283,10 +224,6 @@ function parseAppRoute(hash: string): AppRoute {
   };
 }
 
-function formatWorkspaceRoute(): string {
-  return "#/workspace";
-}
-
 function formatBlueprintDebugRoute(buildId: string | null = null): string {
   return buildId ? `#/debug/blueprints/${encodeURIComponent(buildId)}` : "#/debug/blueprints";
 }
@@ -296,35 +233,30 @@ function hasPlanningAnswer(answer: PlanningAnswerDraft | undefined): answer is P
     return false;
   }
 
-  if (answer.answerType === "option") {
-    return Boolean(answer.optionId);
-  }
-
-  if (answer.answerType === "custom") {
-    return answer.customResponse.trim().length > 0;
-  }
-
-  return true;
+  return answer.answerType === "option"
+    ? Boolean(answer.optionId)
+    : answer.customResponse.trim().length > 0;
 }
 
 function toPlanningAnswerDrafts(
   answers: PlanningAnswer[]
 ): Record<string, PlanningAnswerDraft> {
   return answers.reduce<Record<string, PlanningAnswerDraft>>((accumulator, answer) => {
-    accumulator[answer.questionId] =
-      answer.answerType === "custom"
-        ? {
-            answerType: "custom",
-            customResponse: answer.customResponse
-          }
-        : answer.answerType === "skipped"
-          ? {
-              answerType: "skipped"
-            }
-        : {
-            answerType: "option",
-            optionId: answer.optionId
-          };
+    if (answer.answerType === "custom") {
+      accumulator[answer.questionId] = {
+        answerType: "custom",
+        customResponse: answer.customResponse
+      };
+      return accumulator;
+    }
+
+    if (answer.answerType === "option") {
+      accumulator[answer.questionId] = {
+        answerType: "option",
+        optionId: answer.optionId
+      };
+    }
+
     return accumulator;
   }, {});
 }
@@ -439,11 +371,11 @@ function ThemeDropdown({
           aria-label="Theme options"
         >
           {theme === "light" ? (
-            <SunIcon data-icon="inline-start" />
-          ) : (
             <MoonStarIcon data-icon="inline-start" />
+          ) : (
+            <SunIcon data-icon="inline-start" />
           )}
-          {theme === "light" ? "Light" : "Dark"}
+          {theme === "light" ? "Dark" : "Light"}
           <ChevronDownIcon data-icon="inline-end" />
         </Button>
       </DropdownMenuTrigger>
@@ -495,100 +427,11 @@ function DetailPopover({
   );
 }
 
-function GuideSectionLabel({
-  icon,
-  children,
-  className
-}: {
-  icon: ReactNode;
-  children: ReactNode;
-  className?: string;
-}) {
-  return (
-    <span className={cn("construct-guide-section-label", className)}>
-      <span className="construct-guide-section-label-icon">{icon}</span>
-      <span>{children}</span>
-    </span>
-  );
-}
-
-function GuideStatusPill({
-  icon,
-  className,
-  children
-}: {
-  icon: ReactNode;
-  className?: string;
-  children: ReactNode;
-}) {
-  return (
-    <ToolbarPill variant="outline" className={cn("construct-guide-status-pill", className)}>
-      <span className="construct-guide-status-pill-icon">{icon}</span>
-      <span>{children}</span>
-    </ToolbarPill>
-  );
-}
-
-function GuideActionButton({
-  icon,
-  className,
-  children,
-  active = false,
-  ...props
-}: ComponentProps<typeof Button> & {
-  icon: ReactNode;
-  active?: boolean;
-}) {
-  return (
-    <Button
-      variant="outline"
-      className={cn("construct-guide-action-button", active && "is-active", className)}
-      {...props}
-    >
-      <span className="construct-guide-action-button-icon">{icon}</span>
-      <span>{children}</span>
-    </Button>
-  );
-}
-
-function TaskOutputBlock({
-  label,
-  value,
-  tone
-}: {
-  label: string;
-  value: string;
-  tone: "expected" | "actual";
-}) {
-  return (
-    <div className={cn("construct-task-output-block", `is-${tone}`)}>
-      <span className="construct-task-output-label">{label}</span>
-      <pre className="construct-task-output-value">{value}</pre>
-    </div>
-  );
-}
-
 export default function App() {
   const [appRoute, setAppRoute] = useState<AppRoute>(() =>
     parseAppRoute(window.location.hash)
   );
   const [runnerHealth, setRunnerHealth] = useState<RunnerHealth | null>(null);
-  const [authSession, setAuthSession] = useState<AuthSessionView | null>(null);
-  const [authMode, setAuthMode] = useState<"login" | "signup">("login");
-  const [authBusy, setAuthBusy] = useState(false);
-  const [authError, setAuthError] = useState("");
-  const [loginEmail, setLoginEmail] = useState("");
-  const [loginPassword, setLoginPassword] = useState("");
-  const [signupDisplayName, setSignupDisplayName] = useState("");
-  const [signupEmail, setSignupEmail] = useState("");
-  const [signupPassword, setSignupPassword] = useState("");
-  const [accountPanelOpen, setAccountPanelOpen] = useState(false);
-  const [displayNameDraft, setDisplayNameDraft] = useState("");
-  const [profileBusy, setProfileBusy] = useState(false);
-  const [providerBusy, setProviderBusy] = useState<ConnectedProvider | null>(null);
-  const [providerDrafts, setProviderDrafts] = useState<
-    Partial<Record<ConnectedProvider, { apiKey: string; baseUrl: string }>>
-  >({});
   const [projectsDashboard, setProjectsDashboard] =
     useState<ProjectsDashboardResponse | null>(null);
   const [dashboardOpen, setDashboardOpen] = useState(true);
@@ -639,6 +482,8 @@ export default function App() {
   const [deepDiveBusy, setDeepDiveBusy] = useState(false);
   const [deepDiveError, setDeepDiveError] = useState("");
   const [revealedHintLevel, setRevealedHintLevel] = useState(0);
+  const [projectImprovementState, setProjectImprovementState] =
+    useState<ProjectImprovementPhase | null>(null);
   const editorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
   const decorationIdsRef = useRef<string[]>([]);
   const activeRequestIdRef = useRef(0);
@@ -655,10 +500,6 @@ export default function App() {
   const filteredTree = useMemo(
     () => filterTreeNodes(workspaceTree, filterQuery),
     [filterQuery, workspaceTree]
-  );
-  const workspaceTreeLookup = useMemo(
-    () => buildTreeNodeLookup(workspaceTree),
-    [workspaceTree]
   );
   const guidePrompts = useMemo(
     () => (activeStep ? buildGuidancePrompts(activeStep) : []),
@@ -733,21 +574,8 @@ export default function App() {
   const activeRewriteGate =
     activeTaskProgress?.activeSession?.rewriteGate ?? taskSession?.rewriteGate ?? null;
   const activeAttemptStatus = activeTaskProgress?.latestAttempt?.status ?? null;
-  const authReady = runnerHealth?.authReady ?? false;
-  const isAuthenticated = Boolean(authSession?.user && authSession?.session);
   const overlayVisible = surfaceMode === "brief" && Boolean(activeStep);
   const explorerIsFiltered = filterQuery.trim().length > 0;
-  const expandedWorkspaceTreeIds = useMemo(
-    () =>
-      explorerIsFiltered
-        ? collectDirectoryPaths(filteredTree)
-        : collectExpandedDirectoryIds(workspaceTree, expandedDirectories),
-    [expandedDirectories, explorerIsFiltered, filteredTree, workspaceTree]
-  );
-  const workspaceTreeElements = useMemo(
-    () => buildWorkspaceTreeElements(filteredTree),
-    [filteredTree]
-  );
   const editorTheme = theme === "dark" ? "vs-dark" : "vs";
   const saveStateLabel =
     saveState === "saving"
@@ -787,28 +615,24 @@ export default function App() {
 
     const loadDashboard = async () => {
       try {
-        const [health, session] = await Promise.all([
+        const [health, projects, profile, planningState] = await Promise.all([
           fetchRunnerHealth(controller.signal),
-          fetchAuthSession(controller.signal)
+          fetchProjectsDashboard(controller.signal),
+          fetchLearnerProfile(controller.signal),
+          fetchCurrentPlanningState(controller.signal)
         ]);
 
-        if (controller.signal.aborted) {
-          return;
-        }
-
         setRunnerHealth(health);
-        setAuthSession(session);
-        setAuthError("");
+        setProjectsDashboard(projects);
+        setLearnerProfile(profile);
+        setPlanningSession(planningState.session);
+        setPlanningPlan(planningState.plan);
+        setPlanningAnswers(toPlanningAnswerDrafts(planningState.answers));
         setPlanningEvents([]);
         setPlanningError("");
         setPlanningGoal("");
         setLoadError("");
         setProjectsError("");
-        setProjectsDashboard(null);
-        setLearnerProfile(null);
-        setPlanningSession(null);
-        setPlanningPlan(null);
-        setPlanningAnswers({});
         setBlueprint(null);
         setBlueprintPath("");
         setCanonicalBlueprintPath("");
@@ -825,38 +649,12 @@ export default function App() {
         setSurfaceMode("brief");
         setPlanningOverlayOpen(false);
         setDashboardOpen(true);
-
-        if (!session.user || !session.session) {
-          setStatusMessage(
-            health.authReady
-              ? "Sign in to unlock your projects, saved credentials, and build path."
-              : "Configure DATABASE_URL to enable Construct accounts and saved provider settings."
-          );
-          return;
-        }
-
-        const [projects, profile, planningState] = await Promise.all([
-          fetchProjectsDashboard(controller.signal),
-          fetchLearnerProfile(controller.signal),
-          fetchCurrentPlanningState(controller.signal)
-        ]);
-
-        if (controller.signal.aborted) {
-          return;
-        }
-
-        setProjectsDashboard(projects);
-        setLearnerProfile(profile);
-        setPlanningSession(planningState.session);
-        setPlanningPlan(planningState.plan);
-        setPlanningAnswers(toPlanningAnswerDrafts(planningState.answers));
-        setPlanningGoal(planningState.session?.goal ?? "");
         setStatusMessage(
           planningState.session
             ? "Resume the in-progress Architect run or open an existing project."
             : projects.projects.length > 0
-              ? "Choose a project to resume or start a new one."
-              : "Start the first project to generate a guided build."
+            ? "Choose a project to resume or start a new one."
+            : "Start the first project to generate a guided build."
         );
       } catch (error) {
         if (controller.signal.aborted) {
@@ -868,7 +666,6 @@ export default function App() {
         setLoadError(message);
         setProjectsError(message);
         setLearnerProfile(null);
-        setAuthSession(null);
         setStatusMessage("Construct is waiting for the local runner.");
       }
     };
@@ -879,15 +676,6 @@ export default function App() {
       controller.abort();
     };
   }, []);
-
-  useEffect(() => {
-    setDisplayNameDraft(authSession?.user?.displayName ?? "");
-
-    if (!authSession?.user) {
-      setAccountPanelOpen(false);
-      setProviderDrafts({});
-    }
-  }, [authSession?.user?.displayName, authSession?.user]);
 
   useEffect(() => {
     if (!activeFilePath || editorValue === savedValue) {
@@ -1044,204 +832,7 @@ export default function App() {
     setRuntimeGuideEvents((current) => appendAgentEvent(current, event));
   };
 
-  const refreshAuthState = async () => {
-    const session = await fetchAuthSession();
-    setAuthSession(session);
-    return session;
-  };
-
-  const loadAuthenticatedDashboard = async () => {
-    const [projects, profile, planningState] = await Promise.all([
-      fetchProjectsDashboard(),
-      fetchLearnerProfile(),
-      fetchCurrentPlanningState()
-    ]);
-
-    setProjectsDashboard(projects);
-    setLearnerProfile(profile);
-    setPlanningSession(planningState.session);
-    setPlanningPlan(planningState.plan);
-    setPlanningAnswers(toPlanningAnswerDrafts(planningState.answers));
-    setPlanningGoal(planningState.session?.goal ?? "");
-    setProjectsError("");
-    setPlanningError("");
-    setDashboardOpen(true);
-    setPlanningOverlayOpen(false);
-    setStatusMessage(
-      planningState.session
-        ? "Resume the in-progress Architect run or open an existing project."
-        : projects.projects.length > 0
-          ? "Choose a project to resume or start a new one."
-          : "Start the first project to generate a guided build."
-    );
-  };
-
-  const resetAuthenticatedWorkspaceState = () => {
-    setProjectsDashboard(null);
-    setLearnerProfile(null);
-    setPlanningSession(null);
-    setPlanningPlan(null);
-    setPlanningAnswers({});
-    setPlanningEvents([]);
-    setPlanningError("");
-    setPlanningGoal("");
-    setBlueprint(null);
-    setBlueprintPath("");
-    setCanonicalBlueprintPath("");
-    setWorkspaceFiles([]);
-    setLearnerModel(null);
-    setActiveStepId("");
-    setTaskProgress(null);
-    setTaskSession(null);
-    setTaskResult(null);
-    setActiveFilePath("");
-    setEditorValue("");
-    setSavedValue("");
-    setAnchorLocation(null);
-    setGuideVisible(false);
-    setGuideMinimized(false);
-    setRuntimeGuide(null);
-    setRuntimeGuideEvents([]);
-    setSurfaceMode("brief");
-    setAccountPanelOpen(false);
-  };
-
-  const handleLogin = async () => {
-    setAuthBusy(true);
-    setAuthError("");
-
-    try {
-      const session = await loginWithPassword({
-        email: loginEmail,
-        password: loginPassword
-      });
-      setStoredSessionToken(session.sessionToken);
-      setAuthSession(session);
-      setLoginPassword("");
-      await loadAuthenticatedDashboard();
-    } catch (error) {
-      setAuthError(error instanceof Error ? error.message : "Failed to sign in.");
-    } finally {
-      setAuthBusy(false);
-    }
-  };
-
-  const handleSignup = async () => {
-    setAuthBusy(true);
-    setAuthError("");
-
-    try {
-      const session = await signUpWithPassword({
-        displayName: signupDisplayName,
-        email: signupEmail,
-        password: signupPassword
-      });
-      setStoredSessionToken(session.sessionToken);
-      setAuthSession(session);
-      setSignupPassword("");
-      await loadAuthenticatedDashboard();
-    } catch (error) {
-      setAuthError(error instanceof Error ? error.message : "Failed to create your account.");
-    } finally {
-      setAuthBusy(false);
-    }
-  };
-
-  const handleLogout = async () => {
-    setAuthBusy(true);
-    setAuthError("");
-
-    try {
-      await logoutCurrentSession();
-      setAuthSession(await refreshAuthState());
-      resetAuthenticatedWorkspaceState();
-      setStatusMessage(
-        runnerHealth?.authReady
-          ? "Signed out. Sign back in to reopen your projects."
-          : "Configure DATABASE_URL to enable Construct accounts."
-      );
-    } catch (error) {
-      setAuthError(error instanceof Error ? error.message : "Failed to sign out.");
-    } finally {
-      setAuthBusy(false);
-    }
-  };
-
-  const handleSaveProfile = async () => {
-    setProfileBusy(true);
-    setAuthError("");
-
-    try {
-      await updateAccount({
-        displayName: displayNameDraft
-      });
-      await refreshAuthState();
-      setStatusMessage("Updated your Construct profile.");
-    } catch (error) {
-      setAuthError(error instanceof Error ? error.message : "Failed to update your profile.");
-    } finally {
-      setProfileBusy(false);
-    }
-  };
-
-  const handleSaveProviderConnection = async (provider: ConnectedProvider) => {
-    const draft = providerDrafts[provider];
-    if (!draft) {
-      return;
-    }
-
-    setProviderBusy(provider);
-    setAuthError("");
-
-    try {
-      await saveProviderApiKey({
-        provider,
-        apiKey: draft.apiKey,
-        baseUrl: draft.baseUrl
-      });
-      await refreshAuthState();
-      setProviderDrafts((current) => ({
-        ...current,
-        [provider]: {
-          apiKey: "",
-          baseUrl: draft.baseUrl
-        }
-      }));
-      setStatusMessage(`Saved ${provider} credentials.`);
-    } catch (error) {
-      setAuthError(
-        error instanceof Error ? error.message : `Failed to save ${provider} credentials.`
-      );
-    } finally {
-      setProviderBusy(null);
-    }
-  };
-
-  const handleRemoveProviderConnection = async (provider: ConnectedProvider) => {
-    setProviderBusy(provider);
-    setAuthError("");
-
-    try {
-      await removeProviderConnection({
-        provider,
-        authType: "api-key"
-      });
-      await refreshAuthState();
-      setStatusMessage(`Removed ${provider} credentials.`);
-    } catch (error) {
-      setAuthError(
-        error instanceof Error ? error.message : `Failed to remove ${provider} credentials.`
-      );
-    } finally {
-      setProviderBusy(null);
-    }
-  };
-
-  const hydrateWorkspace = async (
-    preferredStepId?: string | null,
-    options?: { surfaceMode?: SurfaceMode }
-  ) => {
-    const nextSurfaceMode = options?.surfaceMode ?? "brief";
+  const hydrateWorkspace = async (preferredStepId?: string | null) => {
     const [blueprintEnvelope, filesEnvelope, learner] = await Promise.all([
       fetchBlueprint(),
       fetchWorkspaceFiles(),
@@ -1262,7 +853,7 @@ export default function App() {
       setEditorValue("");
       setSavedValue("");
       setAnchorLocation(null);
-      setSurfaceMode(nextSurfaceMode);
+      setSurfaceMode("brief");
       return null;
     }
 
@@ -1283,12 +874,49 @@ export default function App() {
     setTaskProgress(null);
     setTaskSession(null);
     setTaskResult(null);
-    setSurfaceMode(nextSurfaceMode);
+    setSurfaceMode("brief");
 
     if (preferredStep) {
       setActiveStepId(preferredStep.id);
     } else {
       setActiveStepId("");
+    }
+
+    return blueprintEnvelope.blueprint;
+  };
+
+  const refreshBlueprintSnapshot = async (preferredStepId?: string | null) => {
+    const [blueprintEnvelope, filesEnvelope, learner] = await Promise.all([
+      fetchBlueprint(),
+      fetchWorkspaceFiles(),
+      fetchLearnerModel()
+    ]);
+
+    if (!blueprintEnvelope.blueprint) {
+      return null;
+    }
+
+    const nextRuntimeSteps = getRuntimeSteps(blueprintEnvelope.blueprint);
+    const resolvedStep =
+      (preferredStepId
+        ? nextRuntimeSteps.find((step) => step.id === preferredStepId)
+        : null)
+      ?? (blueprintEnvelope.blueprint.frontier?.activeStepId
+        ? nextRuntimeSteps.find(
+            (step) => step.id === blueprintEnvelope.blueprint?.frontier?.activeStepId
+          )
+        : null)
+      ?? nextRuntimeSteps[0]
+      ?? null;
+
+    setBlueprint(blueprintEnvelope.blueprint);
+    setBlueprintPath(blueprintEnvelope.blueprintPath);
+    setCanonicalBlueprintPath(blueprintEnvelope.canonicalBlueprintPath ?? "");
+    setWorkspaceFiles(filesEnvelope.files);
+    setLearnerModel(learner);
+
+    if (resolvedStep) {
+      setActiveStepId(resolvedStep.id);
     }
 
     return blueprintEnvelope.blueprint;
@@ -1305,11 +933,7 @@ export default function App() {
     return projects;
   };
 
-  const openProject = async (
-    project: ProjectSummary,
-    preferredStepId: string | null = null,
-    destination: "brief" | "focus" = "brief"
-  ) => {
+  const openProject = async (project: ProjectSummary) => {
     setDashboardBusy(true);
     setProjectsError("");
 
@@ -1318,52 +942,13 @@ export default function App() {
       const dashboardState = await refreshDashboardState();
       const selectedProject =
         dashboardState.projects.find((entry) => entry.id === selection.activeProjectId) ?? project;
-      const openedBlueprint = await hydrateWorkspace(preferredStepId ?? selectedProject.currentStepId);
-      const targetStep =
-        openedBlueprint
-          ? (
-              preferredStepId ?? selectedProject.currentStepId
-                ? getRuntimeSteps(openedBlueprint).find(
-                    (step) => step.id === (preferredStepId ?? selectedProject.currentStepId)
-                  ) ?? null
-                : null
-            ) ?? getRuntimeSteps(openedBlueprint)[0] ?? null
-          : null;
-
-      if (destination === "focus") {
-        if (targetStep) {
-          await openToAnchor(targetStep, {
-            setActiveFilePath,
-            setEditorValue,
-            setSavedValue,
-            setActiveStepId,
-            setAnchorLocation,
-            setLoadError,
-            setStatusMessage,
-            activeRequestIdRef
-          });
-        }
-
-        setSurfaceMode("focus");
-        setGuideMinimized(false);
-        setGuideVisible(false);
-        setRuntimeGuide(null);
-        setRuntimeGuideEvents([]);
-        setRuntimeGuideError("");
-        setTaskError("");
-        resetTaskTelemetry();
-      }
-
+      await hydrateWorkspace(selectedProject.currentStepId);
       setDashboardOpen(false);
       setPlanningOverlayOpen(false);
       setStatusMessage(
-        destination === "focus"
-          ? targetStep
-            ? `Opened workspace for ${selectedProject.name} at ${targetStep.title}.`
-            : `Opened workspace for ${selectedProject.name}.`
-          : `Resumed ${selectedProject.name} at ${
-              preferredStepId ?? selectedProject.currentStepTitle ?? "the current step"
-            }.`
+        `Resumed ${selectedProject.name} at ${
+          selectedProject.currentStepTitle ?? "the current step"
+        }.`
       );
     } catch (error) {
       const message =
@@ -1607,20 +1192,26 @@ export default function App() {
       return;
     }
 
+    const currentStep = activeStep;
     const response = checkResponses[check.id] ?? "";
     if (!hasAnsweredCheck(check, response)) {
       return;
     }
 
     setCheckReviewBusyId(check.id);
+    setProjectImprovementState({
+      trigger: "check-review",
+      stepTitle: currentStep.title,
+      detail: "Construct is improving the project according to your knowledge and latest check response."
+    });
 
     try {
       const attemptCount = checkAttemptCounts[check.id] ?? 0;
-      const { review } = await reviewStepCheck({
-        stepId: activeStep.id,
-        stepTitle: activeStep.title,
-        stepSummary: activeStep.summary,
-        concepts: activeStep.concepts,
+      const { review, projectImprovement } = await reviewStepCheck({
+        stepId: currentStep.id,
+        stepTitle: currentStep.title,
+        stepSummary: currentStep.summary,
+        concepts: currentStep.concepts,
         check,
         response,
         attemptCount
@@ -1636,9 +1227,18 @@ export default function App() {
           ...current,
           [check.id]: (current[check.id] ?? 0) + 1
         }));
+      }
+
+      if (projectImprovement?.updatedBlueprint) {
+        await refreshBlueprintSnapshot(projectImprovement.activeStepId ?? currentStep.id);
+      }
+
+      if (projectImprovement) {
+        setStatusMessage(projectImprovement.detail);
+      } else if (review.status === "needs-revision") {
         setStatusMessage(`Review the step context again before retrying ${check.id}.`);
       } else {
-        setStatusMessage(`Check complete for ${activeStep.title}.`);
+        setStatusMessage(`Check complete for ${currentStep.title}.`);
       }
 
       setLearnerProfile(await fetchLearnerProfile());
@@ -1647,6 +1247,7 @@ export default function App() {
         error instanceof Error ? error.message : `Failed to review ${check.id}.`;
       setStatusMessage(message);
     } finally {
+      setProjectImprovementState(null);
       setCheckReviewBusyId(null);
     }
   };
@@ -1670,23 +1271,29 @@ export default function App() {
       return;
     }
 
+    const currentStep = activeStep;
     setTaskRunState("running");
     setTaskError("");
 
     try {
       let session = taskSession;
 
-      if (!session || session.stepId !== activeStep.id || session.status !== "active") {
-        const started = await startBlueprintTask(blueprintPath, activeStep.id);
+      if (!session || session.stepId !== currentStep.id || session.status !== "active") {
+        const started = await startBlueprintTask(blueprintPath, currentStep.id);
         session = started.session;
         setTaskSession(started.session);
         setTaskProgress(started.progress);
         setLearnerModel(started.learnerModel);
       }
 
+      setProjectImprovementState({
+        trigger: "task-submit",
+        stepTitle: currentStep.title,
+        detail: "Construct is improving the project according to your knowledge and latest submission evidence."
+      });
       const submission = await submitBlueprintTask({
         blueprintPath,
-        stepId: activeStep.id,
+        stepId: currentStep.id,
         sessionId: session.sessionId,
         telemetry: telemetryRef.current
       });
@@ -1696,55 +1303,46 @@ export default function App() {
       setLearnerModel(submission.learnerModel);
       setLearnerProfile(await fetchLearnerProfile());
       setTaskResult(submission.attempt.result);
-      setGuideVisible(false);
-      setGuideMinimized(false);
-      setRuntimeGuide(null);
-      setRuntimeGuideEvents([]);
-      setRuntimeGuideError("");
+      setGuideVisible(submission.attempt.status !== "passed");
       resetTaskTelemetry();
       setRevealedHintLevel(0);
 
       if (submission.attempt.status !== "passed") {
+        if (submission.projectImprovement?.updatedBlueprint) {
+          await refreshBlueprintSnapshot(submission.projectImprovement.activeStepId ?? currentStep.id);
+        }
+        void loadRuntimeGuide(submission.attempt.result);
         setStatusMessage(
-          submission.attempt.status === "needs-review" && submission.session.rewriteGate
-            ? `Tests passed, but completion is blocked. Retype at least ${submission.session.rewriteGate.requiredTypedChars} characters without large paste and resubmit.`
-            : `Targeted tests failed for ${activeStep.title} on attempt ${submission.attempt.attempt}. Click Get help if you want guidance.`
+          submission.projectImprovement?.detail
+            ?? (submission.attempt.status === "needs-review" && submission.session.rewriteGate
+              ? `Tests passed, but completion is blocked. Retype at least ${submission.session.rewriteGate.requiredTypedChars} characters without large paste and resubmit.`
+              : `Targeted tests failed for ${currentStep.title} on attempt ${submission.attempt.attempt}.`)
         );
       } else {
-        setStatusMessage(`Passed ${activeStep.title} on attempt ${submission.attempt.attempt}. Updating path...`);
-        const previousStepId = activeStep.id;
-        const refreshedBlueprint = await hydrateWorkspace(undefined, {
-          surfaceMode: "focus"
-        });
-        const nextStep = refreshedBlueprint ? getRuntimeSteps(refreshedBlueprint)[0] ?? null : null;
-
-        if (nextStep) {
-          await openToAnchor(nextStep, {
-            setActiveFilePath,
-            setEditorValue,
-            setSavedValue,
-            setActiveStepId,
-            setAnchorLocation,
-            setLoadError,
-            setStatusMessage,
-            activeRequestIdRef
-          });
-        }
-
-        setGuideVisible(false);
-        setSurfaceMode("focus");
         setStatusMessage(
-          nextStep && nextStep.id !== previousStepId
-            ? `Passed ${activeStep.title}. Opened ${nextStep.title} in the workspace.`
-            : `Passed ${activeStep.title} on attempt ${submission.attempt.attempt}.`
+          submission.projectImprovement?.detail
+          ?? `Passed ${currentStep.title} on attempt ${submission.attempt.attempt}. Updating path...`
+        );
+        const refreshedBlueprint = await hydrateWorkspace(
+          submission.projectImprovement?.activeStepId ?? null
+        );
+        const nextStep = refreshedBlueprint ? getRuntimeSteps(refreshedBlueprint)[0] ?? null : null;
+        setGuideVisible(false);
+        setSurfaceMode("brief");
+        setStatusMessage(
+          submission.projectImprovement?.detail
+          ?? (nextStep && nextStep.id !== currentStep.id
+            ? `Passed ${currentStep.title}. Next capability: ${nextStep.title}.`
+            : `Passed ${currentStep.title} on attempt ${submission.attempt.attempt}.`)
         );
       }
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : `Failed to execute ${activeStep.id}.`;
+        error instanceof Error ? error.message : `Failed to execute ${currentStep.id}.`;
       setTaskError(message);
       setStatusMessage(message);
     } finally {
+      setProjectImprovementState(null);
       setTaskRunState("idle");
     }
   };
@@ -1755,9 +1353,12 @@ export default function App() {
     setPlanningEvents([]);
 
     try {
-      const started = await startPlanningSession({
-        goal: planningGoal
-      }, appendPlanningEvent);
+      const started = await startPlanningSession(
+        {
+          goal: planningGoal
+        },
+        appendPlanningEvent
+      );
 
       setPlanningSession(started.session);
       setPlanningPlan(null);
@@ -1770,33 +1371,6 @@ export default function App() {
       );
     } finally {
       setPlanningBusy(false);
-    }
-  };
-
-  const handleResumeCreation = async () => {
-    setDashboardBusy(true);
-    setPlanningError("");
-
-    try {
-      const planningState = await fetchCurrentPlanningState();
-      setPlanningSession(planningState.session);
-      setPlanningPlan(planningState.plan);
-      setPlanningAnswers(toPlanningAnswerDrafts(planningState.answers));
-      setPlanningGoal(planningState.session?.goal ?? "");
-      setPlanningOverlayOpen(true);
-      setStatusMessage(
-        planningState.plan
-          ? "Resume project generation from the last saved stage."
-          : "Continue the intake and generate the project when you're ready."
-      );
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to load the current planning session.";
-      setProjectsError(message);
-      setPlanningError(message);
-      setStatusMessage(message);
-    } finally {
-      setDashboardBusy(false);
     }
   };
 
@@ -1823,11 +1397,6 @@ export default function App() {
               answerType: "custom",
               customResponse: answer.customResponse.trim()
             }
-          : answer.answerType === "skipped"
-            ? {
-                questionId: question.id,
-                answerType: "skipped"
-              }
           : {
               questionId: question.id,
               answerType: "option",
@@ -1871,25 +1440,9 @@ export default function App() {
         `Generated ${openedBlueprint.name}. Review the next build step, then move into the workspace when the implementation handoff opens.`
       );
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to complete the planning session.";
-      setPlanningError(message);
-
-      try {
-        const planningState = await fetchCurrentPlanningState();
-        setPlanningSession(planningState.session);
-        setPlanningPlan(planningState.plan);
-        setPlanningAnswers(toPlanningAnswerDrafts(planningState.answers));
-        setPlanningGoal(planningState.session?.goal ?? "");
-        setPlanningOverlayOpen(true);
-        setStatusMessage(
-          planningState.plan
-            ? "Project generation paused. Resume from the last saved stage."
-            : message
-        );
-      } catch {
-        setStatusMessage(message);
-      }
+      setPlanningError(
+        error instanceof Error ? error.message : "Failed to complete the planning session."
+      );
     } finally {
       setPlanningBusy(false);
     }
@@ -1913,61 +1466,6 @@ export default function App() {
     setPlanningOverlayOpen(true);
   };
 
-  const handleContinueToWorkspace = async () => {
-    try {
-      const dashboardState = projectsDashboard ?? (await refreshDashboardState());
-      const activeProject =
-        dashboardState.projects.find((project) => project.id === dashboardState.activeProjectId) ??
-        dashboardState.projects.find((project) => project.isActive) ??
-        null;
-
-      if (activeProject) {
-        await openProject(activeProject, activeProject.currentStepId, "focus");
-        return;
-      }
-
-      if (blueprint) {
-        setPlanningOverlayOpen(false);
-        setDashboardOpen(false);
-        if (activeStep) {
-          await openToAnchor(activeStep, {
-            setActiveFilePath,
-            setEditorValue,
-            setSavedValue,
-            setActiveStepId,
-            setAnchorLocation,
-            setLoadError,
-            setStatusMessage,
-            activeRequestIdRef
-          });
-        }
-        setSurfaceMode("focus");
-        setGuideMinimized(false);
-        setGuideVisible(false);
-        setRuntimeGuide(null);
-        setRuntimeGuideEvents([]);
-        setRuntimeGuideError("");
-        setTaskError("");
-        resetTaskTelemetry();
-        setStatusMessage(
-          activeStep
-            ? `Opened workspace for ${activeStep.title}.`
-            : "Opened workspace."
-        );
-        return;
-      }
-
-      setPlanningError(
-        "Construct couldn't find an active generated workspace yet. Reopen the project from the dashboard."
-      );
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to open the workspace.";
-      setPlanningError(message);
-      setStatusMessage(message);
-    }
-  };
-
   if (appRoute.kind === "debug-blueprints") {
     return (
       <main className="construct-app">
@@ -1977,27 +1475,13 @@ export default function App() {
           langSmithProject={runnerHealth?.langSmithProject ?? null}
           initialBuildId={appRoute.buildId}
           onClose={() => {
-            window.location.hash = formatWorkspaceRoute();
+            window.location.hash = "";
           }}
           onNavigateToBuild={(buildId) => {
             window.location.hash = formatBlueprintDebugRoute(buildId);
           }}
         />
       </main>
-    );
-  }
-
-  if (appRoute.kind === "landing") {
-    return (
-      <ComingSoonLanding
-        themeControl={
-          <ThemeDropdown
-            theme={theme}
-            onThemeChange={setThemeMode}
-            className="construct-coming-soon-theme-toggle"
-          />
-        }
-      />
     );
   }
 
@@ -2010,36 +1494,6 @@ export default function App() {
   const showAppSidebar = currentView !== "code";
   const editorBreadcrumb = buildEditorBreadcrumb(blueprint?.name ?? "Project", activeFilePath);
 
-  if (!isAuthenticated) {
-    return (
-      <AuthScreen
-        mode={authMode}
-        onModeChange={setAuthMode}
-        providerOptions={authSession?.providerOptions ?? []}
-        runnerHealth={runnerHealth}
-        authError={authError}
-        authBusy={authBusy}
-        authReady={authReady}
-        loginEmail={loginEmail}
-        loginPassword={loginPassword}
-        signupDisplayName={signupDisplayName}
-        signupEmail={signupEmail}
-        signupPassword={signupPassword}
-        onLoginEmailChange={setLoginEmail}
-        onLoginPasswordChange={setLoginPassword}
-        onSignupDisplayNameChange={setSignupDisplayName}
-        onSignupEmailChange={setSignupEmail}
-        onSignupPasswordChange={setSignupPassword}
-        onSubmitLogin={() => {
-          void handleLogin();
-        }}
-        onSubmitSignup={() => {
-          void handleSignup();
-        }}
-      />
-    );
-  }
-
   return (
     <main className="construct-app">
       <div className={`construct-shell ${showAppSidebar ? "" : "is-code-view"}`.trim()}>
@@ -2047,7 +1501,6 @@ export default function App() {
           <AppSidebar
             projectsDashboard={projectsDashboard}
             runnerHealth={runnerHealth}
-            authSession={authSession}
             dashboardBusy={dashboardBusy}
             currentView={currentView}
             activeStep={activeStep}
@@ -2079,12 +1532,6 @@ export default function App() {
               );
             }}
             onStartProject={openFreshPlanningOverlay}
-            onOpenAccount={() => {
-              setAccountPanelOpen(true);
-            }}
-            onLogout={() => {
-              void handleLogout();
-            }}
           />
         ) : null}
 
@@ -2096,7 +1543,6 @@ export default function App() {
             activeFilePath={activeFilePath}
             runnerHealth={runnerHealth}
             saveStateLabel={saveStateLabel}
-            authSession={authSession}
             onOpenProjects={() => {
               setDashboardOpen(true);
               setPlanningOverlayOpen(false);
@@ -2121,9 +1567,6 @@ export default function App() {
               );
             }}
             onStartProject={openFreshPlanningOverlay}
-            onOpenAccount={() => {
-              setAccountPanelOpen(true);
-            }}
             onThemeChange={setThemeMode}
             theme={theme}
           />
@@ -2139,7 +1582,7 @@ export default function App() {
                 planningSession={planningSession}
                 planningPlan={planningPlan}
                 onResumeCreation={() => {
-                  void handleResumeCreation();
+                  setPlanningOverlayOpen(true);
                 }}
                 onOpenProject={(project) => {
                   void openProject(project);
@@ -2173,36 +1616,26 @@ export default function App() {
                       </InputGroup>
                     </div>
 
-                    <div className="construct-explorer-scroll">
-                      {workspaceTreeElements.length > 0 ? (
-                        <Tree
-                          className="construct-workspace-file-tree"
-                          elements={workspaceTreeElements}
-                          selectedId={activeFilePath || undefined}
-                          expandedItems={expandedWorkspaceTreeIds}
-                          onExpandedItemsChange={(nextExpandedItems: string[]) => {
-                            const directoryIds = collectDirectoryPaths(workspaceTree);
-                            setExpandedDirectories((current) => {
-                              const next = { ...current };
-
-                              for (const directoryId of directoryIds) {
-                                next[directoryId] = nextExpandedItems.includes(directoryId);
-                              }
-
-                              return next;
-                            });
-                          }}
-                          onSelectChange={(selectedId: string) => {
-                            const selectedNode = workspaceTreeLookup.get(selectedId) ?? null;
-
-                            if (selectedNode?.kind === "file") {
-                              void handleFileClick(selectedId);
-                            }
-                          }}
-                          initialSelectedId={activeFilePath || undefined}
-                          indicator
-                          sort="none"
-                        />
+                    <ScrollArea className="construct-explorer-scroll">
+                      {filteredTree.length > 0 ? (
+                        <nav className="construct-tree" aria-label="Workspace files">
+                          {filteredTree.map((node) => (
+                            <ExplorerTreeNode
+                              key={node.path}
+                              node={node}
+                              activeFilePath={activeFilePath}
+                              onSelectFile={handleFileClick}
+                              expandedDirectories={expandedDirectories}
+                              onToggleDirectory={(path) => {
+                                setExpandedDirectories((current) => ({
+                                  ...current,
+                                  [path]: !(current[path] ?? true)
+                                }));
+                              }}
+                              forceExpanded={explorerIsFiltered}
+                            />
+                          ))}
+                        </nav>
                       ) : (
                         <div className="construct-explorer-empty">
                           {filterQuery.trim().length > 0
@@ -2210,7 +1643,7 @@ export default function App() {
                             : "No files loaded yet."}
                         </div>
                       )}
-                    </div>
+                    </ScrollArea>
                   </aside>
 
                   <section className="construct-stage">
@@ -2218,56 +1651,49 @@ export default function App() {
                       <section className="construct-editor-shell">
                         <header className="construct-editor-header">
                           <div className="construct-editor-tabs">
-                            <ToolbarPill
-                              variant="outline"
-                              className="construct-editor-tab construct-editor-tab--context"
-                            >
+                            <span className="construct-editor-tab construct-editor-tab--context">
                               Code
-                            </ToolbarPill>
+                            </span>
                             <span className="construct-editor-tab is-active">
                               {labelForEditorPath(activeFilePath)}
                             </span>
                             {activeStep ? (
-                              <ToolbarPill
-                                variant="outline"
-                                className="construct-editor-tab construct-editor-tab--meta"
-                              >
+                              <span className="construct-editor-tab">
                                 Step {activeStepIndex + 1}
-                              </ToolbarPill>
+                              </span>
                             ) : null}
                           </div>
 
                           <div className="construct-editor-header-actions">
-                            <ToolbarPill variant="outline" className="construct-editor-status-pill">
+                            <ToolbarPill>
                               {runnerHealth?.status ?? "offline"}
                             </ToolbarPill>
-                            {activeTaskProgress && activeTaskProgress.totalAttempts > 0 ? (
-                              <DetailPopover
-                                label="Attempts"
-                                description={`Construct has recorded ${activeTaskProgress.totalAttempts} targeted run${
-                                  activeTaskProgress.totalAttempts === 1 ? "" : "s"
-                                } for this step.`}
-                              >
-                                <ToolbarPill variant="outline">{taskAttemptLabel}</ToolbarPill>
-                              </DetailPopover>
-                            ) : null}
-                            {taskSession ? (
-                              <DetailPopover
-                                label="Snapshot"
-                                description={`The pre-task snapshot for this step is ${taskSession.preTaskSnapshot.commitId}.`}
-                              >
-                                <ToolbarPill variant="outline">{snapshotLabel}</ToolbarPill>
-                              </DetailPopover>
-                            ) : null}
+                            <DetailPopover
+                              label="Attempts"
+                              description={`Construct has recorded ${activeTaskProgress?.totalAttempts ?? 0} targeted run${
+                                activeTaskProgress?.totalAttempts === 1 ? "" : "s"
+                              } for this step.`}
+                            >
+                              <ToolbarPill>{taskAttemptLabel}</ToolbarPill>
+                            </DetailPopover>
+                            <DetailPopover
+                              label="Snapshot"
+                              description={
+                                taskSession
+                                  ? `The pre-task snapshot for this step is ${taskSession.preTaskSnapshot.commitId}.`
+                                  : "A pre-task snapshot will appear after the step is focused."
+                              }
+                            >
+                              <ToolbarPill>{snapshotLabel}</ToolbarPill>
+                            </DetailPopover>
                             {activeStep ? (
                               <SecondaryButton
-                                className="construct-editor-brief-button"
                                 onClick={() => {
                                   setSurfaceMode("brief");
                                   setStatusMessage(`Opened brief for ${activeStep.title}.`);
                                 }}
                               >
-                                Brief
+                                Open brief
                               </SecondaryButton>
                             ) : null}
                           </div>
@@ -2508,9 +1934,6 @@ export default function App() {
             onClose={() => {
               setPlanningOverlayOpen(false);
             }}
-            onContinueToWorkspace={() => {
-              void handleContinueToWorkspace();
-            }}
             onGoalChange={setPlanningGoal}
             onOptionAnswerChange={(questionId, optionId) => {
               setPlanningAnswers((current) => ({
@@ -2527,14 +1950,6 @@ export default function App() {
                 [questionId]: {
                   answerType: "custom",
                   customResponse
-                }
-              }));
-            }}
-            onSkipAnswerChange={(questionId) => {
-              setPlanningAnswers((current) => ({
-                ...current,
-                [questionId]: {
-                  answerType: "skipped"
                 }
               }));
             }}
@@ -2578,39 +1993,61 @@ export default function App() {
             deepDiveError={deepDiveError}
           />
         ) : null}
-      </AnimatePresence>
 
-      <AccountSettingsPanel
-        open={accountPanelOpen}
-        authSession={authSession}
-        displayNameDraft={displayNameDraft}
-        onDisplayNameDraftChange={setDisplayNameDraft}
-        profileBusy={profileBusy}
-        providerDrafts={providerDrafts}
-        providerBusy={providerBusy}
-        onProviderDraftChange={(provider, next) => {
-          setProviderDrafts((current) => ({
-            ...current,
-            [provider]: {
-              apiKey: next.apiKey ?? current[provider]?.apiKey ?? "",
-              baseUrl: next.baseUrl ?? current[provider]?.baseUrl ?? ""
-            }
-          }));
-        }}
-        onSaveDisplayName={() => {
-          void handleSaveProfile();
-        }}
-        onSaveConnection={(provider) => {
-          void handleSaveProviderConnection(provider);
-        }}
-        onRemoveConnection={(provider) => {
-          void handleRemoveProviderConnection(provider);
-        }}
-        onClose={() => {
-          setAccountPanelOpen(false);
-        }}
-      />
+        {projectImprovementState ? (
+          <ProjectImprovementOverlay
+            trigger={projectImprovementState.trigger}
+            stepTitle={projectImprovementState.stepTitle}
+            detail={projectImprovementState.detail}
+          />
+        ) : null}
+      </AnimatePresence>
     </main>
+  );
+}
+
+function ProjectImprovementOverlay({
+  trigger,
+  stepTitle,
+  detail
+}: {
+  trigger: ProjectImprovement["trigger"];
+  stepTitle: string;
+  detail: string;
+}) {
+  return (
+    <motion.div
+      className="construct-project-improvement-overlay"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.18, ease: "easeOut" }}
+    >
+      <motion.section
+        className="construct-project-improvement-panel"
+        initial={{ opacity: 0, y: 20, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 16, scale: 0.985 }}
+        transition={{ duration: 0.22, ease: "easeOut" }}
+        role="status"
+        aria-live="polite"
+      >
+        <div className="construct-project-improvement-icon">
+          <Spinner />
+        </div>
+        <div className="construct-project-improvement-copy">
+          <span className="construct-brief-kicker">
+            {trigger === "check-review" ? "Knowledge sync" : "Project improvement"}
+          </span>
+          <h2>Improving the project according to your knowledge</h2>
+          <p>{detail}</p>
+          <div className="construct-tag-list">
+            <TagChip>{stepTitle}</TagChip>
+            <TagChip>{trigger === "check-review" ? "quiz evidence" : "submission evidence"}</TagChip>
+          </div>
+        </div>
+      </motion.section>
+    </motion.div>
   );
 }
 
@@ -2679,12 +2116,6 @@ function FloatingGuideCard({
   taskError: string;
   taskTelemetry: TaskTelemetry;
 }) {
-  const taskAttemptCount = taskProgress?.totalAttempts ?? 0;
-  const recordedHintCount = learnerModel?.hintsUsed[activeStep.id] ?? taskTelemetry.hintsUsed;
-  const pastePercentage = Math.round(taskTelemetry.pasteRatio * 100);
-  const hiddenValidationCount = activeStep.tests.length;
-  const constraintCount = activeStep.constraints.length;
-
   if (minimized) {
     return (
       <motion.aside
@@ -2701,16 +2132,10 @@ function FloatingGuideCard({
           className="construct-floating-card-minibar"
           aria-label={`Expand guide for ${activeStep.title}`}
         >
-          <span className="construct-floating-card-minibar-icon" aria-hidden="true">
-            <PhSidebarSimple size={16} weight="duotone" />
-          </span>
           <span className="construct-floating-card-minibar-kicker">Guide</span>
           <strong>{activeStep.title}</strong>
           <span className="construct-floating-card-minibar-meta">
             Step {activeStepIndex + 1}
-          </span>
-          <span className="construct-floating-card-minibar-expand" aria-hidden="true">
-            <PhArrowsOutSimple size={14} weight="bold" />
           </span>
         </Button>
       </motion.aside>
@@ -2728,78 +2153,51 @@ function FloatingGuideCard({
       <div className="construct-floating-card-header">
         <div className="construct-floating-card-meta">
           <div className="construct-floating-card-meta-copy">
-            <GuideSectionLabel
-              icon={<PhBrain size={14} weight="duotone" />}
-              className="construct-floating-card-kicker"
-            >
-              Guide
-            </GuideSectionLabel>
+            <span className="construct-floating-card-kicker">Guide</span>
             <span className="construct-floating-card-step">
               Step {activeStepIndex + 1} / {getRuntimeSteps(blueprint).length}
             </span>
           </div>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={onMinimize}
-                className="construct-guide-minimize-button"
-                aria-label="Minimize guide"
-              >
-                <PhArrowsInSimple size={14} weight="bold" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Minimize guide</TooltipContent>
-          </Tooltip>
+          <SecondaryButton
+            type="button"
+            onClick={onMinimize}
+            className="construct-guide-minimize-button"
+            aria-label="Minimize tutor"
+          >
+            Minimize
+          </SecondaryButton>
         </div>
         <h2 className="construct-floating-card-title">{activeStep.title}</h2>
         <p className="construct-floating-card-summary">{activeStep.summary}</p>
       </div>
 
       <div className="construct-floating-card-body">
-        <div className="construct-guide-status-strip">
-          {taskAttemptCount > 0 ? (
-            <GuideStatusPill icon={<PhArrowClockwise size={12} weight="bold" />}>
-              {taskAttemptCount} attempt{taskAttemptCount === 1 ? "" : "s"}
-            </GuideStatusPill>
-          ) : null}
-          {recordedHintCount > 0 ? (
-            <GuideStatusPill icon={<PhLightbulb size={12} weight="fill" />}>
-              {recordedHintCount} hint{recordedHintCount === 1 ? "" : "s"}
-            </GuideStatusPill>
-          ) : null}
-          {pastePercentage > 0 ? (
-            <GuideStatusPill icon={<PhArrowSquareIn size={12} weight="bold" />}>
-              {pastePercentage}% paste
-            </GuideStatusPill>
-          ) : null}
-          {taskSession ? (
-            <GuideStatusPill icon={<PhStack size={12} weight="duotone" />}>
-              {formatCommitId(taskSession.preTaskSnapshot.commitId)}
-            </GuideStatusPill>
-          ) : null}
-          {hiddenValidationCount > 0 ? (
-            <DetailPopover
-              label="Hidden validations"
-              description={summarizeCompactList(activeStep.tests)}
-            >
-              <GuideStatusPill icon={<PhTestTube size={12} weight="duotone" />}>
-                {hiddenValidationCount} check{hiddenValidationCount === 1 ? "" : "s"}
-              </GuideStatusPill>
-            </DetailPopover>
-          ) : null}
-          {constraintCount > 0 ? (
-            <DetailPopover
-              label="Constraints"
-              description={summarizeCompactList(activeStep.constraints)}
-            >
-              <GuideStatusPill icon={<PhCompassTool size={12} weight="duotone" />}>
-                {constraintCount} constraint{constraintCount === 1 ? "" : "s"}
-              </GuideStatusPill>
-            </DetailPopover>
-          ) : null}
-        </div>
+        <section className="construct-metadata-panel">
+          <span className="construct-panel-kicker">Telemetry</span>
+          <div className="construct-session-metrics">
+            <MetricPill
+              label="Attempts"
+              value={`${taskProgress?.totalAttempts ?? 0}`}
+            />
+            <MetricPill
+              label="Hints"
+              value={`${taskTelemetry.hintsUsed}`}
+            />
+            <MetricPill
+              label="Paste"
+              value={`${Math.round(taskTelemetry.pasteRatio * 100)}%`}
+            />
+            <MetricPill
+              label="Snapshot"
+              value={
+                taskSession ? formatCommitId(taskSession.preTaskSnapshot.commitId) : "pending"
+              }
+            />
+          </div>
+          <p className="construct-muted-copy">
+            Recorded hints across this step: {learnerModel?.hintsUsed[activeStep.id] ?? 0}
+          </p>
+        </section>
 
         {rewriteGate ? (
           <section className="construct-verification-panel">
@@ -2823,97 +2221,70 @@ function FloatingGuideCard({
           </section>
         ) : null}
 
-        <div className="construct-floating-card-actions">
-          <PrimaryButton
-            type="button"
-            onClick={onSubmitTask}
-            disabled={taskRunState === "running"}
-            className="construct-guide-submit-button"
-          >
-            {taskRunState === "running" ? (
-              <>
-                <Spinner data-icon="inline-start" />
-                Running tests...
-              </>
-            ) : (
-              <>
-                <PhPaperPlaneTilt size={15} weight="fill" />
-                Submit
-              </>
-            )}
-          </PrimaryButton>
+        <MetadataList title="Tests" values={activeStep.tests} />
+        <MetadataList title="Constraints" values={activeStep.constraints} />
 
-          <div className="construct-guide-secondary-actions">
-            <GuideActionButton
+        <div className="construct-floating-card-actions">
+          <div className="construct-action-cluster">
+            <PrimaryButton
               type="button"
-              onClick={onOpenBrief}
-              icon={<PhBookOpenText size={15} weight="duotone" />}
-              className="is-brief"
+              onClick={onSubmitTask}
+              disabled={taskRunState === "running"}
             >
-              Brief
-            </GuideActionButton>
-            <GuideActionButton
-              type="button"
-              onClick={onRefocus}
-              icon={<PhTarget size={15} weight="duotone" />}
-              className="is-refocus"
-            >
-              Refocus
-            </GuideActionButton>
-            <GuideActionButton
-              type="button"
-              onClick={onToggleGuide}
-              icon={
-                runtimeGuideBusy ? (
+              {taskRunState === "running" ? (
+                <>
                   <Spinner data-icon="inline-start" />
-                ) : guideVisible ? (
-                  <PhEyeSlash size={15} weight="duotone" />
-                ) : (
-                  <PhBrain size={15} weight="duotone" />
-                )
-              }
-              className="is-guide"
-              active={guideVisible && !runtimeGuideBusy}
-            >
-              {runtimeGuideBusy ? "Thinking..." : guideVisible ? "Hide guide" : "Get help"}
-            </GuideActionButton>
+                  Running tests...
+                </>
+              ) : (
+                "Submit"
+              )}
+            </PrimaryButton>
+            <SecondaryButton type="button" onClick={onOpenBrief}>
+              Open brief
+            </SecondaryButton>
+          </div>
+
+          <div className="construct-action-cluster is-compact">
+            <SecondaryButton type="button" onClick={onRefocus}>
+              Refocus anchor
+            </SecondaryButton>
+            <SecondaryButton type="button" onClick={onToggleGuide}>
+              {runtimeGuideBusy
+                ? (
+                    <>
+                      <Spinner data-icon="inline-start" />
+                      Guide is thinking...
+                    </>
+                  )
+                : guideVisible
+                  ? "Hide guide"
+                  : "Ask guide"}
+            </SecondaryButton>
           </div>
         </div>
-
-        <TaskResultPanel
-          attemptStatus={attemptStatus}
-          rewriteGate={rewriteGate}
-          taskRunState={taskRunState}
-          taskResult={taskResult}
-          taskError={taskError}
-          title={activeStep.title}
-        />
 
         {attemptStatus !== "passed" && (taskProgress?.totalAttempts ?? 0) >= 2 ? (
           <div className="construct-escalation-panel">
             <div>
               <span className="construct-panel-kicker">Need more support?</span>
               <p className="construct-muted-copy">
-                Construct can break this step down and add a tighter walkthrough before
-                you retry.
+                Construct can deepen this step with extra concept slides and a tighter
+                quiz before you retry the implementation.
               </p>
             </div>
             <SecondaryButton
               type="button"
               onClick={onRequestDeepDive}
               disabled={deepDiveBusy}
-              className="construct-guide-deep-dive-button"
             >
               {deepDiveBusy ? (
                 <>
                   <Spinner data-icon="inline-start" />
-                  Deepening step...
+                  Building deeper walkthrough...
                 </>
               ) : (
-                <>
-                  <PhMagicWand size={15} weight="duotone" />
-                  Deepen this step
-                </>
+                "Need a deeper walkthrough?"
               )}
             </SecondaryButton>
             {deepDiveError ? <InlineError>{deepDiveError}</InlineError> : null}
@@ -2922,9 +2293,7 @@ function FloatingGuideCard({
 
         <div className="construct-floating-hints">
           <div className="construct-floating-hints-header">
-            <GuideSectionLabel icon={<PhLightbulb size={14} weight="duotone" />}>
-              Hints
-            </GuideSectionLabel>
+            <span>Hints</span>
             <div className="construct-hint-actions">
               {[1, 2, 3].map((level) => (
                 <Button
@@ -2936,7 +2305,6 @@ function FloatingGuideCard({
                   variant={revealedHintLevel >= level ? "secondary" : "outline"}
                   className="construct-hint-button"
                 >
-                  <PhSparkle size={12} weight={revealedHintLevel >= level ? "fill" : "regular"} />
                   L{level}
                 </Button>
               ))}
@@ -2954,7 +2322,7 @@ function FloatingGuideCard({
             </div>
           ) : (
             <p className="construct-muted-copy">
-              Unlock a hint after you have tried the implementation.
+              Reveal hints only after you have tried the implementation.
             </p>
           )}
         </div>
@@ -2970,9 +2338,7 @@ function FloatingGuideCard({
             >
               {runtimeGuide ? (
                 <div className="construct-guide-runtime-summary">
-                  <GuideSectionLabel icon={<PhBrain size={14} weight="duotone" />}>
-                    Live Guide
-                  </GuideSectionLabel>
+                  <span className="construct-panel-kicker">Live Guide</span>
                   <p>{runtimeGuide.summary}</p>
                   {runtimeGuide.observations.length > 0 ? (
                     <div className="construct-tag-list">
@@ -3004,18 +2370,14 @@ function FloatingGuideCard({
 
               {runtimeGuide?.nextAction ? (
                 <div className="construct-guide-next-action">
-                  <GuideSectionLabel icon={<PhTarget size={14} weight="duotone" />}>
-                    Next action
-                  </GuideSectionLabel>
+                  <span className="construct-panel-kicker">Next action</span>
                   <p>{runtimeGuide.nextAction}</p>
                 </div>
               ) : null}
 
               {runtimeGuideEvents.length > 0 ? (
                 <div className="construct-guide-event-log">
-                  <GuideSectionLabel icon={<PhSparkle size={14} weight="duotone" />}>
-                    Agent activity
-                  </GuideSectionLabel>
+                  <span className="construct-panel-kicker">Agent activity</span>
                   {runtimeGuideEvents.slice(-4).map((event) => (
                     <div key={event.id} className="construct-guide-event-item">
                       <strong>{event.title}</strong>
@@ -3036,6 +2398,15 @@ function FloatingGuideCard({
             </motion.div>
           ) : null}
         </AnimatePresence>
+
+        <TaskResultPanel
+          attemptStatus={attemptStatus}
+          rewriteGate={rewriteGate}
+          taskRunState={taskRunState}
+          taskResult={taskResult}
+          taskError={taskError}
+          title={activeStep.title}
+        />
       </div>
     </motion.aside>
   );
@@ -3044,7 +2415,6 @@ function FloatingGuideCard({
 function AppSidebar({
   projectsDashboard,
   runnerHealth,
-  authSession,
   dashboardBusy,
   currentView,
   activeStep,
@@ -3053,13 +2423,10 @@ function AppSidebar({
   onOpenProjects,
   onOpenLesson,
   onOpenCode,
-  onStartProject,
-  onOpenAccount,
-  onLogout
+  onStartProject
 }: {
   projectsDashboard: ProjectsDashboardResponse | null;
   runnerHealth: RunnerHealth | null;
-  authSession: AuthSessionView | null;
   dashboardBusy: boolean;
   currentView: "projects" | "lesson" | "code";
   activeStep: BlueprintStep | null;
@@ -3069,8 +2436,6 @@ function AppSidebar({
   onOpenLesson: () => void;
   onOpenCode: () => void;
   onStartProject: () => void;
-  onOpenAccount: () => void;
-  onLogout: () => void;
 }) {
   const recentProjects = (projectsDashboard?.projects ?? []).slice(0, 5);
 
@@ -3078,6 +2443,20 @@ function AppSidebar({
     <SidebarProvider className="construct-app-sidebar-provider">
       <Sidebar collapsible="none" className="construct-app-sidebar">
         <SidebarHeader className="construct-app-sidebar-top">
+          <div className="construct-app-brand">
+            <div className="flex items-center gap-3">
+              <Avatar className="size-10 rounded-xl border border-border/80 bg-background/70">
+                <AvatarFallback className="rounded-xl bg-transparent text-sm font-semibold">
+                  CT
+                </AvatarFallback>
+              </Avatar>
+              <div className="flex min-w-0 flex-col gap-1">
+                <span className="construct-app-brand-kicker">Construct</span>
+                <strong>{activeProjectName ?? "Construction IDE"}</strong>
+              </div>
+            </div>
+          </div>
+
           <PrimaryButton
             type="button"
             onClick={onStartProject}
@@ -3089,7 +2468,7 @@ function AppSidebar({
           </PrimaryButton>
         </SidebarHeader>
 
-        <SidebarContent className="construct-app-sidebar-content">
+        <SidebarContent>
           <SidebarGroup className="construct-app-sidebar-section">
             <SidebarGroupLabel className="construct-panel-kicker">
               Workspace
@@ -3138,7 +2517,7 @@ function AppSidebar({
             </SidebarGroupContent>
           </SidebarGroup>
 
-          <SidebarGroup className="construct-app-sidebar-section construct-app-sidebar-section--recents">
+          <SidebarGroup className="construct-app-sidebar-section">
             <div className="construct-app-sidebar-section-header">
               <SidebarGroupLabel className="construct-panel-kicker">
                 Recents
@@ -3146,14 +2525,15 @@ function AppSidebar({
               <ToolbarPill>{recentProjects.length}</ToolbarPill>
             </div>
 
-            <SidebarGroupContent className="construct-app-sidebar-recents-content">
+            <SidebarGroupContent>
               {recentProjects.length > 0 ? (
-                <ScrollArea className="construct-app-recent-scroll">
+                <ScrollArea className="max-h-[40vh]">
                   <div className="construct-app-recent-list">
                     {recentProjects.map((project) => (
-                      <button
+                      <Button
                         key={project.id}
                         type="button"
+                        variant="ghost"
                         onClick={() => {
                           onOpenProject(project);
                         }}
@@ -3165,7 +2545,7 @@ function AppSidebar({
                       >
                         <strong>{project.name}</strong>
                         <span>{project.currentStepTitle ?? project.description}</span>
-                      </button>
+                      </Button>
                     ))}
                   </div>
                 </ScrollArea>
@@ -3181,34 +2561,6 @@ function AppSidebar({
         </SidebarContent>
 
         <SidebarFooter className="construct-app-sidebar-section construct-app-sidebar-section--meta">
-          {authSession?.user ? (
-            <div className="construct-app-account-card">
-              <div className="construct-app-account-copy">
-                <strong>{authSession.user.displayName}</strong>
-                <span>{authSession.user.email}</span>
-              </div>
-              <div className="construct-app-account-actions">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="construct-app-account-action"
-                  onClick={onOpenAccount}
-                >
-                  Account
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="construct-app-account-action"
-                  onClick={onLogout}
-                >
-                  Sign out
-                </Button>
-              </div>
-            </div>
-          ) : null}
           <div className="construct-app-meta-row">
             <span>Runner</span>
             <ToolbarPill variant="outline">{runnerHealth?.status ?? "offline"}</ToolbarPill>
@@ -3232,12 +2584,10 @@ function WorkbenchTopbar({
   activeFilePath,
   runnerHealth,
   saveStateLabel,
-  authSession,
   onOpenProjects,
   onOpenLesson,
   onOpenCode,
   onStartProject,
-  onOpenAccount,
   onThemeChange,
   theme
 }: {
@@ -3247,113 +2597,71 @@ function WorkbenchTopbar({
   activeFilePath: string | null;
   runnerHealth: RunnerHealth | null;
   saveStateLabel: string;
-  authSession: AuthSessionView | null;
   onOpenProjects: () => void;
   onOpenLesson: () => void;
   onOpenCode: () => void;
   onStartProject: () => void;
-  onOpenAccount: () => void;
   onThemeChange: (theme: ThemeMode) => void;
   theme: ThemeMode;
 }) {
-  const contextLabel =
-    currentView === "projects" ? "Workspace" : activeProjectName ?? "Workspace";
-  const contextTitle =
-    currentView === "projects"
-      ? activeProjectName ?? "Projects"
-      : activeFilePath ?? activeStepTitle ?? activeProjectName ?? "No file focused";
-  const contextMeta =
-    currentView === "projects"
-      ? "Desktop workspace overview"
-      : activeProjectName ?? "Construct workspace";
-  const userDisplayName = authSession?.user?.displayName?.trim() ?? "";
-  const shouldShowSaveState = currentView === "code";
-
   return (
     <header className="construct-workbench-topbar">
-      <div className="construct-workbench-topbar-lead">
-        <Badge variant="outline" className="construct-workbench-context-badge">
-          {contextLabel}
-        </Badge>
-        <div className="construct-workbench-topbar-context">
-          <strong>{contextTitle}</strong>
-          <span>{contextMeta}</span>
-        </div>
+      <div className="construct-workbench-topbar-context">
+        <span className="construct-panel-kicker">
+          {currentView === "projects" ? "Projects" : activeProjectName ?? "Workspace"}
+        </span>
+        <strong>
+          {currentView === "projects"
+            ? "Return to any saved project and keep building."
+            : activeFilePath ?? activeStepTitle ?? activeProjectName ?? "No file focused"}
+        </strong>
       </div>
 
-      <Tabs
-        value={currentView}
-        onValueChange={(value) => {
-          if (value === "projects") {
-            onOpenProjects();
-            return;
-          }
-
-          if (value === "lesson") {
-            onOpenLesson();
-            return;
-          }
-
-          onOpenCode();
-        }}
-        className="construct-workbench-nav"
-      >
-        <TabsList className="construct-workbench-mode-switch" aria-label="Current view">
-          <TabsTrigger value="projects" className="construct-workbench-mode-button">
-            Projects
-          </TabsTrigger>
-          <TabsTrigger value="lesson" className="construct-workbench-mode-button">
-            Step
-          </TabsTrigger>
-          <TabsTrigger value="code" className="construct-workbench-mode-button">
-            Code
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
-
-      <div className="construct-workbench-topbar-actions">
-        <div className="construct-workbench-action-cluster">
-          {authSession?.user ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="construct-workbench-user-chip"
-              onClick={onOpenAccount}
-            >
-              <Avatar size="sm" className="construct-workbench-user-avatar">
-                <AvatarFallback>{initialsForName(userDisplayName)}</AvatarFallback>
-              </Avatar>
-              <span>{userDisplayName}</span>
-            </Button>
-          ) : null}
-          <ToolbarPill variant="outline" className="construct-workbench-status-pill">
-            {runnerHealth?.status ?? "offline"}
-          </ToolbarPill>
-          {shouldShowSaveState ? (
-            <ToolbarPill variant="outline" className="construct-workbench-status-pill">
-              {saveStateLabel}
-            </ToolbarPill>
-          ) : null}
-        </div>
-        <div className="construct-workbench-action-cluster construct-workbench-action-cluster--primary">
+      <div className="construct-workbench-mode-switch" role="tablist" aria-label="Current view">
+        <ButtonGroup className="construct-workbench-mode-switch">
           <Button
             type="button"
-            variant="outline"
-            size="sm"
-            onClick={onStartProject}
-            className="construct-workbench-new-button"
+            variant={currentView === "projects" ? "secondary" : "ghost"}
+            className={cn(
+              "construct-workbench-mode-button",
+              currentView === "projects" ? "is-active" : ""
+            )}
+            onClick={onOpenProjects}
           >
-            <PlusIcon data-icon="inline-start" />
-            New
+            Projects
           </Button>
-          <Separator orientation="vertical" className="construct-workbench-action-separator" />
-          <ThemeDropdown
-            theme={theme}
-            onThemeChange={onThemeChange}
-            className="construct-workbench-theme-button"
-          />
-        </div>
+          <Button
+            type="button"
+            variant={currentView === "lesson" ? "secondary" : "ghost"}
+            className={cn(
+              "construct-workbench-mode-button",
+              currentView === "lesson" ? "is-active" : ""
+            )}
+            onClick={onOpenLesson}
+          >
+            Step
+          </Button>
+          <Button
+            type="button"
+            variant={currentView === "code" ? "secondary" : "ghost"}
+            className={cn(
+              "construct-workbench-mode-button",
+              currentView === "code" ? "is-active" : ""
+            )}
+            onClick={onOpenCode}
+          >
+            Code
+          </Button>
+        </ButtonGroup>
+      </div>
+
+      <div className="construct-workbench-topbar-actions">
+        <ToolbarPill>{runnerHealth?.status ?? "offline"}</ToolbarPill>
+        <ToolbarPill variant="outline">{saveStateLabel}</ToolbarPill>
+        <SecondaryButton type="button" onClick={onStartProject}>
+          New
+        </SecondaryButton>
+        <ThemeDropdown theme={theme} onThemeChange={onThemeChange} />
       </div>
     </header>
   );
@@ -3379,7 +2687,7 @@ function ProjectsHome({
   planningSession: PlanningSession | null;
   planningPlan: GeneratedProjectPlan | null;
   onResumeCreation: () => void;
-  onOpenProject: (project: ProjectSummary, preferredStepId?: string | null) => void;
+  onOpenProject: (project: ProjectSummary) => void;
   onStartProject: () => void;
 }) {
   const projects = projectsDashboard?.projects ?? [];
@@ -3399,6 +2707,33 @@ function ProjectsHome({
 
       return right.updatedAt.localeCompare(left.updatedAt);
     });
+  const knowledgeStats = learnerProfile?.knowledgeStats ?? {
+    rootConceptCount: knowledgeRoots.length,
+    totalConceptCount: knowledgeConcepts.length,
+    leafConceptCount: knowledgeConcepts.filter((concept) => concept.children.length === 0).length,
+    maxDepth: knowledgeConcepts.reduce(
+      (depth, concept) => Math.max(depth, concept.id.split(".").length),
+      0
+    ),
+    averageScore:
+      knowledgeConcepts.length > 0
+        ? Math.round(
+            knowledgeConcepts.reduce((sum, concept) => sum + concept.score, 0) /
+              knowledgeConcepts.length
+          )
+        : 0,
+    strongConceptCount: knowledgeConcepts.filter((concept) => concept.score >= 75).length,
+    developingConceptCount: knowledgeConcepts.filter(
+      (concept) => concept.score >= 45 && concept.score < 75
+    ).length,
+    weakConceptCount: knowledgeConcepts.filter((concept) => concept.score < 45).length
+  };
+  const recentGoals = knowledgeBase
+    ? knowledgeBase.goals
+        .slice()
+        .sort((left, right) => right.lastPlannedAt.localeCompare(left.lastPlannedAt))
+        .slice(0, 5)
+    : [];
   const projectLookup = useMemo(
     () => new Map(projects.map((project) => [project.id, project])),
     [projects]
@@ -3451,12 +2786,21 @@ function ProjectsHome({
       ),
     [knowledgeConcepts]
   );
+  const historyEntries = learnerProfile?.learnerModel?.history ?? [];
+  const totalHintsUsed = Object.values(learnerProfile?.learnerModel?.hintsUsed ?? {}).reduce(
+    (sum, value) => sum + value,
+    0
+  );
   const resumeCreationAvailable = Boolean(planningSession);
   const resumeProgressLabel = planningPlan
     ? `${planningPlan.steps.length} planned steps`
     : planningSession
       ? `${planningSession.questions.length} tailoring questions`
       : "";
+  const passedAttempts = historyEntries.filter((entry) => entry.status === "passed").length;
+  const strugglingAttempts = historyEntries.filter(
+    (entry) => entry.status === "failed" || entry.status === "needs-review"
+  ).length;
   const [knowledgeView, setKnowledgeView] = useState<"concepts" | "projects">("concepts");
   const [expandedKnowledgeIds, setExpandedKnowledgeIds] = useState<Record<string, boolean>>({});
   const [expandedKnowledgeProjectIds, setExpandedKnowledgeProjectIds] = useState<
@@ -3674,6 +3018,50 @@ function ProjectsHome({
             <ToolbarPill>{knowledgeConcepts.length}</ToolbarPill>
           </div>
 
+          <p className="construct-home-surface-copy">
+            This is the real learner knowledge graph Construct stores and uses while
+            planning. Topics can nest as deeply as needed, parent scores roll up from
+            child concepts, and runtime signals update the exact subtopic the learner is
+            struggling with or mastering.
+          </p>
+
+          <div className="construct-home-profile-stats">
+            <div className="construct-home-profile-stat">
+              <span>Concepts</span>
+              <strong>{knowledgeStats.totalConceptCount}</strong>
+            </div>
+            <div className="construct-home-profile-stat">
+              <span>Roots</span>
+              <strong>{knowledgeStats.rootConceptCount}</strong>
+            </div>
+            <div className="construct-home-profile-stat">
+              <span>Leaves</span>
+              <strong>{knowledgeStats.leafConceptCount}</strong>
+            </div>
+            <div className="construct-home-profile-stat">
+              <span>Depth</span>
+              <strong>{knowledgeStats.maxDepth}</strong>
+            </div>
+          </div>
+
+          <div className="construct-home-knowledge-summary">
+            <span>
+              Average score <strong>{knowledgeStats.averageScore}</strong>
+            </span>
+            <span>
+              Strong <strong>{knowledgeStats.strongConceptCount}</strong>
+            </span>
+            <span>
+              Developing <strong>{knowledgeStats.developingConceptCount}</strong>
+            </span>
+            <span>
+              Needs support <strong>{knowledgeStats.weakConceptCount}</strong>
+            </span>
+            <span>
+              Goals tracked <strong>{recentGoals.length}</strong>
+            </span>
+          </div>
+
           {knowledgeRoots.length > 0 ? (
             <Tabs
               value={knowledgeView}
@@ -3775,6 +3163,94 @@ function ProjectsHome({
         </section>
       </div>
 
+      <div className="construct-home-dashboard-secondary">
+        <section className="construct-home-surface">
+          <div className="construct-home-surface-header">
+            <div>
+              <span className="construct-home-section-kicker">Goal history</span>
+              <h2>Recent planned goals</h2>
+            </div>
+          </div>
+
+          {recentGoals.length > 0 ? (
+            <div className="construct-home-goal-list">
+              {recentGoals.map((goal) => (
+                <div key={`${goal.goal}-${goal.lastPlannedAt}`} className="construct-home-goal-item">
+                  <div className="construct-home-goal-head">
+                    <strong>{goal.goal}</strong>
+                    <span>{formatProjectTimestamp(goal.lastPlannedAt)}</span>
+                  </div>
+                  <p>
+                    {goal.language} · {goal.domain}
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="construct-home-empty">
+              Planned goals will accumulate here once the Architect has tailored a few
+              projects around the learner.
+            </div>
+          )}
+        </section>
+
+        <section className="construct-home-surface">
+          <div className="construct-home-surface-header">
+            <div>
+              <span className="construct-home-section-kicker">Learning signals</span>
+              <h2>Runtime evidence</h2>
+            </div>
+          </div>
+
+          <div className="construct-home-signal-grid">
+            <div className="construct-home-fact">
+              <span>Attempt history</span>
+              <strong>{historyEntries.length}</strong>
+            </div>
+            <div className="construct-home-fact">
+              <span>Passed attempts</span>
+              <strong>{passedAttempts}</strong>
+            </div>
+            <div className="construct-home-fact">
+              <span>Needs work</span>
+              <strong>{strugglingAttempts}</strong>
+            </div>
+            <div className="construct-home-fact">
+              <span>Hints used</span>
+              <strong>{totalHintsUsed}</strong>
+            </div>
+          </div>
+
+          {historyEntries.length > 0 ? (
+            <div className="construct-home-signal-list">
+              {historyEntries
+                .slice()
+                .reverse()
+                .slice(0, 5)
+                .map((entry) => (
+                  <div
+                    key={`${entry.stepId}-${entry.recordedAt}-${entry.attempt}`}
+                    className="construct-home-signal-item"
+                  >
+                    <div className="construct-home-signal-head">
+                      <strong>{entry.stepId}</strong>
+                      <span>{formatProjectTimestamp(entry.recordedAt)}</span>
+                    </div>
+                    <p>
+                      {entry.status} · attempt {entry.attempt} · {entry.timeSpentMs} ms ·
+                      hints {entry.hintsUsed}
+                    </p>
+                  </div>
+                ))}
+            </div>
+          ) : (
+            <div className="construct-home-empty">
+              Task execution signals will appear here as the learner moves through code
+              steps and hidden tests.
+            </div>
+          )}
+        </section>
+      </div>
     </section>
   );
 }
@@ -3857,7 +3333,7 @@ function KnowledgeExplorerNodeView({
   goalLookup: Map<string, StoredKnowledgeGoal>;
   onToggleKnowledge: (conceptId: string) => void;
   onSelectKnowledge: (itemKey: string) => void;
-  onOpenProject: (project: ProjectSummary, preferredStepId?: string | null) => void;
+  onOpenProject: (project: ProjectSummary) => void;
 }) {
   const hasChildren = concept.children.length > 0;
   const isExpanded = expandedKnowledgeIds[concept.id] ?? true;
@@ -4031,7 +3507,7 @@ function KnowledgeProjectGroupView({
   selectedKnowledgeItemKey: string | null;
   onToggleProjectGroup: (groupKey: string) => void;
   onSelectKnowledge: (itemKey: string) => void;
-  onOpenProject: (project: ProjectSummary, preferredStepId?: string | null) => void;
+  onOpenProject: (project: ProjectSummary) => void;
   projectLookup: Map<string, ProjectSummary>;
   goalLookup: Map<string, StoredKnowledgeGoal>;
 }) {
@@ -4177,7 +3653,7 @@ function KnowledgeArtifactList({
   artifacts: KnowledgeArtifactRecord[];
   projectLookup: Map<string, ProjectSummary>;
   goalLookup: Map<string, StoredKnowledgeGoal>;
-  onOpenProject: (project: ProjectSummary, preferredStepId?: string | null) => void;
+  onOpenProject: (project: ProjectSummary) => void;
 }) {
   if (artifacts.length === 0) {
     return (
@@ -4243,10 +3719,10 @@ function KnowledgeArtifactList({
                   variant="outline"
                   className="construct-knowledge-link-button"
                   onClick={() => {
-                    onOpenProject(linkedProject, artifact.stepId);
+                    onOpenProject(linkedProject);
                   }}
                 >
-                  {artifact.stepId ? "Open step" : "Open project"}
+                  Open project
                 </Button>
               ) : null}
             </div>
@@ -4335,7 +3811,7 @@ function buildKnowledgeProjectGroups(
             goal?.projectName ??
             goal?.goal ??
             "Project-linked knowledge",
-          projectGoal: artifact.artifact.projectGoal ?? project?.goal ?? goal?.goal ?? null,
+          projectGoal: artifact.artifact.projectGoal ?? goal?.goal ?? project?.goal ?? null,
           project,
           goal,
           conceptEntries: new Map(),
@@ -4347,7 +3823,7 @@ function buildKnowledgeProjectGroups(
         existing.conceptEntries.get(concept.id) ??
         {
           concept,
-          artifacts: []
+          artifacts: [] as KnowledgeArtifactRecord[]
         };
 
       conceptEntry.artifacts.push(artifact);
@@ -4362,7 +3838,7 @@ function buildKnowledgeProjectGroups(
     }
   }
 
-  return Array.from(groupMap.entries())
+  return [...groupMap.entries()]
     .map(([key, group]) => ({
       key,
       projectId: group.projectId,
@@ -4370,31 +3846,27 @@ function buildKnowledgeProjectGroups(
       projectGoal: group.projectGoal,
       project: group.project,
       goal: group.goal,
-      artifactCount: group.artifactCount,
-      latestUpdatedAt: group.latestUpdatedAt,
-      conceptEntries: Array.from(group.conceptEntries.values())
-        .map((entry) => ({
-          concept: entry.concept,
-          artifacts: entry.artifacts.sort((left, right) =>
+      conceptEntries: [...group.conceptEntries.values()]
+        .map((entry) => {
+          const sortedArtifacts = [...entry.artifacts].sort((left, right) =>
             right.artifact.recordedAt.localeCompare(left.artifact.recordedAt)
-          ),
-          latestArtifact:
-            entry.artifacts
-              .slice()
-              .sort((left, right) =>
-                right.artifact.recordedAt.localeCompare(left.artifact.recordedAt)
-              )[0]?.artifact ?? null
-        }))
-        .sort((left, right) => {
-          const leftTime = left.latestArtifact?.recordedAt ?? left.concept.updatedAt;
-          const rightTime = right.latestArtifact?.recordedAt ?? right.concept.updatedAt;
+          );
 
-          if (rightTime !== leftTime) {
-            return rightTime.localeCompare(leftTime);
+          return {
+            concept: entry.concept,
+            artifacts: sortedArtifacts,
+            latestArtifact: sortedArtifacts[0]?.artifact ?? null
+          };
+        })
+        .sort((left, right) => {
+          if (right.concept.score !== left.concept.score) {
+            return right.concept.score - left.concept.score;
           }
 
-          return right.concept.score - left.concept.score;
-        })
+          return left.concept.label.localeCompare(right.concept.label);
+        }),
+      artifactCount: group.artifactCount,
+      latestUpdatedAt: group.latestUpdatedAt
     }))
     .sort((left, right) => right.latestUpdatedAt.localeCompare(left.latestUpdatedAt));
 }
@@ -4408,11 +3880,9 @@ function PlanningOverlay({
   planningAnswers,
   planningSession,
   onClose,
-  onContinueToWorkspace,
   onGoalChange,
   onOptionAnswerChange,
   onCustomAnswerChange,
-  onSkipAnswerChange,
   onStartPlanning,
   onCompletePlanning,
   canCompletePlanning,
@@ -4426,18 +3896,15 @@ function PlanningOverlay({
   planningAnswers: Record<string, PlanningAnswerDraft>;
   planningSession: PlanningSession | null;
   onClose: () => void;
-  onContinueToWorkspace: () => void;
   onGoalChange: (value: string) => void;
   onOptionAnswerChange: (questionId: string, optionId: string) => void;
   onCustomAnswerChange: (questionId: string, customResponse: string) => void;
-  onSkipAnswerChange: (questionId: string) => void;
   onStartPlanning: () => void;
   onCompletePlanning: () => void;
   canCompletePlanning: boolean;
   canResumePlanningGeneration: boolean;
 }) {
   const isQuestionPhase = planningSession && !planningPlan;
-  const isStartPhase = !planningSession;
   const answeredQuestionCount = planningSession
     ? planningSession.questions.filter((question) =>
         hasPlanningAnswer(planningAnswers[question.id])
@@ -4469,38 +3936,26 @@ function PlanningOverlay({
         aria-label="Close project creation"
         onClick={onClose}
       />
-      <section
-        className={cn(
-          "construct-planning-panel max-w-none gap-0 border border-border bg-background p-0 text-foreground shadow-2xl ring-1 ring-foreground/10 sm:max-w-[calc(100vw-24px)]",
-          isStartPhase ? "construct-planning-panel--compact" : ""
-        )}
-      >
+      <section className="construct-planning-panel max-w-none gap-0 border border-border bg-background p-0 text-foreground shadow-2xl ring-1 ring-foreground/10 sm:max-w-[calc(100vw-24px)]">
         <div className="sr-only" aria-hidden="false">
           <h1>Create a new project</h1>
           <p>Work with the Architect to tailor and generate a real project workspace.</p>
         </div>
-        <header
-          className={cn(
-            "construct-planning-header",
-            isStartPhase ? "construct-planning-header--compact" : ""
-          )}
-        >
+        <header className="construct-planning-header">
           <div className="construct-planning-header-copy">
             <span className="construct-brief-kicker">Architect</span>
             <h1>Create a new project.</h1>
             <p>
-              Describe the project once. Construct will generate the project plan,
-              first build step, and hidden validations around that goal.
+              Describe the project once, then Construct will build the project spine,
+              shape the first frontier, and prepare the hidden validations around the learner.
             </p>
           </div>
           <div className="construct-planning-header-actions">
-            {!isStartPhase ? (
-              <ToolbarPill>
-                {planningSession
-                  ? `${answeredQuestionCount}/${planningSession.questions.length} tailored`
-                  : "new project"}
-              </ToolbarPill>
-            ) : null}
+            <ToolbarPill>
+              {planningSession
+                ? `${answeredQuestionCount}/${planningSession.questions.length} tailored`
+                : "new project"}
+            </ToolbarPill>
             <SecondaryButton type="button" onClick={onClose}>
               Close
             </SecondaryButton>
@@ -4508,14 +3963,21 @@ function PlanningOverlay({
         </header>
 
         {!planningSession ? (
-          <div className="construct-planning-start construct-planning-start--compact">
-            <section className="construct-planning-composer construct-planning-composer--compact">
+          <div className="construct-planning-start">
+            <section className="construct-planning-composer">
+              <span className="construct-panel-kicker">Project goal</span>
+              <h2>Describe the project.</h2>
+              <p>
+                Tell Construct what you want to build. The Architect will shape the
+                next-step context, implementation order, and hidden validation around this
+                goal.
+              </p>
               <FieldGroup>
                 <Field>
                   <FieldLabel htmlFor="planning-goal">Project brief</FieldLabel>
                   <FieldDescription>
-                    Keep it short and concrete. Include what you want to build and any
-                    important constraints.
+                    Capture the app, domain, and the concepts you want Construct to teach
+                    through the implementation itself.
                   </FieldDescription>
                   <InputGroup className="construct-check-textarea construct-planning-textarea">
                     <InputGroupAddon align="block-start">
@@ -4551,14 +4013,38 @@ function PlanningOverlay({
                   )}
                 </PrimaryButton>
               </div>
-              <div className="construct-tag-list construct-planning-brief-strip">
-                <TagChip>project spine</TagChip>
-                <TagChip>adaptive frontier</TagChip>
-                <TagChip>hidden tests</TagChip>
-                <TagChip>real code tasks</TagChip>
-              </div>
-              {planningError ? <InlineError>{planningError}</InlineError> : null}
             </section>
+
+            <aside className="construct-planning-sidepanel">
+              <section className="construct-info-panel">
+                <span className="construct-panel-kicker">What the Architect will produce</span>
+                <div className="construct-tag-list">
+                  <TagChip>project path</TagChip>
+                  <TagChip>project spine</TagChip>
+                  <TagChip>adaptive frontier</TagChip>
+                  <TagChip>concept checks</TagChip>
+                  <TagChip>real code tasks</TagChip>
+                  <TagChip>hidden tests</TagChip>
+                </div>
+                <p>
+                  Construct creates the project spine, prepares the first visible slice,
+                  wires hidden tests, and then hands the learner into the workspace at the
+                  right step.
+                </p>
+              </section>
+
+              {planningEvents.length > 0 ? (
+                <section className="construct-planning-event-log">
+                  <div className="construct-brief-section-header">
+                    <div>
+                      <span className="construct-brief-kicker">Agent Activity</span>
+                      <h2>What the Architect is doing right now.</h2>
+                    </div>
+                  </div>
+                  <ArchitectTaskBoard events={planningEvents} />
+                </section>
+              ) : null}
+            </aside>
           </div>
         ) : null}
 
@@ -4797,26 +4283,6 @@ function PlanningOverlay({
                 </SecondaryButton>
 
                 <div className="construct-planning-question-footer-actions">
-                  <SecondaryButton
-                    type="button"
-                    onClick={() => {
-                      onSkipAnswerChange(currentQuestion.id);
-
-                      if (activeQuestionIndex < questionCount - 1) {
-                        setActiveQuestionIndex((current) =>
-                          Math.min(questionCount - 1, current + 1)
-                        );
-                      }
-                    }}
-                    className={cn(
-                      currentAnswer?.answerType === "skipped"
-                        ? "construct-planning-skip-button is-selected"
-                        : "construct-planning-skip-button"
-                    )}
-                    disabled={planningBusy}
-                  >
-                    Skip for now
-                  </SecondaryButton>
                   <PrimaryButton
                     type="button"
                     onClick={() => {
@@ -4871,7 +4337,7 @@ function PlanningOverlay({
                 )}
               </PrimaryButton>
             ) : (
-              <PrimaryButton type="button" onClick={onContinueToWorkspace}>
+              <PrimaryButton type="button" onClick={onClose}>
                 Continue to workspace
               </PrimaryButton>
             )
@@ -5486,118 +4952,98 @@ function normalizeLessonSlideToMarkdown(slide: string | LessonSlide): string {
     .join("\n\n");
 }
 
-function FileIcon({ filePath }: { filePath: string }) {
-  const normalizedPath = filePath.toLowerCase();
-  const fileName = normalizedPath.split("/").pop() ?? normalizedPath;
-  const extension = fileName.includes(".") ? fileName.split(".").pop() ?? "" : "";
-
-  const isPackageManifest =
-    fileName === "package.json" ||
-    fileName === "composer.json" ||
-    fileName === "cargo.toml" ||
-    fileName === "gemfile";
-  const isLockFile =
-    fileName === "package-lock.json" ||
-    fileName === "pnpm-lock.yaml" ||
-    fileName === "yarn.lock" ||
-    fileName === "bun.lockb" ||
-    fileName === "cargo.lock";
-  const isConfigFile =
-    fileName === "turbo.json" ||
-    fileName === "dockerfile" ||
-    fileName === "compose.yaml" ||
-    fileName === "compose.yml" ||
-    fileName === ".gitignore" ||
-    fileName === ".gitattributes" ||
-    fileName === ".gitmodules" ||
-    fileName.startsWith(".env") ||
-    fileName.startsWith(".prettierrc") ||
-    fileName.startsWith(".eslintrc") ||
-    fileName.startsWith("tsconfig") ||
-    fileName.startsWith("jsconfig") ||
-    fileName.endsWith(".config.js") ||
-    fileName.endsWith(".config.cjs") ||
-    fileName.endsWith(".config.mjs") ||
-    fileName.endsWith(".config.ts") ||
-    fileName.endsWith(".config.jsx") ||
-    fileName.endsWith(".config.tsx");
-
-  let IconComponent = FileQuestionMarkIcon;
-  let toneClass = "is-generic";
-
-  if (isLockFile) {
-    IconComponent = FileLockIcon;
-    toneClass = "is-lock";
-  } else if (isPackageManifest) {
-    IconComponent = Package2Icon;
-    toneClass = "is-package";
-  } else if (isConfigFile) {
-    IconComponent = Settings2Icon;
-    toneClass = "is-config";
-  } else if (
-    fileName.endsWith(".d.ts") ||
-    [
-      "ts",
-      "tsx",
-      "mts",
-      "cts",
-      "js",
-      "jsx",
-      "mjs",
-      "cjs",
-      "py",
-      "rs",
-      "go",
-      "java",
-      "kt",
-      "rb",
-      "php",
-      "swift",
-      "cs"
-    ].includes(extension)
-  ) {
-    IconComponent = FileCodeIcon;
-    toneClass = "is-code";
-  } else if (["json", "jsonc"].includes(extension)) {
-    IconComponent = BracesIcon;
-    toneClass = "is-data";
-  } else if (["css", "scss", "sass", "less", "pcss"].includes(extension)) {
-    IconComponent = CodeXmlIcon;
-    toneClass = "is-style";
-  } else if (["html", "xml", "svg"].includes(extension)) {
-    IconComponent = CodeXmlIcon;
-    toneClass = "is-markup";
-  } else if (["sql", "prisma"].includes(extension)) {
-    IconComponent = FileStackIcon;
-    toneClass = "is-data";
-  } else if (["yml", "yaml", "toml", "ini"].includes(extension)) {
-    IconComponent = FileCogIcon;
-    toneClass = "is-config";
-  } else if (["sh", "bash", "zsh", "fish"].includes(extension)) {
-    IconComponent = FileTerminalIcon;
-    toneClass = "is-terminal";
-  } else if (["md", "mdx", "txt"].includes(extension)) {
-    IconComponent = FileTextIcon;
-    toneClass = "is-doc";
-  } else if (["csv", "tsv"].includes(extension)) {
-    IconComponent = FileSpreadsheetIcon;
-    toneClass = "is-data";
-  } else if (["png", "jpg", "jpeg", "gif", "webp", "avif", "ico", "bmp"].includes(extension)) {
-    IconComponent = FileImageIcon;
-    toneClass = "is-media";
-  } else if (["mp4", "mov", "webm", "mkv", "avi"].includes(extension)) {
-    IconComponent = FileVideoCameraIcon;
-    toneClass = "is-media";
-  } else if (["zip", "tar", "gz", "tgz", "rar", "7z"].includes(extension)) {
-    IconComponent = FileArchiveIcon;
-    toneClass = "is-archive";
-  }
+function ExplorerTreeNode({
+  node,
+  activeFilePath,
+  onSelectFile,
+  expandedDirectories,
+  onToggleDirectory,
+  forceExpanded,
+  depth = 0
+}: {
+  node: TreeNode;
+  activeFilePath: string;
+  onSelectFile: (filePath: string) => void;
+  expandedDirectories: Record<string, boolean>;
+  onToggleDirectory: (path: string) => void;
+  forceExpanded: boolean;
+  depth?: number;
+}) {
+  const isDirectory = node.kind === "directory";
+  const isExpanded = forceExpanded || expandedDirectories[node.path] !== false;
+  const isActive = !isDirectory && node.path === activeFilePath;
 
   return (
-    <span className={cn("construct-file-type-icon", toneClass)} aria-hidden="true">
-      <IconComponent className="size-3.5" strokeWidth={1.9} />
-    </span>
+    <div className="construct-tree-node">
+      <Button
+        type="button"
+        variant="ghost"
+        onClick={() => {
+          if (isDirectory) {
+            onToggleDirectory(node.path);
+            return;
+          }
+
+          onSelectFile(node.path);
+        }}
+        className={`construct-tree-row ${isActive ? "is-active" : ""}`}
+        style={{ paddingLeft: `${16 + depth * 24}px` }}
+      >
+        <span className="construct-tree-chevron">
+          {isDirectory ? (isExpanded ? "⌄" : "›") : ""}
+        </span>
+        <span className="construct-tree-icon">
+          {isDirectory ? <FolderIcon /> : <FileIcon filePath={node.path} />}
+        </span>
+        <span className="construct-tree-label">{node.name}</span>
+      </Button>
+
+      {isDirectory && isExpanded ? (
+        <div className="construct-tree-children">
+          {node.children.map((child) => (
+            <ExplorerTreeNode
+              key={child.path}
+              node={child}
+              activeFilePath={activeFilePath}
+              onSelectFile={onSelectFile}
+              expandedDirectories={expandedDirectories}
+              onToggleDirectory={onToggleDirectory}
+              forceExpanded={forceExpanded}
+              depth={depth + 1}
+            />
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
+}
+
+function FolderIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <path
+        d="M2.75 5.5h4.1l1.2 1.5h9.2v7.25a1 1 0 0 1-1 1H3.75a1 1 0 0 1-1-1V5.5Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function FileIcon({ filePath }: { filePath: string }) {
+  const extension = filePath.split(".").pop()?.toLowerCase();
+  const label =
+    extension === "ts" || extension === "tsx"
+      ? "TS"
+      : extension === "sql"
+        ? "SQL"
+        : extension === "json"
+          ? "{}"
+          : "</>";
+
+  return <span className="construct-file-badge">{label}</span>;
 }
 
 function labelForEditorPath(filePath: string | null) {
@@ -5607,21 +5053,6 @@ function labelForEditorPath(filePath: string | null) {
 
   const segments = filePath.split("/");
   return segments[segments.length - 1] ?? filePath;
-}
-
-function initialsForName(name: string) {
-  const normalized = name.trim();
-
-  if (!normalized) {
-    return "CU";
-  }
-
-  const segments = normalized.split(/\s+/).filter(Boolean);
-
-  return segments
-    .slice(0, 2)
-    .map((segment) => segment[0]?.toUpperCase() ?? "")
-    .join("");
 }
 
 function buildEditorBreadcrumb(projectName: string, filePath: string | null) {
@@ -5846,16 +5277,15 @@ function MetadataList({ title, values }: { title: string; values: string[] }) {
   );
 }
 
-function summarizeCompactList(values: string[]) {
-  if (values.length === 0) {
-    return "No details recorded.";
-  }
-
-  if (values.length <= 2) {
-    return values.join(" • ");
-  }
-
-  return `${values.slice(0, 2).join(" • ")} • +${values.length - 2} more`;
+function MetricPill({ label, value }: { label: string; value: string }) {
+  return (
+    <Card className="construct-session-metric" size="sm">
+      <CardContent className="flex items-center justify-between gap-3 px-3 py-2">
+        <span>{label}</span>
+        <strong>{value}</strong>
+      </CardContent>
+    </Card>
+  );
 }
 
 function CheckCard({
@@ -6001,9 +5431,7 @@ function TaskResultPanel({
   return (
     <Card className="construct-task-results">
       <CardHeader className="gap-2">
-        <GuideSectionLabel icon={<PhFlask size={14} weight="duotone" />}>
-          Execution
-        </GuideSectionLabel>
+        <span className="construct-panel-kicker">Execution</span>
       </CardHeader>
 
       <CardContent>
@@ -6023,11 +5451,9 @@ function TaskResultPanel({
           <div className="construct-task-result-body">
             <div className="construct-task-result-meta">
               <ToolbarPill className={`construct-task-status ${taskStatusClassName}`}>
-                <PhTestTube size={12} weight="duotone" />
                 {taskStatusLabel}
               </ToolbarPill>
               <ToolbarPill variant="outline" className="construct-brief-chip">
-                <PhArrowClockwise size={12} weight="bold" />
                 {formatDuration(taskResult.durationMs)}
               </ToolbarPill>
             </div>
@@ -6043,24 +5469,6 @@ function TaskResultPanel({
                     <AlertDescription>
                       <strong>{failure.testName}</strong>
                       <p>{failure.message}</p>
-                      {failure.expectedOutput || failure.actualOutput ? (
-                        <div className="construct-task-output-grid">
-                          {failure.expectedOutput ? (
-                            <TaskOutputBlock
-                              label="Expected output"
-                              value={failure.expectedOutput}
-                              tone="expected"
-                            />
-                          ) : null}
-                          {failure.actualOutput ? (
-                            <TaskOutputBlock
-                              label="Current output"
-                              value={failure.actualOutput}
-                              tone="actual"
-                            />
-                          ) : null}
-                        </div>
-                      ) : null}
                     </AlertDescription>
                   </Alert>
                 ))}
@@ -6196,42 +5604,6 @@ function collectDirectoryPaths(nodes: TreeNode[]): string[] {
   return directories;
 }
 
-function collectExpandedDirectoryIds(
-  nodes: TreeNode[],
-  expandedDirectories: Record<string, boolean>
-): string[] {
-  return collectDirectoryPaths(nodes).filter((path) => expandedDirectories[path] !== false);
-}
-
-function buildWorkspaceTreeElements(nodes: TreeNode[]): TreeViewElement[] {
-  return nodes.map((node) => ({
-    id: node.path,
-    name: node.name,
-    type: node.kind === "directory" ? "folder" : "file",
-    isSelectable: true,
-    icon: node.kind === "file" ? <FileIcon filePath={node.path} /> : undefined,
-    children:
-      node.kind === "directory" ? buildWorkspaceTreeElements(node.children) : undefined
-  }));
-}
-
-function buildTreeNodeLookup(nodes: TreeNode[]): Map<string, TreeNode> {
-  const lookup = new Map<string, TreeNode>();
-
-  const visit = (entries: TreeNode[]) => {
-    for (const entry of entries) {
-      lookup.set(entry.path, entry);
-
-      if (entry.children.length > 0) {
-        visit(entry.children);
-      }
-    }
-  };
-
-  visit(nodes);
-  return lookup;
-}
-
 function getAncestorDirectoryPaths(filePath: string): string[] {
   const segments = filePath.split("/");
   return segments.slice(0, -1).map((_, index) => segments.slice(0, index + 1).join("/"));
@@ -6348,214 +5720,82 @@ type ArchitectTaskGroup = {
   streamChunkCount: number;
 };
 
-type ArchitectTaskChild = {
-  key: string;
-  label: string;
-};
-
 function ArchitectTaskBoard({ events }: { events: AgentEvent[] }) {
   const groups = buildArchitectTaskGroups(events);
   const latestActiveGroup =
     groups.find((group) => group.status === "working") ?? groups.at(-1) ?? null;
-  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
-
-  useEffect(() => {
-    setExpandedGroups((current) => {
-      const next: Record<string, boolean> = {};
-
-      for (const group of groups) {
-        next[group.key] =
-          current[group.key] ??
-          (group.key === latestActiveGroup?.key || group.status === "error");
-      }
-
-      return next;
-    });
-  }, [groups, latestActiveGroup]);
 
   return (
-    <div className="construct-agent-outline">
-      {groups.map((group, index) => {
-        const childItems = buildArchitectTaskChildren(group);
-        const body = buildArchitectTaskSummary(group);
-        const isExpandable = childItems.length > 0 || body.length > 0;
-        const isExpanded =
-          isExpandable &&
-          (expandedGroups[group.key] ??
-            (group.key === latestActiveGroup?.key || index === groups.length - 1));
+    <div className="construct-agent-task-board">
+      {latestActiveGroup ? (
+        <section className="construct-agent-live-banner">
+          <div>
+            <span className="construct-brief-kicker">Live Architect step</span>
+            <h3>{latestActiveGroup.label}</h3>
+            <p>
+              {isStreamAgentEvent(latestActiveGroup.latestEvent)
+                ? "The Architect is actively generating the current stage."
+                : latestActiveGroup.latestEvent.detail ?? latestActiveGroup.latestEvent.title}
+            </p>
+          </div>
+          <span className={`construct-agent-task-pill is-${latestActiveGroup.status}`}>
+            {formatArchitectStatus(latestActiveGroup.status)}
+          </span>
+        </section>
+      ) : null}
 
-        return (
-          <section
-            key={group.key}
-            className={cn(
-              "construct-agent-outline-group",
-              group.key === latestActiveGroup?.key ? "is-active" : "",
-              `is-${group.status}`
-            )}
-          >
-            <div className="construct-agent-outline-node">
-              <span className="construct-agent-outline-rail" aria-hidden="true">
-                <span className="construct-agent-outline-dot" />
-                {index < groups.length - 1 ? (
-                  <span className="construct-agent-outline-stem" />
-                ) : null}
-              </span>
-
-              <div className="construct-agent-outline-content">
-                {isExpandable ? (
-                  <button
-                    type="button"
-                    className="construct-agent-outline-row"
-                    onClick={() => {
-                      setExpandedGroups((current) => ({
-                        ...current,
-                        [group.key]: !isExpanded
-                      }));
-                    }}
-                  >
-                    <span className="construct-agent-outline-row-main">
-                      <span className="construct-agent-outline-icon">
-                        {renderArchitectGroupIcon(group.key)}
-                      </span>
-                      <span className="construct-agent-outline-label">{group.label}</span>
-                    </span>
-                    <span className="construct-agent-outline-chevron" aria-hidden="true">
-                      {isExpanded ? (
-                        <ChevronDownIcon className="size-3.5" />
-                      ) : (
-                        <ChevronRightIcon className="size-3.5" />
-                      )}
-                    </span>
-                  </button>
-                ) : (
-                  <div className="construct-agent-outline-row">
-                    <span className="construct-agent-outline-row-main">
-                      <span className="construct-agent-outline-icon">
-                        {renderArchitectGroupIcon(group.key)}
-                      </span>
-                      <span className="construct-agent-outline-label">{group.label}</span>
-                    </span>
-                  </div>
-                )}
-
-                {isExpanded ? (
-                  <div className="construct-agent-outline-panel">
-                    {childItems.length > 0 ? (
-                      <div className="construct-agent-outline-children">
-                        {childItems.map((item) => (
-                          <div key={item.key} className="construct-agent-outline-child">
-                            <span
-                              className="construct-agent-outline-child-bullet"
-                              aria-hidden="true"
-                            />
-                            <span className="construct-agent-outline-child-label">
-                              {item.label}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    ) : null}
-
-                    {body ? (
-                      <div className="construct-agent-outline-body">
-                        <p>{body}</p>
-                      </div>
-                    ) : null}
-                  </div>
-                ) : null}
+      <div className="construct-agent-task-grid">
+        {groups.map((group) => (
+          <section key={group.key} className="construct-agent-task-card">
+            <div className="construct-agent-task-card-header">
+              <div>
+                <span className="construct-brief-kicker">{group.eyebrow}</span>
+                <h3>{group.label}</h3>
               </div>
+              <span className={`construct-agent-task-pill is-${group.status}`}>
+                {formatArchitectStatus(group.status)}
+              </span>
             </div>
+
+            <div className="construct-guide-event-meta">
+              <span className="construct-task-status">
+                {formatAgentStageLabel(group.latestEvent.stage)}
+              </span>
+              <span className={`construct-task-status ${group.latestEvent.level}`}>
+                {group.latestEvent.level}
+              </span>
+            </div>
+
+            {!isStreamAgentEvent(group.latestEvent) ? (
+              <>
+                <strong>{group.latestEvent.title}</strong>
+                {group.latestEvent.detail ? <p>{group.latestEvent.detail}</p> : null}
+              </>
+            ) : (
+              <strong>{group.latestEvent.title}</strong>
+            )}
+
+            {group.streamChunkCount > 0 ? (
+              <LiveAgentResponseIndicator
+                label="Architect is still responding"
+                chunkCount={group.streamChunkCount}
+              />
+            ) : null}
+
+            {buildPlanningEventTags(group.latestEvent).length > 0 ? (
+              <div className="construct-tag-list">
+                {buildPlanningEventTags(group.latestEvent).map((tag) => (
+                  <TagChip key={`${group.key}-${tag}`}>
+                    {tag}
+                  </TagChip>
+                ))}
+              </div>
+            ) : null}
           </section>
-        );
-      })}
+        ))}
+      </div>
     </div>
   );
-}
-
-function buildArchitectTaskChildren(group: ArchitectTaskGroup): ArchitectTaskChild[] {
-  const items: ArchitectTaskChild[] = [];
-  const seen = new Set<string>();
-
-  for (const event of group.events) {
-    if (isStreamAgentEvent(event)) {
-      continue;
-    }
-
-    const label = event.title.trim();
-    const normalized = label.toLowerCase();
-
-    if (!label || seen.has(normalized)) {
-      continue;
-    }
-
-    seen.add(normalized);
-    items.push({
-      key: event.id,
-      label
-    });
-  }
-
-  if (items.length === 0) {
-    for (const tag of buildPlanningEventTags(group.latestEvent).slice(0, 3)) {
-      items.push({
-        key: `${group.key}-${tag}`,
-        label: tag
-      });
-    }
-  }
-
-  if (group.streamChunkCount > 0) {
-    items.push({
-      key: `${group.key}-stream`,
-      label: `Receiving live updates (${group.streamChunkCount})`
-    });
-  }
-
-  return items.slice(-4);
-}
-
-function buildArchitectTaskSummary(group: ArchitectTaskGroup): string {
-  const detail = group.latestEvent.detail?.trim();
-
-  if (detail) {
-    return detail.length > 260 ? `${detail.slice(0, 257).trimEnd()}...` : detail;
-  }
-
-  if (isStreamAgentEvent(group.latestEvent)) {
-    return "Construct is actively generating this stage and streaming progress into the current path.";
-  }
-
-  const fallback = group.latestEvent.title.trim();
-  return fallback.length > 220 ? `${fallback.slice(0, 217).trimEnd()}...` : fallback;
-}
-
-function renderArchitectGroupIcon(stage: string): ReactNode {
-  if (stage.startsWith("research") || stage === "plan-generation") {
-    return <LightbulbIcon className="size-3.5" />;
-  }
-
-  if (stage.includes("hidden-tests")) {
-    return <FlaskConicalIcon className="size-3.5" />;
-  }
-
-  if (stage.includes("dependency-install")) {
-    return <WrenchIcon className="size-3.5" />;
-  }
-
-  if (
-    stage === "blueprint-generation" ||
-    stage === "blueprint-synthesis" ||
-    stage.includes("canonical-files") ||
-    stage.includes("learner-mask")
-  ) {
-    return <GitBranchPlusIcon className="size-3.5" />;
-  }
-
-  if (stage.includes("support-files") || stage.includes("activation") || stage.includes("layout")) {
-    return <FolderOpenIcon className="size-3.5" />;
-  }
-
-  return <SparklesIcon className="size-3.5" />;
 }
 
 function buildArchitectTaskGroups(events: AgentEvent[]): ArchitectTaskGroup[] {

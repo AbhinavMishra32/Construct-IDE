@@ -1101,6 +1101,64 @@ textarea {
   backdrop-filter: blur(14px);
 }
 
+.construct-project-improvement-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 48;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: color-mix(in srgb, var(--panel-overlay) 66%, transparent);
+  backdrop-filter: blur(10px);
+}
+
+.construct-project-improvement-panel {
+  width: min(420px, 100%);
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 18px 18px 16px;
+  border-radius: 22px;
+  border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
+  background: color-mix(in srgb, var(--panel-bg) 98%, transparent);
+  box-shadow: var(--shadow);
+}
+
+.construct-project-improvement-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--panel-soft) 82%, transparent);
+  color: var(--text);
+  flex-shrink: 0;
+}
+
+.construct-project-improvement-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.construct-project-improvement-copy h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 22px;
+  line-height: 1.08;
+  letter-spacing: -0.04em;
+}
+
+.construct-project-improvement-copy p {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
 .construct-planning-panel {
   position: relative;
   width: min(1280px, 100%);

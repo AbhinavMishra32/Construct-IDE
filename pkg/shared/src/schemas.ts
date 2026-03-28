@@ -232,8 +232,19 @@ export const CheckReviewRequestSchema = z.object({
   attemptCount: z.number().int().nonnegative().default(0)
 });
 
+export const ProjectImprovementSchema = z.object({
+  trigger: z.enum(["check-review", "task-submit"]),
+  status: z.enum(["updated", "recorded", "skipped", "failed"]),
+  title: z.string().min(1),
+  detail: z.string().min(1),
+  updatedBlueprint: z.boolean().default(false),
+  activeStepId: z.string().min(1).nullable().default(null),
+  evidenceCount: z.number().int().nonnegative().default(0)
+});
+
 export const CheckReviewResponseSchema = z.object({
-  review: CheckReviewSchema
+  review: CheckReviewSchema,
+  projectImprovement: ProjectImprovementSchema.nullable().default(null)
 });
 
 export const ProjectPreviewKindSchema = z.enum([
@@ -660,7 +671,8 @@ export const TaskSubmitResponseSchema = z.object({
   session: TaskSessionSchema,
   attempt: TaskAttemptSchema,
   progress: TaskProgressSchema,
-  learnerModel: LearnerModelSchema
+  learnerModel: LearnerModelSchema,
+  projectImprovement: ProjectImprovementSchema.nullable().default(null)
 });
 
 export const PlanMutationSchema = z.object({
@@ -756,6 +768,7 @@ export type LessonSlide = z.infer<typeof LessonSlideSchema>;
 export type CheckReview = z.infer<typeof CheckReviewSchema>;
 export type CheckReviewRequest = z.infer<typeof CheckReviewRequestSchema>;
 export type CheckReviewResponse = z.infer<typeof CheckReviewResponseSchema>;
+export type ProjectImprovement = z.infer<typeof ProjectImprovementSchema>;
 export type ProjectPreviewKind = z.infer<typeof ProjectPreviewKindSchema>;
 export type ProjectPreview = z.infer<typeof ProjectPreviewSchema>;
 export type MaskedRegion = z.infer<typeof MaskedRegionSchema>;

@@ -538,13 +538,14 @@ const server = http.createServer(async (request, response) => {
         stepId: submitRequest.stepId
       });
       const taskSubmission = await workspaceContext.taskLifecycle.submitTask(submitRequest);
-      const frontierUpdated = await getConstructAgent().syncProjectTaskProgress({
+      const projectImprovement = await getConstructAgent().syncProjectTaskProgress({
         canonicalBlueprintPath: workspaceContext.canonicalBlueprintPath,
         stepId: submitRequest.stepId,
         markStepCompleted: taskSubmission.attempt.status === "passed",
         lastAttemptStatus: taskSubmission.attempt.status,
         telemetry: taskSubmission.attempt.telemetry
       });
+      const frontierUpdated = projectImprovement.updatedBlueprint;
 
       if (frontierUpdated) {
         invalidateWorkspaceContext();
@@ -553,13 +554,17 @@ const server = http.createServer(async (request, response) => {
       logRunnerInfo("Completed task submission.", {
         attempt: taskSubmission.attempt.attempt,
         frontierUpdated,
+        projectImprovementStatus: projectImprovement.status,
         sessionId: taskSubmission.session.sessionId,
         status: taskSubmission.attempt.status,
         stepId: submitRequest.stepId
       });
 
       response.writeHead(200, { "Content-Type": "application/json" });
-      response.end(JSON.stringify(taskSubmission));
+      response.end(JSON.stringify({
+        ...taskSubmission,
+        projectImprovement
+      }));
       return;
     }
 
@@ -569,9 +574,24 @@ const server = http.createServer(async (request, response) => {
       const review = CheckReviewResponseSchema.parse(
         await getConstructAgent().reviewCheck(reviewRequest)
       );
+      const workspaceContext = await getWorkspaceContext();
+      const projectImprovement = workspaceContext
+        ? await getConstructAgent().syncProjectCheckProgress({
+            canonicalBlueprintPath: workspaceContext.canonicalBlueprintPath,
+            stepId: reviewRequest.stepId,
+            review: review.review
+          })
+        : null;
+
+      if (projectImprovement?.updatedBlueprint) {
+        invalidateWorkspaceContext();
+      }
 
       response.writeHead(200, { "Content-Type": "application/json" });
-      response.end(JSON.stringify(review));
+      response.end(JSON.stringify({
+        ...review,
+        projectImprovement
+      }));
       return;
     }
 

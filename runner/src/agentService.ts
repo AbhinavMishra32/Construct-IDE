@@ -62,6 +62,7 @@ import {
   type PlanningSessionStartRequest,
   type PlanningSessionStartResponse,
   type ProjectBlueprint,
+  type ProjectImprovement,
   type ProjectSelectionResponse,
   type ProjectsDashboardResponse,
   type RuntimeGuideRequest,
@@ -679,14 +680,19 @@ export class ConstructAgentService {
     markStepCompleted?: boolean;
     lastAttemptStatus?: "failed" | "passed" | "needs-review" | null;
     telemetry?: TaskTelemetry | null;
-  }): Promise<boolean> {
+  }): Promise<ProjectImprovement> {
     const blueprint = await loadBlueprint(input.canonicalBlueprintPath);
     const runtimeSteps = getBlueprintRuntimeSteps(blueprint);
     const stepIndex = runtimeSteps.findIndex((step) => step.id === input.stepId);
     const step = stepIndex >= 0 ? runtimeSteps[stepIndex] : null;
 
     if (!step) {
-      return false;
+      return this.createProjectImprovementResult({
+        trigger: "task-submit",
+        status: "skipped",
+        title: "Skipped project improvement",
+        detail: `Construct could not resolve ${input.stepId}, so the project path stayed as-is.`
+      });
     }
 
     await this.persistence.updateProjectProgress({
@@ -722,7 +728,14 @@ export class ConstructAgentService {
         status: input.lastAttemptStatus ?? null,
         error: error instanceof Error ? error.message : String(error)
       });
-      return false;
+      return this.createProjectImprovementResult({
+        trigger: "task-submit",
+        status: "failed",
+        title: "Recorded your latest submission",
+        detail:
+          "Construct saved the latest task evidence, but the project path could not be refreshed right now.",
+        activeStepId: step.id
+      });
     }
   }
 
@@ -766,6 +779,48 @@ export class ConstructAgentService {
     });
 
     return CheckReviewResponseSchema.parse(review);
+  }
+
+  async syncProjectCheckProgress(input: {
+    canonicalBlueprintPath: string;
+    stepId: string;
+    review: CheckReviewResponse["review"];
+  }): Promise<ProjectImprovement> {
+    const blueprint = await loadBlueprint(input.canonicalBlueprintPath);
+    const step =
+      getBlueprintRuntimeSteps(blueprint).find((entry) => entry.id === input.stepId) ?? null;
+
+    if (!step) {
+      return this.createProjectImprovementResult({
+        trigger: "check-review",
+        status: "skipped",
+        title: "Skipped project improvement",
+        detail: `Construct could not resolve ${input.stepId}, so the current project path stayed as-is.`
+      });
+    }
+
+    try {
+      return await this.applyCheckOutcomeToAdaptiveFrontier({
+        canonicalBlueprintPath: input.canonicalBlueprintPath,
+        step,
+        review: input.review
+      });
+    } catch (error) {
+      this.logger.warn("Adaptive frontier update failed after check review. Keeping the existing path.", {
+        blueprintPath: input.canonicalBlueprintPath,
+        stepId: input.stepId,
+        reviewStatus: input.review.status,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      return this.createProjectImprovementResult({
+        trigger: "check-review",
+        status: "failed",
+        title: "Recorded your latest answer",
+        detail:
+          "Construct saved the latest check evidence, but the project path could not be refreshed right now.",
+        activeStepId: step.id
+      });
+    }
   }
 
   private async loadAdaptiveFrontierMutationContext(
@@ -832,20 +887,80 @@ export class ConstructAgentService {
     };
   }
 
+  private async applyCheckOutcomeToAdaptiveFrontier(input: {
+    canonicalBlueprintPath: string;
+    step: ProjectBlueprint["steps"][number];
+    review: CheckReviewResponse["review"];
+  }): Promise<ProjectImprovement> {
+    const context = await this.loadAdaptiveFrontierMutationContext(input.canonicalBlueprintPath);
+    if (!context?.blueprint.frontier || !context.blueprint.spine) {
+      return this.createProjectImprovementResult({
+        trigger: "check-review",
+        status: "skipped",
+        title: "Recorded your latest answer",
+        detail: "Construct stored the check evidence, but there was no active adaptive frontier to rewrite.",
+        activeStepId: input.step.id
+      });
+    }
+
+    return this.regenerateCurrentAdaptiveFrontier({
+      context,
+      step: input.step,
+      trigger: "check-review",
+      reason:
+        input.review.status === "complete"
+          ? `Refresh the current build path after the learner recovered ${input.step.title} in the latest comprehension check.`
+          : `Refresh the current build path after the learner struggled with ${input.step.title} in the latest comprehension check.`,
+      title:
+        input.review.status === "complete"
+          ? `Updated ${input.step.title} around your recovered understanding`
+          : `Updated ${input.step.title} around your latest check response`,
+      detail:
+        input.review.status === "complete"
+          ? "Construct rewrote the current project slice using the latest quiz evidence, including the recovery from earlier misses."
+          : "Construct rewrote the current project slice using the latest quiz evidence so the next steps better match what still needs reinforcement.",
+      latestSignal: input.review.message,
+      intervention:
+        input.review.status === "complete"
+          ? {
+              kind: "continue-to-code",
+              summary: "Construct refreshed the current capability with the learner's recovered understanding in mind.",
+              reason: "The latest check shows the learner can move forward, but the active project slice should still reflect the exact concept trail that led there."
+            }
+          : {
+              kind: "deepen-explanation",
+              summary: "Construct refreshed the current capability around the learner's latest blocker.",
+              reason: "The latest check shows the learner still needs more grounded support before the current path should feel fixed."
+            }
+    });
+  }
+
   private async applyTaskOutcomeToAdaptiveFrontier(input: {
     canonicalBlueprintPath: string;
     step: ProjectBlueprint["steps"][number];
     markStepCompleted: boolean;
     lastAttemptStatus: "failed" | "passed" | "needs-review" | null;
     telemetry: TaskTelemetry | null;
-  }): Promise<boolean> {
+  }): Promise<ProjectImprovement> {
     if (!input.lastAttemptStatus) {
-      return false;
+      return this.createProjectImprovementResult({
+        trigger: "task-submit",
+        status: "skipped",
+        title: "Skipped project improvement",
+        detail: `Construct did not receive a task outcome for ${input.step.title}, so the project path stayed as-is.`,
+        activeStepId: input.step.id
+      });
     }
 
     const context = await this.loadAdaptiveFrontierMutationContext(input.canonicalBlueprintPath);
     if (!context?.blueprint.frontier || !context.blueprint.spine) {
-      return false;
+      return this.createProjectImprovementResult({
+        trigger: "task-submit",
+        status: "skipped",
+        title: "Recorded your latest submission",
+        detail: "Construct stored the submission evidence, but there was no active adaptive frontier to rewrite.",
+        activeStepId: input.step.id
+      });
     }
 
     const diagnosticTimestamp = this.now().toISOString();
@@ -887,14 +1002,20 @@ export class ConstructAgentService {
         .filter((step, index) => index > cursorIndex)
         .filter((step) => !remainingFrontierSteps.some((existing) => existing.id === step.id))
         .slice(0, Math.max(0, 3 - remainingFrontierSteps.length));
-      const generatedFrontierDraft =
+      const generatedFrontierResult =
         nextPlanSteps.length > 0
           ? await this.generateAdaptiveFrontierDraft({
               context,
               frontierPlanSteps: nextPlanSteps,
-              reason: `Advance the build path after ${input.step.title} passed.`
+              reason: `Advance the build path after ${input.step.title} passed.`,
+              evidenceContext: {
+                trigger: "task-submit",
+                step: input.step,
+                latestSignal: taskDiagnostic.evidence
+              }
             })
           : null;
+      const generatedFrontierDraft = generatedFrontierResult?.draft ?? null;
       const generatedSteps =
         generatedFrontierDraft === null
           ? []
@@ -998,37 +1119,252 @@ export class ConstructAgentService {
         }
       });
 
-      return true;
+      return this.createProjectImprovementResult({
+        trigger: "task-submit",
+        status: "updated",
+        title:
+          nextFrontierSteps.length > 0
+            ? `Updated the project path after ${input.step.title}`
+            : "Completed the adaptive project path",
+        detail:
+          nextFrontierSteps.length > 0
+            ? `Construct advanced the blueprint using your latest implementation evidence and prepared ${nextFrontierSteps[0]?.title ?? "the next capability"}.`
+            : "Construct folded the latest evidence into the blueprint and reached the end of the active frontier.",
+        updatedBlueprint: true,
+        activeStepId: nextBlueprint.frontier?.activeStepId ?? null,
+        evidenceCount: generatedFrontierResult?.evidenceCount ?? 0
+      });
     }
 
-    await this.recordAdaptiveFrontierDiagnostic({
-      canonicalBlueprintPath: input.canonicalBlueprintPath,
-      stepId: input.step.id,
-      kind: taskDiagnostic.kind,
-      summary: taskDiagnostic.summary,
-      evidence: taskDiagnostic.evidence,
-      conceptIds: taskDiagnostic.conceptIds,
+    return this.regenerateCurrentAdaptiveFrontier({
+      context,
+      step: input.step,
+      trigger: "task-submit",
+      reason:
+        input.lastAttemptStatus === "needs-review"
+          ? `Refresh the current build path after ${input.step.title} hit the rewrite gate despite passing tests.`
+          : `Refresh the current build path after ${input.step.title} failed its latest targeted validation.`,
+      title:
+        input.lastAttemptStatus === "needs-review"
+          ? `Updated ${input.step.title} around your latest guarded submit`
+          : `Updated ${input.step.title} around your latest submission`,
+      detail:
+        input.lastAttemptStatus === "needs-review"
+          ? "Construct rewrote the current project slice using the latest rewrite-gate evidence so the next attempt better matches your current ownership of the code."
+          : "Construct rewrote the current project slice using the latest failing-test evidence so the next attempt better fits the concepts that still need support.",
+      latestSignal: taskDiagnostic.evidence,
       intervention:
         input.lastAttemptStatus === "needs-review"
           ? {
               kind: "deepen-explanation",
-              summary: "Construct is holding the current capability before advancing.",
+              summary: "Construct refreshed the current capability around the rewrite gate evidence.",
               reason: "The validation guard indicates the learner still needs a more grounded implementation pass."
             }
           : input.telemetry && input.telemetry.hintsUsed >= 2
             ? {
                 kind: "diagnostic-question",
-                summary: "Construct is switching into diagnosis mode on the current capability.",
+                summary: "Construct refreshed the current capability and shifted into diagnosis mode.",
                 reason: "The learner used several hints and still hit a failing validation."
               }
             : {
                 kind: "targeted-check",
-                summary: "Construct is keeping the focus on the current capability.",
+                summary: "Construct refreshed the current capability around the latest failing validation.",
                 reason: "The latest task result shows the learner needs another pass before the path should advance."
-              }
+              },
+      diagnostic: taskDiagnostic
+    });
+  }
+
+  private async regenerateCurrentAdaptiveFrontier(input: {
+    context: {
+      sessionId: string;
+      record: PersistedGeneratedBlueprintRecord;
+      build: BlueprintBuild | null;
+      plan: GeneratedProjectPlan;
+      bundle: GeneratedBlueprintBundleDraft;
+      blueprint: ProjectBlueprint;
+      canonicalBlueprintPath: string;
+      learnerBlueprintPath: string;
+      learnerWorkspaceRoot: string;
+      projectRoot: string;
+    };
+    step: ProjectBlueprint["steps"][number];
+    trigger: ProjectImprovement["trigger"];
+    reason: string;
+    title: string;
+    detail: string;
+    latestSignal: string;
+    intervention: Exclude<NonNullable<ProjectBlueprint["frontier"]>["intervention"], null>;
+    diagnostic?: NonNullable<ProjectBlueprint["frontier"]>["diagnostics"][number];
+  }): Promise<ProjectImprovement> {
+    const frontier = input.context.blueprint.frontier;
+    const spine = input.context.blueprint.spine;
+    if (!frontier || !spine) {
+      return this.createProjectImprovementResult({
+        trigger: input.trigger,
+        status: "skipped",
+        title: input.title,
+        detail: "Construct recorded the evidence, but there was no active adaptive frontier to rewrite.",
+        activeStepId: input.step.id
+      });
+    }
+
+    const timestamp = this.now().toISOString();
+    const nextDiagnostics = input.diagnostic
+      ? appendAdaptiveFrontierDiagnostic(frontier.diagnostics, input.diagnostic)
+      : frontier.diagnostics;
+    const frontierPlanSteps = resolveFrontierPlanSteps(input.context.plan, frontier.steps);
+
+    if (frontierPlanSteps.length === 0) {
+      const nextBlueprint = ProjectBlueprintSchema.parse({
+        ...input.context.blueprint,
+        frontier: buildAdaptiveFrontier({
+          steps: frontier.steps,
+          spine,
+          generatedAt: timestamp,
+          diagnostics: nextDiagnostics,
+          intervention: input.intervention,
+          activeStepId: frontier.activeStepId ?? input.step.id
+        })
+      });
+
+      await this.persistAdaptiveBlueprintState({
+        context: input.context,
+        blueprint: nextBlueprint,
+        bundle: input.context.bundle,
+        event: {
+          stage: "adaptive-frontier-refresh",
+          title: input.title,
+          detail: input.detail,
+          level: "info",
+          payload: {
+            activeStepId: nextBlueprint.frontier?.activeStepId ?? null,
+            frontierStepIds: nextBlueprint.frontier?.stepIds ?? [],
+            trigger: input.trigger
+          }
+        }
+      });
+
+      return this.createProjectImprovementResult({
+        trigger: input.trigger,
+        status: "recorded",
+        title: input.title,
+        detail: input.detail,
+        updatedBlueprint: false,
+        activeStepId: nextBlueprint.frontier?.activeStepId ?? null
+      });
+    }
+
+    const generatedFrontierResult = await this.generateAdaptiveFrontierDraft({
+      context: input.context,
+      frontierPlanSteps,
+      reason: input.reason,
+      evidenceContext: {
+        trigger: input.trigger,
+        step: input.step,
+        latestSignal: input.latestSignal,
+        diagnostics: nextDiagnostics
+      }
+    });
+    const generatedFrontierDraft = generatedFrontierResult.draft;
+    const generatedSteps = annotateGeneratedBlueprintSteps({
+      steps: normalizeGeneratedBlueprintSteps(generatedFrontierDraft.steps),
+      plan: input.context.plan,
+      entrypoint: input.context.blueprint.entrypoints[0] ?? null
+    });
+    const generatedStepsById = new Map(generatedSteps.map((step) => [step.id, step]));
+    const nextFrontierSteps = frontier.steps.map(
+      (step) => generatedStepsById.get(step.id) ?? step
+    );
+    const currentLearnerFiles = await this.readProjectFilesSnapshot(
+      input.context.learnerWorkspaceRoot,
+      Object.keys(input.context.blueprint.files)
+    );
+    const generatedLearnerFiles = fileEntriesToRecord(generatedFrontierDraft.learnerFiles);
+    const nextBlueprint = ProjectBlueprintSchema.parse({
+      ...input.context.blueprint,
+      files: {
+        ...currentLearnerFiles,
+        ...generatedLearnerFiles
+      },
+      steps: mergeBlueprintStepRegistry(input.context.blueprint.steps, generatedSteps),
+      spine: {
+        ...spine,
+        activeCommitId:
+          nextFrontierSteps.find((step) => step.id === (frontier.activeStepId ?? input.step.id))?.commitId
+          ?? input.step.commitId
+          ?? frontier.activeCommitId
+          ?? spine.activeCommitId
+      },
+      frontier: buildAdaptiveFrontier({
+        steps: nextFrontierSteps,
+        spine: {
+          ...spine,
+          activeCommitId:
+            nextFrontierSteps.find((step) => step.id === (frontier.activeStepId ?? input.step.id))?.commitId
+            ?? input.step.commitId
+            ?? frontier.activeCommitId
+            ?? spine.activeCommitId
+        },
+        generatedAt: timestamp,
+        diagnostics: nextDiagnostics,
+        intervention: input.intervention,
+        activeStepId: frontier.activeStepId ?? input.step.id
+      })
+    });
+    const nextFrontierStepIds = new Set(nextFrontierSteps.map((step) => step.id));
+    const nextFrontierTestPaths = uniquePaths(nextFrontierSteps.flatMap((step) => step.tests));
+    const nextFrontierLearnerPaths = uniquePaths(
+      nextFrontierSteps.flatMap((step) => [step.anchor.file, ...step.visibleFiles])
+    );
+    const nextBundle = GENERATED_BLUEPRINT_BUNDLE_DRAFT_SCHEMA.parse({
+      ...input.context.bundle,
+      learnerFiles: recordToFileEntries(
+        pickRecordPaths(nextBlueprint.files, nextFrontierLearnerPaths)
+      ),
+      hiddenTests: recordToFileEntries(
+        pickRecordPaths(
+          {
+            ...fileEntriesToRecord(input.context.bundle.hiddenTests),
+            ...fileEntriesToRecord(generatedFrontierDraft.hiddenTests)
+          },
+          nextFrontierTestPaths
+        )
+      ),
+      steps: mergeFrontierDraftSteps(
+        input.context.bundle.steps.filter((step) => nextFrontierStepIds.has(step.id)),
+        generatedFrontierDraft.steps
+      )
     });
 
-    return false;
+    await this.persistAdaptiveBlueprintState({
+      context: input.context,
+      blueprint: nextBlueprint,
+      bundle: nextBundle,
+      generatedLearnerFiles,
+      generatedHiddenTests: fileEntriesToRecord(generatedFrontierDraft.hiddenTests),
+      event: {
+        stage: "adaptive-frontier-refresh",
+        title: input.title,
+        detail: input.detail,
+        level: "success",
+        payload: {
+          activeStepId: nextBlueprint.frontier?.activeStepId ?? null,
+          frontierStepIds: nextBlueprint.frontier?.stepIds ?? [],
+          trigger: input.trigger
+        }
+      }
+    });
+
+    return this.createProjectImprovementResult({
+      trigger: input.trigger,
+      status: "updated",
+      title: input.title,
+      detail: input.detail,
+      updatedBlueprint: true,
+      activeStepId: nextBlueprint.frontier?.activeStepId ?? null,
+      evidenceCount: generatedFrontierResult.evidenceCount
+    });
   }
 
   private async generateAdaptiveFrontierDraft(input: {
@@ -1041,8 +1377,28 @@ export class ConstructAgentService {
     };
     frontierPlanSteps: GeneratedProjectPlan["steps"];
     reason: string;
-  }): Promise<GeneratedFrontierDraft> {
+    evidenceContext: {
+      trigger: ProjectImprovement["trigger"];
+      step: ProjectBlueprint["steps"][number];
+      latestSignal: string;
+      diagnostics?: NonNullable<ProjectBlueprint["frontier"]>["diagnostics"];
+    };
+  }): Promise<{
+    draft: GeneratedFrontierDraft;
+    evidenceCount: number;
+  }> {
     const knowledgeBase = await this.readKnowledgeBase();
+    const recentCapabilityEvidence = this.buildAdaptiveFrontierEvidenceBundle({
+      knowledgeBase,
+      blueprint: input.context.blueprint,
+      step: input.evidenceContext.step,
+      trigger: input.evidenceContext.trigger,
+      latestSignal: input.evidenceContext.latestSignal,
+      diagnostics:
+        input.evidenceContext.diagnostics
+        ?? input.context.blueprint.frontier?.diagnostics
+        ?? []
+    });
     const currentWorkspaceFiles = await this.readProjectFilesSnapshot(
       input.context.learnerWorkspaceRoot,
       uniquePaths([
@@ -1072,7 +1428,8 @@ export class ConstructAgentService {
           currentFrontier: input.context.blueprint.frontier,
           stableSpine: input.context.blueprint.spine,
           currentWorkspaceFiles: recordToFileEntries(currentWorkspaceFiles),
-          priorKnowledge: serializeKnowledgeBaseForPrompt(knowledgeBase)
+          priorKnowledge: serializeKnowledgeBaseForPrompt(knowledgeBase),
+          recentCapabilityEvidence
         },
         null,
         2
@@ -1081,10 +1438,13 @@ export class ConstructAgentService {
       verbosity: "medium"
     });
 
-    return trimGeneratedFrontierDraftToPlan(
-      normalizeGeneratedFrontierDraft(draft),
-      input.frontierPlanSteps
-    );
+    return {
+      draft: trimGeneratedFrontierDraftToPlan(
+        normalizeGeneratedFrontierDraft(draft),
+        input.frontierPlanSteps
+      ),
+      evidenceCount: recentCapabilityEvidence.evidenceCount
+    };
   }
 
   private async readProjectFilesSnapshot(
@@ -1328,7 +1688,8 @@ export class ConstructAgentService {
         missingCriteria: isCorrect
           ? []
           : ["Choose the option that matches the concept explained in the lesson."]
-      }
+      },
+      projectImprovement: null
     };
   }
 
@@ -1569,6 +1930,132 @@ export class ConstructAgentService {
     } catch {
       return base;
     }
+  }
+
+  private buildAdaptiveFrontierEvidenceBundle(input: {
+    knowledgeBase: UserKnowledgeBase;
+    blueprint: ProjectBlueprint;
+    step: ProjectBlueprint["steps"][number];
+    trigger: ProjectImprovement["trigger"];
+    latestSignal: string;
+    diagnostics: NonNullable<ProjectBlueprint["frontier"]>["diagnostics"];
+  }): {
+    trigger: ProjectImprovement["trigger"];
+    focusStep: {
+      id: string;
+      title: string;
+      summary: string;
+      concepts: string[];
+    };
+    latestSignal: string;
+    conceptNotes: Array<{
+      conceptId: string;
+      label: string;
+      currentScore: number;
+      trend: "improving" | "steady" | "slipping";
+      recentSignals: Array<{
+        source: StoredKnowledgeConcept["evidence"][number]["source"];
+        score: number;
+        summary: string;
+        recordedAt: string;
+        stepId: string | null;
+        stepTitle: string | null;
+      }>;
+    }>;
+    frontierDiagnostics: Array<{
+      kind: NonNullable<ProjectBlueprint["frontier"]>["diagnostics"][number]["kind"];
+      summary: string;
+      evidence: string;
+      recordedAt: string;
+    }>;
+    evidenceCount: number;
+  } {
+    const conceptsById = new Map(
+      flattenKnowledgeConcepts(input.knowledgeBase.concepts).map((concept) => [concept.id, concept])
+    );
+    const conceptNotes = Array.from(new Set(input.step.concepts))
+      .map((conceptId) => conceptsById.get(conceptId))
+      .filter((concept): concept is StoredKnowledgeConcept => Boolean(concept))
+      .map((concept) => {
+        const recentSignals = concept.evidence
+          .slice()
+          .sort((left, right) => left.recordedAt.localeCompare(right.recordedAt))
+          .slice(-4)
+          .map((evidence) => ({
+            source: evidence.source,
+            score: evidence.score,
+            summary: evidence.summary,
+            recordedAt: evidence.recordedAt,
+            stepId: evidence.stepId,
+            stepTitle: evidence.stepTitle
+          }));
+        const firstScore = recentSignals[0]?.score ?? concept.score;
+        const lastScore = recentSignals[recentSignals.length - 1]?.score ?? concept.score;
+        const trend: "improving" | "steady" | "slipping" =
+          lastScore - firstScore >= 10
+            ? "improving"
+            : firstScore - lastScore >= 10
+              ? "slipping"
+              : "steady";
+
+        return {
+          conceptId: concept.id,
+          label: concept.label,
+          currentScore: concept.score,
+          trend,
+          recentSignals
+        };
+      });
+    const frontierDiagnostics = input.diagnostics
+      .filter((diagnostic) =>
+        diagnostic.conceptIds.some((conceptId) => input.step.concepts.includes(conceptId))
+        || diagnostic.summary.includes(input.step.title)
+        || diagnostic.evidence.includes(input.step.title)
+      )
+      .slice(-5)
+      .map((diagnostic) => ({
+        kind: diagnostic.kind,
+        summary: diagnostic.summary,
+        evidence: diagnostic.evidence,
+        recordedAt: diagnostic.recordedAt
+      }));
+    const evidenceCount =
+      conceptNotes.reduce((sum, note) => sum + note.recentSignals.length, 0)
+      + frontierDiagnostics.length;
+
+    return {
+      trigger: input.trigger,
+      focusStep: {
+        id: input.step.id,
+        title: input.step.title,
+        summary: input.step.summary,
+        concepts: input.step.concepts
+      },
+      latestSignal: input.latestSignal,
+      conceptNotes,
+      frontierDiagnostics,
+      evidenceCount
+    };
+  }
+
+  private createProjectImprovementResult(input: {
+    trigger: ProjectImprovement["trigger"];
+    status: ProjectImprovement["status"];
+    title: string;
+    detail: string;
+    updatedBlueprint?: boolean;
+    activeStepId?: string | null;
+    evidenceCount?: number;
+  }): ProjectImprovement {
+    return {
+      trigger: input.trigger,
+      status: input.status,
+      title: input.title,
+      detail: input.detail,
+      updatedBlueprint: input.updatedBlueprint ?? false,
+      activeStepId: input.activeStepId ?? null,
+      evidenceCount: input.evidenceCount ?? 0
+    };
   }
 
   private async getLlm(): Promise<StructuredLanguageModel> {
@@ -6552,6 +7039,16 @@ function getPlanStepIndex(plan: GeneratedProjectPlan, stepId: string): number {
   return plan.steps.findIndex((step) => step.id === stepId);
 }
 
+function resolveFrontierPlanSteps(
+  plan: GeneratedProjectPlan,
+  frontierSteps: ProjectBlueprint["steps"]
+): GeneratedProjectPlan["steps"] {
+  const stepsById = new Map(plan.steps.map((step) => [step.id, step]));
+  return frontierSteps
+    .map((step) => stepsById.get(step.id) ?? null)
+    .filter((step): step is GeneratedProjectPlan["steps"][number] => Boolean(step));
+}
+
 function uniquePaths(paths: string[]): string[] {
   return Array.from(
     new Set(
@@ -7077,7 +7574,9 @@ function buildAdaptiveFrontierGenerationInstructions(): string {
     "If a hidden test path ends in `.js`, return valid runnable JavaScript immediately.",
     "Every step anchor.file must exist in learnerFiles, every step anchor.marker must appear literally inside that learner file, and every step test path must exist in hiddenTests.",
     "Every returned step must include a real anchor, substantial explanation slides, grounded checks, constraints, and targeted tests.",
-    "Use priorKnowledge, the current frontier, and the stated reason to decide how much hand-holding or decomposition the learner now needs.",
+    "Use priorKnowledge, recentCapabilityEvidence, the current frontier, and the stated reason to decide how much hand-holding or decomposition the learner now needs.",
+    "recentCapabilityEvidence contains the latest quizzes, written answers, submission outcomes, and recent recovery patterns. React to that concrete evidence, not just the average score.",
+    "If recentCapabilityEvidence shows the learner first missed a concept and then recovered it, preserve momentum while still reinforcing the exact concept boundary they struggled with.",
     "The selectedFrontierSteps are the only steps that should be deeply authored right now. Do not author the rest of the spine.",
     "Keep the project feeling like a real system under construction, not a detached tutorial.",
     "The returned steps should read like serious build guidance: explain why this capability matters now, how it fits the architecture, and exactly what behavior the learner is unlocking.",

@@ -307,6 +307,17 @@ export type CheckReviewRequest = {
 
 export type CheckReviewResponse = {
   review: CheckReview;
+  projectImprovement: ProjectImprovement | null;
+};
+
+export type ProjectImprovement = {
+  trigger: "check-review" | "task-submit";
+  status: "updated" | "recorded" | "skipped" | "failed";
+  title: string;
+  detail: string;
+  updatedBlueprint: boolean;
+  activeStepId: string | null;
+  evidenceCount: number;
 };
 
 export type LessonSlideBlock =
@@ -774,6 +785,7 @@ export type TaskSubmitResponse = {
   attempt: TaskAttempt;
   progress: TaskProgress;
   learnerModel: LearnerModel;
+  projectImprovement: ProjectImprovement | null;
 };
 
 export type TreeNode = {
