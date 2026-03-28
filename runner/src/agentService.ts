@@ -232,6 +232,7 @@ type PlanGraphState = {
   jobId: string;
   request: PlanningSessionCompleteRequest;
   session: PlanningSession;
+  resumeFromCheckpoint: boolean;
   knowledgeBase: UserKnowledgeBase;
   goalScope: GoalScope | null;
   architectureResearch: ResearchDigest | null;
@@ -461,6 +462,19 @@ const LESSON_AUTHORED_STEP_DRAFT_SCHEMA = z.object({
   checks: z.array(GENERATED_COMPREHENSION_CHECK_DRAFT_SCHEMA).max(4)
 });
 
+const RESEARCH_SOURCE_SCHEMA = z.object({
+  title: z.string().min(1),
+  url: z.string().min(1),
+  snippet: z.string().min(1),
+  publishedDate: z.string().min(1).optional()
+});
+
+const RESEARCH_DIGEST_SCHEMA = z.object({
+  query: z.string().min(1),
+  answer: z.string().min(1).optional(),
+  sources: z.array(RESEARCH_SOURCE_SCHEMA).default([])
+});
+
 const PLANNING_BUILD_CHECKPOINT_FAILURE_SCHEMA = z.object({
   stage: z.string().min(1),
   message: z.string().min(1),
@@ -480,6 +494,8 @@ const PLANNING_BUILD_CHECKPOINT_SCHEMA = z.object({
   ]),
   plan: GeneratedProjectPlanSchema,
   blueprintDraft: GENERATED_BLUEPRINT_BUNDLE_DRAFT_SCHEMA.nullable(),
+  goalScope: GOAL_SCOPE_DRAFT_SCHEMA.nullable().default(null),
+  mergedResearch: RESEARCH_DIGEST_SCHEMA.nullable().default(null),
   failure: PLANNING_BUILD_CHECKPOINT_FAILURE_SCHEMA.nullable().default(null)
 }).superRefine((value, context) => {
   if (value.stage === "plan-generated" && value.blueprintDraft !== null) {
@@ -3215,6 +3231,7 @@ export class ConstructAgentService {
       jobId: Annotation<string>(),
       request: Annotation<PlanningSessionCompleteRequest>(),
       session: Annotation<PlanningSession>(),
+      resumeFromCheckpoint: Annotation<boolean>(),
       knowledgeBase: Annotation<UserKnowledgeBase>(),
       goalScope: Annotation<GoalScope | null>(),
       architectureResearch: Annotation<ResearchDigest | null>(),
@@ -3229,18 +3246,36 @@ export class ConstructAgentService {
     });
 
     const graph = new StateGraph(StateAnnotation)
-      .addNode("loadKnowledgeBase", async () => ({
-        knowledgeBase: await this.withStage(jobId, "knowledge-base", "Loading learner knowledge", "Combining stored knowledge with the current self-reported answers.", async () => {
-          return this.readKnowledgeBase();
-        })
+      .addNode("loadKnowledgeBase", async (state) => ({
+        knowledgeBase: state.resumeFromCheckpoint
+          ? await this.readKnowledgeBase()
+          : await this.withStage(jobId, "knowledge-base", "Loading learner knowledge", "Combining stored knowledge with the current self-reported answers.", async () => {
+              return this.readKnowledgeBase();
+            })
       }))
       .addNode("determineScope", async (state) => ({
-        goalScope: await this.withStage(jobId, "scope-analysis", "Scoping the request", "The Architect is deciding how large the generated project should be before it spends tokens on research and blueprint synthesis.", async () => {
-          return this.determineGoalScope(state.session.goal);
-        })
+        goalScope: state.goalScope ?? (
+          state.resumeFromCheckpoint
+            ? await this.determineGoalScope(state.session.goal)
+            : await this.withStage(jobId, "scope-analysis", "Scoping the request", "The Architect is deciding how large the generated project should be before it spends tokens on research and blueprint synthesis.", async () => {
+                return this.determineGoalScope(state.session.goal);
+              })
+        )
       }))
       .addNode("researchArchitecture", async (state) => ({
-        architectureResearch: state.goalScope && !state.goalScope.shouldResearch
+        architectureResearch: state.mergedResearch
+          ? null
+          : state.resumeFromCheckpoint
+          ? state.goalScope && !state.goalScope.shouldResearch
+            ? {
+                query: `Local architecture outline for: ${state.session.goal}`,
+                answer: state.goalScope.rationale,
+                sources: []
+              }
+            : await (await this.getSearch()).research(
+                `${state.session.goal} architecture, core modules, component boundaries`
+              )
+          : state.goalScope && !state.goalScope.shouldResearch
           ? await this.skipResearchStage(
               jobId,
               "research-architecture",
@@ -3255,7 +3290,19 @@ export class ConstructAgentService {
             })
       }))
       .addNode("researchDependencies", async (state) => ({
-        dependencyResearch: state.goalScope && !state.goalScope.shouldResearch
+        dependencyResearch: state.mergedResearch
+          ? null
+          : state.resumeFromCheckpoint
+          ? state.goalScope && !state.goalScope.shouldResearch
+            ? {
+                query: `Local dependency order for: ${state.session.goal}`,
+                answer: state.goalScope.rationale,
+                sources: []
+              }
+            : await (await this.getSearch()).research(
+                `${state.session.goal} dependency order, implementation sequence, first real behavior to implement`
+              )
+          : state.goalScope && !state.goalScope.shouldResearch
           ? await this.skipResearchStage(
               jobId,
               "research-dependency-order",
@@ -3270,7 +3317,19 @@ export class ConstructAgentService {
             })
       }))
       .addNode("researchValidation", async (state) => ({
-        validationResearch: state.goalScope && !state.goalScope.shouldResearch
+        validationResearch: state.mergedResearch
+          ? null
+          : state.resumeFromCheckpoint
+          ? state.goalScope && !state.goalScope.shouldResearch
+            ? {
+                query: `Local validation seams for: ${state.session.goal}`,
+                answer: state.goalScope.rationale,
+                sources: []
+              }
+            : await (await this.getSearch()).research(
+                `${state.session.goal} validation strategy, test harness, component-level testing approach`
+              )
+          : state.goalScope && !state.goalScope.shouldResearch
           ? await this.skipResearchStage(
               jobId,
               "research-validation-strategy",
@@ -3285,13 +3344,21 @@ export class ConstructAgentService {
             })
       }))
       .addNode("mergeResearch", async (state) => ({
-        mergedResearch: await this.withStage(jobId, "research-merge", "Combining research signals", "Fusing architecture, dependency, and validation research into a single generation context.", async () => {
-          return mergeResearchDigests("Combined architecture, dependency-order, and validation research", [
-            state.architectureResearch,
-            state.dependencyResearch,
-            state.validationResearch
-          ]);
-        })
+        mergedResearch: state.mergedResearch ?? (
+          state.resumeFromCheckpoint
+            ? mergeResearchDigests("Combined architecture, dependency-order, and validation research", [
+                state.architectureResearch,
+                state.dependencyResearch,
+                state.validationResearch
+              ])
+            : await this.withStage(jobId, "research-merge", "Combining research signals", "Fusing architecture, dependency, and validation research into a single generation context.", async () => {
+                return mergeResearchDigests("Combined architecture, dependency-order, and validation research", [
+                  state.architectureResearch,
+                  state.dependencyResearch,
+                  state.validationResearch
+                ]);
+              })
+        )
       }))
       .addNode("generatePlan", async (state) => ({
         plan: state.plan
@@ -3369,7 +3436,9 @@ export class ConstructAgentService {
               answersSignature,
               stage: "plan-generated",
               plan,
-              blueprintDraft: null
+              blueprintDraft: null,
+              goalScope: state.goalScope,
+              mergedResearch: state.mergedResearch
             });
 
             return plan;
@@ -3557,7 +3626,9 @@ export class ConstructAgentService {
             answersSignature,
             stage: "lessons-authored",
             plan: state.plan,
-            blueprintDraft: nextBlueprintDraft
+            blueprintDraft: nextBlueprintDraft,
+            goalScope: state.goalScope,
+            mergedResearch: state.mergedResearch
           });
           await this.mutateBlueprintBuildForJob(jobId, (current) => ({
             ...(current ??
@@ -3638,12 +3709,13 @@ export class ConstructAgentService {
         jobId,
         request,
         session,
+        resumeFromCheckpoint: planningCheckpoint !== null,
         knowledgeBase: createEmptyKnowledgeBase(this.now().toISOString()),
-        goalScope: null,
+        goalScope: planningCheckpoint?.goalScope ?? null,
         architectureResearch: null,
         dependencyResearch: null,
         validationResearch: null,
-        mergedResearch: null,
+        mergedResearch: planningCheckpoint?.mergedResearch ?? null,
         plan: planningCheckpoint?.plan ?? null,
         blueprintDraft: planningCheckpoint?.blueprintDraft ?? null,
         checkpointStage: planningCheckpoint?.stage ?? null,
@@ -4378,6 +4450,8 @@ export class ConstructAgentService {
       stage: PlanningBuildCheckpoint["stage"];
       plan: GeneratedProjectPlan;
       blueprintDraft: GeneratedBlueprintBundleDraft | null;
+      goalScope?: GoalScope | null;
+      mergedResearch?: ResearchDigest | null;
       failure?: PlanningBuildCheckpoint["failure"];
     }
   ): Promise<void> {
@@ -4390,6 +4464,8 @@ export class ConstructAgentService {
         stage: input.stage,
         plan: input.plan,
         blueprintDraft: input.blueprintDraft,
+        goalScope: input.goalScope ?? null,
+        mergedResearch: input.mergedResearch ?? null,
         failure: input.failure ?? null
       })
     );
@@ -4481,6 +4557,8 @@ export class ConstructAgentService {
       stageTitle: "Project bundle drafted",
       session: input.session,
       plan: input.plan,
+      goalScope: input.goalScope,
+      mergedResearch: input.mergedResearch,
       requestAnswers: input.requestAnswers,
       answersSignature: input.answersSignature,
       rawDraft: rawFrontierDraft,
@@ -4577,6 +4655,8 @@ export class ConstructAgentService {
       stageTitle: "Saved project bundle repaired",
       session: input.session,
       plan: input.plan,
+      goalScope: input.goalScope,
+      mergedResearch: input.mergedResearch,
       requestAnswers: input.requestAnswers,
       answersSignature: input.answersSignature,
       rawDraft: rawFrontierDraft,
@@ -4592,6 +4672,8 @@ export class ConstructAgentService {
     stageTitle: string;
     session: PlanningSession;
     plan: GeneratedProjectPlan;
+    goalScope: GoalScope | null;
+    mergedResearch: ResearchDigest | null;
     requestAnswers: PlanningSessionCompleteRequest["answers"];
     answersSignature: string;
     rawDraft: GeneratedBlueprintBundleDraft;
@@ -4650,6 +4732,8 @@ export class ConstructAgentService {
         stage: "blueprint-draft-invalid",
         plan: input.plan,
         blueprintDraft: input.rawDraft,
+        goalScope: input.goalScope,
+        mergedResearch: input.mergedResearch,
         failure
       });
       await this.mutateBlueprintBuildForJob(input.jobId, (current) => ({
@@ -4715,6 +4799,8 @@ export class ConstructAgentService {
       stage: "blueprint-drafted",
       plan: input.plan,
       blueprintDraft: bundleDraft,
+      goalScope: input.goalScope,
+      mergedResearch: input.mergedResearch,
       failure: null
     });
     await this.mutateBlueprintBuildForJob(input.jobId, (current) => ({

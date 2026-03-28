@@ -2859,10 +2859,12 @@ test("ConstructAgentService rejects blueprint drafts with missing anchor markers
 
 test("ConstructAgentService resumes blueprint creation from the last saved stage after a late persistence failure", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "construct-agent-plan-resume-"));
+  let goalScopeCalls = 0;
   let planCalls = 0;
   let blueprintCalls = 0;
   let lessonAuthoringCalls = 0;
   let activationFailures = 0;
+  const loggedStages: string[] = [];
 
   const basePersistence = createAgentPersistence({
     rootDirectory: root,
@@ -2912,6 +2914,17 @@ test("ConstructAgentService resumes blueprint creation from the last saved stage
   const service = new ConstructAgentService(root, {
     now: () => new Date("2026-03-17T12:00:00.000Z"),
     persistence,
+    logger: {
+      info(_message, context) {
+        if (typeof context?.stage === "string") {
+          loggedStages.push(context.stage);
+        }
+      },
+      warn() {},
+      error() {},
+      debug() {},
+      trace() {}
+    },
     search: {
       async research(query) {
         return {
@@ -2937,6 +2950,7 @@ test("ConstructAgentService resumes blueprint creation from the last saved stage
         }
 
         if (schemaName === "construct_goal_scope") {
+          goalScopeCalls += 1;
           return schema.parse({
             scopeSummary: "Small single-module project",
             artifactShape: "single file module",
@@ -3197,13 +3211,19 @@ test("ConstructAgentService resumes blueprint creation from the last saved stage
     assert.equal(lessonAuthoringCalls, 1);
 
     const retryPlanJob = service.createPlanningPlanJob(request);
+    const retryLogStartIndex = loggedStages.length;
     const retryResult = await waitForJobCompletion(service, retryPlanJob.jobId);
     const planPayload = retryResult.result as { plan: { steps: Array<{ id: string }> } };
+    const retryStages = loggedStages.slice(retryLogStartIndex);
 
     assert.equal(planPayload.plan.steps.length, 1);
+    assert.equal(goalScopeCalls, 2);
     assert.equal(planCalls, 1);
     assert.equal(blueprintCalls, 1);
     assert.equal(lessonAuthoringCalls, 1);
+    assert.equal(retryStages.includes("knowledge-base"), false);
+    assert.equal(retryStages.includes("scope-analysis"), false);
+    assert.equal(retryStages.includes("research-merge"), false);
     assert.equal(
       await basePersistence.getPlanningBuildCheckpoint(questionSession.session.sessionId),
       null
@@ -3215,10 +3235,12 @@ test("ConstructAgentService resumes blueprint creation from the last saved stage
 
 test("ConstructAgentService repairs a saved invalid blueprint draft instead of rerunning plan generation", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "construct-agent-blueprint-draft-repair-"));
+  let goalScopeCalls = 0;
   let planCalls = 0;
   let blueprintCalls = 0;
   let blueprintRepairCalls = 0;
   let lessonAuthoringCalls = 0;
+  const loggedStages: string[] = [];
 
   const persistence = createAgentPersistence({
     rootDirectory: root,
@@ -3307,7 +3329,11 @@ test("ConstructAgentService repairs a saved invalid blueprint draft instead of r
     now: () => new Date("2026-03-29T01:00:00.000Z"),
     persistence,
     logger: {
-      info() {},
+      info(_message, context) {
+        if (typeof context?.stage === "string") {
+          loggedStages.push(context.stage);
+        }
+      },
       debug() {},
       trace() {},
       warn() {},
@@ -3338,6 +3364,7 @@ test("ConstructAgentService repairs a saved invalid blueprint draft instead of r
         }
 
         if (schemaName === "construct_goal_scope") {
+          goalScopeCalls += 1;
           return schema.parse({
             scopeSummary: "Small single-module project",
             artifactShape: "single file module",
@@ -3552,14 +3579,21 @@ test("ConstructAgentService repairs a saved invalid blueprint draft instead of r
     assert.equal(lessonAuthoringCalls, 0);
 
     const retryPlanJob = service.createPlanningPlanJob(request);
+    const retryLogStartIndex = loggedStages.length;
     const retryResult = await waitForJobCompletion(service, retryPlanJob.jobId);
     const planPayload = retryResult.result as { plan: { steps: Array<{ id: string }> } };
+    const retryStages = loggedStages.slice(retryLogStartIndex);
 
     assert.equal(planPayload.plan.steps.length, 1);
+    assert.equal(goalScopeCalls, 2);
     assert.equal(planCalls, 1);
     assert.equal(blueprintCalls, 1);
     assert.equal(blueprintRepairCalls, 1);
     assert.equal(lessonAuthoringCalls, 1);
+    assert.equal(retryStages.includes("knowledge-base"), false);
+    assert.equal(retryStages.includes("scope-analysis"), false);
+    assert.equal(retryStages.includes("research-merge"), false);
+    assert.equal(retryStages.includes("blueprint-repair"), true);
     assert.equal(
       await persistence.getPlanningBuildCheckpoint(questionSession.session.sessionId),
       null

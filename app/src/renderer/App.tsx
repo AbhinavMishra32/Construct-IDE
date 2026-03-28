@@ -1066,6 +1066,7 @@ export default function App() {
   const openResumePlanningOverlay = async () => {
     setDashboardBusy(true);
     setProjectsError("");
+    setPlanningEvents([]);
 
     try {
       await Promise.all([
@@ -1581,6 +1582,7 @@ export default function App() {
         ]);
 
         if (planningState.plan) {
+          setPlanningEvents([]);
           setPlanningError(
             `${message} Your saved planning progress is still intact. Use Resume generation to continue from the failed architect step.`
           );
