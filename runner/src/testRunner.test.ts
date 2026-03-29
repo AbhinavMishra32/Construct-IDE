@@ -79,6 +79,117 @@ test("resolveBlueprintStepRequest accepts generated blueprints that use TypeScri
   }
 });
 
+test("resolveBlueprintStepRequest selects node-test for TypeScript projects that use the built-in Node test runner", async () => {
+  const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "construct-blueprint-node-test-"));
+
+  try {
+    await mkdir(path.join(temporaryDirectory, "src"), { recursive: true });
+    await mkdir(path.join(temporaryDirectory, "test"), { recursive: true });
+
+    const blueprint = await loadBlueprint(blueprintPath);
+    const temporaryBlueprintPath = path.join(temporaryDirectory, "project-blueprint.json");
+
+    await writeFile(
+      path.join(temporaryDirectory, "package.json"),
+      JSON.stringify(
+        {
+          name: "node-test-ts-project",
+          type: "module",
+          scripts: {
+            test: "node --test test/**/*.ts"
+          }
+        },
+        null,
+        2
+      )
+    );
+    await writeFile(
+      path.join(temporaryDirectory, "src", "vdom.ts"),
+      [
+        "/* anchor: step-1-vdom-core */",
+        "export function h(): string {",
+        "  throw new Error('TODO: implement h() for step-1-vdom-core');",
+        "}"
+      ].join("\n")
+    );
+    await writeFile(
+      path.join(temporaryDirectory, "test", "step1_vdom.test.ts"),
+      [
+        "import test from 'node:test';",
+        "import assert from 'node:assert/strict';",
+        "import { h } from '../src/vdom';",
+        "",
+        "test('h throws until implemented', () => {",
+        "  assert.throws(() => h(), /TODO/);",
+        "});"
+      ].join("\n")
+    );
+
+    await writeFile(
+      temporaryBlueprintPath,
+      JSON.stringify(
+        {
+          ...blueprint,
+          id: "node.test.project",
+          name: "Node test project",
+          projectRoot: temporaryDirectory,
+          sourceProjectRoot: temporaryDirectory,
+          language: "TypeScript",
+          entrypoints: ["src/vdom.ts"],
+          files: {
+            "src/vdom.ts": [
+              "/* anchor: step-1-vdom-core */",
+              "export function h(): string {",
+              "  throw new Error('TODO: implement h() for step-1-vdom-core');",
+              "}"
+            ].join("\n")
+          },
+          steps: blueprint.steps.slice(0, 1).map((step) => ({
+            ...step,
+            id: "step-1-vdom-core",
+            title: "Step 1",
+            summary: "Implement h.",
+            doc: "Edit src/vdom.ts.",
+            anchor: {
+              file: "src/vdom.ts",
+              marker: "step-1-vdom-core"
+            },
+            tests: ["test/step1_vdom.test.ts"],
+            lessonSlides: [
+              {
+                blocks: [{ type: "markdown", markdown: "Implement h." }]
+              }
+            ],
+            checks: [],
+            constraints: [],
+            visibleFiles: []
+          })),
+          frontier: blueprint.frontier
+            ? {
+                ...blueprint.frontier,
+                activeStepId: "step-1-vdom-core",
+                stepIds: ["step-1-vdom-core"],
+                hiddenTestPaths: ["test/step1_vdom.test.ts"]
+              }
+            : null
+        },
+        null,
+        2
+      )
+    );
+
+    const request = await resolveBlueprintStepRequest({
+      blueprintPath: temporaryBlueprintPath,
+      stepId: "step-1-vdom-core",
+      timeoutMs: 4_000
+    });
+
+    assert.equal(request.adapter, "node-test");
+  } finally {
+    await rm(temporaryDirectory, { recursive: true, force: true });
+  }
+});
+
 test("inferAdapterFromBlueprint supports TypeScript, Python, and Rust labels", async () => {
   const blueprint = await loadBlueprint(blueprintPath);
 
@@ -250,6 +361,51 @@ test("TestRunnerManager provides a DOM-backed TypeScript-aware runtime for hidde
     });
 
     assert.equal(result.status, "passed");
+    assert.equal(result.failures.length, 0);
+  } finally {
+    await rm(temporaryDirectory, { recursive: true, force: true });
+  }
+});
+
+test("TestRunnerManager runs node:test TypeScript suites via tsx", async () => {
+  const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "construct-node-test-suite-"));
+
+  try {
+    await mkdir(path.join(temporaryDirectory, "src"), { recursive: true });
+    await mkdir(path.join(temporaryDirectory, "test"), { recursive: true });
+
+    await writeFile(
+      path.join(temporaryDirectory, "src", "vdom.ts"),
+      [
+        "export function h(): string {",
+        "  throw new Error('TODO: implement h() for step-1-vdom-core');",
+        "}"
+      ].join("\n")
+    );
+    await writeFile(
+      path.join(temporaryDirectory, "test", "step1_vdom.test.ts"),
+      [
+        "import test from 'node:test';",
+        "import assert from 'node:assert/strict';",
+        "import { h } from '../src/vdom';",
+        "",
+        "test('h throws until implemented', () => {",
+        "  assert.throws(() => h(), /TODO: implement h\\(\\)/);",
+        "});"
+      ].join("\n")
+    );
+
+    const manager = new TestRunnerManager();
+    const result = await manager.runTask({
+      stepId: "fixture.node-test",
+      adapter: "node-test",
+      projectRoot: temporaryDirectory,
+      tests: ["test/step1_vdom.test.ts"],
+      timeoutMs: 10_000
+    });
+
+    assert.equal(result.status, "passed");
+    assert.equal(result.adapter, "node-test");
     assert.equal(result.failures.length, 0);
   } finally {
     await rm(temporaryDirectory, { recursive: true, force: true });

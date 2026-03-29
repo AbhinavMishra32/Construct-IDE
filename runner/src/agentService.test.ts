@@ -3794,6 +3794,57 @@ test("ConstructAgentService repairs a saved invalid blueprint draft instead of r
   }
 });
 
+test("ConstructAgentService rejects node:test hidden harnesses for TypeScript blueprints", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "construct-agent-blueprint-node-test-"));
+  const baseBundle = buildBlueprintGuardBundle();
+
+  try {
+    await expectBlueprintGenerationToReject(root, {
+      bundle: buildBlueprintGuardBundle({
+        supportFiles: [
+          {
+            path: "package.json",
+            content: JSON.stringify(
+              {
+                name: "tiny-utility",
+                scripts: {
+                  test: "node --test hidden_tests/**/*.ts"
+                }
+              },
+              null,
+              2
+            )
+          }
+        ],
+        hiddenTests: [
+          {
+            path: "hidden_tests/step1_validation.ts",
+            content: [
+              "import test from 'node:test';",
+              "import assert from 'node:assert/strict';",
+              "import { shout } from '../src/index';",
+              "",
+              "test('shout uppercases text', () => {",
+              "  assert.equal(shout('hi'), 'HI');",
+              "});"
+            ].join("\n")
+          }
+        ],
+        steps: [
+          {
+            ...baseBundle.steps[0],
+            checks: [] as [],
+            tests: ["hidden_tests/step1_validation.ts"]
+          }
+        ]
+      }),
+      rejectionPattern: /Jest contract Construct expects|Jest-compatible test harness/i
+    });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 async function waitForJobCompletion(
   service: ConstructAgentService,
   jobId: string

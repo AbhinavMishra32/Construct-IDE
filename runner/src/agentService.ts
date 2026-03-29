@@ -1829,7 +1829,9 @@ export class ConstructAgentService {
 
     return {
       draft: trimGeneratedFrontierDraftToPlan(
-        normalizeGeneratedFrontierDraft(draft),
+        normalizeGeneratedFrontierDraft(draft, {
+          language: input.context.blueprint.language
+        }),
         input.frontierPlanSteps
       ),
       evidenceCount: recentCapabilityEvidence.evidenceCount
@@ -7248,9 +7250,16 @@ function normalizeGeneratedBlueprintDraft(
 }
 
 function normalizeGeneratedFrontierDraft(
-  draft: GeneratedFrontierDraft
+  draft: GeneratedFrontierDraft,
+  options?: {
+    language?: string;
+  }
 ): GeneratedFrontierDraft {
-  validateGeneratedFrontierDraftIntegrity(draft, "Generated frontier draft");
+  validateGeneratedFrontierDraftIntegrity(
+    draft,
+    "Generated frontier draft",
+    options?.language
+  );
 
   return {
     ...draft,
@@ -7324,6 +7333,12 @@ function validateGeneratedBlueprintDraftIntegrity(
   }
 
   validateGeneratedStepReferences(draft.steps, learnerFiles, hiddenTestPaths, context);
+  validateGeneratedJavaScriptTestHarness({
+    language: draft.language,
+    supportFiles,
+    hiddenTests: draft.hiddenTests,
+    context
+  });
   validateGeneratedLearnerExerciseSeparation({
     learnerFiles,
     canonicalFiles,
@@ -7334,7 +7349,8 @@ function validateGeneratedBlueprintDraftIntegrity(
 
 function validateGeneratedFrontierDraftIntegrity(
   draft: GeneratedFrontierDraft,
-  context: string
+  context: string,
+  language?: string
 ): void {
   const learnerFiles = validateGeneratedFileEntries(draft.learnerFiles, "learnerFiles", context);
   const hiddenTests = validateGeneratedFileEntries(draft.hiddenTests, "hiddenTests", context);
@@ -7343,6 +7359,11 @@ function validateGeneratedFrontierDraftIntegrity(
 
   validateNoGeneratedPathOverlap(learnerPaths, hiddenTestPaths, "learnerFiles", "hiddenTests", context);
   validateGeneratedStepReferences(draft.steps, learnerFiles, hiddenTestPaths, context);
+  validateGeneratedJavaScriptTestHarness({
+    language,
+    hiddenTests: draft.hiddenTests,
+    context
+  });
   validateGeneratedLearnerExerciseSeparation({
     learnerFiles,
     steps: draft.steps,
@@ -7403,6 +7424,66 @@ function validateGeneratedFileEntry(
   }
 
   validateGeneratedSourceSyntax(file, group, context);
+}
+
+function validateGeneratedJavaScriptTestHarness(input: {
+  language?: string;
+  supportFiles?: Map<string, string>;
+  hiddenTests: Array<{ path: string; content: string }>;
+  context: string;
+}): void {
+  const normalizedLanguage = (input.language ?? "").trim().toLowerCase();
+  if (
+    normalizedLanguage !== "javascript" &&
+    normalizedLanguage !== "js" &&
+    normalizedLanguage !== "jsx" &&
+    normalizedLanguage !== "typescript" &&
+    normalizedLanguage !== "ts" &&
+    normalizedLanguage !== "tsx"
+  ) {
+    return;
+  }
+
+  const nodeTestPaths = input.hiddenTests
+    .filter((file) => looksLikeGeneratedNodeTestSuite(file.content))
+    .map((file) => normalizePathValue(file.path));
+
+  if (nodeTestPaths.length > 0) {
+    throw new Error(
+      `${input.context} returned node:test-based hidden tests (${nodeTestPaths.join(", ")}). JavaScript/TypeScript blueprints must use the Jest contract Construct expects.`
+    );
+  }
+
+  const manifest = input.supportFiles?.get("package.json");
+  if (!manifest) {
+    return;
+  }
+
+  try {
+    const parsed = JSON.parse(manifest) as { scripts?: { test?: unknown } };
+    if (
+      typeof parsed.scripts?.test === "string" &&
+      /\bnode\s+--test\b/.test(parsed.scripts.test)
+    ) {
+      throw new Error(
+        `${input.context} returned a package.json test script that uses node --test. JavaScript/TypeScript blueprints must generate a Jest-compatible test harness.`
+      );
+    }
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      /must generate a Jest-compatible test harness/i.test(error.message)
+    ) {
+      throw error;
+    }
+  }
+}
+
+function looksLikeGeneratedNodeTestSuite(source: string): boolean {
+  return (
+    /\bfrom\s+["']node:test["']/.test(source) ||
+    /\brequire\(\s*["']node:test["']\s*\)/.test(source)
+  );
 }
 
 function validateNoGeneratedPathOverlap(
@@ -8447,6 +8528,7 @@ function buildBlueprintGenerationInstructions(): string {
     "hiddenTests must only cover the current frontierPlanSteps and stay runnable without exposing full solutions in the learnerFiles.",
     "hiddenTests must never contain placeholder bodies, placeholder comments, sentinel strings like `.placeholder`, or comment-only stubs.",
     "If a hidden test path ends in `.js`, return valid runnable JavaScript immediately.",
+    "For JavaScript and TypeScript blueprints, hiddenTests must use Jest-style tests. Do not import from `node:test`, do not use Node's built-in test runner, and do not set package.json scripts.test to `node --test`.",
     "Every .json file in any returned file group must be parseable JSON.",
     "Every step anchor.file must exist in learnerFiles, every step anchor.marker must appear literally inside that learner file, every step test path must exist in hiddenTests, and every entrypoint must exist in supportFiles, canonicalFiles, or learnerFiles.",
     "The answers payload includes the original question, the available options, and either a selected option or a custom freeform learner response. Use that context to tune scope, docs, checks, and task ordering.",
@@ -8513,6 +8595,7 @@ function buildBlueprintRepairInstructions(): string {
     "Resolve every validationFailure completely. Do not repeat the broken file separation, duplicate paths, invalid JSON, invalid source syntax, missing anchors, or missing hidden test references.",
     "supportFiles, canonicalFiles, learnerFiles, and hiddenTests must each contain unique paths, and the groups must not overlap.",
     "Every learnerFile must still have a matching canonicalFile for the same path.",
+    "For JavaScript and TypeScript blueprints, repair the bundle back to a Jest-compatible test harness. Do not return `node:test` imports or `node --test` scripts.",
     "Every learnerFile must stay visibly incomplete at the anchor. Do not repair the draft by handing the learner the finished implementation.",
     "Do not return learnerFiles that already match canonicalFiles or that would already pass the step hidden test without learner edits.",
     "Keep explicit unfinished task affordances at the anchor such as TASK/TODO markers with a failing stub, NotImplemented error, todo!(), unimplemented!(), or an equivalent language-appropriate unfinished implementation.",
@@ -8553,6 +8636,7 @@ function buildAdaptiveFrontierGenerationInstructions(): string {
     "hiddenTests must validate only the currently selected frontier steps.",
     "hiddenTests must never contain placeholder bodies, placeholder comments, sentinel strings like `.placeholder`, or comment-only stubs.",
     "If a hidden test path ends in `.js`, return valid runnable JavaScript immediately.",
+    "For JavaScript and TypeScript frontiers, hiddenTests must stay Jest-compatible. Do not switch the project to `node:test` or `node --test`.",
     "Every step anchor.file must exist in learnerFiles, every step anchor.marker must appear literally inside that learner file, and every step test path must exist in hiddenTests.",
     "Every returned step must include a real anchor, substantial explanation slides, grounded checks, constraints, and targeted tests.",
     "Use priorKnowledge, recentCapabilityEvidence, the current frontier, and the stated reason to decide how much hand-holding or decomposition the learner now needs.",

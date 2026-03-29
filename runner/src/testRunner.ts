@@ -75,6 +75,8 @@ interface ProcessExecutionResult {
   timedOut: boolean;
 }
 
+type JavaScriptTestRuntime = "jest" | "node-test" | "node-validation";
+
 export type TestRunnerLogger = {
   info(message: string, context?: Record<string, unknown>): void;
   warn(message: string, context?: Record<string, unknown>): void;
@@ -104,8 +106,14 @@ export class JestTestAdapter implements TestAdapter {
       path.relative(normalizedRequest.projectRoot, testPath) || path.basename(testPath)
     );
 
-    if (shouldRunNodeValidationScripts(normalizedRequest.tests)) {
+    const runtime = await detectJavaScriptTestRuntime(normalizedRequest);
+
+    if (runtime === "node-validation") {
       return runNodeValidationScripts(normalizedRequest, this.kind, testsRun, logger);
+    }
+
+    if (runtime === "node-test") {
+      return runNodeTestSuites(normalizedRequest, testsRun, logger);
     }
 
     const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "construct-jest-results-"));
@@ -254,6 +262,19 @@ export class JestTestAdapter implements TestAdapter {
   }
 }
 
+export class NodeTestAdapter implements TestAdapter {
+  readonly kind = "node-test" as const;
+
+  async run(request: TaskExecutionRequest, logger: TestRunnerLogger): Promise<TaskResult> {
+    const normalizedRequest = normalizeTaskExecutionRequest(request);
+    const testsRun = normalizedRequest.tests.map((testPath) =>
+      path.relative(normalizedRequest.projectRoot, testPath) || path.basename(testPath)
+    );
+
+    return runNodeTestSuites(normalizedRequest, testsRun, logger);
+  }
+}
+
 export class PytestTestAdapter implements TestAdapter {
   readonly kind = "pytest" as const;
 
@@ -346,6 +367,7 @@ export class TestRunnerManager {
   ) {
     const resolvedAdapters = adapters ?? [
       new JestTestAdapter(),
+      new NodeTestAdapter(),
       new PytestTestAdapter(),
       new CargoTestAdapter()
     ];
@@ -407,12 +429,17 @@ export class TestRunnerManager {
     const blueprintPath = path.resolve(options?.blueprintPath ?? defaultBlueprintPath);
     const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     const blueprint = await loadBlueprint(blueprintPath);
-    const tests = await discoverBlueprintSuiteTests(path.dirname(blueprintPath), blueprint);
+    const projectRoot = path.dirname(blueprintPath);
+    const tests = await discoverBlueprintSuiteTests(projectRoot, blueprint);
 
     return this.runTask({
       stepId: "blueprint.all",
-      adapter: inferAdapterFromBlueprint(blueprint),
-      projectRoot: path.dirname(blueprintPath),
+      adapter: await inferAdapterForProject({
+        blueprint,
+        projectRoot,
+        tests
+      }),
+      projectRoot,
       tests,
       timeoutMs
     });
@@ -437,10 +464,16 @@ export async function resolveBlueprintStepRequest(
     );
   }
 
+  const projectRoot = path.dirname(parsedRequest.blueprintPath);
+
   return TaskExecutionRequestSchema.parse({
     stepId: step.id,
-    adapter: inferAdapterFromBlueprint(blueprint),
-    projectRoot: path.dirname(parsedRequest.blueprintPath),
+    adapter: await inferAdapterForProject({
+      blueprint,
+      projectRoot,
+      tests: step.tests
+    }),
+    projectRoot,
     tests: step.tests,
     timeoutMs: parsedRequest.timeoutMs
   });
@@ -468,9 +501,31 @@ export function inferAdapterFromBlueprint(blueprint: ProjectBlueprint): TestAdap
       return "cargo";
     default:
       throw new BlueprintResolutionError(
-        `No adapter mapping exists yet for blueprint language ${blueprint.language}. Supported languages currently map to jest (JavaScript/TypeScript), pytest (Python), or cargo (Rust).`
+        `No adapter mapping exists yet for blueprint language ${blueprint.language}. Supported languages currently map to jest/node-test (JavaScript/TypeScript), pytest (Python), or cargo (Rust).`
       );
   }
+}
+
+async function inferAdapterForProject(input: {
+  blueprint: ProjectBlueprint;
+  projectRoot: string;
+  tests: string[];
+}): Promise<TestAdapterKind> {
+  const fallbackAdapter = inferAdapterFromBlueprint(input.blueprint);
+
+  if (fallbackAdapter !== "jest") {
+    return fallbackAdapter;
+  }
+
+  const runtime = await detectJavaScriptTestRuntime({
+    stepId: "blueprint.resolve",
+    adapter: fallbackAdapter,
+    projectRoot: input.projectRoot,
+    tests: input.tests,
+    timeoutMs: DEFAULT_TIMEOUT_MS
+  });
+
+  return runtime === "node-test" ? "node-test" : fallbackAdapter;
 }
 
 function normalizeTaskExecutionRequest(request: TaskExecutionRequest): TaskExecutionRequest {
@@ -521,6 +576,51 @@ function summarizeFailureMessage(message: string): string {
     .filter(Boolean);
 
   return lines[0] ?? "Test execution failed.";
+}
+
+async function detectJavaScriptTestRuntime(
+  request: TaskExecutionRequest
+): Promise<JavaScriptTestRuntime> {
+  if (shouldRunNodeValidationScripts(request.tests)) {
+    return "node-validation";
+  }
+
+  const packageJsonPath = path.join(request.projectRoot, "package.json");
+  if (existsSync(packageJsonPath)) {
+    try {
+      const manifest = JSON.parse(await readFile(packageJsonPath, "utf8")) as {
+        scripts?: { test?: unknown };
+      };
+      if (
+        typeof manifest.scripts?.test === "string" &&
+        /\bnode\s+--test\b/.test(manifest.scripts.test)
+      ) {
+        return "node-test";
+      }
+    } catch {
+      // Ignore malformed manifests here and let the main task runner surface them elsewhere.
+    }
+  }
+
+  for (const testPath of request.tests) {
+    try {
+      const source = await readFile(testPath, "utf8");
+      if (looksLikeNodeTestSuite(source)) {
+        return "node-test";
+      }
+    } catch {
+      // Missing files are handled later by the selected test runner.
+    }
+  }
+
+  return "jest";
+}
+
+function looksLikeNodeTestSuite(source: string): boolean {
+  return (
+    /\bfrom\s+["']node:test["']/.test(source) ||
+    /\brequire\(\s*["']node:test["']\s*\)/.test(source)
+  );
 }
 
 function extractOutputComparison(message: string): Pick<
@@ -1223,6 +1323,148 @@ function collectPytestFailures(
   }
 
   return [];
+}
+
+async function runNodeTestSuites(
+  request: TaskExecutionRequest,
+  testsRun: string[],
+  logger: TestRunnerLogger
+): Promise<TaskResult> {
+  const processResult = await runProcess(
+    process.execPath,
+    ["--import", tsxImportPath, "--test", "--test-reporter", "tap", ...request.tests],
+    {
+      cwd: request.projectRoot,
+      timeoutMs: request.timeoutMs,
+      env: {
+        CI: "1"
+      },
+      logger,
+      logContext: {
+        adapter: "node-test",
+        stepId: request.stepId,
+        testsRun
+      }
+    }
+  );
+  const failures = collectNodeTestFailures(request, processResult);
+  const status = !processResult.timedOut && processResult.exitCode === 0 ? "passed" : "failed";
+
+  return TaskResultSchema.parse({
+    stepId: request.stepId,
+    adapter: "node-test",
+    status,
+    durationMs: processResult.durationMs,
+    testsRun,
+    failures,
+    exitCode: processResult.exitCode,
+    timedOut: processResult.timedOut,
+    stdout: processResult.stdout.trim(),
+    stderr: processResult.stderr.trim()
+  });
+}
+
+function collectNodeTestFailures(
+  request: TaskExecutionRequest,
+  result: ProcessExecutionResult
+): TaskFailure[] {
+  const combinedOutput = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
+  const lines = combinedOutput.replace(/\r/g, "").split("\n");
+  const failures: TaskFailure[] = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]?.trimEnd() ?? "";
+    const match = /^not ok\s+\d+\s+-\s+(.+)$/.exec(line.trim());
+
+    if (!match) {
+      continue;
+    }
+
+    const testName = match[1]?.trim() || request.stepId;
+    const blockLines: string[] = [];
+    let cursor = index + 1;
+
+    while (cursor < lines.length) {
+      const currentLine = lines[cursor] ?? "";
+      if (/^(?:ok|not ok)\s+\d+\s+-\s+/.test(currentLine.trim())) {
+        break;
+      }
+      blockLines.push(currentLine);
+      cursor += 1;
+    }
+
+    index = cursor - 1;
+
+    const block = blockLines.join("\n").trim();
+    const stackTrace = extractTapBlockValue(block, "stack");
+    failures.push({
+      testName,
+      message:
+        extractTapBlockValue(block, "error") ||
+        summarizeFailureMessage(stackTrace || block || `node:test reported a failure in ${testName}.`),
+      ...extractOutputComparison(stackTrace ?? block),
+      stackTrace: stackTrace || block || undefined
+    });
+  }
+
+  if (failures.length > 0) {
+    return failures;
+  }
+
+  if (result.timedOut) {
+    return [
+      {
+        testName: request.stepId,
+        message: `The node:test process timed out after ${request.timeoutMs}ms.`,
+        stackTrace: combinedOutput || undefined
+      }
+    ];
+  }
+
+  if (result.exitCode !== 0) {
+    return [
+      {
+        testName: request.stepId,
+        message: summarizeFailureMessage(combinedOutput) || "The node:test run failed.",
+        stackTrace: combinedOutput || undefined
+      }
+    ];
+  }
+
+  return [];
+}
+
+function extractTapBlockValue(block: string, key: string): string | undefined {
+  const lines = block.split("\n");
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    const trimmed = line.trim();
+    const directPrefix = `${key}: `;
+
+    if (!trimmed.startsWith(directPrefix)) {
+      continue;
+    }
+
+    const rawValue = trimmed.slice(directPrefix.length);
+
+    if (rawValue === "|-") {
+      const valueLines: string[] = [];
+      for (let cursor = index + 1; cursor < lines.length; cursor += 1) {
+        const continuation = lines[cursor] ?? "";
+        if (!continuation.startsWith("    ")) {
+          break;
+        }
+        valueLines.push(continuation.slice(4));
+      }
+
+      return valueLines.join("\n").trim() || undefined;
+    }
+
+    return rawValue.replace(/^['"]|['"]$/g, "").trim() || undefined;
+  }
+
+  return undefined;
 }
 
 function buildCargoTestArgs(request: TaskExecutionRequest): string[] {

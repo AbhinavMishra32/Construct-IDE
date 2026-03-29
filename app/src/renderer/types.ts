@@ -121,7 +121,7 @@ export type TaskFailure = {
 export type TaskResult = {
   stepId: string;
   status: "passed" | "failed";
-  adapter: "jest" | "cargo" | "pytest";
+  adapter: "jest" | "node-test" | "cargo" | "pytest";
   durationMs: number;
   testsRun: string[];
   failures: TaskFailure[];

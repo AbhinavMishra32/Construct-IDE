@@ -539,7 +539,7 @@ export const TaskFailureSchema = z.object({
   stackTrace: z.string().min(1).optional()
 });
 
-export const TestAdapterSchema = z.enum(["jest", "cargo", "pytest"]);
+export const TestAdapterSchema = z.enum(["jest", "node-test", "cargo", "pytest"]);
 
 export const TaskExecutionRequestSchema = z.object({
   stepId: z.string().min(1),
