@@ -39,6 +39,7 @@ import {
   FileVideoCameraIcon,
   FolderOpenIcon,
   FolderTreeIcon,
+  HouseIcon,
   ListTodoIcon,
   MoonStarIcon,
   Package2Icon,
@@ -298,10 +299,11 @@ function toPlanningAnswerDrafts(
 function PrimaryButton({
   className,
   children,
+  size = "sm",
   ...props
 }: ComponentProps<typeof Button>) {
   return (
-    <Button className={cn("construct-primary-button", className)} {...props}>
+    <Button size={size} className={cn("construct-primary-button", className)} {...props}>
       {children}
     </Button>
   );
@@ -310,10 +312,12 @@ function PrimaryButton({
 function SecondaryButton({
   className,
   children,
+  size = "sm",
   ...props
 }: ComponentProps<typeof Button>) {
   return (
     <Button
+      size={size}
       variant="outline"
       className={cn("construct-secondary-button", className)}
       {...props}
@@ -390,17 +394,22 @@ function EmptyPanel({
 function ThemeDropdown({
   theme,
   onThemeChange,
-  className
+  className,
+  buttonSize = "sm",
+  buttonVariant = "outline"
 }: {
   theme: ThemeMode;
   onThemeChange: (theme: ThemeMode) => void;
   className?: string;
+  buttonSize?: ComponentProps<typeof Button>["size"];
+  buttonVariant?: ComponentProps<typeof Button>["variant"];
 }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
-          variant="outline"
+          variant={buttonVariant}
+          size={buttonSize}
           className={cn("construct-theme-toggle", className)}
           aria-label="Theme options"
         >
@@ -1959,6 +1968,7 @@ export default function App() {
                             </DetailPopover>
                             {activeStep ? (
                               <SecondaryButton
+                                className="construct-editor-brief-button"
                                 onClick={() => {
                                   setSurfaceMode("brief");
                                   setStatusMessage(`Opened brief for ${activeStep.title}.`);
@@ -2946,21 +2956,36 @@ function WorkbenchTopbar({
 }) {
   return (
     <header className="construct-workbench-topbar">
-      <div className="construct-workbench-topbar-context">
-        <span className="construct-panel-kicker">
-          {currentView === "projects" ? "Projects" : activeProjectName ?? "Workspace"}
-        </span>
-        <strong>
-          {currentView === "projects"
-            ? "Return to any saved project and keep building."
-            : activeFilePath ?? activeStepTitle ?? activeProjectName ?? "No file focused"}
-        </strong>
+      <div className="construct-workbench-topbar-lead">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          className="construct-workbench-home-button"
+          aria-label="Open home"
+          onClick={onOpenProjects}
+        >
+          <HouseIcon />
+        </Button>
+        <div className="construct-workbench-topbar-context">
+          <span>{currentView === "projects" ? "Home" : activeProjectName ?? "Workspace"}</span>
+          <strong>
+            {currentView === "projects"
+              ? "Return to any saved project and keep building."
+              : activeFilePath ?? activeStepTitle ?? activeProjectName ?? "No file focused"}
+          </strong>
+        </div>
       </div>
 
-      <div className="construct-workbench-mode-switch" role="tablist" aria-label="Current view">
-        <ButtonGroup className="construct-workbench-mode-switch">
+      <div className="construct-workbench-nav">
+        <ButtonGroup
+          className="construct-workbench-mode-switch"
+          role="tablist"
+          aria-label="Current view"
+        >
           <Button
             type="button"
+            size="sm"
             variant={currentView === "projects" ? "secondary" : "ghost"}
             className={cn(
               "construct-workbench-mode-button",
@@ -2972,6 +2997,7 @@ function WorkbenchTopbar({
           </Button>
           <Button
             type="button"
+            size="sm"
             variant={currentView === "lesson" ? "secondary" : "ghost"}
             className={cn(
               "construct-workbench-mode-button",
@@ -2983,6 +3009,7 @@ function WorkbenchTopbar({
           </Button>
           <Button
             type="button"
+            size="sm"
             variant={currentView === "code" ? "secondary" : "ghost"}
             className={cn(
               "construct-workbench-mode-button",
@@ -2996,12 +3023,26 @@ function WorkbenchTopbar({
       </div>
 
       <div className="construct-workbench-topbar-actions">
-        <ToolbarPill>{runnerHealth?.status ?? "offline"}</ToolbarPill>
-        <ToolbarPill variant="outline">{saveStateLabel}</ToolbarPill>
-        <SecondaryButton type="button" onClick={onStartProject}>
-          New
-        </SecondaryButton>
-        <ThemeDropdown theme={theme} onThemeChange={onThemeChange} />
+        <div className="construct-workbench-action-cluster construct-workbench-action-cluster--primary">
+          <ToolbarPill className="construct-workbench-status-pill">
+            {runnerHealth?.status ?? "offline"}
+          </ToolbarPill>
+          <ToolbarPill variant="outline" className="construct-workbench-status-pill">
+            {saveStateLabel}
+          </ToolbarPill>
+          <SecondaryButton
+            type="button"
+            className="construct-workbench-new-button"
+            onClick={onStartProject}
+          >
+            New
+          </SecondaryButton>
+          <ThemeDropdown
+            theme={theme}
+            onThemeChange={onThemeChange}
+            className="construct-workbench-theme-button"
+          />
+        </div>
       </div>
     </header>
   );

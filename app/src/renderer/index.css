@@ -1658,8 +1658,8 @@ textarea {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 14px;
-  padding: 14px 22px;
+  gap: 10px;
+  padding: 10px 14px;
   border-bottom: 1px solid var(--course-border);
   background: var(--course-bg);
   position: sticky;
@@ -1670,11 +1670,11 @@ textarea {
 .construct-course-topbar-copy {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 
 .construct-course-topbar-copy strong {
-  font-size: 13px;
+  font-size: 12px;
   letter-spacing: -0.02em;
   color: var(--course-text);
   font-weight: 600;
@@ -1683,7 +1683,7 @@ textarea {
 .construct-course-topbar-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
 }
 
@@ -6706,7 +6706,7 @@ textarea {
   z-index: 10;
   min-height: 48px;
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) auto minmax(260px, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   gap: 10px;
   padding: 8px 12px;
@@ -6724,7 +6724,7 @@ textarea {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   min-height: 36px;
   padding: 3px 12px 3px 4px;
   border-radius: 14px;
@@ -6736,6 +6736,18 @@ textarea {
       color-mix(in srgb, var(--panel-muted) 54%, transparent)
     );
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--panel-bg) 44%, transparent);
+}
+
+.construct-workbench-home-button {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  background: transparent;
+  box-shadow: none;
+}
+
+.construct-workbench-home-button:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--panel-soft) 62%, transparent);
 }
 
 .construct-workbench-context-badge {
@@ -6763,7 +6775,7 @@ textarea {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: 11.5px;
   line-height: 1.2;
   font-weight: 600;
   letter-spacing: -0.02em;
@@ -6788,7 +6800,7 @@ textarea {
 .construct-workbench-mode-switch {
   gap: 0;
   min-height: 36px;
-  padding: 3px;
+  padding: 2px;
   border-radius: 14px;
   border: 1px solid color-mix(in srgb, var(--border) 74%, transparent);
   background:
@@ -6801,24 +6813,25 @@ textarea {
 }
 
 .construct-workbench-mode-button {
-  min-width: 64px;
+  min-width: 60px;
   min-height: 28px;
-  padding: 0 11px;
-  border-radius: 11px;
+  padding: 0 10px;
+  border-radius: 10px;
   font-size: 10.5px;
   font-weight: 500;
   letter-spacing: -0.015em;
   color: var(--text-soft);
 }
 
-.construct-workbench-mode-switch [data-slot="tabs-trigger"][data-state="active"] {
+.construct-workbench-mode-button[data-variant="secondary"],
+.construct-workbench-mode-button.is-active {
   background: color-mix(in srgb, var(--panel-bg) 98%, transparent);
   color: var(--text);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 56%, transparent);
 }
 
-.construct-workbench-mode-switch [data-slot="tabs-trigger"]::after {
-  display: none;
+.construct-workbench-mode-button[data-variant="ghost"]:hover {
+  color: var(--text);
 }
 
 .construct-workbench-topbar-actions {
@@ -6827,6 +6840,7 @@ textarea {
   justify-content: flex-end;
   gap: 6px;
   flex-wrap: wrap;
+  min-width: 0;
 }
 
 .construct-workbench-action-cluster {
@@ -6844,6 +6858,7 @@ textarea {
       color-mix(in srgb, var(--panel-muted) 54%, transparent)
     );
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--panel-bg) 44%, transparent);
+  max-width: 100%;
 }
 
 .construct-workbench-action-cluster--primary {
@@ -7065,6 +7080,32 @@ textarea {
 
 .construct-editor-breadcrumb [data-slot="breadcrumb-page"] {
   color: var(--text);
+}
+
+@media (max-width: 1180px) {
+  .construct-workbench-topbar {
+    grid-template-columns: 1fr;
+    justify-items: stretch;
+  }
+
+  .construct-workbench-nav,
+  .construct-workbench-topbar-actions {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 720px) {
+  .construct-workbench-topbar-lead,
+  .construct-workbench-action-cluster,
+  .construct-workbench-nav,
+  .construct-workbench-mode-switch {
+    width: 100%;
+  }
+
+  .construct-workbench-mode-button {
+    flex: 1;
+    min-width: 0;
+  }
 }
 
 :root[data-construct-theme="dark"] .construct-floating-card {
