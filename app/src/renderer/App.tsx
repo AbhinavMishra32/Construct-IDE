@@ -6855,14 +6855,12 @@ function ArchitectTaskBoard({ events }: { events: AgentEvent[] }) {
                     {getArchitectTaskIcon(group.key)}
                   </span>
                   <span className="construct-agent-outline-label">{group.label}</span>
-                </span>
-                <span className="construct-agent-outline-row-meta">
-                  <span className="construct-agent-outline-status sr-only">
-                    {formatArchitectStatus(group.status)}
-                  </span>
-                  <span className="construct-agent-outline-chevron">
+                  <span className="construct-agent-outline-chevron" aria-hidden="true">
                     {isExpanded ? <ChevronDownIcon size={14} /> : <ChevronRightIcon size={14} />}
                   </span>
+                </span>
+                <span className="construct-agent-outline-status sr-only">
+                  {formatArchitectStatus(group.status)}
                 </span>
               </button>
 

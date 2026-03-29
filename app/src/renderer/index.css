@@ -6933,7 +6933,7 @@ textarea {
   width: 100%;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 10px;
   min-height: 54px;
   padding: 14px 0 14px 28px;
@@ -6981,6 +6981,7 @@ textarea {
   align-items: center;
   gap: 8px;
   min-width: 0;
+  flex-wrap: nowrap;
 }
 
 .construct-agent-outline-icon {
@@ -7017,6 +7018,9 @@ textarea {
 }
 
 .construct-agent-outline-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: var(--text-soft);
   flex-shrink: 0;
 }
@@ -7041,17 +7045,49 @@ textarea {
 .construct-agent-outline-children {
   display: grid;
   gap: 6px;
-  padding-left: 18px;
+  padding-left: 20px;
 }
 
 .construct-agent-outline-child {
+  position: relative;
   display: flex;
   align-items: center;
-  min-height: 18px;
+  min-height: 22px;
+  padding-left: 24px;
+}
+
+.construct-agent-outline-child::before {
+  content: "";
+  position: absolute;
+  left: -2px;
+  top: 50%;
+  width: 14px;
+  height: 12px;
+  border-left: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  border-bottom-left-radius: 12px;
+  transform: translateY(-65%);
+}
+
+.construct-agent-outline-child::after {
+  content: "";
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 72%, transparent);
+  background: var(--panel-bg);
+  transform: translateY(-50%);
 }
 
 .construct-agent-outline-child.is-current {
   color: var(--text);
+}
+
+.construct-agent-outline-child.is-current::after {
+  border-color: color-mix(in srgb, var(--text) 72%, transparent);
 }
 
 .construct-agent-outline-child-label {
