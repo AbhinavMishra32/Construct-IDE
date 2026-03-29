@@ -201,6 +201,61 @@ test("TestRunnerManager runs hidden validation scripts and derives expected vs c
   assert.equal(turboFailure.actualOutput, "turbo.json missing");
 });
 
+test("TestRunnerManager provides a DOM-backed TypeScript-aware runtime for hidden validations", async () => {
+  const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "construct-node-validation-dom-"));
+
+  try {
+    await mkdir(path.join(temporaryDirectory, "src"), { recursive: true });
+    await mkdir(path.join(temporaryDirectory, "hidden_tests"), { recursive: true });
+
+    await writeFile(
+      path.join(temporaryDirectory, "src", "vdom.ts"),
+      [
+        "export function createElement(type: string, props: any, ...children: any[]) {",
+        "  return { type, props, children };",
+        "}",
+        "",
+        "export function render(container: HTMLElement, vnode: any): void {",
+        "  const element = document.createElement(vnode.type);",
+        "  element.textContent = String(vnode.children[0] ?? '');",
+        "  container.appendChild(element);",
+        "}"
+      ].join("\n"),
+      "utf8"
+    );
+
+    await writeFile(
+      path.join(temporaryDirectory, "hidden_tests", "dom_validation.js"),
+      [
+        "(async function () {",
+        "  const { createElement, render } = await import('./src/vdom.js');",
+        "  const container = document.createElement('div');",
+        "  document.body.appendChild(container);",
+        "  render(container, createElement('div', null, 'Hello'));",
+        "  if (container.querySelector('div')?.textContent !== 'Hello') {",
+        "    throw new Error('DOM render failed');",
+        "  }",
+        "})();"
+      ].join("\n"),
+      "utf8"
+    );
+
+    const manager = new TestRunnerManager();
+    const result = await manager.runTask({
+      stepId: "fixture.node-validation-dom",
+      adapter: "jest",
+      projectRoot: temporaryDirectory,
+      tests: ["hidden_tests/dom_validation.js"],
+      timeoutMs: 10_000
+    });
+
+    assert.equal(result.status, "passed");
+    assert.equal(result.failures.length, 0);
+  } finally {
+    await rm(temporaryDirectory, { recursive: true, force: true });
+  }
+});
+
 test("TestRunnerManager derives invalid JSON comparisons from hidden validation output", async () => {
   const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "construct-node-validation-json-"));
 

@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { existsSync, readdirSync, realpathSync } from "node:fs";
 import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
@@ -37,6 +38,9 @@ const defaultBlueprintPath = path.join(
   "workflow-runtime",
   "project-blueprint.json"
 );
+const nodeRequire = createRequire(import.meta.url);
+const tsxImportPath = nodeRequire.resolve("tsx");
+const jsdomRequirePath = nodeRequire.resolve("jsdom");
 
 interface TestAdapter {
   readonly kind: TestAdapterKind;
@@ -714,8 +718,65 @@ async function runNodeValidationScript(
     "const fs = require('node:fs');",
     "const path = require('node:path');",
     "const Module = require('node:module');",
+    `const jsdomRequirePath = ${JSON.stringify(jsdomRequirePath)};`,
+    "function installBrowserLikeGlobals() {",
+    "  let JSDOM;",
+    "  try {",
+    "    ({ JSDOM } = require(jsdomRequirePath));",
+    "  } catch (error) {",
+    "    const detail = error instanceof Error ? error.message : String(error);",
+    "    console.error(`[CONSTRUCT] Hidden validation runner could not load jsdom: ${detail}`);",
+    "    process.exit(1);",
+    "  }",
+    "  const dom = new JSDOM('<!doctype html><html><body></body></html>', {",
+    "    pretendToBeVisual: true,",
+    "    url: 'http://localhost/'",
+    "  });",
+    "  const { window } = dom;",
+    "  const defineGlobal = (key, value) => {",
+    "    Object.defineProperty(globalThis, key, {",
+    "      configurable: true,",
+    "      writable: true,",
+    "      value",
+    "    });",
+    "  };",
+    "  defineGlobal('window', window);",
+    "  defineGlobal('self', window);",
+    "  defineGlobal('document', window.document);",
+    "  defineGlobal('navigator', window.navigator);",
+    "  defineGlobal('location', window.location);",
+    "  defineGlobal('history', window.history);",
+    "  defineGlobal('HTMLElement', window.HTMLElement);",
+    "  defineGlobal('Element', window.Element);",
+    "  defineGlobal('Node', window.Node);",
+    "  defineGlobal('Text', window.Text);",
+    "  defineGlobal('Event', window.Event);",
+    "  defineGlobal('CustomEvent', window.CustomEvent);",
+    "  defineGlobal('DocumentFragment', window.DocumentFragment);",
+    "  defineGlobal('MutationObserver', window.MutationObserver);",
+    "  defineGlobal('DOMParser', window.DOMParser);",
+    "  defineGlobal('getComputedStyle', window.getComputedStyle.bind(window));",
+    "  defineGlobal('requestAnimationFrame', window.requestAnimationFrame.bind(window));",
+    "  defineGlobal('cancelAnimationFrame', window.cancelAnimationFrame.bind(window));",
+    "  for (const key of Object.getOwnPropertyNames(window)) {",
+    "    if (key in globalThis) {",
+    "      continue;",
+    "    }",
+    "    Object.defineProperty(globalThis, key, {",
+    "      configurable: true,",
+    "      enumerable: false,",
+    "      get() {",
+    "        return window[key];",
+    "      },",
+    "      set(value) {",
+    "        window[key] = value;",
+    "      }",
+    "    });",
+    "  }",
+    "}",
     "const [projectRoot, scriptPath] = process.argv.slice(1);",
     "process.chdir(projectRoot);",
+    "installBrowserLikeGlobals();",
     "const source = fs.readFileSync(scriptPath, 'utf8');",
     "const virtualEntry = path.join(projectRoot, '__construct_hidden_validation__.js');",
     "const validationModule = new Module(virtualEntry);",
@@ -725,7 +786,10 @@ async function runNodeValidationScript(
   ].join("\n");
 
   try {
-    return await runProcess(process.execPath, ["-e", wrapperSource, projectRoot, scriptPath], {
+    return await runProcess(
+      process.execPath,
+      ["--import", tsxImportPath, "-e", wrapperSource, projectRoot, scriptPath],
+      {
       cwd: projectRoot,
       timeoutMs,
       env: {
@@ -736,7 +800,8 @@ async function runNodeValidationScript(
         ...logContext,
         validationScript
       }
-    });
+      }
+    );
   } catch (error) {
     if (isMissingBinaryError(error)) {
       throw new BlueprintResolutionError("Unable to locate Node.js in PATH for validation scripts.");
