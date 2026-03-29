@@ -141,6 +141,7 @@ type AgentConfig = {
   searchProvider: "tavily" | "exa";
   openAiModel: string;
   openAiFastModel: string;
+  openAiRepairModel: string;
   openAiApiKey: string;
   openAiBaseUrl?: string;
   tavilyApiKey: string;
@@ -593,6 +594,7 @@ export class ConstructAgentService {
   private readonly resolvedConfigByUserId = new Map<string, AgentConfig>();
   private readonly llmByUserId = new Map<string, StructuredLanguageModel>();
   private readonly fastLlmByUserId = new Map<string, StructuredLanguageModel>();
+  private readonly repairLlmByUserId = new Map<string, StructuredLanguageModel>();
   private readonly searchByUserId = new Map<string, SearchProvider>();
   private projectInstaller: ProjectInstaller | null = null;
   private readonly jobs = new Map<string, AgentJobRecord>();
@@ -634,6 +636,7 @@ export class ConstructAgentService {
     this.resolvedConfigByUserId.delete(userId);
     this.llmByUserId.delete(userId);
     this.fastLlmByUserId.delete(userId);
+    this.repairLlmByUserId.delete(userId);
     this.searchByUserId.delete(userId);
   }
 
@@ -2486,6 +2489,29 @@ export class ConstructAgentService {
       logger: this.logger
     });
     this.fastLlmByUserId.set(userId, llm);
+
+    return llm;
+  }
+
+  private async getRepairLlm(): Promise<StructuredLanguageModel> {
+    if (this.llmOverride) {
+      return this.llmOverride;
+    }
+
+    const userId = getCurrentUserId();
+    const existing = this.repairLlmByUserId.get(userId);
+    if (existing) {
+      return existing;
+    }
+
+    const config = await this.getAgentConfig();
+    const llm = new OpenAIStructuredLanguageModel({
+      apiKey: config.openAiApiKey,
+      baseUrl: config.openAiBaseUrl,
+      model: config.openAiRepairModel,
+      logger: this.logger
+    });
+    this.repairLlmByUserId.set(userId, llm);
 
     return llm;
   }
@@ -4850,9 +4876,10 @@ export class ConstructAgentService {
     if (!input.plan) {
       throw new Error("Cannot repair a blueprint before the project plan exists.");
     }
+    const plan = input.plan;
 
-    const frontierPlanSteps = selectPlanFrontierSteps(input.plan, {
-      startStepId: input.plan.suggestedFirstStepId,
+    const frontierPlanSteps = selectPlanFrontierSteps(plan, {
+      startStepId: plan.suggestedFirstStepId,
       maxSteps: 3
     });
     const repairContext = {
@@ -4861,8 +4888,9 @@ export class ConstructAgentService {
         input.failure?.message ??
         "The saved project bundle draft failed validation and needs to be repaired.",
       frontierStepCount: frontierPlanSteps.length,
-      firstStepTitle: frontierPlanSteps[0]?.title ?? input.plan.steps[0]?.title ?? null
+      firstStepTitle: frontierPlanSteps[0]?.title ?? plan.steps[0]?.title ?? null
     };
+    const maxRepairAttempts = 3;
 
     this.logger.info("Repairing blueprint synthesis draft from saved checkpoint.", {
       jobId: input.jobId,
@@ -4871,48 +4899,109 @@ export class ConstructAgentService {
       ...repairContext
     });
 
-    const stream = this.createModelStreamForwarder(
-      input.jobId,
-      "blueprint-repair",
-      "project bundle repair"
-    );
-
-    const repairedBundleDraft = await this.withStage(
+    const repairedFrontierDraft = await this.withStage(
       input.jobId,
       "blueprint-repair",
       "Repairing the saved project bundle",
       "Construct is resuming from the saved architect draft and repairing only the broken blueprint bundle instead of restarting the whole planning run.",
-      async () =>
-        (await this.getLlm()).parse({
-          schema: GENERATED_BLUEPRINT_BUNDLE_DRAFT_SCHEMA,
-          schemaName: "construct_generated_blueprint_bundle",
-          instructions: buildBlueprintRepairInstructions(),
-          prompt: JSON.stringify(
-            {
-              session: input.session,
-              goalScope: input.goalScope,
-              answers: input.answers,
-              planSpine: input.plan,
-              frontierPlanSteps,
-              priorKnowledge: serializeKnowledgeBaseForPrompt(input.knowledgeBase),
-              research: compactResearchDigest(input.mergedResearch),
-              previousDraft: input.failedDraft,
-              validationFailure: repairContext
-            },
-            null,
-            2
-          ),
-          maxOutputTokens: 20_000,
-          verbosity: "medium",
-          stream
-        }).finally(() => {
-          stream.onComplete?.();
-        })
-    );
+      async () => {
+        let previousDraft = input.failedDraft;
+        let latestFrontierDraft = filterGeneratedBundleDraftToFrontier(previousDraft, frontierPlanSteps);
+        const repairFailures = [repairContext.failureMessage];
 
-    const rawFrontierDraft = filterGeneratedBundleDraftToFrontier(
-      repairedBundleDraft,
-      frontierPlanSteps
+        for (let attempt = 1; attempt <= maxRepairAttempts; attempt += 1) {
+          const stream = this.createModelStreamForwarder(
+            input.jobId,
+            "blueprint-repair",
+            "project bundle repair"
+          );
+
+          const repairedBundleDraft = await (await this.getRepairLlm()).parse({
+            schema: GENERATED_BLUEPRINT_BUNDLE_DRAFT_SCHEMA,
+            schemaName: "construct_generated_blueprint_bundle",
+            instructions: buildBlueprintRepairInstructions(),
+            prompt: JSON.stringify(
+              {
+                session: input.session,
+                goalScope: input.goalScope,
+                answers: input.answers,
+                planSpine: plan,
+                frontierPlanSteps,
+                priorKnowledge: serializeKnowledgeBaseForPrompt(input.knowledgeBase),
+                research: compactResearchDigest(input.mergedResearch),
+                previousDraft,
+                validationFailure: {
+                  ...repairContext,
+                  attempt,
+                  maxRepairAttempts,
+                  previousRepairFailures: repairFailures
+                }
+              },
+              null,
+              2
+            ),
+            maxOutputTokens: 20_000,
+            verbosity: "medium",
+            stream
+          }).finally(() => {
+            stream.onComplete?.();
+          });
+
+          latestFrontierDraft = filterGeneratedBundleDraftToFrontier(
+            repairedBundleDraft,
+            frontierPlanSteps
+          );
+
+          try {
+            normalizeGeneratedBlueprintDraft(latestFrontierDraft);
+            return latestFrontierDraft;
+          } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            previousDraft = latestFrontierDraft;
+            repairFailures.push(errorMessage);
+
+            this.logger.warn("Blueprint repair draft failed validation. Retrying within the same planning job.", {
+              jobId: input.jobId,
+              sessionId: input.session.sessionId,
+              attempt,
+              maxRepairAttempts,
+              error: errorMessage
+            });
+
+            const job = this.jobs.get(input.jobId);
+            if (job && attempt < maxRepairAttempts) {
+              this.emitEvent(job, {
+                stage: "blueprint-repair",
+                title: `Repair draft failed validation (${attempt}/${maxRepairAttempts})`,
+                detail: errorMessage,
+                level: "warning",
+                payload: {
+                  attempt,
+                  maxRepairAttempts
+                }
+              });
+            }
+
+            if (attempt >= maxRepairAttempts) {
+              await this.recordInvalidPlanningBlueprintDraft({
+                jobId: input.jobId,
+                stage: "blueprint-repair",
+                session: input.session,
+                plan,
+                goalScope: input.goalScope,
+                mergedResearch: input.mergedResearch,
+                requestAnswers: input.requestAnswers,
+                answersSignature: input.answersSignature,
+                rawDraft: latestFrontierDraft,
+                errorMessage
+              });
+              throw error;
+            }
+          }
+        }
+
+        throw new Error("Construct exhausted internal blueprint repair attempts.");
+      }
     );
 
     return this.finalizePlanningBlueprintDraft({
@@ -4920,12 +5009,12 @@ export class ConstructAgentService {
       stage: "blueprint-repair",
       stageTitle: "Saved project bundle repaired",
       session: input.session,
-      plan: input.plan,
+      plan,
       goalScope: input.goalScope,
       mergedResearch: input.mergedResearch,
       requestAnswers: input.requestAnswers,
       answersSignature: input.answersSignature,
-      rawDraft: rawFrontierDraft,
+      rawDraft: repairedFrontierDraft,
       successLogContext: "Recovered blueprint bundle from saved checkpoint.",
       successEventTitle: "Saved project bundle repaired",
       successEventDetail: "Construct repaired the saved architect draft and is continuing from the last good planning state."
@@ -4986,51 +5075,18 @@ export class ConstructAgentService {
       bundleDraft = normalizeGeneratedBlueprintDraft(input.rawDraft);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      const failure = {
+      await this.recordInvalidPlanningBlueprintDraft({
+        jobId: input.jobId,
         stage: input.stage,
-        message: errorMessage,
-        recoverable: true,
-        recordedAt: this.now().toISOString()
-      } satisfies NonNullable<PlanningBuildCheckpoint["failure"]>;
-
-      await this.writePlanningBuildCheckpoint(input.session.sessionId, {
-        answersSignature: input.answersSignature,
-        stage: "blueprint-draft-invalid",
+        session: input.session,
         plan: input.plan,
-        blueprintDraft: input.rawDraft,
         goalScope: input.goalScope,
         mergedResearch: input.mergedResearch,
-        failure
+        requestAnswers: input.requestAnswers,
+        answersSignature: input.answersSignature,
+        rawDraft: input.rawDraft,
+        errorMessage
       });
-      await this.mutateBlueprintBuildForJob(input.jobId, (current) => ({
-        ...(current ??
-          createBlueprintBuildRecord({
-            id: input.session.sessionId,
-            sessionId: input.session.sessionId,
-            goal: input.session.goal,
-            detectedLanguage: input.session.detectedLanguage,
-            detectedDomain: input.session.detectedDomain,
-            status: "failed",
-            currentStage: input.stage,
-            currentStageTitle: "Saved blueprint draft needs repair",
-            currentStageStatus: "failed",
-            createdAt: this.now().toISOString(),
-            updatedAt: this.now().toISOString()
-          })),
-        planningSession: input.session,
-        answers: input.requestAnswers,
-        plan: input.plan,
-        blueprintDraft: input.rawDraft,
-        supportFiles: toBlueprintArtifactFiles(input.rawDraft.supportFiles, "support"),
-        canonicalFiles: toBlueprintArtifactFiles(input.rawDraft.canonicalFiles, "canonical"),
-        learnerFiles: toBlueprintArtifactFiles(input.rawDraft.learnerFiles, "learner"),
-        hiddenTests: toBlueprintArtifactFiles(input.rawDraft.hiddenTests, "hidden-tests"),
-        currentStage: input.stage,
-        currentStageTitle: "Saved blueprint draft needs repair",
-        currentStageStatus: "failed",
-        updatedAt: this.now().toISOString(),
-        lastError: errorMessage
-      }));
       throw error;
     }
 
@@ -5101,6 +5157,65 @@ export class ConstructAgentService {
     }));
 
     return bundleDraft;
+  }
+
+  private async recordInvalidPlanningBlueprintDraft(input: {
+    jobId: string;
+    stage: string;
+    session: PlanningSession;
+    plan: GeneratedProjectPlan;
+    goalScope: GoalScope | null;
+    mergedResearch: ResearchDigest | null;
+    requestAnswers: PlanningSessionCompleteRequest["answers"];
+    answersSignature: string;
+    rawDraft: GeneratedBlueprintBundleDraft;
+    errorMessage: string;
+  }): Promise<void> {
+    const failure = {
+      stage: input.stage,
+      message: input.errorMessage,
+      recoverable: true,
+      recordedAt: this.now().toISOString()
+    } satisfies NonNullable<PlanningBuildCheckpoint["failure"]>;
+
+    await this.writePlanningBuildCheckpoint(input.session.sessionId, {
+      answersSignature: input.answersSignature,
+      stage: "blueprint-draft-invalid",
+      plan: input.plan,
+      blueprintDraft: input.rawDraft,
+      goalScope: input.goalScope,
+      mergedResearch: input.mergedResearch,
+      failure
+    });
+    await this.mutateBlueprintBuildForJob(input.jobId, (current) => ({
+      ...(current ??
+        createBlueprintBuildRecord({
+          id: input.session.sessionId,
+          sessionId: input.session.sessionId,
+          goal: input.session.goal,
+          detectedLanguage: input.session.detectedLanguage,
+          detectedDomain: input.session.detectedDomain,
+          status: "failed",
+          currentStage: input.stage,
+          currentStageTitle: "Saved blueprint draft needs repair",
+          currentStageStatus: "failed",
+          createdAt: this.now().toISOString(),
+          updatedAt: this.now().toISOString()
+        })),
+      planningSession: input.session,
+      answers: input.requestAnswers,
+      plan: input.plan,
+      blueprintDraft: input.rawDraft,
+      supportFiles: toBlueprintArtifactFiles(input.rawDraft.supportFiles, "support"),
+      canonicalFiles: toBlueprintArtifactFiles(input.rawDraft.canonicalFiles, "canonical"),
+      learnerFiles: toBlueprintArtifactFiles(input.rawDraft.learnerFiles, "learner"),
+      hiddenTests: toBlueprintArtifactFiles(input.rawDraft.hiddenTests, "hidden-tests"),
+      currentStage: input.stage,
+      currentStageTitle: "Saved blueprint draft needs repair",
+      currentStageStatus: "failed",
+      updatedAt: this.now().toISOString(),
+      lastError: input.errorMessage
+    }));
   }
 
   private async resumePlanningCheckpointStage(
@@ -6260,6 +6375,11 @@ function resolveAgentConfig(): AgentConfig {
     .toLowerCase();
   const openAiApiKey = process.env.OPENAI_API_KEY?.trim();
   const tavilyApiKey = process.env.TAVILY_API_KEY?.trim();
+  const openAiModel = process.env.CONSTRUCT_OPENAI_MODEL?.trim() || "gpt-5.4";
+  const openAiFastModel = process.env.CONSTRUCT_OPENAI_FAST_MODEL?.trim() || "gpt-5-nano";
+  const openAiRepairModel =
+    process.env.CONSTRUCT_OPENAI_REPAIR_MODEL?.trim() ||
+    (openAiModel === "gpt-5-nano" ? "gpt-5.4" : openAiModel);
 
   if (provider !== "openai") {
     throw new Error(
@@ -6286,8 +6406,9 @@ function resolveAgentConfig(): AgentConfig {
     searchProvider,
     openAiApiKey,
     openAiBaseUrl: process.env.CONSTRUCT_OPENAI_BASE_URL?.trim(),
-    openAiModel: process.env.CONSTRUCT_OPENAI_MODEL?.trim() || "gpt-5.4",
-    openAiFastModel: process.env.CONSTRUCT_OPENAI_FAST_MODEL?.trim() || "gpt-5-nano",
+    openAiModel,
+    openAiFastModel,
+    openAiRepairModel,
     tavilyApiKey,
     tavilySearchDepth:
       (process.env.CONSTRUCT_TAVILY_SEARCH_DEPTH?.trim() as
@@ -8397,6 +8518,8 @@ function buildBlueprintRepairInstructions(): string {
     "Do not return learnerFiles that already match canonicalFiles or that would already pass the step hidden test without learner edits.",
     "Keep explicit unfinished task affordances at the anchor such as TASK/TODO markers with a failing stub, NotImplemented error, todo!(), unimplemented!(), or an equivalent language-appropriate unfinished implementation.",
     "Every step anchor.file must exist in learnerFiles, every step anchor.marker must appear literally inside that learner file, every step test path must exist in hiddenTests, and every entrypoint must exist in supportFiles, canonicalFiles, or learnerFiles.",
+    "Any file whose path ends in .json must contain strict parseable JSON only. Do not include comments, markdown fences, trailing prose, placeholder markers, or JavaScript object literal syntax.",
+    "When validationFailure mentions invalid JSON, rewrite the entire offending JSON file so it parses cleanly with JSON.parse on the first attempt.",
     "If a previous file is already valid, preserve its intent instead of rewriting it gratuitously.",
     "Do not emit placeholder prose instead of code. Return concrete, runnable file contents and valid JSON only."
   ].join("\n");

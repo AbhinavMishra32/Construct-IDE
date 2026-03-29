@@ -3668,6 +3668,17 @@ test("ConstructAgentService repairs a saved invalid blueprint draft instead of r
 
           if (repairPrompt) {
             blueprintRepairCalls += 1;
+            if (blueprintRepairCalls === 1) {
+              return schema.parse({
+                ...validBundle,
+                supportFiles: [
+                  {
+                    path: "package.json",
+                    content: "{ name: 'tiny-module-graph' }\n"
+                  }
+                ]
+              });
+            }
             return schema.parse(validBundle);
           }
 
@@ -3767,7 +3778,7 @@ test("ConstructAgentService repairs a saved invalid blueprint draft instead of r
     assert.equal(goalScopeCalls, 2);
     assert.equal(planCalls, 1);
     assert.equal(blueprintCalls, 1);
-    assert.equal(blueprintRepairCalls, 1);
+    assert.equal(blueprintRepairCalls, 2);
     assert.equal(lessonAuthoringCalls, 1);
     assert.equal(retryStages.includes("knowledge-base"), false);
     assert.equal(retryStages.includes("scope-analysis"), false);
