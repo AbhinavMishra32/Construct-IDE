@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { existsSync, readdirSync, realpathSync } from "node:fs";
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
@@ -41,6 +41,7 @@ const defaultBlueprintPath = path.join(
 const nodeRequire = createRequire(import.meta.url);
 const tsxImportPath = nodeRequire.resolve("tsx");
 const jsdomRequirePath = nodeRequire.resolve("jsdom");
+const typeScriptRequirePath = nodeRequire.resolve("typescript");
 
 interface TestAdapter {
   readonly kind: TestAdapterKind;
@@ -73,6 +74,11 @@ interface ProcessExecutionResult {
   stderr: string;
   stdout: string;
   timedOut: boolean;
+}
+
+interface GeneratedJestRuntimeResources {
+  configPath: string;
+  directory: string;
 }
 
 type JavaScriptTestRuntime = "jest" | "node-test" | "node-validation";
@@ -119,10 +125,15 @@ export class JestTestAdapter implements TestAdapter {
     const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "construct-jest-results-"));
     const outputFile = path.join(outputDirectory, "results.json");
     const jestBinaryPath = findUpwardJestBinaryPath(normalizedRequest.projectRoot);
-    const jestConfigPath = findFirstUpwardExistingPath(
+    const existingJestConfigPath = findFirstUpwardExistingPath(
       normalizedRequest.projectRoot,
       JEST_CONFIG_CANDIDATES
     );
+    let generatedJestRuntime: GeneratedJestRuntimeResources | null = null;
+    const jestConfigPath =
+      existingJestConfigPath ??
+      (generatedJestRuntime = await createGeneratedJestRuntime(normalizedRequest.projectRoot))
+        .configPath;
 
     if (!jestBinaryPath) {
       throw new BlueprintResolutionError(
@@ -184,6 +195,9 @@ export class JestTestAdapter implements TestAdapter {
       });
     } finally {
       await rm(outputDirectory, { recursive: true, force: true });
+      if (generatedJestRuntime) {
+        await rm(generatedJestRuntime.directory, { recursive: true, force: true });
+      }
     }
   }
 
@@ -614,6 +628,126 @@ async function detectJavaScriptTestRuntime(
   }
 
   return "jest";
+}
+
+async function createGeneratedJestRuntime(
+  projectRoot: string
+): Promise<GeneratedJestRuntimeResources> {
+  const runtimeDirectory = await mkdtemp(path.join(os.tmpdir(), "construct-jest-runtime-"));
+  const transformerPath = path.join(runtimeDirectory, "transformer.cjs");
+  const styleStubPath = path.join(runtimeDirectory, "style-stub.cjs");
+  const fileStubPath = path.join(runtimeDirectory, "file-stub.cjs");
+  const setupPath = path.join(runtimeDirectory, "setup.cjs");
+  const configPath = path.join(runtimeDirectory, "jest.config.cjs");
+
+  await writeFile(
+    transformerPath,
+    [
+      `const ts = require(${JSON.stringify(typeScriptRequirePath)});`,
+      "",
+      "module.exports = {",
+      "  process(sourceText, sourcePath) {",
+      "    const transpiled = ts.transpileModule(sourceText, {",
+      "      fileName: sourcePath,",
+      "      compilerOptions: {",
+      "        allowJs: true,",
+      "        esModuleInterop: true,",
+      "        isolatedModules: true,",
+      "        jsx: sourcePath.endsWith('.tsx') ? ts.JsxEmit.ReactJSX : ts.JsxEmit.Preserve,",
+      "        inlineSourceMap: true,",
+      "        module: ts.ModuleKind.CommonJS,",
+      "        moduleResolution: ts.ModuleResolutionKind.NodeJs,",
+      "        resolveJsonModule: true,",
+      "        target: ts.ScriptTarget.ES2020,",
+      "        verbatimModuleSyntax: false",
+      "      },",
+      "      reportDiagnostics: false",
+      "    });",
+      "",
+      "    return {",
+      "      code: transpiled.outputText",
+      "    };",
+      "  }",
+      "};",
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+
+  await writeFile(styleStubPath, "module.exports = {};\n", "utf8");
+  await writeFile(fileStubPath, "module.exports = 'construct-file-stub';\n", "utf8");
+  await writeFile(
+    setupPath,
+    [
+      `const { JSDOM } = require(${JSON.stringify(jsdomRequirePath)});`,
+      "",
+      "const dom = new JSDOM('<!doctype html><html><body></body></html>', {",
+      "  pretendToBeVisual: true,",
+      "  url: 'http://localhost/'",
+      "});",
+      "const { window } = dom;",
+      "",
+      "Object.defineProperty(globalThis, 'window', { configurable: true, writable: true, value: window });",
+      "Object.defineProperty(globalThis, 'self', { configurable: true, writable: true, value: window });",
+      "Object.defineProperty(globalThis, 'document', { configurable: true, writable: true, value: window.document });",
+      "Object.defineProperty(globalThis, 'navigator', { configurable: true, writable: true, value: window.navigator });",
+      "Object.defineProperty(globalThis, 'location', { configurable: true, writable: true, value: window.location });",
+      "Object.defineProperty(globalThis, 'history', { configurable: true, writable: true, value: window.history });",
+      "Object.defineProperty(globalThis, 'HTMLElement', { configurable: true, writable: true, value: window.HTMLElement });",
+      "Object.defineProperty(globalThis, 'Element', { configurable: true, writable: true, value: window.Element });",
+      "Object.defineProperty(globalThis, 'Node', { configurable: true, writable: true, value: window.Node });",
+      "Object.defineProperty(globalThis, 'Text', { configurable: true, writable: true, value: window.Text });",
+      "Object.defineProperty(globalThis, 'Event', { configurable: true, writable: true, value: window.Event });",
+      "Object.defineProperty(globalThis, 'CustomEvent', { configurable: true, writable: true, value: window.CustomEvent });",
+      "Object.defineProperty(globalThis, 'DocumentFragment', { configurable: true, writable: true, value: window.DocumentFragment });",
+      "Object.defineProperty(globalThis, 'MutationObserver', { configurable: true, writable: true, value: window.MutationObserver });",
+      "Object.defineProperty(globalThis, 'DOMParser', { configurable: true, writable: true, value: window.DOMParser });",
+      "Object.defineProperty(globalThis, 'getComputedStyle', { configurable: true, writable: true, value: window.getComputedStyle.bind(window) });",
+      "Object.defineProperty(globalThis, 'requestAnimationFrame', { configurable: true, writable: true, value: window.requestAnimationFrame.bind(window) });",
+      "Object.defineProperty(globalThis, 'cancelAnimationFrame', { configurable: true, writable: true, value: window.cancelAnimationFrame.bind(window) });",
+      "",
+      "for (const key of Object.getOwnPropertyNames(window)) {",
+      "  if (key in globalThis) {",
+      "    continue;",
+      "  }",
+      "  Object.defineProperty(globalThis, key, {",
+      "    configurable: true,",
+      "    enumerable: false,",
+      "    get() {",
+      "      return window[key];",
+      "    },",
+      "    set(value) {",
+      "      window[key] = value;",
+      "    }",
+      "  });",
+      "}",
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+  await writeFile(
+    configPath,
+    [
+      "module.exports = {",
+      `  rootDir: ${JSON.stringify(projectRoot)},`,
+      "  testEnvironment: 'node',",
+      `  setupFiles: [${JSON.stringify(setupPath)}],`,
+      `  transform: { '^.+\\\\.[cm]?[jt]sx?$': ${JSON.stringify(transformerPath)} },`,
+      "  moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs', 'json'],",
+      `  moduleNameMapper: {`,
+      `    '\\\\.(css|less|sass|scss)$': ${JSON.stringify(styleStubPath)},`,
+      `    '\\\\.(gif|jpg|jpeg|png|svg|webp|avif)$': ${JSON.stringify(fileStubPath)}`,
+      "  }",
+      "};",
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+
+  return {
+    configPath,
+    directory: runtimeDirectory
+  };
 }
 
 function looksLikeNodeTestSuite(source: string): boolean {

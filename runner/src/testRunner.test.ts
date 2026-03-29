@@ -233,6 +233,89 @@ test("findUpwardJestBinaryPath resolves pnpm-installed jest from a nested genera
   }
 });
 
+test("TestRunnerManager can run TypeScript Jest suites in generated projects without a local Jest config", async () => {
+  const temporaryFixturesRoot = path.join(rootDir, ".construct", "tmp");
+  await mkdir(temporaryFixturesRoot, { recursive: true });
+  const temporaryDirectory = await mkdtemp(
+    path.join(temporaryFixturesRoot, "construct-generated-jest-ts-")
+  );
+
+  try {
+    await mkdir(path.join(temporaryDirectory, "src", "app"), { recursive: true });
+    await mkdir(path.join(temporaryDirectory, "src", "__tests__"), { recursive: true });
+
+    await writeFile(
+      path.join(temporaryDirectory, "package.json"),
+      JSON.stringify(
+        {
+          name: "generated-vite-ts-project",
+          private: true,
+          type: "module",
+          devDependencies: {
+            typescript: "^5.5.4",
+            vite: "^5.2.11"
+          }
+        },
+        null,
+        2
+      )
+    );
+    await writeFile(
+      path.join(temporaryDirectory, "src", "app", "App.ts"),
+      [
+        "export function createApp(root: HTMLElement) {",
+        "  root.innerHTML = '<h1>Vite Vanilla TypeScript</h1><p>explicit render</p><small>Next step</small>';",
+        "  return {",
+        "    destroy() {",
+        "      root.innerHTML = '';",
+        "    }",
+        "  };",
+        "}"
+      ].join("\n")
+    );
+    await writeFile(
+      path.join(temporaryDirectory, "src", "__tests__", "step1.main-and-app.test.ts"),
+      [
+        "import { createApp } from '../app/App';",
+        "",
+        "function getText(el: Element | null): string {",
+        "  return (el?.textContent ?? '').trim();",
+        "}",
+        "",
+        "describe('step 1: explicit entry + initial render', () => {",
+        "  test('createApp renders the required DOM', () => {",
+        "    document.body.innerHTML = '<div id=\"root\"></div>';",
+        "    const root = document.querySelector('#root') as HTMLElement;",
+        "",
+        "    const { destroy } = createApp(root);",
+        "",
+        "    expect(getText(root.querySelector('h1'))).toBe('Vite Vanilla TypeScript');",
+        "    expect(getText(root.querySelector('p'))).toMatch(/explicit/i);",
+        "    expect(getText(root.querySelector('small'))).toMatch(/Next/i);",
+        "",
+        "    destroy();",
+        "    expect(root.innerHTML).toBe('');",
+        "  });",
+        "});"
+      ].join("\n")
+    );
+
+    const manager = new TestRunnerManager();
+    const result = await manager.runTask({
+      stepId: "step-1-create-first-screen-explicit-mount",
+      adapter: "jest",
+      projectRoot: temporaryDirectory,
+      tests: [path.join(temporaryDirectory, "src", "__tests__", "step1.main-and-app.test.ts")],
+      timeoutMs: 10_000
+    });
+
+    assert.equal(result.status, "passed");
+    assert.equal(result.failures.length, 0);
+  } finally {
+    await rm(temporaryDirectory, { recursive: true, force: true });
+  }
+});
+
 test("TestRunnerManager returns a passing structured result for a blueprint step", async () => {
   const manager = new TestRunnerManager();
   const result = await manager.runBlueprintStep({

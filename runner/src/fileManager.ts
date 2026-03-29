@@ -16,8 +16,7 @@ const DEFAULT_IGNORED_DIRECTORIES = new Set([
   ".git",
   ".turbo",
   "coverage",
-  "dist",
-  "node_modules"
+  "dist"
 ]);
 
 export class WorkspacePathError extends Error {
@@ -33,14 +32,18 @@ export class WorkspaceFileManager {
   private readonly ignoredFiles: Set<string>;
   private readonly visibleFiles: Set<string> | null;
   private readonly visibleDirectories: Set<string>;
+  private readonly shallowDirectories: Set<string>;
   private readonly workspaceRealRootPromise: Promise<string>;
 
   constructor(
     workspaceRoot: string,
     options?: {
       ignoredDirectories?: string[];
+      unignoredDirectories?: string[];
       ignoredFiles?: string[];
       visibleFiles?: string[];
+      visibleDirectories?: string[];
+      shallowDirectories?: string[];
     }
   ) {
     this.workspaceRoot = path.resolve(workspaceRoot);
@@ -48,14 +51,25 @@ export class WorkspaceFileManager {
       ...DEFAULT_IGNORED_DIRECTORIES,
       ...(options?.ignoredDirectories ?? [])
     ]);
+    for (const directoryName of options?.unignoredDirectories ?? []) {
+      this.ignoredDirectories.delete(directoryName);
+    }
     this.ignoredFiles = new Set(options?.ignoredFiles ?? []);
     this.visibleFiles =
       options?.visibleFiles && options.visibleFiles.length > 0
         ? new Set(
             options.visibleFiles.map((relativePath) => normalizeWorkspaceRelativePath(relativePath))
-          )
+        )
         : null;
     this.visibleDirectories = buildVisibleDirectorySet(this.visibleFiles);
+    for (const relativePath of options?.visibleDirectories ?? []) {
+      this.visibleDirectories.add(normalizeWorkspaceRelativePath(relativePath));
+    }
+    this.shallowDirectories = new Set(
+      (options?.shallowDirectories ?? []).map((relativePath) =>
+        normalizeWorkspaceRelativePath(relativePath)
+      )
+    );
     this.workspaceRealRootPromise = realpath(this.workspaceRoot);
   }
 
@@ -138,6 +152,9 @@ export class WorkspaceFileManager {
             kind: "directory",
             size: 0
           });
+          if (this.shallowDirectories.has(relativeEntryPath)) {
+            continue;
+          }
           await walk(absolutePath);
           continue;
         }

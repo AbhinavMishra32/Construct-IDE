@@ -81,3 +81,31 @@ test("WorkspaceFileManager can expose only the current visible project slice", a
     await rm(workspaceRoot, { recursive: true, force: true });
   }
 });
+
+test("WorkspaceFileManager can expose a shallow visible directory outside the learner slice", async () => {
+  const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), "construct-file-manager-shallow-"));
+
+  try {
+    await mkdir(path.join(workspaceRoot, "src"), { recursive: true });
+    await mkdir(path.join(workspaceRoot, "node_modules", "pkg"), { recursive: true });
+    await writeFile(path.join(workspaceRoot, "src", "visible.ts"), "export const visible = true;\n");
+    await writeFile(
+      path.join(workspaceRoot, "node_modules", "pkg", "index.js"),
+      "module.exports = 'pkg';\n"
+    );
+
+    const fileManager = new WorkspaceFileManager(workspaceRoot, {
+      visibleFiles: ["src/visible.ts"],
+      visibleDirectories: ["node_modules"],
+      shallowDirectories: ["node_modules"]
+    });
+
+    const entries = await fileManager.listFiles();
+    assert.deepEqual(
+      entries.map((entry) => `${entry.kind}:${entry.path}`),
+      ["directory:node_modules", "directory:src", "file:src/visible.ts"]
+    );
+  } finally {
+    await rm(workspaceRoot, { recursive: true, force: true });
+  }
+});

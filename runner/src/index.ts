@@ -113,8 +113,11 @@ async function createWorkspaceContext(
   });
   const workspaceFileManager = new WorkspaceFileManager(preparedWorkspace.learnerWorkspaceRoot, {
     ignoredDirectories: ["test-fixtures", "tests", "__tests__"],
+    unignoredDirectories: ["node_modules"],
     ignoredFiles: ["project-blueprint.json"],
-    visibleFiles: getBlueprintVisibleFilePaths(preparedWorkspace.blueprint)
+    visibleFiles: getBlueprintVisibleFilePaths(preparedWorkspace.blueprint),
+    visibleDirectories: ["node_modules"],
+    shallowDirectories: ["node_modules"]
   });
   const snapshotService = new SnapshotService(preparedWorkspace.learnerWorkspaceRoot);
   const taskLifecycle = new TaskLifecycleService(preparedWorkspace.learnerWorkspaceRoot, {
