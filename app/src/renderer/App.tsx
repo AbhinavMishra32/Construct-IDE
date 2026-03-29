@@ -4709,6 +4709,7 @@ function PlanningOverlay({
   const isStartPhase = !planningSession;
   const isResumeGenerationPhase = Boolean(planningSession && planningPlan && canResumePlanningGeneration);
   const isBusyGenerationPhase = Boolean(isQuestionPhase && planningBusy && planningSession);
+  const startPhaseHasLiveActivity = isStartPhase && planningBusy && planningEvents.length > 0;
   const planningGoalLabel = planningSession?.goal?.trim() || planningGoal.trim();
   const answeredQuestionCount = planningSession
     ? planningSession.questions.filter((question) =>
@@ -4955,39 +4956,44 @@ function PlanningOverlay({
                         Architect prompt
                       </InputGroupText>
                     </InputGroupAddon>
-                    <InputGroupTextarea
+                  <InputGroupTextarea
                       id="planning-goal"
                       value={planningGoal}
                       onChange={(event) => {
                         onGoalChange(event.target.value);
                       }}
+                      disabled={planningBusy}
                       placeholder="Build a TypeScript dependency graph visualizer from scratch and teach me enough parsing and graph basics to implement it myself."
                     />
                   </InputGroup>
                 </Field>
               </FieldGroup>
-              <div className="construct-planning-composer-actions">
-                <PrimaryButton
-                  type="button"
-                  onClick={onStartPlanning}
-                  disabled={planningBusy || planningGoal.trim().length < 3}
-                >
-                  {planningBusy ? (
-                    <>
-                      <Spinner data-icon="inline-start" />
-                      Starting...
-                    </>
-                  ) : (
-                    "Start project creation"
-                  )}
-                </PrimaryButton>
-              </div>
-              <div className="construct-tag-list construct-planning-brief-strip">
-                <TagChip>project spine</TagChip>
-                <TagChip>adaptive frontier</TagChip>
-                <TagChip>hidden tests</TagChip>
-                <TagChip>real code tasks</TagChip>
-              </div>
+              {!startPhaseHasLiveActivity ? (
+                <>
+                  <div className="construct-planning-composer-actions">
+                    <PrimaryButton
+                      type="button"
+                      onClick={onStartPlanning}
+                      disabled={planningBusy || planningGoal.trim().length < 3}
+                    >
+                      {planningBusy ? (
+                        <>
+                          <Spinner data-icon="inline-start" />
+                          Starting...
+                        </>
+                      ) : (
+                        "Start project creation"
+                      )}
+                    </PrimaryButton>
+                  </div>
+                  <div className="construct-tag-list construct-planning-brief-strip">
+                    <TagChip>project spine</TagChip>
+                    <TagChip>adaptive frontier</TagChip>
+                    <TagChip>hidden tests</TagChip>
+                    <TagChip>real code tasks</TagChip>
+                  </div>
+                </>
+              ) : null}
               {planningError ? <InlineError>{planningError}</InlineError> : null}
             </section>
 
@@ -6800,6 +6806,7 @@ function ArchitectTaskBoard({ events }: { events: AgentEvent[] }) {
         const isExpanded =
           expandedGroupKeys.includes(group.key) || isCurrent;
         const childLabels = buildArchitectTaskChildren(group);
+        const activeChildLabel = getArchitectTaskActiveChildLabel(group);
 
         return (
           <section
@@ -6828,14 +6835,7 @@ function ArchitectTaskBoard({ events }: { events: AgentEvent[] }) {
                   <span className="construct-agent-outline-icon">
                     {getArchitectTaskIcon(group.key)}
                   </span>
-                  {isCurrent ? (
-                    <ShiningText
-                      text={group.label}
-                      className="construct-agent-outline-label construct-agent-outline-label--current"
-                    />
-                  ) : (
-                    <span className="construct-agent-outline-label">{group.label}</span>
-                  )}
+                  <span className="construct-agent-outline-label">{group.label}</span>
                 </span>
                 <span className="construct-agent-outline-row-meta">
                   <span className="construct-agent-outline-status sr-only">
@@ -6852,8 +6852,21 @@ function ArchitectTaskBoard({ events }: { events: AgentEvent[] }) {
                   {childLabels.length > 0 ? (
                     <div className="construct-agent-outline-children">
                       {childLabels.map((label) => (
-                        <div key={`${group.key}:${label}`} className="construct-agent-outline-child">
-                          <span className="construct-agent-outline-child-label">{label}</span>
+                        <div
+                          key={`${group.key}:${label}`}
+                          className={cn(
+                            "construct-agent-outline-child",
+                            isCurrent && activeChildLabel === label && "is-current"
+                          )}
+                        >
+                          {isCurrent && activeChildLabel === label ? (
+                            <ShiningText
+                              text={label}
+                              className="construct-agent-outline-child-label construct-agent-outline-child-label--current"
+                            />
+                          ) : (
+                            <span className="construct-agent-outline-child-label">{label}</span>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -7035,6 +7048,21 @@ function buildArchitectTaskChildren(group: ArchitectTaskGroup): string[] {
   }
 
   return [];
+}
+
+function getArchitectTaskActiveChildLabel(group: ArchitectTaskGroup): string | null {
+  const latestTitle = group.latestEvent.title.trim();
+
+  if (
+    latestTitle &&
+    latestTitle !== group.label &&
+    !latestTitle.toLowerCase().endsWith(" complete")
+  ) {
+    return latestTitle;
+  }
+
+  const childLabels = buildArchitectTaskChildren(group);
+  return childLabels[0] ?? null;
 }
 
 function getArchitectTaskBodyCopy(group: ArchitectTaskGroup): string {

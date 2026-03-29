@@ -6971,11 +6971,6 @@ textarea {
   color: var(--text);
 }
 
-.construct-agent-outline-label--current {
-  display: inline-flex;
-  align-items: center;
-}
-
 .construct-agent-outline-row-meta {
   display: inline-flex;
   align-items: center;
@@ -7011,8 +7006,18 @@ textarea {
   min-height: 20px;
 }
 
+.construct-agent-outline-child.is-current {
+  color: var(--text);
+}
+
 .construct-agent-outline-child-label {
   color: var(--text-soft);
+}
+
+.construct-agent-outline-child-label--current {
+  display: inline-flex;
+  align-items: center;
+  color: transparent;
 }
 
 .construct-agent-outline-body {
