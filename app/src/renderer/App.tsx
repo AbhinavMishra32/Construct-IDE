@@ -159,6 +159,7 @@ import {
   fetchUsageDashboard,
   fetchAuthSession,
   fetchBlueprint,
+  fetchFeatureFlags,
   fetchCurrentPlanningState,
   fetchLearnerProfile,
   fetchLearnerModel,
@@ -182,7 +183,8 @@ import {
   startBlueprintTask,
   submitBlueprintTask,
   syncCurrentProjectStep,
-  updateAccount
+  updateAccount,
+  updateFeatureFlag
 } from "./lib/api";
 import { buildWorkspaceTree } from "./lib/tree";
 import { monaco } from "./monaco";
@@ -196,6 +198,8 @@ import type {
   CheckReview,
   ConnectedProvider,
   ComprehensionCheck,
+  FeatureFlag,
+  FeatureFlagsResponse,
   GeneratedProjectPlan,
   LessonSlide,
   LearnerProfileResponse,
@@ -253,6 +257,15 @@ type ProjectImprovementPhase = {
   stepTitle: string;
   detail: string;
 };
+
+const ADAPTIVE_PROJECT_IMPROVEMENTS_FLAG = "adaptive-project-improvements";
+
+function getFeatureEnabled(
+  featureFlags: FeatureFlagsResponse | null,
+  key: FeatureFlag["key"]
+): boolean {
+  return featureFlags?.flags.find((flag) => flag.key === key)?.enabled ?? true;
+}
 
 const runtimeInfo = window.construct.getRuntimeInfo();
 const SAVE_DEBOUNCE_MS = 450;
@@ -660,6 +673,10 @@ export default function App() {
   const [usageDashboard, setUsageDashboard] = useState<ApiUsageDashboardResponse | null>(null);
   const [usageLoading, setUsageLoading] = useState(false);
   const [usageError, setUsageError] = useState("");
+  const [featureFlags, setFeatureFlags] = useState<FeatureFlagsResponse | null>(null);
+  const [featureFlagsLoading, setFeatureFlagsLoading] = useState(false);
+  const [featureFlagsError, setFeatureFlagsError] = useState("");
+  const [featureFlagBusyKey, setFeatureFlagBusyKey] = useState<FeatureFlag["key"] | null>(null);
   const [providerBusy, setProviderBusy] = useState<ConnectedProvider | null>(null);
   const [providerDrafts, setProviderDrafts] = useState<
     Partial<Record<ConnectedProvider, { apiKey: string; baseUrl: string }>>
@@ -873,6 +890,40 @@ export default function App() {
     }
   };
 
+  const loadFeatureFlags = async (signal?: AbortSignal) => {
+    if (!isAuthenticated) {
+      setFeatureFlags(null);
+      setFeatureFlagsError("");
+      setFeatureFlagsLoading(false);
+      return;
+    }
+
+    setFeatureFlagsLoading(true);
+
+    try {
+      const flags = await fetchFeatureFlags(signal);
+
+      if (signal?.aborted) {
+        return;
+      }
+
+      setFeatureFlags(flags);
+      setFeatureFlagsError("");
+    } catch (error) {
+      if (signal?.aborted) {
+        return;
+      }
+
+      setFeatureFlagsError(
+        error instanceof Error ? error.message : "Failed to load feature flags."
+      );
+    } finally {
+      if (!signal?.aborted) {
+        setFeatureFlagsLoading(false);
+      }
+    }
+  };
+
   useEffect(() => {
     document.documentElement.dataset.constructTheme = theme;
     document.documentElement.classList.toggle("dark", theme === "dark");
@@ -993,6 +1044,9 @@ export default function App() {
       setUsageDashboard(null);
       setUsageError("");
       setUsageLoading(false);
+      setFeatureFlags(null);
+      setFeatureFlagsError("");
+      setFeatureFlagsLoading(false);
     }
   }, [authSession?.user?.displayName, authSession?.user]);
 
@@ -1008,6 +1062,19 @@ export default function App() {
       controller.abort();
     };
   }, [accountPanelOpen, isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      return;
+    }
+
+    const controller = new AbortController();
+    void loadFeatureFlags(controller.signal);
+
+    return () => {
+      controller.abort();
+    };
+  }, [isAuthenticated]);
 
   useEffect(() => {
     if (!activeFilePath || editorValue === savedValue) {
@@ -1304,6 +1371,37 @@ export default function App() {
       setAuthError(error instanceof Error ? error.message : "Failed to update your profile.");
     } finally {
       setProfileBusy(false);
+    }
+  };
+
+  const handleFeatureFlagChange = async (
+    key: FeatureFlag["key"],
+    enabled: boolean
+  ) => {
+    setFeatureFlagBusyKey(key);
+    setAuthError("");
+
+    try {
+      const nextFlags = await updateFeatureFlag({
+        key,
+        enabled
+      });
+      setFeatureFlags(nextFlags);
+      setFeatureFlagsError("");
+      setStatusMessage(
+        enabled
+          ? "Enabled knowledge sync for this account."
+          : "Disabled knowledge sync for this account."
+      );
+    } catch (error) {
+      setFeatureFlagsError(
+        error instanceof Error ? error.message : `Failed to update ${key}.`
+      );
+      setStatusMessage(
+        error instanceof Error ? error.message : `Failed to update ${key}.`
+      );
+    } finally {
+      setFeatureFlagBusyKey(null);
     }
   };
 
@@ -1757,11 +1855,17 @@ export default function App() {
     }
 
     setCheckReviewBusyId(check.id);
-    setProjectImprovementState({
-      trigger: "check-review",
-      stepTitle: currentStep.title,
-      detail: "Construct is deciding whether this answer should change the current project path or simply be recorded for later adaptation."
-    });
+    const projectImprovementEnabled = getFeatureEnabled(
+      featureFlags,
+      ADAPTIVE_PROJECT_IMPROVEMENTS_FLAG
+    );
+    if (projectImprovementEnabled) {
+      setProjectImprovementState({
+        trigger: "check-review",
+        stepTitle: currentStep.title,
+        detail: "Construct is deciding whether this answer should change the current project path or simply be recorded for later adaptation."
+      });
+    }
 
     try {
       const attemptCount = checkAttemptCounts[check.id] ?? 0;
@@ -2737,6 +2841,10 @@ export default function App() {
         usageDashboard={usageDashboard}
         usageLoading={usageLoading}
         usageError={usageError}
+        featureFlags={featureFlags}
+        featureFlagsLoading={featureFlagsLoading}
+        featureFlagsError={featureFlagsError}
+        featureFlagBusyKey={featureFlagBusyKey}
         providerDrafts={providerDrafts}
         providerBusy={providerBusy}
         onProviderDraftChange={(provider, next) => {
@@ -2759,6 +2867,9 @@ export default function App() {
         }}
         onRefreshUsage={() => {
           void loadUsageDashboard();
+        }}
+        onFeatureFlagChange={(key, enabled) => {
+          void handleFeatureFlagChange(key, enabled);
         }}
         onClose={() => {
           setAccountPanelOpen(false);

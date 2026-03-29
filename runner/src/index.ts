@@ -13,6 +13,7 @@ import {
   CheckReviewRequestSchema,
   CheckReviewResponseSchema,
   DeleteProviderConnectionRequestSchema,
+  FeatureFlagsResponseSchema,
   getBlueprintVisibleFilePaths,
   LearnerProfileResponseSchema,
   ProjectCurrentStepRequestSchema,
@@ -23,6 +24,7 @@ import {
   TaskStartRequestSchema,
   TaskSubmitRequestSchema,
   UpdateUserAccountRequestSchema,
+  UpdateFeatureFlagRequestSchema,
   UpsertProviderConnectionRequestSchema
 } from "@construct/shared";
 
@@ -227,6 +229,26 @@ const server = http.createServer(async (request, response) => {
 
         response.writeHead(200, { "Content-Type": "application/json" });
         response.end(JSON.stringify(ApiUsageDashboardResponseSchema.parse(dashboard)));
+        return;
+      }
+
+      if (request.method === "GET" && request.url === "/auth/features") {
+        requireAuthenticatedUser(authSession);
+        const flags = await getConstructAgent().getFeatureFlags();
+
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(JSON.stringify(FeatureFlagsResponseSchema.parse({ flags })));
+        return;
+      }
+
+      if (request.method === "POST" && request.url === "/auth/features") {
+        requireAuthenticatedUser(authSession);
+        const body = await readRequestBody(request);
+        const updateRequest = UpdateFeatureFlagRequestSchema.parse(JSON.parse(body));
+        const flags = await getConstructAgent().updateFeatureFlag(updateRequest);
+
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(JSON.stringify(FeatureFlagsResponseSchema.parse({ flags })));
         return;
       }
 

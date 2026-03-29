@@ -15,6 +15,7 @@ import type {
   CheckReviewRequest,
   CheckReviewResponse,
   CurrentPlanningSessionResponse,
+  FeatureFlagsResponse,
   LearnerProfileResponse,
   LearnerModel,
   ProjectSelectionResponse,
@@ -96,6 +97,19 @@ export async function fetchUsageDashboard(
   signal?: AbortSignal
 ): Promise<ApiUsageDashboardResponse> {
   return getJson<ApiUsageDashboardResponse>("/auth/usage", { signal });
+}
+
+export async function fetchFeatureFlags(
+  signal?: AbortSignal
+): Promise<FeatureFlagsResponse> {
+  return getJson<FeatureFlagsResponse>("/auth/features", { signal });
+}
+
+export async function updateFeatureFlag(input: {
+  key: "adaptive-project-improvements";
+  enabled: boolean;
+}): Promise<FeatureFlagsResponse> {
+  return postJson<FeatureFlagsResponse>("/auth/features", input, `updating ${input.key}`);
 }
 
 export async function saveProviderApiKey(input: {

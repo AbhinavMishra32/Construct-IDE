@@ -104,6 +104,20 @@ export type ProviderConnectionsResponse = {
   connections: ProviderConnection[];
 };
 
+export type FeatureFlagKey = "adaptive-project-improvements";
+
+export type FeatureFlag = {
+  key: FeatureFlagKey;
+  title: string;
+  description: string;
+  enabled: boolean;
+  updatedAt: string;
+};
+
+export type FeatureFlagsResponse = {
+  flags: FeatureFlag[];
+};
+
 export type ApiUsageKind = "llm";
 
 export type ApiUsageTotals = {

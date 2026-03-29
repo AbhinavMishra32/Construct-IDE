@@ -6689,13 +6689,66 @@ textarea {
 }
 
 .construct-account-usage-card,
-.construct-account-profile-card {
+.construct-account-profile-card,
+.construct-account-feature-card {
   min-width: 0;
 }
 
 .construct-account-usage-content {
   display: grid;
   gap: 1rem;
+}
+
+.construct-account-feature-content {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.construct-account-feature-table {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.construct-account-feature-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.9rem;
+  align-items: start;
+  padding: 0.95rem 1rem;
+  border: 1px solid color-mix(in srgb, var(--border) 68%, transparent);
+  border-radius: 1rem;
+  background: color-mix(in srgb, var(--card) 94%, transparent);
+}
+
+.construct-account-feature-copy {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.construct-account-feature-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.construct-account-feature-header strong {
+  font-size: 0.98rem;
+}
+
+.construct-account-feature-copy p {
+  margin: 0;
+  color: var(--muted-foreground);
+  line-height: 1.5;
+}
+
+.construct-account-feature-actions {
+  display: flex;
+  align-items: center;
+}
+
+.construct-account-feature-status.is-enabled {
+  color: color-mix(in srgb, var(--success) 72%, var(--foreground));
 }
 
 .construct-account-usage-totals {
@@ -8101,13 +8154,16 @@ textarea {
   }
 
   .construct-account-usage-row,
-  .construct-account-usage-event {
+  .construct-account-usage-event,
+  .construct-account-feature-row {
+    grid-template-columns: 1fr;
     flex-direction: column;
     align-items: stretch;
   }
 
   .construct-account-usage-row-metrics,
-  .construct-account-usage-event-meta {
+  .construct-account-usage-event-meta,
+  .construct-account-feature-actions {
     justify-items: start;
     white-space: normal;
   }

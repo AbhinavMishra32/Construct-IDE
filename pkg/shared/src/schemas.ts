@@ -146,6 +146,27 @@ export const ProviderConnectionsResponseSchema = z.object({
   connections: z.array(ProviderConnectionSchema).default([])
 });
 
+export const FeatureFlagKeySchema = z.enum([
+  "adaptive-project-improvements"
+]);
+
+export const FeatureFlagSchema = z.object({
+  key: FeatureFlagKeySchema,
+  title: z.string().min(1),
+  description: z.string().min(1),
+  enabled: z.boolean().default(true),
+  updatedAt: z.string().datetime()
+});
+
+export const FeatureFlagsResponseSchema = z.object({
+  flags: z.array(FeatureFlagSchema).default([])
+});
+
+export const UpdateFeatureFlagRequestSchema = z.object({
+  key: FeatureFlagKeySchema,
+  enabled: z.boolean()
+});
+
 export const ApiUsageKindSchema = z.enum(["llm"]);
 
 export const ApiUsageTotalsSchema = z.object({
@@ -830,6 +851,9 @@ export type ApiUsageEvent = z.infer<typeof ApiUsageEventSchema>;
 export type ApiUsageProviderSummary = z.infer<typeof ApiUsageProviderSummarySchema>;
 export type ApiUsageProjectSummary = z.infer<typeof ApiUsageProjectSummarySchema>;
 export type ApiUsageDashboardResponse = z.infer<typeof ApiUsageDashboardResponseSchema>;
+export type FeatureFlagKey = z.infer<typeof FeatureFlagKeySchema>;
+export type FeatureFlag = z.infer<typeof FeatureFlagSchema>;
+export type FeatureFlagsResponse = z.infer<typeof FeatureFlagsResponseSchema>;
 export type AnchorRef = z.infer<typeof AnchorSchema>;
 export type WorkspaceFileEntry = z.infer<typeof WorkspaceFileEntrySchema>;
 export type ComprehensionCheck = z.infer<typeof ComprehensionCheckSchema>;

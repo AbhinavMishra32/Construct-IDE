@@ -5,6 +5,7 @@ import {
   KeyRoundIcon,
   Link2Icon,
   RefreshCwIcon,
+  SparklesIcon,
   UserCircle2Icon,
   XIcon
 } from "lucide-react";
@@ -20,7 +21,9 @@ import { cn } from "@/lib/utils";
 import type {
   ApiUsageDashboardResponse,
   AuthSessionView,
-  ConnectedProvider
+  ConnectedProvider,
+  FeatureFlag,
+  FeatureFlagsResponse
 } from "../types";
 
 const PROVIDER_CATALOG: Array<{
@@ -111,6 +114,10 @@ export function AccountSettingsPanel({
   usageDashboard,
   usageLoading,
   usageError,
+  featureFlags,
+  featureFlagsLoading,
+  featureFlagsError,
+  featureFlagBusyKey,
   providerDrafts,
   providerBusy,
   onProviderDraftChange,
@@ -118,6 +125,7 @@ export function AccountSettingsPanel({
   onSaveConnection,
   onRemoveConnection,
   onRefreshUsage,
+  onFeatureFlagChange,
   onClose
 }: {
   open: boolean;
@@ -128,6 +136,10 @@ export function AccountSettingsPanel({
   usageDashboard: ApiUsageDashboardResponse | null;
   usageLoading: boolean;
   usageError: string;
+  featureFlags: FeatureFlagsResponse | null;
+  featureFlagsLoading: boolean;
+  featureFlagsError: string;
+  featureFlagBusyKey: FeatureFlag["key"] | null;
   providerDrafts: Partial<Record<ConnectedProvider, { apiKey: string; baseUrl: string }>>;
   providerBusy: ConnectedProvider | null;
   onProviderDraftChange: (
@@ -138,6 +150,7 @@ export function AccountSettingsPanel({
   onSaveConnection: (provider: ConnectedProvider) => void;
   onRemoveConnection: (provider: ConnectedProvider) => void;
   onRefreshUsage: () => void;
+  onFeatureFlagChange: (key: FeatureFlag["key"], enabled: boolean) => void;
   onClose: () => void;
 }) {
   if (!open || !authSession?.user) {
@@ -361,6 +374,78 @@ export function AccountSettingsPanel({
                       </span>
                     </div>
                   </>
+                ) : null}
+              </CardContent>
+            </Card>
+
+            <Card className="construct-account-feature-card">
+              <CardHeader>
+                <CardTitle className="construct-account-card-title">
+                  <SparklesIcon className="size-4" />
+                  Features
+                </CardTitle>
+                <CardDescription>
+                  Turn product behaviors on or off for this account. Disabled features are not used by the runner.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="construct-account-feature-content">
+                {featureFlagsError ? (
+                  <div className="construct-account-usage-empty is-error">{featureFlagsError}</div>
+                ) : null}
+
+                {!featureFlagsLoading && !featureFlagsError && !featureFlags ? (
+                  <div className="construct-account-usage-empty">
+                    Feature controls will appear here once Construct loads your account settings.
+                  </div>
+                ) : null}
+
+                {featureFlagsLoading && !featureFlags ? (
+                  <div className="construct-account-usage-empty">Loading feature flags...</div>
+                ) : null}
+
+                {featureFlags ? (
+                  <div className="construct-account-feature-table">
+                    {featureFlags.flags.map((flag) => {
+                      const busy = featureFlagBusyKey === flag.key;
+
+                      return (
+                        <article key={flag.key} className="construct-account-feature-row">
+                          <div className="construct-account-feature-copy">
+                            <div className="construct-account-feature-header">
+                              <strong>{flag.title}</strong>
+                              <Badge
+                                variant={flag.enabled ? "secondary" : "outline"}
+                                className={cn(
+                                  "construct-account-feature-status",
+                                  flag.enabled ? "is-enabled" : "is-disabled"
+                                )}
+                              >
+                                {flag.enabled ? "Enabled" : "Disabled"}
+                              </Badge>
+                            </div>
+                            <p>{flag.description}</p>
+                          </div>
+                          <div className="construct-account-feature-actions">
+                            <Button
+                              type="button"
+                              variant={flag.enabled ? "outline" : "default"}
+                              size="sm"
+                              disabled={busy}
+                              onClick={() => {
+                                onFeatureFlagChange(flag.key, !flag.enabled);
+                              }}
+                            >
+                              {busy
+                                ? "Saving..."
+                                : flag.enabled
+                                  ? "Disable"
+                                  : "Enable"}
+                            </Button>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
                 ) : null}
               </CardContent>
             </Card>

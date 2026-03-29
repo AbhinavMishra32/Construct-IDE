@@ -51,6 +51,8 @@ import {
   type BlueprintDeepDiveResponse,
   type ConceptConfidence,
   type ComprehensionCheck,
+  type FeatureFlag,
+  type FeatureFlagKey,
   type GeneratedProjectPlan,
   type KnowledgeGraph,
   type LearnerModel,
@@ -714,6 +716,22 @@ export class ConstructAgentService {
     return this.persistence.getApiUsageDashboard();
   }
 
+  async getFeatureFlags(): Promise<FeatureFlag[]> {
+    return this.persistence.listFeatureFlags();
+  }
+
+  async updateFeatureFlag(input: {
+    key: FeatureFlagKey;
+    enabled: boolean;
+  }): Promise<FeatureFlag[]> {
+    return this.persistence.setFeatureFlag(input);
+  }
+
+  private async isFeatureEnabled(key: FeatureFlagKey): Promise<boolean> {
+    const flags = await this.persistence.listFeatureFlags();
+    return flags.find((flag) => flag.key === key)?.enabled ?? true;
+  }
+
   async getLearnerProfile(
     learnerModel: LearnerModel | null = null
   ): Promise<LearnerProfileResponse> {
@@ -838,6 +856,17 @@ export class ConstructAgentService {
       markStepCompleted: input.markStepCompleted,
       lastAttemptStatus: input.lastAttemptStatus ?? null
     });
+
+    if (!(await this.isFeatureEnabled("adaptive-project-improvements"))) {
+      return this.createProjectImprovementResult({
+        trigger: "task-submit",
+        status: "skipped",
+        title: "Knowledge sync is disabled",
+        detail:
+          "Construct kept the current project path unchanged because knowledge sync is disabled for this account.",
+        activeStepId: step.id
+      });
+    }
 
     if (input.lastAttemptStatus && input.telemetry) {
       await this.recordTaskKnowledgeSignal({
@@ -992,6 +1021,17 @@ export class ConstructAgentService {
         status: "skipped",
         title: "Skipped project improvement",
         detail: `Construct could not resolve ${input.stepId}, so the current project path stayed as-is.`
+      });
+    }
+
+    if (!(await this.isFeatureEnabled("adaptive-project-improvements"))) {
+      return this.createProjectImprovementResult({
+        trigger: "check-review",
+        status: "skipped",
+        title: "Knowledge sync is disabled",
+        detail:
+          "Construct recorded the check result but kept the current project path unchanged because knowledge sync is disabled for this account.",
+        activeStepId: step.id
       });
     }
 

@@ -1874,6 +1874,59 @@ test("ConstructAgentService can record a single quiz signal without rewriting th
   }
 });
 
+test("ConstructAgentService skips quiz-driven project improvement when knowledge sync is disabled", async () => {
+  const { root, service, generatedBlueprintPath, adaptiveFrontierPrompts } =
+    await createAdaptiveFrontierHarness({
+      onAdaptiveFrontier() {
+        throw new Error("Adaptive frontier rewrite should not run when knowledge sync is disabled.");
+      }
+    });
+
+  try {
+    await service.updateFeatureFlag({
+      key: "adaptive-project-improvements",
+      enabled: false
+    });
+
+    const check = {
+      id: "check.imports.1",
+      type: "mcq" as const,
+      prompt: "Why should the parser keep import lines in order?",
+      options: [
+        { id: "a", label: "Later stages depend on source order." },
+        { id: "b", label: "It only affects formatting." }
+      ],
+      answer: "a"
+    };
+
+    const review = await service.reviewCheck({
+      stepId: "step.parse-imports",
+      stepTitle: "Parse import lines",
+      stepSummary: "Implement the first staged parser capability.",
+      concepts: ["typescript.functions", "domain.parsers"],
+      check,
+      response: "a",
+      attemptCount: 0
+    });
+
+    const improvement = await service.syncProjectCheckProgress({
+      canonicalBlueprintPath: generatedBlueprintPath,
+      stepId: "step.parse-imports",
+      review: review.review,
+      check,
+      response: "a",
+      attemptCount: 0
+    });
+
+    assert.equal(improvement.updatedBlueprint, false);
+    assert.equal(improvement.status, "skipped");
+    assert.equal(adaptiveFrontierPrompts.length, 0);
+    assert.match(improvement.detail, /knowledge sync is disabled/i);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("ConstructAgentService records failed submission evidence without rewriting the frontier", async () => {
   const { root, service, generatedBlueprintPath, adaptiveFrontierPrompts } =
     await createAdaptiveFrontierHarness({
@@ -3089,6 +3142,8 @@ test("ConstructAgentService resumes blueprint creation from the last saved stage
     upsertBlueprintBuildStage: (stage) => basePersistence.upsertBlueprintBuildStage(stage),
     appendBlueprintBuildEvent: (event) => basePersistence.appendBlueprintBuildEvent(event),
     recordApiUsageEvent: (event) => basePersistence.recordApiUsageEvent(event),
+    listFeatureFlags: () => basePersistence.listFeatureFlags(),
+    setFeatureFlag: (input) => basePersistence.setFeatureFlag(input),
     getBlueprintBuildDetail: (buildId) => basePersistence.getBlueprintBuildDetail(buildId),
     listBlueprintBuilds: () => basePersistence.listBlueprintBuilds(),
     getApiUsageDashboard: () => basePersistence.getApiUsageDashboard()

@@ -11,6 +11,8 @@ import {
   BlueprintBuildSchema,
   BlueprintBuildStageSchema,
   CurrentPlanningSessionResponseSchema,
+  FeatureFlagKeySchema,
+  FeatureFlagsResponseSchema,
   GeneratedProjectPlanSchema,
   ProjectAttemptStatusSchema,
   ProjectBlueprintSchema,
@@ -25,6 +27,8 @@ import {
   type BlueprintBuildStage,
   type BlueprintBuildSummary,
   type CurrentPlanningSessionResponse,
+  type FeatureFlag,
+  type FeatureFlagKey,
   type GeneratedProjectPlan,
   type ProjectAttemptStatus,
   type ProjectStatus as SharedProjectStatus,
@@ -76,6 +80,13 @@ const PersistedBlueprintBuildListSchema = z.array(BlueprintBuildSchema);
 const PersistedBlueprintBuildStageListSchema = z.array(BlueprintBuildStageSchema);
 const PersistedBlueprintBuildEventListSchema = z.array(BlueprintBuildEventRecordSchema);
 const PersistedApiUsageEventListSchema = z.array(ApiUsageEventSchema);
+const PersistedFeatureFlagListSchema = z.array(
+  z.object({
+    key: FeatureFlagKeySchema,
+    enabled: z.boolean(),
+    updatedAt: z.string().datetime()
+  })
+);
 
 export type ActiveBlueprintState = z.infer<typeof ActiveBlueprintStateSchema>;
 export type PersistedGeneratedBlueprintRecord = z.infer<
@@ -118,6 +129,8 @@ export type AgentPersistence = {
   upsertBlueprintBuildStage(stage: BlueprintBuildStage): Promise<void>;
   appendBlueprintBuildEvent(event: BlueprintBuildEventRecord): Promise<void>;
   recordApiUsageEvent(event: ApiUsageEvent): Promise<void>;
+  listFeatureFlags(): Promise<FeatureFlag[]>;
+  setFeatureFlag(input: { key: FeatureFlagKey; enabled: boolean }): Promise<FeatureFlag[]>;
   getBlueprintBuildDetail(buildId: string): Promise<BlueprintBuildDetailResponse>;
   listBlueprintBuilds(): Promise<BlueprintBuildSummary[]>;
   getApiUsageDashboard(): Promise<ApiUsageDashboardResponse>;
@@ -171,6 +184,7 @@ class LocalFileAgentPersistence implements AgentPersistence {
   private readonly blueprintBuildStagesPath: string;
   private readonly blueprintBuildEventsPath: string;
   private readonly apiUsageEventsPath: string;
+  private readonly featureFlagsPath: string;
   private readonly logger: AgentPersistenceLogger;
 
   constructor(rootDirectory: string, logger: AgentPersistenceLogger) {
@@ -188,6 +202,7 @@ class LocalFileAgentPersistence implements AgentPersistence {
     this.blueprintBuildStagesPath = path.join(this.stateDirectory, "blueprint-build-stages.json");
     this.blueprintBuildEventsPath = path.join(this.stateDirectory, "blueprint-build-events.json");
     this.apiUsageEventsPath = path.join(this.stateDirectory, "api-usage-events.json");
+    this.featureFlagsPath = path.join(this.stateDirectory, "feature-flags.json");
     this.logger = logger;
   }
 
@@ -467,6 +482,27 @@ class LocalFileAgentPersistence implements AgentPersistence {
     await this.writeApiUsageEvents(sortApiUsageEvents(events));
   }
 
+  async listFeatureFlags(): Promise<FeatureFlag[]> {
+    return resolveFeatureFlags(await this.readFeatureFlags());
+  }
+
+  async setFeatureFlag(input: { key: FeatureFlagKey; enabled: boolean }): Promise<FeatureFlag[]> {
+    const key = FeatureFlagKeySchema.parse(input.key);
+    const flags = await this.readFeatureFlags();
+    const updatedAt = new Date().toISOString();
+    const nextFlags = [
+      ...flags.filter((flag) => flag.key !== key),
+      {
+        key,
+        enabled: input.enabled,
+        updatedAt
+      }
+    ].sort((left, right) => left.key.localeCompare(right.key));
+
+    await this.writeFeatureFlags(nextFlags);
+    return resolveFeatureFlags(nextFlags);
+  }
+
   async getBlueprintBuildDetail(buildId: string): Promise<BlueprintBuildDetailResponse> {
     const [build, stages, events] = await Promise.all([
       this.getBlueprintBuild(buildId),
@@ -606,6 +642,24 @@ class LocalFileAgentPersistence implements AgentPersistence {
       `${JSON.stringify(events, null, 2)}\n`,
       "utf8"
     );
+  }
+
+  private async readFeatureFlags(): Promise<
+    Array<{ key: FeatureFlagKey; enabled: boolean; updatedAt: string }>
+  > {
+    if (!existsSync(this.featureFlagsPath)) {
+      return [];
+    }
+
+    const raw = await readFile(this.featureFlagsPath, "utf8");
+    return PersistedFeatureFlagListSchema.parse(JSON.parse(raw));
+  }
+
+  private async writeFeatureFlags(
+    flags: Array<{ key: FeatureFlagKey; enabled: boolean; updatedAt: string }>
+  ): Promise<void> {
+    await mkdir(this.stateDirectory, { recursive: true });
+    await writeFile(this.featureFlagsPath, `${JSON.stringify(flags, null, 2)}\n`, "utf8");
   }
 
   private async readPlanningBuildCheckpoints(): Promise<Record<string, unknown>> {
@@ -1084,6 +1138,51 @@ class PrismaAgentPersistence implements AgentPersistence {
     });
   }
 
+  async listFeatureFlags(): Promise<FeatureFlag[]> {
+    const userId = getCurrentUserId();
+    const rows = await this.prisma.userFeatureFlag.findMany({
+      where: {
+        userId
+      },
+      orderBy: {
+        key: "asc"
+      }
+    });
+
+    return resolveFeatureFlags(
+      rows.map((row) => ({
+        key: FeatureFlagKeySchema.parse(row.key),
+        enabled: row.enabled,
+        updatedAt: row.updatedAt.toISOString()
+      }))
+    );
+  }
+
+  async setFeatureFlag(input: { key: FeatureFlagKey; enabled: boolean }): Promise<FeatureFlag[]> {
+    const key = FeatureFlagKeySchema.parse(input.key);
+    const userId = getCurrentUserId();
+
+    await this.prisma.userFeatureFlag.upsert({
+      where: {
+        userId_key: {
+          userId,
+          key
+        }
+      },
+      create: {
+        id: `${userId}:${key}`,
+        userId,
+        key,
+        enabled: input.enabled
+      },
+      update: {
+        enabled: input.enabled
+      }
+    });
+
+    return this.listFeatureFlags();
+  }
+
   async getBlueprintBuildDetail(buildId: string): Promise<BlueprintBuildDetailResponse> {
     const userId = getCurrentUserId();
     const [build, stages, events] = await Promise.all([
@@ -1554,6 +1653,42 @@ function sortApiUsageEvents(events: ApiUsageEvent[]): ApiUsageEvent[] {
   return [...events].sort(
     (left, right) => Date.parse(right.recordedAt) - Date.parse(left.recordedAt)
   );
+}
+
+const FEATURE_FLAG_CATALOG = {
+  "adaptive-project-improvements": {
+    title: "Knowledge sync",
+    description:
+      "Allow Construct to use quiz answers and task outcomes to decide whether the current project path should adapt.",
+    defaultEnabled: true
+  }
+} satisfies Record<
+  FeatureFlagKey,
+  {
+    title: string;
+    description: string;
+    defaultEnabled: boolean;
+  }
+>;
+
+function resolveFeatureFlags(
+  persistedFlags: Array<{ key: FeatureFlagKey; enabled: boolean; updatedAt: string }>
+): FeatureFlag[] {
+  const persistedByKey = new Map(persistedFlags.map((flag) => [flag.key, flag]));
+  const fallbackTimestamp = new Date(0).toISOString();
+
+  return FeatureFlagsResponseSchema.parse({
+    flags: Object.entries(FEATURE_FLAG_CATALOG).map(([key, config]) => {
+      const persisted = persistedByKey.get(key as FeatureFlagKey);
+      return {
+        key,
+        title: config.title,
+        description: config.description,
+        enabled: persisted?.enabled ?? config.defaultEnabled,
+        updatedAt: persisted?.updatedAt ?? fallbackTimestamp
+      };
+    })
+  }).flags;
 }
 
 function buildApiUsageDashboard(input: {

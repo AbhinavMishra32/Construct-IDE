@@ -30,6 +30,7 @@ model User {
   authIdentities      AuthIdentity[]
   providerConnections ProviderConnection[]
   apiUsageEvents      ApiUsageEvent[]
+  featureFlags        UserFeatureFlag[]
 
   @@map("construct_users")
 }
@@ -146,6 +147,21 @@ model ApiUsageEvent {
   @@index([userId, projectId, recordedAt])
   @@index([userId, buildId, recordedAt])
   @@map("construct_api_usage_events")
+}
+
+model UserFeatureFlag {
+  id        String   @id
+  userId    String   @map("user_id")
+  key       String
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, key])
+  @@index([userId, updatedAt])
+  @@map("construct_user_feature_flags")
 }
 
 model Project {
