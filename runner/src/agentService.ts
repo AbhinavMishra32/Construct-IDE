@@ -6378,8 +6378,7 @@ function resolveAgentConfig(): AgentConfig {
   const openAiModel = process.env.CONSTRUCT_OPENAI_MODEL?.trim() || "gpt-5.4";
   const openAiFastModel = process.env.CONSTRUCT_OPENAI_FAST_MODEL?.trim() || "gpt-5-nano";
   const openAiRepairModel =
-    process.env.CONSTRUCT_OPENAI_REPAIR_MODEL?.trim() ||
-    (openAiModel === "gpt-5-nano" ? "gpt-5.4" : openAiModel);
+    process.env.CONSTRUCT_OPENAI_REPAIR_MODEL?.trim() || openAiModel;
 
   if (provider !== "openai") {
     throw new Error(
