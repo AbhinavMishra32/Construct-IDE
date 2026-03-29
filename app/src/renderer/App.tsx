@@ -137,6 +137,7 @@ import {
   SidebarMenuItem,
   SidebarProvider
 } from "@/components/ui/sidebar";
+import { ShiningText } from "@/components/ui/shining-text";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
@@ -6795,8 +6796,9 @@ function ArchitectTaskBoard({ events }: { events: AgentEvent[] }) {
   return (
     <div className="construct-agent-outline">
       {groups.map((group) => {
+        const isCurrent = latestActiveGroup?.key === group.key;
         const isExpanded =
-          expandedGroupKeys.includes(group.key) || latestActiveGroup?.key === group.key;
+          expandedGroupKeys.includes(group.key) || isCurrent;
         const childLabels = buildArchitectTaskChildren(group);
 
         return (
@@ -6805,13 +6807,14 @@ function ArchitectTaskBoard({ events }: { events: AgentEvent[] }) {
             className={cn(
               "construct-agent-outline-group",
               `is-${group.status}`,
+              isCurrent && "is-current",
               isExpanded && "is-active"
             )}
           >
             <div className="construct-agent-outline-node">
               <button
                 type="button"
-                className="construct-agent-outline-row"
+                className={cn("construct-agent-outline-row", isCurrent && "is-current")}
                 aria-expanded={isExpanded}
                 onClick={() => {
                   setExpandedGroupKeys((current) =>
@@ -6825,10 +6828,17 @@ function ArchitectTaskBoard({ events }: { events: AgentEvent[] }) {
                   <span className="construct-agent-outline-icon">
                     {getArchitectTaskIcon(group.key)}
                   </span>
-                  <span className="construct-agent-outline-label">{group.label}</span>
+                  {isCurrent ? (
+                    <ShiningText
+                      text={group.label}
+                      className="construct-agent-outline-label construct-agent-outline-label--current"
+                    />
+                  ) : (
+                    <span className="construct-agent-outline-label">{group.label}</span>
+                  )}
                 </span>
                 <span className="construct-agent-outline-row-meta">
-                  <span className="construct-agent-outline-status">
+                  <span className="construct-agent-outline-status sr-only">
                     {formatArchitectStatus(group.status)}
                   </span>
                   <span className="construct-agent-outline-chevron">

@@ -6911,14 +6911,14 @@ textarea {
 
 .construct-agent-outline-group {
   position: relative;
-  padding: 10px 0;
+  padding: 10px 0 12px;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
 }
 
 .construct-agent-outline-node {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 .construct-agent-outline-content {
@@ -6936,6 +6936,10 @@ textarea {
   background: transparent;
   color: var(--text);
   text-align: left;
+}
+
+.construct-agent-outline-row.is-current .construct-agent-outline-icon {
+  color: var(--text);
 }
 
 .construct-agent-outline-row-main {
@@ -6967,10 +6971,15 @@ textarea {
   color: var(--text);
 }
 
+.construct-agent-outline-label--current {
+  display: inline-flex;
+  align-items: center;
+}
+
 .construct-agent-outline-row-meta {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   flex-shrink: 0;
 }
 
@@ -6991,7 +7000,9 @@ textarea {
 
 .construct-agent-outline-children {
   display: grid;
-  gap: 8px;
+  gap: 10px;
+  padding-left: 18px;
+  border-left: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
 }
 
 .construct-agent-outline-child {
@@ -7006,13 +7017,15 @@ textarea {
 
 .construct-agent-outline-body {
   max-width: 68ch;
+  padding-left: 18px;
+  border-left: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
 }
 
 .construct-agent-outline-body p {
   margin: 0;
-  color: var(--text-muted);
-  font-size: 13px;
-  line-height: 1.68;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.62;
   letter-spacing: -0.01em;
 }
 
