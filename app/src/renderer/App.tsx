@@ -6840,6 +6840,7 @@ function ArchitectTaskBoard({ events }: { events: AgentEvent[] }) {
               <button
                 type="button"
                 className={cn("construct-agent-outline-row", isCurrent && "is-current")}
+                data-status={group.status}
                 aria-expanded={isExpanded}
                 onClick={() => {
                   setExpandedGroupKeys((current) =>
