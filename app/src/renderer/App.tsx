@@ -69,6 +69,7 @@ import {
 } from "react-syntax-highlighter/dist/esm/styles/prism";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { AIThinkingBlock } from "@/components/ui/ai-thinking-block";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   Breadcrumb,
@@ -2881,6 +2882,17 @@ function FloatingGuideCard({
   const pastePercentage = Math.round(taskTelemetry.pasteRatio * 100);
   const hiddenValidationCount = activeStep.tests.length;
   const constraintCount = activeStep.constraints.length;
+  const runtimeGuideThinkingText = useMemo(
+    () => buildRuntimeGuideThinkingTranscript(activeStep, runtimeGuideEvents, taskResult),
+    [activeStep, runtimeGuideEvents, taskResult]
+  );
+  const runtimeGuideVisibleEvents = useMemo(
+    () =>
+      runtimeGuideEvents.filter(
+        (event) => !isStreamAgentEvent(event) && !isAgentThinkingEvent(event)
+      ),
+    [runtimeGuideEvents]
+  );
 
   if (minimized) {
     return (
@@ -3175,9 +3187,11 @@ function FloatingGuideCard({
               ) : null}
 
               {runtimeGuideBusy ? (
-                <div className="construct-guide-prompt">
-                  Construct is analyzing the current code, learner profile, and latest test result.
-                </div>
+                <AIThinkingBlock
+                  label="Construct is tracing the current step"
+                  startedAt={runtimeGuideEvents[0]?.timestamp ?? null}
+                  content={runtimeGuideThinkingText}
+                />
               ) : null}
 
               {runtimeGuideError ? (
@@ -3199,24 +3213,15 @@ function FloatingGuideCard({
                 </div>
               ) : null}
 
-              {runtimeGuideEvents.length > 0 ? (
+              {runtimeGuideVisibleEvents.length > 0 ? (
                 <div className="construct-guide-event-log">
                   <GuideSectionLabel icon={<PhSparkle size={14} weight="duotone" />}>
                     Agent activity
                   </GuideSectionLabel>
-                  {runtimeGuideEvents.slice(-4).map((event) => (
+                  {runtimeGuideVisibleEvents.slice(-4).map((event) => (
                     <div key={event.id} className="construct-guide-event-item">
                       <strong>{event.title}</strong>
-                      {event.detail ? (
-                        isStreamAgentEvent(event) ? (
-                          <LiveAgentResponseIndicator
-                            label="Guide is responding"
-                            chunkCount={getAgentStreamChunkCount(event)}
-                          />
-                        ) : (
-                          <p>{event.detail}</p>
-                        )
-                      ) : null}
+                      {event.detail ? <p>{event.detail}</p> : null}
                     </div>
                   ))}
                 </div>
@@ -6770,76 +6775,89 @@ function ArchitectTaskBoard({ events }: { events: AgentEvent[] }) {
   const groups = buildArchitectTaskGroups(events);
   const latestActiveGroup =
     groups.find((group) => group.status === "working") ?? groups.at(-1) ?? null;
+  const [expandedGroupKeys, setExpandedGroupKeys] = useState<string[]>([]);
+  const groupSignature = groups
+    .map((group) => `${group.key}:${group.status}:${group.streamChunkCount}:${group.events.length}`)
+    .join("|");
+
+  useEffect(() => {
+    const defaultExpanded = groups
+      .filter((group, index) => group.status === "working" || index === groups.length - 1)
+      .map((group) => group.key);
+
+    setExpandedGroupKeys((current) => {
+      const knownKeys = new Set(groups.map((group) => group.key));
+      const retained = current.filter((key) => knownKeys.has(key));
+      return Array.from(new Set([...retained, ...defaultExpanded]));
+    });
+  }, [groupSignature, groups]);
 
   return (
-    <div className="construct-agent-task-board">
-      {latestActiveGroup ? (
-        <section className="construct-agent-live-banner">
-          <div>
-            <span className="construct-brief-kicker">Live Architect step</span>
-            <h3>{latestActiveGroup.label}</h3>
-            <p>
-              {isStreamAgentEvent(latestActiveGroup.latestEvent)
-                ? "The Architect is actively generating the current stage."
-                : latestActiveGroup.latestEvent.detail ?? latestActiveGroup.latestEvent.title}
-            </p>
-          </div>
-          <span className={`construct-agent-task-pill is-${latestActiveGroup.status}`}>
-            {formatArchitectStatus(latestActiveGroup.status)}
-          </span>
-        </section>
-      ) : null}
+    <div className="construct-agent-outline">
+      {groups.map((group) => {
+        const isExpanded =
+          expandedGroupKeys.includes(group.key) || latestActiveGroup?.key === group.key;
+        const childLabels = buildArchitectTaskChildren(group);
 
-      <div className="construct-agent-task-grid">
-        {groups.map((group) => (
-          <section key={group.key} className="construct-agent-task-card">
-            <div className="construct-agent-task-card-header">
-              <div>
-                <span className="construct-brief-kicker">{group.eyebrow}</span>
-                <h3>{group.label}</h3>
-              </div>
-              <span className={`construct-agent-task-pill is-${group.status}`}>
-                {formatArchitectStatus(group.status)}
-              </span>
-            </div>
-
-            <div className="construct-guide-event-meta">
-              <span className="construct-task-status">
-                {formatAgentStageLabel(group.latestEvent.stage)}
-              </span>
-              <span className={`construct-task-status ${group.latestEvent.level}`}>
-                {group.latestEvent.level}
-              </span>
-            </div>
-
-            {!isStreamAgentEvent(group.latestEvent) ? (
-              <>
-                <strong>{group.latestEvent.title}</strong>
-                {group.latestEvent.detail ? <p>{group.latestEvent.detail}</p> : null}
-              </>
-            ) : (
-              <strong>{group.latestEvent.title}</strong>
+        return (
+          <section
+            key={group.key}
+            className={cn(
+              "construct-agent-outline-group",
+              `is-${group.status}`,
+              isExpanded && "is-active"
             )}
+          >
+            <div className="construct-agent-outline-node">
+              <button
+                type="button"
+                className="construct-agent-outline-row"
+                aria-expanded={isExpanded}
+                onClick={() => {
+                  setExpandedGroupKeys((current) =>
+                    current.includes(group.key)
+                      ? current.filter((key) => key !== group.key)
+                      : [...current, group.key]
+                  );
+                }}
+              >
+                <span className="construct-agent-outline-row-main">
+                  <span className="construct-agent-outline-icon">
+                    {getArchitectTaskIcon(group.key)}
+                  </span>
+                  <span className="construct-agent-outline-label">{group.label}</span>
+                </span>
+                <span className="construct-agent-outline-row-meta">
+                  <span className="construct-agent-outline-status">
+                    {formatArchitectStatus(group.status)}
+                  </span>
+                  <span className="construct-agent-outline-chevron">
+                    {isExpanded ? <ChevronDownIcon size={14} /> : <ChevronRightIcon size={14} />}
+                  </span>
+                </span>
+              </button>
 
-            {group.streamChunkCount > 0 ? (
-              <LiveAgentResponseIndicator
-                label="Architect is still responding"
-                chunkCount={group.streamChunkCount}
-              />
-            ) : null}
+              {isExpanded ? (
+                <div className="construct-agent-outline-panel">
+                  {childLabels.length > 0 ? (
+                    <div className="construct-agent-outline-children">
+                      {childLabels.map((label) => (
+                        <div key={`${group.key}:${label}`} className="construct-agent-outline-child">
+                          <span className="construct-agent-outline-child-label">{label}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
 
-            {buildPlanningEventTags(group.latestEvent).length > 0 ? (
-              <div className="construct-tag-list">
-                {buildPlanningEventTags(group.latestEvent).map((tag) => (
-                  <TagChip key={`${group.key}-${tag}`}>
-                    {tag}
-                  </TagChip>
-                ))}
-              </div>
-            ) : null}
+                  <div className="construct-agent-outline-body">
+                    <p>{getArchitectTaskBodyCopy(group)}</p>
+                  </div>
+                </div>
+              ) : null}
+            </div>
           </section>
-        ))}
-      </div>
+        );
+      })}
     </div>
   );
 }
@@ -6877,51 +6895,8 @@ function buildArchitectTaskGroups(events: AgentEvent[]): ArchitectTaskGroup[] {
   return order.map((key) => groups.get(key)!);
 }
 
-function LiveAgentResponseIndicator({
-  label,
-  chunkCount
-}: {
-  label: string;
-  chunkCount: number;
-}) {
-  const pulseCount = Math.max(3, Math.min(6, chunkCount || 3));
-
-  return (
-    <div className="construct-agent-live-response" aria-live="polite">
-      <div className="construct-agent-live-response-header">
-        <span className="construct-panel-kicker">{label}</span>
-        <span className="construct-agent-live-response-count">
-          {chunkCount} update{chunkCount === 1 ? "" : "s"}
-        </span>
-      </div>
-      <div className="construct-agent-live-response-body">
-        <div className="construct-agent-live-pulse-track" aria-hidden="true">
-          {Array.from({ length: pulseCount }).map((_, index) => (
-            <span
-              key={index}
-              className="construct-agent-live-pulse"
-              style={{ animationDelay: `${index * 0.14}s` }}
-            />
-          ))}
-        </div>
-        <p>
-          New model output is arriving and Construct is folding it into the current stage.
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function getAgentStreamChunkCount(event: AgentEvent): number {
-  const payload = (event.payload ?? {}) as Record<string, unknown>;
-  const text = String(payload.text ?? event.detail ?? "");
-
-  if (!text) {
-    return 0;
-  }
-
-  const estimatedChunks = Math.ceil(text.length / 120);
-  return Math.max(1, estimatedChunks);
+function isAgentThinkingEvent(event: AgentEvent): boolean {
+  return Boolean((event.payload as Record<string, unknown> | undefined)?.thinking);
 }
 
 function normalizeArchitectTaskKey(stage: string): string {
@@ -6984,6 +6959,86 @@ function describeArchitectTask(key: string): { label: string; eyebrow: string } 
   };
 }
 
+function getArchitectTaskIcon(key: string): ReactNode {
+  if (key.startsWith("research-")) {
+    return <PhLightbulb size={13} weight="regular" />;
+  }
+
+  if (key === "plan-generation") {
+    return <PhLightbulb size={13} weight="regular" />;
+  }
+
+  if (key === "blueprint-generation" || key === "blueprint-synthesis" || key === "blueprint-repair") {
+    return <PhSparkle size={13} weight="regular" />;
+  }
+
+  if (key === "lesson-authoring") {
+    return <PhBookOpenText size={13} weight="regular" />;
+  }
+
+  if (key.includes("hidden-tests")) {
+    return <PhFlask size={13} weight="regular" />;
+  }
+
+  if (
+    key.includes("support-files") ||
+    key.includes("canonical-files") ||
+    key.includes("learner-mask")
+  ) {
+    return <PhStack size={13} weight="regular" />;
+  }
+
+  if (key.includes("dependency-install")) {
+    return <PhMagicWand size={13} weight="regular" />;
+  }
+
+  if (key.includes("activation") || key.includes("layout")) {
+    return <PhArrowSquareIn size={13} weight="regular" />;
+  }
+
+  return <PhSparkle size={13} weight="regular" />;
+}
+
+function buildArchitectTaskChildren(group: ArchitectTaskGroup): string[] {
+  const titles = Array.from(
+    new Set(
+      group.events
+        .filter((event) => !isStreamAgentEvent(event))
+        .map((event) => event.title.trim())
+        .filter((title) => title && title !== group.label && !title.toLowerCase().endsWith(" complete"))
+    )
+  );
+
+  if (titles.length > 0) {
+    return titles.slice(0, 4);
+  }
+
+  const tags = buildPlanningEventTags(group.latestEvent);
+  if (tags.length > 0) {
+    return tags.slice(0, 4);
+  }
+
+  if (group.streamChunkCount > 0) {
+    return [
+      `${group.streamChunkCount} live draft update${group.streamChunkCount === 1 ? "" : "s"}`
+    ];
+  }
+
+  return [];
+}
+
+function getArchitectTaskBodyCopy(group: ArchitectTaskGroup): string {
+  if (isStreamAgentEvent(group.latestEvent)) {
+    return `Construct is still working through ${group.label.toLowerCase()} and folding the latest draft into the current project plan.`;
+  }
+
+  if (group.latestEvent.detail?.trim()) {
+    return group.latestEvent.detail.trim();
+  }
+
+  return group.latestEvent.title;
+}
+
 function architectStatusFromLevel(
   level: AgentEvent["level"]
 ): ArchitectTaskGroup["status"] {
@@ -7000,6 +7055,43 @@ function architectStatusFromLevel(
   }
 
   return "working";
+}
+
+function buildRuntimeGuideThinkingTranscript(
+  activeStep: BlueprintStep,
+  events: AgentEvent[],
+  taskResult: TaskResult | null
+): string {
+  const lines: string[] = [
+    `Reviewing ${activeStep.anchor.file} around the ${activeStep.anchor.marker} anchor.`,
+    activeStep.constraints.length > 0
+      ? `Cross-checking the current code against ${activeStep.constraints.length} step constraint${activeStep.constraints.length === 1 ? "" : "s"}.`
+      : "Checking the current implementation against the step contract.",
+    taskResult?.failures[0]?.testName
+      ? `Comparing the latest failure, "${taskResult.failures[0].testName}", with what this step is supposed to guarantee.`
+      : activeStep.tests.length > 0
+        ? `Checking the current implementation against ${activeStep.tests.length} validation contract${activeStep.tests.length === 1 ? "" : "s"}.`
+        : "Inspecting the current code path before drafting guidance."
+  ];
+
+  const narratedEvents = events
+    .filter((event) => !isStreamAgentEvent(event))
+    .map((event) => {
+      if (event.detail?.trim()) {
+        return event.detail.trim();
+      }
+
+      return event.title.trim();
+    })
+    .filter(Boolean);
+
+  for (const line of narratedEvents.slice(-4)) {
+    lines.push(line);
+  }
+
+  lines.push("Turning that into Socratic questions, graduated hints, and one smallest next action.");
+
+  return Array.from(new Set(lines)).join("\n\n");
 }
 
 function formatArchitectStatus(status: ArchitectTaskGroup["status"]): string {

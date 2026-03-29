@@ -4151,6 +4151,11 @@ export class ConstructAgentService {
             "runtime-guide",
             "runtime guidance"
           );
+          const stopProgressUpdates = this.startNarratedProgress(jobId, {
+            stage: "runtime-guide",
+            title: "Construct is tracing the current step",
+            details: buildRuntimeGuideProgressNotes(state.request)
+          });
           const activeProject = await this.persistence.getActiveProject();
 
           try {
@@ -4179,6 +4184,7 @@ export class ConstructAgentService {
               })
             });
           } finally {
+            stopProgressUpdates();
             stream.onComplete?.();
           }
         })
@@ -4436,6 +4442,58 @@ export class ConstructAgentService {
       });
       throw error;
     }
+  }
+
+  private startNarratedProgress(
+    jobId: string,
+    input: {
+      stage: string;
+      title: string;
+      details: string[];
+      intervalMs?: number;
+    }
+  ): () => void {
+    const job = this.jobs.get(jobId);
+
+    if (!job || input.details.length === 0) {
+      return () => {};
+    }
+
+    let index = 0;
+
+    const emitDetail = () => {
+      const activeJob = this.jobs.get(jobId);
+
+      if (!activeJob || activeJob.status !== "running") {
+        return;
+      }
+
+      const detail = input.details[Math.min(index, input.details.length - 1)];
+
+      this.emitEvent(activeJob, {
+        stage: input.stage,
+        title: input.title,
+        detail,
+        level: "info",
+        payload: {
+          thinking: true,
+          step: index + 1,
+          totalSteps: input.details.length
+        }
+      });
+
+      if (index < input.details.length - 1) {
+        index += 1;
+      }
+    };
+
+    emitDetail();
+
+    const intervalHandle = setInterval(emitDetail, input.intervalMs ?? 1500);
+
+    return () => {
+      clearInterval(intervalHandle);
+    };
   }
 
   private async withPayloadStage<T extends Record<string, unknown>>(
@@ -9134,4 +9192,21 @@ function buildRuntimeGuideInstructions(): string {
     "Observations should reference the test result, constraints, or code snippet when possible.",
     "Next action must be a single practical move the learner can take immediately."
   ].join("\n");
+}
+
+function buildRuntimeGuideProgressNotes(request: RuntimeGuideRequest): string[] {
+  const latestFailure = request.taskResult?.failures[0] ?? null;
+
+  return [
+    `Reviewing ${request.filePath} around the ${request.anchorMarker} anchor.`,
+    request.constraints.length > 0
+      ? `Checking the current implementation against ${request.constraints.length} step constraint${request.constraints.length === 1 ? "" : "s"}.`
+      : "Checking the current implementation against the step contract.",
+    latestFailure
+      ? `Comparing the latest failure, "${latestFailure.testName}", with what the step is supposed to guarantee.`
+      : request.tests.length > 0
+        ? `Mapping the current code against ${request.tests.length} validation contract${request.tests.length === 1 ? "" : "s"}.`
+        : "Inspecting the current code path before drafting guidance.",
+    "Turning that into Socratic questions, escalated hints, and one smallest next action."
+  ];
 }
