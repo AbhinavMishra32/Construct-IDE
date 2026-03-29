@@ -958,98 +958,66 @@ textarea {
   gap: 6px;
 }
 
-.construct-task-summary-card {
+.construct-task-summary {
   display: grid;
-  gap: 12px;
-  padding: 12px;
-  border-radius: 16px;
-  border: 1px solid color-mix(in srgb, var(--border) 68%, transparent);
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--panel-bg) 95%, transparent),
-      color-mix(in srgb, var(--panel-muted) 46%, transparent)
-    );
+  gap: 8px;
+  padding: 0 0 14px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
 }
 
-.construct-task-summary-card.is-failed {
-  border-color: color-mix(in srgb, var(--warning) 26%, var(--border));
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--warning) 8%, transparent),
-      color-mix(in srgb, var(--panel-bg) 94%, transparent)
-    );
-}
-
-.construct-task-summary-card.is-passed {
-  border-color: color-mix(in srgb, var(--success) 26%, var(--border));
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--success) 8%, transparent),
-      color-mix(in srgb, var(--panel-bg) 94%, transparent)
-    );
-}
-
-.construct-task-summary-copy {
-  display: grid;
-  gap: 7px;
-  min-width: 0;
-}
-
-.construct-task-summary-copy h4 {
+.construct-task-summary h4 {
   margin: 0;
   font-size: 16px;
-  line-height: 1.2;
+  line-height: 1.24;
   letter-spacing: -0.02em;
 }
 
-.construct-task-summary-copy p {
+.construct-task-summary p {
   margin: 0;
   color: var(--text-muted);
   line-height: 1.58;
 }
 
-.construct-task-summary-focus {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-  padding: 10px 11px;
-  border-radius: 14px;
-  border: 1px solid color-mix(in srgb, var(--border) 68%, transparent);
-  background: color-mix(in srgb, var(--panel-bg) 86%, transparent);
-}
-
-.construct-task-summary-focus span {
+.construct-task-summary-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
   color: var(--text-muted);
-  font-size: 9px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  font-size: 12px;
 }
 
-.construct-task-summary-focus strong {
+.construct-task-summary-inline span {
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 9px;
+}
+
+.construct-task-summary-inline strong {
+  color: var(--text);
   font-size: 12px;
-  line-height: 1.45;
+  line-height: 1.4;
+}
+
+.construct-task-summary.is-passed {
+  border-bottom-color: color-mix(in srgb, var(--success) 22%, var(--border));
 }
 
 .construct-task-failures {
   display: grid;
-  gap: 12px;
+  gap: 0;
 }
 
 .construct-task-failure-card {
   display: grid;
   gap: 12px;
-  padding: 12px;
-  border-radius: 16px;
-  border: 1px solid color-mix(in srgb, var(--border) 64%, transparent);
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--panel-bg) 96%, transparent),
-      color-mix(in srgb, var(--panel-muted) 36%, transparent)
-    );
+  padding: 14px 0;
+  border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+
+.construct-task-failure-card:first-child {
+  padding-top: 4px;
+  border-top: 0;
 }
 
 .construct-task-failure-card-header {
@@ -1062,11 +1030,11 @@ textarea {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 12px;
-  border: 1px solid color-mix(in srgb, var(--warning) 30%, var(--border));
-  background: color-mix(in srgb, var(--warning) 10%, transparent);
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--warning) 20%, var(--border));
+  background: color-mix(in srgb, var(--warning) 6%, transparent);
   color: var(--warning);
   font-size: 11px;
   font-weight: 700;
@@ -1096,27 +1064,24 @@ textarea {
 .construct-task-comparison-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 10px;
+  gap: 12px;
 }
 
 .construct-task-comparison-panel {
   display: grid;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
-  padding: 11px;
-  border-radius: 14px;
-  border: 1px solid color-mix(in srgb, var(--border) 66%, transparent);
-  background: color-mix(in srgb, var(--panel-bg) 90%, transparent);
+  padding: 0 0 0 12px;
+  border-left: 2px solid color-mix(in srgb, var(--border) 72%, transparent);
+  background: transparent;
 }
 
 .construct-task-comparison-panel.is-expected {
-  border-color: color-mix(in srgb, var(--primary) 22%, var(--border));
-  background: color-mix(in srgb, var(--primary) 5%, var(--panel-bg));
+  border-left-color: color-mix(in srgb, var(--primary) 30%, var(--border));
 }
 
 .construct-task-comparison-panel.is-actual {
-  border-color: color-mix(in srgb, var(--warning) 24%, var(--border));
-  background: color-mix(in srgb, var(--warning) 7%, var(--panel-bg));
+  border-left-color: color-mix(in srgb, var(--warning) 30%, var(--border));
 }
 
 .construct-task-comparison-panel p {
@@ -1133,10 +1098,9 @@ textarea {
 .construct-task-diagnostic {
   display: grid;
   gap: 6px;
-  padding: 10px 11px;
-  border-radius: 14px;
-  border: 1px dashed color-mix(in srgb, var(--border) 76%, transparent);
-  background: color-mix(in srgb, var(--panel-bg) 78%, transparent);
+  padding: 0 0 0 12px;
+  border-left: 2px dashed color-mix(in srgb, var(--border) 76%, transparent);
+  background: transparent;
 }
 
 .construct-task-diagnostic p {
@@ -1221,20 +1185,17 @@ textarea {
   flex-direction: column;
   gap: 6px;
   min-width: 0;
-  padding: 10px;
-  border-radius: 12px;
-  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
-  background: color-mix(in srgb, var(--panel-bg) 94%, transparent);
+  padding: 2px 0 0;
+  border: 0;
+  background: transparent;
 }
 
 .construct-task-output-block.is-expected {
-  border-color: color-mix(in srgb, var(--success) 28%, var(--border));
-  background: color-mix(in srgb, var(--success) 8%, var(--panel-bg));
+  background: transparent;
 }
 
 .construct-task-output-block.is-actual {
-  border-color: color-mix(in srgb, var(--warning) 28%, var(--border));
-  background: color-mix(in srgb, var(--warning) 9%, var(--panel-bg));
+  background: transparent;
 }
 
 .construct-task-output-label {
@@ -1252,7 +1213,8 @@ textarea {
   min-height: 52px;
   padding: 10px 11px;
   border-radius: 10px;
-  background: color-mix(in srgb, var(--editor-surface) 90%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  background: color-mix(in srgb, var(--editor-surface) 86%, transparent);
   color: var(--text);
   font: 11px/1.65 var(--course-font-mono);
   white-space: pre-wrap;

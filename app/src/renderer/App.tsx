@@ -6442,22 +6442,20 @@ function TaskResultPanel({
 
             {taskResult.failures.length > 0 ? (
               <>
-                <div className="construct-task-summary-card is-failed">
-                  <div className="construct-task-summary-copy">
-                    <GuideSectionLabel icon={<PhTarget size={13} weight="duotone" />}>
-                      Verification summary
-                    </GuideSectionLabel>
-                    <h4>
-                      {failureCount} validation contract{failureCount === 1 ? "" : "s"} still
-                      failing
-                    </h4>
-                    <p>
-                      Each card shows the contract the step expects first, then the behavior and
-                      output your implementation produces right now.
-                    </p>
-                  </div>
+                <div className="construct-task-summary">
+                  <GuideSectionLabel icon={<PhTarget size={13} weight="duotone" />}>
+                    Verification summary
+                  </GuideSectionLabel>
+                  <h4>
+                    {failureCount} validation contract{failureCount === 1 ? "" : "s"} still
+                    failing
+                  </h4>
+                  <p>
+                    Each item shows the contract the step expects first, then the behavior and
+                    output your implementation produces right now.
+                  </p>
                   {leadingFailure ? (
-                    <div className="construct-task-summary-focus">
+                    <div className="construct-task-summary-inline">
                       <span>Focus next</span>
                       <strong>{normalizeExecutionCopy(leadingFailure.testName)}</strong>
                     </div>
@@ -6482,18 +6480,16 @@ function TaskResultPanel({
                 </AlertDescription>
               </Alert>
             ) : (
-              <div className="construct-task-summary-card is-passed">
-                <div className="construct-task-summary-copy">
-                  <GuideSectionLabel icon={<PhTarget size={13} weight="duotone" />}>
-                    Verification summary
-                  </GuideSectionLabel>
-                  <h4>All targeted checks passed</h4>
-                  <p>
-                    This step satisfied the current validation set. You can keep building or
-                    move to the next step when you are ready.
-                  </p>
-                </div>
-                <div className="construct-task-summary-focus">
+              <div className="construct-task-summary is-passed">
+                <GuideSectionLabel icon={<PhTarget size={13} weight="duotone" />}>
+                  Verification summary
+                </GuideSectionLabel>
+                <h4>All targeted checks passed</h4>
+                <p>
+                  This step satisfied the current validation set. You can keep building or move
+                  to the next step when you are ready.
+                </p>
+                <div className="construct-task-summary-inline">
                   <span>Tests run</span>
                   <strong>{taskResult.testsRun.length}</strong>
                 </div>
