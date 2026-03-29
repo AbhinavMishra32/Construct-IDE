@@ -1975,6 +1975,7 @@ textarea {
   position: sticky;
   top: 64px;
   max-height: calc(100vh - 64px);
+  min-width: 0;
 }
 
 .construct-course-outline--persistent {
@@ -2045,7 +2046,7 @@ textarea {
   flex: 1 0 auto;
   min-height: calc(100vh - 64px);
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-columns: minmax(320px, 340px) minmax(0, 1fr);
 }
 
 .construct-course-stage {
@@ -2374,7 +2375,12 @@ textarea {
 .construct-step-list-item {
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr);
+  align-items: flex-start;
+  justify-content: flex-start;
+  justify-items: flex-start;
   gap: 12px;
+  width: 100%;
+  min-width: 0;
   padding: 12px 4px;
   border-radius: 0;
   border: 0;
@@ -2382,6 +2388,7 @@ textarea {
   background: transparent;
   color: var(--text);
   text-align: left;
+  white-space: normal;
 }
 
 .construct-step-list-item:hover {
@@ -2398,20 +2405,29 @@ textarea {
   justify-content: center;
   width: 34px;
   height: 34px;
+  flex-shrink: 0;
+  align-self: start;
   border-radius: 999px;
   background: transparent;
   border: 1px solid var(--course-border);
   color: var(--course-muted);
 }
 
+.construct-step-list-item > div {
+  min-width: 0;
+}
+
 .construct-step-list-item strong,
 .construct-step-list-item span {
   display: block;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .construct-step-list-item strong {
   font-size: 13px;
-  line-height: 1.4;
+  line-height: 1.45;
 }
 
 .construct-step-list-item span:last-child {
@@ -5557,6 +5573,7 @@ textarea {
 
 .construct-app-sidebar {
   height: 100%;
+  min-width: 0;
   gap: 12px;
   padding: 12px 14px 14px;
   background: color-mix(in srgb, var(--panel-bg) 98%, transparent);
@@ -5564,6 +5581,7 @@ textarea {
 }
 
 .construct-app-sidebar-top {
+  flex-shrink: 0;
   gap: 12px;
   padding-bottom: 12px;
 }
@@ -5621,26 +5639,64 @@ textarea {
 .construct-app-sidebar-content {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
+  gap: 12px;
   min-height: 0;
   overflow: hidden;
 }
 
 .construct-app-sidebar-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
   min-height: 0;
 }
 
 .construct-app-sidebar-section--recents {
-  flex: 1;
+  flex: 1 1 auto;
 }
 
 .construct-app-sidebar-recents-content {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
   min-height: 0;
   height: 100%;
 }
 
 .construct-app-recent-scroll {
+  flex: 1 1 auto;
   height: 100%;
-  max-height: 100%;
+  min-height: 0;
+  max-height: none;
+}
+
+.construct-app-recent-scroll [data-slot="scroll-area-viewport"] {
+  height: 100%;
+}
+
+.construct-app-recent-scroll [data-slot="scroll-area-viewport"] > div {
+  display: block !important;
+  min-width: 100%;
+}
+
+.construct-app-sidebar-section--meta {
+  flex-shrink: 0;
+}
+
+.construct-app-account-card {
+  min-width: 0;
+}
+
+.construct-app-account-card strong,
+.construct-app-account-card span {
+  display: block;
+  min-width: 0;
+}
+
+.construct-app-account-card span {
+  overflow-wrap: anywhere;
 }
 
 
@@ -7149,6 +7205,10 @@ textarea {
   letter-spacing: -0.01em;
 }
 
+.construct-agent-outline-tools {
+  padding-left: 18px;
+}
+
 .construct-toolbar-pill,
 .construct-brief-chip {
   min-height: 22px;
@@ -7870,6 +7930,93 @@ textarea {
       color-mix(in srgb, var(--panel-bg) 97%, transparent),
       color-mix(in srgb, var(--panel-muted) 36%, transparent)
     );
+}
+
+.construct-agent-tool-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.construct-agent-tool-list.is-compact {
+  gap: 6px;
+}
+
+.construct-agent-tool-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 52%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--panel-bg) 84%, transparent);
+}
+
+.construct-agent-tool-item.is-warning {
+  border-color: color-mix(in srgb, var(--warning) 28%, var(--border));
+}
+
+.construct-agent-tool-item.is-error {
+  border-color: color-mix(in srgb, var(--danger) 36%, var(--border));
+}
+
+.construct-agent-tool-item-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.construct-agent-tool-badge {
+  flex-shrink: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 10px;
+}
+
+.construct-agent-tool-command,
+.construct-agent-tool-title {
+  min-width: 0;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.construct-agent-tool-command {
+  display: inline-flex;
+  max-width: 100%;
+  padding: 2px 6px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel-soft) 76%, transparent);
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.construct-agent-tool-title {
+  color: var(--text-soft);
+}
+
+.construct-agent-tool-detail {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+.construct-agent-tool-output {
+  margin: 0;
+  max-height: 160px;
+  overflow: auto;
+  padding: 8px 9px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel-soft) 62%, transparent);
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: "SF Mono", "JetBrains Mono", monospace;
 }
 
 .construct-guide-minimize-button {

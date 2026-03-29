@@ -106,6 +106,11 @@ async function createWorkspaceContext(
   canonicalBlueprintPath: string
 ): Promise<WorkspaceContext> {
   const preparedWorkspace = await prepareLearnerWorkspace(canonicalBlueprintPath);
+  await getConstructAgent().ensureLearnerWorkspaceReady({
+    canonicalBlueprintPath,
+    learnerWorkspaceRoot: preparedWorkspace.learnerWorkspaceRoot,
+    reason: "workspace-open"
+  });
   const workspaceFileManager = new WorkspaceFileManager(preparedWorkspace.learnerWorkspaceRoot, {
     ignoredDirectories: ["test-fixtures", "tests", "__tests__"],
     ignoredFiles: ["project-blueprint.json"],

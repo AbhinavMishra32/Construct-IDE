@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import type http from "node:http";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Script } from "node:vm";
 
@@ -10,6 +10,7 @@ import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
 import { BaseCallbackHandler } from "@langchain/core/callbacks/base";
 import { ChatOpenAI } from "@langchain/openai";
 import type { RunnableConfig } from "@langchain/core/runnables";
+import { createDeepAgent, LocalShellBackend } from "deepagents";
 import {
   AgentEventSchema,
   AgentJobCreatedResponseSchema,
@@ -65,6 +66,7 @@ import {
   type PlanningSessionStartResponse,
   type ProjectBlueprint,
   type ProjectImprovement,
+  type ProjectSummary,
   type ProjectSelectionResponse,
   type ProjectsDashboardResponse,
   type RuntimeGuideRequest,
@@ -237,6 +239,22 @@ type DependencyInstallResult = {
   detail?: string;
 };
 
+type WorkspaceBootstrapResult = {
+  status: "ready" | "skipped" | "warning";
+  ready: boolean;
+  detail: string;
+  observations: string[];
+  commands: string[];
+};
+
+type WorkspaceBootstrapState = {
+  version: 1;
+  manifests: Record<string, string>;
+  bootstrappedAt: string;
+  summary: string;
+  commands: string[];
+};
+
 type ProjectInstaller = {
   install(projectRoot: string, files: Record<string, string>): Promise<DependencyInstallResult>;
 };
@@ -304,6 +322,7 @@ type ResolvedPlanningAnswer = {
 };
 
 type GoalScope = {
+  engagementMode: "implementation-first" | "learning-first" | "balanced";
   scopeSummary: string;
   artifactShape: string;
   complexityScore: number;
@@ -314,7 +333,16 @@ type GoalScope = {
   rationale: string;
 };
 
+const WORKSPACE_BOOTSTRAP_RESPONSE_SCHEMA = z.object({
+  summary: z.string().min(1),
+  ready: z.boolean(),
+  observations: z.array(z.string().min(1)).default([])
+});
+
+const DEEP_AGENT_RUNTIME_GUIDE_RESPONSE_SCHEMA = RuntimeGuideResponseSchema;
+
 const GOAL_SCOPE_DRAFT_SCHEMA = z.object({
+  engagementMode: z.enum(["implementation-first", "learning-first", "balanced"]).default("balanced"),
   scopeSummary: z.string().min(1),
   artifactShape: z.string().min(1),
   complexityScore: z.number().int().min(0).max(100),
@@ -597,8 +625,11 @@ const EXPLICIT_GOAL_SELF_REPORT_DRAFT_SCHEMA = z.object({
       rationale: z.string().min(1),
       labelPath: z.array(z.string().min(1)).min(1).max(8).optional()
     })
-  ).max(8).default([])
-});
+  ).default([])
+}).transform((value) => ({
+  ...value,
+  signals: normalizeGoalSelfReportSignals(value.signals)
+}));
 
 const SHORT_ANSWER_CHECK_REVIEW_DRAFT_SCHEMA = z.object({
   status: z.enum(["complete", "needs-revision"]),
@@ -765,6 +796,60 @@ export class ConstructAgentService {
     }
 
     return getActiveBlueprintPathFromFile(this.rootDirectory);
+  }
+
+  async ensureLearnerWorkspaceReady(input: {
+    canonicalBlueprintPath: string;
+    learnerWorkspaceRoot?: string;
+    jobId?: string | null;
+    reason?: "planning-build" | "workspace-open" | "runtime-guide";
+  }): Promise<WorkspaceBootstrapResult> {
+    const preparedWorkspace = input.learnerWorkspaceRoot
+      ? {
+          learnerWorkspaceRoot: input.learnerWorkspaceRoot
+        }
+      : await prepareLearnerWorkspace(input.canonicalBlueprintPath);
+    const workspaceRoot = preparedWorkspace.learnerWorkspaceRoot;
+    const manifests = await collectWorkspaceBootstrapManifestSignatures(workspaceRoot);
+
+    if (Object.keys(manifests).length === 0) {
+      return {
+        status: "skipped",
+        ready: true,
+        detail: "No supported dependency manifest was found in the learner workspace.",
+        observations: [],
+        commands: []
+      };
+    }
+
+    const nodeModulesMissing =
+      "package.json" in manifests &&
+      !existsSync(path.join(workspaceRoot, "node_modules"));
+    const markerState = await readWorkspaceBootstrapState(
+      path.join(workspaceRoot, ".construct", "workspace-bootstrap.json")
+    );
+    const manifestsChanged =
+      markerState !== null &&
+      JSON.stringify(markerState.manifests) !== JSON.stringify(manifests);
+
+    if (!nodeModulesMissing && markerState && !manifestsChanged) {
+      return {
+        status: "skipped",
+        ready: true,
+        detail: "The learner workspace is already bootstrapped for local IDE use.",
+        observations: [markerState.summary],
+        commands: markerState.commands
+      };
+    }
+
+    return this.runWorkspaceBootstrapAgent({
+      jobId: input.jobId ?? null,
+      workspaceRoot,
+      manifests,
+      reason:
+        input.reason ??
+        (nodeModulesMissing ? "workspace-open" : "planning-build")
+    });
   }
 
   async listProjectsDashboard(): Promise<ProjectsDashboardResponse> {
@@ -4222,12 +4307,7 @@ export class ConstructAgentService {
         })
       }))
       .addNode("generateGuidance", async (state) => ({
-        guide: await this.withStage(jobId, "runtime-guide", "Analyzing the current implementation", "OpenAI is reviewing the anchored code, constraints, and latest test result to prepare Socratic guidance.", async () => {
-          const stream = this.createModelStreamForwarder(
-            jobId,
-            "runtime-guide",
-            "runtime guidance"
-          );
+        guide: await this.withStage(jobId, "runtime-guide", "Analyzing the current implementation", "Construct is inspecting the real learner workspace, tracing the active step, and comparing it with the latest validation signal.", async () => {
           const stopProgressUpdates = this.startNarratedProgress(jobId, {
             stage: "runtime-guide",
             title: "Construct is tracing the current step",
@@ -4236,33 +4316,22 @@ export class ConstructAgentService {
           const activeProject = await this.persistence.getActiveProject();
 
           try {
-            return (await this.getLlm()).parse({
-              schema: RuntimeGuideResponseSchema,
-              schemaName: "construct_runtime_guide",
-              instructions: buildRuntimeGuideInstructions(),
-              prompt: JSON.stringify(
-                {
-                  request: state.request,
-                  priorKnowledge: serializeKnowledgeBaseForPrompt(state.knowledgeBase)
-                },
-                null,
-                2
-              ),
-              maxOutputTokens: 3_000,
-              verbosity: "medium",
-              stream,
-              usage: this.buildJobUsageContext(jobId, {
-                projectId: activeProject?.id ?? null,
-                projectName: activeProject?.name ?? null,
-                projectGoal: activeProject?.goal ?? null,
-                blueprintPath: activeProject?.blueprintPath ?? null,
-                stage: "runtime-guide",
-                operation: "runtime guide generation"
-              })
+            if (activeProject?.blueprintPath) {
+              await this.ensureLearnerWorkspaceReady({
+                canonicalBlueprintPath: activeProject.blueprintPath,
+                jobId,
+                reason: "runtime-guide"
+              });
+            }
+
+            return this.runRuntimeGuideDeepAgent({
+              jobId,
+              request: state.request,
+              knowledgeBase: state.knowledgeBase,
+              activeProject
             });
           } finally {
             stopProgressUpdates();
-            stream.onComplete?.();
           }
         })
       }))
@@ -5799,6 +5868,11 @@ export class ConstructAgentService {
         };
       }
     );
+    await this.ensureLearnerWorkspaceReady({
+      canonicalBlueprintPath: blueprintPath,
+      jobId,
+      reason: "planning-build"
+    });
     await this.mutateBlueprintBuildForJob(jobId, (current) => ({
       ...(current ??
         createBlueprintBuildRecord({
@@ -6196,6 +6270,680 @@ export class ConstructAgentService {
     });
 
     return result;
+  }
+
+  private async runWorkspaceBootstrapAgent(input: {
+    jobId: string | null;
+    workspaceRoot: string;
+    manifests: Record<string, string>;
+    reason: "planning-build" | "workspace-open" | "runtime-guide";
+  }): Promise<WorkspaceBootstrapResult> {
+    const stage = "workspace-bootstrap";
+    const commands: string[] = [];
+    const observations: string[] = [];
+    const title = "Bootstrapping the learner workspace";
+    const detail =
+      input.reason === "runtime-guide"
+        ? "Construct is checking the learner workspace before it reasons over the current step."
+        : "Construct is preparing the learner workspace so dependencies and tooling resolve inside the actual IDE workspace.";
+
+    if (input.jobId) {
+      await this.markBlueprintBuildStageForJob(input.jobId, {
+        stage,
+        title,
+        status: "running",
+        detail,
+        inputJson: {
+          workspaceRoot: input.workspaceRoot,
+          manifestPaths: Object.keys(input.manifests)
+        }
+      });
+
+      const job = this.jobs.get(input.jobId);
+      if (job) {
+        this.emitEvent(job, {
+          stage,
+          title,
+          detail,
+          level: "info"
+        });
+      }
+    }
+
+    const backend = await this.createObservedLocalShellBackend({
+      rootDir: input.workspaceRoot,
+      jobId: input.jobId,
+      stage,
+      commandLog: commands,
+      allowFileEdits: false
+    });
+
+    try {
+      const deterministicBootstrap = await this.runDeterministicWorkspaceBootstrap({
+        backend,
+        workspaceRoot: input.workspaceRoot,
+        manifests: input.manifests
+      });
+      observations.push(...deterministicBootstrap.observations);
+
+      if (deterministicBootstrap.ready) {
+        const summary =
+          deterministicBootstrap.summary ??
+          "The learner workspace has the dependency baseline it needs for local IDE use.";
+        const markerPath = path.join(input.workspaceRoot, ".construct", "workspace-bootstrap.json");
+
+        await mkdir(path.dirname(markerPath), { recursive: true });
+        await writeWorkspaceBootstrapState(markerPath, {
+          version: 1,
+          manifests: input.manifests,
+          bootstrappedAt: this.now().toISOString(),
+          summary,
+          commands
+        });
+
+        if (input.jobId) {
+          const job = this.jobs.get(input.jobId);
+          await this.markBlueprintBuildStageForJob(input.jobId, {
+            stage,
+            title,
+            status: "completed",
+            detail: summary,
+            outputJson: {
+              ready: true,
+              observations,
+              commands
+            }
+          });
+
+          if (job) {
+            this.emitEvent(job, {
+              stage,
+              title: "Learner workspace is ready",
+              detail: summary,
+              level: "success",
+              payload: {
+                ready: true,
+                commands,
+                observations
+              }
+            });
+          }
+        }
+
+        return {
+          status: "ready",
+          ready: true,
+          detail: summary,
+          observations,
+          commands
+        };
+      }
+
+      const agent = createDeepAgent({
+        model: (await this.createDeepAgentChatModel(
+          this.buildJobUsageContext(input.jobId ?? "workspace-bootstrap", {
+            stage,
+            operation: "workspace bootstrap",
+            blueprintPath: null
+          })
+        )) as never,
+        backend,
+        responseFormat: WORKSPACE_BOOTSTRAP_RESPONSE_SCHEMA as never,
+        systemPrompt: buildWorkspaceBootstrapSystemPrompt()
+      });
+
+      const result = await agent.invoke({
+        messages: [
+          {
+            role: "user",
+            content: JSON.stringify(
+              {
+                reason: input.reason,
+                workspaceRoot: input.workspaceRoot,
+                manifests: Object.keys(input.manifests),
+                requirements: [
+                  "Inspect the learner workspace and decide whether dependency bootstrap is needed.",
+                  "Use shell commands when needed.",
+                  "Do not modify learner-owned source files.",
+                  "Prefer install or verification commands over file edits.",
+                  "Return ready=true only if the workspace has the dependency/tooling baseline it needs."
+                ]
+              },
+              null,
+              2
+            )
+          }
+        ]
+      });
+
+      const parsed = WORKSPACE_BOOTSTRAP_RESPONSE_SCHEMA.parse(
+        readDeepAgentStructuredResponse(result)
+      );
+      const markerPath = path.join(input.workspaceRoot, ".construct", "workspace-bootstrap.json");
+      observations.push(...parsed.observations);
+
+      await mkdir(path.dirname(markerPath), { recursive: true });
+      await writeWorkspaceBootstrapState(markerPath, {
+        version: 1,
+        manifests: input.manifests,
+        bootstrappedAt: this.now().toISOString(),
+        summary: parsed.summary,
+        commands
+      });
+
+      if (input.jobId) {
+        const job = this.jobs.get(input.jobId);
+        const status = parsed.ready ? "completed" : "warning";
+
+        await this.markBlueprintBuildStageForJob(input.jobId, {
+          stage,
+          title,
+          status,
+          detail: parsed.summary,
+          outputJson: {
+            ready: parsed.ready,
+            observations,
+            commands
+          }
+        });
+
+        if (job) {
+          this.emitEvent(job, {
+            stage,
+            title: parsed.ready
+              ? "Learner workspace is ready"
+              : "Learner workspace still needs attention",
+            detail: parsed.summary,
+            level: parsed.ready ? "success" : "warning",
+            payload: {
+              ready: parsed.ready,
+              commands,
+              observations
+            }
+          });
+        }
+      }
+
+      return {
+        status: parsed.ready ? "ready" : "warning",
+        ready: parsed.ready,
+        detail: parsed.summary,
+        observations,
+        commands
+      };
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "The learner workspace bootstrap did not complete.";
+
+      if (input.jobId) {
+        const job = this.jobs.get(input.jobId);
+
+        await this.markBlueprintBuildStageForJob(input.jobId, {
+          stage,
+          title,
+          status: "warning",
+          detail: message,
+          outputJson: {
+            commands
+          }
+        });
+
+        if (job) {
+          this.emitEvent(job, {
+            stage,
+            title: "Learner workspace bootstrap needs attention",
+            detail: message,
+            level: "warning",
+            payload: {
+              commands
+            }
+          });
+        }
+      }
+
+      this.logger.warn("Deep agent workspace bootstrap failed.", {
+        workspaceRoot: input.workspaceRoot,
+        reason: input.reason,
+        error: message
+      });
+
+      return {
+        status: "warning",
+        ready: false,
+        detail: message,
+        observations,
+        commands
+      };
+    } finally {
+      await backend.close();
+    }
+  }
+
+  private async runDeterministicWorkspaceBootstrap(input: {
+    backend: Awaited<ReturnType<ConstructAgentService["createObservedLocalShellBackend"]>>;
+    workspaceRoot: string;
+    manifests: Record<string, string>;
+  }): Promise<{
+    ready: boolean;
+    summary: string | null;
+    observations: string[];
+  }> {
+    const observations: string[] = [];
+
+    if (input.manifests["package.json"]) {
+      const nodeModulesPath = path.join(input.workspaceRoot, "node_modules");
+      const nodeModulesExists = await stat(nodeModulesPath)
+        .then((entry) => entry.isDirectory())
+        .catch(() => false);
+
+      if (!nodeModulesExists) {
+        const packageManager = detectWorkspacePackageManager(input.workspaceRoot, input.manifests);
+        const installCommand =
+          packageManager === "npm"
+            ? "npm install"
+            : packageManager === "yarn"
+              ? "yarn install"
+              : packageManager === "bun"
+                ? "bun install"
+                : "pnpm install --ignore-workspace --frozen-lockfile=false";
+        const result = await input.backend.execute(installCommand);
+
+        if (result.exitCode !== 0) {
+          observations.push(
+            `Dependency install did not finish cleanly with ${packageManager}.`
+          );
+          return {
+            ready: false,
+            summary: `Construct could not finish installing learner workspace dependencies with ${packageManager}.`,
+            observations
+          };
+        }
+
+        observations.push(
+          `Installed learner workspace dependencies with ${packageManager}.`
+        );
+      }
+
+      return {
+        ready: true,
+        summary: observations[0] ?? "The learner workspace dependencies are installed.",
+        observations
+      };
+    }
+
+    if (input.manifests["Cargo.toml"]) {
+      const result = await input.backend.execute("cargo fetch");
+
+      if (result.exitCode !== 0) {
+        observations.push("Rust dependency bootstrap did not finish cleanly.");
+        return {
+          ready: false,
+          summary: "Construct could not finish fetching the learner workspace Rust dependencies.",
+          observations
+        };
+      }
+
+      observations.push("Fetched the learner workspace Rust dependencies.");
+      return {
+        ready: true,
+        summary: observations[0],
+        observations
+      };
+    }
+
+    return {
+      ready: false,
+      summary: null,
+      observations
+    };
+  }
+
+  private async runRuntimeGuideDeepAgent(input: {
+    jobId: string;
+    request: RuntimeGuideRequest;
+    knowledgeBase: UserKnowledgeBase;
+    activeProject: ProjectSummary | null;
+  }): Promise<RuntimeGuideResponse> {
+    const workspaceRoot =
+      input.activeProject?.blueprintPath
+        ? (await prepareLearnerWorkspace(input.activeProject.blueprintPath)).learnerWorkspaceRoot
+        : this.rootDirectory;
+    const commandLog: string[] = [];
+    const backend = await this.createObservedLocalShellBackend({
+      rootDir: workspaceRoot,
+      jobId: input.jobId,
+      stage: "runtime-guide",
+      commandLog,
+      allowFileEdits: false
+    });
+
+    try {
+      const agent = createDeepAgent({
+        model: (await this.createDeepAgentChatModel(
+          this.buildJobUsageContext(input.jobId, {
+            projectId: input.activeProject?.id ?? null,
+            projectName: input.activeProject?.name ?? null,
+            projectGoal: input.activeProject?.goal ?? null,
+            blueprintPath: input.activeProject?.blueprintPath ?? null,
+            stage: "runtime-guide",
+            operation: "runtime guide deep agent"
+          })
+        )) as never,
+        backend,
+        responseFormat: DEEP_AGENT_RUNTIME_GUIDE_RESPONSE_SCHEMA as never,
+        systemPrompt: buildRuntimeGuideInstructions()
+      });
+
+      const result = await agent.invoke({
+        messages: [
+          {
+            role: "user",
+            content: JSON.stringify(
+              {
+                request: input.request,
+                priorKnowledge: serializeKnowledgeBaseForPrompt(input.knowledgeBase),
+                workspaceRoot,
+                guardrails: [
+                  "Inspect the real learner workspace before giving advice.",
+                  "Use terminal and filesystem tools when they help.",
+                  "Do not edit files.",
+                  "Never provide a full runnable solution.",
+                  "Return only the structured runtime guide response."
+                ]
+              },
+              null,
+              2
+            )
+          }
+        ]
+      });
+
+      const structured = RuntimeGuideResponseSchema.parse(
+        readDeepAgentStructuredResponse(result)
+      );
+
+      if (commandLog.length > 0) {
+        const job = this.jobs.get(input.jobId);
+        if (job) {
+          this.emitEvent(job, {
+            stage: "runtime-guide",
+            title: "Construct finished inspecting the workspace",
+            detail: `Used ${commandLog.length} terminal command${commandLog.length === 1 ? "" : "s"} while tracing the current step.`,
+            level: "success",
+            payload: {
+              commands: commandLog
+            }
+          });
+        }
+      }
+
+      return structured;
+    } finally {
+      await backend.close();
+    }
+  }
+
+  private async createDeepAgentChatModel(
+    usage: LanguageModelUsageContext
+  ): Promise<ChatOpenAI> {
+    const config = await this.getAgentConfig();
+    const callbacks = this.buildDeepAgentUsageCallbacks(usage);
+
+    return new ChatOpenAI({
+      apiKey: config.openAiApiKey,
+      model: config.openAiModel,
+      configuration: config.openAiBaseUrl
+        ? {
+            baseURL: config.openAiBaseUrl
+          }
+        : undefined,
+      callbacks
+    });
+  }
+
+  private buildDeepAgentUsageCallbacks(
+    usage: LanguageModelUsageContext
+  ): BaseCallbackHandler[] {
+    const handler = BaseCallbackHandler.fromMethods({
+      handleLLMEnd: async (output) => {
+        const tokenUsage = extractDeepAgentUsage(output);
+        if (!tokenUsage) {
+          return;
+        }
+
+        try {
+          const resolvedProject =
+            !usage.projectId && usage.blueprintPath
+              ? await this.persistence.getProjectByBlueprintPath(usage.blueprintPath)
+              : null;
+
+          await this.persistence.recordApiUsageEvent({
+            id: randomUUID(),
+            provider: "openai",
+            kind: "llm",
+            model: (await this.getAgentConfig()).openAiModel,
+            operation: usage.operation?.trim() || "deep agent",
+            stage: usage.stage?.trim() || null,
+            schemaName: null,
+            mode: "deep-agent",
+            projectId: usage.projectId ?? resolvedProject?.id ?? null,
+            projectName: usage.projectName ?? resolvedProject?.name ?? null,
+            projectGoal: usage.projectGoal ?? resolvedProject?.goal ?? null,
+            buildId: usage.buildId ?? null,
+            sessionId: usage.sessionId ?? resolvedProject?.id ?? null,
+            jobId: usage.jobId ?? null,
+            inputTokens: tokenUsage.inputTokens,
+            outputTokens: tokenUsage.outputTokens,
+            totalTokens: tokenUsage.totalTokens,
+            cachedInputTokens: tokenUsage.cachedInputTokens,
+            reasoningTokens: tokenUsage.reasoningTokens,
+            costUsd: tokenUsage.costUsd,
+            currency: tokenUsage.currency,
+            metadata: tokenUsage.metadata,
+            recordedAt: new Date().toISOString()
+          });
+        } catch (error) {
+          this.logger.warn("Failed to record deep agent usage event.", {
+            stage: usage.stage ?? null,
+            operation: usage.operation ?? "deep agent",
+            error: error instanceof Error ? error.message : String(error)
+          });
+        }
+      }
+    });
+
+    return [handler];
+  }
+
+  private async createObservedLocalShellBackend(input: {
+    rootDir: string;
+    jobId: string | null;
+    stage: string;
+    commandLog: string[];
+    allowFileEdits: boolean;
+  }) {
+    const backend = new LocalShellBackend({
+      rootDir: input.rootDir,
+      inheritEnv: true
+    });
+    await backend.initialize();
+
+    const emit = (
+      title: string,
+      detail: string,
+      level: AgentEvent["level"] = "info",
+      payload?: Record<string, unknown>
+    ) => {
+      if (!input.jobId) {
+        return;
+      }
+
+      const job = this.jobs.get(input.jobId);
+      if (!job) {
+        return;
+      }
+
+      this.emitEvent(job, {
+        stage: input.stage,
+        title,
+        detail,
+        level,
+        payload
+      });
+    };
+
+    return {
+      async lsInfo(targetPath: string) {
+        const result = await backend.lsInfo(targetPath);
+        emit(
+          "Listing workspace files",
+          `Inspecting ${formatObservedBackendPath(input.rootDir, targetPath)} and finding ${result.length} entr${result.length === 1 ? "y" : "ies"}.`,
+          "info",
+          {
+            tool: "ls",
+            path: formatObservedBackendPath(input.rootDir, targetPath),
+            entryCount: result.length
+          }
+        );
+        return result;
+      },
+      async read(filePath: string, offset?: number, limit?: number) {
+        const result = await backend.read(filePath, offset, limit);
+        emit(
+          "Reading file",
+          `Opening ${formatObservedBackendPath(input.rootDir, filePath)}${typeof offset === "number" ? ` near line ${offset + 1}` : ""}.`,
+          "info",
+          {
+            tool: "read_file",
+            path: formatObservedBackendPath(input.rootDir, filePath),
+            offset: offset ?? null,
+            limit: limit ?? null
+          }
+        );
+        return result;
+      },
+      async readRaw(filePath: string) {
+        emit(
+          "Reading file",
+          `Opening ${formatObservedBackendPath(input.rootDir, filePath)}.`,
+          "info",
+          {
+            tool: "read_file",
+            path: formatObservedBackendPath(input.rootDir, filePath)
+          }
+        );
+        return backend.readRaw(filePath);
+      },
+      async grepRaw(pattern: string, searchPath?: string | null, glob?: string | null) {
+        const result = await backend.grepRaw(pattern, searchPath ?? undefined, glob);
+        const matchCount = Array.isArray(result) ? result.length : 0;
+        emit(
+          "Searching workspace",
+          `Looking for "${truncateText(pattern, 80)}" in ${formatObservedBackendPath(input.rootDir, searchPath ?? ".")}${glob ? ` (${glob})` : ""}${Array.isArray(result) ? ` and finding ${matchCount} match${matchCount === 1 ? "" : "es"}.` : "."}`,
+          "info",
+          {
+            tool: "grep",
+            path: formatObservedBackendPath(input.rootDir, searchPath ?? "."),
+            pattern,
+            glob: glob ?? null,
+            matchCount
+          }
+        );
+        return result;
+      },
+      async globInfo(pattern: string, searchPath?: string) {
+        const result = await backend.globInfo(pattern, searchPath);
+        emit(
+          "Globbing files",
+          `Matching ${truncateText(pattern, 80)} under ${formatObservedBackendPath(input.rootDir, searchPath ?? ".")}.`,
+          "info",
+          {
+            tool: "glob",
+            path: formatObservedBackendPath(input.rootDir, searchPath ?? "."),
+            pattern,
+            matchCount: result.length
+          }
+        );
+        return result;
+      },
+      async write(filePath: string, content: string) {
+        if (!input.allowFileEdits) {
+          emit(
+            "Blocked file edit",
+            `Construct refused to write ${formatObservedBackendPath(input.rootDir, filePath)} because this agent is running in read-only mode.`,
+            "warning",
+            {
+              tool: "write_file",
+              path: formatObservedBackendPath(input.rootDir, filePath),
+              blocked: true
+            }
+          );
+          return {
+            error: "This agent is running in read-only mode.",
+            filesUpdate: null,
+            metadata: {
+              blocked: true
+            }
+          };
+        }
+
+        return backend.write(filePath, content);
+      },
+      async edit(filePath: string, oldString: string, newString: string, replaceAll?: boolean) {
+        if (!input.allowFileEdits) {
+          emit(
+            "Blocked file edit",
+            `Construct refused to edit ${formatObservedBackendPath(input.rootDir, filePath)} because this agent is running in read-only mode.`,
+            "warning",
+            {
+              tool: "edit_file",
+              path: formatObservedBackendPath(input.rootDir, filePath),
+              blocked: true
+            }
+          );
+          return {
+            error: "This agent is running in read-only mode.",
+            filesUpdate: null,
+            metadata: {
+              blocked: true
+            }
+          };
+        }
+
+        return backend.edit(filePath, oldString, newString, replaceAll);
+      },
+      async execute(command: string) {
+        input.commandLog.push(command);
+        emit(
+          "Running command",
+          `Executing ${truncateCommandForDisplay(command)} in the learner workspace.`,
+          "info",
+          {
+            tool: "execute",
+            command,
+            phase: "start"
+          }
+        );
+        const result = await backend.execute(command);
+        emit(
+          result.exitCode === 0 ? "Command completed" : "Command reported an issue",
+          summarizeObservedCommandResult(command, result.output, result.exitCode),
+          result.exitCode === 0 ? "success" : "warning",
+          {
+            tool: "execute",
+            command,
+            output: result.output,
+            phase: "end",
+            exitCode: result.exitCode,
+            truncated: result.truncated
+          }
+        );
+        return result;
+      },
+      async close() {
+        await backend.close();
+      }
+    };
   }
 
   private async restoreGeneratedBlueprint(sessionId: string): Promise<string | null> {
@@ -6862,6 +7610,299 @@ function readDecimalMetric(...values: unknown[]): number | null {
   }
 
   return null;
+}
+
+function readDeepAgentStructuredResponse(result: unknown): unknown {
+  const record = asRecord(result);
+  return record?.structuredResponse ?? record?.structured_response ?? result;
+}
+
+function normalizeGoalSelfReportSignals(
+  signals: Array<{
+    conceptId: string;
+    label: string;
+    category: "language" | "domain" | "workflow";
+    score: number;
+    rationale: string;
+    labelPath?: string[];
+  }>
+): Array<{
+  conceptId: string;
+  label: string;
+  category: "language" | "domain" | "workflow";
+  score: number;
+  rationale: string;
+  labelPath?: string[];
+}> {
+  const deduped: Array<{
+    conceptId: string;
+    label: string;
+    category: "language" | "domain" | "workflow";
+    score: number;
+    rationale: string;
+    labelPath?: string[];
+  }> = [];
+  const seenConceptIds = new Set<string>();
+
+  for (const signal of signals) {
+    const conceptId = signal.conceptId.trim();
+    if (!conceptId || seenConceptIds.has(conceptId)) {
+      continue;
+    }
+
+    seenConceptIds.add(conceptId);
+    deduped.push({
+      ...signal,
+      conceptId,
+      label: signal.label.trim(),
+      rationale: signal.rationale.trim(),
+      labelPath: signal.labelPath?.slice(0, 8)
+    });
+
+    if (deduped.length >= 8) {
+      break;
+    }
+  }
+
+  return deduped;
+}
+
+function extractDeepAgentUsage(response: unknown): {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  cachedInputTokens: number;
+  reasoningTokens: number;
+  costUsd: number | null;
+  currency: string | null;
+  metadata: Record<string, unknown>;
+} | null {
+  const record = asRecord(response);
+  if (!record) {
+    return null;
+  }
+
+  const llmOutput = asRecord(record.llmOutput);
+  const tokenUsage =
+    asRecord(llmOutput?.tokenUsage) ??
+    asRecord(llmOutput?.token_usage) ??
+    asRecord(llmOutput?.usage);
+
+  const generations = Array.isArray(record.generations) ? record.generations : [];
+  const firstGeneration = Array.isArray(generations[0]) ? generations[0][0] : generations[0];
+  const message = asRecord(asRecord(firstGeneration)?.message);
+  const usageMetadata = asRecord(message?.usage_metadata);
+  const responseMetadata = asRecord(message?.response_metadata);
+  const metadataTokenUsage =
+    asRecord(responseMetadata?.tokenUsage) ??
+    asRecord(responseMetadata?.token_usage) ??
+    asRecord(responseMetadata?.usage);
+  const inputDetails =
+    asRecord(usageMetadata?.input_token_details) ??
+    asRecord(tokenUsage?.inputTokenDetails) ??
+    asRecord(tokenUsage?.input_token_details) ??
+    asRecord(metadataTokenUsage?.inputTokenDetails) ??
+    asRecord(metadataTokenUsage?.input_token_details);
+  const outputDetails =
+    asRecord(usageMetadata?.output_token_details) ??
+    asRecord(tokenUsage?.completionTokenDetails) ??
+    asRecord(tokenUsage?.output_token_details) ??
+    asRecord(metadataTokenUsage?.completionTokenDetails) ??
+    asRecord(metadataTokenUsage?.output_token_details);
+
+  const inputTokens =
+    readNumericMetric(
+      usageMetadata?.input_tokens,
+      tokenUsage?.promptTokens,
+      tokenUsage?.prompt_tokens,
+      tokenUsage?.inputTokens,
+      tokenUsage?.input_tokens,
+      metadataTokenUsage?.promptTokens,
+      metadataTokenUsage?.prompt_tokens
+    ) ?? 0;
+  const outputTokens =
+    readNumericMetric(
+      usageMetadata?.output_tokens,
+      tokenUsage?.completionTokens,
+      tokenUsage?.completion_tokens,
+      tokenUsage?.outputTokens,
+      tokenUsage?.output_tokens,
+      metadataTokenUsage?.completionTokens,
+      metadataTokenUsage?.completion_tokens
+    ) ?? 0;
+  const totalTokens =
+    readNumericMetric(
+      usageMetadata?.total_tokens,
+      tokenUsage?.totalTokens,
+      tokenUsage?.total_tokens,
+      metadataTokenUsage?.totalTokens,
+      metadataTokenUsage?.total_tokens
+    ) ?? (inputTokens + outputTokens);
+  const cachedInputTokens =
+    readNumericMetric(
+      inputDetails?.cached_tokens,
+      inputDetails?.cache_read,
+      inputDetails?.cachedTokens,
+      inputDetails?.cacheReadTokens
+    ) ?? 0;
+  const reasoningTokens =
+    readNumericMetric(
+      outputDetails?.reasoning_tokens,
+      outputDetails?.reasoning,
+      outputDetails?.reasoningTokens
+    ) ?? 0;
+
+  return {
+    inputTokens,
+    outputTokens,
+    totalTokens,
+    cachedInputTokens,
+    reasoningTokens,
+    costUsd: null,
+    currency: "USD",
+    metadata: {
+      usageSource: tokenUsage ? "llmOutput" : usageMetadata ? "message" : "unavailable"
+    }
+  };
+}
+
+async function collectWorkspaceBootstrapManifestSignatures(
+  workspaceRoot: string
+): Promise<Record<string, string>> {
+  const manifests: Record<string, string> = {};
+
+  for (const relativePath of [
+    "package.json",
+    "pnpm-lock.yaml",
+    "package-lock.json",
+    "yarn.lock",
+    "Cargo.toml",
+    "Cargo.lock",
+    "pyproject.toml",
+    "requirements.txt"
+  ]) {
+    const absolutePath = path.join(workspaceRoot, relativePath);
+    if (!existsSync(absolutePath)) {
+      continue;
+    }
+
+    const fileStat = await stat(absolutePath);
+    manifests[relativePath] = `${fileStat.size}:${fileStat.mtimeMs}`;
+  }
+
+  return manifests;
+}
+
+async function readWorkspaceBootstrapState(
+  markerPath: string
+): Promise<WorkspaceBootstrapState | null> {
+  if (!existsSync(markerPath)) {
+    return null;
+  }
+
+  try {
+    const raw = await readFile(markerPath, "utf8");
+    const parsed = JSON.parse(raw);
+
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      "version" in parsed &&
+      "manifests" in parsed &&
+      "bootstrappedAt" in parsed &&
+      "summary" in parsed &&
+      "commands" in parsed
+    ) {
+      return parsed as WorkspaceBootstrapState;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+async function writeWorkspaceBootstrapState(
+  markerPath: string,
+  state: WorkspaceBootstrapState
+): Promise<void> {
+  await writeFile(markerPath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+}
+
+function formatObservedBackendPath(rootDir: string, targetPath: string): string {
+  if (!targetPath || targetPath === ".") {
+    return ".";
+  }
+
+  const resolved = path.isAbsolute(targetPath)
+    ? targetPath
+    : path.resolve(rootDir, targetPath);
+  const relative = path.relative(rootDir, resolved);
+  if (!relative || relative === "") {
+    return ".";
+  }
+
+  return relative.startsWith("..") ? targetPath : relative;
+}
+
+function truncateCommandForDisplay(command: string): string {
+  return `\`${truncateText(command.replace(/\s+/g, " ").trim(), 120)}\``;
+}
+
+function summarizeObservedCommandResult(
+  command: string,
+  output: string,
+  exitCode: number | null
+): string {
+  const normalizedOutput = output
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 3)
+    .join(" ");
+
+  const summary = normalizedOutput
+    ? truncateText(normalizedOutput, 180)
+    : exitCode === 0
+      ? "The command finished without additional output."
+      : "The command exited without useful output.";
+
+  return `${truncateCommandForDisplay(command)} finished with exit code ${exitCode ?? "unknown"}. ${summary}`;
+}
+
+function buildWorkspaceBootstrapSystemPrompt(): string {
+  return [
+    "You are Construct's workspace bootstrap agent.",
+    "Your job is to make a generated learner workspace behave like a real local IDE workspace.",
+    "Inspect the workspace, detect missing dependency or toolchain setup, and run the smallest safe bootstrap commands needed.",
+    "Prefer commands like package installation or lightweight verification over editing files.",
+    "Do not modify learner-owned implementation files, task scaffolds, or hidden tests.",
+    "Do not solve the learner's coding task.",
+    "When a Node project has a package.json and dependencies are missing, install them inside the learner workspace before concluding.",
+    "Return a concise structured summary of whether the workspace is ready."
+  ].join("\n");
+}
+
+function detectWorkspacePackageManager(
+  workspaceRoot: string,
+  manifests: Record<string, string>
+): "pnpm" | "npm" | "yarn" | "bun" {
+  const hasLockfile = (name: string) =>
+    manifests[name] || existsSync(path.join(workspaceRoot, name));
+
+  if (hasLockfile("bun.lockb") || hasLockfile("bun.lock")) {
+    return "bun";
+  }
+
+  if (hasLockfile("yarn.lock")) {
+    return "yarn";
+  }
+
+  if (hasLockfile("package-lock.json")) {
+    return "npm";
+  }
+
+  return "pnpm";
 }
 
 function readStringMetric(...values: unknown[]): string | null {
@@ -8924,6 +9965,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function inferGoalScopeFallback(goal: string): GoalScope {
   const normalized = goal.trim().toLowerCase();
+  const engagementMode = inferGoalEngagementModeFallback(normalized);
   const smallScopeHints = [
     "small",
     "simple",
@@ -8958,6 +10000,7 @@ function inferGoalScopeFallback(goal: string): GoalScope {
 
   if (mentionsSmallScope && !mentionsComplexScope && wordCount <= 8) {
     return {
+      engagementMode,
       scopeSummary: "Very small local artifact",
       artifactShape: normalized.includes("class") ? "class" : "module",
       complexityScore: 12,
@@ -8971,6 +10014,7 @@ function inferGoalScopeFallback(goal: string): GoalScope {
 
   if (mentionsComplexScope || wordCount >= 10) {
     return {
+      engagementMode,
       scopeSummary: "Large multi-part project",
       artifactShape: "system",
       complexityScore: 82,
@@ -8983,6 +10027,7 @@ function inferGoalScopeFallback(goal: string): GoalScope {
   }
 
   return {
+    engagementMode,
     scopeSummary: "Normal project-sized request",
     artifactShape: normalized.includes("class") ? "class" : "app",
     complexityScore: 45,
@@ -8994,12 +10039,64 @@ function inferGoalScopeFallback(goal: string): GoalScope {
   };
 }
 
+function inferGoalEngagementModeFallback(
+  normalizedGoal: string
+): GoalScope["engagementMode"] {
+  const implementationIntentHints = [
+    "build",
+    "implement",
+    "implementation",
+    "create",
+    "make",
+    "ship",
+    "develop",
+    "clone",
+    "recreate",
+    "port"
+  ];
+  const learningIntentHints = [
+    "learn",
+    "teach",
+    "teaching",
+    "understand",
+    "explain",
+    "tutorial",
+    "guide",
+    "walkthrough",
+    "course",
+    "lesson",
+    "study"
+  ];
+
+  const mentionsImplementationIntent = implementationIntentHints.some((hint) =>
+    normalizedGoal.includes(hint)
+  );
+  const mentionsLearningIntent = learningIntentHints.some((hint) =>
+    normalizedGoal.includes(hint)
+  );
+
+  if (mentionsImplementationIntent && !mentionsLearningIntent) {
+    return "implementation-first";
+  }
+
+  if (mentionsLearningIntent && !mentionsImplementationIntent) {
+    return "learning-first";
+  }
+
+  return "balanced";
+}
+
 function buildGoalScopeInstructions(): string {
   return [
     "You are Construct's Architect agent.",
     "Decide how large the requested project should be before planning or research begins.",
+    "Also decide the request's engagementMode: implementation-first, learning-first, or balanced.",
     "Do not force the request into canned scope labels. Describe the scope in your own words using scopeSummary and artifactShape.",
     "artifactShape should be your own concise description of the primary artifact to build, such as 'todo class', 'single module', 'cli app', or 'compiler pipeline'.",
+    "engagementMode should be implementation-first when the user primarily wants to build, ship, recreate, port, or implement an artifact, even if they say 'from scratch'.",
+    "engagementMode should be learning-first only when the user is primarily asking to learn, understand, or be taught the named technology or concept.",
+    "engagementMode should be balanced when the request clearly mixes both building and learning.",
+    "Do not mistake a framework or library named in the goal for an implicit request to study that framework broadly. Treat it as the build substrate unless the user explicitly asks to learn it.",
     "complexityScore is a 0-100 estimate of how large and multi-part the project really is.",
     "shouldResearch should be false only when broad web research would clearly be wasteful for this specific request.",
     "recommendedQuestionCount should be the minimum number of intake questions needed to personalize the path.",
@@ -9029,6 +10126,9 @@ function buildQuestionGenerationInstructions(): string {
     "Favor prerequisite concepts, likely blockers, workflow preferences, and depth decisions that actually affect implementation order or how much explanation the learner needs.",
     "Use goalScope.recommendedQuestionCount as the target number of questions.",
     "Use goalScope.scopeSummary and goalScope.artifactShape to decide how local or broad the intake should be.",
+    "Use goalScope.engagementMode to decide whether the intake should optimize more for shipping momentum, teaching depth, or a balance of both.",
+    "If engagementMode is implementation-first, ask only what is needed to help the learner build the requested artifact effectively. Do not turn the named framework, library, or platform into a broad curriculum topic by default.",
+    "If engagementMode is learning-first, it is acceptable to ask where Construct should slow down and explain more first-principles context.",
     "Do not ask about concepts that are already clearly comfortable in the prior knowledge base unless the new goal materially changes their meaning.",
     "If you need to ask about a concept like TypeScript utility types, ask about lived usage and desired support, for example: 'Which statement best matches your current experience using utility types like Partial<T> when shaping update payloads in real code?'"
   ].join("\n");
@@ -9056,8 +10156,9 @@ function buildGoalSelfReportExtractionInstructions(): string {
 function buildPlanGenerationInstructions(): string {
   return [
     "You are Construct's Architect agent.",
-    "Generate the stable spine for a serious developer IDE that teaches through real system construction.",
+    "Generate the stable spine for a serious developer IDE that helps the learner build real systems in-place.",
     "The learner will build the real project in-place, so every step must contribute to the final system.",
+    "Use goalScope.engagementMode to decide how implementation-first, learning-first, or balanced the plan should feel.",
     "Think in terms of capabilities, milestones, staged commits, and dependency-aware visible outcomes.",
     "Do not assume the future frontier will stay static forever. The near-term route may adapt after evaluation points.",
     "priorKnowledge is a recursive learner graph with nested concepts and sub-concepts. Use the deepest relevant weak or strong nodes, not just the top-level topic names.",
@@ -9067,8 +10168,11 @@ function buildPlanGenerationInstructions(): string {
     "Each step must include concrete validation focus, implementation notes, quiz focus, and hidden validation focus.",
     "Prefer steps that unlock later modules and make the dependency chain explicit.",
     "If the learner is weak in a prerequisite concept, insert a skill step immediately before the implementation step that needs it.",
+    "If engagementMode is implementation-first, keep the plan centered on shipping the requested artifact. Only insert prerequisite teaching that directly unblocks the next implementation step.",
+    "Do not reinterpret a build request as a broad course on the named framework, library, language, or platform unless the goal or learner answers explicitly ask for that.",
     "Keep the total number of steps within goalScope.recommendedMinSteps and goalScope.recommendedMaxSteps.",
     "Use goalScope.scopeSummary and goalScope.artifactShape to decide how narrow or broad the plan should be.",
+    "summary should describe the artifact being implemented and the build path through it. Avoid framing the summary as a tutorial, introduction, or survey of the named technology unless engagementMode is learning-first.",
     "The first step should usually teach and implement the first real code behavior or design decision in the artifact.",
     "Do not spend the first step on environment setup, dependency installation, version pinning, package metadata, or generic scaffolding unless the user's goal explicitly asks to learn setup/tooling.",
     "For small or local requests, keep the path tightly focused on the requested artifact. Do not inflate it with validation harness steps, environment validation steps, packaging steps, optional export steps, or side quests unless the user explicitly asked for those.",
@@ -9086,6 +10190,7 @@ function buildBlueprintGenerationInstructions(): string {
     "The canonical final project must stay coherent, but only the next 1-3 visible steps should carry the deepest authored detail.",
     "The prompt includes planSpine for the full long-range dependency order and frontierPlanSteps for the only steps that should be deeply authored right now.",
     "priorKnowledge is a recursive learner graph. Use the most relevant subtopics to decide how much to explain, which examples to choose, and where the learner will need hand-holding.",
+    "Use goalScope.engagementMode to decide how implementation-first, learning-first, or balanced the authored blueprint should feel.",
     "Return a runnable canonical project split into supportFiles, canonicalFiles, learnerFiles, and hiddenTests.",
     "Each of those file groups must be an array of objects shaped exactly like { path, content }.",
     "supportFiles are unmasked project files such as package.json, pyproject.toml, tsconfig, helper modules, and fixed runtime scaffolding.",
@@ -9112,10 +10217,12 @@ function buildBlueprintGenerationInstructions(): string {
     "Teach the required concept from the learner's current level so they can actually solve the task afterward. Use rich markdown prose, bullet lists, ordered lists, blockquotes, horizontal rules, tables when useful, and fenced code snippets when helpful.",
     "lessonSlides should teach the concept in markdown before the task begins. Emit each slide as its own array entry. Do not collapse multiple slides into one string.",
     "Each slide should usually teach one primary concept or one tightly related concept cluster. The next slide should move to the next concept the learner needs for the project.",
-    "The first step must open with at least four real teaching slides unless the user explicitly asked for setup/tooling rather than implementation.",
+    "If engagementMode is learning-first, the first step should usually open with at least four real teaching slides unless the user explicitly asked for setup/tooling rather than implementation.",
+    "If engagementMode is implementation-first, keep the lesson focused on the exact concepts needed for the current code boundary. Do not broaden the step into a general course on the surrounding framework, library, or platform.",
+    "If the named technology is just the delivery substrate for the requested artifact, assume the learner wants to build with it rather than study it broadly.",
     "When the project is building a framework, library, runtime, parser, renderer, or other system with internal jargon, start by teaching what the overall system is in plain language before diving into names like VNode, AST, reconciler, reducer, hook, parser, or renderer internals.",
     "Do not assume the learner already understands technical words that appear in the step title, summary, doc, or code sketch. If you use a term like VNode, virtual DOM, reconciler, token, AST, reducer, or hook, define it clearly before you rely on it.",
-    "For the first meaningful step, use a beginner-friendly sequence: first the big picture of what the system is, then why this concept exists, then how it works at a high level, then the deeper internal term(s), then what exact file/function/behavior the learner will implement next.",
+    "For learning-first steps or any step that introduces jargon-heavy internals, use a sequence like: first the big picture of what the system is, then why this concept exists, then how it works at a high level, then the deeper internal term(s), then what exact file/function/behavior the learner will implement next.",
     "The last one or two lesson slides before the exercise should make the implementation handoff obvious: name the file or anchor, explain what behavior the learner is about to build, and connect that code task back to the concept they just learned.",
     "Do not treat a slide like a presenter note or splash card. A slide should feel like a real docs page section that teaches a concept thoroughly enough for the learner to use it in the exercise.",
     "The first step should teach and implement the first meaningful code behavior or design decision, not environment setup or package scaffolding.",
@@ -9126,7 +10233,8 @@ function buildBlueprintGenerationInstructions(): string {
     "Avoid giant title-only slides. Prefer explanation-rich markdown that reads like technical documentation or a high-quality lesson chapter.",
     "Each slide should usually be substantial, not tiny. For non-trivial steps, most slides should feel like a docs section: multiple paragraphs plus at least one concrete structure such as a list, example, code sketch, comparison table, or callout.",
     "Most slides should include at least two markdown subheadings such as `## Why this matters`, `## How it works`, `## Example`, `## Common mistakes`, or `## How this helps in the exercise`.",
-    "For the first step and for any brand-new concept, it is usually better to generate 4-6 substantial markdown slides than 1-2 shallow ones.",
+    "For learning-first foundational steps and for any brand-new concept that would otherwise be opaque, it is usually better to generate 4-6 substantial markdown slides than 1-2 shallow ones.",
+    "For implementation-first requests, prefer the minimum teaching depth that removes hidden leaps and makes the exercise solvable. Do not add broad technology orientation that the task does not need.",
     "When a concept is new or foundational, a single slide should often contain roughly 180-350 words of explanation unless the concept is genuinely small.",
     "If a slide is only one short paragraph, it is almost certainly too shallow. Expand it into a real explanation with multiple sections.",
     "Explain the mental model, the important APIs or language features involved, the invariants/constraints, common mistakes, and the exact behavior the later exercise will require.",
@@ -9404,6 +10512,7 @@ function buildAdaptiveFrontierGenerationInstructions(): string {
     "Every step anchor.file must exist in learnerFiles, every step anchor.marker must appear literally inside that learner file, and every step test path must exist in hiddenTests.",
     "Every returned step must include a real anchor, substantial explanation slides, grounded checks, constraints, and targeted tests.",
     "Use priorKnowledge, recentCapabilityEvidence, the current frontier, and the stated reason to decide how much hand-holding or decomposition the learner now needs.",
+    "Use goalScope.engagementMode when deciding how much to explain. If the project is implementation-first, keep rewritten steps tightly scoped to the immediate build boundary unless the evidence shows the learner truly needs broader teaching.",
     "recentCapabilityEvidence contains the latest quizzes, written answers, submission outcomes, and recent recovery patterns. React to that concrete evidence, not just the average score.",
     "If recentCapabilityEvidence shows the learner first missed a concept and then recovered it, preserve momentum while still reinforcing the exact concept boundary they struggled with.",
     "The selectedFrontierSteps are the only steps that should be deeply authored right now. Do not author the rest of the spine.",
@@ -9429,6 +10538,7 @@ function buildLessonAuthoringInstructions(context: {
     "Your job is to rewrite the step teaching content so this step reads like a serious docs chapter before the learner reaches checks or code.",
     "Return only the authored content for this single step: summary, doc, lessonSlides, and checks.",
     "The answers payload includes the original question, the available options, and either a selected option or a custom freeform learner response. Use that context to decide how much to explain, what examples to choose, and where to slow down.",
+    "Use goalScope.engagementMode to decide whether this chapter should be implementation-first, learning-first, or balanced.",
     "Rewrite lessonSlides, doc, and checks so they match the learner's level and the real code task.",
     "lessonSlides must be rich markdown and should read like documentation or a high-quality course chapter.",
     "Each slide must be an object with a blocks array.",
@@ -9446,6 +10556,7 @@ function buildLessonAuthoringInstructions(context: {
     "Within a step, different slides should usually cover different required concepts. Do not use consecutive slides to repeat the same short summary.",
     "Different slides should progress the learner from one required concept to the next. Think 'next concept page' rather than 'next decorative slide'.",
     "Make the continuity obvious. Every slide should connect back to the previous concept and forward to the next one the learner needs for this exact project.",
+    "If engagementMode is implementation-first, keep the chapter centered on the exact implementation boundary. Explain only the concepts needed to succeed on this code task instead of turning the surrounding framework or platform into a general survey course.",
     "When a step introduces a new concept, write enough for a learner to understand it without having to infer missing background.",
     "For foundational steps, use an intentional teaching order: first 'what is this in plain language?', then 'why does it matter here?', then 'how does it work?', then 'what exactly are we about to implement?'.",
     "The last one or two slides before the learner reaches checks or code should explicitly bridge into the exercise by naming the file or anchor, the behavior to implement, and how the concept maps to that code.",
@@ -9463,8 +10574,9 @@ function buildLessonAuthoringInstructions(context: {
     "Use fewer, stronger checks. The first step should usually have 1 or 2 grounded checks, not a scatter of thin ones.",
     "The doc field should become a crisp implementation handoff. It should explain exactly what file or anchor is being changed, what behavior to implement, and what the tests are verifying. It should not re-teach the whole lesson.",
     "The doc field should assume the lesson already did the teaching. It should now hand the learner into the exercise with clarity.",
-    "For the first step and any foundational step, prefer 4 to 6 substantial slides unless the concept is genuinely tiny.",
-    "Before the first check in the first step, there should usually be at least three concept-heavy slides and often four or more.",
+    "For learning-first foundational steps, prefer 4 to 6 substantial slides unless the concept is genuinely tiny.",
+    "For implementation-first steps, 1 to 3 substantial slides is often enough when the concept is only supporting context for the task.",
+    "When engagementMode is learning-first and this is the first step, there should usually be at least three concept-heavy slides and often four or more before the first check.",
     "If the teaching is still too shallow to justify a check, reduce or remove the checks rather than quizzing early.",
     "Slides should look good when rendered as docs. Use markdown headings inside slides to break the explanation into sections such as 'Why this matters', 'How it works', 'Example', 'Common mistakes', or 'How this helps in the task'.",
     "Do not move to checks after a single summary slide unless the concept is truly trivial. In most real steps, the learner should read multiple substantial docs-style slides before the first check.",
@@ -9516,6 +10628,8 @@ function buildShortAnswerCheckReviewInstructions(): string {
 function buildRuntimeGuideInstructions(): string {
   return [
     "You are Construct's runtime Guide agent, a calm senior engineer helping the learner implement real project code.",
+    "Inspect the real learner workspace before you answer.",
+    "Use filesystem and shell tools when they help you verify the current state.",
     "Use Socratic guidance first.",
     "Never give a full runnable solution.",
     "Return exactly 1 to 3 Socratic questions.",
@@ -9530,6 +10644,7 @@ function buildRuntimeGuideProgressNotes(request: RuntimeGuideRequest): string[] 
 
   return [
     `Reviewing ${request.filePath} around the ${request.anchorMarker} anchor.`,
+    "Inspecting the learner workspace and any nearby project files needed to understand the failure.",
     request.constraints.length > 0
       ? `Checking the current implementation against ${request.constraints.length} step constraint${request.constraints.length === 1 ? "" : "s"}.`
       : "Checking the current implementation against the step contract.",

@@ -264,7 +264,7 @@ function getFeatureEnabled(
   featureFlags: FeatureFlagsResponse | null,
   key: FeatureFlag["key"]
 ): boolean {
-  return featureFlags?.flags.find((flag) => flag.key === key)?.enabled ?? true;
+  return featureFlags?.flags.find((flag) => flag.key === key)?.enabled === true;
 }
 
 const runtimeInfo = window.construct.getRuntimeInfo();
@@ -1855,8 +1855,21 @@ export default function App() {
     }
 
     setCheckReviewBusyId(check.id);
+    let latestFeatureFlags = featureFlags;
+    if (isAuthenticated) {
+      try {
+        latestFeatureFlags = await fetchFeatureFlags();
+        setFeatureFlags(latestFeatureFlags);
+        setFeatureFlagsError("");
+      } catch (error) {
+        setFeatureFlagsError(
+          error instanceof Error ? error.message : "Failed to refresh feature flags."
+        );
+      }
+    }
+
     const projectImprovementEnabled = getFeatureEnabled(
-      featureFlags,
+      latestFeatureFlags,
       ADAPTIVE_PROJECT_IMPROVEMENTS_FLAG
     );
     if (projectImprovementEnabled) {
@@ -3005,6 +3018,10 @@ function FloatingGuideCard({
       ),
     [runtimeGuideEvents]
   );
+  const runtimeGuideToolActivities = useMemo(
+    () => extractAgentToolActivities(runtimeGuideVisibleEvents, 8),
+    [runtimeGuideVisibleEvents]
+  );
 
   if (minimized) {
     return (
@@ -3325,6 +3342,15 @@ function FloatingGuideCard({
                 </div>
               ) : null}
 
+              {runtimeGuideToolActivities.length > 0 ? (
+                <div className="construct-guide-event-log">
+                  <GuideSectionLabel icon={<FileTerminalIcon size={14} />}>
+                    Tool activity
+                  </GuideSectionLabel>
+                  <AgentToolActivityList activities={runtimeGuideToolActivities} />
+                </div>
+              ) : null}
+
               {runtimeGuideVisibleEvents.length > 0 ? (
                 <div className="construct-guide-event-log">
                   <GuideSectionLabel icon={<PhSparkle size={14} weight="duotone" />}>
@@ -3417,7 +3443,7 @@ function AppSidebar({
           </PrimaryButton>
         </SidebarHeader>
 
-        <SidebarContent>
+        <SidebarContent className="construct-app-sidebar-content">
           <SidebarGroup className="construct-app-sidebar-section">
             <SidebarGroupLabel className="construct-panel-kicker">
               Workspace
@@ -3466,7 +3492,7 @@ function AppSidebar({
             </SidebarGroupContent>
           </SidebarGroup>
 
-          <SidebarGroup className="construct-app-sidebar-section">
+          <SidebarGroup className="construct-app-sidebar-section construct-app-sidebar-section--recents">
             <div className="construct-app-sidebar-section-header">
               <SidebarGroupLabel className="construct-panel-kicker">
                 Recents
@@ -3474,9 +3500,9 @@ function AppSidebar({
               <ToolbarPill>{recentProjects.length}</ToolbarPill>
             </div>
 
-            <SidebarGroupContent>
+            <SidebarGroupContent className="construct-app-sidebar-recents-content">
               {recentProjects.length > 0 ? (
-                <ScrollArea className="max-h-[40vh]">
+                <ScrollArea className="construct-app-recent-scroll">
                   <div className="construct-app-recent-list">
                     {recentProjects.map((project) => (
                       <Button
@@ -6936,6 +6962,7 @@ function ArchitectTaskBoard({ events }: { events: AgentEvent[] }) {
           expandedGroupKeys.includes(group.key) || isCurrent;
         const childLabels = buildArchitectTaskChildren(group);
         const activeChildLabel = getArchitectTaskActiveChildLabel(group);
+        const toolActivities = extractAgentToolActivities(group.events, 6);
 
         return (
           <section
@@ -7003,6 +7030,12 @@ function ArchitectTaskBoard({ events }: { events: AgentEvent[] }) {
                   <div className="construct-agent-outline-body">
                     <p>{getArchitectTaskBodyCopy(group)}</p>
                   </div>
+
+                  {toolActivities.length > 0 ? (
+                    <div className="construct-agent-outline-tools">
+                      <AgentToolActivityList activities={toolActivities} compact />
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
             </div>
@@ -7010,6 +7043,55 @@ function ArchitectTaskBoard({ events }: { events: AgentEvent[] }) {
         );
       })}
       <div ref={bottomAnchorRef} aria-hidden="true" className="construct-agent-outline-anchor" />
+    </div>
+  );
+}
+
+type AgentToolActivity = {
+  id: string;
+  tool: string;
+  title: string;
+  detail: string | null;
+  command: string | null;
+  output: string | null;
+  path: string | null;
+  level: AgentEvent["level"];
+};
+
+function AgentToolActivityList({
+  activities,
+  compact = false
+}: {
+  activities: AgentToolActivity[];
+  compact?: boolean;
+}) {
+  return (
+    <div className={cn("construct-agent-tool-list", compact && "is-compact")}>
+      {activities.map((activity) => (
+        <div
+          key={activity.id}
+          className={cn("construct-agent-tool-item", `is-${activity.level}`)}
+        >
+          <div className="construct-agent-tool-item-head">
+            <Badge variant="outline" className="construct-agent-tool-badge">
+              {formatAgentToolLabel(activity.tool)}
+            </Badge>
+            {activity.command ? (
+              <code className="construct-agent-tool-command">{activity.command}</code>
+            ) : activity.path ? (
+              <code className="construct-agent-tool-command">{activity.path}</code>
+            ) : (
+              <span className="construct-agent-tool-title">{activity.title}</span>
+            )}
+          </div>
+          {activity.detail ? (
+            <p className="construct-agent-tool-detail">{activity.detail}</p>
+          ) : null}
+          {activity.output ? (
+            <pre className="construct-agent-tool-output">{activity.output}</pre>
+          ) : null}
+        </div>
+      ))}
     </div>
   );
 }
@@ -7049,6 +7131,87 @@ function buildArchitectTaskGroups(events: AgentEvent[]): ArchitectTaskGroup[] {
 
 function isAgentThinkingEvent(event: AgentEvent): boolean {
   return Boolean((event.payload as Record<string, unknown> | undefined)?.thinking);
+}
+
+function extractAgentToolActivities(
+  events: AgentEvent[],
+  limit = 6
+): AgentToolActivity[] {
+  const activities: AgentToolActivity[] = [];
+
+  for (const event of events) {
+    const payload = asAgentEventPayload(event);
+    const commands = Array.isArray(payload?.commands)
+      ? payload.commands.filter((value): value is string => typeof value === "string")
+      : [];
+
+    if (commands.length > 0) {
+      for (const command of commands) {
+        activities.push({
+          id: `${event.id}:${command}`,
+          tool: "execute",
+          title: event.title,
+          detail: event.detail?.trim() || null,
+          command,
+          output: null,
+          path: null,
+          level: event.level
+        });
+      }
+      continue;
+    }
+
+    const tool = typeof payload?.tool === "string" ? payload.tool : null;
+    const command = typeof payload?.command === "string" ? payload.command : null;
+    const output = typeof payload?.output === "string" && payload.output.trim().length > 0
+      ? payload.output.trim()
+      : null;
+    const path = typeof payload?.path === "string" ? payload.path : null;
+
+    if (!tool && !command && !output && !path) {
+      continue;
+    }
+
+    activities.push({
+      id: event.id,
+      tool: tool ?? "activity",
+      title: event.title,
+      detail: event.detail?.trim() || null,
+      command,
+      output,
+      path,
+      level: event.level
+    });
+  }
+
+  return activities.slice(-limit);
+}
+
+function asAgentEventPayload(event: AgentEvent): Record<string, unknown> | null {
+  return event.payload && typeof event.payload === "object"
+    ? (event.payload as Record<string, unknown>)
+    : null;
+}
+
+function formatAgentToolLabel(tool: string): string {
+  switch (tool) {
+    case "read_file":
+      return "read";
+    case "write_file":
+      return "write";
+    case "edit_file":
+      return "edit";
+    case "execute":
+      return "execute";
+    case "grep":
+      return "grep";
+    case "glob":
+      return "glob";
+    case "ls":
+      return "ls";
+    default:
+      return tool.replace(/[_-]+/g, " ");
+  }
 }
 
 function normalizeArchitectTaskKey(stage: string): string {
@@ -7098,6 +7261,13 @@ function describeArchitectTask(key: string): { label: string; eyebrow: string } 
     };
   }
 
+  if (key.includes("workspace-bootstrap")) {
+    return {
+      label: "Workspace bootstrap",
+      eyebrow: "Workspace"
+    };
+  }
+
   if (key.includes("activation") || key.includes("layout")) {
     return {
       label: formatAgentStageLabel(key),
@@ -7142,6 +7312,10 @@ function getArchitectTaskIcon(key: string): ReactNode {
 
   if (key.includes("dependency-install")) {
     return <PhMagicWand size={13} weight="regular" />;
+  }
+
+  if (key.includes("workspace-bootstrap")) {
+    return <PhArrowSquareIn size={13} weight="regular" />;
   }
 
   if (key.includes("activation") || key.includes("layout")) {

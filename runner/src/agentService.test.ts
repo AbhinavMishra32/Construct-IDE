@@ -9,7 +9,7 @@ import type { StoredKnowledgeConcept } from "@construct/shared";
 
 import { ConstructAgentService } from "./agentService";
 import { createAgentPersistence, type AgentPersistence } from "./agentPersistence";
-import { findKnowledgeConcept } from "./knowledgeGraph";
+import { createEmptyKnowledgeBase, findKnowledgeConcept } from "./knowledgeGraph";
 import { prepareLearnerWorkspace } from "./workspaceMaterializer";
 
 const previousStorageBackend = process.env.CONSTRUCT_STORAGE_BACKEND;
@@ -4490,6 +4490,122 @@ async function expectBlueprintGenerationToReject(
     setTimeout(resolve, 50);
   });
 }
+
+test("goal-scope fallback keeps build requests implementation-first instead of recasting them as learning goals", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "construct-agent-goal-scope-build-"));
+
+  try {
+    const service = new ConstructAgentService(root, {
+      llm: {
+        async parse() {
+          throw new Error("Simulated scope-analysis failure.");
+        }
+      },
+      logger: {
+        info() {},
+        debug() {},
+        trace() {},
+        warn() {},
+        error() {}
+      }
+    });
+
+    const scope = await (service as unknown as {
+      determineGoalScope(goal: string): Promise<{
+        engagementMode: string;
+        artifactShape: string;
+      }>;
+    }).determineGoalScope("nextjs implementation from scratch in typescript");
+
+    assert.equal(scope.engagementMode, "implementation-first");
+    assert.equal(scope.artifactShape, "app");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("goal-scope fallback preserves explicit learning-first requests", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "construct-agent-goal-scope-learn-"));
+
+  try {
+    const service = new ConstructAgentService(root, {
+      llm: {
+        async parse() {
+          throw new Error("Simulated scope-analysis failure.");
+        }
+      },
+      logger: {
+        info() {},
+        debug() {},
+        trace() {},
+        warn() {},
+        error() {}
+      }
+    });
+
+    const scope = await (service as unknown as {
+      determineGoalScope(goal: string): Promise<{
+        engagementMode: string;
+      }>;
+    }).determineGoalScope("learn nextjs from scratch in typescript");
+
+    assert.equal(scope.engagementMode, "learning-first");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("goal self-report extraction trims oversized signal drafts instead of failing planning", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "construct-agent-self-report-"));
+
+  try {
+    const service = new ConstructAgentService(root, {
+      llm: {
+        async parse({ schemaName, schema }) {
+          if (schemaName !== "construct_goal_self_report_signals") {
+            throw new Error(`Unexpected schema request: ${schemaName}`);
+          }
+
+          return schema.parse({
+            signals: Array.from({ length: 12 }, (_, index) => ({
+              conceptId: `typescript.topic-${index + 1}`,
+              label: `TypeScript topic ${index + 1}`,
+              category: "language" as const,
+              score: 25 + index,
+              rationale: `Self-report signal ${index + 1}`,
+              labelPath: ["TypeScript", `Topic ${index + 1}`]
+            }))
+          });
+        }
+      },
+      logger: {
+        info() {},
+        debug() {},
+        trace() {},
+        warn() {},
+        error() {}
+      }
+    });
+
+    const current = createEmptyKnowledgeBase(new Date(Date.UTC(2026, 2, 29)).toISOString());
+    const next = await (service as unknown as {
+      extractGoalSelfReportKnowledge(
+        currentKnowledge: typeof current,
+        goal: string
+      ): Promise<typeof current>;
+    }).extractGoalSelfReportKnowledge(
+      current,
+      "implement a typescript utility from scratch"
+    );
+
+    assert.equal(next.concepts.length, 1);
+    const typescriptRoot = findKnowledgeConcept(next.concepts, "typescript");
+    assert.ok(typescriptRoot);
+    assert.equal(typescriptRoot.children.length, 8);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 function buildBlueprintGuardBundle(
   overrides: Partial<{
