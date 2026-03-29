@@ -6783,6 +6783,7 @@ function ArchitectTaskBoard({ events }: { events: AgentEvent[] }) {
   const latestActiveGroup =
     groups.find((group) => group.status === "working") ?? groups.at(-1) ?? null;
   const [expandedGroupKeys, setExpandedGroupKeys] = useState<string[]>([]);
+  const bottomAnchorRef = useRef<HTMLDivElement | null>(null);
   const groupSignature = groups
     .map((group) => `${group.key}:${group.status}:${group.streamChunkCount}:${group.events.length}`)
     .join("|");
@@ -6798,6 +6799,23 @@ function ArchitectTaskBoard({ events }: { events: AgentEvent[] }) {
       return Array.from(new Set([...retained, ...defaultExpanded]));
     });
   }, [groupSignature, groups]);
+
+  useEffect(() => {
+    if (groups.length === 0) {
+      return;
+    }
+
+    const frameHandle = window.requestAnimationFrame(() => {
+      bottomAnchorRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest"
+      });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameHandle);
+    };
+  }, [groupSignature, groups.length]);
 
   return (
     <div className="construct-agent-outline">
@@ -6881,6 +6899,7 @@ function ArchitectTaskBoard({ events }: { events: AgentEvent[] }) {
           </section>
         );
       })}
+      <div ref={bottomAnchorRef} aria-hidden="true" className="construct-agent-outline-anchor" />
     </div>
   );
 }

@@ -6909,6 +6909,11 @@ textarea {
   gap: 4px;
 }
 
+.construct-agent-outline-anchor {
+  width: 100%;
+  height: 1px;
+}
+
 .construct-agent-outline-group {
   position: relative;
   padding: 10px 0 12px;
