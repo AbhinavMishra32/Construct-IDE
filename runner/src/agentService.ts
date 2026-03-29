@@ -472,10 +472,10 @@ const GENERATED_BLUEPRINT_BUNDLE_DRAFT_SCHEMA = z.object({
 });
 
 const GENERATED_BLUEPRINT_FILE_PATCH_SCHEMA = z.object({
-  supportFiles: FILE_CONTENTS_SCHEMA.default([]),
-  canonicalFiles: FILE_CONTENTS_SCHEMA.default([]),
-  learnerFiles: FILE_CONTENTS_SCHEMA.default([]),
-  hiddenTests: FILE_CONTENTS_SCHEMA.default([])
+  supportFiles: FILE_CONTENTS_SCHEMA,
+  canonicalFiles: FILE_CONTENTS_SCHEMA,
+  learnerFiles: FILE_CONTENTS_SCHEMA,
+  hiddenTests: FILE_CONTENTS_SCHEMA
 }).refine(
   (patch) =>
     patch.supportFiles.length +
@@ -514,10 +514,18 @@ const RESEARCH_DIGEST_SCHEMA = z.object({
   sources: z.array(RESEARCH_SOURCE_SCHEMA).default([])
 });
 
+const PLANNING_BUILD_REPAIR_TARGET_SCHEMA = z.object({
+  group: z.enum(["supportFiles", "canonicalFiles", "learnerFiles", "hiddenTests"]),
+  path: z.string().min(1),
+  error: z.string().min(1),
+  kind: z.enum(["invalid-json", "invalid-source-syntax", "invalid-hidden-test"])
+});
+
 const PLANNING_BUILD_CHECKPOINT_FAILURE_SCHEMA = z.object({
   stage: z.string().min(1),
   message: z.string().min(1),
   recoverable: z.boolean().default(true),
+  repairTargets: z.array(PLANNING_BUILD_REPAIR_TARGET_SCHEMA).default([]),
   recordedAt: z.string().datetime()
 });
 
@@ -5123,20 +5131,31 @@ export class ConstructAgentService {
         let previousDraft = input.failedDraft;
         let latestFrontierDraft = filterGeneratedBundleDraftToFrontier(previousDraft, frontierPlanSteps);
         const repairFailures = [repairContext.failureMessage];
+        const initialCheckpointTargets = input.failure?.repairTargets ?? [];
 
         for (let attempt = 1; attempt <= maxRepairAttempts; attempt += 1) {
           const latestFailureMessage = repairFailures[repairFailures.length - 1] ?? repairContext.failureMessage;
-          const validationTarget = extractGeneratedBlueprintFileValidationTarget(latestFailureMessage);
+          const validationTargets =
+            collectGeneratedBlueprintFileValidationTargets(previousDraft, "Generated blueprint draft");
+          const fallbackValidationTarget = extractGeneratedBlueprintFileValidationTarget(latestFailureMessage);
+          const resolvedValidationTargets =
+            validationTargets.length > 0
+              ? validationTargets
+              : initialCheckpointTargets.length > 0 && attempt === 1
+                ? initialCheckpointTargets
+              : fallbackValidationTarget
+                ? [fallbackValidationTarget]
+                : [];
           const stream = this.createModelStreamForwarder(
             input.jobId,
             "blueprint-repair",
-            validationTarget ? "targeted file repair" : "project bundle repair"
+            resolvedValidationTargets.length > 0 ? "targeted file repair" : "project bundle repair"
           );
 
           const repairedBundleDraft = await (async () => {
             const repairLlm = await this.getRepairLlm();
 
-            if (!validationTarget) {
+            if (resolvedValidationTargets.length === 0) {
               return repairLlm.parse({
                 schema: GENERATED_BLUEPRINT_BUNDLE_DRAFT_SCHEMA,
                 schemaName: "construct_generated_blueprint_bundle",
@@ -5177,19 +5196,19 @@ export class ConstructAgentService {
               schemaName: "construct_generated_blueprint_file_patch",
               instructions: buildBlueprintFilePatchRepairInstructions(),
               prompt: JSON.stringify(
-                {
-                  session: input.session,
-                  goalScope: input.goalScope,
-                  answers: input.answers,
-                  planSpine: plan,
-                  frontierPlanSteps,
-                  priorKnowledge: serializeKnowledgeBaseForPrompt(input.knowledgeBase),
-                  research: compactResearchDigest(input.mergedResearch),
-                  previousDraft,
-                  repairTarget: validationTarget,
-                  validationFailure: {
-                    ...repairContext,
-                    attempt,
+                  {
+                    session: input.session,
+                    goalScope: input.goalScope,
+                    answers: input.answers,
+                    planSpine: plan,
+                    frontierPlanSteps,
+                    priorKnowledge: serializeKnowledgeBaseForPrompt(input.knowledgeBase),
+                    research: compactResearchDigest(input.mergedResearch),
+                    previousDraft,
+                    repairTargets: resolvedValidationTargets,
+                    validationFailure: {
+                      ...repairContext,
+                      attempt,
                     maxRepairAttempts,
                     previousRepairFailures: repairFailures
                   }
@@ -5209,7 +5228,7 @@ export class ConstructAgentService {
 
             validateBlueprintFilePatchTargets(
               patch,
-              [validationTarget],
+              resolvedValidationTargets,
               "Generated blueprint file repair"
             );
             return mergeGeneratedBlueprintFilePatch(previousDraft, patch);
@@ -5441,10 +5460,15 @@ export class ConstructAgentService {
     rawDraft: GeneratedBlueprintBundleDraft;
     errorMessage: string;
   }): Promise<void> {
+    const repairTargets = collectGeneratedBlueprintFileValidationTargets(
+      input.rawDraft,
+      "Generated blueprint draft"
+    );
     const failure = {
       stage: input.stage,
       message: input.errorMessage,
       recoverable: true,
+      repairTargets,
       recordedAt: this.now().toISOString()
     } satisfies NonNullable<PlanningBuildCheckpoint["failure"]>;
 
@@ -9122,7 +9146,7 @@ function buildBlueprintRepairInstructions(): string {
 function buildBlueprintFilePatchRepairInstructions(): string {
   return [
     "You are Construct's Architect repair agent.",
-    "Repair only the file or files named in repairTarget.",
+    "Repair only the file or files named in repairTargets.",
     "Return only the corrected file contents in the matching supportFiles, canonicalFiles, learnerFiles, or hiddenTests arrays.",
     "Leave every untouched file group as an empty array.",
     "Do not rename files, add extra files, delete files, or rewrite unrelated paths.",
@@ -9192,6 +9216,42 @@ function extractGeneratedBlueprintFileValidationTarget(
   }
 
   return null;
+}
+
+function collectGeneratedBlueprintFileValidationTargets(
+  draft: GeneratedBlueprintBundleDraft,
+  context: string
+): GeneratedBlueprintFileValidationTarget[] {
+  const targets: GeneratedBlueprintFileValidationTarget[] = [];
+
+  const collectFromGroup = (
+    files: Array<{ path: string; content: string }>,
+    group: GeneratedBlueprintFileGroup
+  ) => {
+    for (const file of files) {
+      try {
+        validateGeneratedFileEntry(file, group, context);
+      } catch (error) {
+        const target = extractGeneratedBlueprintFileValidationTarget(
+          error instanceof Error ? error.message : String(error)
+        );
+
+        if (target) {
+          targets.push(target);
+        }
+      }
+    }
+  };
+
+  collectFromGroup(draft.supportFiles, "supportFiles");
+  collectFromGroup(draft.canonicalFiles, "canonicalFiles");
+  collectFromGroup(draft.learnerFiles, "learnerFiles");
+  collectFromGroup(draft.hiddenTests, "hiddenTests");
+
+  return targets.filter((target, index, allTargets) => {
+    const key = `${target.group}:${normalizePathValue(target.path)}`;
+    return index === allTargets.findIndex((candidate) => `${candidate.group}:${normalizePathValue(candidate.path)}` === key);
+  });
 }
 
 function validateBlueprintFilePatchTargets(

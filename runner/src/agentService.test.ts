@@ -3838,6 +3838,10 @@ test("ConstructAgentService repairs file-local syntax failures with targeted blu
       {
         path: "src/server.ts",
         content: "export function startServer(): string {\n  return 'ok';\n}\n"
+      },
+      {
+        path: "src/loader.ts",
+        content: "export function loadConfig(): string {\n  return 'ready';\n}\n"
       }
     ],
     learnerFiles: [
@@ -4061,6 +4065,10 @@ test("ConstructAgentService repairs file-local syntax failures with targeted blu
                 {
                   path: "src/server.ts",
                   content: "export function startServer(): string {\n  return value.;\n}\n"
+                },
+                {
+                  path: "src/loader.ts",
+                  content: "export function loadConfig(): string {\n  return value.;\n}\n"
                 }
               ]
             });
@@ -4087,6 +4095,10 @@ test("ConstructAgentService repairs file-local syntax failures with targeted blu
               {
                 path: "src/server.ts",
                 content: "export function startServer(): string {\n  return 'ok';\n}\n"
+              },
+              {
+                path: "src/loader.ts",
+                content: "export function loadConfig(): string {\n  return 'ready';\n}\n"
               }
             ],
             learnerFiles: [],
