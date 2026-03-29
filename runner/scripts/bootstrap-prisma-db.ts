@@ -277,6 +277,35 @@ await sql`
 `;
 
 await sql`
+  CREATE TABLE IF NOT EXISTS construct_api_usage_events (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES construct_users(id) ON DELETE CASCADE,
+    provider TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'llm',
+    model TEXT NOT NULL,
+    operation TEXT NOT NULL,
+    stage TEXT,
+    schema_name TEXT,
+    mode TEXT,
+    project_id TEXT,
+    project_name TEXT,
+    project_goal TEXT,
+    build_id TEXT,
+    session_id TEXT,
+    job_id TEXT,
+    input_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    total_tokens INTEGER NOT NULL DEFAULT 0,
+    cached_input_tokens INTEGER NOT NULL DEFAULT 0,
+    reasoning_tokens INTEGER NOT NULL DEFAULT 0,
+    cost_usd DOUBLE PRECISION,
+    currency TEXT,
+    metadata_json TEXT,
+    recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )
+`;
+
+await sql`
   CREATE INDEX IF NOT EXISTS construct_auth_sessions_user_revoked_idx
   ON construct_auth_sessions (user_id, revoked_at)
 `;
@@ -294,6 +323,26 @@ await sql`
 await sql`
   CREATE INDEX IF NOT EXISTS construct_provider_connections_user_provider_idx
   ON construct_provider_connections (user_id, provider)
+`;
+
+await sql`
+  CREATE INDEX IF NOT EXISTS construct_api_usage_events_user_recorded_idx
+  ON construct_api_usage_events (user_id, recorded_at DESC)
+`;
+
+await sql`
+  CREATE INDEX IF NOT EXISTS construct_api_usage_events_user_provider_recorded_idx
+  ON construct_api_usage_events (user_id, provider, recorded_at DESC)
+`;
+
+await sql`
+  CREATE INDEX IF NOT EXISTS construct_api_usage_events_user_project_recorded_idx
+  ON construct_api_usage_events (user_id, project_id, recorded_at DESC)
+`;
+
+await sql`
+  CREATE INDEX IF NOT EXISTS construct_api_usage_events_user_build_recorded_idx
+  ON construct_api_usage_events (user_id, build_id, recorded_at DESC)
 `;
 
 console.log("Construct Prisma backend schema bootstrapped.");

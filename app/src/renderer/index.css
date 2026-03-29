@@ -6383,11 +6383,15 @@ textarea {
 .construct-account-grid {
   display: grid;
   gap: 1rem;
+  grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
+  align-items: start;
 }
 
 .construct-account-provider-stack {
   display: grid;
   gap: 1rem;
+  grid-column: 2;
+  grid-row: 1 / span 2;
 }
 
 .construct-account-card-title {
@@ -6412,6 +6416,135 @@ textarea {
   flex-wrap: wrap;
   gap: 0.6rem;
   margin-top: 0.15rem;
+}
+
+.construct-account-usage-card,
+.construct-account-profile-card {
+  min-width: 0;
+}
+
+.construct-account-usage-content {
+  display: grid;
+  gap: 1rem;
+}
+
+.construct-account-usage-totals {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.construct-account-usage-stat {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-radius: 1rem;
+  background: color-mix(in srgb, var(--card) 92%, transparent);
+}
+
+.construct-account-usage-stat span {
+  color: var(--muted-foreground);
+  font-size: 0.77rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.construct-account-usage-stat strong {
+  font-size: 1.2rem;
+  line-height: 1.1;
+}
+
+.construct-account-usage-section {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.construct-account-usage-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.construct-account-usage-section-header span {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.construct-account-usage-list {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.construct-account-usage-row,
+.construct-account-usage-event,
+.construct-account-usage-empty {
+  padding: 0.9rem 1rem;
+  border: 1px solid color-mix(in srgb, var(--border) 68%, transparent);
+  border-radius: 1rem;
+  background: color-mix(in srgb, var(--card) 94%, transparent);
+}
+
+.construct-account-usage-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.construct-account-usage-row strong,
+.construct-account-usage-event strong {
+  font-size: 0.98rem;
+}
+
+.construct-account-usage-row p,
+.construct-account-usage-event p,
+.construct-account-usage-empty {
+  margin: 0.2rem 0 0;
+  color: var(--muted-foreground);
+  line-height: 1.5;
+}
+
+.construct-account-usage-row-metrics,
+.construct-account-usage-event-meta {
+  display: grid;
+  justify-items: end;
+  gap: 0.18rem;
+  color: var(--muted-foreground);
+  font-size: 0.84rem;
+  white-space: nowrap;
+}
+
+.construct-account-usage-event {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.9rem;
+}
+
+.construct-account-usage-event-copy {
+  min-width: 0;
+}
+
+.construct-account-usage-event-copy .construct-account-card-title {
+  margin-bottom: 0.18rem;
+}
+
+.construct-account-usage-empty.is-error {
+  color: hsl(var(--destructive));
+  border-color: color-mix(in srgb, hsl(var(--destructive)) 35%, transparent);
+}
+
+.construct-account-usage-footnote {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: var(--muted-foreground);
+  font-size: 0.9rem;
 }
 
 .construct-planning-panel--compact {
@@ -7674,6 +7807,31 @@ textarea {
     max-height: 100vh;
     padding: 1rem;
     border-radius: 1.25rem;
+  }
+
+  .construct-account-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .construct-account-provider-stack {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
+  .construct-account-usage-totals {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .construct-account-usage-row,
+  .construct-account-usage-event {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .construct-account-usage-row-metrics,
+  .construct-account-usage-event-meta {
+    justify-items: start;
+    white-space: normal;
   }
 }
 

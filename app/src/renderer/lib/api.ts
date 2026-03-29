@@ -9,6 +9,7 @@ import type {
   BlueprintBuildListResponse,
   BlueprintBuildStage,
   AgentJobCreatedResponse,
+  ApiUsageDashboardResponse,
   AgentJobSnapshot,
   BlueprintEnvelope,
   CheckReviewRequest,
@@ -89,6 +90,12 @@ export async function fetchProviderConnections(
   signal?: AbortSignal
 ): Promise<ProviderConnectionsResponse> {
   return getJson<ProviderConnectionsResponse>("/auth/connections", { signal });
+}
+
+export async function fetchUsageDashboard(
+  signal?: AbortSignal
+): Promise<ApiUsageDashboardResponse> {
+  return getJson<ApiUsageDashboardResponse>("/auth/usage", { signal });
 }
 
 export async function saveProviderApiKey(input: {

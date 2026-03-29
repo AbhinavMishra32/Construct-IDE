@@ -104,6 +104,70 @@ export type ProviderConnectionsResponse = {
   connections: ProviderConnection[];
 };
 
+export type ApiUsageKind = "llm";
+
+export type ApiUsageTotals = {
+  eventCount: number;
+  pricedEventCount: number;
+  unpricedEventCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  cachedInputTokens: number;
+  reasoningTokens: number;
+  costUsd: number | null;
+  currency: string | null;
+};
+
+export type ApiUsageEvent = {
+  id: string;
+  provider: ConnectedProvider;
+  kind: ApiUsageKind;
+  model: string;
+  operation: string;
+  stage: string | null;
+  schemaName: string | null;
+  mode: string | null;
+  projectId: string | null;
+  projectName: string | null;
+  projectGoal: string | null;
+  buildId: string | null;
+  sessionId: string | null;
+  jobId: string | null;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  cachedInputTokens: number;
+  reasoningTokens: number;
+  costUsd: number | null;
+  currency: string | null;
+  metadata: Record<string, unknown> | null;
+  recordedAt: string;
+};
+
+export type ApiUsageProviderSummary = ApiUsageTotals & {
+  provider: ConnectedProvider;
+  models: string[];
+  lastUsedAt: string | null;
+};
+
+export type ApiUsageProjectSummary = ApiUsageTotals & {
+  projectId: string;
+  projectName: string | null;
+  projectGoal: string | null;
+  providers: ConnectedProvider[];
+  models: string[];
+  lastUsedAt: string | null;
+};
+
+export type ApiUsageDashboardResponse = {
+  generatedAt: string;
+  totals: ApiUsageTotals;
+  providers: ApiUsageProviderSummary[];
+  projects: ApiUsageProjectSummary[];
+  recentEvents: ApiUsageEvent[];
+};
+
 export type WorkspaceFileEntry = {
   path: string;
   kind: "file" | "directory";

@@ -180,21 +180,41 @@ type StructuredLanguageModel = {
       onToken?: (chunk: string) => void;
       onComplete?: () => void;
     };
+    usage?: LanguageModelUsageContext;
   }): Promise<z.infer<T>>;
+};
+
+type LanguageModelUsageContext = {
+  jobId?: string | null;
+  buildId?: string | null;
+  sessionId?: string | null;
+  blueprintPath?: string | null;
+  projectId?: string | null;
+  projectName?: string | null;
+  projectGoal?: string | null;
+  stage?: string | null;
+  operation?: string | null;
 };
 
 type LanguageModelMessage = [role: "system" | "user", content: string];
 
+type LanguageModelRawResponse = {
+  content: unknown;
+  response_metadata?: unknown;
+  usage_metadata?: unknown;
+};
+
 type LanguageModelClient = {
   withStructuredOutput<T extends z.ZodTypeAny>(
     schema: T,
-    options: { name: string; method: "jsonSchema" }
+    options: { name: string; method: "jsonSchema"; includeRaw?: boolean }
   ): {
     invoke(messages: LanguageModelMessage[], config?: LanguageModelInvokeConfig): Promise<unknown>;
   };
-  invoke(messages: LanguageModelMessage[], config?: LanguageModelInvokeConfig): Promise<{
-    content: unknown;
-  }>;
+  invoke(
+    messages: LanguageModelMessage[],
+    config?: LanguageModelInvokeConfig
+  ): Promise<LanguageModelRawResponse>;
 };
 
 type LanguageModelInvokeConfig = {
@@ -651,6 +671,10 @@ export class ConstructAgentService {
 
   async getBlueprintBuildDetail(buildId: string): Promise<BlueprintBuildDetailResponse> {
     return this.persistence.getBlueprintBuildDetail(buildId);
+  }
+
+  async getApiUsageDashboard() {
+    return this.persistence.getApiUsageDashboard();
   }
 
   async getLearnerProfile(
@@ -1725,7 +1749,16 @@ export class ConstructAgentService {
           2
         ),
         maxOutputTokens: 400,
-        verbosity: "low"
+        verbosity: "low",
+        usage: {
+          sessionId: input.context.sessionId,
+          projectId: input.context.record.sessionId,
+          projectName: input.context.blueprint.name,
+          projectGoal: input.context.record.goal,
+          blueprintPath: input.context.record.blueprintPath,
+          stage: "adaptive-frontier-decision",
+          operation: "adaptive frontier decision"
+        }
       });
 
       return {
@@ -1824,7 +1857,16 @@ export class ConstructAgentService {
         2
       ),
       maxOutputTokens: 12_000,
-      verbosity: "medium"
+      verbosity: "medium",
+      usage: {
+        sessionId: input.context.sessionId,
+        projectId: input.context.record.sessionId,
+        projectName: input.context.blueprint.name,
+        projectGoal: input.context.record.goal,
+        blueprintPath: input.context.record.blueprintPath,
+        stage: "adaptive-frontier-generation",
+        operation: "adaptive frontier generation"
+      }
     });
 
     return {
@@ -2087,6 +2129,7 @@ export class ConstructAgentService {
   private async reviewShortAnswerCheck(
     input: CheckReviewRequest
   ): Promise<CheckReviewResponse> {
+    const activeProject = await this.persistence.getActiveProject();
     const draft = await (await this.getLlm()).parse({
       schema: SHORT_ANSWER_CHECK_REVIEW_DRAFT_SCHEMA,
       schemaName: "construct_short_answer_check_review",
@@ -2104,7 +2147,15 @@ export class ConstructAgentService {
         2
       ),
       maxOutputTokens: 900,
-      verbosity: "low"
+      verbosity: "low",
+      usage: {
+        projectId: activeProject?.id ?? null,
+        projectName: activeProject?.name ?? null,
+        projectGoal: activeProject?.goal ?? null,
+        blueprintPath: activeProject?.blueprintPath ?? null,
+        stage: "check-review",
+        operation: "short-answer review"
+      }
     });
 
     return CheckReviewResponseSchema.parse({
@@ -2465,7 +2516,8 @@ export class ConstructAgentService {
         apiKey: config.openAiApiKey,
         baseUrl: config.openAiBaseUrl,
         model: config.openAiModel,
-        logger: this.logger
+        logger: this.logger,
+        persistence: this.persistence
       });
     this.llmByUserId.set(userId, llm);
 
@@ -2488,7 +2540,8 @@ export class ConstructAgentService {
       apiKey: config.openAiApiKey,
       baseUrl: config.openAiBaseUrl,
       model: config.openAiFastModel,
-      logger: this.logger
+      logger: this.logger,
+      persistence: this.persistence
     });
     this.fastLlmByUserId.set(userId, llm);
 
@@ -2511,7 +2564,8 @@ export class ConstructAgentService {
       apiKey: config.openAiApiKey,
       baseUrl: config.openAiBaseUrl,
       model: config.openAiRepairModel,
-      logger: this.logger
+      logger: this.logger,
+      persistence: this.persistence
     });
     this.repairLlmByUserId.set(userId, llm);
 
@@ -3350,12 +3404,22 @@ export class ConstructAgentService {
           return this.extractGoalSelfReportKnowledge(
             state.knowledgeBase,
             state.request.goal,
+            this.buildJobUsageContext(jobId, {
+              stage: "goal-self-report",
+              operation: "goal self-report extraction"
+            })
           );
         })
       }))
       .addNode("determineScope", async (state) => ({
         goalScope: await this.withStage(jobId, "scope-analysis", "Scoping the request", "The Architect is deciding how large the project should be and whether broad external research is justified.", async () => {
-          return this.determineGoalScope(state.request.goal);
+          return this.determineGoalScope(
+            state.request.goal,
+            this.buildJobUsageContext(jobId, {
+              stage: "scope-analysis",
+              operation: "goal scope analysis"
+            })
+          );
         })
       }))
       .addNode("researchProjectShape", async (state) => ({
@@ -3416,7 +3480,11 @@ export class ConstructAgentService {
               ),
               maxOutputTokens: 2_500,
               verbosity: "medium",
-              stream
+              stream,
+              usage: this.buildJobUsageContext(jobId, {
+                stage: "question-generation",
+                operation: "planning question generation"
+              })
             });
 
             return this.buildPlanningSession(state.request, questionDraft);
@@ -3550,9 +3618,23 @@ export class ConstructAgentService {
       .addNode("determineScope", async (state) => ({
         goalScope: state.goalScope ?? (
           state.resumeFromCheckpoint
-            ? await this.determineGoalScope(state.session.goal)
+            ? await this.determineGoalScope(
+                state.session.goal,
+                this.buildJobUsageContext(jobId, {
+                  sessionId: state.session.sessionId,
+                  stage: "scope-analysis",
+                  operation: "goal scope analysis"
+                })
+              )
             : await this.withStage(jobId, "scope-analysis", "Scoping the request", "The Architect is deciding how large the generated project should be before it spends tokens on research and blueprint synthesis.", async () => {
-                return this.determineGoalScope(state.session.goal);
+                return this.determineGoalScope(
+                  state.session.goal,
+                  this.buildJobUsageContext(jobId, {
+                    sessionId: state.session.sessionId,
+                    stage: "scope-analysis",
+                    operation: "goal scope analysis"
+                  })
+                );
               })
         )
       }))
@@ -3685,7 +3767,12 @@ export class ConstructAgentService {
               ),
               maxOutputTokens: 16_000,
               verbosity: "medium",
-              stream
+              stream,
+              usage: this.buildJobUsageContext(jobId, {
+                sessionId: state.session.sessionId,
+                stage: "plan-generation",
+                operation: "planning roadmap generation"
+              })
             });
 
             const plan = this.buildGeneratedPlan(state.session, planDraft);
@@ -3883,7 +3970,12 @@ export class ConstructAgentService {
               ),
               maxOutputTokens: stepIndex === 0 ? 10_000 : 8_000,
               verbosity: "high",
-              stream
+              stream,
+              usage: this.buildJobUsageContext(jobId, {
+                sessionId: state.session.sessionId,
+                stage: "lesson-authoring",
+                operation: `lesson authoring:${step.id}`
+              })
             }).finally(() => {
               stream.onComplete?.();
             });
@@ -4059,6 +4151,7 @@ export class ConstructAgentService {
             "runtime-guide",
             "runtime guidance"
           );
+          const activeProject = await this.persistence.getActiveProject();
 
           try {
             return (await this.getLlm()).parse({
@@ -4075,7 +4168,15 @@ export class ConstructAgentService {
               ),
               maxOutputTokens: 3_000,
               verbosity: "medium",
-              stream
+              stream,
+              usage: this.buildJobUsageContext(jobId, {
+                projectId: activeProject?.id ?? null,
+                projectName: activeProject?.name ?? null,
+                projectGoal: activeProject?.goal ?? null,
+                blueprintPath: activeProject?.blueprintPath ?? null,
+                stage: "runtime-guide",
+                operation: "runtime guide generation"
+              })
             });
           } finally {
             stream.onComplete?.();
@@ -4165,7 +4266,12 @@ export class ConstructAgentService {
               ),
               maxOutputTokens: 4_000,
               verbosity: "medium",
-              stream
+              stream,
+              usage: this.buildJobUsageContext(jobId, {
+                blueprintPath: state.request.canonicalBlueprintPath,
+                stage: "deep-dive-generation",
+                operation: "deep dive generation"
+              })
             });
           } finally {
             stream.onComplete?.();
@@ -4389,7 +4495,10 @@ export class ConstructAgentService {
     }
   }
 
-  private async determineGoalScope(goal: string): Promise<GoalScope> {
+  private async determineGoalScope(
+    goal: string,
+    usage?: LanguageModelUsageContext
+  ): Promise<GoalScope> {
     try {
       return await (await this.getLlm()).parse({
         schema: GOAL_SCOPE_DRAFT_SCHEMA,
@@ -4403,7 +4512,8 @@ export class ConstructAgentService {
           2
         ),
         maxOutputTokens: 800,
-        verbosity: "low"
+        verbosity: "low",
+        usage
       });
     } catch (error) {
       const fallback = inferGoalScopeFallback(goal);
@@ -4556,6 +4666,17 @@ export class ConstructAgentService {
         clearScheduledFlush();
         flush();
       }
+    };
+  }
+
+  private buildJobUsageContext(
+    jobId: string,
+    input: Omit<LanguageModelUsageContext, "jobId" | "buildId"> = {}
+  ): LanguageModelUsageContext {
+    return {
+      jobId,
+      buildId: this.buildIdsByJobId.get(jobId) ?? null,
+      ...input
     };
   }
 
@@ -4835,7 +4956,12 @@ export class ConstructAgentService {
       ),
       maxOutputTokens: 20_000,
       verbosity: "medium",
-      stream
+      stream,
+      usage: this.buildJobUsageContext(input.jobId, {
+        sessionId: input.session.sessionId,
+        stage: "blueprint-synthesis",
+        operation: "project bundle synthesis"
+      })
     }).finally(() => {
       stream.onComplete?.();
     });
@@ -4944,7 +5070,12 @@ export class ConstructAgentService {
             ),
             maxOutputTokens: 20_000,
             verbosity: "medium",
-            stream
+            stream,
+            usage: this.buildJobUsageContext(input.jobId, {
+              sessionId: input.session.sessionId,
+              stage: "blueprint-repair",
+              operation: "project bundle repair"
+            })
           }).finally(() => {
             stream.onComplete?.();
           });
@@ -5599,7 +5730,8 @@ export class ConstructAgentService {
 
   private async extractGoalSelfReportKnowledge(
     current: UserKnowledgeBase,
-    goal: string
+    goal: string,
+    usage?: LanguageModelUsageContext
   ): Promise<UserKnowledgeBase> {
     const timestamp = this.now().toISOString();
     const draft = await (await this.getLlm()).parse({
@@ -5615,7 +5747,8 @@ export class ConstructAgentService {
         2
       ),
       maxOutputTokens: 1_400,
-      verbosity: "low"
+      verbosity: "low",
+      usage
     });
 
     if (draft.signals.length === 0) {
@@ -5930,12 +6063,14 @@ export class OpenAIStructuredLanguageModel implements StructuredLanguageModel {
   private readonly client: LanguageModelClient;
   private readonly model: string;
   private readonly logger: AgentLogger;
+  private readonly persistence: AgentPersistence | null;
 
   constructor(input: {
     apiKey: string;
     baseUrl?: string;
     model: string;
     logger: AgentLogger;
+    persistence?: AgentPersistence;
     client?: LanguageModelClient;
   }) {
     this.client =
@@ -5951,6 +6086,7 @@ export class OpenAIStructuredLanguageModel implements StructuredLanguageModel {
       });
     this.model = input.model;
     this.logger = input.logger;
+    this.persistence = input.persistence ?? null;
   }
 
   async parse<T extends z.ZodTypeAny>(input: {
@@ -5966,6 +6102,7 @@ export class OpenAIStructuredLanguageModel implements StructuredLanguageModel {
       onToken?: (chunk: string) => void;
       onComplete?: () => void;
     };
+    usage?: LanguageModelUsageContext;
   }): Promise<z.infer<T>> {
     const startedAt = Date.now();
     this.logger.info("Starting OpenAI structured generation.", {
@@ -6088,10 +6225,12 @@ export class OpenAIStructuredLanguageModel implements StructuredLanguageModel {
       onToken?: (chunk: string) => void;
       onComplete?: () => void;
     };
+    usage?: LanguageModelUsageContext;
   }): Promise<z.infer<T>> {
     const structuredModel = this.client.withStructuredOutput(input.schema, {
       name: input.schemaName,
-      method: "jsonSchema"
+      method: "jsonSchema",
+      includeRaw: true
     });
     const callbacks = this.buildStreamingCallbacks(input);
     const response = await structuredModel.invoke([
@@ -6120,7 +6259,11 @@ export class OpenAIStructuredLanguageModel implements StructuredLanguageModel {
       response
     });
 
-    return input.schema.parse(response);
+    const parsedResponse = extractStructuredParsedPayload(response);
+    const rawResponse = extractStructuredRawPayload(response) ?? response;
+    await this.recordUsageEvent(input, "structured", rawResponse);
+
+    return input.schema.parse(parsedResponse ?? response);
   }
 
   private async invokeJsonFallback<T extends z.ZodTypeAny>(input: {
@@ -6136,6 +6279,7 @@ export class OpenAIStructuredLanguageModel implements StructuredLanguageModel {
       onToken?: (chunk: string) => void;
       onComplete?: () => void;
     };
+    usage?: LanguageModelUsageContext;
   }): Promise<z.infer<T>> {
     const schemaContract = zodToJsonSchema(input.schema, input.schemaName);
     const callbacks = this.buildStreamingCallbacks(input);
@@ -6161,6 +6305,7 @@ export class OpenAIStructuredLanguageModel implements StructuredLanguageModel {
         mode: "json-fallback"
       }
     });
+    await this.recordUsageEvent(input, "json-fallback", response);
 
     const text = extractModelText(response.content);
     this.logger.trace?.("OpenAI JSON fallback response trace.", {
@@ -6196,6 +6341,7 @@ export class OpenAIStructuredLanguageModel implements StructuredLanguageModel {
         onToken?: (chunk: string) => void;
         onComplete?: () => void;
       };
+      usage?: LanguageModelUsageContext;
     },
     schemaContract: unknown,
     invalidText: string
@@ -6233,6 +6379,7 @@ export class OpenAIStructuredLanguageModel implements StructuredLanguageModel {
         mode: "json-repair"
       }
     });
+    await this.recordUsageEvent(input, "json-repair", response);
 
     const repairedText = extractModelText(response.content);
     this.logger.trace?.("OpenAI JSON repair response trace.", {
@@ -6258,6 +6405,7 @@ export class OpenAIStructuredLanguageModel implements StructuredLanguageModel {
         onToken?: (chunk: string) => void;
         onComplete?: () => void;
       };
+      usage?: LanguageModelUsageContext;
     },
     error: Error
   ): Promise<z.infer<T>> {
@@ -6304,6 +6452,225 @@ export class OpenAIStructuredLanguageModel implements StructuredLanguageModel {
 
     return [handler];
   }
+
+  private async recordUsageEvent(
+    input: {
+      schemaName: string;
+      usage?: LanguageModelUsageContext;
+    },
+    mode: string,
+    response: unknown
+  ): Promise<void> {
+    if (!this.persistence) {
+      return;
+    }
+
+    const usage = extractLanguageModelUsage(response);
+    if (!usage) {
+      return;
+    }
+
+    try {
+      const resolvedProject =
+        !input.usage?.projectId && input.usage?.blueprintPath
+          ? await this.persistence.getProjectByBlueprintPath(input.usage.blueprintPath)
+          : null;
+
+      await this.persistence.recordApiUsageEvent({
+        id: randomUUID(),
+        provider: "openai",
+        kind: "llm",
+        model: this.model,
+        operation: input.usage?.operation?.trim() || input.schemaName,
+        stage: input.usage?.stage?.trim() || null,
+        schemaName: input.schemaName,
+        mode,
+        projectId: input.usage?.projectId ?? resolvedProject?.id ?? null,
+        projectName: input.usage?.projectName ?? resolvedProject?.name ?? null,
+        projectGoal: input.usage?.projectGoal ?? resolvedProject?.goal ?? null,
+        buildId: input.usage?.buildId ?? null,
+        sessionId: input.usage?.sessionId ?? resolvedProject?.id ?? null,
+        jobId: input.usage?.jobId ?? null,
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+        totalTokens: usage.totalTokens,
+        cachedInputTokens: usage.cachedInputTokens,
+        reasoningTokens: usage.reasoningTokens,
+        costUsd: usage.costUsd,
+        currency: usage.currency,
+        metadata: usage.metadata,
+        recordedAt: new Date().toISOString()
+      });
+    } catch (error) {
+      this.logger.warn("Failed to record provider usage event.", {
+        model: this.model,
+        schemaName: input.schemaName,
+        mode,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+}
+
+function extractStructuredParsedPayload(response: unknown): unknown {
+  const record = asRecord(response);
+  return record?.parsed;
+}
+
+function extractStructuredRawPayload(response: unknown): LanguageModelRawResponse | null {
+  const record = asRecord(response);
+  const raw = record?.raw;
+  const rawRecord = asRecord(raw);
+
+  if (!rawRecord || !("content" in rawRecord)) {
+    return null;
+  }
+
+  return rawRecord as LanguageModelRawResponse;
+}
+
+function extractLanguageModelUsage(response: unknown): {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  cachedInputTokens: number;
+  reasoningTokens: number;
+  costUsd: number | null;
+  currency: string | null;
+  metadata: Record<string, unknown>;
+} | null {
+  const responseRecord = asRecord(response);
+
+  if (!responseRecord) {
+    return null;
+  }
+
+  const usageMetadata = asRecord(responseRecord["usage_metadata"]);
+  const responseMetadata = asRecord(responseRecord["response_metadata"]);
+  const tokenUsage =
+    asRecord(responseMetadata?.tokenUsage) ??
+    asRecord(responseMetadata?.token_usage) ??
+    asRecord(responseMetadata?.usage);
+  const inputDetails =
+    asRecord(usageMetadata?.input_token_details) ??
+    asRecord(tokenUsage?.inputTokenDetails) ??
+    asRecord(tokenUsage?.input_token_details);
+  const outputDetails =
+    asRecord(usageMetadata?.output_token_details) ??
+    asRecord(tokenUsage?.completionTokenDetails) ??
+    asRecord(tokenUsage?.output_token_details);
+  const billing = asRecord(responseMetadata?.billing);
+
+  const inputTokens =
+    readNumericMetric(
+      usageMetadata?.input_tokens,
+      tokenUsage?.promptTokens,
+      tokenUsage?.prompt_tokens,
+      tokenUsage?.inputTokens,
+      tokenUsage?.input_tokens
+    ) ?? 0;
+  const outputTokens =
+    readNumericMetric(
+      usageMetadata?.output_tokens,
+      tokenUsage?.completionTokens,
+      tokenUsage?.completion_tokens,
+      tokenUsage?.outputTokens,
+      tokenUsage?.output_tokens
+    ) ?? 0;
+  const totalTokens =
+    readNumericMetric(
+      usageMetadata?.total_tokens,
+      tokenUsage?.totalTokens,
+      tokenUsage?.total_tokens
+    ) ?? (inputTokens + outputTokens);
+  const cachedInputTokens =
+    readNumericMetric(
+      inputDetails?.cached_tokens,
+      inputDetails?.cache_read,
+      inputDetails?.cachedTokens,
+      inputDetails?.cacheReadTokens
+    ) ?? 0;
+  const reasoningTokens =
+    readNumericMetric(
+      outputDetails?.reasoning_tokens,
+      outputDetails?.reasoning,
+      outputDetails?.reasoningTokens
+    ) ?? 0;
+  const costUsd =
+    readDecimalMetric(
+      responseMetadata?.costUsd,
+      responseMetadata?.cost_usd,
+      billing?.costUsd,
+      billing?.cost_usd
+    ) ?? null;
+  const currency =
+    readStringMetric(responseMetadata?.currency, billing?.currency) ?? null;
+  const usageSource = usageMetadata
+    ? "usage_metadata"
+    : tokenUsage
+      ? "response_metadata"
+      : "unavailable";
+
+  return {
+    inputTokens,
+    outputTokens,
+    totalTokens,
+    cachedInputTokens,
+    reasoningTokens,
+    costUsd,
+    currency,
+    metadata: {
+      usageSource
+    }
+  };
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : null;
+}
+
+function readNumericMetric(...values: unknown[]): number | null {
+  for (const value of values) {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return Math.max(0, Math.round(value));
+    }
+
+    if (typeof value === "string" && value.trim().length > 0) {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) {
+        return Math.max(0, Math.round(parsed));
+      }
+    }
+  }
+
+  return null;
+}
+
+function readDecimalMetric(...values: unknown[]): number | null {
+  for (const value of values) {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return Math.max(0, value);
+    }
+
+    if (typeof value === "string" && value.trim().length > 0) {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) {
+        return Math.max(0, parsed);
+      }
+    }
+  }
+
+  return null;
+}
+
+function readStringMetric(...values: unknown[]): string | null {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+
+  return null;
 }
 
 class TavilySearchProvider implements SearchProvider {

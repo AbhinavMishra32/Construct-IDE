@@ -154,6 +154,7 @@ import {
 } from "./lib/guide";
 import {
   completePlanningSession,
+  fetchUsageDashboard,
   fetchAuthSession,
   fetchBlueprint,
   fetchCurrentPlanningState,
@@ -185,6 +186,7 @@ import { buildWorkspaceTree } from "./lib/tree";
 import { monaco } from "./monaco";
 import type {
   AgentEvent,
+  ApiUsageDashboardResponse,
   AnchorLocation,
   AuthSessionView,
   BlueprintDeepDiveResponse,
@@ -572,6 +574,9 @@ export default function App() {
   const [accountPanelOpen, setAccountPanelOpen] = useState(false);
   const [displayNameDraft, setDisplayNameDraft] = useState("");
   const [profileBusy, setProfileBusy] = useState(false);
+  const [usageDashboard, setUsageDashboard] = useState<ApiUsageDashboardResponse | null>(null);
+  const [usageLoading, setUsageLoading] = useState(false);
+  const [usageError, setUsageError] = useState("");
   const [providerBusy, setProviderBusy] = useState<ConnectedProvider | null>(null);
   const [providerDrafts, setProviderDrafts] = useState<
     Partial<Record<ConnectedProvider, { apiKey: string; baseUrl: string }>>
@@ -753,6 +758,38 @@ export default function App() {
       }`
     : "No attempts";
 
+  const loadUsageDashboard = async (signal?: AbortSignal) => {
+    if (!isAuthenticated) {
+      setUsageDashboard(null);
+      setUsageError("");
+      setUsageLoading(false);
+      return;
+    }
+
+    setUsageLoading(true);
+
+    try {
+      const dashboard = await fetchUsageDashboard(signal);
+
+      if (signal?.aborted) {
+        return;
+      }
+
+      setUsageDashboard(dashboard);
+      setUsageError("");
+    } catch (error) {
+      if (signal?.aborted) {
+        return;
+      }
+
+      setUsageError(error instanceof Error ? error.message : "Failed to load API usage.");
+    } finally {
+      if (!signal?.aborted) {
+        setUsageLoading(false);
+      }
+    }
+  };
+
   useEffect(() => {
     document.documentElement.dataset.constructTheme = theme;
     document.documentElement.classList.toggle("dark", theme === "dark");
@@ -870,8 +907,24 @@ export default function App() {
     if (!authSession?.user) {
       setAccountPanelOpen(false);
       setProviderDrafts({});
+      setUsageDashboard(null);
+      setUsageError("");
+      setUsageLoading(false);
     }
   }, [authSession?.user?.displayName, authSession?.user]);
+
+  useEffect(() => {
+    if (!accountPanelOpen || !isAuthenticated) {
+      return;
+    }
+
+    const controller = new AbortController();
+    void loadUsageDashboard(controller.signal);
+
+    return () => {
+      controller.abort();
+    };
+  }, [accountPanelOpen, isAuthenticated]);
 
   useEffect(() => {
     if (!activeFilePath || editorValue === savedValue) {
@@ -2598,6 +2651,9 @@ export default function App() {
         displayNameDraft={displayNameDraft}
         onDisplayNameDraftChange={setDisplayNameDraft}
         profileBusy={profileBusy}
+        usageDashboard={usageDashboard}
+        usageLoading={usageLoading}
+        usageError={usageError}
         providerDrafts={providerDrafts}
         providerBusy={providerBusy}
         onProviderDraftChange={(provider, next) => {
@@ -2617,6 +2673,9 @@ export default function App() {
         }}
         onRemoveConnection={(provider) => {
           void handleRemoveProviderConnection(provider);
+        }}
+        onRefreshUsage={() => {
+          void loadUsageDashboard();
         }}
         onClose={() => {
           setAccountPanelOpen(false);

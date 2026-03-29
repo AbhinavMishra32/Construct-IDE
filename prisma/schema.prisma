@@ -29,6 +29,7 @@ model User {
   authSessions        AuthSession[]
   authIdentities      AuthIdentity[]
   providerConnections ProviderConnection[]
+  apiUsageEvents      ApiUsageEvent[]
 
   @@map("construct_users")
 }
@@ -110,6 +111,41 @@ model ProviderConnection {
   @@unique([userId, provider, authType])
   @@index([userId, provider])
   @@map("construct_provider_connections")
+}
+
+model ApiUsageEvent {
+  id                String   @id
+  userId            String   @map("user_id")
+  provider          String
+  kind              String   @default("llm")
+  model             String
+  operation         String
+  stage             String?
+  schemaName        String?  @map("schema_name")
+  mode              String?
+  projectId         String?  @map("project_id")
+  projectName       String?  @map("project_name")
+  projectGoal       String?  @map("project_goal") @db.Text
+  buildId           String?  @map("build_id")
+  sessionId         String?  @map("session_id")
+  jobId             String?  @map("job_id")
+  inputTokens       Int      @default(0) @map("input_tokens")
+  outputTokens      Int      @default(0) @map("output_tokens")
+  totalTokens       Int      @default(0) @map("total_tokens")
+  cachedInputTokens Int      @default(0) @map("cached_input_tokens")
+  reasoningTokens   Int      @default(0) @map("reasoning_tokens")
+  costUsd           Float?   @map("cost_usd")
+  currency          String?
+  metadataJson      String?  @map("metadata_json") @db.Text
+  recordedAt        DateTime @default(now()) @map("recorded_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, recordedAt])
+  @@index([userId, provider, recordedAt])
+  @@index([userId, projectId, recordedAt])
+  @@index([userId, buildId, recordedAt])
+  @@map("construct_api_usage_events")
 }
 
 model Project {

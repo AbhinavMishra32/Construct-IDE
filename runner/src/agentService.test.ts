@@ -3078,6 +3078,8 @@ test("ConstructAgentService resumes blueprint creation from the last saved stage
     listProjects: () => basePersistence.listProjects(),
     getActiveProject: () => basePersistence.getActiveProject(),
     getProject: (projectId) => basePersistence.getProject(projectId),
+    getProjectByBlueprintPath: (blueprintPath) =>
+      basePersistence.getProjectByBlueprintPath(blueprintPath),
     setActiveProject: (projectId) => basePersistence.setActiveProject(projectId),
     updateProjectProgress: (update) => basePersistence.updateProjectProgress(update),
     getBlueprintBuild: (buildId) => basePersistence.getBlueprintBuild(buildId),
@@ -3086,8 +3088,10 @@ test("ConstructAgentService resumes blueprint creation from the last saved stage
     upsertBlueprintBuild: (build) => basePersistence.upsertBlueprintBuild(build),
     upsertBlueprintBuildStage: (stage) => basePersistence.upsertBlueprintBuildStage(stage),
     appendBlueprintBuildEvent: (event) => basePersistence.appendBlueprintBuildEvent(event),
+    recordApiUsageEvent: (event) => basePersistence.recordApiUsageEvent(event),
     getBlueprintBuildDetail: (buildId) => basePersistence.getBlueprintBuildDetail(buildId),
-    listBlueprintBuilds: () => basePersistence.listBlueprintBuilds()
+    listBlueprintBuilds: () => basePersistence.listBlueprintBuilds(),
+    getApiUsageDashboard: () => basePersistence.getApiUsageDashboard()
   };
 
   const service = new ConstructAgentService(root, {

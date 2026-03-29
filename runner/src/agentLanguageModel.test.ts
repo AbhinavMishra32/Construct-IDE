@@ -4,6 +4,7 @@ import test from "node:test";
 import { z } from "zod";
 
 import { OpenAIStructuredLanguageModel } from "./agentService";
+import type { ApiUsageEvent } from "@construct/shared";
 
 test("OpenAIStructuredLanguageModel falls back to JSON mode when structured output schema is incompatible", async () => {
   let structuredCalls = 0;
@@ -179,6 +180,93 @@ test("OpenAIStructuredLanguageModel repairs malformed JSON fallback output", asy
   assert.equal(structuredCalls, 1);
   assert.equal(fallbackCalls, 1);
   assert.equal(repairCalls, 1);
+});
+
+test("OpenAIStructuredLanguageModel records usage metadata for successful calls", async () => {
+  const recordedEvents: Array<Record<string, unknown>> = [];
+
+  const model = new OpenAIStructuredLanguageModel({
+    apiKey: "test-key",
+    model: "gpt-5-mini",
+    logger: {
+      info() {},
+      warn() {},
+      error() {},
+      debug() {},
+      trace() {}
+    },
+    persistence: {
+      async getProjectByBlueprintPath() {
+        return null;
+      },
+      async recordApiUsageEvent(event: ApiUsageEvent) {
+        recordedEvents.push(event as unknown as Record<string, unknown>);
+      }
+    } as never,
+    client: {
+      withStructuredOutput() {
+        return {
+          async invoke() {
+            return {
+              raw: {
+                content: JSON.stringify({
+                  value: "counted"
+                }),
+                usage_metadata: {
+                  input_tokens: 42,
+                  output_tokens: 8,
+                  total_tokens: 50,
+                  input_token_details: {
+                    cached_tokens: 5
+                  }
+                },
+                response_metadata: {
+                  billing: {
+                    cost_usd: 0.0025,
+                    currency: "USD"
+                  }
+                }
+              },
+              parsed: {
+                value: "counted"
+              }
+            };
+          }
+        };
+      },
+      async invoke() {
+        return {
+          content: "{}"
+        };
+      }
+    }
+  });
+
+  const parsed = await model.parse({
+    schema: z.object({
+      value: z.string().min(1)
+    }),
+    schemaName: "test_usage_schema",
+    instructions: "Return test data.",
+    prompt: "Generate a payload.",
+    usage: {
+      projectId: "project-1",
+      projectName: "Usage project",
+      projectGoal: "Measure usage",
+      sessionId: "project-1",
+      jobId: "job-1",
+      operation: "usage test"
+    }
+  });
+
+  assert.equal(parsed.value, "counted");
+  assert.equal(recordedEvents.length, 1);
+  assert.equal(recordedEvents[0]?.inputTokens, 42);
+  assert.equal(recordedEvents[0]?.outputTokens, 8);
+  assert.equal(recordedEvents[0]?.totalTokens, 50);
+  assert.equal(recordedEvents[0]?.cachedInputTokens, 5);
+  assert.equal(recordedEvents[0]?.costUsd, 0.0025);
+  assert.equal(recordedEvents[0]?.provider, "openai");
 });
 
 test("OpenAIStructuredLanguageModel repairs malformed structured-output drafts without restarting the whole generation", async () => {

@@ -146,6 +146,70 @@ export const ProviderConnectionsResponseSchema = z.object({
   connections: z.array(ProviderConnectionSchema).default([])
 });
 
+export const ApiUsageKindSchema = z.enum(["llm"]);
+
+export const ApiUsageTotalsSchema = z.object({
+  eventCount: z.number().int().nonnegative().default(0),
+  pricedEventCount: z.number().int().nonnegative().default(0),
+  unpricedEventCount: z.number().int().nonnegative().default(0),
+  inputTokens: z.number().int().nonnegative().default(0),
+  outputTokens: z.number().int().nonnegative().default(0),
+  totalTokens: z.number().int().nonnegative().default(0),
+  cachedInputTokens: z.number().int().nonnegative().default(0),
+  reasoningTokens: z.number().int().nonnegative().default(0),
+  costUsd: z.number().nonnegative().nullable().default(null),
+  currency: z.string().min(1).nullable().default(null)
+});
+
+export const ApiUsageEventSchema = z.object({
+  id: z.string().min(1),
+  provider: ConnectedProviderSchema,
+  kind: ApiUsageKindSchema.default("llm"),
+  model: z.string().min(1),
+  operation: z.string().min(1),
+  stage: z.string().min(1).nullable().default(null),
+  schemaName: z.string().min(1).nullable().default(null),
+  mode: z.string().min(1).nullable().default(null),
+  projectId: z.string().min(1).nullable().default(null),
+  projectName: z.string().min(1).nullable().default(null),
+  projectGoal: z.string().min(1).nullable().default(null),
+  buildId: z.string().min(1).nullable().default(null),
+  sessionId: z.string().min(1).nullable().default(null),
+  jobId: z.string().min(1).nullable().default(null),
+  inputTokens: z.number().int().nonnegative().default(0),
+  outputTokens: z.number().int().nonnegative().default(0),
+  totalTokens: z.number().int().nonnegative().default(0),
+  cachedInputTokens: z.number().int().nonnegative().default(0),
+  reasoningTokens: z.number().int().nonnegative().default(0),
+  costUsd: z.number().nonnegative().nullable().default(null),
+  currency: z.string().min(1).nullable().default(null),
+  metadata: z.record(z.string(), z.unknown()).nullable().default(null),
+  recordedAt: z.string().datetime()
+});
+
+export const ApiUsageProviderSummarySchema = ApiUsageTotalsSchema.extend({
+  provider: ConnectedProviderSchema,
+  models: z.array(z.string().min(1)).default([]),
+  lastUsedAt: z.string().datetime().nullable().default(null)
+});
+
+export const ApiUsageProjectSummarySchema = ApiUsageTotalsSchema.extend({
+  projectId: z.string().min(1),
+  projectName: z.string().min(1).nullable().default(null),
+  projectGoal: z.string().min(1).nullable().default(null),
+  providers: z.array(ConnectedProviderSchema).default([]),
+  models: z.array(z.string().min(1)).default([]),
+  lastUsedAt: z.string().datetime().nullable().default(null)
+});
+
+export const ApiUsageDashboardResponseSchema = z.object({
+  generatedAt: z.string().datetime(),
+  totals: ApiUsageTotalsSchema,
+  providers: z.array(ApiUsageProviderSummarySchema).default([]),
+  projects: z.array(ApiUsageProjectSummarySchema).default([]),
+  recentEvents: z.array(ApiUsageEventSchema).default([])
+});
+
 export const AnchorSchema = z.object({
   file: z.string().min(1),
   marker: z.string().min(1),
@@ -760,6 +824,12 @@ export function getBlueprintMaterializedFilePaths(
   return Array.from(materializedPaths).filter(Boolean).sort();
 }
 
+export type ApiUsageKind = z.infer<typeof ApiUsageKindSchema>;
+export type ApiUsageTotals = z.infer<typeof ApiUsageTotalsSchema>;
+export type ApiUsageEvent = z.infer<typeof ApiUsageEventSchema>;
+export type ApiUsageProviderSummary = z.infer<typeof ApiUsageProviderSummarySchema>;
+export type ApiUsageProjectSummary = z.infer<typeof ApiUsageProjectSummarySchema>;
+export type ApiUsageDashboardResponse = z.infer<typeof ApiUsageDashboardResponseSchema>;
 export type AnchorRef = z.infer<typeof AnchorSchema>;
 export type WorkspaceFileEntry = z.infer<typeof WorkspaceFileEntrySchema>;
 export type ComprehensionCheck = z.infer<typeof ComprehensionCheckSchema>;

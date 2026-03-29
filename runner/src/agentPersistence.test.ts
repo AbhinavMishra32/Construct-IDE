@@ -249,6 +249,74 @@ test("local agent persistence stores planning state, knowledge, generated bluepr
     assert.equal(blueprintBuildDetail.stages.length, 1);
     assert.equal(blueprintBuildDetail.events.length, 1);
 
+    await persistence.recordApiUsageEvent({
+      id: "usage-1",
+      provider: "openai",
+      kind: "llm",
+      model: "gpt-5-nano",
+      operation: "planning question generation",
+      stage: "question-generation",
+      schemaName: "construct_planning_question_draft",
+      mode: "structured",
+      projectId: null,
+      projectName: null,
+      projectGoal: null,
+      buildId: "build-1",
+      sessionId: null,
+      jobId: "job-1",
+      inputTokens: 120,
+      outputTokens: 30,
+      totalTokens: 150,
+      cachedInputTokens: 10,
+      reasoningTokens: 0,
+      costUsd: 0.0015,
+      currency: "USD",
+      metadata: {
+        usageSource: "usage_metadata"
+      },
+      recordedAt: "2026-03-15T00:00:03.000Z"
+    });
+
+    await persistence.recordApiUsageEvent({
+      id: "usage-2",
+      provider: "openai",
+      kind: "llm",
+      model: "gpt-5-nano",
+      operation: "runtime guide generation",
+      stage: "runtime-guide",
+      schemaName: "construct_runtime_guide",
+      mode: "structured",
+      projectId: "session-1",
+      projectName: "Compiler",
+      projectGoal: "build a C compiler in Rust",
+      buildId: null,
+      sessionId: "session-1",
+      jobId: "job-2",
+      inputTokens: 80,
+      outputTokens: 20,
+      totalTokens: 100,
+      cachedInputTokens: 0,
+      reasoningTokens: 0,
+      costUsd: null,
+      currency: null,
+      metadata: {
+        usageSource: "usage_metadata"
+      },
+      recordedAt: "2026-03-15T00:00:04.000Z"
+    });
+
+    const usageDashboard = await persistence.getApiUsageDashboard();
+    const projectByBlueprint = await persistence.getProjectByBlueprintPath(
+      path.join(root, ".construct", "generated-blueprints", "session-1", "project-blueprint.json")
+    );
+
+    assert.equal(projectByBlueprint?.id, "session-1");
+    assert.equal(usageDashboard.totals.totalTokens, 250);
+    assert.equal(usageDashboard.providers[0]?.provider, "openai");
+    assert.equal(usageDashboard.projects[0]?.projectId, "session-1");
+    assert.equal(usageDashboard.projects[0]?.totalTokens, 250);
+    assert.equal(usageDashboard.recentEvents[0]?.projectId, "session-1");
+
     await persistence.updateProjectProgress({
       blueprintPath: path.join(root, ".construct", "generated-blueprints", "session-1", "project-blueprint.json"),
       stepId: "step-1",

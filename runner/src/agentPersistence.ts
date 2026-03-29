@@ -3,6 +3,8 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import {
+  ApiUsageDashboardResponseSchema,
+  ApiUsageEventSchema,
   BlueprintBuildDetailResponseSchema,
   BlueprintBuildEventRecordSchema,
   BlueprintBuildListResponseSchema,
@@ -15,6 +17,8 @@ import {
   ProjectSummarySchema,
   UserKnowledgeBaseSchema,
   getBlueprintRuntimeSteps,
+  type ApiUsageDashboardResponse,
+  type ApiUsageEvent,
   type BlueprintBuild,
   type BlueprintBuildDetailResponse,
   type BlueprintBuildEventRecord,
@@ -71,6 +75,7 @@ const PersistedProjectRecordListSchema = z.array(PersistedProjectRecordSchema);
 const PersistedBlueprintBuildListSchema = z.array(BlueprintBuildSchema);
 const PersistedBlueprintBuildStageListSchema = z.array(BlueprintBuildStageSchema);
 const PersistedBlueprintBuildEventListSchema = z.array(BlueprintBuildEventRecordSchema);
+const PersistedApiUsageEventListSchema = z.array(ApiUsageEventSchema);
 
 export type ActiveBlueprintState = z.infer<typeof ActiveBlueprintStateSchema>;
 export type PersistedGeneratedBlueprintRecord = z.infer<
@@ -104,6 +109,7 @@ export type AgentPersistence = {
   listProjects(): Promise<ProjectSummary[]>;
   getActiveProject(): Promise<ProjectSummary | null>;
   getProject(projectId: string): Promise<ProjectSummary | null>;
+  getProjectByBlueprintPath(blueprintPath: string): Promise<ProjectSummary | null>;
   setActiveProject(projectId: string): Promise<ProjectSummary | null>;
   updateProjectProgress(update: ProjectProgressUpdate): Promise<ProjectSummary | null>;
   getBlueprintBuild(buildId: string): Promise<BlueprintBuild | null>;
@@ -111,8 +117,10 @@ export type AgentPersistence = {
   upsertBlueprintBuild(build: BlueprintBuild): Promise<void>;
   upsertBlueprintBuildStage(stage: BlueprintBuildStage): Promise<void>;
   appendBlueprintBuildEvent(event: BlueprintBuildEventRecord): Promise<void>;
+  recordApiUsageEvent(event: ApiUsageEvent): Promise<void>;
   getBlueprintBuildDetail(buildId: string): Promise<BlueprintBuildDetailResponse>;
   listBlueprintBuilds(): Promise<BlueprintBuildSummary[]>;
+  getApiUsageDashboard(): Promise<ApiUsageDashboardResponse>;
 };
 
 type AgentPersistenceLogger = {
@@ -162,6 +170,7 @@ class LocalFileAgentPersistence implements AgentPersistence {
   private readonly blueprintBuildsPath: string;
   private readonly blueprintBuildStagesPath: string;
   private readonly blueprintBuildEventsPath: string;
+  private readonly apiUsageEventsPath: string;
   private readonly logger: AgentPersistenceLogger;
 
   constructor(rootDirectory: string, logger: AgentPersistenceLogger) {
@@ -178,6 +187,7 @@ class LocalFileAgentPersistence implements AgentPersistence {
     this.blueprintBuildsPath = path.join(this.stateDirectory, "blueprint-builds.json");
     this.blueprintBuildStagesPath = path.join(this.stateDirectory, "blueprint-build-stages.json");
     this.blueprintBuildEventsPath = path.join(this.stateDirectory, "blueprint-build-events.json");
+    this.apiUsageEventsPath = path.join(this.stateDirectory, "api-usage-events.json");
     this.logger = logger;
   }
 
@@ -339,6 +349,15 @@ class LocalFileAgentPersistence implements AgentPersistence {
     return toProjectSummary(projects.find((project) => project.id === projectId) ?? null);
   }
 
+  async getProjectByBlueprintPath(blueprintPath: string): Promise<ProjectSummary | null> {
+    const projects = await this.readProjects();
+    const resolvedBlueprintPath = path.resolve(blueprintPath);
+    return toProjectSummary(
+      projects.find((project) => path.resolve(project.blueprintPath) === resolvedBlueprintPath) ??
+        null
+    );
+  }
+
   async setActiveProject(projectId: string): Promise<ProjectSummary | null> {
     const projects = await this.readProjects();
     const timestamp = new Date().toISOString();
@@ -441,6 +460,13 @@ class LocalFileAgentPersistence implements AgentPersistence {
     await this.writeBlueprintBuildEvents(sortBlueprintBuildEvents(events));
   }
 
+  async recordApiUsageEvent(event: ApiUsageEvent): Promise<void> {
+    const parsed = ApiUsageEventSchema.parse(event);
+    const events = await this.readApiUsageEvents();
+    events.push(parsed);
+    await this.writeApiUsageEvents(sortApiUsageEvents(events));
+  }
+
   async getBlueprintBuildDetail(buildId: string): Promise<BlueprintBuildDetailResponse> {
     const [build, stages, events] = await Promise.all([
       this.getBlueprintBuild(buildId),
@@ -460,6 +486,20 @@ class LocalFileAgentPersistence implements AgentPersistence {
     return BlueprintBuildListResponseSchema.parse({
       builds: sortBlueprintBuilds(builds)
     }).builds;
+  }
+
+  async getApiUsageDashboard(): Promise<ApiUsageDashboardResponse> {
+    const [events, projects, builds] = await Promise.all([
+      this.readApiUsageEvents(),
+      this.readProjects(),
+      this.readBlueprintBuilds()
+    ]);
+
+    return buildApiUsageDashboard({
+      events,
+      projects: projects.map(toProjectSummary).filter((project): project is ProjectSummary => Boolean(project)),
+      builds
+    });
   }
 
   private async readBlueprintRecords(): Promise<PersistedGeneratedBlueprintRecord[]> {
@@ -545,6 +585,24 @@ class LocalFileAgentPersistence implements AgentPersistence {
     await mkdir(this.stateDirectory, { recursive: true });
     await writeFile(
       this.blueprintBuildEventsPath,
+      `${JSON.stringify(events, null, 2)}\n`,
+      "utf8"
+    );
+  }
+
+  private async readApiUsageEvents(): Promise<ApiUsageEvent[]> {
+    if (!existsSync(this.apiUsageEventsPath)) {
+      return [];
+    }
+
+    const raw = await readFile(this.apiUsageEventsPath, "utf8");
+    return PersistedApiUsageEventListSchema.parse(JSON.parse(raw));
+  }
+
+  private async writeApiUsageEvents(events: ApiUsageEvent[]): Promise<void> {
+    await mkdir(this.stateDirectory, { recursive: true });
+    await writeFile(
+      this.apiUsageEventsPath,
       `${JSON.stringify(events, null, 2)}\n`,
       "utf8"
     );
@@ -877,6 +935,19 @@ class PrismaAgentPersistence implements AgentPersistence {
     return project ? toProjectSummaryFromPrisma(project) : null;
   }
 
+  async getProjectByBlueprintPath(blueprintPath: string): Promise<ProjectSummary | null> {
+    const userId = getCurrentUserId();
+    const resolvedBlueprintPath = path.resolve(blueprintPath);
+    const project = await this.prisma.project.findFirst({
+      where: {
+        userId,
+        blueprintPath: resolvedBlueprintPath
+      }
+    });
+
+    return project ? toProjectSummaryFromPrisma(project) : null;
+  }
+
   async setActiveProject(projectId: string): Promise<ProjectSummary | null> {
     const timestamp = new Date();
     const userId = getCurrentUserId();
@@ -1004,6 +1075,15 @@ class PrismaAgentPersistence implements AgentPersistence {
     });
   }
 
+  async recordApiUsageEvent(event: ApiUsageEvent): Promise<void> {
+    const parsed = ApiUsageEventSchema.parse(event);
+    const userId = getCurrentUserId();
+
+    await this.prisma.apiUsageEvent.create({
+      data: mapApiUsageEventCreateInput(userId, parsed)
+    });
+  }
+
   async getBlueprintBuildDetail(buildId: string): Promise<BlueprintBuildDetailResponse> {
     const userId = getCurrentUserId();
     const [build, stages, events] = await Promise.all([
@@ -1068,6 +1148,36 @@ class PrismaAgentPersistence implements AgentPersistence {
     return BlueprintBuildListResponseSchema.parse({
       builds: builds.map(toBlueprintBuildFromPrisma)
     }).builds;
+  }
+
+  async getApiUsageDashboard(): Promise<ApiUsageDashboardResponse> {
+    const userId = getCurrentUserId();
+    const [events, projects, builds] = await Promise.all([
+      this.prisma.apiUsageEvent.findMany({
+        where: {
+          userId
+        },
+        orderBy: {
+          recordedAt: "desc"
+        }
+      }),
+      this.prisma.project.findMany({
+        where: {
+          userId
+        }
+      }),
+      this.prisma.blueprintBuild.findMany({
+        where: {
+          userId
+        }
+      })
+    ]);
+
+    return buildApiUsageDashboard({
+      events: events.map(toApiUsageEventFromPrisma),
+      projects: projects.map(toProjectSummaryFromPrisma),
+      builds: builds.map(toBlueprintBuildFromPrisma)
+    });
   }
 }
 
@@ -1440,6 +1550,132 @@ function sortBlueprintBuildEvents(
   );
 }
 
+function sortApiUsageEvents(events: ApiUsageEvent[]): ApiUsageEvent[] {
+  return [...events].sort(
+    (left, right) => Date.parse(right.recordedAt) - Date.parse(left.recordedAt)
+  );
+}
+
+function buildApiUsageDashboard(input: {
+  events: ApiUsageEvent[];
+  projects: ProjectSummary[];
+  builds: BlueprintBuild[];
+}): ApiUsageDashboardResponse {
+  const projectsById = new Map(input.projects.map((project) => [project.id, project]));
+  const sessionIdsByBuildId = new Map(
+    input.builds.flatMap((build) => (build.sessionId ? [[build.id, build.sessionId]] : []))
+  );
+  const resolvedEvents = sortApiUsageEvents(
+    input.events.map((event) =>
+      resolveApiUsageEventProject(event, projectsById, sessionIdsByBuildId)
+    )
+  );
+  const providerSummaries = new Map<string, ApiUsageEvent[]>();
+  const projectSummaries = new Map<string, ApiUsageEvent[]>();
+
+  for (const event of resolvedEvents) {
+    providerSummaries.set(event.provider, [...(providerSummaries.get(event.provider) ?? []), event]);
+
+    if (event.projectId) {
+      projectSummaries.set(event.projectId, [...(projectSummaries.get(event.projectId) ?? []), event]);
+    }
+  }
+
+  return ApiUsageDashboardResponseSchema.parse({
+    generatedAt: new Date().toISOString(),
+    totals: summarizeApiUsageTotals(resolvedEvents),
+    providers: Array.from(providerSummaries.entries())
+      .map(([provider, events]) => ({
+        provider,
+        ...summarizeApiUsageTotals(events),
+        models: sortUniqueStrings(events.map((event) => event.model)),
+        lastUsedAt: events[0]?.recordedAt ?? null
+      }))
+      .sort((left, right) => right.totalTokens - left.totalTokens),
+    projects: Array.from(projectSummaries.entries())
+      .map(([projectId, events]) => ({
+        projectId,
+        projectName: events.find((event) => event.projectName)?.projectName ?? null,
+        projectGoal: events.find((event) => event.projectGoal)?.projectGoal ?? null,
+        providers: sortUniqueStrings(events.map((event) => event.provider)),
+        models: sortUniqueStrings(events.map((event) => event.model)),
+        lastUsedAt: events[0]?.recordedAt ?? null,
+        ...summarizeApiUsageTotals(events)
+      }))
+      .sort((left, right) => right.totalTokens - left.totalTokens),
+    recentEvents: resolvedEvents.slice(0, 40)
+  });
+}
+
+function resolveApiUsageEventProject(
+  event: ApiUsageEvent,
+  projectsById: Map<string, ProjectSummary>,
+  sessionIdsByBuildId: Map<string, string>
+): ApiUsageEvent {
+  const sessionId = event.sessionId ?? (event.buildId ? sessionIdsByBuildId.get(event.buildId) ?? null : null);
+  const projectId = event.projectId ?? sessionId ?? null;
+  const project = projectId ? projectsById.get(projectId) ?? null : null;
+
+  return ApiUsageEventSchema.parse({
+    ...event,
+    sessionId,
+    projectId,
+    projectName: event.projectName ?? project?.name ?? null,
+    projectGoal: event.projectGoal ?? project?.goal ?? null
+  });
+}
+
+function summarizeApiUsageTotals(events: ApiUsageEvent[]) {
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let totalTokens = 0;
+  let cachedInputTokens = 0;
+  let reasoningTokens = 0;
+  let pricedEventCount = 0;
+  let unpricedEventCount = 0;
+  let costUsdTotal = 0;
+  let currency: string | null = null;
+
+  for (const event of events) {
+    inputTokens += event.inputTokens;
+    outputTokens += event.outputTokens;
+    totalTokens += event.totalTokens;
+    cachedInputTokens += event.cachedInputTokens;
+    reasoningTokens += event.reasoningTokens;
+
+    if (typeof event.costUsd === "number") {
+      pricedEventCount += 1;
+      costUsdTotal += event.costUsd;
+      currency = currency && event.currency && currency !== event.currency ? null : (currency ?? event.currency ?? null);
+    } else {
+      unpricedEventCount += 1;
+    }
+  }
+
+  return {
+    eventCount: events.length,
+    pricedEventCount,
+    unpricedEventCount,
+    inputTokens,
+    outputTokens,
+    totalTokens,
+    cachedInputTokens,
+    reasoningTokens,
+    costUsd: pricedEventCount > 0 ? Number(costUsdTotal.toFixed(6)) : null,
+    currency
+  };
+}
+
+function sortUniqueStrings(values: Array<string | null | undefined>): string[] {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => value?.trim() ?? "")
+        .filter((value): value is string => value.length > 0)
+    )
+  ).sort((left, right) => left.localeCompare(right));
+}
+
 function mapBlueprintBuildCreateInput(build: BlueprintBuild) {
   return {
     id: build.id,
@@ -1551,6 +1787,35 @@ function mapBlueprintBuildEventCreateInput(event: BlueprintBuildEventRecord) {
     payloadJson: event.payload === null ? null : JSON.stringify(event.payload),
     traceUrl: event.traceUrl,
     timestamp: new Date(event.timestamp)
+  };
+}
+
+function mapApiUsageEventCreateInput(userId: string, event: ApiUsageEvent) {
+  return {
+    id: event.id,
+    userId,
+    provider: event.provider,
+    kind: event.kind,
+    model: event.model,
+    operation: event.operation,
+    stage: event.stage,
+    schemaName: event.schemaName,
+    mode: event.mode,
+    projectId: event.projectId,
+    projectName: event.projectName,
+    projectGoal: event.projectGoal,
+    buildId: event.buildId,
+    sessionId: event.sessionId,
+    jobId: event.jobId,
+    inputTokens: event.inputTokens,
+    outputTokens: event.outputTokens,
+    totalTokens: event.totalTokens,
+    cachedInputTokens: event.cachedInputTokens,
+    reasoningTokens: event.reasoningTokens,
+    costUsd: event.costUsd,
+    currency: event.currency,
+    metadataJson: event.metadata ? JSON.stringify(event.metadata) : null,
+    recordedAt: new Date(event.recordedAt)
   };
 }
 
@@ -1669,6 +1934,58 @@ function toBlueprintBuildEventFromPrisma(event: {
     payload: parseJsonValue(event.payloadJson),
     traceUrl: event.traceUrl,
     timestamp: event.timestamp.toISOString()
+  });
+}
+
+function toApiUsageEventFromPrisma(event: {
+  id: string;
+  provider: string;
+  kind: string;
+  model: string;
+  operation: string;
+  stage: string | null;
+  schemaName: string | null;
+  mode: string | null;
+  projectId: string | null;
+  projectName: string | null;
+  projectGoal: string | null;
+  buildId: string | null;
+  sessionId: string | null;
+  jobId: string | null;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  cachedInputTokens: number;
+  reasoningTokens: number;
+  costUsd: number | null;
+  currency: string | null;
+  metadataJson: string | null;
+  recordedAt: Date;
+}): ApiUsageEvent {
+  return ApiUsageEventSchema.parse({
+    id: event.id,
+    provider: event.provider,
+    kind: event.kind,
+    model: event.model,
+    operation: event.operation,
+    stage: event.stage,
+    schemaName: event.schemaName,
+    mode: event.mode,
+    projectId: event.projectId,
+    projectName: event.projectName,
+    projectGoal: event.projectGoal,
+    buildId: event.buildId,
+    sessionId: event.sessionId,
+    jobId: event.jobId,
+    inputTokens: event.inputTokens,
+    outputTokens: event.outputTokens,
+    totalTokens: event.totalTokens,
+    cachedInputTokens: event.cachedInputTokens,
+    reasoningTokens: event.reasoningTokens,
+    costUsd: event.costUsd,
+    currency: event.currency,
+    metadata: parseJsonValue(event.metadataJson),
+    recordedAt: event.recordedAt.toISOString()
   });
 }
 

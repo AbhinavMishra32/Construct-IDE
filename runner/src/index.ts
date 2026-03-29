@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import {
   APP_NAME,
   AgentJobSnapshotSchema,
+  ApiUsageDashboardResponseSchema,
   AuthLoginRequestSchema,
   AuthSignupRequestSchema,
   BlueprintDeepDiveRequestSchema,
@@ -217,6 +218,15 @@ const server = http.createServer(async (request, response) => {
 
         response.writeHead(200, { "Content-Type": "application/json" });
         response.end(JSON.stringify(connections));
+        return;
+      }
+
+      if (request.method === "GET" && request.url === "/auth/usage") {
+        requireAuthenticatedUser(authSession);
+        const dashboard = await getConstructAgent().getApiUsageDashboard();
+
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(JSON.stringify(ApiUsageDashboardResponseSchema.parse(dashboard)));
         return;
       }
 
