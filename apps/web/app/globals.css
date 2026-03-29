@@ -1,0 +1,102 @@
+@import "@fontsource-variable/geist";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 240 7% 4%;
+  --foreground: 60 7% 95%;
+  --card: 220 10% 8%;
+  --card-foreground: 60 7% 95%;
+  --popover: 225 10% 9%;
+  --popover-foreground: 60 7% 95%;
+  --primary: 220 14% 95%;
+  --primary-foreground: 225 10% 9%;
+  --secondary: 225 9% 11%;
+  --secondary-foreground: 60 7% 95%;
+  --muted: 225 9% 11%;
+  --muted-foreground: 225 8% 70%;
+  --accent: 225 9% 11%;
+  --accent-foreground: 60 7% 95%;
+  --destructive: 343 89% 71%;
+  --destructive-foreground: 225 10% 9%;
+  --border: 225 8% 16%;
+  --input: 225 8% 16%;
+  --ring: 218 100% 66%;
+  --radius: 1rem;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+  body {
+  min-height: 100vh;
+  margin: 0;
+  font-family: "Geist", "SF Pro Display", "Inter", sans-serif;
+  background:
+    radial-gradient(circle at 15% 16%, rgba(79, 140, 255, 0.14), transparent 28%),
+    radial-gradient(circle at 84% 18%, rgba(52, 211, 153, 0.12), transparent 28%),
+    radial-gradient(circle at 50% 98%, rgba(251, 191, 36, 0.1), transparent 34%),
+    linear-gradient(180deg, #111214 0%, #0d0d0f 100%);
+  color: var(--foreground);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.landing-backdrop {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.landing-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, rgba(39, 40, 45, 0.46) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(39, 40, 45, 0.34) 1px, transparent 1px);
+  background-size: 72px 72px;
+  mask-image: radial-gradient(circle at center, black 18%, transparent 84%);
+  opacity: 0.48;
+}
+
+.landing-orb {
+  position: absolute;
+  border-radius: 999px;
+  filter: blur(22px);
+  opacity: 0.9;
+}
+
+.landing-orb-blue {
+  top: 7%;
+  left: 6%;
+  width: clamp(15rem, 26vw, 23rem);
+  aspect-ratio: 1;
+  background: radial-gradient(circle, rgba(79, 140, 255, 0.24) 0%, transparent 72%);
+}
+
+.landing-orb-green {
+  top: 14%;
+  right: 7%;
+  width: clamp(15rem, 28vw, 24rem);
+  aspect-ratio: 1;
+  background: radial-gradient(circle, rgba(52, 211, 153, 0.22) 0%, transparent 74%);
+}
+
+.landing-orb-gold {
+  bottom: -10%;
+  left: 30%;
+  width: clamp(18rem, 34vw, 30rem);
+  aspect-ratio: 1;
+  background: radial-gradient(circle, rgba(251, 191, 36, 0.18) 0%, transparent 78%);
+}
+
+.text-balance {
+  text-wrap: balance;
+}

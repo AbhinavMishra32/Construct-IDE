@@ -10,7 +10,8 @@
         "^build"
       ],
       "outputs": [
-        "dist/**"
+        "dist/**",
+        ".next/**"
       ]
     },
     "typecheck": {
@@ -29,4 +30,3 @@
     }
   }
 }
-
