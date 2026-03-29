@@ -6452,8 +6452,8 @@ function TaskResultPanel({
                       failing
                     </h4>
                     <p>
-                      Each card shows the contract the step expects on the left and what your
-                      implementation returns right now on the right.
+                      Each card shows the contract the step expects first, then the behavior and
+                      output your implementation produces right now.
                     </p>
                   </div>
                   {leadingFailure ? (
