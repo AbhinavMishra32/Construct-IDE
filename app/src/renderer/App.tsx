@@ -557,6 +557,87 @@ function TaskOutputBlock({
   );
 }
 
+function normalizeExecutionCopy(value: string): string {
+  return value
+    .replace(/^Error:\s*/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function TaskFailureCard({
+  failure,
+  index
+}: {
+  failure: TaskResult["failures"][number];
+  index: number;
+}) {
+  const expectedBehavior = normalizeExecutionCopy(failure.testName);
+  const currentBehavior = normalizeExecutionCopy(
+    failure.actualOutput || failure.message || "Current behavior could not be determined."
+  );
+  const matcherDiagnostic =
+    failure.expectedOutput || failure.actualOutput
+      ? normalizeExecutionCopy(failure.message)
+      : null;
+
+  return (
+    <div className="construct-task-failure-card">
+      <div className="construct-task-failure-card-header">
+        <div className="construct-task-failure-card-index">
+          {String(index + 1).padStart(2, "0")}
+        </div>
+        <div className="construct-task-failure-card-copy">
+          <span className="construct-task-failure-kicker">Validation contract</span>
+          <h4>{expectedBehavior}</h4>
+        </div>
+      </div>
+
+      <div className="construct-task-comparison-grid">
+        <div className="construct-task-comparison-panel is-expected">
+          <div className="construct-task-comparison-header">
+            <GuideSectionLabel icon={<PhTarget size={13} weight="duotone" />}>
+              Should do
+            </GuideSectionLabel>
+          </div>
+          <p>{expectedBehavior}</p>
+          {failure.expectedOutput ? (
+            <TaskOutputBlock
+              label="Expected output"
+              value={failure.expectedOutput}
+              tone="expected"
+            />
+          ) : null}
+        </div>
+
+        <div className="construct-task-comparison-panel is-actual">
+          <div className="construct-task-comparison-header">
+            <GuideSectionLabel icon={<PhCompassTool size={13} weight="duotone" />}>
+              Does now
+            </GuideSectionLabel>
+          </div>
+          <p>{currentBehavior}</p>
+          {failure.actualOutput ? (
+            <TaskOutputBlock
+              label="Current output"
+              value={failure.actualOutput}
+              tone="actual"
+            />
+          ) : null}
+        </div>
+      </div>
+
+      {matcherDiagnostic ? (
+        <div className="construct-task-diagnostic">
+          <GuideSectionLabel icon={<PhTestTube size={13} weight="duotone" />}>
+            Diagnostic
+          </GuideSectionLabel>
+          <p>{matcherDiagnostic}</p>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export default function App() {
   const [appRoute, setAppRoute] = useState<AppRoute>(() =>
     parseAppRoute(window.location.hash)
@@ -6316,6 +6397,8 @@ function TaskResultPanel({
     Boolean(rewriteGate);
   const taskStatusLabel = isVerificationBlocked ? "review" : taskResult?.status ?? "";
   const taskStatusClassName = isVerificationBlocked ? "needs-review" : taskResult?.status ?? "";
+  const failureCount = taskResult?.failures.length ?? 0;
+  const leadingFailure = failureCount > 0 ? taskResult?.failures[0] ?? null : null;
 
   return (
     <Card className="construct-task-results">
@@ -6349,41 +6432,48 @@ function TaskResultPanel({
                 <PhArrowClockwise size={12} weight="bold" />
                 {formatDuration(taskResult.durationMs)}
               </ToolbarPill>
+              {taskResult.status === "failed" ? (
+                <ToolbarPill variant="outline" className="construct-brief-chip">
+                  <PhStack size={12} weight="duotone" />
+                  {failureCount} blocker{failureCount === 1 ? "" : "s"}
+                </ToolbarPill>
+              ) : null}
             </div>
 
             {taskResult.failures.length > 0 ? (
-              <div className="construct-task-failures">
-                {taskResult.failures.map((failure) => (
-                  <Alert
-                    key={`${failure.testName}-${failure.message}`}
-                    variant="destructive"
-                    className="construct-task-failure"
-                  >
-                    <AlertDescription>
-                      <strong>{failure.testName}</strong>
-                      <p>{failure.message}</p>
-                      {failure.expectedOutput || failure.actualOutput ? (
-                        <div className="construct-task-output-grid">
-                          {failure.expectedOutput ? (
-                            <TaskOutputBlock
-                              label="Expected output"
-                              value={failure.expectedOutput}
-                              tone="expected"
-                            />
-                          ) : null}
-                          {failure.actualOutput ? (
-                            <TaskOutputBlock
-                              label="Current output"
-                              value={failure.actualOutput}
-                              tone="actual"
-                            />
-                          ) : null}
-                        </div>
-                      ) : null}
-                    </AlertDescription>
-                  </Alert>
-                ))}
-              </div>
+              <>
+                <div className="construct-task-summary-card is-failed">
+                  <div className="construct-task-summary-copy">
+                    <GuideSectionLabel icon={<PhTarget size={13} weight="duotone" />}>
+                      Verification summary
+                    </GuideSectionLabel>
+                    <h4>
+                      {failureCount} validation contract{failureCount === 1 ? "" : "s"} still
+                      failing
+                    </h4>
+                    <p>
+                      Each card shows the contract the step expects on the left and what your
+                      implementation returns right now on the right.
+                    </p>
+                  </div>
+                  {leadingFailure ? (
+                    <div className="construct-task-summary-focus">
+                      <span>Focus next</span>
+                      <strong>{normalizeExecutionCopy(leadingFailure.testName)}</strong>
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="construct-task-failures">
+                  {taskResult.failures.map((failure, index) => (
+                    <TaskFailureCard
+                      key={`${failure.testName}-${failure.message}-${index}`}
+                      failure={failure}
+                      index={index}
+                    />
+                  ))}
+                </div>
+              </>
             ) : isVerificationBlocked && rewriteGate ? (
               <Alert className="construct-task-warning">
                 <AlertDescription>
@@ -6392,9 +6482,22 @@ function TaskResultPanel({
                 </AlertDescription>
               </Alert>
             ) : (
-              <Alert className="construct-task-success">
-                <AlertDescription>All targeted tests passed.</AlertDescription>
-              </Alert>
+              <div className="construct-task-summary-card is-passed">
+                <div className="construct-task-summary-copy">
+                  <GuideSectionLabel icon={<PhTarget size={13} weight="duotone" />}>
+                    Verification summary
+                  </GuideSectionLabel>
+                  <h4>All targeted checks passed</h4>
+                  <p>
+                    This step satisfied the current validation set. You can keep building or
+                    move to the next step when you are ready.
+                  </p>
+                </div>
+                <div className="construct-task-summary-focus">
+                  <span>Tests run</span>
+                  <strong>{taskResult.testsRun.length}</strong>
+                </div>
+              </div>
             )}
           </div>
         )}
