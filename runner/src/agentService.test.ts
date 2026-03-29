@@ -2890,6 +2890,88 @@ test("ConstructAgentService rejects invalid generated learner source syntax", as
   }
 });
 
+test("ConstructAgentService rejects learner files that already match the canonical implementation", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "construct-agent-canonical-match-guard-"));
+
+  try {
+    const solvedWithTaskMarker = [
+      "export function shout(value: string): string {",
+      "  // TASK:utility",
+      "  return value.toUpperCase();",
+      "}"
+    ].join("\n");
+
+    await expectBlueprintGenerationToReject(root, {
+      bundle: buildBlueprintGuardBundle({
+        canonicalFiles: [
+          {
+            path: "src/index.ts",
+            content: `${solvedWithTaskMarker}\n`
+          }
+        ],
+        learnerFiles: [
+          {
+            path: "src/index.ts",
+            content: `${solvedWithTaskMarker}\n`
+          }
+        ]
+      }),
+      rejectionPattern: /learnerfiles file src\/index\.ts already matches the canonical implementation/i
+    });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("ConstructAgentService rejects solved learner files without a learner-visible task gap", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "construct-agent-task-gap-guard-"));
+
+  try {
+    await expectBlueprintGenerationToReject(root, {
+      bundle: buildBlueprintGuardBundle({
+        learnerFiles: [
+          {
+            path: "src/index.ts",
+            content: [
+              "export function shout(value: string): string {",
+              "  // step-utility-anchor",
+              "  return value.toUpperCase();",
+              "}"
+            ].join("\n")
+          }
+        ],
+        steps: [
+          {
+            id: "step.utility",
+            title: "Implement the utility",
+            summary: "Implement the string helper.",
+            doc: "Edit `src/index.ts` and implement `shout`.",
+            lessonSlides: [
+              markdownSlide("## Start with one pure function\n\nKeep this focused on a single utility."),
+              markdownSlide("## Why purity matters here\n\nA pure transformation is easy to reason about and test.")
+            ],
+            anchor: {
+              file: "src/index.ts",
+              marker: "step-utility-anchor",
+              startLine: null,
+              endLine: null
+            },
+            tests: ["hidden_tests/step1_validation.js"],
+            concepts: ["typescript.functions"],
+            constraints: ["Keep the implementation pure."],
+            checks: [],
+            estimatedMinutes: 8,
+            difficulty: "intro" as const
+          }
+        ]
+      }),
+      rejectionPattern: /learnerfiles file src\/index\.ts does not expose a learner-visible task gap/i
+    });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("ConstructAgentService rejects blueprint drafts with missing hidden test references", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "construct-agent-step-ref-guard-"));
 

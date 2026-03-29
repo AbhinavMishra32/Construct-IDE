@@ -7204,6 +7204,12 @@ function validateGeneratedBlueprintDraftIntegrity(
   }
 
   validateGeneratedStepReferences(draft.steps, learnerFiles, hiddenTestPaths, context);
+  validateGeneratedLearnerExerciseSeparation({
+    learnerFiles,
+    canonicalFiles,
+    steps: draft.steps,
+    context
+  });
 }
 
 function validateGeneratedFrontierDraftIntegrity(
@@ -7217,6 +7223,11 @@ function validateGeneratedFrontierDraftIntegrity(
 
   validateNoGeneratedPathOverlap(learnerPaths, hiddenTestPaths, "learnerFiles", "hiddenTests", context);
   validateGeneratedStepReferences(draft.steps, learnerFiles, hiddenTestPaths, context);
+  validateGeneratedLearnerExerciseSeparation({
+    learnerFiles,
+    steps: draft.steps,
+    context
+  });
 }
 
 function validateGeneratedFileEntries(
@@ -7320,6 +7331,70 @@ function validateGeneratedStepReferences(
       }
     }
   }
+}
+
+const LEARNER_TASK_GAP_PATTERNS = [
+  /\bTASK\b/i,
+  /\bTODO\b/i,
+  /\bFIXME\b/i,
+  /\bNotImplemented(?:Error)?\b/i,
+  /throw new Error\((["'`])Implement/i,
+  /throw new Error\((["'`])TODO/i,
+  /\btodo!\s*\(/i,
+  /\bunimplemented!\s*\(/i
+];
+
+function validateGeneratedLearnerExerciseSeparation(input: {
+  learnerFiles: Map<string, string>;
+  steps: GeneratedBlueprintBundleDraft["steps"] | GeneratedFrontierDraft["steps"];
+  context: string;
+  canonicalFiles?: Map<string, string>;
+}): void {
+  const validatedFiles = new Set<string>();
+
+  for (const step of input.steps) {
+    const anchorFile = normalizePathValue(step.anchor.file);
+    if (validatedFiles.has(anchorFile)) {
+      continue;
+    }
+    validatedFiles.add(anchorFile);
+
+    const learnerContent = input.learnerFiles.get(anchorFile);
+    if (learnerContent === undefined) {
+      continue;
+    }
+
+    const canonicalContent = input.canonicalFiles?.get(anchorFile);
+    if (
+      canonicalContent !== undefined &&
+      normalizeGeneratedSourceForComparison(learnerContent)
+        === normalizeGeneratedSourceForComparison(canonicalContent)
+    ) {
+      throw new Error(
+        `${input.context} learnerFiles file ${anchorFile} already matches the canonical implementation.`
+      );
+    }
+
+    if (!containsLearnerTaskGap(learnerContent, step.anchor.marker)) {
+      throw new Error(
+        `${input.context} learnerFiles file ${anchorFile} does not expose a learner-visible task gap near ${step.anchor.marker}.`
+      );
+    }
+  }
+}
+
+function containsLearnerTaskGap(content: string, marker: string): boolean {
+  const normalizedMarker = marker.trim();
+
+  if (LEARNER_TASK_GAP_PATTERNS.some((pattern) => pattern.test(normalizedMarker))) {
+    return true;
+  }
+
+  return LEARNER_TASK_GAP_PATTERNS.some((pattern) => pattern.test(content));
+}
+
+function normalizeGeneratedSourceForComparison(content: string): string {
+  return content.replace(/\r\n/g, "\n").trim();
 }
 
 function validateGeneratedHiddenTest(
@@ -8244,6 +8319,9 @@ function buildBlueprintGenerationInstructions(): string {
     "supportFiles are unmasked project files such as package.json, pyproject.toml, tsconfig, helper modules, and fixed runtime scaffolding.",
     "canonicalFiles are the solved versions of the learner-owned implementation files.",
     "learnerFiles must only cover the current frontierPlanSteps and must correspond to the same file paths as the canonical implementation for those frontier capabilities, but with focused TASK markers and incomplete implementations the learner must fill in.",
+    "Every learnerFile must be visibly incomplete at the anchored task region. The learner should need to edit code before the hidden test for that step can pass.",
+    "Do not return learnerFiles that already match canonicalFiles, already satisfy the hidden validation, or merely restate the solved implementation with a passive comment.",
+    "Use an explicit unfinished task affordance at each anchor such as TASK/TODO markers with a failing stub, NotImplemented error, todo!(), unimplemented!(), or an equivalent language-appropriate unfinished implementation.",
     "supportFiles, canonicalFiles, and learnerFiles must not contain placeholder bodies, placeholder comments, placeholder drafts, 'final version lives elsewhere' stubs, or comment-only skeletons.",
     "If any returned supportFiles, canonicalFiles, or learnerFiles path ends in .ts, .tsx, .js, .jsx, .mts, .cts, .mjs, or .cjs, return syntactically valid source code immediately.",
     "hiddenTests must only cover the current frontierPlanSteps and stay runnable without exposing full solutions in the learnerFiles.",
@@ -8315,6 +8393,9 @@ function buildBlueprintRepairInstructions(): string {
     "Resolve every validationFailure completely. Do not repeat the broken file separation, duplicate paths, invalid JSON, invalid source syntax, missing anchors, or missing hidden test references.",
     "supportFiles, canonicalFiles, learnerFiles, and hiddenTests must each contain unique paths, and the groups must not overlap.",
     "Every learnerFile must still have a matching canonicalFile for the same path.",
+    "Every learnerFile must stay visibly incomplete at the anchor. Do not repair the draft by handing the learner the finished implementation.",
+    "Do not return learnerFiles that already match canonicalFiles or that would already pass the step hidden test without learner edits.",
+    "Keep explicit unfinished task affordances at the anchor such as TASK/TODO markers with a failing stub, NotImplemented error, todo!(), unimplemented!(), or an equivalent language-appropriate unfinished implementation.",
     "Every step anchor.file must exist in learnerFiles, every step anchor.marker must appear literally inside that learner file, every step test path must exist in hiddenTests, and every entrypoint must exist in supportFiles, canonicalFiles, or learnerFiles.",
     "If a previous file is already valid, preserve its intent instead of rewriting it gratuitously.",
     "Do not emit placeholder prose instead of code. Return concrete, runnable file contents and valid JSON only."
@@ -8342,6 +8423,8 @@ function buildAdaptiveFrontierGenerationInstructions(): string {
     "The stable spine already exists. Do not rewrite the entire project.",
     "Return only learnerFiles, hiddenTests, and steps for the selectedFrontierSteps in the prompt.",
     "learnerFiles must preserve the current working project state while introducing only the next masked implementation targets.",
+    "Every learnerFile must remain visibly incomplete at the current anchor so the learner still has real work to do before the step passes.",
+    "Do not dump solved code into learnerFiles, even if recentCapabilityEvidence is strong. The frontier may become lighter or narrower, but it must stay learner-owned.",
     "If a selected frontier step extends a file the learner already touched, carry forward the working code from currentWorkspaceFiles and add only the next focused TASK marker or placeholder region.",
     "learnerFiles must not contain placeholder bodies, placeholder comments, placeholder drafts, or comment-only skeletons outside the intentional TASK regions.",
     "If any returned learnerFiles path ends in .ts, .tsx, .js, .jsx, .mts, .cts, .mjs, or .cjs, return syntactically valid source code immediately.",
