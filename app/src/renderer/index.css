@@ -7061,7 +7061,7 @@ textarea {
   position: absolute;
   left: -20px;
   top: 50%;
-  width: 18px;
+  width: 30px;
   height: 12px;
   border-left: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
   border-bottom: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
