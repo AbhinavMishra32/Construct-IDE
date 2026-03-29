@@ -6906,7 +6906,7 @@ textarea {
 .construct-agent-outline {
   display: flex;
   flex-direction: column;
-  gap: 0;
+  gap: 10px;
 }
 
 .construct-agent-outline-anchor {
@@ -6916,7 +6916,6 @@ textarea {
 
 .construct-agent-outline-group {
   position: relative;
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
 }
 
 .construct-agent-outline-node {
@@ -7023,15 +7022,26 @@ textarea {
 }
 
 .construct-agent-outline-panel {
+  position: relative;
   display: grid;
   gap: 8px;
   padding: 0 0 18px 36px;
 }
 
+.construct-agent-outline-panel::before {
+  content: "";
+  position: absolute;
+  left: 16px;
+  top: 2px;
+  bottom: 6px;
+  width: 1px;
+  background: color-mix(in srgb, var(--border) 76%, transparent);
+}
+
 .construct-agent-outline-children {
   display: grid;
   gap: 6px;
-  padding-left: 0;
+  padding-left: 18px;
 }
 
 .construct-agent-outline-child {
@@ -7056,7 +7066,7 @@ textarea {
 
 .construct-agent-outline-body {
   max-width: 68ch;
-  padding-left: 0;
+  padding-left: 18px;
 }
 
 .construct-agent-outline-body p {
