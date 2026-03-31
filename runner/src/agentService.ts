@@ -9147,11 +9147,13 @@ function normalizeDraftLessonSlides(
 function normalizeGeneratedBlueprintDraft(
   draft: GeneratedBlueprintBundleDraft
 ): GeneratedBlueprintBundleDraft {
-  validateGeneratedBlueprintDraftIntegrity(draft, "Generated blueprint draft");
+  const rebalancedDraft = rebalanceGeneratedConstructionSurfaces(draft);
+
+  validateGeneratedBlueprintDraftIntegrity(rebalancedDraft, "Generated blueprint draft");
 
   return {
-    ...draft,
-    steps: draft.steps.map((step) => ({
+    ...rebalancedDraft,
+    steps: rebalancedDraft.steps.map((step) => ({
       ...step,
       lessonSlides: normalizeDraftLessonSlides(step.lessonSlides, step.doc)
     }))
@@ -9164,15 +9166,17 @@ function normalizeGeneratedFrontierDraft(
     language?: string;
   }
 ): GeneratedFrontierDraft {
+  const rebalancedDraft = rebalanceGeneratedConstructionSurfaces(draft);
+
   validateGeneratedFrontierDraftIntegrity(
-    draft,
+    rebalancedDraft,
     "Generated frontier draft",
     options?.language
   );
 
   return {
-    ...draft,
-    steps: draft.steps.map((step) => ({
+    ...rebalancedDraft,
+    steps: rebalancedDraft.steps.map((step) => ({
       ...step,
       lessonSlides: normalizeDraftLessonSlides(step.lessonSlides, step.doc)
     }))
@@ -9534,17 +9538,15 @@ function validateGeneratedLearnerStepBudget(input: {
   );
   const constructionUnits = buildConstructionUnits(
     input.step,
-    uniqueConstructionInstructions([
-      ...extractConstructionRequirementsFromLearnerFile(input.step, input.learnerContent),
-      ...extractConstructionRequirementsFromDoc(input.step.doc),
-      ...extractConstructionRequirementsFromSummary(input.step.summary)
-    ])
+    resolveConstructionSourceRequirements(input.step, input.learnerContent)
   );
   const responsibilityKinds = new Set(constructionUnits.map((unit) => unit.kind));
-  const maxTaskRegions = input.step.difficulty === "intro" ? 1 : 2;
-  const maxBuildMoves = input.step.difficulty === "intro" ? 4 : 6;
-  const maxResponsibilityKinds = input.step.difficulty === "intro" ? 2 : 3;
-  const difficultyLabel = input.step.difficulty === "intro" ? "Intro" : "Core";
+  const {
+    maxTaskRegions,
+    maxBuildMoves,
+    maxResponsibilityKinds,
+    difficultyLabel
+  } = getLearnerStepBudget(input.step);
 
   if (taskGapRegions.length > maxTaskRegions) {
     throw new Error(
@@ -10076,20 +10078,7 @@ function compileConstructionScaffolding<TDraft extends DraftWithConstructionScaf
   const steps = draft.steps.map((step) => {
     const normalizedAnchorPath = normalizePathValue(step.anchor.file);
     const learnerContent = learnerFileByPath.get(normalizedAnchorPath) ?? "";
-    const commentRequirements = uniqueConstructionInstructions(
-      extractConstructionRequirementsFromLearnerFile(step, learnerContent)
-    );
-    const docRequirements = uniqueConstructionInstructions(
-      extractConstructionRequirementsFromDoc(step.doc)
-    );
-    const summaryRequirements = uniqueConstructionInstructions(
-      extractConstructionRequirementsFromSummary(step.summary)
-    );
-    const sourceRequirements = uniqueConstructionInstructions(
-      commentRequirements.length >= 2
-        ? commentRequirements
-        : [...commentRequirements, ...docRequirements, ...summaryRequirements]
-    );
+    const sourceRequirements = resolveConstructionSourceRequirements(step, learnerContent);
     const constructionUnits = buildConstructionUnits(step, sourceRequirements);
     const scaffoldedContent = rewriteLearnerFileWithConstructionSequence(
       step,
@@ -10133,6 +10122,53 @@ function compileConstructionScaffolding<TDraft extends DraftWithConstructionScaf
         .slice(0, 4)
         .map((unit) => unit.title)
     }
+  };
+}
+
+function rebalanceGeneratedConstructionSurfaces<TDraft extends DraftWithConstructionScaffolding>(
+  draft: TDraft
+): TDraft {
+  const learnerFileByPath = new Map(
+    draft.learnerFiles.map((file) => [normalizePathValue(file.path), file.content] as const)
+  );
+
+  for (const step of draft.steps) {
+    if (step.difficulty === "advanced") {
+      continue;
+    }
+
+    const normalizedAnchorPath = normalizePathValue(step.anchor.file);
+    const learnerContent = learnerFileByPath.get(normalizedAnchorPath);
+
+    if (!learnerContent) {
+      continue;
+    }
+
+    const sourceRequirements = resolveConstructionSourceRequirements(step, learnerContent);
+    const budgetedRequirements = fitConstructionRequirementsToBudget(step, sourceRequirements);
+
+    if (
+      budgetedRequirements.length === 0 ||
+      budgetedRequirements.length === sourceRequirements.length
+    ) {
+      continue;
+    }
+
+    const rebalancedContent = rewriteLearnerFileWithBudgetedConstructionSequence(
+      step,
+      learnerContent,
+      budgetedRequirements
+    );
+
+    learnerFileByPath.set(normalizedAnchorPath, rebalancedContent);
+  }
+
+  return {
+    ...draft,
+    learnerFiles: draft.learnerFiles.map((file) => ({
+      ...file,
+      content: learnerFileByPath.get(normalizePathValue(file.path)) ?? file.content
+    }))
   };
 }
 
@@ -10341,6 +10377,83 @@ function uniqueConstructionInstructions(instructions: string[]): string[] {
   }
 
   return normalized.slice(0, 6);
+}
+
+function resolveConstructionSourceRequirements(
+  step: GeneratedBlueprintStepDraft,
+  learnerContent: string
+): string[] {
+  const commentRequirements = uniqueConstructionInstructions(
+    extractConstructionRequirementsFromLearnerFile(step, learnerContent)
+  );
+  const docRequirements = uniqueConstructionInstructions(
+    extractConstructionRequirementsFromDoc(step.doc)
+  );
+  const summaryRequirements = uniqueConstructionInstructions(
+    extractConstructionRequirementsFromSummary(step.summary)
+  );
+
+  return uniqueConstructionInstructions(
+    commentRequirements.length > 0
+      ? commentRequirements
+      : [...docRequirements, ...summaryRequirements]
+  );
+}
+
+function getLearnerStepBudget(step: GeneratedBlueprintStepDraft): {
+  maxTaskRegions: number;
+  maxBuildMoves: number;
+  maxResponsibilityKinds: number;
+  difficultyLabel: "Intro" | "Core";
+} {
+  return step.difficulty === "intro"
+    ? {
+        maxTaskRegions: 1,
+        maxBuildMoves: 4,
+        maxResponsibilityKinds: 2,
+        difficultyLabel: "Intro"
+      }
+    : {
+        maxTaskRegions: 2,
+        maxBuildMoves: 6,
+        maxResponsibilityKinds: 3,
+        difficultyLabel: "Core"
+      };
+}
+
+function fitConstructionRequirementsToBudget(
+  step: GeneratedBlueprintStepDraft,
+  requirements: string[]
+): string[] {
+  if (step.difficulty === "advanced") {
+    return requirements;
+  }
+
+  const { maxBuildMoves, maxResponsibilityKinds } = getLearnerStepBudget(step);
+  const budgeted: string[] = [];
+  const kinds = new Set<ConstructionUnit["kind"]>();
+
+  for (const requirement of requirements) {
+    const kind = inferConstructionUnitKind(requirement, step.anchor.file);
+    const introducesNewKind = !kinds.has(kind);
+
+    if (introducesNewKind && kinds.size >= maxResponsibilityKinds) {
+      continue;
+    }
+
+    budgeted.push(requirement);
+    kinds.add(kind);
+
+    if (budgeted.length >= maxBuildMoves) {
+      break;
+    }
+  }
+
+  if (budgeted.length === 0 && requirements.length > 0) {
+    return [requirements[0]!];
+  }
+
+  return budgeted;
 }
 
 function isConstructionInstructionLine(line: string): boolean {
@@ -10569,6 +10682,72 @@ function rewriteLearnerFileWithConstructionSequence(
     ...lines.slice(0, anchorIndex + 1),
     ...ladderBlock,
     ...lines.slice(anchorIndex + 1)
+  ].join("\n");
+}
+
+function rewriteLearnerFileWithBudgetedConstructionSequence(
+  step: GeneratedBlueprintStepDraft,
+  learnerContent: string,
+  constructionRequirements: string[]
+): string {
+  if (!learnerContent.trim() || constructionRequirements.length === 0) {
+    return learnerContent;
+  }
+
+  const lines = learnerContent.replace(/\r\n/g, "\n").split("\n");
+  const anchorIndex = lines.findIndex((line) => line.includes(step.anchor.marker));
+
+  if (anchorIndex < 0) {
+    return learnerContent;
+  }
+
+  const commentPrefix = detectConstructionCommentPrefix(lines, anchorIndex);
+  const anchorLine = lines[anchorIndex] ?? "";
+
+  if (!commentPrefix || !anchorLine.trim().startsWith(commentPrefix)) {
+    return learnerContent;
+  }
+
+  const indent = anchorLine.match(/^\s*/)![0] ?? "";
+  let blockEnd = anchorIndex + 1;
+  let capturedComment = false;
+
+  for (; blockEnd < Math.min(lines.length, anchorIndex + 24); blockEnd += 1) {
+    const trimmed = lines[blockEnd]!.trim();
+
+    if (!trimmed) {
+      if (capturedComment) {
+        continue;
+      }
+      continue;
+    }
+
+    if (trimmed.startsWith(commentPrefix)) {
+      capturedComment = true;
+      continue;
+    }
+
+    if (capturedComment) {
+      break;
+    }
+
+    break;
+  }
+
+  const budgetedBlock = [
+    anchorLine,
+    `${indent}${commentPrefix} Build sequence for this step:`,
+    ...constructionRequirements.map(
+      (instruction, index) =>
+        `${indent}${commentPrefix} ${index + 1}) ${truncateText(instruction, 108)}`
+    ),
+    `${indent}${commentPrefix} Keep this slice local; later behavior unlocks in the next step.`
+  ];
+
+  return [
+    ...lines.slice(0, anchorIndex),
+    ...budgetedBlock,
+    ...lines.slice(blockEnd)
   ].join("\n");
 }
 

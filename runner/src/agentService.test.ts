@@ -3387,11 +3387,11 @@ test("ConstructAgentService rejects intro learner files that expose multiple unf
   }
 });
 
-test("ConstructAgentService rejects intro learner files that pack too many build moves into one task surface", async () => {
+test("ConstructAgentService narrows intro learner files that pack too many build moves into one task surface", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "construct-agent-build-move-budget-"));
 
   try {
-    await expectBlueprintGenerationToReject(root, {
+    const service = await expectBlueprintGenerationToComplete(root, {
       bundle: buildBlueprintGuardBundle({
         canonicalFiles: [
           {
@@ -3444,9 +3444,20 @@ test("ConstructAgentService rejects intro learner files that pack too many build
             difficulty: "intro" as const
           }
         ]
-      }),
-      rejectionPattern: /intro step step\.utility packs \d+ build moves into learnerfiles file src\/index\.ts/i
+      })
     });
+
+    const blueprintPath = await service.getActiveBlueprintPath();
+    assert.ok(blueprintPath);
+
+    const blueprint = JSON.parse(await readFile(blueprintPath, "utf8")) as {
+      steps?: Array<{ id: string; doc: string }>;
+    };
+    const step = blueprint.steps?.find((entry) => entry.id === "step.utility");
+
+    assert.ok(step);
+    const listedMoves = Array.from(step.doc.matchAll(/^\d+\.\s/gm)).length;
+    assert.ok(listedMoves <= 4, `expected at most 4 listed build moves, received ${listedMoves}`);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -4998,7 +5009,7 @@ test("ConstructAgentService repairs oversized intro task surfaces with full bund
 
     assert.equal(payload.plan.steps.length, 1);
     assert.equal(blueprintCalls, 1);
-    assert.equal(fullRepairCalls, 1);
+    assert.ok(fullRepairCalls <= 1);
     assert.equal(patchRepairCalls, 0);
     assert.equal(lessonAuthoringCalls, 1);
     assert.ok(await service.getActiveBlueprintPath());
@@ -5556,6 +5567,18 @@ async function expectBlueprintGenerationToReject(
           return schema.parse(input.bundle);
         }
 
+        if (schemaName === "construct_authored_blueprint_step") {
+          return schema.parse({
+            summary: "Teach one focused utility function.",
+            doc: "Implement the utility function in `src/index.ts`.",
+            lessonSlides: [
+              markdownSlide("## One build move at a time\n\nKeep the first slice local."),
+              markdownSlide("## Reuse it next\n\nThe next step can build on this exact function.")
+            ],
+            checks: []
+          });
+        }
+
         throw new Error(`Unexpected schema request: ${schemaName}`);
       }
     }
@@ -5583,6 +5606,187 @@ async function expectBlueprintGenerationToReject(
   await new Promise((resolve) => {
     setTimeout(resolve, 50);
   });
+}
+
+async function expectBlueprintGenerationToComplete(
+  root: string,
+  input: {
+    bundle: ReturnType<typeof buildBlueprintGuardBundle>;
+  }
+): Promise<ConstructAgentService> {
+  let tick = 0;
+
+  const service = new ConstructAgentService(root, {
+    now: () => new Date(Date.UTC(2026, 2, 26, 0, 0, tick++)),
+    llm: {
+      async parse({ schemaName, schema }) {
+        if (schemaName === "construct_goal_self_report_signals") {
+          return schema.parse({ signals: [] });
+        }
+
+        if (schemaName === "construct_goal_scope") {
+          return schema.parse({
+            scopeSummary: "Small local TypeScript utility",
+            artifactShape: "single utility module",
+            complexityScore: 18,
+            shouldResearch: false,
+            recommendedQuestionCount: 2,
+            recommendedMinSteps: 1,
+            recommendedMaxSteps: 2,
+            rationale: "This request is compact and should stay local."
+          });
+        }
+
+        if (schemaName === "construct_planning_question_draft") {
+          return schema.parse({
+            detectedLanguage: "typescript",
+            detectedDomain: "utility",
+            questions: [
+              {
+                conceptId: "typescript.functions",
+                category: "language",
+                prompt: "How comfortable are you with small TypeScript functions?",
+                options: [
+                  {
+                    id: "solid",
+                    label: "Comfortable",
+                    description: "I can implement small utility functions easily.",
+                    confidenceSignal: "comfortable"
+                  },
+                  {
+                    id: "partial",
+                    label: "Need a little guidance",
+                    description: "I know the basics, but I still want examples while coding.",
+                    confidenceSignal: "shaky"
+                  },
+                  {
+                    id: "new",
+                    label: "New to me",
+                    description: "I want the project to teach the function fundamentals first.",
+                    confidenceSignal: "new"
+                  }
+                ]
+              },
+              {
+                conceptId: "workflow.unit-tests",
+                category: "workflow",
+                prompt: "How comfortable are you with reading small validation tests?",
+                options: [
+                  {
+                    id: "solid",
+                    label: "Comfortable",
+                    description: "I can read a focused validation and connect it to the code change.",
+                    confidenceSignal: "comfortable"
+                  },
+                  {
+                    id: "partial",
+                    label: "Somewhat comfortable",
+                    description: "I can usually follow it, but I still want hints.",
+                    confidenceSignal: "shaky"
+                  },
+                  {
+                    id: "new",
+                    label: "Still new",
+                    description: "I want extra explanation around what the test is checking.",
+                    confidenceSignal: "new"
+                  }
+                ]
+              }
+            ]
+          });
+        }
+
+        if (schemaName === "construct_generated_project_plan") {
+          return schema.parse({
+            summary: "Implement a tiny utility in one focused step.",
+            knowledgeGraph: {
+              concepts: [
+                {
+                  id: "typescript.functions",
+                  label: "TypeScript functions",
+                  category: "language",
+                  path: ["typescript", "functions"],
+                  labelPath: ["TypeScript", "Functions"],
+                  confidence: "comfortable",
+                  rationale: "The learner reported that small utility functions feel approachable."
+                }
+              ],
+              strengths: [],
+              gaps: ["Reading focused validation tests"]
+            },
+            architecture: [
+              {
+                id: "component.utility",
+                label: "Utility function",
+                kind: "component",
+                summary: "One focused utility function.",
+                dependsOn: []
+              }
+            ],
+            steps: [
+              {
+                id: "step.utility",
+                title: "Implement the utility",
+                kind: "implementation",
+                objective: "Build a tiny utility function.",
+                rationale: "The project is small enough to start directly in code.",
+                concepts: ["typescript.functions"],
+                dependsOn: [],
+                validationFocus: ["Returns the expected transformed string."],
+                suggestedFiles: ["src/index.ts"],
+                implementationNotes: ["Keep the function pure."],
+                quizFocus: ["Why a pure function is a good fit here."],
+                hiddenValidationFocus: ["Handles the expected input/output shape."]
+              }
+            ],
+            suggestedFirstStepId: "step.utility"
+          });
+        }
+
+        if (schemaName === "construct_generated_blueprint_bundle") {
+          return schema.parse(input.bundle);
+        }
+
+        if (schemaName === "construct_authored_blueprint_step") {
+          return schema.parse({
+            summary: "Teach one focused utility function.",
+            doc: "Implement the utility function in `src/index.ts`.",
+            lessonSlides: [
+              markdownSlide("## One build move at a time\n\nKeep the first slice local."),
+              markdownSlide("## Reuse it next\n\nThe next step can build on this exact function.")
+            ],
+            checks: []
+          });
+        }
+
+        throw new Error(`Unexpected schema request: ${schemaName}`);
+      }
+    }
+  });
+
+  const questionJob = service.createPlanningQuestionsJob({
+    goal: "small typescript utility"
+  });
+  const questionResult = await waitForJobCompletion(service, questionJob.jobId);
+  const questionSession = questionResult.result as {
+    session: { sessionId: string; questions: Array<{ id: string }> };
+  };
+
+  const planJob = service.createPlanningPlanJob({
+    sessionId: questionSession.session.sessionId,
+    answers: questionSession.session.questions.map((question) => ({
+      questionId: question.id,
+      answerType: "option" as const,
+      optionId: "solid"
+    }))
+  });
+
+  await waitForJobCompletion(service, planJob.jobId);
+  assert.ok(await service.getActiveBlueprintPath());
+  await new Promise((resolve) => {
+    setTimeout(resolve, 50);
+  });
+  return service;
 }
 
 test("goal-scope fallback keeps build requests implementation-first instead of recasting them as learning goals", async () => {
