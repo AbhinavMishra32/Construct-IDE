@@ -2195,7 +2195,6 @@ textarea {
 .construct-course-slide-surface .construct-markdown h3 {
   margin: 0.3em 0 0.48em;
   letter-spacing: -0.04em;
-  max-width: 19ch;
   color: var(--course-text);
   font-weight: 600;
   text-wrap: pretty;
@@ -2204,12 +2203,14 @@ textarea {
 .construct-course-slide-surface .construct-markdown h1 {
   font-size: clamp(32px, 3vw, 48px);
   line-height: 1.03;
+  max-width: 18ch;
 }
 
 .construct-course-slide-surface .construct-markdown h2 {
   font-size: clamp(22px, 1.9vw, 30px);
   line-height: 1.16;
   margin-top: 2.8rem;
+  max-width: 28ch;
 }
 
 .construct-course-slide-surface .construct-markdown h3 {
@@ -2217,6 +2218,7 @@ textarea {
   line-height: 1.24;
   letter-spacing: -0.028em;
   margin-top: 2rem;
+  max-width: 34ch;
 }
 
 .construct-course-slide-surface .construct-markdown p,
@@ -2583,18 +2585,27 @@ textarea {
 }
 
 .construct-markdown-inline-code {
-  display: inline-flex;
-  align-items: center;
-  min-height: 1.75em;
-  padding: 0 0.42em;
-  margin: 0 0.08em;
+  display: inline;
+  padding: 0.08em 0.42em;
+  margin: 0 0.14em;
   border-radius: 0.45rem;
   border: 1px solid var(--course-inline-code-border);
   background: var(--course-inline-code-bg);
   color: var(--course-prose-code);
   font-family: var(--course-font-mono);
   font-size: 0.82em;
-  line-height: 1;
+  line-height: 1.35;
+  vertical-align: baseline;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  white-space: normal;
+}
+
+.construct-markdown h1 .construct-markdown-inline-code,
+.construct-markdown h2 .construct-markdown-inline-code,
+.construct-markdown h3 .construct-markdown-inline-code {
+  white-space: nowrap;
+  margin-inline: 0.12em;
 }
 
 .construct-markdown-link {
