@@ -94,6 +94,123 @@ test("prepareLearnerWorkspace strips trailing task comments from generated JSON 
   }
 });
 
+test("prepareLearnerWorkspace copies local relative-module dependencies needed by visible learner files", async () => {
+  const isolatedRoot = await mkdtemp(path.join(os.tmpdir(), "construct-materialize-deps-"));
+  const isolatedBlueprintRoot = path.join(isolatedRoot, "blueprints", "local-deps");
+  const isolatedBlueprintPath = path.join(isolatedBlueprintRoot, "project-blueprint.json");
+
+  try {
+    await rm(path.join(isolatedRoot, "blueprints"), { recursive: true, force: true });
+    await copyBlueprintProject(isolatedBlueprintRoot);
+
+    const blueprint = JSON.parse(await readFile(isolatedBlueprintPath, "utf8")) as {
+      files: Record<string, string>;
+    };
+    const learnerStateSource = [
+      "import { helperValue } from './helper';",
+      "",
+      "export type MergeState = {",
+      "  value: number;",
+      "};",
+      "",
+      "export function mergeState(input: MergeState): MergeState {",
+      "  throw new Error(`Implement mergeState with ${helperValue}`);",
+      "}"
+    ].join("\n");
+
+    blueprint.files["src/state.ts"] = learnerStateSource;
+    await writeFile(
+      isolatedBlueprintPath,
+      `${JSON.stringify(blueprint, null, 2)}\n`,
+      "utf8"
+    );
+    await writeFile(
+      path.join(isolatedBlueprintRoot, "src", "state.ts"),
+      learnerStateSource,
+      "utf8"
+    );
+    await writeFile(
+      path.join(isolatedBlueprintRoot, "src", "helper.ts"),
+      "export const helperValue = 42;\n",
+      "utf8"
+    );
+
+    const prepared = await prepareLearnerWorkspace(isolatedBlueprintPath);
+    const learnerHelper = await readFile(
+      path.join(prepared.learnerWorkspaceRoot, "src", "helper.ts"),
+      "utf8"
+    );
+
+    assert.equal(learnerHelper, "export const helperValue = 42;\n");
+  } finally {
+    await rm(isolatedRoot, { recursive: true, force: true });
+  }
+});
+
+test("prepareLearnerWorkspace backfills missing dependency files without overwriting learner edits", async () => {
+  const isolatedRoot = await mkdtemp(path.join(os.tmpdir(), "construct-materialize-backfill-"));
+  const isolatedBlueprintRoot = path.join(isolatedRoot, "blueprints", "backfill-deps");
+  const isolatedBlueprintPath = path.join(isolatedBlueprintRoot, "project-blueprint.json");
+
+  try {
+    await rm(path.join(isolatedRoot, "blueprints"), { recursive: true, force: true });
+    await copyBlueprintProject(isolatedBlueprintRoot);
+
+    const blueprint = JSON.parse(await readFile(isolatedBlueprintPath, "utf8")) as {
+      files: Record<string, string>;
+    };
+    const learnerStateSource = [
+      "import { helperValue } from './helper';",
+      "",
+      "export type MergeState = {",
+      "  value: number;",
+      "};",
+      "",
+      "export function mergeState(input: MergeState): MergeState {",
+      "  throw new Error(`Implement mergeState with ${helperValue}`);",
+      "}"
+    ].join("\n");
+
+    blueprint.files["src/state.ts"] = learnerStateSource;
+    await writeFile(
+      isolatedBlueprintPath,
+      `${JSON.stringify(blueprint, null, 2)}\n`,
+      "utf8"
+    );
+    await writeFile(
+      path.join(isolatedBlueprintRoot, "src", "state.ts"),
+      learnerStateSource,
+      "utf8"
+    );
+    await writeFile(
+      path.join(isolatedBlueprintRoot, "src", "helper.ts"),
+      "export const helperValue = 42;\n",
+      "utf8"
+    );
+
+    const prepared = await prepareLearnerWorkspace(isolatedBlueprintPath);
+    const learnerStatePath = path.join(prepared.learnerWorkspaceRoot, "src", "state.ts");
+    const learnerHelperPath = path.join(prepared.learnerWorkspaceRoot, "src", "helper.ts");
+
+    await writeFile(
+      learnerStatePath,
+      `${learnerStateSource}\n// learner edit\n`,
+      "utf8"
+    );
+    await rm(learnerHelperPath, { force: true });
+
+    await prepareLearnerWorkspace(isolatedBlueprintPath);
+
+    const learnerState = await readFile(learnerStatePath, "utf8");
+    const learnerHelper = await readFile(learnerHelperPath, "utf8");
+
+    assert.match(learnerState, /learner edit/);
+    assert.equal(learnerHelper, "export const helperValue = 42;\n");
+  } finally {
+    await rm(isolatedRoot, { recursive: true, force: true });
+  }
+});
+
 async function copyBlueprintProject(destinationRoot: string): Promise<void> {
   const sourceRoot = path.dirname(canonicalBlueprintPath);
   const { cp, mkdir } = await import("node:fs/promises");

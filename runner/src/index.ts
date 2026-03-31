@@ -14,7 +14,6 @@ import {
   CheckReviewResponseSchema,
   DeleteProviderConnectionRequestSchema,
   FeatureFlagsResponseSchema,
-  getBlueprintVisibleFilePaths,
   LearnerProfileResponseSchema,
   ProjectCurrentStepRequestSchema,
   ProjectSelectionRequestSchema,
@@ -94,7 +93,10 @@ async function getWorkspaceContext(): Promise<WorkspaceContext | null> {
     workspaceContextPromise &&
     workspaceContextBlueprintPath === canonicalBlueprintPath
   ) {
-    return workspaceContextPromise;
+    return workspaceContextPromise.then(async (context) => {
+      await prepareLearnerWorkspace(canonicalBlueprintPath);
+      return context;
+    });
   }
 
   workspaceContextBlueprintPath = canonicalBlueprintPath;
@@ -115,7 +117,7 @@ async function createWorkspaceContext(
     ignoredDirectories: ["test-fixtures", "tests", "__tests__"],
     unignoredDirectories: ["node_modules"],
     ignoredFiles: ["project-blueprint.json"],
-    visibleFiles: getBlueprintVisibleFilePaths(preparedWorkspace.blueprint),
+    visibleFiles: preparedWorkspace.materializedFilePaths,
     visibleDirectories: ["node_modules"],
     shallowDirectories: ["node_modules"]
   });
