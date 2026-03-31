@@ -8036,33 +8036,128 @@ function resolveAgentConfig(): AgentConfig {
 
 function createConsoleAgentLogger(): AgentLogger {
   const debugLevel = resolveDebugLevel();
+  let activeStreamKey: string | null = null;
+
+  const clearActiveStreamLine = () => {
+    if (!activeStreamKey) {
+      return;
+    }
+
+    if (typeof process.stdout.clearLine === "function" && typeof process.stdout.cursorTo === "function") {
+      process.stdout.clearLine(0);
+      process.stdout.cursorTo(0);
+    } else {
+      process.stdout.write("\r\u001b[2K");
+    }
+  };
+
+  const finalizeActiveStreamLine = () => {
+    if (!activeStreamKey) {
+      return;
+    }
+
+    process.stdout.write("\n");
+    activeStreamKey = null;
+  };
+
+  const writeLiveStreamLine = (
+    message: string,
+    context: Record<string, unknown>
+  ) => {
+    const streamState = getConsoleStreamState(message, context);
+
+    if (!streamState) {
+      finalizeActiveStreamLine();
+      return false;
+    }
+
+    const nextLine = formatLiveStreamLogLine(streamState);
+
+    if (activeStreamKey && activeStreamKey !== streamState.key) {
+      finalizeActiveStreamLine();
+    }
+
+    clearActiveStreamLine();
+    process.stdout.write(nextLine);
+    activeStreamKey = streamState.key;
+    return true;
+  };
 
   return {
     info(message, context) {
       if (debugLevel < 1) {
         return;
       }
+      if (context && writeLiveStreamLine(message, context)) {
+        return;
+      }
       console.log(formatAgentLogLine("INFO", message, context));
     },
     warn(message, context) {
+      finalizeActiveStreamLine();
       console.warn(formatAgentLogLine("WARN", message, context));
     },
     error(message, context) {
+      finalizeActiveStreamLine();
       console.error(formatAgentLogLine("ERROR", message, context));
     },
     debug(message, context) {
       if (debugLevel < 2) {
         return;
       }
+      finalizeActiveStreamLine();
       console.debug(formatAgentLogLine("DEBUG", message, context));
     },
     trace(message, context) {
       if (debugLevel < 3) {
         return;
       }
+      finalizeActiveStreamLine();
       console.debug(formatAgentLogLine("TRACE", message, context));
     }
   };
+}
+
+function getConsoleStreamState(
+  message: string,
+  context: Record<string, unknown>
+): { key: string; line: string } | null {
+  if (message !== "Agent emitted event.") {
+    return null;
+  }
+
+  const payload = context.payload;
+  const isStreamPayload =
+    payload &&
+    typeof payload === "object" &&
+    "stream" in payload &&
+    (payload as Record<string, unknown>).stream === true;
+  const stage = typeof context.stage === "string" ? context.stage : "";
+  const jobId = typeof context.jobId === "string" ? context.jobId : "";
+
+  if (!isStreamPayload || !stage.endsWith("-stream") || jobId.length === 0) {
+    return null;
+  }
+
+  const title = typeof context.title === "string" ? context.title : "Live draft";
+  const detail =
+    typeof context.detail === "string"
+      ? context.detail.replace(/\s+/g, " ").trim()
+      : "";
+
+  return {
+    key: `${jobId}:${stage}`,
+    line: formatAgentLogLine("INFO", title, {
+      jobId,
+      kind: context.kind,
+      stage,
+      text: detail.length > 0 ? detail : undefined
+    })
+  };
+}
+
+function formatLiveStreamLogLine(input: { key: string; line: string }): string {
+  return input.line;
 }
 
 function formatAgentLogLine(
