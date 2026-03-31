@@ -52,6 +52,7 @@ import {
   type BlueprintDeepDiveResponse,
   type ConceptConfidence,
   type ComprehensionCheck,
+  type ConstructionUnit,
   type FeatureFlag,
   type FeatureFlagKey,
   type GeneratedProjectPlan,
@@ -668,6 +669,23 @@ type GeneratedBlueprintFileValidationTarget = {
   path: string;
   error: string;
   kind: "invalid-json" | "invalid-source-syntax" | "invalid-hidden-test" | "duplicate-path";
+};
+
+type DraftWithConstructionScaffolding = {
+  steps: GeneratedBlueprintStepDraft[];
+  learnerFiles: Array<{ path: string; content: string }>;
+};
+
+type ConstructionCompilerResult<TDraft extends DraftWithConstructionScaffolding> = {
+  draft: TDraft;
+  constructionUnitsByStepId: Map<string, ConstructionUnit[]>;
+  summary: {
+    stepCount: number;
+    unitCount: number;
+    scaffoldedFileCount: number;
+    sampleStepTitles: string[];
+    sampleUnitTitles: string[];
+  };
 };
 
 export class ConstructAgentService {
@@ -1409,12 +1427,19 @@ export class ConstructAgentService {
               }
             })
           : null;
-      const generatedFrontierDraft = generatedFrontierResult?.draft ?? null;
+      const compiledFrontierResult =
+        generatedFrontierResult?.draft
+          ? compileConstructionScaffolding(generatedFrontierResult.draft)
+          : null;
+      const generatedFrontierDraft = compiledFrontierResult?.draft ?? null;
       const generatedSteps =
         generatedFrontierDraft === null
           ? []
           : annotateGeneratedBlueprintSteps({
-              steps: normalizeGeneratedBlueprintSteps(generatedFrontierDraft.steps),
+              steps: normalizeGeneratedBlueprintSteps(generatedFrontierDraft.steps, {
+                constructionUnitsByStepId:
+                  compiledFrontierResult?.constructionUnitsByStepId
+              }),
               plan: context.plan,
               entrypoint: context.blueprint.entrypoints[0] ?? null
             });
@@ -1708,9 +1733,14 @@ export class ConstructAgentService {
         diagnostics: nextDiagnostics
       }
     });
-    const generatedFrontierDraft = generatedFrontierResult.draft;
+    const compiledFrontierResult = compileConstructionScaffolding(
+      generatedFrontierResult.draft
+    );
+    const generatedFrontierDraft = compiledFrontierResult.draft;
     const generatedSteps = annotateGeneratedBlueprintSteps({
-      steps: normalizeGeneratedBlueprintSteps(generatedFrontierDraft.steps),
+      steps: normalizeGeneratedBlueprintSteps(generatedFrontierDraft.steps, {
+        constructionUnitsByStepId: compiledFrontierResult.constructionUnitsByStepId
+      }),
       plan: input.context.plan,
       entrypoint: input.context.blueprint.entrypoints[0] ?? null
     });
@@ -4699,6 +4729,73 @@ export class ConstructAgentService {
     }
   }
 
+  private async compileConstructionDraftForJob<TDraft extends DraftWithConstructionScaffolding>(
+    jobId: string,
+    draft: TDraft
+  ): Promise<ConstructionCompilerResult<TDraft>> {
+    let compiledResult: ConstructionCompilerResult<TDraft> | null = null;
+
+    await this.withPayloadStage(
+      jobId,
+      "construction-compiler",
+      "Packing the construction ladder",
+      "Construct is decomposing each learner-owned step into smaller build moves, tightening the handoff, and rewriting safe task scaffolding beside the real anchor.",
+      async () => {
+        compiledResult = compileConstructionScaffolding(draft);
+
+        const job = this.jobs.get(jobId);
+        if (job && compiledResult) {
+          const originalLearnerFiles = new Map(
+            draft.learnerFiles.map((file) => [normalizePathValue(file.path), file.content] as const)
+          );
+
+          for (const step of compiledResult.draft.steps) {
+            const units = compiledResult.constructionUnitsByStepId.get(step.id) ?? [];
+            this.emitEvent(job, {
+              stage: "construction-compiler",
+              title: `Packed ${step.title}`,
+              detail: `${units.length} concrete build move${units.length === 1 ? "" : "s"} now guide ${normalizePathValue(step.anchor.file)}.`,
+              level: "info",
+              payload: {
+                stepId: step.id,
+                path: normalizePathValue(step.anchor.file),
+                unitCount: units.length,
+                sampleUnitTitles: units.slice(0, 4).map((unit) => unit.title)
+              }
+            });
+
+            const nextLearnerFile = compiledResult.draft.learnerFiles.find(
+              (file) => normalizePathValue(file.path) === normalizePathValue(step.anchor.file)
+            );
+            const originalContent = originalLearnerFiles.get(normalizePathValue(step.anchor.file));
+
+            if (nextLearnerFile && originalContent !== nextLearnerFile.content) {
+              this.emitEvent(job, {
+                stage: "construction-compiler",
+                title: `Updated learner scaffolding in ${normalizePathValue(step.anchor.file)}`,
+                detail: "Construct inserted a sequenced build ladder right beside the learner anchor so the next move is visible without solving the whole file.",
+                level: "info",
+                payload: {
+                  tool: "write",
+                  path: normalizePathValue(step.anchor.file),
+                  unitCount: units.length
+                }
+              });
+            }
+          }
+        }
+
+        return compiledResult.summary;
+      }
+    );
+
+    if (!compiledResult) {
+      throw new Error("Construction compiler did not produce a result.");
+    }
+
+    return compiledResult;
+  }
+
   private async determineGoalScope(
     goal: string,
     usage?: LanguageModelUsageContext
@@ -5492,6 +5589,11 @@ export class ConstructAgentService {
       throw error;
     }
 
+    bundleDraft = (await this.compileConstructionDraftForJob(
+      input.jobId,
+      bundleDraft
+    )).draft;
+
     if (job) {
       this.emitEvent(job, {
         stage: "blueprint-synthesis",
@@ -5673,11 +5775,20 @@ export class ConstructAgentService {
     plan: GeneratedProjectPlan,
     draft: GeneratedBlueprintBundleDraft
   ): Promise<string> {
-    const supportFiles = fileEntriesToRecord(draft.supportFiles);
-    const canonicalFiles = fileEntriesToRecord(draft.canonicalFiles);
-    const learnerFiles = fileEntriesToRecord(draft.learnerFiles);
-    const hiddenTests = fileEntriesToRecord(draft.hiddenTests);
-    const projectSlug = slugify(draft.projectSlug || draft.projectName || session.goal) || "generated-project";
+    const constructionCompilation = compileConstructionScaffolding({
+      steps: draft.steps,
+      learnerFiles: draft.learnerFiles
+    });
+    const compiledDraft: GeneratedBlueprintBundleDraft = {
+      ...draft,
+      steps: constructionCompilation.draft.steps,
+      learnerFiles: constructionCompilation.draft.learnerFiles
+    };
+    const supportFiles = fileEntriesToRecord(compiledDraft.supportFiles);
+    const canonicalFiles = fileEntriesToRecord(compiledDraft.canonicalFiles);
+    const learnerFiles = fileEntriesToRecord(compiledDraft.learnerFiles);
+    const hiddenTests = fileEntriesToRecord(compiledDraft.hiddenTests);
+    const projectSlug = slugify(compiledDraft.projectSlug || compiledDraft.projectName || session.goal) || "generated-project";
     const projectRoot = path.join(
       this.generatedBlueprintsDirectory,
       `${session.sessionId}-${projectSlug}`
@@ -5695,8 +5806,8 @@ export class ConstructAgentService {
 
         return {
           projectRoot,
-          entrypointCount: draft.entrypoints.length,
-          entrypoints: draft.entrypoints.slice(0, 4)
+          entrypointCount: compiledDraft.entrypoints.length,
+          entrypoints: compiledDraft.entrypoints.slice(0, 4)
         };
       }
     );
@@ -5739,13 +5850,15 @@ export class ConstructAgentService {
 
     const generatedAt = this.now().toISOString();
     const normalizedSteps = annotateGeneratedBlueprintSteps({
-      steps: normalizeGeneratedBlueprintSteps(draft.steps),
+      steps: normalizeGeneratedBlueprintSteps(compiledDraft.steps, {
+        constructionUnitsByStepId: constructionCompilation.constructionUnitsByStepId
+      }),
       plan,
-      entrypoint: draft.entrypoints[0] ?? null
+      entrypoint: compiledDraft.entrypoints[0] ?? null
     });
     const spine = buildStableSpine({
       plan,
-      draft
+      draft: compiledDraft
     });
     const frontier = buildAdaptiveFrontier({
       steps: normalizedSteps,
@@ -5755,24 +5868,24 @@ export class ConstructAgentService {
 
     const blueprint: ProjectBlueprint = ProjectBlueprintSchema.parse({
       id: `construct.generated.${session.sessionId}.${projectSlug}`,
-      name: draft.projectName,
+      name: compiledDraft.projectName,
       version: "0.1.0",
-      description: draft.description,
+      description: compiledDraft.description,
       projectRoot,
       sourceProjectRoot: projectRoot,
-      language: draft.language,
-      entrypoints: draft.entrypoints,
+      language: compiledDraft.language,
+      entrypoints: compiledDraft.entrypoints,
       files: learnerFiles,
       steps: normalizedSteps,
       spine,
       frontier,
-      dependencyGraph: draft.dependencyGraph,
+      dependencyGraph: compiledDraft.dependencyGraph,
       metadata: {
         createdBy: "Construct Architect agent",
         createdAt: generatedAt,
-        targetLanguage: draft.language,
+        targetLanguage: compiledDraft.language,
         tags: Array.from(new Set([
-          ...draft.tags,
+          ...compiledDraft.tags,
           session.detectedDomain,
           session.detectedLanguage,
           "agent-generated"
@@ -5798,11 +5911,11 @@ export class ConstructAgentService {
       planningSession: session,
       plan,
       blueprint,
-      blueprintDraft: draft,
-      supportFiles: toBlueprintArtifactFiles(draft.supportFiles, "support"),
-      canonicalFiles: toBlueprintArtifactFiles(draft.canonicalFiles, "canonical"),
-      learnerFiles: toBlueprintArtifactFiles(draft.learnerFiles, "learner"),
-      hiddenTests: toBlueprintArtifactFiles(draft.hiddenTests, "hidden-tests"),
+      blueprintDraft: compiledDraft,
+      supportFiles: toBlueprintArtifactFiles(compiledDraft.supportFiles, "support"),
+      canonicalFiles: toBlueprintArtifactFiles(compiledDraft.canonicalFiles, "canonical"),
+      learnerFiles: toBlueprintArtifactFiles(compiledDraft.learnerFiles, "learner"),
+      hiddenTests: toBlueprintArtifactFiles(compiledDraft.hiddenTests, "hidden-tests"),
       status: "running",
       currentStage: "blueprint-materialization",
       currentStageTitle: "Materializing generated project",
@@ -8474,6 +8587,26 @@ function summarizeAgentEventPayload(event: AgentEvent): Record<string, unknown> 
     };
   }
 
+  if (event.stage.startsWith("construction")) {
+    const payload = event.payload as Record<string, unknown>;
+
+    return {
+      stepCount: typeof payload.stepCount === "number" ? payload.stepCount : undefined,
+      unitCount: typeof payload.unitCount === "number" ? payload.unitCount : undefined,
+      scaffoldedFileCount:
+        typeof payload.scaffoldedFileCount === "number"
+          ? payload.scaffoldedFileCount
+          : undefined,
+      path: typeof payload.path === "string" ? payload.path : undefined,
+      sampleStepTitles: Array.isArray(payload.sampleStepTitles)
+        ? payload.sampleStepTitles.slice(0, 3).map((entry) => truncateText(String(entry), 80))
+        : undefined,
+      sampleUnitTitles: Array.isArray(payload.sampleUnitTitles)
+        ? payload.sampleUnitTitles.slice(0, 4).map((entry) => truncateText(String(entry), 80))
+        : undefined
+    };
+  }
+
   return {
     keys: Object.keys(event.payload)
   };
@@ -9437,7 +9570,10 @@ function looksLikePlaceholderGeneratedArtifact(pathValue: string, content: strin
 }
 
 function normalizeGeneratedBlueprintSteps(
-  steps: GeneratedBlueprintBundleDraft["steps"]
+  steps: GeneratedBlueprintBundleDraft["steps"],
+  options?: {
+    constructionUnitsByStepId?: Map<string, ConstructionUnit[]>;
+  }
 ): ProjectBlueprint["steps"] {
   return steps.map((step) =>
     BlueprintStepSchema.parse({
@@ -9449,7 +9585,8 @@ function normalizeGeneratedBlueprintSteps(
         ...(step.anchor.startLine === null ? {} : { startLine: step.anchor.startLine }),
         ...(step.anchor.endLine === null ? {} : { endLine: step.anchor.endLine })
       },
-      checks: normalizeGeneratedChecks(step.checks)
+      checks: normalizeGeneratedChecks(step.checks),
+      constructionUnits: options?.constructionUnitsByStepId?.get(step.id) ?? []
     })
   );
 }
@@ -9735,6 +9872,521 @@ function mergeFrontierDraftSteps(
 ): GeneratedBlueprintBundleDraft["steps"] {
   const nextStepIds = new Set(nextSteps.map((step) => step.id));
   return [...existingSteps.filter((step) => !nextStepIds.has(step.id)), ...nextSteps];
+}
+
+function compileConstructionScaffolding<TDraft extends DraftWithConstructionScaffolding>(
+  draft: TDraft
+): ConstructionCompilerResult<TDraft> {
+  const learnerFiles = draft.learnerFiles.map((file) => ({
+    path: normalizePathValue(file.path),
+    content: file.content
+  }));
+  const learnerFileByPath = new Map(learnerFiles.map((file) => [file.path, file.content] as const));
+  const constructionUnitsByStepId = new Map<string, ConstructionUnit[]>();
+  let scaffoldedFileCount = 0;
+  let unitCount = 0;
+
+  const steps = draft.steps.map((step) => {
+    const normalizedAnchorPath = normalizePathValue(step.anchor.file);
+    const learnerContent = learnerFileByPath.get(normalizedAnchorPath) ?? "";
+    const commentRequirements = uniqueConstructionInstructions(
+      extractConstructionRequirementsFromLearnerFile(step, learnerContent)
+    );
+    const docRequirements = uniqueConstructionInstructions(
+      extractConstructionRequirementsFromDoc(step.doc)
+    );
+    const summaryRequirements = uniqueConstructionInstructions(
+      extractConstructionRequirementsFromSummary(step.summary)
+    );
+    const sourceRequirements = uniqueConstructionInstructions(
+      commentRequirements.length >= 2
+        ? commentRequirements
+        : [...commentRequirements, ...docRequirements, ...summaryRequirements]
+    );
+    const constructionUnits = buildConstructionUnits(step, sourceRequirements);
+    const scaffoldedContent = rewriteLearnerFileWithConstructionSequence(
+      step,
+      learnerContent,
+      constructionUnits
+    );
+
+    if (scaffoldedContent !== learnerContent) {
+      learnerFileByPath.set(normalizedAnchorPath, scaffoldedContent);
+      scaffoldedFileCount += 1;
+    }
+
+    constructionUnitsByStepId.set(step.id, constructionUnits);
+    unitCount += constructionUnits.length;
+
+    return {
+      ...step,
+      doc: ensureConstructionDoc(step, constructionUnits)
+    };
+  });
+
+  const nextLearnerFiles = learnerFiles.map((file) => ({
+    path: file.path,
+    content: learnerFileByPath.get(file.path) ?? file.content
+  }));
+
+  return {
+    draft: {
+      ...draft,
+      steps,
+      learnerFiles: nextLearnerFiles
+    },
+    constructionUnitsByStepId,
+    summary: {
+      stepCount: steps.length,
+      unitCount,
+      scaffoldedFileCount,
+      sampleStepTitles: steps.slice(0, 3).map((step) => step.title),
+      sampleUnitTitles: Array.from(constructionUnitsByStepId.values())
+        .flat()
+        .slice(0, 4)
+        .map((unit) => unit.title)
+    }
+  };
+}
+
+function extractConstructionRequirementsFromLearnerFile(
+  step: GeneratedBlueprintStepDraft,
+  learnerContent: string
+): string[] {
+  if (!learnerContent.trim()) {
+    return [];
+  }
+
+  const lines = learnerContent.replace(/\r\n/g, "\n").split("\n");
+  const anchorIndex = lines.findIndex((line) => line.includes(step.anchor.marker));
+
+  if (anchorIndex < 0) {
+    return [];
+  }
+
+  const commentPrefix = detectConstructionCommentPrefix(lines, anchorIndex);
+  if (!commentPrefix) {
+    return [];
+  }
+
+  const nearbyCommentLines: string[] = [];
+  let capturedComment = false;
+
+  for (let index = anchorIndex; index < Math.min(lines.length, anchorIndex + 24); index += 1) {
+    const trimmed = lines[index]!.trim();
+
+    if (!trimmed) {
+      if (capturedComment) {
+        continue;
+      }
+      continue;
+    }
+
+    if (trimmed.startsWith(commentPrefix)) {
+      nearbyCommentLines.push(stripLineCommentPrefix(lines[index]!, commentPrefix));
+      capturedComment = true;
+      continue;
+    }
+
+    if (
+      index === anchorIndex &&
+      lines[index]!.includes(step.anchor.marker) &&
+      lines[index]!.includes(commentPrefix)
+    ) {
+      nearbyCommentLines.push(stripLineCommentPrefix(lines[index]!, commentPrefix));
+      capturedComment = true;
+      continue;
+    }
+
+    if (capturedComment) {
+      break;
+    }
+  }
+
+  return extractConstructionRequirementsFromHintLines(nearbyCommentLines);
+}
+
+function detectConstructionCommentPrefix(lines: string[], anchorIndex: number): string | null {
+  for (let index = anchorIndex; index < Math.min(lines.length, anchorIndex + 6); index += 1) {
+    const trimmed = lines[index]!.trim();
+
+    if (trimmed.startsWith("//")) {
+      return "//";
+    }
+
+    if (trimmed.startsWith("#")) {
+      return "#";
+    }
+  }
+
+  return null;
+}
+
+function stripLineCommentPrefix(line: string, prefix: string): string {
+  return line.trim().replace(new RegExp(`^${escapeRegExp(prefix)}\\s?`), "").trim();
+}
+
+function extractConstructionRequirementsFromHintLines(lines: string[]): string[] {
+  const requirements: string[] = [];
+  let inInstructionList = false;
+  let inGeneratedBuildSequence = false;
+
+  for (const rawLine of lines) {
+    const line = sanitizeConstructionText(rawLine);
+
+    if (!line) {
+      continue;
+    }
+
+    if (/^(?:Comprehension check|Step \d+ learner file|anchor:)/i.test(line)) {
+      continue;
+    }
+
+    if (/^(?:Build sequence for this step|Implementation ladder)/i.test(line)) {
+      inInstructionList = true;
+      inGeneratedBuildSequence = true;
+      continue;
+    }
+
+    if (/^(?:TASK|TODO)\b/i.test(line)) {
+      const inlineInstruction = line.replace(/^(?:TASK|TODO)\s*:\s*/i, "").trim();
+      if (inlineInstruction && isConstructionInstructionLine(inlineInstruction)) {
+        requirements.push(inlineInstruction);
+      }
+      continue;
+    }
+
+    if (/^(?:Requirements?|Behavior|What to add|You must|Success looks like)\b/i.test(line)) {
+      const inlineInstruction = line.replace(/^[^:]+:\s*/i, "").trim();
+      if (inlineInstruction && isConstructionInstructionLine(inlineInstruction)) {
+        requirements.push(inlineInstruction);
+      }
+      inInstructionList = true;
+      continue;
+    }
+
+    const listMatch = line.match(/^(?:[-*]|\d+[.)])\s*(.+)$/);
+    if (listMatch) {
+      requirements.push(listMatch[1]!.trim());
+      inInstructionList = true;
+      continue;
+    }
+
+    if (inGeneratedBuildSequence) {
+      continue;
+    }
+
+    if (inInstructionList && isConstructionInstructionLine(line)) {
+      requirements.push(line);
+      continue;
+    }
+
+    if (requirements.length === 0 && isConstructionInstructionLine(line)) {
+      requirements.push(line);
+    }
+  }
+
+  return requirements;
+}
+
+function extractConstructionRequirementsFromDoc(doc: string): string[] {
+  const lines = doc.replace(/\r\n/g, "\n").split("\n");
+  const requirements: string[] = [];
+
+  for (const rawLine of lines) {
+    const line = sanitizeConstructionText(rawLine);
+    const listMatch = line.match(/^(?:[-*]|\d+[.)])\s*(.+)$/);
+
+    if (listMatch && isConstructionInstructionLine(listMatch[1]!)) {
+      requirements.push(listMatch[1]!.trim());
+    }
+  }
+
+  if (requirements.length > 0) {
+    return requirements;
+  }
+
+  return doc
+    .replace(/\r\n/g, "\n")
+    .split(/\n\s*\n/)
+    .flatMap((paragraph) => paragraph.split(/(?<=[.!?])\s+/))
+    .map((sentence) => sanitizeConstructionText(sentence))
+    .filter((sentence) => sentence.length > 0 && isConstructionInstructionLine(sentence))
+    .slice(0, 5);
+}
+
+function extractConstructionRequirementsFromSummary(summary: string): string[] {
+  const candidate = sanitizeConstructionText(summary);
+  return isConstructionInstructionLine(candidate) ? [candidate] : [];
+}
+
+function sanitizeConstructionText(value: string): string {
+  return value
+    .replace(/`+/g, "")
+    .replace(/\*\*/g, "")
+    .replace(/\*/g, "")
+    .replace(/^#+\s*/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function uniqueConstructionInstructions(instructions: string[]): string[] {
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+
+  for (const instruction of instructions) {
+    const cleaned = instruction
+      .replace(/\s+/g, " ")
+      .replace(/\s*[.;:]+\s*$/, "")
+      .trim();
+
+    if (!cleaned) {
+      continue;
+    }
+
+    const fingerprint = cleaned.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    if (!fingerprint || seen.has(fingerprint)) {
+      continue;
+    }
+
+    seen.add(fingerprint);
+    normalized.push(cleaned);
+  }
+
+  return normalized.slice(0, 6);
+}
+
+function isConstructionInstructionLine(line: string): boolean {
+  return (
+    line.length <= 220 &&
+    /\b(?:implement|add|create|define|compute|calculate|derive|return|use|include|keep|update|store|initialize|inject|wire|mount|render|export|support|handle|validate|refill|consume|deny|allow|parse|convert|call|set)\b/i.test(line)
+  );
+}
+
+function buildConstructionUnits(
+  step: GeneratedBlueprintStepDraft,
+  instructions: string[]
+): ConstructionUnit[] {
+  const resolvedInstructions =
+    instructions.length > 0
+      ? instructions
+      : [
+          `Read the anchored code in ${step.anchor.file} and identify the values already available around ${step.anchor.marker}.`,
+          step.summary,
+          `Make the observable behavior in ${step.anchor.file} line up with ${step.tests[0] ?? "the hidden validation"}.`
+        ];
+
+  return resolvedInstructions.map((instruction, index) => {
+    const title = buildConstructionUnitTitle(instruction);
+    const kind = inferConstructionUnitKind(instruction, step.anchor.file);
+    const id = `${step.id}.unit-${index + 1}`;
+
+    return {
+      id,
+      title,
+      summary: truncateText(instruction, 160),
+      instruction,
+      whyItMatters: buildConstructionUnitRationale(kind, step),
+      successSignal: buildConstructionUnitSuccessSignal(kind, step),
+      file: normalizePathValue(step.anchor.file),
+      kind,
+      dependsOn: index > 0 ? [`${step.id}.unit-${index}`] : []
+    };
+  });
+}
+
+function buildConstructionUnitTitle(instruction: string): string {
+  const cleaned = instruction.replace(/\s*[.;:]+\s*$/, "").trim();
+  const firstClause = cleaned.split(/(?:\s+-\s+|;|:)/)[0]!.trim();
+  const compact = truncateText(firstClause, 68);
+  return compact.charAt(0).toUpperCase() + compact.slice(1);
+}
+
+function inferConstructionUnitKind(
+  instruction: string,
+  filePath: string
+): ConstructionUnit["kind"] {
+  const value = instruction.toLowerCase();
+
+  if (/\b(type|interface|enum|schema|contract|shape)\b/.test(value)) {
+    return "type";
+  }
+
+  if (/\b(state|store|constructor|initialize|snapshot|field|instance)\b/.test(value)) {
+    return "state";
+  }
+
+  if (/\b(compute|calculate|derive|refill|elapsed|deficit|convert|math|formula)\b/.test(value)) {
+    return "calculation";
+  }
+
+  if (/\b(if|else|branch|allow|deny|when|case)\b/.test(value)) {
+    return "branch";
+  }
+
+  if (/\b(return|response|payload|result|object)\b/.test(value)) {
+    return "return-shape";
+  }
+
+  if (/\b(import|export|wire|mount|hook|call|inject|link|route|use)\b/.test(value)) {
+    return "wiring";
+  }
+
+  if (/\b(validate|guard|error|reject|assert)\b/.test(value)) {
+    return "validation";
+  }
+
+  if (/\b(render|prompt|read|write|parse|print|display)\b/.test(value)) {
+    return "io";
+  }
+
+  if (/\b(clean up|extract|rename|refactor)\b/.test(value)) {
+    return "refactor";
+  }
+
+  if (/\.(json|yaml|yml|toml)$/.test(filePath)) {
+    return "shape";
+  }
+
+  return "implementation";
+}
+
+function buildConstructionUnitRationale(
+  kind: ConstructionUnit["kind"],
+  step: GeneratedBlueprintStepDraft
+): string {
+  switch (kind) {
+    case "type":
+    case "shape":
+      return `Later code in ${path.basename(step.anchor.file)} depends on this shared shape existing first.`;
+    case "state":
+      return "The next branch or return path needs a coherent snapshot to build on.";
+    case "calculation":
+      return "The later decision logic depends on this intermediate value being correct.";
+    case "branch":
+      return "This is the observable decision point the hidden validation will exercise.";
+    case "return-shape":
+      return "This is how the step exposes success or failure to the caller and the test harness.";
+    case "wiring":
+      return "This connects the new artifact to the code path the learner is actually shipping.";
+    case "validation":
+      return "This keeps the step behavior deliberate instead of relying on accidental defaults.";
+    case "io":
+      return "This is the visible behavior the learner or test will directly observe.";
+    case "refactor":
+      return "This keeps the code understandable before the next slice builds on it.";
+    default:
+      return `This is one concrete build move inside ${step.title}.`;
+  }
+}
+
+function buildConstructionUnitSuccessSignal(
+  kind: ConstructionUnit["kind"],
+  step: GeneratedBlueprintStepDraft
+): string {
+  switch (kind) {
+    case "type":
+    case "shape":
+      return `The new shape is defined in ${path.basename(step.anchor.file)} and later lines can reference it without guesswork.`;
+    case "state":
+      return "The updated state is stored so the next call or branch can reuse it.";
+    case "calculation":
+      return "There is now a named value in the file that the next branch can trust.";
+    case "branch":
+      return "The allow/deny behavior now matches the promised contract for this step.";
+    case "return-shape":
+      return "The function now returns the exact fields the hidden validation expects.";
+    case "wiring":
+      return "The new code path is connected to the actual function, class, or route being exercised.";
+    case "validation":
+      return "Bad inputs or edge cases now fail in an intentional, testable way.";
+    case "io":
+      return "The learner can point to the exact visible output this code now produces.";
+    default:
+      return `This piece of ${step.title} is now implemented in ${path.basename(step.anchor.file)}.`;
+  }
+}
+
+function ensureConstructionDoc(
+  step: GeneratedBlueprintStepDraft,
+  constructionUnits: ConstructionUnit[]
+): string {
+  if (
+    constructionUnits.length === 0 ||
+    /## Build this in order/i.test(step.doc) ||
+    step.doc.length > 220
+  ) {
+    return step.doc;
+  }
+
+  const unitLines = constructionUnits
+    .map((unit, index) => `${index + 1}. ${unit.instruction}`)
+    .join("\n");
+
+  return [
+    step.doc.trim(),
+    "",
+    "## Build this in order",
+    "",
+    unitLines,
+    "",
+    "## Step boundary",
+    "",
+    `- Edit \`${normalizePathValue(step.anchor.file)}\` at \`${step.anchor.marker}\`.`,
+    "- Finish only this project slice now; the next step will reuse it instead of restarting the subsystem."
+  ].join("\n");
+}
+
+function rewriteLearnerFileWithConstructionSequence(
+  step: GeneratedBlueprintStepDraft,
+  learnerContent: string,
+  constructionUnits: ConstructionUnit[]
+): string {
+  if (!learnerContent.trim() || constructionUnits.length === 0) {
+    return learnerContent;
+  }
+
+  const lines = learnerContent.replace(/\r\n/g, "\n").split("\n");
+  const anchorIndex = lines.findIndex((line) => line.includes(step.anchor.marker));
+
+  if (anchorIndex < 0) {
+    return learnerContent;
+  }
+
+  const commentPrefix = detectConstructionCommentPrefix(lines, anchorIndex);
+  const anchorLine = lines[anchorIndex] ?? "";
+
+  if (!commentPrefix || !anchorLine.trim().startsWith(commentPrefix)) {
+    return learnerContent;
+  }
+
+  const existingBlock = lines
+    .slice(anchorIndex, Math.min(lines.length, anchorIndex + 10))
+    .join("\n");
+
+  if (/Build sequence for this step/i.test(existingBlock)) {
+    return learnerContent;
+  }
+
+  const indent = anchorLine.match(/^\s*/)![0] ?? "";
+  const ladderBlock = [
+    `${indent}${commentPrefix} Build sequence for this step:`,
+    ...constructionUnits.map(
+      (unit, index) =>
+        `${indent}${commentPrefix} ${index + 1}) ${truncateText(unit.instruction, 108)}`
+    ),
+    `${indent}${commentPrefix} Keep this slice local; the next step will reuse this exact artifact.`
+  ];
+
+  return [
+    ...lines.slice(0, anchorIndex + 1),
+    ...ladderBlock,
+    ...lines.slice(anchorIndex + 1)
+  ].join("\n");
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function appendAdaptiveFrontierDiagnostic(
@@ -10283,6 +10935,9 @@ function buildPlanGenerationInstructions(): string {
     "For small or local requests, keep the path tightly focused on the requested artifact. Do not inflate it with validation harness steps, environment validation steps, packaging steps, optional export steps, or side quests unless the user explicitly asked for those.",
     "Do not create standalone quiz-only, checks-only, or validation-only steps. Checks belong inside the teaching step they validate.",
     "Do not produce toy exercises disconnected from the project.",
+    "For beginner or balanced learners, prefer steps that create one real artifact and then use it immediately in the next one or two steps.",
+    "Prefer dependency-ordered construction: define the type, helper, state field, or adapter before asking the learner to build behavior that depends on it.",
+    "Avoid blank-slate subsystem steps when the same outcome can be taught as 2-5 smaller build moves inside a visible project slice.",
     "Suggested first step must reference one of the generated steps."
   ].join("\n");
 }
@@ -10325,6 +10980,9 @@ function buildBlueprintGenerationInstructions(): string {
     "If engagementMode is learning-first, the first step should usually open with at least four real teaching slides unless the user explicitly asked for setup/tooling rather than implementation.",
     "If engagementMode is implementation-first, keep the lesson focused on the exact concepts needed for the current code boundary. Do not broaden the step into a general course on the surrounding framework, library, or platform.",
     "If the named technology is just the delivery substrate for the requested artifact, assume the learner wants to build with it rather than study it broadly.",
+    "Every frontier step should feel like a real construction slice, not a worksheet. The learner should author one concrete artifact, helper, type, branch, or state transition that the next visible code move can reuse.",
+    "Prefer dependency-ordered beginner scaffolding: create the shape first, then consume it; create the helper first, then call it; create the branch input first, then branch on it.",
+    "Do not ask the learner to invent architecture, algorithm, and language syntax all at once when a smaller project-authentic build sequence would teach the same system better.",
     "When the project is building a framework, library, runtime, parser, renderer, or other system with internal jargon, start by teaching what the overall system is in plain language before diving into names like VNode, AST, reconciler, reducer, hook, parser, or renderer internals.",
     "Do not assume the learner already understands technical words that appear in the step title, summary, doc, or code sketch. If you use a term like VNode, virtual DOM, reconciler, token, AST, reducer, or hook, define it clearly before you rely on it.",
     "For learning-first steps or any step that introduces jargon-heavy internals, use a sequence like: first the big picture of what the system is, then why this concept exists, then how it works at a high level, then the deeper internal term(s), then what exact file/function/behavior the learner will implement next.",
@@ -10746,6 +11404,8 @@ function buildLessonAuthoringInstructions(context: {
     "Make the continuity obvious. Every slide should connect back to the previous concept and forward to the next one the learner needs for this exact project.",
     "If engagementMode is implementation-first, keep the chapter centered on the exact implementation boundary. Explain only the concepts needed to succeed on this code task instead of turning the surrounding framework or platform into a general survey course.",
     "If engagementMode is implementation-first, teach the exact artifact the learner is about to build. Name the function/class/module/data shape they will edit, explain that artifact's job in the system, and show what correct behavior looks like before you ask them to code.",
+    "Treat the task as a build sequence, not a worksheet. Break the implementation into dependency-ordered moves the learner can execute one after another while still building the real project themselves.",
+    "Prefer handoffs like 'first create this type, then use it here, then add this branch' over one giant task that requires the learner to invent the whole subsystem at once.",
     "When a step introduces a new concept, write enough for a learner to understand it without having to infer missing background.",
     "For foundational steps, use an intentional teaching order: first 'what is this in plain language?', then 'why does it matter here?', then 'how does it work?', then 'what exactly are we about to implement?'.",
     "Do not leave the learner with only theory. At least one slide should bridge from concept to code by showing a near-transfer worked example that is structurally similar to the exercise they will do next.",

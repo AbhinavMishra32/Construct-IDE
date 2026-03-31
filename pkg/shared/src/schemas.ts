@@ -446,6 +446,30 @@ export const MentorInterventionSchema = z.object({
   reason: z.string().min(1)
 });
 
+export const ConstructionUnitSchema = z.object({
+  id: z.string().min(1),
+  title: z.string().min(1),
+  summary: z.string().min(1),
+  instruction: z.string().min(1),
+  whyItMatters: z.string().min(1),
+  successSignal: z.string().min(1),
+  file: z.string().min(1),
+  kind: z.enum([
+    "type",
+    "shape",
+    "state",
+    "calculation",
+    "branch",
+    "return-shape",
+    "wiring",
+    "validation",
+    "io",
+    "refactor",
+    "implementation"
+  ]),
+  dependsOn: z.array(z.string().min(1)).default([])
+});
+
 export const BlueprintStepSchema = z.object({
   id: z.string().min(1),
   title: z.string().min(1),
@@ -465,6 +489,7 @@ export const BlueprintStepSchema = z.object({
   concepts: z.array(z.string().min(1)).min(1),
   constraints: z.array(z.string().min(1)).default([]),
   checks: z.array(ComprehensionCheckSchema).default([]),
+  constructionUnits: z.array(ConstructionUnitSchema).default([]),
   visibleFiles: z.array(z.string().min(1)).default([]),
   maskedRegions: z.array(MaskedRegionSchema).default([]),
   preview: ProjectPreviewSchema.nullable().default(null),
@@ -873,6 +898,7 @@ export type RecommendedBuildRoute = z.infer<typeof RecommendedBuildRouteSchema>;
 export type ProjectSpine = z.infer<typeof ProjectSpineSchema>;
 export type DiagnosticSignal = z.infer<typeof DiagnosticSignalSchema>;
 export type MentorIntervention = z.infer<typeof MentorInterventionSchema>;
+export type ConstructionUnit = z.infer<typeof ConstructionUnitSchema>;
 export type BlueprintStep = z.infer<typeof BlueprintStepSchema>;
 export type AdaptiveFrontier = z.infer<typeof AdaptiveFrontierSchema>;
 export type ProjectBlueprint = z.infer<typeof ProjectBlueprintSchema>;

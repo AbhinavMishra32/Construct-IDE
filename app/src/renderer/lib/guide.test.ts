@@ -54,6 +54,19 @@ const blueprintStep: BlueprintStep = {
   concepts: ["async control flow", "runtime orchestration"],
   constraints: ["Track visit order.", "Stop when there is no next node."],
   checks: [mcqCheck],
+  constructionUnits: [
+    {
+      id: "step.runner-loop.unit-1",
+      title: "Read the next node id from state",
+      summary: "Load the next node id before the loop advances.",
+      instruction: "Read the next node id from the current workflow state before you branch.",
+      whyItMatters: "The loop cannot decide whether to continue until it knows what node comes next.",
+      successSignal: "The loop has a named current-node value it can branch on.",
+      file: "src/runner.ts",
+      kind: "state",
+      dependsOn: []
+    }
+  ],
   visibleFiles: ["src/runner.ts"],
   preview: null,
   estimatedMinutes: 15,

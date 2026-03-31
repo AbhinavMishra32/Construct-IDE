@@ -441,6 +441,28 @@ export type BlueprintStep = {
   concepts: string[];
   constraints: string[];
   checks: ComprehensionCheck[];
+  constructionUnits: Array<{
+    id: string;
+    title: string;
+    summary: string;
+    instruction: string;
+    whyItMatters: string;
+    successSignal: string;
+    file: string;
+    kind:
+      | "type"
+      | "shape"
+      | "state"
+      | "calculation"
+      | "branch"
+      | "return-shape"
+      | "wiring"
+      | "validation"
+      | "io"
+      | "refactor"
+      | "implementation";
+    dependsOn: string[];
+  }>;
   visibleFiles: string[];
   preview: ProjectPreview | null;
   estimatedMinutes: number;

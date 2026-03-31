@@ -5927,8 +5927,9 @@ function BriefOverlay({
                     <span className="construct-brief-kicker">Implementation handoff</span>
                     <strong>{activeStep.title}</strong>
                     <p>
-                      You have the concept. Now Construct will open the exact file and anchor
-                      where this step turns into implementation work.
+                      You have the concept. Now Construct will open the exact file, show the
+                      build order for this slice, and keep the work small enough to ship
+                      yourself.
                     </p>
                   </div>
                   <div className="construct-brief-header-meta">
@@ -5942,24 +5943,29 @@ function BriefOverlay({
                 </header>
 
                 <div className="construct-course-exercise-grid">
-                  <InfoPanel
-                    title="Implementation brief"
-                    body={activeStep.doc}
-                    markdown
-                  />
-                  <InfoPanel
-                    title="Where Construct will take you"
-                    body={[
-                      `## ${activeStep.anchor.file}`,
-                      "",
-                      `Anchor: \`${activeStep.anchor.marker}\``,
-                      "",
-                      "Construct will open the exact file and focus the learner-owned region for this step."
-                    ].join("\n")}
-                    markdown
-                  />
-                  <MetadataList title="Constraints" values={activeStep.constraints} />
-                  <MetadataList title="Hidden validations" values={activeStep.tests} />
+                  <ConstructionLadderPanel step={activeStep} />
+                  <div className="construct-course-exercise-stack">
+                    <InfoPanel
+                      title="Implementation brief"
+                      body={activeStep.doc}
+                      markdown
+                    />
+                    <InfoPanel
+                      title="Where Construct will take you"
+                      body={[
+                        `## ${activeStep.anchor.file}`,
+                        "",
+                        `Anchor: \`${activeStep.anchor.marker}\``,
+                        "",
+                        "Construct will open the exact file and focus the learner-owned region for this step."
+                      ].join("\n")}
+                      markdown
+                    />
+                  </div>
+                  <div className="construct-course-exercise-stack">
+                    <MetadataList title="Constraints" values={activeStep.constraints} />
+                    <MetadataList title="Hidden validations" values={activeStep.tests} />
+                  </div>
                 </div>
 
                 <footer className="construct-course-stage-footer">
@@ -6197,6 +6203,44 @@ function InfoPanel({
   );
 }
 
+function ConstructionLadderPanel({ step }: { step: BlueprintStep }) {
+  if (step.constructionUnits.length === 0) {
+    return null;
+  }
+
+  return (
+    <Card className="construct-construction-panel" size="sm">
+      <CardHeader className="gap-2">
+        <span className="construct-panel-kicker">Build this in order</span>
+        <p className="construct-construction-panel-copy">
+          Each move is a real part of the project. Finish one, then let the next item build on it.
+        </p>
+      </CardHeader>
+      <CardContent>
+        <ol className="construct-construction-list">
+          {step.constructionUnits.map((unit, index) => (
+            <li key={unit.id} className="construct-construction-item">
+              <span className="construct-construction-index">
+                {String(index + 1).padStart(2, "0")}
+              </span>
+              <div className="construct-construction-copy">
+                <div className="construct-construction-head">
+                  <strong>{unit.title}</strong>
+                  <TagChip className="construct-construction-kind">
+                    {formatConstructionUnitKind(unit.kind)}
+                  </TagChip>
+                </div>
+                <p>{unit.instruction}</p>
+                <span className="construct-construction-why">{unit.whyItMatters}</span>
+              </div>
+            </li>
+          ))}
+        </ol>
+      </CardContent>
+    </Card>
+  );
+}
+
 function MarkdownSlide({ markdown }: { markdown: string }) {
   const codeTheme = getConstructThemeMode() === "dark" ? oneDark : oneLight;
   const normalizedMarkdown = normalizeLessonMarkdown(markdown);
@@ -6400,6 +6444,35 @@ function summarizeCompactList(values: string[]) {
   }
 
   return `${values.slice(0, 2).join(" • ")} • +${values.length - 2} more`;
+}
+
+function formatConstructionUnitKind(
+  kind: BlueprintStep["constructionUnits"][number]["kind"]
+): string {
+  switch (kind) {
+    case "type":
+      return "Type";
+    case "shape":
+      return "Shape";
+    case "state":
+      return "State";
+    case "calculation":
+      return "Math";
+    case "branch":
+      return "Branch";
+    case "return-shape":
+      return "Return";
+    case "wiring":
+      return "Wiring";
+    case "validation":
+      return "Guard";
+    case "io":
+      return "I/O";
+    case "refactor":
+      return "Refactor";
+    default:
+      return "Build";
+  }
 }
 
 function CheckCard({
@@ -7227,6 +7300,13 @@ function describeArchitectTask(key: string): { label: string; eyebrow: string } 
     };
   }
 
+  if (key.includes("construction-compiler")) {
+    return {
+      label: "Construction ladder packing",
+      eyebrow: "Build"
+    };
+  }
+
   if (key.includes("support-files") || key.includes("canonical-files") || key.includes("learner-mask")) {
     return {
       label: formatAgentStageLabel(key),
@@ -7285,6 +7365,10 @@ function getArchitectTaskIcon(key: string): ReactNode {
     return <PhBookOpenText size={13} weight="regular" />;
   }
 
+  if (key.includes("construction-compiler")) {
+    return <PhTarget size={13} weight="regular" />;
+  }
+
   if (key.includes("hidden-tests")) {
     return <PhFlask size={13} weight="regular" />;
   }
@@ -7313,6 +7397,20 @@ function getArchitectTaskIcon(key: string): ReactNode {
 }
 
 function buildArchitectTaskChildren(group: ArchitectTaskGroup): string[] {
+  if (group.key.includes("construction-compiler")) {
+    const payloadTitles = group.events
+      .flatMap((event) => {
+        const payload = asAgentEventPayload(event);
+        return Array.isArray(payload?.sampleUnitTitles)
+          ? payload.sampleUnitTitles.map((entry) => String(entry).trim()).filter(Boolean)
+          : [];
+      });
+
+    if (payloadTitles.length > 0) {
+      return Array.from(new Set(payloadTitles)).slice(0, 4);
+    }
+  }
+
   const titles = Array.from(
     new Set(
       group.events
@@ -7358,6 +7456,11 @@ function getArchitectTaskActiveChildLabel(group: ArchitectTaskGroup): string | n
 function getArchitectTaskBodyCopy(group: ArchitectTaskGroup): string {
   if (isStreamAgentEvent(group.latestEvent)) {
     return `Construct is still working through ${group.label.toLowerCase()} and folding the latest draft into the current project plan.`;
+  }
+
+  if (group.key.includes("construction-compiler")) {
+    return group.latestEvent.detail?.trim()
+      || "Construct is turning each learner task into a smaller, dependency-aware build ladder before the workspace opens.";
   }
 
   if (group.latestEvent.detail?.trim()) {

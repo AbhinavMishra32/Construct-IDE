@@ -2892,6 +2892,288 @@ test("ConstructAgentService generates lesson-first blueprints without a repair l
   }
 });
 
+test("ConstructAgentService compiles a construction ladder and scaffolds the learner anchor", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "construct-agent-construction-ladder-"));
+  let tick = 0;
+
+  const service = new ConstructAgentService(root, {
+    now: () => new Date(Date.UTC(2026, 2, 31, 0, 0, tick++)),
+    logger: {
+      info() {},
+      debug() {},
+      trace() {},
+      warn() {},
+      error() {}
+    },
+    projectInstaller: {
+      async install() {
+        return {
+          status: "skipped",
+          packageManager: "none",
+          detail: "No dependency install needed for this focused test."
+        };
+      }
+    },
+    llm: {
+      async parse({ schemaName, schema }) {
+        if (schemaName === "construct_goal_self_report_signals") {
+          return schema.parse({ signals: [] });
+        }
+
+        if (schemaName === "construct_goal_scope") {
+          return schema.parse({
+            engagementMode: "implementation-first",
+            scopeSummary: "Small local TypeScript utility",
+            artifactShape: "single pure helper",
+            complexityScore: 10,
+            shouldResearch: false,
+            recommendedQuestionCount: 2,
+            recommendedMinSteps: 1,
+            recommendedMaxSteps: 2,
+            rationale: "This request should stay tightly scoped to one learner-owned function."
+          });
+        }
+
+        if (schemaName === "construct_planning_question_draft") {
+          return schema.parse({
+            detectedLanguage: "typescript",
+            detectedDomain: "utility function",
+            questions: [
+              {
+                conceptId: "typescript.functions",
+                category: "language",
+                prompt: "How comfortable are you with TypeScript functions?",
+                options: [
+                  {
+                    id: "comfortable",
+                    label: "Comfortable",
+                    description: "I can write small TypeScript helpers on my own.",
+                    confidenceSignal: "comfortable"
+                  },
+                  {
+                    id: "partial",
+                    label: "Need a sequence",
+                    description: "I understand the basics but want the code moves broken down.",
+                    confidenceSignal: "shaky"
+                  },
+                  {
+                    id: "new",
+                    label: "Brand new",
+                    description: "I need the Architect to slow down and spell it out.",
+                    confidenceSignal: "new"
+                  }
+                ]
+              },
+              {
+                conceptId: "typescript.strings",
+                category: "domain",
+                prompt: "How comfortable are you with trim and uppercase string transforms?",
+                options: [
+                  {
+                    id: "comfortable",
+                    label: "Comfortable",
+                    description: "I can chain the transforms without much trouble.",
+                    confidenceSignal: "comfortable"
+                  },
+                  {
+                    id: "partial",
+                    label: "Need reminders",
+                    description: "I know them, but I want the order made explicit.",
+                    confidenceSignal: "shaky"
+                  },
+                  {
+                    id: "new",
+                    label: "New to me",
+                    description: "I need the sequence and behavior explained carefully.",
+                    confidenceSignal: "new"
+                  }
+                ]
+              }
+            ]
+          });
+        }
+
+        if (schemaName === "construct_generated_project_plan") {
+          return schema.parse({
+            summary: "Implement one small string helper in a way that can be built step by step.",
+            knowledgeGraph: {
+              concepts: [
+                {
+                  id: "typescript.functions",
+                  label: "TypeScript functions",
+                  category: "language",
+                  path: ["typescript", "functions"],
+                  labelPath: ["TypeScript", "Functions"],
+                  confidence: "shaky",
+                  rationale: "The learner asked for the code moves to be broken down."
+                }
+              ],
+              strengths: [],
+              gaps: ["TypeScript functions", "Sequencing string transforms"]
+            },
+            architecture: [
+              {
+                id: "component.utility",
+                label: "Whitespace-aware shout helper",
+                kind: "component",
+                summary: "A single pure function that normalizes and uppercases input.",
+                dependsOn: []
+              }
+            ],
+            steps: [
+              {
+                id: "step.utility",
+                title: "Implement the utility",
+                kind: "implementation",
+                objective: "Implement the one learner-owned string helper.",
+                rationale: "A single real function keeps the project buildable while still feeling like real software.",
+                concepts: ["typescript.functions", "typescript.strings"],
+                dependsOn: [],
+                validationFocus: ["Returns a trimmed, uppercased string."],
+                suggestedFiles: ["src/index.ts"],
+                implementationNotes: ["Keep the helper pure and sequence the operations clearly."],
+                quizFocus: ["Why smaller dependency-ordered moves keep the build understandable."],
+                hiddenValidationFocus: ["The function trims first and then uppercases the remaining text."]
+              }
+            ],
+            suggestedFirstStepId: "step.utility"
+          });
+        }
+
+        if (schemaName === "construct_generated_blueprint_bundle") {
+          return schema.parse(
+            buildBlueprintGuardBundle({
+              projectName: "Shout Utility",
+              projectSlug: "shout-utility",
+              description: "A tiny utility that trims and uppercases a string.",
+              canonicalFiles: [
+                {
+                  path: "src/index.ts",
+                  content: [
+                    "export function shout(value: string): string {",
+                    "  const trimmed = value.trim();",
+                    "  return trimmed.toUpperCase();",
+                    "}"
+                  ].join("\n")
+                }
+              ],
+              learnerFiles: [
+                {
+                  path: "src/index.ts",
+                  content: [
+                    "export function shout(value: string): string {",
+                    "  // TASK:utility",
+                    "  // Requirements:",
+                    "  // 1) Trim surrounding whitespace from `value`.",
+                    "  // 2) Convert the remaining text to uppercase.",
+                    "  // 3) Return the final string.",
+                    "  throw new Error('Implement shout');",
+                    "}"
+                  ].join("\n")
+                }
+              ],
+              steps: [
+                {
+                  id: "step.utility",
+                  title: "Implement the utility",
+                  summary: "Build the string helper.",
+                  doc: "Edit `src/index.ts` and implement `shout`.",
+                  lessonSlides: [
+                    markdownSlide("## One real helper\n\nWe are building one pure function and keeping the scope tight."),
+                    markdownSlide("## Sequence matters\n\nTrim first, then uppercase, then return the final value.")
+                  ],
+                  anchor: {
+                    file: "src/index.ts",
+                    marker: "TASK:utility",
+                    startLine: null,
+                    endLine: null
+                  },
+                  tests: ["hidden_tests/step1_validation.js"],
+                  concepts: ["typescript.functions"],
+                  constraints: ["Keep the implementation pure."],
+                  checks: [],
+                  estimatedMinutes: 8,
+                  difficulty: "intro"
+                }
+              ]
+            })
+          );
+        }
+
+        if (schemaName === "construct_authored_blueprint_step") {
+          return schema.parse({
+            summary: "Build the helper as three explicit code moves.",
+            doc: "Edit `src/index.ts` and implement `shout` at the `TASK:utility` anchor.",
+            lessonSlides: [
+              markdownSlide("## What this helper does\n\nTake the incoming string, normalize it, and return the transformed result."),
+              markdownSlide("## Build order\n\nCreate the intermediate trimmed value, transform it, then return it.")
+            ],
+            checks: []
+          });
+        }
+
+        throw new Error(`Unexpected schema request: ${schemaName}`);
+      }
+    }
+  });
+
+  try {
+    const questionJob = service.createPlanningQuestionsJob({
+      goal: "build a shout utility in typescript"
+    });
+    const questionResult = await waitForJobCompletion(service, questionJob.jobId);
+    const questionSession = questionResult.result as {
+      session: { sessionId: string; questions: Array<{ id: string }> };
+    };
+
+    const planJob = service.createPlanningPlanJob({
+      sessionId: questionSession.session.sessionId,
+      answers: questionSession.session.questions.map((question) => ({
+        questionId: question.id,
+        answerType: "option" as const,
+        optionId: "partial"
+      }))
+    });
+    await waitForJobCompletion(service, planJob.jobId);
+
+    const generatedProjectDirectories = await readdir(
+      path.join(root, ".construct", "generated-blueprints")
+    );
+    const generatedBlueprintPath = path.join(
+      root,
+      ".construct",
+      "generated-blueprints",
+      generatedProjectDirectories[0]!,
+      "project-blueprint.json"
+    );
+    const blueprint = JSON.parse(await readFile(generatedBlueprintPath, "utf8")) as {
+      files: Record<string, string>;
+      steps: Array<{
+        constructionUnits?: Array<{ instruction: string }>;
+      }>;
+      frontier?: {
+        steps?: Array<{
+          constructionUnits?: Array<{ instruction: string }>;
+        }>;
+      } | null;
+    };
+
+    assert.match(blueprint.files["src/index.ts"] ?? "", /Build sequence for this step:/);
+    assert.equal(Array.isArray(blueprint.steps[0]?.constructionUnits), true);
+    assert.equal(blueprint.steps[0]?.constructionUnits?.length, 3);
+    assert.match(
+      blueprint.steps[0]?.constructionUnits?.[0]?.instruction ?? "",
+      /trim surrounding whitespace/i
+    );
+    assert.equal(
+      blueprint.frontier?.steps?.[0]?.constructionUnits?.length,
+      blueprint.steps[0]?.constructionUnits?.length
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("ConstructAgentService rejects placeholder hidden tests from blueprint generation", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "construct-agent-hidden-test-guard-"));
 
