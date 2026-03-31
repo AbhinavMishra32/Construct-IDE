@@ -6962,7 +6962,6 @@ function ArchitectTaskBoard({ events }: { events: AgentEvent[] }) {
           expandedGroupKeys.includes(group.key) || isCurrent;
         const childLabels = buildArchitectTaskChildren(group);
         const activeChildLabel = getArchitectTaskActiveChildLabel(group);
-        const streamText = getArchitectTaskStreamText(group);
         const toolActivities = extractAgentToolActivities(group.events, 6);
 
         return (
@@ -7029,11 +7028,7 @@ function ArchitectTaskBoard({ events }: { events: AgentEvent[] }) {
                   ) : null}
 
                   <div className="construct-agent-outline-body">
-                    {streamText ? (
-                      <pre className="construct-agent-outline-stream">{streamText}</pre>
-                    ) : (
-                      <p>{getArchitectTaskBodyCopy(group)}</p>
-                    )}
+                    <p>{getArchitectTaskBodyCopy(group)}</p>
                   </div>
 
                   {toolActivities.length > 0 ? (
@@ -7349,20 +7344,16 @@ function buildArchitectTaskChildren(group: ArchitectTaskGroup): string[] {
     return tags.slice(0, 4);
   }
 
-  const streamLabel = getAgentEventStreamLabel(group.latestEvent);
-  if (streamLabel) {
-    return [streamLabel];
+  if (group.streamChunkCount > 0) {
+    return [
+      `${group.streamChunkCount} live draft update${group.streamChunkCount === 1 ? "" : "s"}`
+    ];
   }
 
   return [];
 }
 
 function getArchitectTaskActiveChildLabel(group: ArchitectTaskGroup): string | null {
-  const streamLabel = getAgentEventStreamLabel(group.latestEvent);
-  if (streamLabel) {
-    return streamLabel;
-  }
-
   const latestTitle = group.latestEvent.title.trim();
 
   if (
@@ -7387,37 +7378,6 @@ function getArchitectTaskBodyCopy(group: ArchitectTaskGroup): string {
   }
 
   return group.latestEvent.title;
-}
-
-function getArchitectTaskStreamText(group: ArchitectTaskGroup): string | null {
-  if (!isStreamAgentEvent(group.latestEvent)) {
-    return null;
-  }
-
-  const payload = asAgentEventPayload(group.latestEvent);
-  const rawText =
-    typeof payload?.text === "string"
-      ? payload.text
-      : typeof group.latestEvent.detail === "string"
-        ? group.latestEvent.detail
-        : "";
-  const normalizedText = rawText.replace(/\r/g, "").trim();
-
-  return normalizedText.length > 0 ? normalizedText : null;
-}
-
-function getAgentEventStreamLabel(event: AgentEvent): string | null {
-  if (!isStreamAgentEvent(event)) {
-    return null;
-  }
-
-  const payload = asAgentEventPayload(event);
-  const label =
-    typeof payload?.label === "string"
-      ? payload.label.trim()
-      : event.title.replace(/^Live draft:\s*/i, "").trim();
-
-  return label.length > 0 ? label : null;
 }
 
 function architectStatusFromLevel(
