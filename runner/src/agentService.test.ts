@@ -4248,6 +4248,339 @@ test("ConstructAgentService repairs file-local syntax failures with targeted blu
   }
 });
 
+test("ConstructAgentService remaps a single targeted repair patch back onto the only failing file", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "construct-agent-blueprint-remap-repair-"));
+  let planCalls = 0;
+  let blueprintCalls = 0;
+  let fullRepairCalls = 0;
+  let patchRepairCalls = 0;
+
+  const persistence = createAgentPersistence({
+    rootDirectory: root,
+    logger: {
+      info() {},
+      warn() {},
+      error() {}
+    }
+  });
+
+  const validBundle = {
+    projectName: "tiny-server",
+    projectSlug: "tiny-server",
+    description: "A tiny TypeScript project with one server entrypoint.",
+    language: "typescript",
+    entrypoints: ["src/server.ts"],
+    supportFiles: [
+      {
+        path: "package.json",
+        content: "{\n  \"name\": \"tiny-server\"\n}\n"
+      }
+    ],
+    canonicalFiles: [
+      {
+        path: "src/server.ts",
+        content: "export function startServer(): string {\n  return 'ok';\n}\n"
+      }
+    ],
+    learnerFiles: [
+      {
+        path: "src/server.ts",
+        content: "export function startServer(): string {\n  // TASK:start-server\n  throw new Error('Implement startServer');\n}\n"
+      }
+    ],
+    hiddenTests: [
+      {
+        path: "tests/server.test.ts",
+        content: "import { startServer } from '../src/server';\n\ntest('returns the starter string', () => {\n  expect(startServer()).toBe('ok');\n});\n"
+      }
+    ],
+    steps: [
+      {
+        id: "step.start-server",
+        title: "Start the tiny server",
+        summary: "Implement the first runtime function.",
+        doc: "Edit `src/server.ts` at the `TASK:start-server` anchor and implement `startServer()`.",
+        lessonSlides: [
+          markdownSlide("## Start with one visible behavior\n\nA single function is enough to make the project concrete.")
+        ],
+        anchor: {
+          file: "src/server.ts",
+          marker: "TASK:start-server",
+          startLine: null,
+          endLine: null
+        },
+        tests: ["tests/server.test.ts"],
+        concepts: ["typescript.functions", "domain.servers"],
+        constraints: ["Keep the first step intentionally tiny."],
+        checks: [],
+        estimatedMinutes: 15,
+        difficulty: "intro"
+      }
+    ],
+    dependencyGraph: {
+      nodes: [{ id: "component.server", label: "Server", kind: "component" }],
+      edges: []
+    },
+    tags: ["typescript", "server"]
+  };
+
+  const service = new ConstructAgentService(root, {
+    now: () => new Date("2026-03-31T01:00:00.000Z"),
+    persistence,
+    logger: {
+      info() {},
+      debug() {},
+      trace() {},
+      warn() {},
+      error() {}
+    },
+    search: {
+      async research(query) {
+        return {
+          query,
+          answer: "Start with one visible runtime behavior.",
+          sources: []
+        };
+      }
+    },
+    projectInstaller: {
+      async install() {
+        return {
+          status: "skipped",
+          packageManager: "none",
+          detail: "No install needed for the regression."
+        };
+      }
+    },
+    llm: {
+      async parse({ schemaName, schema, prompt }) {
+        if (schemaName === "construct_goal_self_report_signals") {
+          return schema.parse({ signals: [] });
+        }
+
+        if (schemaName === "construct_goal_scope") {
+          return schema.parse({
+            scopeSummary: "Small single-module project",
+            artifactShape: "single file module",
+            complexityScore: 10,
+            shouldResearch: false,
+            recommendedQuestionCount: 1,
+            recommendedMinSteps: 1,
+            recommendedMaxSteps: 2,
+            rationale: "The project is intentionally tiny."
+          });
+        }
+
+        if (schemaName === "construct_planning_question_draft") {
+          return schema.parse({
+            detectedLanguage: "typescript",
+            detectedDomain: "tiny server utility",
+            questions: [
+              {
+                conceptId: "typescript.functions",
+                category: "language",
+                prompt: "How comfortable are you with small TypeScript functions?",
+                options: [
+                  {
+                    id: "solid",
+                    label: "Comfortable",
+                    description: "I can work with small typed functions confidently.",
+                    confidenceSignal: "comfortable"
+                  },
+                  {
+                    id: "partial",
+                    label: "Need guidance",
+                    description: "I can follow examples, but I still want help while implementing.",
+                    confidenceSignal: "shaky"
+                  },
+                  {
+                    id: "new",
+                    label: "Still new",
+                    description: "I need the fundamentals taught clearly before I code.",
+                    confidenceSignal: "new"
+                  }
+                ]
+              },
+              {
+                conceptId: "domain.servers",
+                category: "domain",
+                prompt: "How familiar are you with a tiny runtime entrypoint?",
+                options: [
+                  {
+                    id: "solid",
+                    label: "I know the idea well",
+                    description: "I understand what a small entrypoint function is doing.",
+                    confidenceSignal: "comfortable"
+                  },
+                  {
+                    id: "partial",
+                    label: "I know the idea but want examples",
+                    description: "I understand the concept, but I still want a walkthrough.",
+                    confidenceSignal: "shaky"
+                  },
+                  {
+                    id: "new",
+                    label: "This is new to me",
+                    description: "I need the project to teach the concept from scratch.",
+                    confidenceSignal: "new"
+                  }
+                ]
+              }
+            ]
+          });
+        }
+
+        if (schemaName === "construct_generated_project_plan") {
+          planCalls += 1;
+          return schema.parse({
+            summary: "Teach one runtime behavior and implement the first server function.",
+            knowledgeGraph: {
+              concepts: [
+                {
+                  id: "typescript.functions",
+                  label: "TypeScript functions",
+                  category: "language",
+                  path: ["typescript", "functions"],
+                  labelPath: ["TypeScript", "Functions"],
+                  confidence: "shaky",
+                  rationale: "The learner asked for help with tiny functions."
+                }
+              ],
+              strengths: [],
+              gaps: ["Runtime entrypoints"]
+            },
+            architecture: [
+              {
+                id: "component.server",
+                label: "Server entrypoint",
+                kind: "component",
+                summary: "Exposes the first visible runtime function.",
+                dependsOn: []
+              }
+            ],
+            steps: [
+              {
+                id: "step.start-server",
+                title: "Start the tiny server",
+                kind: "implementation",
+                objective: "Implement the first runtime function.",
+                rationale: "Start with one visible behavior.",
+                concepts: ["typescript.functions", "domain.servers"],
+                dependsOn: [],
+                validationFocus: ["returns the starter string"],
+                suggestedFiles: ["src/server.ts"],
+                implementationNotes: ["Keep it intentionally tiny."],
+                quizFocus: ["Can explain what the function returns."],
+                hiddenValidationFocus: ["starter string returned"]
+              }
+            ],
+            suggestedFirstStepId: "step.start-server"
+          });
+        }
+
+        if (schemaName === "construct_generated_blueprint_bundle") {
+          const repairPrompt = typeof prompt === "string" && prompt.includes("\"previousDraft\"");
+
+          if (repairPrompt) {
+            fullRepairCalls += 1;
+            return schema.parse({
+              ...validBundle,
+              canonicalFiles: [
+                {
+                  path: "src/server.ts",
+                  content: "export function startServer(): string {\n  return value.;\n}\n"
+                }
+              ]
+            });
+          }
+
+          blueprintCalls += 1;
+          return schema.parse({
+            ...validBundle,
+            supportFiles: [
+              ...validBundle.supportFiles,
+              {
+                path: "src/server.ts",
+                content: "export const supportFlag = true;\n"
+              }
+            ]
+          });
+        }
+
+        if (schemaName === "construct_generated_blueprint_file_patch") {
+          patchRepairCalls += 1;
+          return schema.parse({
+            supportFiles: [],
+            canonicalFiles: [
+              {
+                path: "src/rateLimiter/TokenBucketRateLimiter.ts",
+                content: "export function startServer(): string {\n  return 'ok';\n}\n"
+              }
+            ],
+            learnerFiles: [],
+            hiddenTests: []
+          });
+        }
+
+        if (schemaName === "construct_authored_blueprint_step") {
+          return schema.parse({
+            summary: "Teach the first runtime function and implement the starter string.",
+            doc: "Edit `src/server.ts` and implement `startServer()`.",
+            lessonSlides: [
+              markdownSlide("## Start with one visible runtime behavior\n\nThe first step only needs one concrete function."),
+              markdownSlide("## Why this stays intentionally tiny\n\nA single return value is enough to anchor the runtime mental model before the project grows.")
+            ],
+            checks: []
+          });
+        }
+
+        throw new Error(`Unexpected schema request: ${schemaName}`);
+      }
+    }
+  });
+
+  try {
+    const questionJob = service.createPlanningQuestionsJob({
+      goal: "small typescript server utility"
+    });
+    const questionResult = await waitForJobCompletion(service, questionJob.jobId);
+    const questionSession = questionResult.result as {
+      session: { sessionId: string; questions: Array<{ id: string; options: Array<{ id: string }> }> };
+    };
+
+    const request = {
+      sessionId: questionSession.session.sessionId,
+      answers: questionSession.session.questions.map((question) => ({
+        questionId: question.id,
+        answerType: "option" as const,
+        optionId: question.options[0]!.id
+      }))
+    };
+
+    const firstPlanJob = service.createPlanningPlanJob(request);
+    await assert.rejects(
+      () => waitForJobCompletion(service, firstPlanJob.jobId),
+      /overlapping paths in supportFiles and canonicalFiles/i
+    );
+
+    const retryPlanJob = service.createPlanningPlanJob(request);
+    const retryResult = await waitForJobCompletion(service, retryPlanJob.jobId);
+    const planPayload = retryResult.result as { plan: { steps: Array<{ id: string }> } };
+
+    assert.equal(planPayload.plan.steps.length, 1);
+    assert.equal(planCalls, 1);
+    assert.equal(blueprintCalls, 1);
+    assert.equal(fullRepairCalls, 1);
+    assert.equal(patchRepairCalls, 1);
+    assert.ok(await service.getActiveBlueprintPath());
+  } finally {
+    await new Promise((resolve) => {
+      setTimeout(resolve, 50);
+    });
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("ConstructAgentService rejects node:test hidden harnesses for TypeScript blueprints", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "construct-agent-blueprint-node-test-"));
   const baseBundle = buildBlueprintGuardBundle();

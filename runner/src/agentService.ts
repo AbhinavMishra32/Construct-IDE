@@ -548,7 +548,7 @@ const PLANNING_BUILD_REPAIR_TARGET_SCHEMA = z.object({
   group: z.enum(["supportFiles", "canonicalFiles", "learnerFiles", "hiddenTests"]),
   path: z.string().min(1),
   error: z.string().min(1),
-  kind: z.enum(["invalid-json", "invalid-source-syntax", "invalid-hidden-test"])
+  kind: z.enum(["invalid-json", "invalid-source-syntax", "invalid-hidden-test", "duplicate-path"])
 });
 
 const PLANNING_BUILD_CHECKPOINT_FAILURE_SCHEMA = z.object({
@@ -667,7 +667,7 @@ type GeneratedBlueprintFileValidationTarget = {
   group: GeneratedBlueprintFileGroup;
   path: string;
   error: string;
-  kind: "invalid-json" | "invalid-source-syntax" | "invalid-hidden-test";
+  kind: "invalid-json" | "invalid-source-syntax" | "invalid-hidden-test" | "duplicate-path";
 };
 
 export class ConstructAgentService {
@@ -5261,101 +5261,105 @@ export class ConstructAgentService {
             resolvedValidationTargets.length > 0 ? "targeted file repair" : "project bundle repair"
           );
 
-          const repairedBundleDraft = await (async () => {
-            const repairLlm = await this.getRepairLlm();
+          let candidateFrontierDraft: GeneratedBlueprintBundleDraft | null = null;
 
-            if (resolvedValidationTargets.length === 0) {
-              return repairLlm.parse({
-                schema: GENERATED_BLUEPRINT_BUNDLE_DRAFT_SCHEMA,
-                schemaName: "construct_generated_blueprint_bundle",
-                instructions: buildBlueprintRepairInstructions(),
+          try {
+            const repairedBundleDraft = await (async () => {
+              const repairLlm = await this.getRepairLlm();
+
+              if (resolvedValidationTargets.length === 0) {
+                return repairLlm.parse({
+                  schema: GENERATED_BLUEPRINT_BUNDLE_DRAFT_SCHEMA,
+                  schemaName: "construct_generated_blueprint_bundle",
+                  instructions: buildBlueprintRepairInstructions(),
+                  prompt: JSON.stringify(
+                    {
+                      session: input.session,
+                      goalScope: input.goalScope,
+                      answers: input.answers,
+                      planSpine: plan,
+                      frontierPlanSteps,
+                      priorKnowledge: serializeKnowledgeBaseForPrompt(input.knowledgeBase),
+                      research: compactResearchDigest(input.mergedResearch),
+                      previousDraft,
+                      validationFailure: {
+                        ...repairContext,
+                        attempt,
+                        maxRepairAttempts,
+                        previousRepairFailures: repairFailures
+                      }
+                    },
+                    null,
+                    2
+                  ),
+                  maxOutputTokens: 20_000,
+                  verbosity: "medium",
+                  stream,
+                  usage: this.buildJobUsageContext(input.jobId, {
+                    sessionId: input.session.sessionId,
+                    stage: "blueprint-repair",
+                    operation: "project bundle repair"
+                  })
+                });
+              }
+
+              const rawPatch = await repairLlm.parse({
+                schema: GENERATED_BLUEPRINT_FILE_PATCH_SCHEMA,
+                schemaName: "construct_generated_blueprint_file_patch",
+                instructions: buildBlueprintFilePatchRepairInstructions(),
                 prompt: JSON.stringify(
-                  {
-                    session: input.session,
-                    goalScope: input.goalScope,
-                    answers: input.answers,
-                    planSpine: plan,
-                    frontierPlanSteps,
-                    priorKnowledge: serializeKnowledgeBaseForPrompt(input.knowledgeBase),
-                    research: compactResearchDigest(input.mergedResearch),
-                    previousDraft,
-                    validationFailure: {
-                      ...repairContext,
-                      attempt,
-                      maxRepairAttempts,
-                      previousRepairFailures: repairFailures
-                    }
-                  },
-                  null,
-                  2
-                ),
-                maxOutputTokens: 20_000,
+                    {
+                      session: input.session,
+                      goalScope: input.goalScope,
+                      answers: input.answers,
+                      planSpine: plan,
+                      frontierPlanSteps,
+                      priorKnowledge: serializeKnowledgeBaseForPrompt(input.knowledgeBase),
+                      research: compactResearchDigest(input.mergedResearch),
+                      previousDraft,
+                      repairTargets: resolvedValidationTargets,
+                      validationFailure: {
+                        ...repairContext,
+                        attempt,
+                        maxRepairAttempts,
+                        previousRepairFailures: repairFailures
+                      }
+                    },
+                    null,
+                    2
+                  ),
+                maxOutputTokens: 8_000,
                 verbosity: "medium",
                 stream,
                 usage: this.buildJobUsageContext(input.jobId, {
                   sessionId: input.session.sessionId,
                   stage: "blueprint-repair",
-                  operation: "project bundle repair"
+                  operation: "targeted blueprint file repair"
                 })
               });
-            }
 
-            const patch = await repairLlm.parse({
-              schema: GENERATED_BLUEPRINT_FILE_PATCH_SCHEMA,
-              schemaName: "construct_generated_blueprint_file_patch",
-              instructions: buildBlueprintFilePatchRepairInstructions(),
-              prompt: JSON.stringify(
-                  {
-                    session: input.session,
-                    goalScope: input.goalScope,
-                    answers: input.answers,
-                    planSpine: plan,
-                    frontierPlanSteps,
-                    priorKnowledge: serializeKnowledgeBaseForPrompt(input.knowledgeBase),
-                    research: compactResearchDigest(input.mergedResearch),
-                    previousDraft,
-                    repairTargets: resolvedValidationTargets,
-                    validationFailure: {
-                      ...repairContext,
-                      attempt,
-                    maxRepairAttempts,
-                    previousRepairFailures: repairFailures
-                  }
-                },
-                null,
-                2
-              ),
-              maxOutputTokens: 8_000,
-              verbosity: "medium",
-              stream,
-              usage: this.buildJobUsageContext(input.jobId, {
-                sessionId: input.session.sessionId,
-                stage: "blueprint-repair",
-                operation: "targeted blueprint file repair"
-              })
+              const patch = validateBlueprintFilePatchTargets(
+                rawPatch,
+                resolvedValidationTargets,
+                "Generated blueprint file repair"
+              );
+              return mergeGeneratedBlueprintFilePatch(previousDraft, patch);
+            })().finally(() => {
+              stream.onComplete?.();
             });
 
-            validateBlueprintFilePatchTargets(
-              patch,
-              resolvedValidationTargets,
-              "Generated blueprint file repair"
+            candidateFrontierDraft = filterGeneratedBundleDraftToFrontier(
+              repairedBundleDraft,
+              frontierPlanSteps
             );
-            return mergeGeneratedBlueprintFilePatch(previousDraft, patch);
-          })().finally(() => {
-            stream.onComplete?.();
-          });
-
-          latestFrontierDraft = filterGeneratedBundleDraftToFrontier(
-            repairedBundleDraft,
-            frontierPlanSteps
-          );
-
-          try {
-            normalizeGeneratedBlueprintDraft(latestFrontierDraft);
-            return latestFrontierDraft;
+            normalizeGeneratedBlueprintDraft(candidateFrontierDraft);
+            return candidateFrontierDraft;
           } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
-            previousDraft = latestFrontierDraft;
+            if (candidateFrontierDraft) {
+              latestFrontierDraft = candidateFrontierDraft;
+              previousDraft = candidateFrontierDraft;
+            }
             repairFailures.push(errorMessage);
 
             this.logger.warn("Blueprint repair draft failed validation. Retrying within the same planning job.", {
@@ -5390,7 +5394,7 @@ export class ConstructAgentService {
                 mergedResearch: input.mergedResearch,
                 requestAnswers: input.requestAnswers,
                 answersSignature: input.answersSignature,
-                rawDraft: latestFrontierDraft,
+                rawDraft: candidateFrontierDraft ?? latestFrontierDraft,
                 errorMessage
               });
               throw error;
@@ -10297,6 +10301,8 @@ function buildBlueprintFilePatchRepairInstructions(): string {
     "Repair only the file or files named in repairTargets.",
     "Return only the corrected file contents in the matching supportFiles, canonicalFiles, learnerFiles, or hiddenTests arrays.",
     "Leave every untouched file group as an empty array.",
+    "Copy the exact repairTargets path strings verbatim. Do not rename them, normalize them differently, or invent sibling file names.",
+    "If repairTargets contains exactly one file path, your returned patch for that group must use that exact path and no other path.",
     "Do not rename files, add extra files, delete files, or rewrite unrelated paths.",
     "Preserve the existing project goal, step order, teaching intent, and learner-visible task structure.",
     "If the failing file is a learnerFile, keep the learner task gap and anchor intact.",
@@ -10324,6 +10330,19 @@ function buildAdaptiveFrontierUpdateDecisionInstructions(): string {
 function extractGeneratedBlueprintFileValidationTarget(
   message: string
 ): GeneratedBlueprintFileValidationTarget | null {
+  const duplicatePathMatch = message.match(
+    /returned duplicate (supportFiles|canonicalFiles|learnerFiles|hiddenTests) path ([^.\n]+)\.?$/i
+  );
+
+  if (duplicatePathMatch) {
+    return {
+      kind: "duplicate-path",
+      group: duplicatePathMatch[1] as GeneratedBlueprintFileGroup,
+      path: normalizePathValue(duplicatePathMatch[2] ?? ""),
+      error: message
+    };
+  }
+
   const invalidJsonMatch = message.match(
     /returned invalid JSON for (supportFiles|canonicalFiles|learnerFiles|hiddenTests) file ([^:]+):\s*(.+)$/i
   );
@@ -10376,7 +10395,23 @@ function collectGeneratedBlueprintFileValidationTargets(
     files: Array<{ path: string; content: string }>,
     group: GeneratedBlueprintFileGroup
   ) => {
+    const seenPaths = new Set<string>();
+
     for (const file of files) {
+      const normalizedPath = normalizePathValue(file.path);
+
+      if (seenPaths.has(normalizedPath)) {
+        targets.push({
+          kind: "duplicate-path",
+          group,
+          path: normalizedPath,
+          error: `${context} returned duplicate ${group} path ${normalizedPath}.`
+        });
+        continue;
+      }
+
+      seenPaths.add(normalizedPath);
+
       try {
         validateGeneratedFileEntry(file, group, context);
       } catch (error) {
@@ -10406,34 +10441,77 @@ function validateBlueprintFilePatchTargets(
   patch: GeneratedBlueprintFilePatchDraft,
   targets: GeneratedBlueprintFileValidationTarget[],
   context: string
-): void {
+): GeneratedBlueprintFilePatchDraft {
   const allowedTargets = new Set(
     targets.map((target) => `${target.group}:${normalizePathValue(target.path)}`)
   );
   const seenTargets = new Set<string>();
+  const remainingTargetsByGroup = new Map<
+    GeneratedBlueprintFileGroup,
+    Set<string>
+  >([
+    ["supportFiles", new Set<string>()],
+    ["canonicalFiles", new Set<string>()],
+    ["learnerFiles", new Set<string>()],
+    ["hiddenTests", new Set<string>()]
+  ]);
+
+  for (const target of targets) {
+    remainingTargetsByGroup.get(target.group)?.add(normalizePathValue(target.path));
+  }
 
   const visitGroup = (
     group: GeneratedBlueprintFileGroup,
     entries: Array<{ path: string; content: string }>
-  ) => {
+  ): Array<{ path: string; content: string }> => {
+    const normalizedEntries: Array<{ path: string; content: string }> = [];
+    const unexpectedEntries: Array<{ path: string; content: string }> = [];
+
     for (const entry of entries) {
       const normalizedPath = normalizePathValue(entry.path);
       const targetKey = `${group}:${normalizedPath}`;
 
-      if (!allowedTargets.has(targetKey)) {
-        throw new Error(
-          `${context} returned unexpected ${group} file ${normalizedPath}. Only the explicitly failing file paths may be repaired in this mode.`
-        );
+      if (allowedTargets.has(targetKey)) {
+        seenTargets.add(targetKey);
+        remainingTargetsByGroup.get(group)?.delete(normalizedPath);
+        normalizedEntries.push({
+          path: normalizedPath,
+          content: entry.content
+        });
+        continue;
       }
 
-      seenTargets.add(targetKey);
+      unexpectedEntries.push({
+        path: normalizedPath,
+        content: entry.content
+      });
     }
+
+    const remainingTargets = Array.from(remainingTargetsByGroup.get(group) ?? []);
+    if (unexpectedEntries.length === 1 && remainingTargets.length === 1) {
+      const remappedPath = remainingTargets[0]!;
+      seenTargets.add(`${group}:${remappedPath}`);
+      remainingTargetsByGroup.get(group)?.delete(remappedPath);
+      normalizedEntries.push({
+        path: remappedPath,
+        content: unexpectedEntries[0]!.content
+      });
+    }
+
+    return Array.from(
+      new Map(normalizedEntries.map((entry) => [normalizePathValue(entry.path), entry.content] as const))
+    ).map(([path, content]) => ({
+      path,
+      content
+    }));
   };
 
-  visitGroup("supportFiles", patch.supportFiles);
-  visitGroup("canonicalFiles", patch.canonicalFiles);
-  visitGroup("learnerFiles", patch.learnerFiles);
-  visitGroup("hiddenTests", patch.hiddenTests);
+  const normalizedPatch: GeneratedBlueprintFilePatchDraft = {
+    supportFiles: visitGroup("supportFiles", patch.supportFiles),
+    canonicalFiles: visitGroup("canonicalFiles", patch.canonicalFiles),
+    learnerFiles: visitGroup("learnerFiles", patch.learnerFiles),
+    hiddenTests: visitGroup("hiddenTests", patch.hiddenTests)
+  };
 
   const missingTargets = targets.filter(
     (target) => !seenTargets.has(`${target.group}:${normalizePathValue(target.path)}`)
@@ -10446,6 +10524,8 @@ function validateBlueprintFilePatchTargets(
         .join(", ")}.`
     );
   }
+
+  return normalizedPatch;
 }
 
 function mergeGeneratedBlueprintFileEntries(
@@ -10455,29 +10535,30 @@ function mergeGeneratedBlueprintFileEntries(
   const patchedByPath = new Map(
     patchedFiles.map((file) => [normalizePathValue(file.path), file.content] as const)
   );
-  const merged = existingFiles.map((file) => {
+  const mergedByPath = new Map<string, { path: string; content: string }>();
+
+  for (const file of existingFiles) {
     const normalizedPath = normalizePathValue(file.path);
     const patchedContent = patchedByPath.get(normalizedPath);
 
-    if (patchedContent === undefined) {
-      return file;
-    }
+    mergedByPath.set(normalizedPath, {
+      path: normalizedPath,
+      content: patchedContent ?? file.content
+    });
 
-    patchedByPath.delete(normalizedPath);
-    return {
-      path: file.path,
-      content: patchedContent
-    };
-  });
+    if (patchedContent !== undefined) {
+      patchedByPath.delete(normalizedPath);
+    }
+  }
 
   for (const [normalizedPath, content] of patchedByPath.entries()) {
-    merged.push({
+    mergedByPath.set(normalizedPath, {
       path: normalizedPath,
       content
     });
   }
 
-  return merged;
+  return Array.from(mergedByPath.values());
 }
 
 function mergeGeneratedBlueprintFilePatch(
