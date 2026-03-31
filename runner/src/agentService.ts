@@ -3511,8 +3511,8 @@ export class ConstructAgentService {
       title: event.title
     };
 
-    if (event.detail && !isStreamEvent) {
-      context.detail = event.detail;
+    if (event.detail) {
+      context.detail = isStreamEvent ? truncateText(event.detail, 320) : event.detail;
     }
 
     if (payloadSummary) {
@@ -8327,10 +8327,12 @@ function summarizeAgentEventPayload(event: AgentEvent): Record<string, unknown> 
   ) {
     const payload = event.payload as Record<string, unknown>;
     const text = typeof payload.text === "string" ? payload.text : "";
+    const preview = text.replace(/\s+/g, " ").trim();
     return {
       stream: true,
       label: typeof payload.label === "string" ? payload.label : undefined,
-      chunkChars: text.length
+      chunkChars: text.length,
+      preview: preview.length > 0 ? truncateText(preview, 180) : undefined
     };
   }
 
