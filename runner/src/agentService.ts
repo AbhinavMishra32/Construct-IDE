@@ -9147,7 +9147,10 @@ function normalizeDraftLessonSlides(
 function normalizeGeneratedBlueprintDraft(
   draft: GeneratedBlueprintBundleDraft
 ): GeneratedBlueprintBundleDraft {
-  const rebalancedDraft = rebalanceGeneratedConstructionSurfaces(draft);
+  const separatedDraft = restoreGeneratedLearnerTaskGaps(draft, {
+    canonicalFiles: draft.canonicalFiles
+  });
+  const rebalancedDraft = rebalanceGeneratedConstructionSurfaces(separatedDraft);
 
   validateGeneratedBlueprintDraftIntegrity(rebalancedDraft, "Generated blueprint draft");
 
@@ -9166,7 +9169,8 @@ function normalizeGeneratedFrontierDraft(
     language?: string;
   }
 ): GeneratedFrontierDraft {
-  const rebalancedDraft = rebalanceGeneratedConstructionSurfaces(draft);
+  const separatedDraft = restoreGeneratedLearnerTaskGaps(draft);
+  const rebalancedDraft = rebalanceGeneratedConstructionSurfaces(separatedDraft);
 
   validateGeneratedFrontierDraftIntegrity(
     rebalancedDraft,
@@ -9449,6 +9453,7 @@ function validateGeneratedStepReferences(
 
 const LEARNER_TASK_GAP_PATTERNS = [
   /\bTASK\b/i,
+  /\bTASK_NOT_IMPLEMENTED\b/i,
   /\bTODO\b/i,
   /\bFIXME\b/i,
   /\bNotImplemented(?:Error)?\b/i,
@@ -10172,6 +10177,55 @@ function rebalanceGeneratedConstructionSurfaces<TDraft extends DraftWithConstruc
   };
 }
 
+function restoreGeneratedLearnerTaskGaps<TDraft extends DraftWithConstructionScaffolding>(
+  draft: TDraft,
+  options?: {
+    canonicalFiles?: Array<{ path: string; content: string }>;
+  }
+): TDraft {
+  const learnerFileByPath = new Map(
+    draft.learnerFiles.map((file) => [normalizePathValue(file.path), file.content] as const)
+  );
+  const canonicalFileByPath = new Map(
+    (options?.canonicalFiles ?? []).map((file) => [normalizePathValue(file.path), file.content] as const)
+  );
+
+  for (const step of draft.steps) {
+    const anchorPath = normalizePathValue(step.anchor.file);
+    const learnerContent = learnerFileByPath.get(anchorPath);
+
+    if (!learnerContent) {
+      continue;
+    }
+
+    const canonicalContent = canonicalFileByPath.get(anchorPath);
+    const matchesCanonical =
+      canonicalContent !== undefined &&
+      normalizeGeneratedSourceForComparison(learnerContent)
+        === normalizeGeneratedSourceForComparison(canonicalContent);
+    const hasTaskGap = containsLearnerTaskGap(learnerContent, step.anchor.marker);
+
+    if (!matchesCanonical && hasTaskGap) {
+      continue;
+    }
+
+    const restoredContent = restoreExecutableLearnerTaskGap(step, learnerContent);
+    if (!restoredContent) {
+      continue;
+    }
+
+    learnerFileByPath.set(anchorPath, restoredContent);
+  }
+
+  return {
+    ...draft,
+    learnerFiles: draft.learnerFiles.map((file) => ({
+      ...file,
+      content: learnerFileByPath.get(normalizePathValue(file.path)) ?? file.content
+    }))
+  };
+}
+
 function extractConstructionRequirementsFromLearnerFile(
   step: GeneratedBlueprintStepDraft,
   learnerContent: string
@@ -10749,6 +10803,102 @@ function rewriteLearnerFileWithBudgetedConstructionSequence(
     ...budgetedBlock,
     ...lines.slice(blockEnd)
   ].join("\n");
+}
+
+function restoreExecutableLearnerTaskGap(
+  step: GeneratedBlueprintStepDraft,
+  learnerContent: string
+): string | null {
+  const normalizedPath = normalizePathValue(step.anchor.file);
+  const extension = path.extname(normalizedPath).toLowerCase();
+
+  if (
+    ![
+      ".ts",
+      ".tsx",
+      ".js",
+      ".jsx",
+      ".mts",
+      ".cts",
+      ".mjs",
+      ".cjs"
+    ].includes(extension)
+  ) {
+    return null;
+  }
+
+  const lines = learnerContent.replace(/\r\n/g, "\n").split("\n");
+  const anchorIndex = lines.findIndex((line) => line.includes(step.anchor.marker));
+
+  if (anchorIndex < 0) {
+    return null;
+  }
+
+  const commentPrefix = detectConstructionCommentPrefix(lines, anchorIndex);
+  const anchorLine = lines[anchorIndex] ?? "";
+
+  if (!commentPrefix || !anchorLine.trim().startsWith(commentPrefix)) {
+    return null;
+  }
+
+  const enclosingRegionIndex = findNearestExecutableTaskRegionIndex(lines, anchorIndex);
+  if (enclosingRegionIndex < 0) {
+    return null;
+  }
+
+  let insertIndex = anchorIndex + 1;
+  while (insertIndex < lines.length) {
+    const trimmed = lines[insertIndex]!.trim();
+
+    if (!trimmed) {
+      insertIndex += 1;
+      continue;
+    }
+
+    if (trimmed.startsWith(commentPrefix)) {
+      insertIndex += 1;
+      continue;
+    }
+
+    if (LEARNER_TASK_REGION_SIGNATURE_PATTERN.test(trimmed)) {
+      return null;
+    }
+
+    break;
+  }
+
+  const existingNearbyGap = lines
+    .slice(anchorIndex, Math.min(lines.length, anchorIndex + 8))
+    .some((line) => /\bTASK_NOT_IMPLEMENTED\b|\bTODO\b|\bNotImplemented(?:Error)?\b/i.test(line));
+
+  if (existingNearbyGap) {
+    return learnerContent;
+  }
+
+  const indentMatch = lines[insertIndex]?.match(/^\s*/) ?? lines[enclosingRegionIndex]?.match(/^\s*/) ?? ["  "];
+  const indent = indentMatch[0] ?? "  ";
+  const gapId = step.anchor.marker
+    .replace(/[^A-Za-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase() || "task";
+  const taskGapLine = `${indent}throw new Error('TASK_NOT_IMPLEMENTED: ${gapId}');`;
+
+  return [
+    ...lines.slice(0, insertIndex),
+    taskGapLine,
+    ...lines.slice(insertIndex)
+  ].join("\n");
+}
+
+function findNearestExecutableTaskRegionIndex(lines: string[], startIndex: number): number {
+  for (let index = startIndex; index >= 0; index -= 1) {
+    const trimmed = lines[index]!.trim();
+    if (LEARNER_TASK_REGION_SIGNATURE_PATTERN.test(trimmed)) {
+      return index;
+    }
+  }
+
+  return -1;
 }
 
 function escapeRegExp(value: string): string {

@@ -3235,7 +3235,7 @@ test("ConstructAgentService rejects invalid generated learner source syntax", as
   }
 });
 
-test("ConstructAgentService rejects learner files that already match the canonical implementation", async () => {
+test("ConstructAgentService restores a learner task gap when learner files match the canonical implementation", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "construct-agent-canonical-match-guard-"));
 
   try {
@@ -3246,7 +3246,7 @@ test("ConstructAgentService rejects learner files that already match the canonic
       "}"
     ].join("\n");
 
-    await expectBlueprintGenerationToReject(root, {
+    const service = await expectBlueprintGenerationToComplete(root, {
       bundle: buildBlueprintGuardBundle({
         canonicalFiles: [
           {
@@ -3260,19 +3260,34 @@ test("ConstructAgentService rejects learner files that already match the canonic
             content: `${solvedWithTaskMarker}\n`
           }
         ]
-      }),
-      rejectionPattern: /learnerfiles file src\/index\.ts already matches the canonical implementation/i
+      })
     });
+
+    const blueprintPath = await service.getActiveBlueprintPath();
+    assert.ok(blueprintPath);
+
+    const workspaceFiles = await readdir(path.join(path.dirname(blueprintPath), ".construct", "workspaces"));
+    const learnerWorkspaceRoot = path.join(
+      path.dirname(blueprintPath),
+      ".construct",
+      "workspaces",
+      workspaceFiles[0]!,
+      "src",
+      "index.ts"
+    );
+    const learnerContent = await readFile(learnerWorkspaceRoot, "utf8");
+
+    assert.match(learnerContent, /TASK_NOT_IMPLEMENTED/i);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
 });
 
-test("ConstructAgentService rejects solved learner files without a learner-visible task gap", async () => {
+test("ConstructAgentService restores a learner-visible task gap for solved executable learner files", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "construct-agent-task-gap-guard-"));
 
   try {
-    await expectBlueprintGenerationToReject(root, {
+    const service = await expectBlueprintGenerationToComplete(root, {
       bundle: buildBlueprintGuardBundle({
         learnerFiles: [
           {
@@ -3309,9 +3324,25 @@ test("ConstructAgentService rejects solved learner files without a learner-visib
             difficulty: "intro" as const
           }
         ]
-      }),
-      rejectionPattern: /learnerfiles file src\/index\.ts does not expose a learner-visible task gap/i
+      })
     });
+
+    const blueprintPath = await service.getActiveBlueprintPath();
+    assert.ok(blueprintPath);
+
+    const workspaceFiles = await readdir(path.join(path.dirname(blueprintPath), ".construct", "workspaces"));
+    const learnerWorkspaceRoot = path.join(
+      path.dirname(blueprintPath),
+      ".construct",
+      "workspaces",
+      workspaceFiles[0]!,
+      "src",
+      "index.ts"
+    );
+    const learnerContent = await readFile(learnerWorkspaceRoot, "utf8");
+
+    assert.match(learnerContent, /TASK_NOT_IMPLEMENTED/i);
+    assert.match(learnerContent, /step-utility-anchor/i);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
