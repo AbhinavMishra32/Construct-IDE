@@ -6980,10 +6980,72 @@ function ArchitectTaskBoard({ events }: { events: AgentEvent[] }) {
   const latestActiveGroup =
     groups.find((group) => group.status === "working") ?? groups.at(-1) ?? null;
   const [expandedGroupKeys, setExpandedGroupKeys] = useState<string[]>([]);
+  const [enteringGroupKeys, setEnteringGroupKeys] = useState<string[]>([]);
   const bottomAnchorRef = useRef<HTMLDivElement | null>(null);
+  const seenGroupKeysRef = useRef<Set<string>>(new Set());
+  const hasTrackedGroupKeysRef = useRef(false);
+  const enteringGroupTimersRef = useRef<Map<string, number>>(new Map());
   const groupSignature = groups
     .map((group) => `${group.key}:${group.status}:${group.streamChunkCount}:${group.events.length}`)
     .join("|");
+  const groupKeySignature = groups.map((group) => group.key).join("|");
+
+  useEffect(() => {
+    return () => {
+      for (const timer of enteringGroupTimersRef.current.values()) {
+        window.clearTimeout(timer);
+      }
+      enteringGroupTimersRef.current.clear();
+    };
+  }, []);
+
+  useEffect(() => {
+    const nextKeys = groups.map((group) => group.key);
+
+    if (!hasTrackedGroupKeysRef.current) {
+      seenGroupKeysRef.current = new Set(nextKeys);
+      hasTrackedGroupKeysRef.current = true;
+      return;
+    }
+
+    if (nextKeys.length === 0) {
+      seenGroupKeysRef.current.clear();
+      setEnteringGroupKeys([]);
+
+      for (const timer of enteringGroupTimersRef.current.values()) {
+        window.clearTimeout(timer);
+      }
+      enteringGroupTimersRef.current.clear();
+      return;
+    }
+
+    const nextKeySet = new Set(nextKeys);
+    const newKeys = nextKeys.filter((key) => !seenGroupKeysRef.current.has(key));
+
+    seenGroupKeysRef.current = nextKeySet;
+    setEnteringGroupKeys((current) => current.filter((key) => nextKeySet.has(key)));
+
+    if (newKeys.length === 0) {
+      return;
+    }
+
+    setEnteringGroupKeys((current) => Array.from(new Set([...current, ...newKeys])));
+
+    for (const key of newKeys) {
+      const existingTimer = enteringGroupTimersRef.current.get(key);
+
+      if (typeof existingTimer === "number") {
+        window.clearTimeout(existingTimer);
+      }
+
+      const timer = window.setTimeout(() => {
+        setEnteringGroupKeys((current) => current.filter((currentKey) => currentKey !== key));
+        enteringGroupTimersRef.current.delete(key);
+      }, 820);
+
+      enteringGroupTimersRef.current.set(key, timer);
+    }
+  }, [groupKeySignature, groups]);
 
   useEffect(() => {
     const defaultExpanded = groups
@@ -7002,15 +7064,22 @@ function ArchitectTaskBoard({ events }: { events: AgentEvent[] }) {
       return;
     }
 
+    let followFrameHandle: number | null = null;
     const frameHandle = window.requestAnimationFrame(() => {
-      bottomAnchorRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "nearest"
+      followFrameHandle = window.requestAnimationFrame(() => {
+        bottomAnchorRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "nearest"
+        });
       });
     });
 
     return () => {
       window.cancelAnimationFrame(frameHandle);
+
+      if (followFrameHandle !== null) {
+        window.cancelAnimationFrame(followFrameHandle);
+      }
     };
   }, [groupSignature, groups.length]);
 
@@ -7020,18 +7089,33 @@ function ArchitectTaskBoard({ events }: { events: AgentEvent[] }) {
         const isCurrent = latestActiveGroup?.key === group.key;
         const isExpanded =
           expandedGroupKeys.includes(group.key) || isCurrent;
+        const isEntering = enteringGroupKeys.includes(group.key);
         const childLabels = buildArchitectTaskChildren(group);
         const activeChildLabel = getArchitectTaskActiveChildLabel(group);
         const toolActivities = extractAgentToolActivities(group.events, 6);
 
         return (
-          <section
+          <motion.section
             key={group.key}
+            layout="position"
+            initial={isEntering ? { opacity: 0, y: 18, scale: 0.985 } : false}
+            animate={{
+              opacity: 1,
+              y: 0,
+              scale: 1
+            }}
+            transition={{
+              opacity: { duration: 0.26, ease: [0.16, 1, 0.3, 1] },
+              y: { type: "spring", stiffness: 320, damping: 28, mass: 0.76 },
+              scale: { duration: 0.42, ease: [0.16, 1, 0.3, 1] },
+              layout: { duration: 0.38, ease: [0.22, 1, 0.36, 1] }
+            }}
             className={cn(
               "construct-agent-outline-group",
               `is-${group.status}`,
               isCurrent && "is-current",
-              isExpanded && "is-active"
+              isExpanded && "is-active",
+              isEntering && "is-entering"
             )}
           >
             <div className="construct-agent-outline-node">
@@ -7063,7 +7147,15 @@ function ArchitectTaskBoard({ events }: { events: AgentEvent[] }) {
               </button>
 
               {isExpanded ? (
-                <div className="construct-agent-outline-panel">
+                <motion.div
+                  className="construct-agent-outline-panel"
+                  initial={isEntering ? { opacity: 0, y: 8 } : false}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{
+                    opacity: { duration: 0.22, delay: isEntering ? 0.06 : 0, ease: [0.16, 1, 0.3, 1] },
+                    y: { duration: 0.28, delay: isEntering ? 0.06 : 0, ease: [0.22, 1, 0.36, 1] }
+                  }}
+                >
                   {childLabels.length > 0 ? (
                     <div className="construct-agent-outline-children">
                       {childLabels.map((label) => (
@@ -7096,10 +7188,10 @@ function ArchitectTaskBoard({ events }: { events: AgentEvent[] }) {
                       <AgentToolActivityList activities={toolActivities} compact />
                     </div>
                   ) : null}
-                </div>
+                </motion.div>
               ) : null}
             </div>
-          </section>
+          </motion.section>
         );
       })}
       <div ref={bottomAnchorRef} aria-hidden="true" className="construct-agent-outline-anchor" />
