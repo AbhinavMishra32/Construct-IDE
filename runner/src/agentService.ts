@@ -5283,21 +5283,71 @@ export class ConstructAgentService {
       frontierPlanSteps
     );
 
-    return this.finalizePlanningBlueprintDraft({
-      jobId: input.jobId,
-      stage: "blueprint-generation",
-      stageTitle: "Project bundle drafted",
-      session: input.session,
-      plan: input.plan,
-      goalScope: input.goalScope,
-      mergedResearch: input.mergedResearch,
-      requestAnswers: input.requestAnswers,
-      answersSignature: input.answersSignature,
-      rawDraft: rawFrontierDraft,
-      successLogContext: "Received blueprint synthesis response.",
-      successEventTitle: "Project bundle drafted",
-      successEventDetail: "The Architect has returned a candidate project bundle and Construct is now materializing it into a runnable workspace."
-    });
+    try {
+      return await this.finalizePlanningBlueprintDraft({
+        jobId: input.jobId,
+        stage: "blueprint-generation",
+        stageTitle: "Project bundle drafted",
+        session: input.session,
+        plan: input.plan,
+        goalScope: input.goalScope,
+        mergedResearch: input.mergedResearch,
+        requestAnswers: input.requestAnswers,
+        answersSignature: input.answersSignature,
+        rawDraft: rawFrontierDraft,
+        successLogContext: "Received blueprint synthesis response.",
+        successEventTitle: "Project bundle drafted",
+        successEventDetail: "The Architect has returned a candidate project bundle and Construct is now materializing it into a runnable workspace."
+      });
+    } catch (error) {
+      const checkpoint = await this.readPlanningBuildCheckpoint(
+        input.session.sessionId,
+        input.answersSignature
+      );
+
+      if (
+        checkpoint?.stage !== "blueprint-draft-invalid" ||
+        !checkpoint.blueprintDraft ||
+        !checkpoint.failure?.recoverable
+      ) {
+        throw error;
+      }
+
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
+      this.logger.warn(
+        "Initial blueprint synthesis draft failed validation. Repairing it within the same planning job.",
+        {
+          jobId: input.jobId,
+          sessionId: input.session.sessionId,
+          error: errorMessage
+        }
+      );
+
+      const job = this.jobs.get(input.jobId);
+      if (job) {
+        this.emitEvent(job, {
+          stage: "blueprint-generation",
+          title: "Blueprint draft needs repair",
+          detail: errorMessage,
+          level: "warning"
+        });
+      }
+
+      return this.repairPlanningBlueprintDraft({
+        jobId: input.jobId,
+        session: input.session,
+        plan: input.plan,
+        goalScope: input.goalScope,
+        answers: input.answers,
+        knowledgeBase: input.knowledgeBase,
+        mergedResearch: input.mergedResearch,
+        failedDraft: checkpoint.blueprintDraft,
+        failure: checkpoint.failure,
+        answersSignature: input.answersSignature,
+        requestAnswers: input.requestAnswers
+      });
+    }
   }
 
   private async repairPlanningBlueprintDraft(input: {
@@ -5363,10 +5413,15 @@ export class ConstructAgentService {
               : fallbackValidationTarget
                 ? [fallbackValidationTarget]
                 : [];
+          const shouldUseBundleRepair =
+            resolvedValidationTargets.length === 0 ||
+            resolvedValidationTargets.some(
+              (target) => target.kind === "oversized-task-surface"
+            );
           const stream = this.createModelStreamForwarder(
             input.jobId,
             "blueprint-repair",
-            resolvedValidationTargets.length > 0 ? "targeted file repair" : "project bundle repair"
+            shouldUseBundleRepair ? "project bundle repair" : "targeted file repair"
           );
 
           let candidateFrontierDraft: GeneratedBlueprintBundleDraft | null = null;
@@ -5375,7 +5430,7 @@ export class ConstructAgentService {
             const repairedBundleDraft = await (async () => {
               const repairLlm = await this.getRepairLlm();
 
-              if (resolvedValidationTargets.length === 0) {
+              if (shouldUseBundleRepair) {
                 return repairLlm.parse({
                   schema: GENERATED_BLUEPRINT_BUNDLE_DRAFT_SCHEMA,
                   schemaName: "construct_generated_blueprint_bundle",

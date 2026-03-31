@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -4672,6 +4672,340 @@ test("ConstructAgentService repairs file-local syntax failures with targeted blu
     assert.ok(await service.getActiveBlueprintPath());
   } finally {
     await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("ConstructAgentService repairs oversized intro task surfaces with full bundle repair instead of file patches", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "construct-agent-oversized-step-repair-"));
+  let blueprintCalls = 0;
+  let fullRepairCalls = 0;
+  let patchRepairCalls = 0;
+  let lessonAuthoringCalls = 0;
+
+  await mkdir(path.join(root, ".construct", "state"), { recursive: true });
+
+  const persistence = createAgentPersistence({
+    rootDirectory: root,
+    logger: {
+      info() {},
+      warn() {},
+      error() {}
+    }
+  });
+
+  const validBundle = {
+    projectName: "tiny-rate-limiter",
+    projectSlug: "tiny-rate-limiter",
+    description: "A tiny TypeScript rate limiter starter.",
+    language: "typescript",
+    entrypoints: ["src/RateLimiter.ts"],
+    supportFiles: [
+      {
+        path: "package.json",
+        content: "{\n  \"name\": \"tiny-rate-limiter\"\n}\n"
+      }
+    ],
+    canonicalFiles: [
+      {
+        path: "src/RateLimiter.ts",
+        content: "export function validateConfig(input: number): number {\n  return input;\n}\n"
+      }
+    ],
+    learnerFiles: [
+      {
+        path: "src/RateLimiter.ts",
+        content: [
+          "export function validateConfig(input: number): number {",
+          "  // TASK:validate-config",
+          "  throw new Error('TASK_NOT_IMPLEMENTED: validateConfig');",
+          "}"
+        ].join("\n")
+      }
+    ],
+    hiddenTests: [
+      {
+        path: "tests/rate-limiter.test.ts",
+        content: "import { validateConfig } from '../src/RateLimiter';\n\ntest('validateConfig returns the number', () => {\n  expect(validateConfig(1)).toBe(1);\n});\n"
+      }
+    ],
+    steps: [
+      {
+        id: "step-1-define-public-api-and-types",
+        title: "Define the public API",
+        summary: "Start with one public validation function.",
+        doc: "Implement `validateConfig` in `src/RateLimiter.ts`.",
+        lessonSlides: [
+          markdownSlide("## Start with one function\n\nThe first step should only establish one public contract."),
+          markdownSlide("## Keep it local\n\nThe next step can build on this validated shape.")
+        ],
+        anchor: {
+          file: "src/RateLimiter.ts",
+          marker: "TASK:validate-config",
+          startLine: null,
+          endLine: null
+        },
+        tests: ["tests/rate-limiter.test.ts"],
+        concepts: ["typescript.functions", "domain.rate-limiter"],
+        constraints: ["Keep the first task intentionally narrow."],
+        checks: [],
+        estimatedMinutes: 12,
+        difficulty: "intro" as const
+      }
+    ],
+    dependencyGraph: {
+      nodes: [
+        { id: "component.rate-limiter", label: "Rate limiter", kind: "component" as const }
+      ],
+      edges: []
+    },
+    tags: ["typescript", "rate-limiter"]
+  };
+
+  const oversizedBundle = {
+    ...validBundle,
+    learnerFiles: [
+      {
+        path: "src/RateLimiter.ts",
+        content: [
+          "export function validateConfig(input: number): number {",
+          "  // TASK:validate-config",
+          "  // Requirements:",
+          "  // - validate the input number",
+          "  // - compute elapsed refill time",
+          "  // - derive the refill amount",
+          "  // - branch for allow versus deny",
+          "  // - return the decision payload shape",
+          "  throw new Error('TASK_NOT_IMPLEMENTED: validateConfig');",
+          "}"
+        ].join("\n")
+      }
+    ]
+  };
+
+  const service = new ConstructAgentService(root, {
+    now: () => new Date("2026-03-31T16:00:00.000Z"),
+    persistence,
+    logger: {
+      info() {},
+      debug() {},
+      trace() {},
+      warn() {},
+      error() {}
+    },
+    search: {
+      async research(query) {
+        return {
+          query,
+          answer: "Start with one visible public contract.",
+          sources: []
+        };
+      }
+    },
+    projectInstaller: {
+      async install() {
+        return {
+          status: "skipped",
+          packageManager: "none",
+          detail: "No install needed for this regression."
+        };
+      }
+    },
+    llm: {
+      async parse({ schemaName, schema, prompt }) {
+        if (schemaName === "construct_goal_self_report_signals") {
+          return schema.parse({ signals: [] });
+        }
+
+        if (schemaName === "construct_goal_scope") {
+          return schema.parse({
+            scopeSummary: "Small single-file TypeScript rate limiter starter",
+            artifactShape: "single public module",
+            complexityScore: 18,
+            shouldResearch: false,
+            recommendedQuestionCount: 2,
+            recommendedMinSteps: 1,
+            recommendedMaxSteps: 3,
+            rationale: "The request is compact enough to avoid broad research."
+          });
+        }
+
+        if (schemaName === "construct_planning_question_draft") {
+          return schema.parse({
+            detectedLanguage: "typescript",
+            detectedDomain: "rate limiter utility",
+            questions: [
+              {
+                conceptId: "typescript.functions",
+                category: "language",
+                prompt: "How comfortable are you with TypeScript functions?",
+                options: [
+                  {
+                    id: "solid",
+                    label: "Comfortable",
+                    description: "I can write small functions without much help.",
+                    confidenceSignal: "comfortable"
+                  },
+                  {
+                    id: "partial",
+                    label: "Somewhat comfortable",
+                    description: "I know the basics, but I still want guidance.",
+                    confidenceSignal: "shaky"
+                  },
+                  {
+                    id: "new",
+                    label: "New to me",
+                    description: "I need the function basics taught clearly first.",
+                    confidenceSignal: "new"
+                  }
+                ]
+              },
+              {
+                conceptId: "domain.rate-limiter",
+                category: "domain",
+                prompt: "How familiar are you with rate limiter behavior?",
+                options: [
+                  {
+                    id: "solid",
+                    label: "Comfortable",
+                    description: "I know the basic rate limiter idea already.",
+                    confidenceSignal: "comfortable"
+                  },
+                  {
+                    id: "partial",
+                    label: "Somewhat comfortable",
+                    description: "I know the rough idea, but I still want help sequencing it.",
+                    confidenceSignal: "shaky"
+                  },
+                  {
+                    id: "new",
+                    label: "New to me",
+                    description: "I need the public contract explained from scratch.",
+                    confidenceSignal: "new"
+                  }
+                ]
+              }
+            ]
+          });
+        }
+
+        if (schemaName === "construct_generated_project_plan") {
+          return schema.parse({
+            summary: "Build one visible rate limiter function first, then grow the behavior later.",
+            knowledgeGraph: {
+              concepts: [
+                {
+                  id: "typescript.functions",
+                  label: "TypeScript functions",
+                  category: "language",
+                  path: ["typescript", "functions"],
+                  labelPath: ["TypeScript", "Functions"],
+                  confidence: "shaky",
+                  rationale: "The learner is only somewhat comfortable with small functions."
+                }
+              ],
+              gaps: ["TypeScript functions"],
+              strengths: []
+            },
+            architecture: [
+              {
+                id: "component.rate-limiter",
+                label: "Rate limiter",
+                kind: "component",
+                summary: "A small public rate limiter API.",
+                dependsOn: []
+              }
+            ],
+            steps: [
+              {
+                id: "step-1-define-public-api-and-types",
+                title: "Define the public API",
+                kind: "implementation",
+                objective: "Start the rate limiter with one public validation function.",
+                rationale: "A single public contract keeps the first slice survivable.",
+                concepts: ["typescript.functions", "domain.rate-limiter"],
+                dependsOn: [],
+                validationFocus: ["public validation contract returns the expected value"],
+                suggestedFiles: ["src/RateLimiter.ts"],
+                implementationNotes: ["Keep the first slice local and public."],
+                quizFocus: ["Can explain the public contract."],
+                hiddenValidationFocus: ["public validation function behaves correctly"]
+              }
+            ],
+            suggestedFirstStepId: "step-1-define-public-api-and-types"
+          });
+        }
+
+        if (schemaName === "construct_generated_blueprint_bundle") {
+          const repairPrompt = typeof prompt === "string" && prompt.includes("\"previousDraft\"");
+
+          if (repairPrompt) {
+            fullRepairCalls += 1;
+            return schema.parse(validBundle);
+          }
+
+          blueprintCalls += 1;
+          return schema.parse(oversizedBundle);
+        }
+
+        if (schemaName === "construct_generated_blueprint_file_patch") {
+          patchRepairCalls += 1;
+          return schema.parse({
+            supportFiles: [],
+            canonicalFiles: [],
+            learnerFiles: [],
+            hiddenTests: []
+          });
+        }
+
+        if (schemaName === "construct_authored_blueprint_step") {
+          lessonAuthoringCalls += 1;
+          return schema.parse({
+            summary: "Teach one public validation function and then implement it.",
+            doc: "Edit `src/RateLimiter.ts` at the `TASK:validate-config` anchor and implement `validateConfig()`.",
+            lessonSlides: [
+              markdownSlide("## Start with one public function\n\nThe first slice should only establish one public contract."),
+              markdownSlide("## Why this stays intentionally tiny\n\nA single validated return value is enough to anchor the API before the limiter grows.")
+            ],
+            checks: []
+          });
+        }
+
+        throw new Error(`Unexpected schema request: ${schemaName}`);
+      }
+    }
+  });
+
+  try {
+    const questionJob = service.createPlanningQuestionsJob({
+      goal: "bucket drop rate limiter implementation in typescript"
+    });
+    const questionResult = await waitForJobCompletion(service, questionJob.jobId);
+    const questionSession = questionResult.result as {
+      session: { sessionId: string; questions: Array<{ id: string; options: Array<{ id: string }> }> };
+    };
+
+    const planJob = service.createPlanningPlanJob({
+      sessionId: questionSession.session.sessionId,
+      answers: questionSession.session.questions.map((question) => ({
+        questionId: question.id,
+        answerType: "option" as const,
+        optionId: question.options[1]?.id ?? question.options[0]!.id
+      }))
+    });
+
+    const planResult = await waitForJobCompletion(service, planJob.jobId);
+    const payload = planResult.result as { plan: { steps: Array<{ id: string }> } };
+
+    assert.equal(payload.plan.steps.length, 1);
+    assert.equal(blueprintCalls, 1);
+    assert.equal(fullRepairCalls, 1);
+    assert.equal(patchRepairCalls, 0);
+    assert.equal(lessonAuthoringCalls, 1);
+    assert.ok(await service.getActiveBlueprintPath());
+  } finally {
+    // The blueprint-build persistence queue can outlive the awaited job result slightly.
+    // Keep this temp workspace around so the regression asserts the repair path itself
+    // instead of racing the async build-writer tail.
   }
 });
 
