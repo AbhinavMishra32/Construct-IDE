@@ -1063,48 +1063,60 @@ textarea {
 .construct-task-result-body {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  margin-top: 12px;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 .construct-task-result-meta {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 6px;
 }
 
 .construct-task-result-meta .construct-toolbar-pill {
-  gap: 6px;
+  gap: 5px;
+  min-height: 22px;
+  padding-inline: 8px;
+  font-size: 10px;
 }
 
 .construct-task-summary {
   display: grid;
-  gap: 8px;
-  padding: 0 0 14px;
+  gap: 5px;
+  padding: 0 0 10px;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+
+.construct-task-summary-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .construct-task-summary h4 {
   margin: 0;
-  font-size: 16px;
-  line-height: 1.24;
+  font-size: 14px;
+  line-height: 1.2;
   letter-spacing: -0.02em;
 }
 
 .construct-task-summary p {
   margin: 0;
   color: var(--text-muted);
-  line-height: 1.58;
+  font-size: 12px;
+  line-height: 1.48;
 }
 
 .construct-task-summary-inline {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .construct-task-summary-inline span {
@@ -1115,7 +1127,7 @@ textarea {
 
 .construct-task-summary-inline strong {
   color: var(--text);
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1.4;
 }
 
@@ -1125,38 +1137,39 @@ textarea {
 
 .construct-task-failures {
   display: grid;
-  gap: 0;
+  gap: 6px;
 }
 
 .construct-task-failure-card {
   display: grid;
-  gap: 12px;
-  padding: 14px 0;
-  border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  gap: 8px;
+  padding: 10px 0;
+  border-top: 1px solid color-mix(in srgb, var(--border) 54%, transparent);
 }
 
 .construct-task-failure-card:first-child {
-  padding-top: 4px;
+  padding-top: 2px;
   border-top: 0;
 }
 
 .construct-task-failure-card-header {
   display: flex;
-  align-items: flex-start;
-  gap: 10px;
+  align-items: center;
+  gap: 8px;
 }
 
 .construct-task-failure-card-index {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 999px;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 7px;
+  border-radius: 10px;
   border: 1px solid color-mix(in srgb, var(--warning) 20%, var(--border));
   background: color-mix(in srgb, var(--warning) 6%, transparent);
   color: var(--warning);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.14em;
 }
@@ -1174,59 +1187,75 @@ textarea {
   text-transform: uppercase;
 }
 
-.construct-task-failure-card-copy h4 {
-  margin: 0;
-  font-size: 15px;
-  line-height: 1.28;
-  letter-spacing: -0.02em;
+.construct-task-comparison-stack {
+  display: grid;
+  gap: 6px;
 }
 
-.construct-task-comparison-grid {
+.construct-task-comparison-row {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 12px;
-}
-
-.construct-task-comparison-panel {
-  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
   gap: 8px;
   min-width: 0;
-  padding: 0 0 0 12px;
+  padding: 0 0 0 10px;
   border-left: 2px solid color-mix(in srgb, var(--border) 72%, transparent);
   background: transparent;
 }
 
-.construct-task-comparison-panel.is-expected {
-  border-left-color: color-mix(in srgb, var(--primary) 30%, var(--border));
+.construct-task-comparison-row.is-expected {
+  border-left-color: color-mix(in srgb, var(--text-muted) 56%, var(--border));
 }
 
-.construct-task-comparison-panel.is-actual {
-  border-left-color: color-mix(in srgb, var(--warning) 30%, var(--border));
+.construct-task-comparison-row.is-actual {
+  border-left-color: color-mix(in srgb, var(--warning) 38%, var(--border));
 }
 
-.construct-task-comparison-panel p {
+.construct-task-comparison-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding-top: 1px;
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.construct-task-comparison-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.construct-task-comparison-copy p {
   margin: 0;
   color: var(--text);
-  line-height: 1.58;
-}
-
-.construct-task-comparison-header {
-  display: flex;
-  align-items: center;
+  font-size: 12.5px;
+  line-height: 1.48;
 }
 
 .construct-task-diagnostic {
   display: grid;
-  gap: 6px;
-  padding: 0 0 0 12px;
-  border-left: 2px dashed color-mix(in srgb, var(--border) 76%, transparent);
+  gap: 4px;
+  padding: 0 0 0 10px;
+  border-left: 2px dashed color-mix(in srgb, var(--border) 62%, transparent);
   background: transparent;
+}
+
+.construct-task-diagnostic-label {
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
 .construct-task-diagnostic p {
   margin: 0;
   color: var(--text-muted);
-  line-height: 1.56;
+  font-size: 11.5px;
+  line-height: 1.45;
 }
 
 .construct-task-status {
@@ -1303,9 +1332,9 @@ textarea {
 .construct-task-output-block {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
-  padding: 2px 0 0;
+  padding: 1px 0 0;
   border: 0;
   background: transparent;
 }
@@ -1321,7 +1350,7 @@ textarea {
 .construct-task-output-label {
   display: inline-flex;
   align-items: center;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -1330,13 +1359,13 @@ textarea {
 
 .construct-task-output-value {
   margin: 0;
-  min-height: 52px;
-  padding: 10px 11px;
-  border-radius: 10px;
+  min-height: 0;
+  padding: 7px 8px;
+  border-radius: 8px;
   border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
   background: color-mix(in srgb, var(--editor-surface) 86%, transparent);
   color: var(--text);
-  font: 11px/1.65 var(--course-font-mono);
+  font: 10.5px/1.55 var(--course-font-mono);
   white-space: pre-wrap;
   word-break: break-word;
 }

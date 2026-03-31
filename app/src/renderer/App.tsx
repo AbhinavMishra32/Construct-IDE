@@ -598,54 +598,49 @@ function TaskFailureCard({
   return (
     <div className="construct-task-failure-card">
       <div className="construct-task-failure-card-header">
-        <div className="construct-task-failure-card-index">
-          {String(index + 1).padStart(2, "0")}
-        </div>
-        <div className="construct-task-failure-card-copy">
-          <span className="construct-task-failure-kicker">Validation contract</span>
-          <h4>{expectedBehavior}</h4>
-        </div>
+        <div className="construct-task-failure-card-index">{String(index + 1).padStart(2, "0")}</div>
+        <span className="construct-task-failure-kicker">Validation contract</span>
       </div>
 
-      <div className="construct-task-comparison-grid">
-        <div className="construct-task-comparison-panel is-expected">
-          <div className="construct-task-comparison-header">
-            <GuideSectionLabel icon={<PhTarget size={13} weight="duotone" />}>
-              Should do
-            </GuideSectionLabel>
+      <div className="construct-task-comparison-stack">
+        <div className="construct-task-comparison-row is-expected">
+          <div className="construct-task-comparison-label">
+            <PhTarget size={12} weight="duotone" />
+            <span>Should</span>
           </div>
-          <p>{expectedBehavior}</p>
-          {failure.expectedOutput ? (
-            <TaskOutputBlock
-              label="Expected output"
-              value={failure.expectedOutput}
-              tone="expected"
-            />
-          ) : null}
+          <div className="construct-task-comparison-copy">
+            <p>{expectedBehavior}</p>
+            {failure.expectedOutput ? (
+              <TaskOutputBlock
+                label="Expected output"
+                value={failure.expectedOutput}
+                tone="expected"
+              />
+            ) : null}
+          </div>
         </div>
 
-        <div className="construct-task-comparison-panel is-actual">
-          <div className="construct-task-comparison-header">
-            <GuideSectionLabel icon={<PhCompassTool size={13} weight="duotone" />}>
-              Does now
-            </GuideSectionLabel>
+        <div className="construct-task-comparison-row is-actual">
+          <div className="construct-task-comparison-label">
+            <PhCompassTool size={12} weight="duotone" />
+            <span>Now</span>
           </div>
-          <p>{currentBehavior}</p>
-          {failure.actualOutput ? (
-            <TaskOutputBlock
-              label="Current output"
-              value={failure.actualOutput}
-              tone="actual"
-            />
-          ) : null}
+          <div className="construct-task-comparison-copy">
+            <p>{currentBehavior}</p>
+            {failure.actualOutput ? (
+              <TaskOutputBlock
+                label="Current output"
+                value={failure.actualOutput}
+                tone="actual"
+              />
+            ) : null}
+          </div>
         </div>
       </div>
 
       {matcherDiagnostic ? (
         <div className="construct-task-diagnostic">
-          <GuideSectionLabel icon={<PhTestTube size={13} weight="duotone" />}>
-            Diagnostic
-          </GuideSectionLabel>
+          <span className="construct-task-diagnostic-label">Diagnostic</span>
           <p>{matcherDiagnostic}</p>
         </div>
       ) : null}
@@ -6547,11 +6542,10 @@ function TaskResultPanel({
   const taskStatusLabel = isVerificationBlocked ? "review" : taskResult?.status ?? "";
   const taskStatusClassName = isVerificationBlocked ? "needs-review" : taskResult?.status ?? "";
   const failureCount = taskResult?.failures.length ?? 0;
-  const leadingFailure = failureCount > 0 ? taskResult?.failures[0] ?? null : null;
 
   return (
-    <Card className="construct-task-results">
-      <CardHeader className="gap-2">
+    <Card size="sm" className="construct-task-results">
+      <CardHeader className="gap-1.5">
         <GuideSectionLabel icon={<PhFlask size={14} weight="duotone" />}>
           Execution
         </GuideSectionLabel>
@@ -6592,23 +6586,17 @@ function TaskResultPanel({
             {taskResult.failures.length > 0 ? (
               <>
                 <div className="construct-task-summary">
-                  <GuideSectionLabel icon={<PhTarget size={13} weight="duotone" />}>
-                    Verification summary
-                  </GuideSectionLabel>
-                  <h4>
-                    {failureCount} validation contract{failureCount === 1 ? "" : "s"} still
-                    failing
-                  </h4>
-                  <p>
-                    Each item shows the contract the step expects first, then the behavior and
-                    output your implementation produces right now.
-                  </p>
-                  {leadingFailure ? (
+                  <div className="construct-task-summary-head">
+                    <h4>{failureCount} contract{failureCount === 1 ? "" : "s"} failing</h4>
                     <div className="construct-task-summary-inline">
-                      <span>Focus next</span>
-                      <strong>{normalizeExecutionCopy(leadingFailure.testName)}</strong>
+                      <span>Tests run</span>
+                      <strong>{taskResult.testsRun.length}</strong>
                     </div>
-                  ) : null}
+                  </div>
+                  <p>
+                    Compare the expected behavior against what your implementation does now, fix
+                    the first blocker, then submit again.
+                  </p>
                 </div>
 
                 <div className="construct-task-failures">
@@ -6630,18 +6618,17 @@ function TaskResultPanel({
               </Alert>
             ) : (
               <div className="construct-task-summary is-passed">
-                <GuideSectionLabel icon={<PhTarget size={13} weight="duotone" />}>
-                  Verification summary
-                </GuideSectionLabel>
-                <h4>All targeted checks passed</h4>
+                <div className="construct-task-summary-head">
+                  <h4>All targeted checks passed</h4>
+                  <div className="construct-task-summary-inline">
+                    <span>Tests run</span>
+                    <strong>{taskResult.testsRun.length}</strong>
+                  </div>
+                </div>
                 <p>
                   This step satisfied the current validation set. You can keep building or move
                   to the next step when you are ready.
                 </p>
-                <div className="construct-task-summary-inline">
-                  <span>Tests run</span>
-                  <strong>{taskResult.testsRun.length}</strong>
-                </div>
               </div>
             )}
           </div>
