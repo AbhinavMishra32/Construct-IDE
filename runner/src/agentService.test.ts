@@ -2211,6 +2211,8 @@ test("ConstructAgentService skips broad research for small local goals", async (
   const root = await mkdtemp(path.join(os.tmpdir(), "construct-agent-small-scope-"));
   let searchCalls = 0;
   const loggedStages: string[] = [];
+  let lessonAuthoringInstructions = "";
+  let lessonAuthoringPrompt = "";
 
   const service = new ConstructAgentService(root, {
     now: () => new Date("2026-03-15T00:00:00.000Z"),
@@ -2245,7 +2247,7 @@ test("ConstructAgentService skips broad research for small local goals", async (
       }
     },
     llm: {
-      async parse({ schemaName, schema }) {
+      async parse({ schemaName, schema, instructions, prompt }) {
         if (schemaName === "construct_goal_self_report_signals") {
           return schema.parse({
             signals: []
@@ -2442,6 +2444,8 @@ test("ConstructAgentService skips broad research for small local goals", async (
         }
 
         if (schemaName === "construct_authored_blueprint_step") {
+          lessonAuthoringInstructions = instructions;
+          lessonAuthoringPrompt = prompt;
           return schema.parse({
             summary: "Create the TodoList class.",
             doc: "Edit `todo.py` at the `TASK:todo-class` anchor. Define the `TodoList` class in that single module, give it in-memory state for todo items, and implement the constructor and the add/list behavior the hidden test exercises. The hidden test checks that a new instance starts empty and that added items come back in insertion order.",
@@ -2519,6 +2523,12 @@ test("ConstructAgentService skips broad research for small local goals", async (
           /built one tiny CLI before/i.test(entry.summary)
       )
     );
+    assert.match(lessonAuthoringInstructions, /teach the exact artifact the learner is about to build/i);
+    assert.match(lessonAuthoringInstructions, /near-transfer worked example/i);
+    assert.match(lessonAuthoringInstructions, /what you will implement, success looks like, and what is not required in this step/i);
+    assert.match(lessonAuthoringInstructions, /step boundary explicit/i);
+    assert.match(lessonAuthoringPrompt, /What exact artifact the learner will implement in this step/);
+    assert.match(lessonAuthoringPrompt, /What is explicitly out of scope for this step/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
