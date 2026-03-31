@@ -3317,6 +3317,141 @@ test("ConstructAgentService rejects solved learner files without a learner-visib
   }
 });
 
+test("ConstructAgentService rejects intro learner files that expose multiple unfinished regions", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "construct-agent-oversized-intro-step-"));
+
+  try {
+    await expectBlueprintGenerationToReject(root, {
+      bundle: buildBlueprintGuardBundle({
+        canonicalFiles: [
+          {
+            path: "src/index.ts",
+            content: [
+              "export class TinyLimiter {",
+              "  validate(): void {}",
+              "",
+              "  compute(): number {",
+              "    return 1;",
+              "  }",
+              "}"
+            ].join("\n")
+          }
+        ],
+        learnerFiles: [
+          {
+            path: "src/index.ts",
+            content: [
+              "export class TinyLimiter {",
+              "  // TASK:validate-config",
+              "  validate(): void {",
+              "    throw new Error('TASK_NOT_IMPLEMENTED: validate');",
+              "  }",
+              "",
+              "  // TASK:compute-decision",
+              "  compute(): number {",
+              "    throw new Error('TASK_NOT_IMPLEMENTED: compute');",
+              "  }",
+              "}"
+            ].join("\n")
+          }
+        ],
+        steps: [
+          {
+            id: "step.utility",
+            title: "Implement the limiter core",
+            summary: "Start the limiter implementation.",
+            doc: "Edit `src/index.ts` and start implementing the limiter.",
+            lessonSlides: [
+              markdownSlide("## Start with one method\n\nKeep the first implementation slice local."),
+              markdownSlide("## Build one behavior first\n\nThe next step can reuse it.")
+            ],
+            anchor: {
+              file: "src/index.ts",
+              marker: "TASK:validate-config",
+              startLine: null,
+              endLine: null
+            },
+            tests: ["hidden_tests/step1_validation.js"],
+            concepts: ["typescript.classes"],
+            constraints: ["Keep the first task focused."],
+            checks: [],
+            estimatedMinutes: 12,
+            difficulty: "intro" as const
+          }
+        ]
+      }),
+      rejectionPattern: /intro step step\.utility exposes 2 learner task gaps in learnerfiles file src\/index\.ts/i
+    });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("ConstructAgentService rejects intro learner files that pack too many build moves into one task surface", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "construct-agent-build-move-budget-"));
+
+  try {
+    await expectBlueprintGenerationToReject(root, {
+      bundle: buildBlueprintGuardBundle({
+        canonicalFiles: [
+          {
+            path: "src/index.ts",
+            content: [
+              "export function consume(cost: number): number {",
+              "  return cost;",
+              "}"
+            ].join("\n")
+          }
+        ],
+        learnerFiles: [
+          {
+            path: "src/index.ts",
+            content: [
+              "export function consume(cost: number): number {",
+              "  // TASK:consume",
+              "  // Requirements:",
+              "  // - validate the input cost",
+              "  // - compute elapsed refill time",
+              "  // - derive the refill amount",
+              "  // - branch for allow versus deny",
+              "  // - return the decision payload shape",
+              "  throw new Error('TASK_NOT_IMPLEMENTED: consume');",
+              "}"
+            ].join("\n")
+          }
+        ],
+        steps: [
+          {
+            id: "step.utility",
+            title: "Implement consume",
+            summary: "Implement the limiter decision.",
+            doc: "Edit `src/index.ts` and implement the consume decision path.",
+            lessonSlides: [
+              markdownSlide("## Build one code move at a time\n\nDo not overload the first task."),
+              markdownSlide("## Reuse the next slice\n\nKeep each step tight enough to chain.")
+            ],
+            anchor: {
+              file: "src/index.ts",
+              marker: "TASK:consume",
+              startLine: null,
+              endLine: null
+            },
+            tests: ["hidden_tests/step1_validation.js"],
+            concepts: ["typescript.functions"],
+            constraints: ["Keep the task narrow."],
+            checks: [],
+            estimatedMinutes: 12,
+            difficulty: "intro" as const
+          }
+        ]
+      }),
+      rejectionPattern: /intro step step\.utility packs \d+ build moves into learnerfiles file src\/index\.ts/i
+    });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("ConstructAgentService rejects blueprint drafts with missing hidden test references", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "construct-agent-step-ref-guard-"));
 

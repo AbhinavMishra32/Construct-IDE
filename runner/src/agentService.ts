@@ -549,7 +549,13 @@ const PLANNING_BUILD_REPAIR_TARGET_SCHEMA = z.object({
   group: z.enum(["supportFiles", "canonicalFiles", "learnerFiles", "hiddenTests"]),
   path: z.string().min(1),
   error: z.string().min(1),
-  kind: z.enum(["invalid-json", "invalid-source-syntax", "invalid-hidden-test", "duplicate-path"])
+  kind: z.enum([
+    "invalid-json",
+    "invalid-source-syntax",
+    "invalid-hidden-test",
+    "duplicate-path",
+    "oversized-task-surface"
+  ])
 });
 
 const PLANNING_BUILD_CHECKPOINT_FAILURE_SCHEMA = z.object({
@@ -668,7 +674,12 @@ type GeneratedBlueprintFileValidationTarget = {
   group: GeneratedBlueprintFileGroup;
   path: string;
   error: string;
-  kind: "invalid-json" | "invalid-source-syntax" | "invalid-hidden-test" | "duplicate-path";
+  kind:
+    | "invalid-json"
+    | "invalid-source-syntax"
+    | "invalid-hidden-test"
+    | "duplicate-path"
+    | "oversized-task-surface";
 };
 
 type DraftWithConstructionScaffolding = {
@@ -9425,6 +9436,21 @@ function validateGeneratedLearnerExerciseSeparation(input: {
       );
     }
   }
+
+  for (const step of input.steps) {
+    const anchorFile = normalizePathValue(step.anchor.file);
+    const learnerContent = input.learnerFiles.get(anchorFile);
+
+    if (learnerContent === undefined) {
+      continue;
+    }
+
+    validateGeneratedLearnerStepBudget({
+      step,
+      learnerContent,
+      context: input.context
+    });
+  }
 }
 
 function containsLearnerTaskGap(content: string, marker: string): boolean {
@@ -9436,6 +9462,112 @@ function containsLearnerTaskGap(content: string, marker: string): boolean {
 
   return LEARNER_TASK_GAP_PATTERNS.some((pattern) => pattern.test(content));
 }
+
+function validateGeneratedLearnerStepBudget(input: {
+  step: GeneratedBlueprintStepDraft;
+  learnerContent: string;
+  context: string;
+}): void {
+  if (input.step.difficulty === "advanced") {
+    return;
+  }
+
+  const anchorFile = normalizePathValue(input.step.anchor.file);
+  const taskGapRegions = collectLearnerTaskGapRegions(
+    input.learnerContent,
+    input.step.anchor.marker
+  );
+  const constructionUnits = buildConstructionUnits(
+    input.step,
+    uniqueConstructionInstructions([
+      ...extractConstructionRequirementsFromLearnerFile(input.step, input.learnerContent),
+      ...extractConstructionRequirementsFromDoc(input.step.doc),
+      ...extractConstructionRequirementsFromSummary(input.step.summary)
+    ])
+  );
+  const responsibilityKinds = new Set(constructionUnits.map((unit) => unit.kind));
+  const maxTaskRegions = input.step.difficulty === "intro" ? 1 : 2;
+  const maxBuildMoves = input.step.difficulty === "intro" ? 4 : 6;
+  const maxResponsibilityKinds = input.step.difficulty === "intro" ? 2 : 3;
+  const difficultyLabel = input.step.difficulty === "intro" ? "Intro" : "Core";
+
+  if (taskGapRegions.length > maxTaskRegions) {
+    throw new Error(
+      `${input.context} ${difficultyLabel.toLowerCase()} step ${input.step.id} exposes ${taskGapRegions.length} learner task gaps in learnerFiles file ${anchorFile}. ${difficultyLabel} steps must keep only ${maxTaskRegions} active unfinished region${maxTaskRegions === 1 ? "" : "s"} visible at a time.`
+    );
+  }
+
+  if (constructionUnits.length > maxBuildMoves) {
+    throw new Error(
+      `${input.context} ${difficultyLabel.toLowerCase()} step ${input.step.id} packs ${constructionUnits.length} build moves into learnerFiles file ${anchorFile}. ${difficultyLabel} steps should stay within ${maxBuildMoves} build moves so the learner only faces the next concrete slice.`
+    );
+  }
+
+  if (responsibilityKinds.size > maxResponsibilityKinds) {
+    throw new Error(
+      `${input.context} ${difficultyLabel.toLowerCase()} step ${input.step.id} mixes ${responsibilityKinds.size} construction responsibility kinds in learnerFiles file ${anchorFile}. ${difficultyLabel} steps should stay within ${maxResponsibilityKinds} responsibility kinds and one main unknown at a time.`
+    );
+  }
+}
+
+function collectLearnerTaskGapRegions(
+  learnerContent: string,
+  anchorMarker: string
+): Array<{ key: string; sample: string }> {
+  const lines = learnerContent.replace(/\r\n/g, "\n").split("\n");
+  const anchorIndex = lines.findIndex((line) => line.includes(anchorMarker));
+  const startIndex = anchorIndex >= 0 ? anchorIndex : 0;
+  const regions = new Map<string, { key: string; sample: string }>();
+
+  for (let index = startIndex; index < lines.length; index += 1) {
+    const line = lines[index]?.trim() ?? "";
+
+    if (!line || !looksLikeLearnerTaskGapLine(line)) {
+      continue;
+    }
+
+    const regionKey = findNearestLearnerTaskRegionKey(lines, index);
+    if (!regions.has(regionKey)) {
+      regions.set(regionKey, {
+        key: regionKey,
+        sample: sanitizeConstructionText(line)
+      });
+    }
+  }
+
+  return Array.from(regions.values());
+}
+
+function looksLikeLearnerTaskGapLine(line: string): boolean {
+  if (/Build sequence for this step/i.test(line)) {
+    return false;
+  }
+
+  if (/Keep this slice local/i.test(line)) {
+    return false;
+  }
+
+  return LEARNER_TASK_GAP_PATTERNS.some((pattern) => pattern.test(line));
+}
+
+function findNearestLearnerTaskRegionKey(lines: string[], lineIndex: number): string {
+  for (let index = lineIndex; index >= Math.max(0, lineIndex - 40); index -= 1) {
+    const trimmed = lines[index]?.trim() ?? "";
+
+    if (!trimmed || /^(?:\/\/|#)/.test(trimmed)) {
+      continue;
+    }
+
+    if (LEARNER_TASK_REGION_SIGNATURE_PATTERN.test(trimmed)) {
+      return sanitizeConstructionText(trimmed);
+    }
+  }
+
+  return `line-${lineIndex + 1}`;
+}
+
+const LEARNER_TASK_REGION_SIGNATURE_PATTERN =
+  /^(?:export\s+)?(?:default\s+)?(?:async\s+)?function\b|^(?:public|private|protected|static|readonly|\s)*(?:async\s+)?[A-Za-z_$][\w$]*\s*\([^;{)]*\)\s*(?::\s*[^=]+)?\s*\{|^\s*constructor\s*\(/i;
 
 function normalizeGeneratedSourceForComparison(content: string): string {
   return content.replace(/\r\n/g, "\n").trim();
@@ -10723,6 +10855,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function inferGoalScopeFallback(goal: string): GoalScope {
   const normalized = goal.trim().toLowerCase();
   const engagementMode = inferGoalEngagementModeFallback(normalized);
+  const mentionsBeginnerScope = /\b(from scratch|brand new|total beginner|beginner|never used|don't know|do not know)\b/.test(
+    normalized
+  );
   const smallScopeHints = [
     "small",
     "simple",
@@ -10777,8 +10912,8 @@ function inferGoalScopeFallback(goal: string): GoalScope {
       complexityScore: 82,
       shouldResearch: true,
       recommendedQuestionCount: 6,
-      recommendedMinSteps: 5,
-      recommendedMaxSteps: 10,
+      recommendedMinSteps: mentionsBeginnerScope ? 6 : 5,
+      recommendedMaxSteps: mentionsBeginnerScope ? 12 : 10,
       rationale: "The fallback scope check detected a larger systems-style request, so full research is warranted."
     };
   }
@@ -10790,8 +10925,8 @@ function inferGoalScopeFallback(goal: string): GoalScope {
     complexityScore: 45,
     shouldResearch: true,
     recommendedQuestionCount: 4,
-    recommendedMinSteps: 3,
-    recommendedMaxSteps: 6,
+    recommendedMinSteps: mentionsBeginnerScope ? 5 : 3,
+    recommendedMaxSteps: mentionsBeginnerScope ? 9 : 6,
     rationale: "The fallback scope check treated this as a normal project-sized request."
   };
 }
@@ -10858,6 +10993,7 @@ function buildGoalScopeInstructions(): string {
     "shouldResearch should be false only when broad web research would clearly be wasteful for this specific request.",
     "recommendedQuestionCount should be the minimum number of intake questions needed to personalize the path.",
     "recommendedMinSteps and recommendedMaxSteps should define the step budget the Architect should aim for.",
+    "If the request is implementation-first and the learner sounds new or says phrases like 'from scratch', 'beginner', or 'don't know', bias toward more, smaller construction steps instead of fewer broad ones.",
     "Be conservative with scope expansion. If the user asks for something small, keep it small unless the request itself requires more."
   ].join("\n");
 }
@@ -10938,6 +11074,7 @@ function buildPlanGenerationInstructions(): string {
     "For beginner or balanced learners, prefer steps that create one real artifact and then use it immediately in the next one or two steps.",
     "Prefer dependency-ordered construction: define the type, helper, state field, or adapter before asking the learner to build behavior that depends on it.",
     "Avoid blank-slate subsystem steps when the same outcome can be taught as 2-5 smaller build moves inside a visible project slice.",
+    "For beginner-facing implementation steps, one step should usually own one main unknown: for example validation, one helper, one branch, one calculation, or one return shape, not all of them at once.",
     "Suggested first step must reference one of the generated steps."
   ].join("\n");
 }
@@ -10959,6 +11096,8 @@ function buildBlueprintGenerationInstructions(): string {
     "Every learnerFile must be visibly incomplete at the anchored task region. The learner should need to edit code before the hidden test for that step can pass.",
     "Do not return learnerFiles that already match canonicalFiles, already satisfy the hidden validation, or merely restate the solved implementation with a passive comment.",
     "Use an explicit unfinished task affordance at each anchor such as TASK/TODO markers with a failing stub, NotImplemented error, todo!(), unimplemented!(), or an equivalent language-appropriate unfinished implementation.",
+    "For intro or beginner-facing frontier steps, keep exactly one learner-owned unfinished region active in the anchored file. Do not leave multiple future methods, branches, or helper TODO blocks visible at once.",
+    "If a file will need several future methods or phases, keep later regions canonical for now and reveal them in later steps instead of asking the learner to implement the whole subsystem in one first step.",
     "supportFiles, canonicalFiles, and learnerFiles must not contain placeholder bodies, placeholder comments, placeholder drafts, 'final version lives elsewhere' stubs, or comment-only skeletons.",
     "If any returned supportFiles, canonicalFiles, or learnerFiles path ends in .ts, .tsx, .js, .jsx, .mts, .cts, .mjs, or .cjs, return syntactically valid source code immediately.",
     "hiddenTests must only cover the current frontierPlanSteps and stay runnable without exposing full solutions in the learnerFiles.",
@@ -10983,6 +11122,7 @@ function buildBlueprintGenerationInstructions(): string {
     "Every frontier step should feel like a real construction slice, not a worksheet. The learner should author one concrete artifact, helper, type, branch, or state transition that the next visible code move can reuse.",
     "Prefer dependency-ordered beginner scaffolding: create the shape first, then consume it; create the helper first, then call it; create the branch input first, then branch on it.",
     "Do not ask the learner to invent architecture, algorithm, and language syntax all at once when a smaller project-authentic build sequence would teach the same system better.",
+    "If the learner is new, avoid first steps that require validation, async control flow, state mutation, return-shape design, and algorithm math all in the same task surface.",
     "When the project is building a framework, library, runtime, parser, renderer, or other system with internal jargon, start by teaching what the overall system is in plain language before diving into names like VNode, AST, reconciler, reducer, hook, parser, or renderer internals.",
     "Do not assume the learner already understands technical words that appear in the step title, summary, doc, or code sketch. If you use a term like VNode, virtual DOM, reconciler, token, AST, reducer, or hook, define it clearly before you rely on it.",
     "For learning-first steps or any step that introduces jargon-heavy internals, use a sequence like: first the big picture of what the system is, then why this concept exists, then how it works at a high level, then the deeper internal term(s), then what exact file/function/behavior the learner will implement next.",
@@ -11052,6 +11192,7 @@ function buildBlueprintRepairInstructions(): string {
     "Every learnerFile must stay visibly incomplete at the anchor. Do not repair the draft by handing the learner the finished implementation.",
     "Do not return learnerFiles that already match canonicalFiles or that would already pass the step hidden test without learner edits.",
     "Keep explicit unfinished task affordances at the anchor such as TASK/TODO markers with a failing stub, NotImplemented error, todo!(), unimplemented!(), or an equivalent language-appropriate unfinished implementation.",
+    "If a learnerFile was rejected for exposing too much work at once, reduce it to one active unfinished region for intro steps and keep future work canonical until later steps.",
     "Every step anchor.file must exist in learnerFiles, every step anchor.marker must appear literally inside that learner file, every step test path must exist in hiddenTests, and every entrypoint must exist in supportFiles, canonicalFiles, or learnerFiles.",
     "Any file whose path ends in .json must contain strict parseable JSON only. Do not include comments, markdown fences, trailing prose, placeholder markers, or JavaScript object literal syntax.",
     "When validationFailure mentions invalid JSON, rewrite the entire offending JSON file so it parses cleanly with JSON.parse on the first attempt.",
@@ -11071,6 +11212,7 @@ function buildBlueprintFilePatchRepairInstructions(): string {
     "Do not rename files, add extra files, delete files, or rewrite unrelated paths.",
     "Preserve the existing project goal, step order, teaching intent, and learner-visible task structure.",
     "If the failing file is a learnerFile, keep the learner task gap and anchor intact.",
+    "If the failing learnerFile was rejected for exposing too much work at once, narrow it to one active unfinished region and keep later work canonical until later steps.",
     "If the failing file is a canonicalFile or supportFile, make it fully valid and runnable for its role.",
     "If the failing file ends in .json, return strict parseable JSON only with no comments, trailing prose, or fences.",
     "If the failing file is JavaScript or TypeScript, return syntactically valid source code immediately.",
@@ -11147,6 +11289,19 @@ function extractGeneratedBlueprintFileValidationTarget(
     };
   }
 
+  const oversizedTaskSurfaceMatch = message.match(
+    /(intro|core) step [^ ]+ (?:exposes \d+ learner task gaps|packs \d+ build moves|mixes \d+ construction responsibility kinds) in learnerFiles file ([^.\n]+)\./i
+  );
+
+  if (oversizedTaskSurfaceMatch) {
+    return {
+      kind: "oversized-task-surface",
+      group: "learnerFiles",
+      path: normalizePathValue(oversizedTaskSurfaceMatch[2] ?? ""),
+      error: message
+    };
+  }
+
   return null;
 }
 
@@ -11195,6 +11350,18 @@ function collectGeneratedBlueprintFileValidationTargets(
   collectFromGroup(draft.canonicalFiles, "canonicalFiles");
   collectFromGroup(draft.learnerFiles, "learnerFiles");
   collectFromGroup(draft.hiddenTests, "hiddenTests");
+
+  try {
+    validateGeneratedBlueprintDraftIntegrity(draft, context);
+  } catch (error) {
+    const target = extractGeneratedBlueprintFileValidationTarget(
+      error instanceof Error ? error.message : String(error)
+    );
+
+    if (target) {
+      targets.push(target);
+    }
+  }
 
   return targets.filter((target, index, allTargets) => {
     const key = `${target.group}:${normalizePathValue(target.path)}`;
@@ -11349,6 +11516,7 @@ function buildAdaptiveFrontierGenerationInstructions(): string {
     "Every learnerFile must remain visibly incomplete at the current anchor so the learner still has real work to do before the step passes.",
     "Do not dump solved code into learnerFiles, even if recentCapabilityEvidence is strong. The frontier may become lighter or narrower, but it must stay learner-owned.",
     "If a selected frontier step extends a file the learner already touched, carry forward the working code from currentWorkspaceFiles and add only the next focused TASK marker or placeholder region.",
+    "For intro or beginner-facing rewritten steps, keep only one active unfinished region visible in the anchored file. Do not expose future TODO blocks for later methods or later branches in the same step.",
     "learnerFiles must not contain placeholder bodies, placeholder comments, placeholder drafts, or comment-only skeletons outside the intentional TASK regions.",
     "If any returned learnerFiles path ends in .ts, .tsx, .js, .jsx, .mts, .cts, .mjs, or .cjs, return syntactically valid source code immediately.",
     "hiddenTests must validate only the currently selected frontier steps.",
