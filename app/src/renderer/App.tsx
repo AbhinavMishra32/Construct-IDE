@@ -2279,7 +2279,6 @@ export default function App() {
         mode={authMode}
         onModeChange={setAuthMode}
         providerOptions={authSession?.providerOptions ?? []}
-        runnerHealth={runnerHealth}
         authError={authError}
         authBusy={authBusy}
         authReady={authReady}

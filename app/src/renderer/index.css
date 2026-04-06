@@ -6735,20 +6735,6 @@ textarea {
   margin-top: 0.25rem;
 }
 
-.construct-auth-card-footer {
-  justify-content: center;
-}
-
-.construct-auth-meta-item {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.55rem;
-  color: var(--muted-foreground);
-  font-size: 0.9rem;
-  text-align: center;
-}
-
 .construct-app-account-card {
   display: grid;
   gap: 0.85rem;

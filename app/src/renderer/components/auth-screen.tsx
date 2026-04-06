@@ -1,4 +1,4 @@
-import { DatabaseIcon, KeyRoundIcon, ShieldCheckIcon } from "lucide-react";
+import { DatabaseIcon, ShieldCheckIcon } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -7,22 +7,20 @@ import {
   Card,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle
 } from "@/components/ui/card";
-import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-import type { AuthProviderOption, RunnerHealth } from "../types";
+import type { AuthProviderOption } from "../types";
 
 export function AuthScreen({
   mode,
   onModeChange,
   providerOptions,
-  runnerHealth,
   authError,
   authBusy,
   authReady,
@@ -42,7 +40,6 @@ export function AuthScreen({
   mode: "login" | "signup";
   onModeChange: (mode: "login" | "signup") => void;
   providerOptions: AuthProviderOption[];
-  runnerHealth: RunnerHealth | null;
   authError: string;
   authBusy: boolean;
   authReady: boolean;
@@ -69,7 +66,7 @@ export function AuthScreen({
           <div className="construct-auth-brand">
             <strong>Construct</strong>
             <div className="construct-auth-brand-copy">
-              <span>Sign in to access your projects, saved settings, and guided workspace.</span>
+              <span>Sign in or create an account to continue.</span>
             </div>
           </div>
 
@@ -80,8 +77,8 @@ export function AuthScreen({
               </CardTitle>
               <CardDescription>
                 {mode === "login"
-                  ? "Use your Construct account to access projects, saved credentials, and future provider links."
-                  : "Your account will own project state, saved provider credentials, and future external login connections."}
+                  ? "Enter your email and password."
+                  : "Create your account with an email and password."}
               </CardDescription>
             </CardHeader>
 
@@ -104,10 +101,9 @@ export function AuthScreen({
                   <Alert className="construct-auth-alert">
                     <DatabaseIcon />
                     <div className="construct-auth-alert-copy">
-                      <AlertTitle>Database setup is still needed</AlertTitle>
+                      <AlertTitle>Database setup needed</AlertTitle>
                       <AlertDescription>
-                        Configure `DATABASE_URL` so Construct can persist users, sessions, and
-                        encrypted provider settings.
+                        Configure `DATABASE_URL` to enable account sign-in.
                       </AlertDescription>
                     </div>
                   </Alert>
@@ -199,9 +195,6 @@ export function AuthScreen({
                         autoComplete="name"
                         disabled={authBusy}
                       />
-                      <FieldDescription>
-                        This is what Construct shows in the workspace and account panel.
-                      </FieldDescription>
                     </Field>
                     <Field>
                       <FieldLabel>Email</FieldLabel>
@@ -227,9 +220,6 @@ export function AuthScreen({
                         autoComplete="new-password"
                         disabled={authBusy}
                       />
-                      <FieldDescription>
-                        Construct stores a password hash, not the raw password.
-                      </FieldDescription>
                     </Field>
                     <Button
                       type="button"
@@ -243,12 +233,6 @@ export function AuthScreen({
                 </TabsContent>
               </Tabs>
             </CardContent>
-            <CardFooter className="construct-auth-card-footer">
-              <div className="construct-auth-meta-item">
-                <KeyRoundIcon />
-                <span>Native auth now, external OpenAI and Codex login later.</span>
-              </div>
-            </CardFooter>
           </Card>
         </div>
       </section>
