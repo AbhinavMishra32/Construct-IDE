@@ -3512,8 +3512,10 @@ function AppSidebar({
                         )}
                         disabled={dashboardBusy}
                       >
-                        <strong>{project.name}</strong>
-                        <span>{project.currentStepTitle ?? project.description}</span>
+                        <strong className="construct-app-recent-item-title">{project.name}</strong>
+                        <p className="construct-app-recent-item-meta">
+                          {project.currentStepTitle ?? project.description}
+                        </p>
                       </Button>
                     ))}
                   </div>

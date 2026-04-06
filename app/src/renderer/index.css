@@ -3334,6 +3334,10 @@ textarea {
   font-weight: 600;
 }
 
+.construct-app-recent-item-meta {
+  margin: 0;
+}
+
 .construct-app-recent-item span,
 .construct-app-sidebar-empty {
   font-size: 12px;
@@ -5002,13 +5006,6 @@ textarea {
   padding: 10px 12px;
 }
 
-.construct-app-recent-item span {
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
 .construct-app-sidebar-empty {
   padding: 0 4px;
 }
@@ -5752,20 +5749,51 @@ textarea {
   width: 100%;
   border-radius: 10px;
   padding: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  box-shadow: none;
 }
 
 .construct-app-recent-item strong,
-.construct-app-recent-item span {
+.construct-app-recent-item p {
   display: block;
   width: 100%;
   min-width: 0;
   text-align: left;
 }
 
-.construct-app-recent-item strong {
+.construct-app-recent-item-title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.35;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.construct-app-recent-item-meta {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: color-mix(in srgb, var(--text) 56%, var(--text-muted));
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.construct-app-recent-item:hover {
+  background: color-mix(in srgb, var(--panel-muted) 90%, transparent);
+}
+
+.construct-app-recent-item.is-active {
+  background: color-mix(in srgb, var(--panel-soft) 88%, transparent);
+  border-color: color-mix(in srgb, var(--border) 76%, transparent);
+}
+
+.construct-app-recent-item:disabled {
+  opacity: 0.72;
 }
 
 .construct-app-sidebar-content {
