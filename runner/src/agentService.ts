@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import type http from "node:http";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
@@ -8914,25 +8913,35 @@ function createProjectInstaller(logger: AgentLogger): ProjectInstaller {
   return {
     async install(projectRoot, files) {
       if (files["package.json"]) {
-        return runProjectInstallCommand({
-          command: "pnpm",
-          args: ["install", "--ignore-workspace", "--frozen-lockfile=false"],
+        logger.info("Skipping generated project dependency install in blueprint root.", {
           projectRoot,
-          manifestPath: "package.json",
           packageManager: "pnpm",
-          logger
+          manifestPath: "package.json"
         });
+
+        return {
+          status: "skipped",
+          packageManager: "pnpm",
+          manifestPath: "package.json",
+          detail:
+            "Dependency installation is deferred to the learner workspace bootstrap so Construct does not duplicate node_modules in the generated blueprint root."
+        };
       }
 
       if (files["Cargo.toml"]) {
-        return runProjectInstallCommand({
-          command: "cargo",
-          args: ["fetch"],
-          projectRoot,
+        logger.info("Skipping generated project dependency install in blueprint root.", {
           manifestPath: "Cargo.toml",
           packageManager: "cargo",
-          logger
+          projectRoot
         });
+
+        return {
+          status: "skipped",
+          packageManager: "cargo",
+          manifestPath: "Cargo.toml",
+          detail:
+            "Dependency fetching is deferred to the learner workspace bootstrap so Construct does not duplicate Cargo artifacts in the generated blueprint root."
+        };
       }
 
       return {
@@ -8942,79 +8951,6 @@ function createProjectInstaller(logger: AgentLogger): ProjectInstaller {
       };
     }
   };
-}
-
-async function runProjectInstallCommand(input: {
-  command: string;
-  args: string[];
-  projectRoot: string;
-  manifestPath: string;
-  packageManager: string;
-  logger: AgentLogger;
-}): Promise<DependencyInstallResult> {
-  const { command, args, projectRoot, manifestPath, packageManager, logger } = input;
-
-  logger.info("Starting generated project dependency install.", {
-    projectRoot,
-    packageManager,
-    manifestPath
-  });
-
-  try {
-    await new Promise<void>((resolve, reject) => {
-      const child = spawn(command, args, {
-        cwd: projectRoot,
-        stdio: ["ignore", "pipe", "pipe"],
-        env: process.env
-      });
-
-      let stderr = "";
-
-      child.stderr.on("data", (chunk) => {
-        stderr += String(chunk);
-      });
-
-      child.on("error", (error) => {
-        reject(error);
-      });
-
-      child.on("close", (code) => {
-        if (code === 0) {
-          resolve();
-          return;
-        }
-
-        reject(new Error(stderr.trim() || `${command} exited with code ${code ?? "unknown"}`));
-      });
-    });
-
-    logger.info("Completed generated project dependency install.", {
-      projectRoot,
-      packageManager,
-      manifestPath
-    });
-
-    return {
-      status: "installed",
-      packageManager,
-      manifestPath
-    };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown dependency install error.";
-    logger.warn("Generated project dependency install failed.", {
-      projectRoot,
-      packageManager,
-      manifestPath,
-      detail: truncateText(message, 240)
-    });
-
-    return {
-      status: "failed",
-      packageManager,
-      manifestPath,
-      detail: truncateText(message, 240)
-    };
-  }
 }
 
 function compactResearchDigest(

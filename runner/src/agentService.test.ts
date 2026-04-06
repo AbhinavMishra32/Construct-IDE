@@ -485,6 +485,55 @@ test.after(() => {
   }
 });
 
+test("default generated project installer defers root dependency installs to workspace bootstrap", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "construct-agent-installer-"));
+  const service = new ConstructAgentService(root, {
+    logger: {
+      info() {},
+      debug() {},
+      trace() {},
+      warn() {},
+      error() {}
+    }
+  });
+
+  try {
+    const installer = (
+      service as unknown as {
+        getProjectInstaller(): {
+          install(
+            projectRoot: string,
+            files: Record<string, string>
+          ): Promise<{
+            status: string;
+            packageManager: string;
+            manifestPath?: string;
+            detail?: string;
+          }>;
+        };
+      }
+    ).getProjectInstaller();
+
+    const packageInstall = await installer.install(root, {
+      "package.json": '{\n  "name": "demo"\n}\n'
+    });
+    assert.equal(packageInstall.status, "skipped");
+    assert.equal(packageInstall.packageManager, "pnpm");
+    assert.equal(packageInstall.manifestPath, "package.json");
+    assert.match(packageInstall.detail ?? "", /learner workspace bootstrap/i);
+
+    const cargoInstall = await installer.install(root, {
+      "Cargo.toml": '[package]\nname = "demo"\nversion = "0.1.0"\n'
+    });
+    assert.equal(cargoInstall.status, "skipped");
+    assert.equal(cargoInstall.packageManager, "cargo");
+    assert.equal(cargoInstall.manifestPath, "Cargo.toml");
+    assert.match(cargoInstall.detail ?? "", /learner workspace bootstrap/i);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("ConstructAgentService creates question and plan jobs and persists the resulting state", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "construct-agent-service-"));
   let tick = 0;
