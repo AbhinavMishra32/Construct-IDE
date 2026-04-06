@@ -3,9 +3,18 @@ import { DatabaseIcon, KeyRoundIcon, ShieldCheckIcon } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle
+} from "@/components/ui/card";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 import type { AuthProviderOption, RunnerHealth } from "../types";
@@ -60,16 +69,25 @@ export function AuthScreen({
         <div className="construct-auth-panel">
           <div className="construct-auth-brand">
             <strong>Construct</strong>
-            <div className="construct-auth-brand-meta">
-              <Badge variant="outline">Runner {runnerHealth?.status ?? "offline"}</Badge>
-              <Badge variant={authReady ? "secondary" : "outline"}>
-                {authReady ? "Database auth ready" : "Database setup needed"}
-              </Badge>
+            <div className="construct-auth-brand-copy">
+              <span>Sign in to open projects, saved credentials, and guided builds.</span>
             </div>
           </div>
 
           <Card className="construct-auth-card">
             <CardHeader className="construct-auth-card-header">
+              <span className="construct-auth-card-kicker">
+                <ShieldCheckIcon />
+                Construct account
+              </span>
+              <CardAction className="construct-auth-status-cluster">
+                <Badge variant={runnerHealth?.status === "online" ? "secondary" : "outline"}>
+                  Runner {runnerHealth?.status ?? "offline"}
+                </Badge>
+                <Badge variant={authReady ? "secondary" : "destructive"}>
+                  {authReady ? "Database ready" : "Database setup needed"}
+                </Badge>
+              </CardAction>
               <CardTitle>
                 {mode === "login" ? "Sign in to continue" : "Create your Construct account"}
               </CardTitle>
@@ -90,48 +108,57 @@ export function AuthScreen({
                 }}
                 className="construct-auth-tabs"
               >
-                <TabsList className="construct-auth-tabs-list">
+                <TabsList variant="line" className="construct-auth-tabs-list">
                   <TabsTrigger value="login">Sign in</TabsTrigger>
                   <TabsTrigger value="signup">Create account</TabsTrigger>
                 </TabsList>
 
-                <div className="construct-auth-provider-stack">
-                  {oauthProviders.map((provider) => (
-                    <Button
-                      key={provider.id}
-                      type="button"
-                      variant="outline"
-                      className="construct-auth-provider-button"
-                      disabled
-                    >
-                      <div className="construct-auth-provider-copy">
-                        <strong>{provider.label}</strong>
-                        <span>{provider.description}</span>
-                      </div>
-                      <Badge variant="outline">
-                        {provider.comingSoon ? "Coming soon" : provider.buttonLabel}
-                      </Badge>
-                    </Button>
-                  ))}
-                </div>
-
                 {!authReady ? (
                   <Alert className="construct-auth-alert">
-                    <DatabaseIcon className="size-4" />
-                    <AlertTitle>Database setup is still needed</AlertTitle>
-                    <AlertDescription>
-                      Configure `DATABASE_URL` so Construct can persist users, sessions, and encrypted
-                      provider settings.
-                    </AlertDescription>
+                    <DatabaseIcon />
+                    <div className="construct-auth-alert-copy">
+                      <AlertTitle>Database setup is still needed</AlertTitle>
+                      <AlertDescription>
+                        Configure `DATABASE_URL` so Construct can persist users, sessions, and
+                        encrypted provider settings.
+                      </AlertDescription>
+                    </div>
                   </Alert>
                 ) : null}
 
                 {authError ? (
                   <Alert variant="destructive" className="construct-auth-alert">
-                    <ShieldCheckIcon className="size-4" />
-                    <AlertTitle>Authentication failed</AlertTitle>
-                    <AlertDescription>{authError}</AlertDescription>
+                    <ShieldCheckIcon />
+                    <div className="construct-auth-alert-copy">
+                      <AlertTitle>Authentication failed</AlertTitle>
+                      <AlertDescription>{authError}</AlertDescription>
+                    </div>
                   </Alert>
+                ) : null}
+
+                {oauthProviders.length > 0 ? (
+                  <>
+                    <Separator className="construct-auth-separator" />
+                    <div className="construct-auth-provider-stack">
+                      {oauthProviders.map((provider) => (
+                        <Button
+                          key={provider.id}
+                          type="button"
+                          variant="outline"
+                          className="construct-auth-provider-button"
+                          disabled
+                        >
+                          <div className="construct-auth-provider-copy">
+                            <strong>{provider.label}</strong>
+                            <span>{provider.description}</span>
+                          </div>
+                          <Badge variant="outline">
+                            {provider.comingSoon ? "Coming soon" : provider.buttonLabel}
+                          </Badge>
+                        </Button>
+                      ))}
+                    </div>
+                  </>
                 ) : null}
 
                 <TabsContent value="login" className="construct-auth-tab-content">
@@ -229,14 +256,13 @@ export function AuthScreen({
                 </TabsContent>
               </Tabs>
             </CardContent>
+            <CardFooter className="construct-auth-card-footer">
+              <div className="construct-auth-meta-item">
+                <KeyRoundIcon />
+                <span>Native auth now, external OpenAI and Codex login later.</span>
+              </div>
+            </CardFooter>
           </Card>
-
-          <div className="construct-auth-meta">
-            <div className="construct-auth-meta-item">
-              <KeyRoundIcon className="size-4" />
-              <span>Native auth now, external OpenAI and Codex login later.</span>
-            </div>
-          </div>
         </div>
       </section>
     </div>

@@ -6613,29 +6613,32 @@ textarea {
 }
 
 .construct-auth-panel {
-  width: min(460px, 100%);
+  width: min(520px, 100%);
   display: grid;
-  gap: 1rem;
+  gap: 0.9rem;
 }
 
 .construct-auth-brand {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
+  display: grid;
+  gap: 0.35rem;
 }
 
 .construct-auth-brand strong {
-  font-size: 1.7rem;
-  line-height: 1;
+  font-size: 2rem;
+  line-height: 1.02;
   letter-spacing: -0.03em;
 }
 
-.construct-auth-brand-meta {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 0.5rem;
+.construct-auth-brand-copy {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.construct-auth-brand-copy span {
+  max-width: 42ch;
+  color: var(--muted-foreground);
+  font-size: 0.98rem;
+  line-height: 1.5;
 }
 
 .construct-auth-card {
@@ -6648,7 +6651,11 @@ textarea {
 
 .construct-auth-card-header,
 .construct-auth-card-body {
-  gap: 1rem;
+  gap: 0.9rem;
+}
+
+.construct-auth-card-header {
+  padding-bottom: 0.2rem;
 }
 
 .construct-auth-card-kicker {
@@ -6660,6 +6667,13 @@ textarea {
   font-weight: 600;
   letter-spacing: 0.02em;
   text-transform: uppercase;
+}
+
+.construct-auth-status-cluster {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: flex-start;
 }
 
 .construct-auth-tabs {
@@ -6674,6 +6688,10 @@ textarea {
 
 .construct-auth-tab-content {
   margin-top: 0;
+}
+
+.construct-auth-separator {
+  margin: 0.15rem 0 0.1rem;
 }
 
 .construct-auth-provider-stack,
@@ -6712,21 +6730,35 @@ textarea {
 }
 
 .construct-auth-alert {
-  margin-top: 0.15rem;
+  margin-top: 0.1rem;
+  align-items: flex-start;
+  border-radius: 1rem;
+  padding: 0.95rem 1rem;
+}
+
+.construct-auth-alert-copy {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.construct-auth-alert-copy [data-slot="alert-title"],
+.construct-auth-alert-copy [data-slot="alert-description"] {
+  grid-column: auto;
 }
 
 .construct-auth-submit {
-  margin-top: 0.35rem;
+  margin-top: 0.2rem;
 }
 
-.construct-auth-meta {
-  display: flex;
+.construct-auth-card-footer {
   justify-content: center;
 }
 
 .construct-auth-meta-item {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 0.55rem;
   color: var(--muted-foreground);
   font-size: 0.9rem;
@@ -8480,8 +8512,7 @@ textarea {
     width: 100%;
   }
 
-  .construct-auth-brand,
-  .construct-auth-brand-meta,
+  .construct-auth-status-cluster,
   .construct-auth-provider-button,
   .construct-account-provider-title-row,
   .construct-account-header {
