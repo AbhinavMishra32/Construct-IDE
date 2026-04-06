@@ -79,7 +79,6 @@ import {
   BreadcrumbSeparator
 } from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
-import { ButtonGroup } from "@/components/ui/button-group";
 import {
   Card,
   CardContent,
@@ -132,9 +131,6 @@ import {
   SidebarGroupContent,
   SidebarGroupLabel,
   SidebarHeader,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
   SidebarProvider
 } from "@/components/ui/sidebar";
 import { ShiningText } from "@/components/ui/shining-text";
@@ -2311,34 +2307,9 @@ export default function App() {
             runnerHealth={runnerHealth}
             authSession={authSession}
             dashboardBusy={dashboardBusy}
-            currentView={currentView}
-            activeStep={activeStep}
             activeProjectName={blueprint?.name ?? null}
             onOpenProject={(project) => {
               void openProject(project);
-            }}
-            onOpenProjects={() => {
-              setDashboardOpen(true);
-              setPlanningOverlayOpen(false);
-              setStatusMessage("Opened projects dashboard.");
-            }}
-            onOpenLesson={() => {
-              if (!activeStep) {
-                return;
-              }
-
-              setDashboardOpen(false);
-              setSurfaceMode("brief");
-              setStatusMessage(`Opened the guided step context for ${activeStep.title}.`);
-            }}
-            onOpenCode={() => {
-              setDashboardOpen(false);
-              setSurfaceMode("focus");
-              setStatusMessage(
-                activeStep
-                  ? `Returned to the code workspace for ${activeStep.title}.`
-                  : "Returned to the code workspace."
-              );
             }}
             onStartProject={openFreshPlanningOverlay}
             onOpenAccount={() => {
@@ -2364,31 +2335,13 @@ export default function App() {
               setPlanningOverlayOpen(false);
               setStatusMessage("Opened projects dashboard.");
             }}
-            onOpenLesson={() => {
-              if (!activeStep) {
-                return;
-              }
-
-              setDashboardOpen(false);
-              setSurfaceMode("brief");
-              setStatusMessage(`Opened the guided step context for ${activeStep.title}.`);
-            }}
-            onOpenCode={() => {
-              setDashboardOpen(false);
-              setSurfaceMode("focus");
-              setStatusMessage(
-                activeStep
-                  ? `Returned to the code workspace for ${activeStep.title}.`
-                  : "Returned to the code workspace."
-              );
-            }}
-            onStartProject={openFreshPlanningOverlay}
             onOpenAccount={() => {
               setAccountPanelOpen(true);
             }}
             onLogout={() => {
               void handleLogout();
             }}
+            onStartProject={openFreshPlanningOverlay}
             onThemeChange={setThemeMode}
             theme={theme}
           />
@@ -3380,13 +3333,8 @@ function AppSidebar({
   runnerHealth,
   authSession,
   dashboardBusy,
-  currentView,
-  activeStep,
   activeProjectName,
   onOpenProject,
-  onOpenProjects,
-  onOpenLesson,
-  onOpenCode,
   onStartProject,
   onOpenAccount,
   onLogout
@@ -3395,13 +3343,8 @@ function AppSidebar({
   runnerHealth: RunnerHealth | null;
   authSession: AuthSessionView | null;
   dashboardBusy: boolean;
-  currentView: "projects" | "lesson" | "code";
-  activeStep: BlueprintStep | null;
   activeProjectName: string | null;
   onOpenProject: (project: ProjectSummary) => void;
-  onOpenProjects: () => void;
-  onOpenLesson: () => void;
-  onOpenCode: () => void;
   onStartProject: () => void;
   onOpenAccount: () => void;
   onLogout: () => void;
@@ -3438,54 +3381,6 @@ function AppSidebar({
         </SidebarHeader>
 
         <SidebarContent className="construct-app-sidebar-content">
-          <SidebarGroup className="construct-app-sidebar-section">
-            <SidebarGroupLabel className="construct-panel-kicker">
-              Workspace
-            </SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu className="construct-app-nav">
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    type="button"
-                    onClick={onOpenProjects}
-                    isActive={currentView === "projects"}
-                    className="construct-app-nav-item"
-                    tooltip="Projects"
-                  >
-                    <FolderTreeIcon />
-                    <span>Projects</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    type="button"
-                    onClick={onOpenLesson}
-                    isActive={currentView === "lesson"}
-                    className="construct-app-nav-item"
-                    tooltip="Step context"
-                    disabled={!activeStep}
-                  >
-                    <BookOpenTextIcon />
-                    <span>Step</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    type="button"
-                    onClick={onOpenCode}
-                    isActive={currentView === "code"}
-                    className="construct-app-nav-item"
-                    tooltip="Code"
-                    disabled={!activeStep}
-                  >
-                    <FolderOpenIcon />
-                    <span>Code</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-
           <SidebarGroup className="construct-app-sidebar-section construct-app-sidebar-section--recents">
             <div className="construct-app-sidebar-section-header">
               <SidebarGroupLabel className="construct-panel-kicker">
@@ -3573,11 +3468,9 @@ function WorkbenchTopbar({
   saveStateLabel,
   authSession,
   onOpenProjects,
-  onOpenLesson,
-  onOpenCode,
-  onStartProject,
   onOpenAccount,
   onLogout,
+  onStartProject,
   onThemeChange,
   theme
 }: {
@@ -3589,11 +3482,9 @@ function WorkbenchTopbar({
   saveStateLabel: string;
   authSession: AuthSessionView | null;
   onOpenProjects: () => void;
-  onOpenLesson: () => void;
-  onOpenCode: () => void;
-  onStartProject: () => void;
   onOpenAccount: () => void;
   onLogout: () => void;
+  onStartProject: () => void;
   onThemeChange: (theme: ThemeMode) => void;
   theme: ThemeMode;
 }) {
@@ -3618,51 +3509,6 @@ function WorkbenchTopbar({
               : activeFilePath ?? activeStepTitle ?? activeProjectName ?? "No file focused"}
           </strong>
         </div>
-      </div>
-
-      <div className="construct-workbench-nav">
-        <ButtonGroup
-          className="construct-workbench-mode-switch"
-          role="tablist"
-          aria-label="Current view"
-        >
-          <Button
-            type="button"
-            size="sm"
-            variant={currentView === "projects" ? "secondary" : "ghost"}
-            className={cn(
-              "construct-workbench-mode-button",
-              currentView === "projects" ? "is-active" : ""
-            )}
-            onClick={onOpenProjects}
-          >
-            Projects
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant={currentView === "lesson" ? "secondary" : "ghost"}
-            className={cn(
-              "construct-workbench-mode-button",
-              currentView === "lesson" ? "is-active" : ""
-            )}
-            onClick={onOpenLesson}
-          >
-            Step
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant={currentView === "code" ? "secondary" : "ghost"}
-            className={cn(
-              "construct-workbench-mode-button",
-              currentView === "code" ? "is-active" : ""
-            )}
-            onClick={onOpenCode}
-          >
-            Code
-          </Button>
-        </ButtonGroup>
       </div>
 
       <div className="construct-workbench-topbar-actions">

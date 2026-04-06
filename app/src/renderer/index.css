@@ -3387,39 +3387,6 @@ textarea {
   text-overflow: ellipsis;
 }
 
-.construct-workbench-mode-switch {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  padding: 2px;
-  border-radius: 14px;
-  border: 1px solid var(--border);
-  background: var(--panel-muted);
-}
-
-.construct-workbench-mode-button {
-  appearance: none;
-  min-height: 34px;
-  padding: 0 16px;
-  border: 0;
-  border-radius: 11px;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 500;
-}
-
-.construct-workbench-mode-button:hover {
-  color: var(--text);
-}
-
-.construct-workbench-mode-button.is-active {
-  background: var(--panel-bg);
-  color: var(--text);
-  box-shadow: inset 0 0 0 1px var(--border);
-}
-
 .construct-workbench-topbar-actions {
   display: flex;
   align-items: center;
@@ -3858,14 +3825,6 @@ textarea {
 
   .construct-workbench-topbar {
     padding: 10px 14px;
-  }
-
-  .construct-workbench-mode-switch {
-    width: 100%;
-  }
-
-  .construct-workbench-mode-button {
-    flex: 1;
   }
 
   .construct-layout {
@@ -5031,19 +4990,6 @@ textarea {
   line-height: 1.35;
 }
 
-.construct-workbench-mode-switch {
-  border-radius: 12px;
-  padding: 2px;
-  background: var(--panel-muted);
-}
-
-.construct-workbench-mode-button {
-  min-height: 30px;
-  padding: 0 14px;
-  border-radius: 9px;
-  font-size: 12px;
-}
-
 .construct-workbench {
   background: var(--editor-bg);
 }
@@ -5396,14 +5342,6 @@ textarea {
 
   .construct-workbench-topbar {
     padding: 10px 14px;
-  }
-
-  .construct-workbench-mode-switch {
-    width: 100%;
-  }
-
-  .construct-workbench-mode-button {
-    flex: 1;
   }
 
   .construct-layout {
@@ -5890,19 +5828,6 @@ textarea {
   line-height: 1.35;
 }
 
-.construct-workbench-mode-switch {
-  border-radius: 12px;
-  padding: 2px;
-  background: var(--panel-muted);
-}
-
-.construct-workbench-mode-button {
-  min-height: 30px;
-  padding: 0 14px;
-  border-radius: 9px;
-  font-size: 12px;
-}
-
 .construct-layout {
   grid-template-columns: 268px minmax(0, 1fr);
   background: var(--editor-bg);
@@ -6196,14 +6121,6 @@ textarea {
 
   .construct-workbench-topbar {
     padding: 10px 14px;
-  }
-
-  .construct-workbench-mode-switch {
-    width: 100%;
-  }
-
-  .construct-workbench-mode-button {
-    flex: 1;
   }
 
   .construct-layout {
@@ -7474,7 +7391,7 @@ textarea {
   z-index: 10;
   min-height: 48px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
   padding: 8px 12px;
@@ -7557,49 +7474,6 @@ textarea {
   color: var(--text-soft);
   font-size: 10px;
   line-height: 1.2;
-}
-
-.construct-workbench-nav {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.construct-workbench-mode-switch {
-  gap: 0;
-  min-height: 36px;
-  padding: 2px;
-  border-radius: 14px;
-  border: 1px solid color-mix(in srgb, var(--border) 74%, transparent);
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--panel-bg) 96%, transparent),
-      color-mix(in srgb, var(--panel-muted) 54%, transparent)
-    );
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--panel-bg) 44%, transparent);
-}
-
-.construct-workbench-mode-button {
-  min-width: 60px;
-  min-height: 28px;
-  padding: 0 10px;
-  border-radius: 10px;
-  font-size: 10.5px;
-  font-weight: 500;
-  letter-spacing: -0.015em;
-  color: var(--text-soft);
-}
-
-.construct-workbench-mode-button[data-variant="secondary"],
-.construct-workbench-mode-button.is-active {
-  background: color-mix(in srgb, var(--panel-bg) 98%, transparent);
-  color: var(--text);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 56%, transparent);
-}
-
-.construct-workbench-mode-button[data-variant="ghost"]:hover {
-  color: var(--text);
 }
 
 .construct-workbench-topbar-actions {
@@ -7856,7 +7730,6 @@ textarea {
     justify-items: stretch;
   }
 
-  .construct-workbench-nav,
   .construct-workbench-topbar-actions {
     justify-content: flex-start;
   }
@@ -7864,15 +7737,8 @@ textarea {
 
 @media (max-width: 720px) {
   .construct-workbench-topbar-lead,
-  .construct-workbench-action-cluster,
-  .construct-workbench-nav,
-  .construct-workbench-mode-switch {
+  .construct-workbench-action-cluster {
     width: 100%;
-  }
-
-  .construct-workbench-mode-button {
-    flex: 1;
-    min-width: 0;
   }
 }
 
