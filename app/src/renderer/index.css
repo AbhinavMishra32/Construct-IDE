@@ -5742,16 +5742,21 @@ textarea {
 }
 
 .construct-app-recent-item {
-  align-items: flex-start;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
   justify-content: flex-start;
+  gap: 4px;
   min-height: auto;
   min-width: 0;
   width: 100%;
+  height: auto;
   border-radius: 10px;
   padding: 10px;
   border: 1px solid transparent;
   background: transparent;
   box-shadow: none;
+  white-space: normal;
 }
 
 .construct-app-recent-item strong,
@@ -5778,6 +5783,7 @@ textarea {
   overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+  white-space: normal;
   color: color-mix(in srgb, var(--text) 56%, var(--text-muted));
   font-size: 12px;
   line-height: 1.45;
