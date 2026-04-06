@@ -5,7 +5,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
-  CardAction,
   CardContent,
   CardDescription,
   CardFooter,
@@ -70,24 +69,12 @@ export function AuthScreen({
           <div className="construct-auth-brand">
             <strong>Construct</strong>
             <div className="construct-auth-brand-copy">
-              <span>Sign in to open projects, saved credentials, and guided builds.</span>
+              <span>Sign in to access your projects, saved settings, and guided workspace.</span>
             </div>
           </div>
 
           <Card className="construct-auth-card">
             <CardHeader className="construct-auth-card-header">
-              <span className="construct-auth-card-kicker">
-                <ShieldCheckIcon />
-                Construct account
-              </span>
-              <CardAction className="construct-auth-status-cluster">
-                <Badge variant={runnerHealth?.status === "online" ? "secondary" : "outline"}>
-                  Runner {runnerHealth?.status ?? "offline"}
-                </Badge>
-                <Badge variant={authReady ? "secondary" : "destructive"}>
-                  {authReady ? "Database ready" : "Database setup needed"}
-                </Badge>
-              </CardAction>
               <CardTitle>
                 {mode === "login" ? "Sign in to continue" : "Create your Construct account"}
               </CardTitle>
@@ -108,7 +95,7 @@ export function AuthScreen({
                 }}
                 className="construct-auth-tabs"
               >
-                <TabsList variant="line" className="construct-auth-tabs-list">
+                <TabsList className="construct-auth-tabs-list">
                   <TabsTrigger value="login">Sign in</TabsTrigger>
                   <TabsTrigger value="signup">Create account</TabsTrigger>
                 </TabsList>

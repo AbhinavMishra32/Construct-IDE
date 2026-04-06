@@ -6613,18 +6613,19 @@ textarea {
 }
 
 .construct-auth-panel {
-  width: min(520px, 100%);
+  width: min(440px, 100%);
   display: grid;
-  gap: 0.9rem;
+  gap: 1rem;
 }
 
 .construct-auth-brand {
   display: grid;
-  gap: 0.35rem;
+  gap: 0.4rem;
+  justify-items: start;
 }
 
 .construct-auth-brand strong {
-  font-size: 2rem;
+  font-size: 2.1rem;
   line-height: 1.02;
   letter-spacing: -0.03em;
 }
@@ -6635,49 +6636,32 @@ textarea {
 }
 
 .construct-auth-brand-copy span {
-  max-width: 42ch;
+  max-width: 32ch;
   color: var(--muted-foreground);
-  font-size: 0.98rem;
-  line-height: 1.5;
+  font-size: 0.96rem;
+  line-height: 1.45;
 }
 
 .construct-auth-card {
-  border-radius: 1.5rem;
+  border-radius: 1.25rem;
   border-color: color-mix(in srgb, var(--border) 82%, transparent);
   background: color-mix(in srgb, var(--card) 95%, transparent);
-  box-shadow: 0 28px 76px -46px color-mix(in srgb, var(--foreground) 30%, transparent);
-  backdrop-filter: blur(14px);
+  box-shadow: 0 22px 56px -42px color-mix(in srgb, var(--foreground) 30%, transparent);
+  backdrop-filter: blur(12px);
 }
 
 .construct-auth-card-header,
 .construct-auth-card-body {
-  gap: 0.9rem;
+  gap: 0.85rem;
 }
 
 .construct-auth-card-header {
-  padding-bottom: 0.2rem;
-}
-
-.construct-auth-card-kicker {
-  display: inline-flex;
-  align-items: center;
   gap: 0.45rem;
-  color: var(--primary);
-  font-size: 0.82rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-}
-
-.construct-auth-status-cluster {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.45rem;
-  align-items: flex-start;
+  padding-bottom: 0.1rem;
 }
 
 .construct-auth-tabs {
-  gap: 1rem;
+  gap: 0.95rem;
 }
 
 .construct-auth-tabs-list {
@@ -6691,7 +6675,7 @@ textarea {
 }
 
 .construct-auth-separator {
-  margin: 0.15rem 0 0.1rem;
+  margin: 0.1rem 0 0.15rem;
 }
 
 .construct-auth-provider-stack,
@@ -6733,7 +6717,7 @@ textarea {
   margin-top: 0.1rem;
   align-items: flex-start;
   border-radius: 1rem;
-  padding: 0.95rem 1rem;
+  padding: 0.9rem 0.95rem;
 }
 
 .construct-auth-alert-copy {
@@ -6748,7 +6732,7 @@ textarea {
 }
 
 .construct-auth-submit {
-  margin-top: 0.2rem;
+  margin-top: 0.25rem;
 }
 
 .construct-auth-card-footer {
@@ -8512,7 +8496,6 @@ textarea {
     width: 100%;
   }
 
-  .construct-auth-status-cluster,
   .construct-auth-provider-button,
   .construct-account-provider-title-row,
   .construct-account-header {
