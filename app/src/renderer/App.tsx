@@ -2335,13 +2335,13 @@ export default function App() {
               setPlanningOverlayOpen(false);
               setStatusMessage("Opened projects dashboard.");
             }}
+            onStartProject={openFreshPlanningOverlay}
             onOpenAccount={() => {
               setAccountPanelOpen(true);
             }}
             onLogout={() => {
               void handleLogout();
             }}
-            onStartProject={openFreshPlanningOverlay}
             onThemeChange={setThemeMode}
             theme={theme}
           />
@@ -3407,10 +3407,8 @@ function AppSidebar({
                         )}
                         disabled={dashboardBusy}
                       >
-                        <strong className="construct-app-recent-item-title">{project.name}</strong>
-                        <p className="construct-app-recent-item-meta">
-                          {project.currentStepTitle ?? project.description}
-                        </p>
+                        <strong>{project.name}</strong>
+                        <span>{project.currentStepTitle ?? project.description}</span>
                       </Button>
                     ))}
                   </div>
@@ -3468,9 +3466,9 @@ function WorkbenchTopbar({
   saveStateLabel,
   authSession,
   onOpenProjects,
+  onStartProject,
   onOpenAccount,
   onLogout,
-  onStartProject,
   onThemeChange,
   theme
 }: {
@@ -3482,9 +3480,9 @@ function WorkbenchTopbar({
   saveStateLabel: string;
   authSession: AuthSessionView | null;
   onOpenProjects: () => void;
+  onStartProject: () => void;
   onOpenAccount: () => void;
   onLogout: () => void;
-  onStartProject: () => void;
   onThemeChange: (theme: ThemeMode) => void;
   theme: ThemeMode;
 }) {

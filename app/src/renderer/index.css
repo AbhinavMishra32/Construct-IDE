@@ -3242,41 +3242,6 @@ textarea {
   font-weight: 600;
 }
 
-.construct-app-nav {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.construct-app-nav-item {
-  appearance: none;
-  min-height: 36px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: 10px;
-  background: transparent;
-  color: var(--text-muted);
-  text-align: left;
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 500;
-}
-
-.construct-app-nav-item:hover {
-  background: var(--panel-muted);
-  color: var(--text);
-}
-
-.construct-app-nav-item.is-active {
-  background: var(--panel-soft);
-  color: var(--text);
-}
-
-.construct-app-nav-item:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
 .construct-app-sidebar-section {
   display: flex;
   flex-direction: column;
@@ -4920,23 +4885,6 @@ textarea {
   background: color-mix(in srgb, var(--panel-muted) 92%, transparent);
 }
 
-.construct-app-nav-item {
-  min-height: 36px;
-  padding: 0 12px;
-  border-radius: 10px;
-  font-size: 13px;
-}
-
-.construct-app-nav-item svg {
-  width: 15px;
-  height: 15px;
-}
-
-.construct-app-nav-item.is-active {
-  background: var(--panel-soft);
-  box-shadow: inset 0 0 0 1px var(--border);
-}
-
 .construct-app-sidebar-section {
   gap: 12px;
 }
@@ -5665,18 +5613,6 @@ textarea {
 
 .construct-app-sidebar-primary:hover {
   background: var(--panel-muted);
-}
-
-.construct-app-nav-item {
-  min-height: 34px;
-  padding: 0 10px;
-  border-radius: 9px;
-  font-size: 13px;
-}
-
-.construct-app-nav-item.is-active {
-  background: var(--panel-soft);
-  box-shadow: inset 0 0 0 1px var(--border);
 }
 
 .construct-app-recent-item {
