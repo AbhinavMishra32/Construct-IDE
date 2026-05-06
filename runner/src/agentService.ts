@@ -9390,11 +9390,11 @@ function validateGeneratedStepReferences(
 const LEARNER_TASK_GAP_PATTERNS = [
   /\bTASK\b/i,
   /\bTASK_NOT_IMPLEMENTED\b/i,
-  /\bTODO\b/i,
+  /(?:^|[^A-Za-z0-9_])TODO(?:\b|[:(])/,
   /\bFIXME\b/i,
   /\bNotImplemented(?:Error)?\b/i,
   /throw new Error\((["'`])Implement/i,
-  /throw new Error\((["'`])TODO/i,
+  /throw new Error\((["'`])TODO/,
   /\btodo!\s*\(/i,
   /\bunimplemented!\s*\(/i
 ];
@@ -9448,6 +9448,9 @@ function validateGeneratedLearnerExerciseSeparation(input: {
     validateGeneratedLearnerStepBudget({
       step,
       learnerContent,
+      siblingAnchorMarkers: input.steps
+        .filter((candidate) => normalizePathValue(candidate.anchor.file) === anchorFile)
+        .map((candidate) => candidate.anchor.marker),
       context: input.context
     });
   }
@@ -9466,6 +9469,7 @@ function containsLearnerTaskGap(content: string, marker: string): boolean {
 function validateGeneratedLearnerStepBudget(input: {
   step: GeneratedBlueprintStepDraft;
   learnerContent: string;
+  siblingAnchorMarkers: string[];
   context: string;
 }): void {
   if (input.step.difficulty === "advanced") {
@@ -9475,7 +9479,8 @@ function validateGeneratedLearnerStepBudget(input: {
   const anchorFile = normalizePathValue(input.step.anchor.file);
   const taskGapRegions = collectLearnerTaskGapRegions(
     input.learnerContent,
-    input.step.anchor.marker
+    input.step.anchor.marker,
+    input.siblingAnchorMarkers
   );
   const constructionUnits = buildConstructionUnits(
     input.step,
@@ -9510,14 +9515,20 @@ function validateGeneratedLearnerStepBudget(input: {
 
 function collectLearnerTaskGapRegions(
   learnerContent: string,
-  anchorMarker: string
+  anchorMarker: string,
+  siblingAnchorMarkers: string[] = []
 ): Array<{ key: string; sample: string }> {
   const lines = learnerContent.replace(/\r\n/g, "\n").split("\n");
   const anchorIndex = lines.findIndex((line) => line.includes(anchorMarker));
   const startIndex = anchorIndex >= 0 ? anchorIndex : 0;
+  const nextAnchorIndex = siblingAnchorMarkers
+    .filter((marker) => marker.trim() && marker !== anchorMarker)
+    .map((marker) => lines.findIndex((line) => line.includes(marker)))
+    .filter((index) => index > startIndex)
+    .reduce((closest, index) => Math.min(closest, index), lines.length);
   const regions = new Map<string, { key: string; sample: string }>();
 
-  for (let index = startIndex; index < lines.length; index += 1) {
+  for (let index = startIndex; index < nextAnchorIndex; index += 1) {
     const line = lines[index]?.trim() ?? "";
 
     if (!line || !looksLikeLearnerTaskGapLine(line)) {
@@ -10805,7 +10816,10 @@ function restoreExecutableLearnerTaskGap(
 
   const existingNearbyGap = lines
     .slice(anchorIndex, Math.min(lines.length, anchorIndex + 8))
-    .some((line) => /\bTASK_NOT_IMPLEMENTED\b|\bTODO\b|\bNotImplemented(?:Error)?\b/i.test(line));
+    .some((line) =>
+      /\bTASK_NOT_IMPLEMENTED\b|\bNotImplemented(?:Error)?\b/i.test(line) ||
+      /(?:^|[^A-Za-z0-9_])TODO(?:\b|[:(])/.test(line)
+    );
 
   if (existingNearbyGap) {
     return learnerContent;

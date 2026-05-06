@@ -3467,6 +3467,81 @@ test("ConstructAgentService rejects intro learner files that expose multiple unf
   }
 });
 
+test("ConstructAgentService does not count Todo type names as TODO task gaps", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "construct-agent-shared-core-file-"));
+
+  try {
+    await mkdir(path.join(root, ".construct", "state"), { recursive: true });
+
+    await expectBlueprintGenerationToComplete(root, {
+      bundle: {
+        ...buildBlueprintGuardBundle(),
+        entrypoints: ["src/domain/todoTypes.ts"],
+        canonicalFiles: [
+          {
+            path: "src/domain/todoTypes.ts",
+            content: [
+              "export type TodoId = string;",
+              "",
+              "export type TodoText = string;",
+              "",
+              "export type Todo = {",
+              "  id: TodoId;",
+              "  text: TodoText;",
+              "  completed: boolean;",
+              "};"
+            ].join("\n")
+          }
+        ],
+        learnerFiles: [
+          {
+            path: "src/domain/todoTypes.ts",
+            content: [
+              "export type TodoId = string;",
+              "",
+              "// TASK:step-2-id-type",
+              "export type TodoText = string;",
+              "",
+              "// TASK:step-2-todo-shape",
+              "export type Todo = {",
+              "  id: TodoId;",
+              "  text: TodoText;",
+              "  completed: boolean;",
+              "};"
+            ].join("\n")
+          }
+        ],
+        steps: [
+          {
+            id: "step-2-establish-app-scope-domain-model",
+            title: "Define the Todo domain model",
+            summary: "Create the shared Todo type aliases and shape.",
+            doc: "Edit `src/domain/todoTypes.ts` and define the Todo id/text aliases plus the Todo shape.",
+            lessonSlides: [
+              markdownSlide("## Build the shared type contract\n\nKeep this step focused on the immediate Todo shape."),
+              markdownSlide("## Leave later helpers for later\n\nThe next step can reuse the same file without widening this slice.")
+            ],
+            anchor: {
+              file: "src/domain/todoTypes.ts",
+              marker: "TASK:step-2-id-type",
+              startLine: null,
+              endLine: null
+            },
+            tests: ["hidden_tests/step1_validation.js"],
+            concepts: ["typescript.types"],
+            constraints: ["Keep this step to the Todo model only."],
+            checks: [],
+            estimatedMinutes: 12,
+            difficulty: "core" as const
+          }
+        ]
+      }
+    });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("ConstructAgentService narrows intro learner files that pack too many build moves into one task surface", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "construct-agent-build-move-budget-"));
 
