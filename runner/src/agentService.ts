@@ -11189,7 +11189,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function inferGoalScopeFallback(goal: string): GoalScope {
   const normalized = goal.trim().toLowerCase();
   const engagementMode = inferGoalEngagementModeFallback(normalized);
-  const mentionsBeginnerScope = /\b(from scratch|brand new|total beginner|beginner|never used|don't know|do not know)\b/.test(
+  const mentionsBeginnerScope = /\b(brand new|total beginner|beginner|never used|don't know|do not know)\b/.test(
     normalized
   );
   const smallScopeHints = [
@@ -11322,12 +11322,14 @@ function buildGoalScopeInstructions(): string {
     "engagementMode should be implementation-first when the user primarily wants to build, ship, recreate, port, or implement an artifact, even if they say 'from scratch'.",
     "engagementMode should be learning-first only when the user is primarily asking to learn, understand, or be taught the named technology or concept.",
     "engagementMode should be balanced when the request clearly mixes both building and learning.",
+    "Treat 'from scratch' as a request to start from zero on the requested artifact, not as permission to replace the artifact with a tiny tutorial surrogate.",
     "Do not mistake a framework or library named in the goal for an implicit request to study that framework broadly. Treat it as the build substrate unless the user explicitly asks to learn it.",
     "complexityScore is a 0-100 estimate of how large and multi-part the project really is.",
     "shouldResearch should be false only when broad web research would clearly be wasteful for this specific request.",
     "recommendedQuestionCount should be the minimum number of intake questions needed to personalize the path.",
     "recommendedMinSteps and recommendedMaxSteps should define the step budget the Architect should aim for.",
-    "If the request is implementation-first and the learner sounds new or says phrases like 'from scratch', 'beginner', or 'don't know', bias toward more, smaller construction steps instead of fewer broad ones.",
+    "Do not treat 'from scratch' by itself as evidence that the learner wants tiny tutorial slices or a slowed-down curriculum.",
+    "Only bias toward more, smaller construction steps when the learner explicitly signals inexperience or asks for extra hand-holding with phrases like 'beginner', 'never used', or 'don't know'.",
     "Be conservative with scope expansion. If the user asks for something small, keep it small unless the request itself requires more."
   ].join("\n");
 }
@@ -11355,6 +11357,7 @@ function buildQuestionGenerationInstructions(): string {
     "Use goalScope.scopeSummary and goalScope.artifactShape to decide how local or broad the intake should be.",
     "Use goalScope.engagementMode to decide whether the intake should optimize more for shipping momentum, teaching depth, or a balance of both.",
     "If engagementMode is implementation-first, ask only what is needed to help the learner build the requested artifact effectively. Do not turn the named framework, library, or platform into a broad curriculum topic by default.",
+    "Do not use intake questions to quietly swap the requested artifact for a more convenient demo artifact. Questions may tune pacing, support level, or build order, but the project should remain the same artifact the user asked for unless they explicitly redirect it.",
     "If engagementMode is learning-first, it is acceptable to ask where Construct should slow down and explain more first-principles context.",
     "Do not ask about concepts that are already clearly comfortable in the prior knowledge base unless the new goal materially changes their meaning.",
     "If you need to ask about a concept like TypeScript utility types, ask about lived usage and desired support, for example: 'Which statement best matches your current experience using utility types like Partial<T> when shaping update payloads in real code?'"
@@ -11397,6 +11400,7 @@ function buildPlanGenerationInstructions(): string {
     "If the learner is weak in a prerequisite concept, insert a skill step immediately before the implementation step that needs it.",
     "If engagementMode is implementation-first, keep the plan centered on shipping the requested artifact. Only insert prerequisite teaching that directly unblocks the next implementation step.",
     "Do not reinterpret a build request as a broad course on the named framework, library, language, or platform unless the goal or learner answers explicitly ask for that.",
+    "Do not silently substitute a different showcase project, demo app, or tutorial-friendly artifact for the requested artifact. If the goal says 'implement reactjs from scratch', plan a React-like system or another faithful interpretation of that request, not an unrelated Todo SPA unless the user asked for one.",
     "Keep the total number of steps within goalScope.recommendedMinSteps and goalScope.recommendedMaxSteps.",
     "Use goalScope.scopeSummary and goalScope.artifactShape to decide how narrow or broad the plan should be.",
     "summary should describe the artifact being implemented and the build path through it. Avoid framing the summary as a tutorial, introduction, or survey of the named technology unless engagementMode is learning-first.",
@@ -11427,6 +11431,7 @@ function buildBlueprintGenerationInstructions(): string {
     "supportFiles are unmasked project files such as package.json, pyproject.toml, tsconfig, helper modules, and fixed runtime scaffolding.",
     "canonicalFiles are the solved versions of the learner-owned implementation files.",
     "learnerFiles must only cover the current frontierPlanSteps and must correspond to the same file paths as the canonical implementation for those frontier capabilities, but with focused TASK markers and incomplete implementations the learner must fill in.",
+    "Honor the requested artifact literally. Do not rewrite the project into a different app or tutorial-friendly surrogate just because it is easier to scaffold or teach.",
     "Every learnerFile must be visibly incomplete at the anchored task region. The learner should need to edit code before the hidden test for that step can pass.",
     "Do not return learnerFiles that already match canonicalFiles, already satisfy the hidden validation, or merely restate the solved implementation with a passive comment.",
     "Use an explicit unfinished task affordance at each anchor such as TASK/TODO markers with a failing stub, NotImplemented error, todo!(), unimplemented!(), or an equivalent language-appropriate unfinished implementation.",
@@ -11453,6 +11458,7 @@ function buildBlueprintGenerationInstructions(): string {
     "If engagementMode is learning-first, the first step should usually open with at least four real teaching slides unless the user explicitly asked for setup/tooling rather than implementation.",
     "If engagementMode is implementation-first, keep the lesson focused on the exact concepts needed for the current code boundary. Do not broaden the step into a general course on the surrounding framework, library, or platform.",
     "If the named technology is just the delivery substrate for the requested artifact, assume the learner wants to build with it rather than study it broadly.",
+    "Do not generate a generic example app when the user asked for a framework, runtime, compiler, renderer, or other system itself. The first visible steps should still belong to that requested artifact.",
     "Every frontier step should feel like a real construction slice, not a worksheet. The learner should author one concrete artifact, helper, type, branch, or state transition that the next visible code move can reuse.",
     "Prefer dependency-ordered beginner scaffolding: create the shape first, then consume it; create the helper first, then call it; create the branch input first, then branch on it.",
     "Do not ask the learner to invent architecture, algorithm, and language syntax all at once when a smaller project-authentic build sequence would teach the same system better.",

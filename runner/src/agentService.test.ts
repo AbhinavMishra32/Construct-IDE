@@ -6008,6 +6008,41 @@ test("goal-scope fallback preserves explicit learning-first requests", async () 
   }
 });
 
+test("goal-scope fallback does not treat from scratch alone as beginner hand-holding", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "construct-agent-goal-scope-from-scratch-"));
+
+  try {
+    const service = new ConstructAgentService(root, {
+      llm: {
+        async parse() {
+          throw new Error("Simulated scope-analysis failure.");
+        }
+      },
+      logger: {
+        info() {},
+        debug() {},
+        trace() {},
+        warn() {},
+        error() {}
+      }
+    });
+
+    const scope = await (service as unknown as {
+      determineGoalScope(goal: string): Promise<{
+        engagementMode: string;
+        recommendedMinSteps: number;
+        recommendedMaxSteps: number;
+      }>;
+    }).determineGoalScope("implement reactjs from scratch in typescript");
+
+    assert.equal(scope.engagementMode, "implementation-first");
+    assert.equal(scope.recommendedMinSteps, 3);
+    assert.equal(scope.recommendedMaxSteps, 6);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("goal self-report extraction trims oversized signal drafts instead of failing planning", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "construct-agent-self-report-"));
 
