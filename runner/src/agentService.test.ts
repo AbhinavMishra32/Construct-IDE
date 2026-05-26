@@ -6118,7 +6118,7 @@ function buildBlueprintGuardBundle(
       constraints: string[];
       checks: [];
       estimatedMinutes: number;
-      difficulty: "intro";
+      difficulty: "intro" | "core";
     }>;
     dependencyGraph: {
       nodes: Array<{ id: string; label: string; kind: "component" }>;

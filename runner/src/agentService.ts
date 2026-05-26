@@ -10953,6 +10953,8 @@ function buildLessonAuthoringBrief(
   };
 } {
   const requiredCoverage = [
+    "What the overall project arc is and where this step fits inside it",
+    "What we are building today in this step before diving into details",
     "What the core concept is in plain language",
     "What the larger library/system is before any internal jargon is assumed",
     "Why this concept matters in this specific project step",
@@ -10965,6 +10967,7 @@ function buildLessonAuthoringBrief(
     "What exact file/function/behavior the learner is about to implement",
     "What success looks like when the implementation is correct",
     "What is explicitly out of scope for this step",
+    "A short checkpoint or recap of what the learner should have working by the end of the step",
     "How the explanation connects directly to the exercise",
     "How this concept leads into the next concept or implementation boundary in the project"
   ];
@@ -11901,6 +11904,9 @@ function buildLessonAuthoringInstructions(context: {
     "Use inline question blocks only when the learner would benefit from checking understanding inside the lesson before moving forward. Inline checks should feel embedded in the explanation, not like a separate quiz screen pasted into the slide.",
     "Treat each slide as a docs page section for one concept the learner must understand before implementing the task.",
     "Use markdown structure deliberately: headings, paragraphs, bullet lists, ordered lists, blockquotes, tables when helpful, and fenced code blocks for worked examples or conceptual sketches.",
+    "The tone should feel like a hands-on senior engineer teaching through a real build, not a sterile rubric or detached worksheet.",
+    "For implementation-first chapters, establish the project arc, say what we are building now, then move into the concrete implementation boundary.",
+    "Use natural practical sections such as: project spine, what we are building now, mental model, build steps, common mistakes, checkpoint, and what comes next.",
     "Do not repeat the step title as the main heading of every slide. The UI already shows step context.",
     "Avoid shallow slides. Most non-trivial slides should feel like a docs section with real explanation, not a caption or summary card.",
     "Do not write single-heading slides with a short paragraph underneath. That is too shallow for Construct.",
@@ -11914,6 +11920,7 @@ function buildLessonAuthoringInstructions(context: {
     "If engagementMode is implementation-first, teach the exact artifact the learner is about to build. Name the function/class/module/data shape they will edit, explain that artifact's job in the system, and show what correct behavior looks like before you ask them to code.",
     "Treat the task as a build sequence, not a worksheet. Break the implementation into dependency-ordered moves the learner can execute one after another while still building the real project themselves.",
     "Prefer handoffs like 'first create this type, then use it here, then add this branch' over one giant task that requires the learner to invent the whole subsystem at once.",
+    "When useful, explain the exact working support code around the learner-owned gap so the learner sees the real system spine, even if they are only responsible for implementing one slice of it.",
     "When a step introduces a new concept, write enough for a learner to understand it without having to infer missing background.",
     "For foundational steps, use an intentional teaching order: first 'what is this in plain language?', then 'why does it matter here?', then 'how does it work?', then 'what exactly are we about to implement?'.",
     "Do not leave the learner with only theory. At least one slide should bridge from concept to code by showing a near-transfer worked example that is structurally similar to the exercise they will do next.",
@@ -11935,8 +11942,9 @@ function buildLessonAuthoringInstructions(context: {
     "The doc field should become a crisp implementation handoff. It should explain exactly what file or anchor is being changed, what behavior to implement, and what the tests are verifying. It should not re-teach the whole lesson.",
     "The doc field should assume the lesson already did the teaching. It should now hand the learner into the exercise with clarity.",
     "The doc field should make the step boundary explicit: what you are implementing now, what success looks like in behavior or output, and what remains out of scope for a later step.",
+    "The final slide or doc handoff should often include a practical checkpoint: what routes, files, outputs, or behaviors should be working before the learner moves on.",
     "For learning-first foundational steps, prefer 4 to 6 substantial slides unless the concept is genuinely tiny.",
-    "For implementation-first steps, 1 to 3 substantial slides is often enough when the concept is only supporting context for the task.",
+    "For implementation-first steps, prefer 2 to 4 substantial slides when the concept is non-trivial, and do not be afraid to use 4 or more if that is what it takes to make the build feel coherent and motivating.",
     "When engagementMode is learning-first and this is the first step, there should usually be at least three concept-heavy slides and often four or more before the first check.",
     "If the teaching is still too shallow to justify a check, reduce or remove the checks rather than quizzing early.",
     "Slides should look good when rendered as docs. Use markdown headings inside slides to break the explanation into sections such as 'Why this matters', 'How it works', 'Example', 'Common mistakes', or 'How this helps in the task'.",
