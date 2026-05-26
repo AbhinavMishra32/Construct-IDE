@@ -9,6 +9,7 @@ import type { StoredKnowledgeConcept } from "@construct/shared";
 
 import { ConstructAgentService } from "./agentService";
 import { createAgentPersistence, type AgentPersistence } from "./agentPersistence";
+import { resolveArtifactLock } from "./creationPipelineV2";
 import { createEmptyKnowledgeBase, findKnowledgeConcept } from "./knowledgeGraph";
 import { prepareLearnerWorkspace } from "./workspaceMaterializer";
 
@@ -6040,6 +6041,410 @@ test("goal-scope fallback does not treat from scratch alone as beginner hand-hol
     assert.equal(scope.recommendedMaxSteps, 6);
   } finally {
     await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("goal-scope analysis receives artifact-lock context for ambiguous framework-only build requests", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "construct-agent-goal-scope-artifact-lock-"));
+  let scopePrompt = "";
+
+  try {
+    const service = new ConstructAgentService(root, {
+      llm: {
+        async parse({ schemaName, schema, prompt }) {
+          if (schemaName !== "construct_goal_scope") {
+            throw new Error(`Unexpected schema request: ${schemaName}`);
+          }
+
+          scopePrompt = prompt;
+
+          return schema.parse({
+            engagementMode: "implementation-first",
+            scopeSummary: "Ambiguous framework-oriented request",
+            artifactShape: "react framework or app built with react",
+            complexityScore: 55,
+            shouldResearch: true,
+            recommendedQuestionCount: 3,
+            recommendedMinSteps: 3,
+            recommendedMaxSteps: 6,
+            rationale: "The request needs artifact clarification before deeper planning."
+          });
+        }
+      },
+      logger: {
+        info() {},
+        debug() {},
+        trace() {},
+        warn() {},
+        error() {}
+      }
+    });
+
+    await (service as unknown as {
+      determineGoalScope(
+        goal: string,
+        artifactLock?: ReturnType<typeof resolveArtifactLock>
+      ): Promise<{
+        engagementMode: string;
+      }>;
+    }).determineGoalScope(
+      "implement reactjs from scratch in typescript",
+      resolveArtifactLock("implement reactjs from scratch in typescript")
+    );
+
+    const parsedPrompt = JSON.parse(scopePrompt) as {
+      artifactLock: {
+        needsClarification: boolean;
+        requestedTechnology: string[];
+        artifactNouns: string[];
+      };
+    };
+
+    assert.equal(parsedPrompt.artifactLock.needsClarification, true);
+    assert.deepEqual(parsedPrompt.artifactLock.requestedTechnology, ["react", "reactjs"]);
+    assert.deepEqual(parsedPrompt.artifactLock.artifactNouns, []);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("planning question generation receives artifact-lock context before tailoring intake", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "construct-agent-question-artifact-lock-"));
+  let questionPrompt = "";
+
+  try {
+    const service = new ConstructAgentService(root, {
+      llm: {
+        async parse({ schemaName, schema, prompt }) {
+          if (schemaName === "construct_goal_self_report_signals") {
+            return schema.parse({ signals: [] });
+          }
+
+          if (schemaName === "construct_goal_scope") {
+            return schema.parse({
+              engagementMode: "implementation-first",
+              scopeSummary: "Ambiguous framework-oriented request",
+              artifactShape: "react framework or app built with react",
+              complexityScore: 55,
+              shouldResearch: false,
+              recommendedQuestionCount: 2,
+              recommendedMinSteps: 3,
+              recommendedMaxSteps: 6,
+              rationale: "Clarify the artifact before expanding the build path."
+            });
+          }
+
+          if (schemaName === "construct_planning_question_draft") {
+            questionPrompt = prompt;
+
+            return schema.parse({
+              detectedLanguage: "typescript",
+              detectedDomain: "react",
+              questions: [
+                {
+                  conceptId: "workflow.artifact-choice",
+                  category: "workflow",
+                  prompt: "Which outcome are you actually aiming for with React here?",
+                  options: [
+                    {
+                      id: "framework",
+                      label: "Build a React-like system",
+                      description: "I want to implement the framework or runtime mechanics themselves.",
+                      confidenceSignal: "comfortable"
+                    },
+                    {
+                      id: "app",
+                      label: "Build an app using React",
+                      description: "I want the real project to be an application built with React.",
+                      confidenceSignal: "shaky"
+                    },
+                    {
+                      id: "unsure",
+                      label: "Help me choose",
+                      description: "I want Construct to explain the difference before we commit.",
+                      confidenceSignal: "new"
+                    }
+                  ]
+                },
+                {
+                  conceptId: "typescript.react-support",
+                  category: "language",
+                  prompt: "How much TypeScript support do you want while building it?",
+                  options: [
+                    {
+                      id: "solid",
+                      label: "Light support",
+                      description: "I mainly want momentum and only targeted explanations.",
+                      confidenceSignal: "comfortable"
+                    },
+                    {
+                      id: "partial",
+                      label: "Some support",
+                      description: "I want examples around the trickier TypeScript boundaries.",
+                      confidenceSignal: "shaky"
+                    },
+                    {
+                      id: "new",
+                      label: "Deep support",
+                      description: "I want TypeScript decisions explained carefully as we build.",
+                      confidenceSignal: "new"
+                    }
+                  ]
+                }
+              ]
+            });
+          }
+
+          throw new Error(`Unexpected schema request: ${schemaName}`);
+        }
+      },
+      logger: {
+        info() {},
+        debug() {},
+        trace() {},
+        warn() {},
+        error() {}
+      }
+    });
+
+    const questionJob = service.createPlanningQuestionsJob({
+      goal: "implement reactjs from scratch in typescript"
+    });
+
+    await waitForJobCompletion(service, questionJob.jobId);
+
+    const parsedPrompt = JSON.parse(questionPrompt) as {
+      artifactLock: {
+        needsClarification: boolean;
+        requestedTechnology: string[];
+      };
+      goalScope: {
+        artifactShape: string;
+      };
+    };
+
+    assert.equal(parsedPrompt.artifactLock.needsClarification, true);
+    assert.deepEqual(parsedPrompt.artifactLock.requestedTechnology, ["react", "reactjs"]);
+    assert.equal(parsedPrompt.goalScope.artifactShape, "react framework or app built with react");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("plan and blueprint generation keep artifact-lock context alive for ambiguous framework requests", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "construct-agent-plan-artifact-lock-"));
+  let planPrompt = "";
+  let blueprintPrompt = "";
+
+  try {
+    const service = new ConstructAgentService(root, {
+      llm: {
+        async parse({ schemaName, schema, prompt }) {
+          if (schemaName === "construct_goal_self_report_signals") {
+            return schema.parse({ signals: [] });
+          }
+
+          if (schemaName === "construct_goal_scope") {
+            return schema.parse({
+              engagementMode: "implementation-first",
+              scopeSummary: "Ambiguous framework-oriented request",
+              artifactShape: "react framework or app built with react",
+              complexityScore: 55,
+              shouldResearch: false,
+              recommendedQuestionCount: 2,
+              recommendedMinSteps: 3,
+              recommendedMaxSteps: 6,
+              rationale: "Clarify the artifact early and then preserve that interpretation."
+            });
+          }
+
+          if (schemaName === "construct_planning_question_draft") {
+            return schema.parse({
+              detectedLanguage: "typescript",
+              detectedDomain: "react",
+              questions: [
+                {
+                  conceptId: "workflow.artifact-choice",
+                  category: "workflow",
+                  prompt: "Which outcome are you actually aiming for with React here?",
+                  options: [
+                    {
+                      id: "framework",
+                      label: "Build a React-like system",
+                      description: "I want to implement the framework or runtime mechanics themselves.",
+                      confidenceSignal: "comfortable"
+                    },
+                    {
+                      id: "app",
+                      label: "Build an app using React",
+                      description: "I want the real project to be an application built with React.",
+                      confidenceSignal: "shaky"
+                    },
+                    {
+                      id: "unsure",
+                      label: "Help me choose",
+                      description: "I want Construct to explain the difference before we commit.",
+                      confidenceSignal: "new"
+                    }
+                  ]
+                },
+                {
+                  conceptId: "typescript.react-support",
+                  category: "language",
+                  prompt: "How much TypeScript support do you want while building it?",
+                  options: [
+                    {
+                      id: "solid",
+                      label: "Light support",
+                      description: "I mainly want momentum and only targeted explanations.",
+                      confidenceSignal: "comfortable"
+                    },
+                    {
+                      id: "partial",
+                      label: "Some support",
+                      description: "I want examples around the trickier TypeScript boundaries.",
+                      confidenceSignal: "shaky"
+                    },
+                    {
+                      id: "new",
+                      label: "Deep support",
+                      description: "I want TypeScript decisions explained carefully as we build.",
+                      confidenceSignal: "new"
+                    }
+                  ]
+                }
+              ]
+            });
+          }
+
+          if (schemaName === "construct_generated_project_plan") {
+            planPrompt = prompt;
+
+            return schema.parse({
+              summary: "Clarify the React artifact first, then build the chosen path faithfully.",
+              knowledgeGraph: {
+                concepts: [
+                  {
+                    id: "workflow.artifact-choice",
+                    label: "Artifact direction",
+                    category: "workflow",
+                    path: ["workflow", "artifact-choice"],
+                    labelPath: ["Workflow", "Artifact direction"],
+                    confidence: "shaky",
+                    rationale: "This request still needs the artifact shape clarified and preserved."
+                  }
+                ],
+                strengths: [],
+                gaps: ["Artifact direction"]
+              },
+              architecture: [
+                {
+                  id: "component.react-core",
+                  label: "React core",
+                  kind: "component",
+                  summary: "The requested React-oriented build target.",
+                  dependsOn: []
+                }
+              ],
+              steps: [
+                {
+                  id: "step.react-core",
+                  title: "Start the React-oriented implementation",
+                  kind: "implementation",
+                  objective: "Build the first real behavior in the chosen React path.",
+                  rationale: "The project should stay faithful to the React request.",
+                  concepts: ["workflow.artifact-choice"],
+                  dependsOn: [],
+                  validationFocus: ["Preserves the requested artifact identity."],
+                  suggestedFiles: ["src/index.ts"],
+                  implementationNotes: ["Keep the first slice small and faithful."],
+                  quizFocus: ["Why artifact fidelity matters."],
+                  hiddenValidationFocus: ["The first slice belongs to the requested artifact."]
+                }
+              ],
+              suggestedFirstStepId: "step.react-core"
+            });
+          }
+
+          if (schemaName === "construct_generated_blueprint_bundle") {
+            blueprintPrompt = prompt;
+            return schema.parse(
+              buildBlueprintGuardBundle({
+                projectName: "React Core",
+                projectSlug: "react-core",
+                description: "A faithful React-oriented build path.",
+                tags: ["typescript", "react"]
+              })
+            );
+          }
+
+          if (schemaName === "construct_authored_blueprint_step") {
+            return schema.parse({
+              summary: "Teach the first real React-oriented slice.",
+              doc: "Implement the learner-owned gap in `src/index.ts`.",
+              lessonSlides: [
+                markdownSlide("## Keep the artifact faithful\n\nWe are building the React-oriented system that was requested."),
+                markdownSlide("## First real slice\n\nStart with one concrete behavior that belongs to that system.")
+              ],
+              checks: []
+            });
+          }
+
+          throw new Error(`Unexpected schema request: ${schemaName}`);
+        }
+      },
+      logger: {
+        info() {},
+        debug() {},
+        trace() {},
+        warn() {},
+        error() {}
+      }
+    });
+
+    const questionJob = service.createPlanningQuestionsJob({
+      goal: "implement reactjs from scratch in typescript"
+    });
+    const questionResult = await waitForJobCompletion(service, questionJob.jobId);
+    const questionSession = questionResult.result as {
+      session: { sessionId: string; questions: Array<{ id: string }> };
+    };
+
+    const planJob = service.createPlanningPlanJob({
+      sessionId: questionSession.session.sessionId,
+      answers: questionSession.session.questions.map((question, index) => ({
+        questionId: question.id,
+        answerType: "option" as const,
+        optionId: index === 0 ? "framework" : "solid"
+      }))
+    });
+
+    await waitForJobCompletion(service, planJob.jobId);
+    await new Promise((resolve) => {
+      setTimeout(resolve, 50);
+    });
+
+    const parsedPlanPrompt = JSON.parse(planPrompt) as {
+      artifactLock: {
+        needsClarification: boolean;
+        requestedTechnology: string[];
+      };
+    };
+    const parsedBlueprintPrompt = JSON.parse(blueprintPrompt) as {
+      artifactLock: {
+        needsClarification: boolean;
+        requestedTechnology: string[];
+      };
+    };
+
+    assert.equal(parsedPlanPrompt.artifactLock.needsClarification, true);
+    assert.deepEqual(parsedPlanPrompt.artifactLock.requestedTechnology, ["react", "reactjs"]);
+    assert.equal(parsedBlueprintPrompt.artifactLock.needsClarification, true);
+    assert.deepEqual(parsedBlueprintPrompt.artifactLock.requestedTechnology, ["react", "reactjs"]);
+  } finally {
+    // Leave this temp tree in place for the rest of the process because
+    // background persistence bookkeeping can still touch it just after the
+    // planning job reports completion.
   }
 });
 

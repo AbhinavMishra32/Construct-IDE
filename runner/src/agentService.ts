@@ -84,6 +84,7 @@ import {
   type AgentPersistence,
   type PersistedGeneratedBlueprintRecord
 } from "./agentPersistence";
+import { resolveArtifactLock, type ArtifactLockDecision } from "./creationPipelineV2";
 import { getCurrentUserId } from "./authContext";
 import { ConstructAuthService } from "./authService";
 import {
@@ -263,6 +264,7 @@ type QuestionGraphState = {
   jobId: string;
   request: PlanningSessionStartRequest;
   knowledgeBase: UserKnowledgeBase;
+  artifactLock: ArtifactLockDecision | null;
   goalScope: GoalScope | null;
   projectShapeResearch: ResearchDigest | null;
   prerequisiteResearch: ResearchDigest | null;
@@ -276,6 +278,7 @@ type PlanGraphState = {
   session: PlanningSession;
   resumeFromCheckpoint: boolean;
   knowledgeBase: UserKnowledgeBase;
+  artifactLock: ArtifactLockDecision | null;
   goalScope: GoalScope | null;
   architectureResearch: ResearchDigest | null;
   dependencyResearch: ResearchDigest | null;
@@ -3588,6 +3591,7 @@ export class ConstructAgentService {
       jobId: Annotation<string>(),
       request: Annotation<PlanningSessionStartRequest>(),
       knowledgeBase: Annotation<UserKnowledgeBase>(),
+      artifactLock: Annotation<ArtifactLockDecision | null>(),
       goalScope: Annotation<GoalScope | null>(),
       projectShapeResearch: Annotation<ResearchDigest | null>(),
       prerequisiteResearch: Annotation<ResearchDigest | null>(),
@@ -3613,10 +3617,16 @@ export class ConstructAgentService {
           );
         })
       }))
+      .addNode("lockArtifact", async (state) => ({
+        artifactLock: await this.withStage(jobId, "artifact-lock", "Locking the requested artifact", "The Architect is pinning down the requested artifact before it chooses scope or tailoring questions so the project identity does not drift.", async () => {
+          return resolveArtifactLock(state.request.goal);
+        })
+      }))
       .addNode("determineScope", async (state) => ({
         goalScope: await this.withStage(jobId, "scope-analysis", "Scoping the request", "The Architect is deciding how large the project should be and whether broad external research is justified.", async () => {
           return this.determineGoalScope(
             state.request.goal,
+            state.artifactLock ?? undefined,
             this.buildJobUsageContext(jobId, {
               stage: "scope-analysis",
               operation: "goal scope analysis"
@@ -3673,6 +3683,7 @@ export class ConstructAgentService {
               prompt: JSON.stringify(
                 {
                   goal: state.request.goal,
+                  artifactLock: state.artifactLock,
                   goalScope: state.goalScope,
                   priorKnowledge: serializeKnowledgeBaseForPrompt(state.knowledgeBase),
                   research: compactResearchDigest(state.mergedResearch)
@@ -3697,7 +3708,8 @@ export class ConstructAgentService {
       }))
       .addEdge(START, "loadKnowledgeBase")
       .addEdge("loadKnowledgeBase", "extractGoalSelfReport")
-      .addEdge("extractGoalSelfReport", "determineScope")
+      .addEdge("extractGoalSelfReport", "lockArtifact")
+      .addEdge("lockArtifact", "determineScope")
       .addEdge("determineScope", "researchProjectShape")
       .addEdge("determineScope", "researchPrerequisites")
       .addEdge("researchProjectShape", "mergeResearch")
@@ -3711,6 +3723,7 @@ export class ConstructAgentService {
         jobId,
         request,
         knowledgeBase: createEmptyKnowledgeBase(this.now().toISOString()),
+        artifactLock: null,
         goalScope: null,
         projectShapeResearch: null,
         prerequisiteResearch: null,
@@ -3797,6 +3810,7 @@ export class ConstructAgentService {
       session: Annotation<PlanningSession>(),
       resumeFromCheckpoint: Annotation<boolean>(),
       knowledgeBase: Annotation<UserKnowledgeBase>(),
+      artifactLock: Annotation<ArtifactLockDecision | null>(),
       goalScope: Annotation<GoalScope | null>(),
       architectureResearch: Annotation<ResearchDigest | null>(),
       dependencyResearch: Annotation<ResearchDigest | null>(),
@@ -3822,6 +3836,7 @@ export class ConstructAgentService {
           state.resumeFromCheckpoint
             ? await this.determineGoalScope(
                 state.session.goal,
+                state.artifactLock ?? undefined,
                 this.buildJobUsageContext(jobId, {
                   sessionId: state.session.sessionId,
                   stage: "scope-analysis",
@@ -3831,6 +3846,7 @@ export class ConstructAgentService {
             : await this.withStage(jobId, "scope-analysis", "Scoping the request", "The Architect is deciding how large the generated project should be before it spends tokens on research and blueprint synthesis.", async () => {
                 return this.determineGoalScope(
                   state.session.goal,
+                  state.artifactLock ?? undefined,
                   this.buildJobUsageContext(jobId, {
                     sessionId: state.session.sessionId,
                     stage: "scope-analysis",
@@ -3959,6 +3975,7 @@ export class ConstructAgentService {
               prompt: JSON.stringify(
                 {
                   session: state.session,
+                  artifactLock: state.artifactLock,
                   goalScope: state.goalScope,
                   answers: resolvedAnswers,
                   priorKnowledge: serializeKnowledgeBaseForPrompt(state.knowledgeBase),
@@ -4048,6 +4065,7 @@ export class ConstructAgentService {
                 jobId,
                 session: state.session,
                 plan: state.plan,
+                artifactLock: state.artifactLock,
                 goalScope: state.goalScope,
                 answers: resolvedAnswers,
                 knowledgeBase: state.knowledgeBase,
@@ -4061,6 +4079,7 @@ export class ConstructAgentService {
                 jobId,
                 session: state.session,
                 plan: state.plan,
+                artifactLock: state.artifactLock,
                 goalScope: state.goalScope,
                 answers: resolvedAnswers,
                 knowledgeBase: state.knowledgeBase,
@@ -4159,6 +4178,7 @@ export class ConstructAgentService {
               prompt: JSON.stringify(
                 {
                   session: state.session,
+                  artifactLock: state.artifactLock,
                   goalScope: state.goalScope,
                   answers: resolvedAnswers,
                   plan: state.plan,
@@ -4299,6 +4319,7 @@ export class ConstructAgentService {
         session,
         resumeFromCheckpoint: planningCheckpoint !== null,
         knowledgeBase: createEmptyKnowledgeBase(this.now().toISOString()),
+        artifactLock: resolveArtifactLock(session.goal),
         goalScope: planningCheckpoint?.goalScope ?? null,
         architectureResearch: null,
         dependencyResearch: null,
@@ -4808,6 +4829,7 @@ export class ConstructAgentService {
 
   private async determineGoalScope(
     goal: string,
+    artifactLock?: ArtifactLockDecision,
     usage?: LanguageModelUsageContext
   ): Promise<GoalScope> {
     try {
@@ -4817,7 +4839,8 @@ export class ConstructAgentService {
         instructions: buildGoalScopeInstructions(),
         prompt: JSON.stringify(
           {
-            goal
+            goal,
+            artifactLock: artifactLock ?? null
           },
           null,
           2
@@ -5201,6 +5224,7 @@ export class ConstructAgentService {
     jobId: string;
     session: PlanningSession;
     plan: GeneratedProjectPlan | null;
+    artifactLock: ArtifactLockDecision | null;
     goalScope: GoalScope | null;
     answers: ResolvedPlanningAnswer[];
     knowledgeBase: UserKnowledgeBase;
@@ -5255,6 +5279,7 @@ export class ConstructAgentService {
       prompt: JSON.stringify(
         {
           session: input.session,
+          artifactLock: input.artifactLock,
           goalScope: input.goalScope,
           answers: input.answers,
           planSpine: input.plan,
@@ -5337,6 +5362,7 @@ export class ConstructAgentService {
         jobId: input.jobId,
         session: input.session,
         plan: input.plan,
+        artifactLock: input.artifactLock,
         goalScope: input.goalScope,
         answers: input.answers,
         knowledgeBase: input.knowledgeBase,
@@ -5353,6 +5379,7 @@ export class ConstructAgentService {
     jobId: string;
     session: PlanningSession;
     plan: GeneratedProjectPlan | null;
+    artifactLock: ArtifactLockDecision | null;
     goalScope: GoalScope | null;
     answers: ResolvedPlanningAnswer[];
     knowledgeBase: UserKnowledgeBase;
@@ -5437,6 +5464,7 @@ export class ConstructAgentService {
                   prompt: JSON.stringify(
                     {
                       session: input.session,
+                      artifactLock: input.artifactLock,
                       goalScope: input.goalScope,
                       answers: input.answers,
                       planSpine: plan,
@@ -5472,6 +5500,7 @@ export class ConstructAgentService {
                 prompt: JSON.stringify(
                     {
                       session: input.session,
+                      artifactLock: input.artifactLock,
                       goalScope: input.goalScope,
                       answers: input.answers,
                       planSpine: plan,
@@ -11320,6 +11349,7 @@ function buildGoalScopeInstructions(): string {
     "You are Construct's Architect agent.",
     "Decide how large the requested project should be before planning or research begins.",
     "Also decide the request's engagementMode: implementation-first, learning-first, or balanced.",
+    "If artifactLock is provided, treat it as the project-identity guardrail for the rest of this decision.",
     "Do not force the request into canned scope labels. Describe the scope in your own words using scopeSummary and artifactShape.",
     "artifactShape should be your own concise description of the primary artifact to build, such as 'todo class', 'single module', 'cli app', or 'compiler pipeline'.",
     "engagementMode should be implementation-first when the user primarily wants to build, ship, recreate, port, or implement an artifact, even if they say 'from scratch'.",
@@ -11327,6 +11357,7 @@ function buildGoalScopeInstructions(): string {
     "engagementMode should be balanced when the request clearly mixes both building and learning.",
     "Treat 'from scratch' as a request to start from zero on the requested artifact, not as permission to replace the artifact with a tiny tutorial surrogate.",
     "Do not mistake a framework or library named in the goal for an implicit request to study that framework broadly. Treat it as the build substrate unless the user explicitly asks to learn it.",
+    "If artifactLock.needsClarification is true, preserve that ambiguity honestly in artifactShape and rationale instead of collapsing it into a generic app, demo project, or survey course.",
     "complexityScore is a 0-100 estimate of how large and multi-part the project really is.",
     "shouldResearch should be false only when broad web research would clearly be wasteful for this specific request.",
     "recommendedQuestionCount should be the minimum number of intake questions needed to personalize the path.",
@@ -11342,6 +11373,7 @@ function buildQuestionGenerationInstructions(): string {
     "You are Construct's Architect agent.",
     "Your job is to prepare the intake phase for a serious local AI developer IDE.",
     "Given a project goal, prior stored learner knowledge, and optional lightweight web research, generate project-tailoring intake questions.",
+    "artifactLock describes the requested artifact identity and whether it still needs clarification.",
     "priorKnowledge is a recursive concept graph. Parent topics roll up from child subtopics, so inspect the deepest relevant concepts before deciding what to ask.",
     "These are tailoring questions, not assessment questions and not quiz questions.",
     "Ask only the minimum questions needed to personalize the build path.",
@@ -11360,6 +11392,7 @@ function buildQuestionGenerationInstructions(): string {
     "Use goalScope.scopeSummary and goalScope.artifactShape to decide how local or broad the intake should be.",
     "Use goalScope.engagementMode to decide whether the intake should optimize more for shipping momentum, teaching depth, or a balance of both.",
     "If engagementMode is implementation-first, ask only what is needed to help the learner build the requested artifact effectively. Do not turn the named framework, library, or platform into a broad curriculum topic by default.",
+    "If artifactLock.needsClarification is true, spend one intake question clarifying the requested artifact directly instead of silently guessing or substituting a tutorial-friendly project.",
     "Do not use intake questions to quietly swap the requested artifact for a more convenient demo artifact. Questions may tune pacing, support level, or build order, but the project should remain the same artifact the user asked for unless they explicitly redirect it.",
     "If engagementMode is learning-first, it is acceptable to ask where Construct should slow down and explain more first-principles context.",
     "Do not ask about concepts that are already clearly comfortable in the prior knowledge base unless the new goal materially changes their meaning.",
@@ -11391,6 +11424,7 @@ function buildPlanGenerationInstructions(): string {
     "You are Construct's Architect agent.",
     "Generate the stable spine for a serious developer IDE that helps the learner build real systems in-place.",
     "The learner will build the real project in-place, so every step must contribute to the final system.",
+    "artifactLock is the project-identity guardrail. Use it to keep the requested artifact faithful all the way through the plan.",
     "Use goalScope.engagementMode to decide how implementation-first, learning-first, or balanced the plan should feel.",
     "Think in terms of capabilities, milestones, staged commits, and dependency-aware visible outcomes.",
     "Do not assume the future frontier will stay static forever. The near-term route may adapt after evaluation points.",
@@ -11404,6 +11438,7 @@ function buildPlanGenerationInstructions(): string {
     "If engagementMode is implementation-first, keep the plan centered on shipping the requested artifact. Only insert prerequisite teaching that directly unblocks the next implementation step.",
     "Do not reinterpret a build request as a broad course on the named framework, library, language, or platform unless the goal or learner answers explicitly ask for that.",
     "Do not silently substitute a different showcase project, demo app, or tutorial-friendly artifact for the requested artifact. If the goal says 'implement reactjs from scratch', plan a React-like system or another faithful interpretation of that request, not an unrelated Todo SPA unless the user asked for one.",
+    "If artifactLock.needsClarification is true, keep the step plan honest about that ambiguity and preserve room for clarification instead of pretending the artifact has already been settled to a generic app.",
     "Keep the total number of steps within goalScope.recommendedMinSteps and goalScope.recommendedMaxSteps.",
     "Use goalScope.scopeSummary and goalScope.artifactShape to decide how narrow or broad the plan should be.",
     "summary should describe the artifact being implemented and the build path through it. Avoid framing the summary as a tutorial, introduction, or survey of the named technology unless engagementMode is learning-first.",
@@ -11425,6 +11460,7 @@ function buildBlueprintGenerationInstructions(): string {
     "You are Construct's Architect agent.",
     "Generate a real project blueprint for the learner to implement in-place.",
     "Construct now follows a stable spine plus adaptive frontier architecture.",
+    "artifactLock is the project-identity guardrail for this blueprint. Do not let the authored files drift away from it.",
     "The canonical final project must stay coherent, but only the next 1-3 visible steps should carry the deepest authored detail.",
     "The prompt includes planSpine for the full long-range dependency order and frontierPlanSteps for the only steps that should be deeply authored right now.",
     "priorKnowledge is a recursive learner graph. Use the most relevant subtopics to decide how much to explain, which examples to choose, and where the learner will need hand-holding.",
@@ -11435,6 +11471,7 @@ function buildBlueprintGenerationInstructions(): string {
     "canonicalFiles are the solved versions of the learner-owned implementation files.",
     "learnerFiles must only cover the current frontierPlanSteps and must correspond to the same file paths as the canonical implementation for those frontier capabilities, but with focused TASK markers and incomplete implementations the learner must fill in.",
     "Honor the requested artifact literally. Do not rewrite the project into a different app or tutorial-friendly surrogate just because it is easier to scaffold or teach.",
+    "If artifactLock.needsClarification is true, preserve the faithful ambiguous interpretation already carried by the plan rather than collapsing it into a generic demo app.",
     "Every learnerFile must be visibly incomplete at the anchored task region. The learner should need to edit code before the hidden test for that step can pass.",
     "Do not return learnerFiles that already match canonicalFiles, already satisfy the hidden validation, or merely restate the solved implementation with a passive comment.",
     "Use an explicit unfinished task affordance at each anchor such as TASK/TODO markers with a failing stub, NotImplemented error, todo!(), unimplemented!(), or an equivalent language-appropriate unfinished implementation.",
@@ -11525,6 +11562,7 @@ function buildBlueprintRepairInstructions(): string {
   return [
     "You are Construct's Architect agent.",
     "Repair a previously generated project blueprint draft without restarting the whole project design.",
+    "artifactLock is still binding during repair. Do not use repair as an excuse to substitute a different artifact.",
     "You will receive previousDraft plus validationFailure describing exactly why the saved draft was rejected.",
     "Keep the same project goal, step order, teaching intent, and visible frontier unless the validationFailure makes a local rewrite necessary.",
     "Return the full corrected blueprint bundle again as supportFiles, canonicalFiles, learnerFiles, hiddenTests, steps, entrypoints, dependencyGraph, and tags.",
@@ -11548,6 +11586,7 @@ function buildBlueprintFilePatchRepairInstructions(): string {
   return [
     "You are Construct's Architect repair agent.",
     "Repair only the file or files named in repairTargets.",
+    "artifactLock is still binding during repair. Keep the requested artifact faithful while fixing only the targeted files.",
     "Return only the corrected file contents in the matching supportFiles, canonicalFiles, learnerFiles, or hiddenTests arrays.",
     "Leave every untouched file group as an empty array.",
     "Copy the exact repairTargets path strings verbatim. Do not rename them, normalize them differently, or invent sibling file names.",
