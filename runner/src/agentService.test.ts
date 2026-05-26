@@ -3619,6 +3619,102 @@ test("ConstructAgentService narrows intro learner files that pack too many build
   }
 });
 
+test("ConstructAgentService allows a cohesive intro algorithm slice to widen to core-sized learner budget", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "construct-agent-cohesive-intro-algorithm-"));
+
+  try {
+    await expectBlueprintGenerationToComplete(root, {
+      bundle: buildBlueprintGuardBundle({
+        entrypoints: ["src/leakyBucketLimiter.ts"],
+        canonicalFiles: [
+          {
+            path: "src/leakyBucketLimiter.ts",
+            content: [
+              "export type LeakyBucketConfig = {",
+              "  capacity: number;",
+              "  leakPerSecond: number;",
+              "};",
+              "",
+              "export function applyLeakyBucket(",
+              "  config: LeakyBucketConfig,",
+              "  previousLevel: number,",
+              "  elapsedMs: number,",
+              "  cost: number",
+              "): number {",
+              "  const leakedTokens = (elapsedMs / 1000) * config.leakPerSecond;",
+              "  const nextLevel = Math.max(0, previousLevel - leakedTokens);",
+              "  return Math.min(config.capacity, nextLevel + cost);",
+              "}"
+            ].join("\n")
+          }
+        ],
+        learnerFiles: [
+          {
+            path: "src/leakyBucketLimiter.ts",
+            content: [
+              "// TASK:config-and-core-math",
+              "export type LeakyBucketConfig = {",
+              "  capacity: number;",
+              "  leakPerSecond: number;",
+              "};",
+              "",
+              "export function applyLeakyBucket(",
+              "  config: LeakyBucketConfig,",
+              "  previousLevel: number,",
+              "  elapsedMs: number,",
+              "  cost: number",
+              "): number {",
+              "  // TASK:apply-bucket-math",
+              "  // Requirements:",
+              "  // - compute elapsed refill time",
+              "  // - derive leaked tokens",
+              "  // - clamp the bucket at capacity",
+              "  // - decide allow versus deny",
+              "  // - return the updated token count",
+              "  throw new Error('TASK_NOT_IMPLEMENTED: applyLeakyBucket');",
+              "}"
+            ].join("\n")
+          }
+        ],
+        steps: [
+          {
+            id: "step-1-config-and-core-math",
+            title: "Implement the limiter config and core math",
+            summary: "Define the limiter config and implement the core leakage calculation.",
+            doc: [
+              "Edit `src/leakyBucketLimiter.ts`.",
+              "1. Define the config shape used by the limiter.",
+              "2. Compute elapsed refill time.",
+              "3. Derive leaked tokens.",
+              "4. Clamp the bucket at capacity.",
+              "5. Decide allow versus deny.",
+              "6. Return the updated token count."
+            ].join("\n"),
+            lessonSlides: [
+              markdownSlide("## Keep the first slice cohesive\n\nFor a small algorithm module, one file can hold the meaningful first implementation surface."),
+              markdownSlide("## Build the limiter math directly\n\nThe learner should implement the actual bucket behavior instead of being forced through fake micro-steps.")
+            ],
+            anchor: {
+              file: "src/leakyBucketLimiter.ts",
+              marker: "TASK:config-and-core-math",
+              startLine: null,
+              endLine: null
+            },
+            tests: ["hidden_tests/step1_validation.js"],
+            concepts: ["typescript.functions", "algorithms.rate-limiting"],
+            constraints: ["Keep the first step focused on the limiter API and core leakage math."],
+            checks: [],
+            estimatedMinutes: 15,
+            difficulty: "intro" as const
+          }
+        ]
+      })
+    });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("ConstructAgentService rejects blueprint drafts with missing hidden test references", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "construct-agent-step-ref-guard-"));
 
