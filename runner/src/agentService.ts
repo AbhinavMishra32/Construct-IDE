@@ -84,6 +84,11 @@ import {
   type AgentPersistence,
   type PersistedGeneratedBlueprintRecord
 } from "./agentPersistence";
+import {
+  buildDeterministicCreationQuestionDraft,
+  buildUnifiedCreationContract,
+  inferCreationGoalScope
+} from "./creationKernel";
 import { resolveArtifactLock, type ArtifactLockDecision } from "./creationPipelineV2";
 import { getCurrentUserId } from "./authContext";
 import { ConstructAuthService } from "./authService";
@@ -3535,7 +3540,14 @@ export class ConstructAgentService {
     job.updatedAt = event.timestamp;
     this.logAgentEvent(job, event);
     this.broadcast(job, "agent-event", event);
-    void this.recordBlueprintBuildEvent(job.jobId, event);
+    void this.recordBlueprintBuildEvent(job.jobId, event).catch((error) => {
+      this.logger.warn("Failed to record blueprint build event.", {
+        jobId: job.jobId,
+        kind: job.kind,
+        stage: event.stage,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    });
   }
 
   private logAgentEvent(job: AgentJobRecord, event: AgentEvent): void {
@@ -3634,87 +3646,26 @@ export class ConstructAgentService {
           );
         })
       }))
-      .addNode("researchProjectShape", async (state) => ({
-        projectShapeResearch: state.goalScope && !state.goalScope.shouldResearch
-          ? await this.skipResearchStage(
-              jobId,
-              "research-project-shape",
-              "Skipping broad project-shape research",
-              state.goalScope.rationale,
-              `Local-scope shape for: ${state.request.goal}`
-            )
-          : await this.withStage(jobId, "research-project-shape", "Researching the target project shape", "Fetching architecture references, major subsystems, and implementation constraints from Tavily.", async () => {
-              return (await this.getSearch()).research(
-                `Project architecture, core subsystems, and implementation constraints for: ${state.request.goal}`
-              );
-            })
-      }))
-      .addNode("researchPrerequisites", async (state) => ({
-        prerequisiteResearch: state.goalScope && !state.goalScope.shouldResearch
-          ? await this.skipResearchStage(
-              jobId,
-              "research-prerequisites",
-              "Skipping broad prerequisite research",
-              state.goalScope.rationale,
-              `Local-scope prerequisites for: ${state.request.goal}`
-            )
-          : await this.withStage(jobId, "research-prerequisites", "Researching prerequisite skills", "Identifying the language, compiler, and systems concepts this project depends on.", async () => {
-              return (await this.getSearch()).research(
-                `Prerequisite language, compiler, and systems skills needed for: ${state.request.goal}`
-              );
-            })
-      }))
-      .addNode("mergeResearch", async (state) => ({
-        mergedResearch: await this.withStage(jobId, "research-merge", "Combining research signals", "Merging architecture and prerequisite findings into a single planning context.", async () => {
-          return mergeResearchDigests("Combined project-shape and prerequisite research", [
-            state.projectShapeResearch,
-            state.prerequisiteResearch
-          ]);
-        })
-      }))
       .addNode("generateQuestions", async (state) => ({
-        session: await this.withStage(jobId, "question-generation", "Generating project-tailoring questions", "OpenAI is turning the goal and stored knowledge into collaborative intake questions that tailor the project path.", async () => {
-          const stream = this.createModelStreamForwarder(jobId, "question-generation", "question generation");
-          try {
-            const questionDraft = await (await this.getLlm()).parse({
-              schema: PLANNING_QUESTION_DRAFT_SCHEMA,
-              schemaName: "construct_planning_question_draft",
-              instructions: buildQuestionGenerationInstructions(),
-              prompt: JSON.stringify(
-                {
-                  goal: state.request.goal,
-                  artifactLock: state.artifactLock,
-                  goalScope: state.goalScope,
-                  priorKnowledge: serializeKnowledgeBaseForPrompt(state.knowledgeBase),
-                  research: compactResearchDigest(state.mergedResearch)
-                },
-                null,
-                2
-              ),
-              maxOutputTokens: 2_500,
-              verbosity: "medium",
-              stream,
-              usage: this.buildJobUsageContext(jobId, {
-                stage: "question-generation",
-                operation: "planning question generation"
-              })
-            });
+        session: await this.withStage(jobId, "creation-intake", "Preparing build controls", "Construct is locking the artifact and creating a tiny deterministic intake instead of asking the model to invent questions.", async () => {
+          const artifactLock = state.artifactLock ?? resolveArtifactLock(state.request.goal);
+          const goalScope = state.goalScope ?? inferCreationGoalScope(state.request.goal, artifactLock);
+          const questionDraft = PLANNING_QUESTION_DRAFT_SCHEMA.parse(
+            buildDeterministicCreationQuestionDraft({
+              goal: state.request.goal,
+              artifact: artifactLock,
+              goalScope
+            })
+          );
 
-            return this.buildPlanningSession(state.request, questionDraft);
-          } finally {
-            stream.onComplete?.();
-          }
+          return this.buildPlanningSession(state.request, questionDraft);
         })
       }))
       .addEdge(START, "loadKnowledgeBase")
       .addEdge("loadKnowledgeBase", "extractGoalSelfReport")
       .addEdge("extractGoalSelfReport", "lockArtifact")
       .addEdge("lockArtifact", "determineScope")
-      .addEdge("determineScope", "researchProjectShape")
-      .addEdge("determineScope", "researchPrerequisites")
-      .addEdge("researchProjectShape", "mergeResearch")
-      .addEdge("researchPrerequisites", "mergeResearch")
-      .addEdge("mergeResearch", "generateQuestions")
+      .addEdge("determineScope", "generateQuestions")
       .addEdge("generateQuestions", END)
       .compile();
 
@@ -3856,104 +3807,6 @@ export class ConstructAgentService {
               })
         )
       }))
-      .addNode("researchArchitecture", async (state) => ({
-        architectureResearch: state.mergedResearch
-          ? null
-          : state.resumeFromCheckpoint
-          ? state.goalScope && !state.goalScope.shouldResearch
-            ? {
-                query: `Local architecture outline for: ${state.session.goal}`,
-                answer: state.goalScope.rationale,
-                sources: []
-              }
-            : await (await this.getSearch()).research(
-                `${state.session.goal} architecture, core modules, component boundaries`
-              )
-          : state.goalScope && !state.goalScope.shouldResearch
-          ? await this.skipResearchStage(
-              jobId,
-              "research-architecture",
-              "Skipping broad architecture research",
-              state.goalScope.rationale,
-              `Local architecture outline for: ${state.session.goal}`
-            )
-          : await this.withStage(jobId, "research-architecture", "Researching architecture", "Fetching reference material for the requested system shape and major component boundaries.", async () => {
-              return (await this.getSearch()).research(
-                `${state.session.goal} architecture, core modules, component boundaries`
-              );
-            })
-      }))
-      .addNode("researchDependencies", async (state) => ({
-        dependencyResearch: state.mergedResearch
-          ? null
-          : state.resumeFromCheckpoint
-          ? state.goalScope && !state.goalScope.shouldResearch
-            ? {
-                query: `Local dependency order for: ${state.session.goal}`,
-                answer: state.goalScope.rationale,
-                sources: []
-              }
-            : await (await this.getSearch()).research(
-                `${state.session.goal} dependency order, implementation sequence, first real behavior to implement`
-              )
-          : state.goalScope && !state.goalScope.shouldResearch
-          ? await this.skipResearchStage(
-              jobId,
-              "research-dependency-order",
-              "Skipping broad dependency-order research",
-              state.goalScope.rationale,
-              `Local dependency order for: ${state.session.goal}`
-            )
-          : await this.withStage(jobId, "research-dependency-order", "Researching dependency order", "Tracing which modules must exist first and how the build should be sequenced.", async () => {
-              return (await this.getSearch()).research(
-                `${state.session.goal} dependency order, implementation sequence, first real behavior to implement`
-              );
-            })
-      }))
-      .addNode("researchValidation", async (state) => ({
-        validationResearch: state.mergedResearch
-          ? null
-          : state.resumeFromCheckpoint
-          ? state.goalScope && !state.goalScope.shouldResearch
-            ? {
-                query: `Local validation seams for: ${state.session.goal}`,
-                answer: state.goalScope.rationale,
-                sources: []
-              }
-            : await (await this.getSearch()).research(
-                `${state.session.goal} validation strategy, test harness, component-level testing approach`
-              )
-          : state.goalScope && !state.goalScope.shouldResearch
-          ? await this.skipResearchStage(
-              jobId,
-              "research-validation-strategy",
-              "Skipping broad validation research",
-              state.goalScope.rationale,
-              `Local validation seams for: ${state.session.goal}`
-            )
-          : await this.withStage(jobId, "research-validation-strategy", "Researching validation strategy", "Finding good validation seams, harness patterns, and per-component test boundaries.", async () => {
-              return (await this.getSearch()).research(
-                `${state.session.goal} validation strategy, test harness, component-level testing approach`
-              );
-            })
-      }))
-      .addNode("mergeResearch", async (state) => ({
-        mergedResearch: state.mergedResearch ?? (
-          state.resumeFromCheckpoint
-            ? mergeResearchDigests("Combined architecture, dependency-order, and validation research", [
-                state.architectureResearch,
-                state.dependencyResearch,
-                state.validationResearch
-              ])
-            : await this.withStage(jobId, "research-merge", "Combining research signals", "Fusing architecture, dependency, and validation research into a single generation context.", async () => {
-                return mergeResearchDigests("Combined architecture, dependency-order, and validation research", [
-                  state.architectureResearch,
-                  state.dependencyResearch,
-                  state.validationResearch
-                ]);
-              })
-        )
-      }))
       .addNode("generatePlan", async (state) => ({
         plan: state.plan
           ? await (async () => {
@@ -3976,6 +3829,11 @@ export class ConstructAgentService {
                 {
                   session: state.session,
                   artifactLock: state.artifactLock,
+                  creationContract: buildUnifiedCreationContract({
+                    goal: state.session.goal,
+                    artifact: state.artifactLock,
+                    goalScope: state.goalScope
+                  }),
                   goalScope: state.goalScope,
                   answers: resolvedAnswers,
                   priorKnowledge: serializeKnowledgeBaseForPrompt(state.knowledgeBase),
@@ -4179,6 +4037,11 @@ export class ConstructAgentService {
                 {
                   session: state.session,
                   artifactLock: state.artifactLock,
+                  creationContract: buildUnifiedCreationContract({
+                    goal: state.session.goal,
+                    artifact: state.artifactLock,
+                    goalScope: state.goalScope
+                  }),
                   goalScope: state.goalScope,
                   answers: resolvedAnswers,
                   plan: state.plan,
@@ -4299,13 +4162,7 @@ export class ConstructAgentService {
       }))
       .addEdge(START, "loadKnowledgeBase")
       .addEdge("loadKnowledgeBase", "determineScope")
-      .addEdge("determineScope", "researchArchitecture")
-      .addEdge("determineScope", "researchDependencies")
-      .addEdge("determineScope", "researchValidation")
-      .addEdge("researchArchitecture", "mergeResearch")
-      .addEdge("researchDependencies", "mergeResearch")
-      .addEdge("researchValidation", "mergeResearch")
-      .addEdge("mergeResearch", "generatePlan")
+      .addEdge("determineScope", "generatePlan")
       .addEdge("generatePlan", "generateBlueprint")
       .addEdge("generateBlueprint", "authorLessons")
       .addEdge("authorLessons", "persistBlueprint")
@@ -4832,32 +4689,11 @@ export class ConstructAgentService {
     artifactLock?: ArtifactLockDecision,
     usage?: LanguageModelUsageContext
   ): Promise<GoalScope> {
-    try {
-      return await (await this.getLlm()).parse({
-        schema: GOAL_SCOPE_DRAFT_SCHEMA,
-        schemaName: "construct_goal_scope",
-        instructions: buildGoalScopeInstructions(),
-        prompt: JSON.stringify(
-          {
-            goal,
-            artifactLock: artifactLock ?? null
-          },
-          null,
-          2
-        ),
-        maxOutputTokens: 800,
-        verbosity: "low",
-        usage
-      });
-    } catch (error) {
-      const fallback = inferGoalScopeFallback(goal);
-      this.logger.warn("Goal-scope analysis failed. Falling back to heuristic scope.", {
-        goal,
-        error: error instanceof Error ? error.message : "Unknown scope-analysis failure.",
-        fallback
-      });
-      return fallback;
-    }
+    void usage;
+
+    return GOAL_SCOPE_DRAFT_SCHEMA.parse(
+      inferCreationGoalScope(goal, artifactLock ?? resolveArtifactLock(goal))
+    );
   }
 
   private async skipResearchStage(
@@ -5280,6 +5116,11 @@ export class ConstructAgentService {
         {
           session: input.session,
           artifactLock: input.artifactLock,
+          creationContract: buildUnifiedCreationContract({
+            goal: input.session.goal,
+            artifact: input.artifactLock,
+            goalScope: input.goalScope
+          }),
           goalScope: input.goalScope,
           answers: input.answers,
           planSpine: input.plan,
@@ -5465,6 +5306,11 @@ export class ConstructAgentService {
                     {
                       session: input.session,
                       artifactLock: input.artifactLock,
+                      creationContract: buildUnifiedCreationContract({
+                        goal: input.session.goal,
+                        artifact: input.artifactLock,
+                        goalScope: input.goalScope
+                      }),
                       goalScope: input.goalScope,
                       answers: input.answers,
                       planSpine: plan,
@@ -5501,6 +5347,11 @@ export class ConstructAgentService {
                     {
                       session: input.session,
                       artifactLock: input.artifactLock,
+                      creationContract: buildUnifiedCreationContract({
+                        goal: input.session.goal,
+                        artifact: input.artifactLock,
+                        goalScope: input.goalScope
+                      }),
                       goalScope: input.goalScope,
                       answers: input.answers,
                       planSpine: plan,

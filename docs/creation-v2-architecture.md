@@ -328,3 +328,37 @@ expose the next diff
 teach that diff well
 adapt pacing without changing identity
 ```
+
+## Live Kernel Migration
+
+The runner now has a deterministic creation kernel in
+`runner/src/creationKernel.ts`.
+
+The live flow is:
+
+```txt
+goal
+-> artifact lock
+-> deterministic scope
+-> deterministic build-control intake
+-> model plan inside creation contract
+-> model project bundle inside creation contract
+-> model lesson inside creation contract
+```
+
+This deliberately removes several unstable early decisions from the model. The
+model no longer decides whether to ask broad intake questions, whether to run
+local research, or what the creation architecture is. It receives a creation
+contract and generates inside it.
+
+The key product rule is:
+
+```txt
+The solved project is the source of truth.
+Teaching, repair, pacing, and adaptation sit on top of that project.
+```
+
+The existing API still returns planning sessions and answers so the desktop app
+does not need a breaking protocol migration yet, but those "questions" are now
+small build controls rather than model-authored quizzes or course-personality
+surveys.

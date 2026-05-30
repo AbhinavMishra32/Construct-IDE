@@ -436,7 +436,7 @@ async function createAdaptiveFrontierHarness(options: {
     answers: questionSession.session.questions.map((question) => ({
       questionId: question.id,
       answerType: "option" as const,
-      optionId: "partial"
+      optionId: deterministicCreationOptionId(question.id)
     }))
   });
   await waitForJobCompletion(service, planJob.jobId);
@@ -1016,10 +1016,9 @@ test("ConstructAgentService creates question and plan jobs and persists the resu
     };
 
     assert.equal(questionSession.session.detectedLanguage, "rust");
-    assert.equal(questionSession.session.questions.length, 4);
-    assert.ok(loggedStages.includes("research-project-shape"));
-    assert.ok(loggedStages.includes("research-prerequisites"));
-    assert.ok(loggedStages.includes("research-merge"));
+    assert.equal(questionSession.session.questions.length, 2);
+    assert.equal(loggedStages.some((stage) => stage.startsWith("research-")), false);
+    assert.ok(loggedStages.includes("creation-intake"));
 
     const planJob = service.createPlanningPlanJob({
       sessionId: questionSession.session.sessionId,
@@ -1031,7 +1030,7 @@ test("ConstructAgentService creates question and plan jobs and persists the resu
             }
           : {
               answerType: "option" as const,
-              optionId: "partial"
+              optionId: deterministicCreationOptionId(question.id)
             })
       }))
     });
@@ -1635,12 +1634,12 @@ test("ConstructAgentService advances the adaptive frontier after a passed step a
 
     const planJob = service.createPlanningPlanJob({
       sessionId: questionSession.session.sessionId,
-      answers: questionSession.session.questions.map((question) => ({
-        questionId: question.id,
-        answerType: "option" as const,
-        optionId: "partial"
-      }))
-    });
+    answers: questionSession.session.questions.map((question) => ({
+      questionId: question.id,
+      answerType: "option" as const,
+      optionId: deterministicCreationOptionId(question.id)
+    }))
+  });
     await waitForJobCompletion(service, planJob.jobId);
 
     const generatedProjectDirectories = await readdir(
@@ -2445,7 +2444,7 @@ test("ConstructAgentService skips broad research for small local goals", async (
             learnerFiles: [
               {
                 path: "todo.py",
-                content: "class TodoList:\n    # TASK:todo-class\n    raise NotImplementedError\n"
+                content: "class TodoList:\n    ...  # TASK:todo-class\n"
               }
             ],
             hiddenTests: [
@@ -2534,7 +2533,7 @@ test("ConstructAgentService skips broad research for small local goals", async (
           : {
               questionId: question.id,
               answerType: "option" as const,
-              optionId: "fast"
+              optionId: "concise-build-notes"
             }
       )
     });
@@ -2547,38 +2546,20 @@ test("ConstructAgentService skips broad research for small local goals", async (
     assert.equal(planPayload.plan.steps.length, 1);
     assert.ok(
       loggedStages.some((stage) =>
-        stage.includes("research-project-shape:Research skipped for small local scope")
+        stage.includes("creation-intake:Preparing build controls complete")
       )
     );
-    assert.ok(
-      loggedStages.some((stage) =>
-        stage.includes("research-architecture:Research skipped for small local scope")
-      )
-    );
+    assert.equal(loggedStages.some((stage) => stage.includes("research-")), false);
 
-    const knowledgeBaseRaw = await readFile(
-      path.join(root, ".construct", "state", "user-knowledge.json"),
-      "utf8"
-    );
-    const knowledgeBase = JSON.parse(knowledgeBaseRaw) as {
-      concepts: StoredKnowledgeConcept[];
-    };
-    const classesConcept = findKnowledgeConcept(knowledgeBase.concepts, "python.classes");
-
-    assert.ok(classesConcept);
-    assert.ok(
-      classesConcept?.evidence.some(
-        (entry) =>
-          entry.source === "self-report" &&
-          /built one tiny CLI before/i.test(entry.summary)
-      )
-    );
     assert.match(lessonAuthoringInstructions, /teach the exact artifact the learner is about to build/i);
     assert.match(lessonAuthoringInstructions, /near-transfer worked example/i);
     assert.match(lessonAuthoringInstructions, /what you will implement, success looks like, and what is not required in this step/i);
     assert.match(lessonAuthoringInstructions, /step boundary explicit/i);
     assert.match(lessonAuthoringPrompt, /What exact artifact the learner will implement in this step/);
     assert.match(lessonAuthoringPrompt, /What is explicitly out of scope for this step/);
+    await new Promise((resolve) => {
+      setTimeout(resolve, 50);
+    });
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -3178,12 +3159,12 @@ test("ConstructAgentService compiles a construction ladder and scaffolds the lea
 
     const planJob = service.createPlanningPlanJob({
       sessionId: questionSession.session.sessionId,
-      answers: questionSession.session.questions.map((question) => ({
-        questionId: question.id,
-        answerType: "option" as const,
-        optionId: "partial"
-      }))
-    });
+    answers: questionSession.session.questions.map((question) => ({
+      questionId: question.id,
+      answerType: "option" as const,
+      optionId: deterministicCreationOptionId(question.id)
+    }))
+  });
     await waitForJobCompletion(service, planJob.jobId);
 
     const generatedProjectDirectories = await readdir(
@@ -5849,7 +5830,7 @@ async function expectBlueprintGenerationToReject(
     answers: questionSession.session.questions.map((question) => ({
       questionId: question.id,
       answerType: "option" as const,
-      optionId: "solid"
+      optionId: deterministicCreationOptionId(question.id)
     }))
   });
 
@@ -6029,7 +6010,7 @@ async function expectBlueprintGenerationToComplete(
     answers: questionSession.session.questions.map((question) => ({
       questionId: question.id,
       answerType: "option" as const,
-      optionId: "solid"
+      optionId: deterministicCreationOptionId(question.id)
     }))
   });
 
@@ -6039,6 +6020,19 @@ async function expectBlueprintGenerationToComplete(
     setTimeout(resolve, 50);
   });
   return service;
+}
+
+function deterministicCreationOptionId(questionId: string): string {
+  switch (questionId) {
+    case "question.artifact-identity":
+      return "build-technology";
+    case "question.artifact-first-slice":
+      return "first-working-behavior";
+    case "question.teaching-depth":
+      return "concise-build-notes";
+    default:
+      throw new Error(`No deterministic test answer for planning question ${questionId}`);
+  }
 }
 
 test("goal-scope fallback keeps build requests implementation-first instead of recasting them as learning goals", async () => {
@@ -6068,7 +6062,7 @@ test("goal-scope fallback keeps build requests implementation-first instead of r
     }).determineGoalScope("nextjs implementation from scratch in typescript");
 
     assert.equal(scope.engagementMode, "implementation-first");
-    assert.equal(scope.artifactShape, "app");
+    assert.equal(scope.artifactShape, "next + nextjs artifact");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -6133,38 +6127,21 @@ test("goal-scope fallback does not treat from scratch alone as beginner hand-hol
     }).determineGoalScope("implement reactjs from scratch in typescript");
 
     assert.equal(scope.engagementMode, "implementation-first");
-    assert.equal(scope.recommendedMinSteps, 3);
+    assert.equal(scope.recommendedMinSteps, 2);
     assert.equal(scope.recommendedMaxSteps, 6);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
 });
 
-test("goal-scope analysis receives artifact-lock context for ambiguous framework-only build requests", async () => {
+test("goal-scope analysis is deterministic and preserves ambiguous framework-only artifact locks", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "construct-agent-goal-scope-artifact-lock-"));
-  let scopePrompt = "";
 
   try {
     const service = new ConstructAgentService(root, {
       llm: {
-        async parse({ schemaName, schema, prompt }) {
-          if (schemaName !== "construct_goal_scope") {
-            throw new Error(`Unexpected schema request: ${schemaName}`);
-          }
-
-          scopePrompt = prompt;
-
-          return schema.parse({
-            engagementMode: "implementation-first",
-            scopeSummary: "Ambiguous framework-oriented request",
-            artifactShape: "react framework or app built with react",
-            complexityScore: 55,
-            shouldResearch: true,
-            recommendedQuestionCount: 3,
-            recommendedMinSteps: 3,
-            recommendedMaxSteps: 6,
-            rationale: "The request needs artifact clarification before deeper planning."
-          });
+        async parse({ schemaName }) {
+          throw new Error(`Unexpected schema request: ${schemaName}`);
         }
       },
       logger: {
@@ -6176,119 +6153,42 @@ test("goal-scope analysis receives artifact-lock context for ambiguous framework
       }
     });
 
-    await (service as unknown as {
+    const artifactLock = resolveArtifactLock("implement reactjs from scratch in typescript");
+    const scope = await (service as unknown as {
       determineGoalScope(
         goal: string,
         artifactLock?: ReturnType<typeof resolveArtifactLock>
       ): Promise<{
         engagementMode: string;
+        artifactShape: string;
+        shouldResearch: boolean;
+        recommendedQuestionCount: number;
       }>;
     }).determineGoalScope(
       "implement reactjs from scratch in typescript",
-      resolveArtifactLock("implement reactjs from scratch in typescript")
+      artifactLock
     );
 
-    const parsedPrompt = JSON.parse(scopePrompt) as {
-      artifactLock: {
-        needsClarification: boolean;
-        requestedTechnology: string[];
-        artifactNouns: string[];
-      };
-    };
-
-    assert.equal(parsedPrompt.artifactLock.needsClarification, true);
-    assert.deepEqual(parsedPrompt.artifactLock.requestedTechnology, ["react", "reactjs"]);
-    assert.deepEqual(parsedPrompt.artifactLock.artifactNouns, []);
+    assert.equal(artifactLock.needsClarification, true);
+    assert.deepEqual(artifactLock.requestedTechnology, ["react", "reactjs"]);
+    assert.deepEqual(artifactLock.artifactNouns, []);
+    assert.equal(scope.engagementMode, "implementation-first");
+    assert.equal(scope.shouldResearch, false);
+    assert.equal(scope.recommendedQuestionCount, 2);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
 });
 
-test("planning question generation receives artifact-lock context before tailoring intake", async () => {
+test("planning question generation uses deterministic artifact-lock intake", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "construct-agent-question-artifact-lock-"));
-  let questionPrompt = "";
 
   try {
     const service = new ConstructAgentService(root, {
       llm: {
-        async parse({ schemaName, schema, prompt }) {
+        async parse({ schemaName, schema }) {
           if (schemaName === "construct_goal_self_report_signals") {
             return schema.parse({ signals: [] });
-          }
-
-          if (schemaName === "construct_goal_scope") {
-            return schema.parse({
-              engagementMode: "implementation-first",
-              scopeSummary: "Ambiguous framework-oriented request",
-              artifactShape: "react framework or app built with react",
-              complexityScore: 55,
-              shouldResearch: false,
-              recommendedQuestionCount: 2,
-              recommendedMinSteps: 3,
-              recommendedMaxSteps: 6,
-              rationale: "Clarify the artifact before expanding the build path."
-            });
-          }
-
-          if (schemaName === "construct_planning_question_draft") {
-            questionPrompt = prompt;
-
-            return schema.parse({
-              detectedLanguage: "typescript",
-              detectedDomain: "react",
-              questions: [
-                {
-                  conceptId: "workflow.artifact-choice",
-                  category: "workflow",
-                  prompt: "Which outcome are you actually aiming for with React here?",
-                  options: [
-                    {
-                      id: "framework",
-                      label: "Build a React-like system",
-                      description: "I want to implement the framework or runtime mechanics themselves.",
-                      confidenceSignal: "comfortable"
-                    },
-                    {
-                      id: "app",
-                      label: "Build an app using React",
-                      description: "I want the real project to be an application built with React.",
-                      confidenceSignal: "shaky"
-                    },
-                    {
-                      id: "unsure",
-                      label: "Help me choose",
-                      description: "I want Construct to explain the difference before we commit.",
-                      confidenceSignal: "new"
-                    }
-                  ]
-                },
-                {
-                  conceptId: "typescript.react-support",
-                  category: "language",
-                  prompt: "How much TypeScript support do you want while building it?",
-                  options: [
-                    {
-                      id: "solid",
-                      label: "Light support",
-                      description: "I mainly want momentum and only targeted explanations.",
-                      confidenceSignal: "comfortable"
-                    },
-                    {
-                      id: "partial",
-                      label: "Some support",
-                      description: "I want examples around the trickier TypeScript boundaries.",
-                      confidenceSignal: "shaky"
-                    },
-                    {
-                      id: "new",
-                      label: "Deep support",
-                      description: "I want TypeScript decisions explained carefully as we build.",
-                      confidenceSignal: "new"
-                    }
-                  ]
-                }
-              ]
-            });
           }
 
           throw new Error(`Unexpected schema request: ${schemaName}`);
@@ -6307,21 +6207,23 @@ test("planning question generation receives artifact-lock context before tailori
       goal: "implement reactjs from scratch in typescript"
     });
 
-    await waitForJobCompletion(service, questionJob.jobId);
-
-    const parsedPrompt = JSON.parse(questionPrompt) as {
-      artifactLock: {
-        needsClarification: boolean;
-        requestedTechnology: string[];
-      };
-      goalScope: {
-        artifactShape: string;
+    const result = await waitForJobCompletion(service, questionJob.jobId);
+    const payload = result.result as {
+      session: {
+        detectedLanguage: string;
+        detectedDomain: string;
+        questions: Array<{ conceptId: string; prompt: string; options: Array<{ id: string }> }>;
       };
     };
 
-    assert.equal(parsedPrompt.artifactLock.needsClarification, true);
-    assert.deepEqual(parsedPrompt.artifactLock.requestedTechnology, ["react", "reactjs"]);
-    assert.equal(parsedPrompt.goalScope.artifactShape, "react framework or app built with react");
+    assert.equal(payload.session.detectedLanguage, "typescript");
+    assert.equal(payload.session.questions.length, 2);
+    assert.equal(payload.session.questions[0]?.conceptId, "artifact.identity");
+    assert.match(payload.session.questions[0]?.prompt ?? "", /which artifact/i);
+    assert.deepEqual(
+      payload.session.questions[0]?.options.map((option) => option.id),
+      ["build-technology", "build-with-technology", "smallest-faithful-artifact"]
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -6338,79 +6240,6 @@ test("plan and blueprint generation keep artifact-lock context alive for ambiguo
         async parse({ schemaName, schema, prompt }) {
           if (schemaName === "construct_goal_self_report_signals") {
             return schema.parse({ signals: [] });
-          }
-
-          if (schemaName === "construct_goal_scope") {
-            return schema.parse({
-              engagementMode: "implementation-first",
-              scopeSummary: "Ambiguous framework-oriented request",
-              artifactShape: "react framework or app built with react",
-              complexityScore: 55,
-              shouldResearch: false,
-              recommendedQuestionCount: 2,
-              recommendedMinSteps: 3,
-              recommendedMaxSteps: 6,
-              rationale: "Clarify the artifact early and then preserve that interpretation."
-            });
-          }
-
-          if (schemaName === "construct_planning_question_draft") {
-            return schema.parse({
-              detectedLanguage: "typescript",
-              detectedDomain: "react",
-              questions: [
-                {
-                  conceptId: "workflow.artifact-choice",
-                  category: "workflow",
-                  prompt: "Which outcome are you actually aiming for with React here?",
-                  options: [
-                    {
-                      id: "framework",
-                      label: "Build a React-like system",
-                      description: "I want to implement the framework or runtime mechanics themselves.",
-                      confidenceSignal: "comfortable"
-                    },
-                    {
-                      id: "app",
-                      label: "Build an app using React",
-                      description: "I want the real project to be an application built with React.",
-                      confidenceSignal: "shaky"
-                    },
-                    {
-                      id: "unsure",
-                      label: "Help me choose",
-                      description: "I want Construct to explain the difference before we commit.",
-                      confidenceSignal: "new"
-                    }
-                  ]
-                },
-                {
-                  conceptId: "typescript.react-support",
-                  category: "language",
-                  prompt: "How much TypeScript support do you want while building it?",
-                  options: [
-                    {
-                      id: "solid",
-                      label: "Light support",
-                      description: "I mainly want momentum and only targeted explanations.",
-                      confidenceSignal: "comfortable"
-                    },
-                    {
-                      id: "partial",
-                      label: "Some support",
-                      description: "I want examples around the trickier TypeScript boundaries.",
-                      confidenceSignal: "shaky"
-                    },
-                    {
-                      id: "new",
-                      label: "Deep support",
-                      description: "I want TypeScript decisions explained carefully as we build.",
-                      confidenceSignal: "new"
-                    }
-                  ]
-                }
-              ]
-            });
           }
 
           if (schemaName === "construct_generated_project_plan") {
@@ -6511,7 +6340,7 @@ test("plan and blueprint generation keep artifact-lock context alive for ambiguo
       answers: questionSession.session.questions.map((question, index) => ({
         questionId: question.id,
         answerType: "option" as const,
-        optionId: index === 0 ? "framework" : "solid"
+        optionId: index === 0 ? "build-technology" : "concise-build-notes"
       }))
     });
 
@@ -6525,18 +6354,41 @@ test("plan and blueprint generation keep artifact-lock context alive for ambiguo
         needsClarification: boolean;
         requestedTechnology: string[];
       };
+      creationContract: {
+        architecture: string;
+        stagePolicy: {
+          intake: string;
+          scope: string;
+          research: string;
+        };
+      };
     };
     const parsedBlueprintPrompt = JSON.parse(blueprintPrompt) as {
       artifactLock: {
         needsClarification: boolean;
         requestedTechnology: string[];
       };
+      creationContract: {
+        architecture: string;
+        hardRules: string[];
+      };
     };
 
     assert.equal(parsedPlanPrompt.artifactLock.needsClarification, true);
     assert.deepEqual(parsedPlanPrompt.artifactLock.requestedTechnology, ["react", "reactjs"]);
+    assert.equal(parsedPlanPrompt.creationContract.architecture, "artifact-first-project-compiler");
+    assert.equal(parsedPlanPrompt.creationContract.stagePolicy.intake, "deterministic");
+    assert.equal(parsedPlanPrompt.creationContract.stagePolicy.scope, "deterministic");
+    assert.equal(parsedPlanPrompt.creationContract.stagePolicy.research, "disabled-by-default");
     assert.equal(parsedBlueprintPrompt.artifactLock.needsClarification, true);
     assert.deepEqual(parsedBlueprintPrompt.artifactLock.requestedTechnology, ["react", "reactjs"]);
+    assert.equal(parsedBlueprintPrompt.creationContract.architecture, "artifact-first-project-compiler");
+    assert.equal(
+      parsedBlueprintPrompt.creationContract.hardRules.some((rule) =>
+        /may not replace the requested artifact/i.test(rule)
+      ),
+      true
+    );
   } finally {
     // Leave this temp tree in place for the rest of the process because
     // background persistence bookkeeping can still touch it just after the

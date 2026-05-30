@@ -7,6 +7,11 @@ import {
   resolveArtifactLock,
   shouldClarifyRequestedArtifact
 } from "./creationPipelineV2.js";
+import {
+  buildDeterministicCreationQuestionDraft,
+  buildUnifiedCreationContract,
+  inferCreationGoalScope
+} from "./creationKernel.js";
 
 test("creation v2 asks for clarification when a technology-only request is artifact-ambiguous", () => {
   const decision = resolveArtifactLock("implement reactjs from scratch in typescript");
@@ -46,4 +51,46 @@ test("creation v2 outline preserves artifact-first invariants", () => {
     true
   );
   assert.equal(shouldClarifyRequestedArtifact("build a local RAG backend in NestJS"), false);
+});
+
+test("creation kernel scopes and asks intake deterministically without model-shaped quiz questions", () => {
+  const artifact = resolveArtifactLock("implement a leaky bucket limiter in typescript");
+  const scope = inferCreationGoalScope("implement a leaky bucket limiter in typescript", artifact);
+  const intake = buildDeterministicCreationQuestionDraft({
+    goal: "implement a leaky bucket limiter in typescript",
+    artifact,
+    goalScope: scope
+  });
+
+  assert.equal(scope.shouldResearch, false);
+  assert.equal(scope.engagementMode, "implementation-first");
+  assert.equal(intake.questions.length, 2);
+  assert.equal(intake.questions[0]?.conceptId, "artifact.first-slice");
+  assert.doesNotMatch(intake.questions.map((question) => question.prompt).join("\n"), /which command|what syntax|correct api/i);
+});
+
+test("creation kernel gives ambiguous technology requests one artifact-lock question", () => {
+  const artifact = resolveArtifactLock("implement reactjs from scratch in typescript");
+  const scope = inferCreationGoalScope("implement reactjs from scratch in typescript", artifact);
+  const intake = buildDeterministicCreationQuestionDraft({
+    goal: "implement reactjs from scratch in typescript",
+    artifact,
+    goalScope: scope
+  });
+
+  assert.equal(artifact.needsClarification, true);
+  assert.equal(intake.questions[0]?.conceptId, "artifact.identity");
+  assert.match(intake.questions[0]?.prompt ?? "", /which artifact/i);
+});
+
+test("creation kernel contract makes solved project the source of truth", () => {
+  const contract = buildUnifiedCreationContract({
+    goal: "build a NestJS backend for research agents"
+  });
+
+  assert.equal(contract.architecture, "artifact-first-project-compiler");
+  assert.equal(contract.stagePolicy.scope, "deterministic");
+  assert.equal(contract.stagePolicy.intake, "deterministic");
+  assert.equal(contract.stagePolicy.research, "disabled-by-default");
+  assert.equal(contract.hardRules.some((rule) => /solved project is the source of truth/i.test(rule)), true);
 });
