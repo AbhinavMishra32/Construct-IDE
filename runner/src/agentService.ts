@@ -3743,7 +3743,8 @@ export class ConstructAgentService {
 
     const session = planningState.session;
     const resolvedAnswers = this.resolvePlanningAnswers(session, request.answers);
-    const answersSignature = this.buildPlanningAnswersSignature(resolvedAnswers);
+    const plannerAnswers = this.getPlannerAnswersForCreation(resolvedAnswers);
+    const answersSignature = this.buildPlanningAnswersSignature(plannerAnswers);
     const planningCheckpoint = await this.readPlanningBuildCheckpoint(
       request.sessionId,
       answersSignature
@@ -3835,7 +3836,7 @@ export class ConstructAgentService {
                     goalScope: state.goalScope
                   }),
                   goalScope: state.goalScope,
-                  answers: resolvedAnswers,
+                  answers: plannerAnswers,
                   priorKnowledge: serializeKnowledgeBaseForPrompt(state.knowledgeBase),
                   research: compactResearchDigest(state.mergedResearch)
                 },
@@ -3888,7 +3889,7 @@ export class ConstructAgentService {
               state.knowledgeBase,
               state.session,
               plan,
-              resolvedAnswers
+              plannerAnswers
             );
             await this.writePlanningBuildCheckpoint(state.session.sessionId, {
               answersSignature,
@@ -3925,7 +3926,7 @@ export class ConstructAgentService {
                 plan: state.plan,
                 artifactLock: state.artifactLock,
                 goalScope: state.goalScope,
-                answers: resolvedAnswers,
+                answers: plannerAnswers,
                 knowledgeBase: state.knowledgeBase,
                 mergedResearch: state.mergedResearch,
                 failedDraft: state.blueprintDraft,
@@ -3939,7 +3940,7 @@ export class ConstructAgentService {
                 plan: state.plan,
                 artifactLock: state.artifactLock,
                 goalScope: state.goalScope,
-                answers: resolvedAnswers,
+                answers: plannerAnswers,
                 knowledgeBase: state.knowledgeBase,
                 mergedResearch: state.mergedResearch,
                 answersSignature,
@@ -4043,7 +4044,7 @@ export class ConstructAgentService {
                     goalScope: state.goalScope
                   }),
                   goalScope: state.goalScope,
-                  answers: resolvedAnswers,
+                  answers: plannerAnswers,
                   plan: state.plan,
                   priorKnowledge: serializeKnowledgeBaseForPrompt(state.knowledgeBase),
                   research: compactResearchDigest(state.mergedResearch),
@@ -4994,6 +4995,15 @@ export class ConstructAgentService {
         customResponse: answer.customResponse?.trim() ?? null
       }))
     );
+  }
+
+  private getPlannerAnswersForCreation(
+    _answers: ResolvedPlanningAnswer[]
+  ): ResolvedPlanningAnswer[] {
+    // Temporarily disable answer-driven course mutation during project creation.
+    // We still persist raw intake answers for the UI and future architecture work,
+    // but the planner/blueprint path should stay stable until the new system lands.
+    return [];
   }
 
   private async readPlanningBuildCheckpoint(
@@ -11359,8 +11369,8 @@ function buildPlanGenerationInstructions(): string {
     "Think in terms of capabilities, milestones, staged commits, and dependency-aware visible outcomes.",
     "Do not assume the future frontier will stay static forever. The near-term route may adapt after evaluation points.",
     "priorKnowledge is a recursive learner graph with nested concepts and sub-concepts. Use the deepest relevant weak or strong nodes, not just the top-level topic names.",
-    "Use the learner's answers and prior knowledge to change step order, not just explanations.",
-    "The answers payload includes the original question, the available options, and either a selected option or a custom freeform learner response. Use that full context rather than treating answers as generic scores.",
+    "The answers payload is currently stored for UI continuity and future architecture work.",
+    "Do not use learner answers to change step order, scope, or artifact identity during creation right now.",
     "Architecture components must reflect true dependency order.",
     "Each step must include concrete validation focus, implementation notes, quiz focus, and hidden validation focus.",
     "Prefer steps that unlock later modules and make the dependency chain explicit.",
@@ -11416,7 +11426,8 @@ function buildBlueprintGenerationInstructions(): string {
     "For JavaScript and TypeScript blueprints, hiddenTests must use Jest-style tests. Do not import from `node:test`, do not use Node's built-in test runner, and do not set package.json scripts.test to `node --test`.",
     "Every .json file in any returned file group must be parseable JSON.",
     "Every step anchor.file must exist in learnerFiles, every step anchor.marker must appear literally inside that learner file, every step test path must exist in hiddenTests, and every entrypoint must exist in supportFiles, canonicalFiles, or learnerFiles.",
-    "The answers payload includes the original question, the available options, and either a selected option or a custom freeform learner response. Use that context to tune scope, docs, checks, and task ordering.",
+    "The answers payload is currently stored for UI continuity and future architecture work.",
+    "Do not use learner answers to retune scope, docs, checks, or task ordering during creation right now.",
     "Every returned step must point to a real learnerFile anchor in the current frontier and include lessonSlides, doc text, comprehension checks, constraints, and targeted tests.",
     "Do not deeply author every future step in the spine. Only the frontierPlanSteps should come back as learnerFiles, hiddenTests, and steps.",
     "lessonSlides are the main teaching surface. Each slide must be an object with a blocks array.",
@@ -11865,7 +11876,8 @@ function buildLessonAuthoringInstructions(context: {
     "priorKnowledge is a recursive learner graph with nested subtopics and scores. Match the lesson to the deepest relevant concept gaps or strengths, not only the parent label.",
     "Your job is to rewrite the step teaching content so this step reads like a serious docs chapter before the learner reaches checks or code.",
     "Return only the authored content for this single step: summary, doc, lessonSlides, and checks.",
-    "The answers payload includes the original question, the available options, and either a selected option or a custom freeform learner response. Use that context to decide how much to explain, what examples to choose, and where to slow down.",
+    "The answers payload is currently stored for UI continuity and future architecture work.",
+    "Do not use learner answers to reshape the lesson chapter during creation right now.",
     "Use goalScope.engagementMode to decide whether this chapter should be implementation-first, learning-first, or balanced.",
     "Rewrite lessonSlides, doc, and checks so they match the learner's level and the real code task.",
     "lessonSlides must be rich markdown and should read like documentation or a high-quality course chapter.",
