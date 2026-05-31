@@ -38,7 +38,7 @@ export type CreationQuestionDraft = {
 
 export type UnifiedCreationContract = {
   architecture: "artifact-first-project-compiler";
-  pedagogy: "naive-first-progressive";
+  courseCreator: CourseCreatorPolicy;
   artifact: ArtifactLockDecision;
   goalScope: CreationGoalScopeDecision;
   stageOrder: CreationV2Stage[];
@@ -53,6 +53,17 @@ export type UnifiedCreationContract = {
     blueprint: "model-inside-contract";
     lesson: "model-inside-contract";
   };
+};
+
+export type CourseCreatorStage = "plan" | "blueprint" | "frontier" | "lesson";
+
+export type CourseCreatorPolicy = {
+  id: string;
+  role: string;
+  systemPrompt: string;
+  abilities: string[];
+  globalDirectives: string[];
+  stageDirectives: Record<CourseCreatorStage, string[]>;
 };
 
 const IMPLEMENTATION_HINTS = [
@@ -109,6 +120,80 @@ const SMALL_ARTIFACT_HINTS = [
   "module",
   "limiter"
 ];
+
+const DEFAULT_COURSE_CREATOR_SYSTEM_PROMPT = [
+  "Create real build courses by acting as the central course designer, project architect, and lesson author.",
+  "The course shape is controlled by this policy, not by scattered domain-specific prompt rules.",
+  "Default style: progressive construction. Start with the simplest honest version of the requested artifact, use examples/tests to expose its shortcomings, then add exactly the next capability that fixes the current shortcoming.",
+  "Every generated file, step, explanation, check, and hidden test must serve that course shape."
+].join("\n");
+
+function getCourseCreatorSystemPromptOverride(): string | null {
+  const override = process.env.CONSTRUCT_COURSE_CREATOR_SYSTEM_PROMPT?.trim();
+  return override && override.length > 0 ? override : null;
+}
+
+export function buildDefaultCourseCreatorPolicy(): CourseCreatorPolicy {
+  return {
+    id: "central-progressive-build-course",
+    role: "central-course-creator",
+    systemPrompt: getCourseCreatorSystemPromptOverride() ?? DEFAULT_COURSE_CREATOR_SYSTEM_PROMPT,
+    abilities: [
+      "choose the course architecture and step sequence inside the locked artifact",
+      "choose the first learner-visible slice and the later upgrade path",
+      "write solved files, learner-owned files, tests, checks, and lessons as one coherent course design",
+      "change course style when the course creator system prompt changes, without requiring domain-specific code changes",
+      "keep all stage outputs aligned to the same course shape"
+    ],
+    globalDirectives: [
+      "The course creator policy is the source of truth for pedagogy and course shape.",
+      "Do not encode course style as one-off domain exceptions in individual stages.",
+      "The default first slice should be the smallest honest behavior the learner can understand and implement.",
+      "Later slices should be motivated by concrete shortcomings from examples, tests, or observed behavior.",
+      "Do not start with a polished production shell and one TODO hole unless the policy explicitly asks for production-first teaching.",
+      "Every new field, helper, method, abstraction, validation rule, or dependency should appear when the lesson can explain why that piece now exists."
+    ],
+    stageDirectives: {
+      plan: [
+        "Design the whole step sequence from the course creator policy.",
+        "Make the dependency chain and upgrade pressure explicit: simple version, shortcoming, next capability.",
+        "Do not hardcode the default progressive style to one domain; apply the policy to whatever artifact is locked."
+      ],
+      blueprint: [
+        "Generate learner files, canonical files, hidden tests, and step metadata that all follow the same course creator policy.",
+        "The first frontier should expose only the current learner-owned concept boundary.",
+        "If a future production concept is not the current slice, keep it out of the learner file or leave it solved/invisible until its step."
+      ],
+      frontier: [
+        "Regenerate only the next frontier according to the same course creator policy that produced the spine.",
+        "If the current frontier violates the policy, rewrite the frontier shape instead of patching around the symptom.",
+        "Use recent learner evidence to adjust explanation and slice size, not artifact identity."
+      ],
+      lesson: [
+        "Teach the exact current slice selected by the course creator policy.",
+        "Explain why each visible code piece exists before asking the learner to implement it.",
+        "Bridge from the current limitation to the next step, but do not teach future production machinery as if it were required now."
+      ]
+    }
+  };
+}
+
+export function formatCourseCreatorPolicyForPrompt(stage: CourseCreatorStage): string[] {
+  const policy = buildDefaultCourseCreatorPolicy();
+  return [
+    "Course creator policy:",
+    `- id: ${policy.id}`,
+    `- role: ${policy.role}`,
+    "Course creator system prompt:",
+    policy.systemPrompt,
+    "Course creator abilities:",
+    ...policy.abilities.map((ability) => `- ${ability}`),
+    "Global course directives:",
+    ...policy.globalDirectives.map((directive) => `- ${directive}`),
+    `Stage directives for ${stage}:`,
+    ...policy.stageDirectives[stage].map((directive) => `- ${directive}`)
+  ];
+}
 
 function normalizeGoal(goal: string): string {
   return goal.trim().toLowerCase().replace(/\s+/g, " ");
@@ -337,7 +422,7 @@ export function buildUnifiedCreationContract(input: {
 
   return {
     architecture: "artifact-first-project-compiler",
-    pedagogy: "naive-first-progressive",
+    courseCreator: buildDefaultCourseCreatorPolicy(),
     artifact,
     goalScope,
     stageOrder: [...CREATION_V2_STAGE_ORDER],
@@ -348,8 +433,8 @@ export function buildUnifiedCreationContract(input: {
       "decide whether external research is allowed"
     ],
     modelResponsibilities: [
+      "act as the central course creator described by creationContract.courseCreator",
       "design a dependency-ordered project spine inside the locked artifact",
-      "start algorithm and library artifacts with the simplest honest version before introducing production structure",
       "generate the runnable solved project",
       "derive the current learner-owned diff from that solved project",
       "write practical teaching for the exact current diff"
@@ -358,8 +443,8 @@ export function buildUnifiedCreationContract(input: {
       "The model may not replace the requested artifact with a tutorial surrogate.",
       "The model may not use intake answers to mutate artifact identity.",
       "The model may change pacing and lesson depth, but not what is being built.",
-      "The first implementation slice should be the naive version of the real artifact, then each later slice fixes a concrete shortcoming exposed by examples or tests.",
-      "Do not expose production-ready private fields, validation helpers, async queues, injected clocks, or full config objects in the first step unless that is the smallest honest artifact.",
+      "The course creator policy controls the course shape across plan, blueprint, frontier, and lesson stages.",
+      "Changing the course creator system prompt should be enough to change the generated course style without changing stage-specific code.",
       "The solved project is the source of truth; teaching is layered on top.",
       "Repair may fix files and step boundaries, but may not redesign the project."
     ],

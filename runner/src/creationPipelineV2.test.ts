@@ -9,6 +9,7 @@ import {
 } from "./creationPipelineV2.js";
 import {
   buildDeterministicCreationQuestionDraft,
+  formatCourseCreatorPolicyForPrompt,
   buildUnifiedCreationContract,
   inferCreationGoalScope
 } from "./creationKernel.js";
@@ -89,21 +90,43 @@ test("creation kernel contract makes solved project the source of truth", () => 
   });
 
   assert.equal(contract.architecture, "artifact-first-project-compiler");
-  assert.equal(contract.pedagogy, "naive-first-progressive");
+  assert.equal(contract.courseCreator.role, "central-course-creator");
   assert.equal(contract.stagePolicy.scope, "deterministic");
   assert.equal(contract.stagePolicy.intake, "deterministic");
   assert.equal(contract.stagePolicy.research, "disabled-by-default");
   assert.equal(contract.hardRules.some((rule) => /solved project is the source of truth/i.test(rule)), true);
 });
 
-test("creation kernel requires naive-first progression for compact algorithm artifacts", () => {
+test("creation kernel centralizes course style in the course creator policy", () => {
   const contract = buildUnifiedCreationContract({
     goal: "implement a leaky bucket limiter in typescript"
   });
-  const rules = contract.hardRules.join("\n");
+  const promptLines = formatCourseCreatorPolicyForPrompt("plan").join("\n");
 
   assert.equal(contract.goalScope.scopeSummary, "Small real artifact");
-  assert.match(rules, /first implementation slice should be the naive version/i);
-  assert.match(rules, /concrete shortcoming/i);
-  assert.match(rules, /Do not expose production-ready private fields/i);
+  assert.match(contract.courseCreator.systemPrompt, /progressive construction/i);
+  assert.match(promptLines, /Course creator policy/i);
+  assert.match(promptLines, /simple version, shortcoming, next capability/i);
+  assert.match(contract.hardRules.join("\n"), /course creator policy controls the course shape/i);
+});
+
+test("creation kernel lets the course creator system prompt override course shape", () => {
+  const previous = process.env.CONSTRUCT_COURSE_CREATOR_SYSTEM_PROMPT;
+  process.env.CONSTRUCT_COURSE_CREATOR_SYSTEM_PROMPT = "Production-first course: start with the final public API, then teach internals after.";
+
+  try {
+    const contract = buildUnifiedCreationContract({
+      goal: "implement a leaky bucket limiter in typescript"
+    });
+    const promptLines = formatCourseCreatorPolicyForPrompt("blueprint").join("\n");
+
+    assert.match(contract.courseCreator.systemPrompt, /Production-first course/i);
+    assert.match(promptLines, /Production-first course/i);
+  } finally {
+    if (previous === undefined) {
+      delete process.env.CONSTRUCT_COURSE_CREATOR_SYSTEM_PROMPT;
+    } else {
+      process.env.CONSTRUCT_COURSE_CREATOR_SYSTEM_PROMPT = previous;
+    }
+  }
 });

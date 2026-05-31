@@ -3600,7 +3600,7 @@ test("ConstructAgentService narrows intro learner files that pack too many build
   }
 });
 
-test("ConstructAgentService accepts a naive-first intro algorithm slice without production-shaped scaffolding", async () => {
+test("ConstructAgentService accepts the default progressive intro slice without production-shaped scaffolding", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "construct-agent-cohesive-intro-algorithm-"));
 
   try {
