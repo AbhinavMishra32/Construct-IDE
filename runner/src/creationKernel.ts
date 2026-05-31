@@ -38,6 +38,7 @@ export type CreationQuestionDraft = {
 
 export type UnifiedCreationContract = {
   architecture: "artifact-first-project-compiler";
+  pedagogy: "naive-first-progressive";
   artifact: ArtifactLockDecision;
   goalScope: CreationGoalScopeDecision;
   stageOrder: CreationV2Stage[];
@@ -336,6 +337,7 @@ export function buildUnifiedCreationContract(input: {
 
   return {
     architecture: "artifact-first-project-compiler",
+    pedagogy: "naive-first-progressive",
     artifact,
     goalScope,
     stageOrder: [...CREATION_V2_STAGE_ORDER],
@@ -347,6 +349,7 @@ export function buildUnifiedCreationContract(input: {
     ],
     modelResponsibilities: [
       "design a dependency-ordered project spine inside the locked artifact",
+      "start algorithm and library artifacts with the simplest honest version before introducing production structure",
       "generate the runnable solved project",
       "derive the current learner-owned diff from that solved project",
       "write practical teaching for the exact current diff"
@@ -355,6 +358,8 @@ export function buildUnifiedCreationContract(input: {
       "The model may not replace the requested artifact with a tutorial surrogate.",
       "The model may not use intake answers to mutate artifact identity.",
       "The model may change pacing and lesson depth, but not what is being built.",
+      "The first implementation slice should be the naive version of the real artifact, then each later slice fixes a concrete shortcoming exposed by examples or tests.",
+      "Do not expose production-ready private fields, validation helpers, async queues, injected clocks, or full config objects in the first step unless that is the smallest honest artifact.",
       "The solved project is the source of truth; teaching is layered on top.",
       "Repair may fix files and step boundaries, but may not redesign the project."
     ],

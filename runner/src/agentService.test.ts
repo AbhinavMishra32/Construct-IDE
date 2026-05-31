@@ -3600,7 +3600,7 @@ test("ConstructAgentService narrows intro learner files that pack too many build
   }
 });
 
-test("ConstructAgentService allows a cohesive intro algorithm slice to widen to core-sized learner budget", async () => {
+test("ConstructAgentService accepts a naive-first intro algorithm slice without production-shaped scaffolding", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "construct-agent-cohesive-intro-algorithm-"));
 
   try {
@@ -3611,20 +3611,13 @@ test("ConstructAgentService allows a cohesive intro algorithm slice to widen to 
           {
             path: "src/leakyBucketLimiter.ts",
             content: [
-              "export type LeakyBucketConfig = {",
-              "  capacity: number;",
-              "  leakPerSecond: number;",
-              "};",
+              "export class LeakyBucketLimiter {",
+              "  private level = 0;",
               "",
-              "export function applyLeakyBucket(",
-              "  config: LeakyBucketConfig,",
-              "  previousLevel: number,",
-              "  elapsedMs: number,",
-              "  cost: number",
-              "): number {",
-              "  const leakedTokens = (elapsedMs / 1000) * config.leakPerSecond;",
-              "  const nextLevel = Math.max(0, previousLevel - leakedTokens);",
-              "  return Math.min(config.capacity, nextLevel + cost);",
+              "  addDrop(): number {",
+              "    this.level += 1;",
+              "    return this.level;",
+              "  }",
               "}"
             ].join("\n")
           }
@@ -3633,59 +3626,42 @@ test("ConstructAgentService allows a cohesive intro algorithm slice to widen to 
           {
             path: "src/leakyBucketLimiter.ts",
             content: [
-              "// TASK:config-and-core-math",
-              "export type LeakyBucketConfig = {",
-              "  capacity: number;",
-              "  leakPerSecond: number;",
-              "};",
+              "export class LeakyBucketLimiter {",
+              "  private level = 0;",
               "",
-              "export function applyLeakyBucket(",
-              "  config: LeakyBucketConfig,",
-              "  previousLevel: number,",
-              "  elapsedMs: number,",
-              "  cost: number",
-              "): number {",
-              "  // TASK:apply-bucket-math",
-              "  // Requirements:",
-              "  // - compute elapsed refill time",
-              "  // - derive leaked tokens",
-              "  // - clamp the bucket at capacity",
-              "  // - decide allow versus deny",
-              "  // - return the updated token count",
-              "  throw new Error('TASK_NOT_IMPLEMENTED: applyLeakyBucket');",
+              "  addDrop(): number {",
+              "    // TASK:add-one-drop",
+              "    throw new Error('TASK_NOT_IMPLEMENTED: addDrop');",
+              "  }",
               "}"
             ].join("\n")
           }
         ],
         steps: [
           {
-            id: "step-1-config-and-core-math",
-            title: "Implement the limiter config and core math",
-            summary: "Define the limiter config and implement the core leakage calculation.",
+            id: "step-1-naive-bucket-counter",
+            title: "Build the naive bucket counter",
+            summary: "Start the limiter as one understandable class with one private level and one method that adds a drop.",
             doc: [
               "Edit `src/leakyBucketLimiter.ts`.",
-              "1. Define the config shape used by the limiter.",
-              "2. Compute elapsed refill time.",
-              "3. Derive leaked tokens.",
-              "4. Clamp the bucket at capacity.",
-              "5. Decide allow versus deny.",
-              "6. Return the updated token count."
+              "1. Increment the private bucket level by one.",
+              "2. Return the new level."
             ].join("\n"),
             lessonSlides: [
-              markdownSlide("## Keep the first slice cohesive\n\nFor a small algorithm module, one file can hold the meaningful first implementation surface."),
-              markdownSlide("## Build the limiter math directly\n\nThe learner should implement the actual bucket behavior instead of being forced through fake micro-steps.")
+              markdownSlide("## Start naive on purpose\n\nBefore capacity, clocks, queues, or validation exist, the learner should understand that a leaky bucket is state that changes when work arrives."),
+              markdownSlide("## Why this first field exists\n\nThe `level` field is the one number the class remembers between method calls. The first method only proves that state changes can be observed.")
             ],
             anchor: {
               file: "src/leakyBucketLimiter.ts",
-              marker: "TASK:config-and-core-math",
+              marker: "TASK:add-one-drop",
               startLine: null,
               endLine: null
             },
             tests: ["hidden_tests/step1_validation.js"],
             concepts: ["typescript.functions", "algorithms.rate-limiting"],
-            constraints: ["Keep the first step focused on the limiter API and core leakage math."],
+            constraints: ["Do not add capacity, clocks, validation, async queues, or config yet."],
             checks: [],
-            estimatedMinutes: 15,
+            estimatedMinutes: 8,
             difficulty: "intro" as const
           }
         ]

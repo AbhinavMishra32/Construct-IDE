@@ -89,8 +89,21 @@ test("creation kernel contract makes solved project the source of truth", () => 
   });
 
   assert.equal(contract.architecture, "artifact-first-project-compiler");
+  assert.equal(contract.pedagogy, "naive-first-progressive");
   assert.equal(contract.stagePolicy.scope, "deterministic");
   assert.equal(contract.stagePolicy.intake, "deterministic");
   assert.equal(contract.stagePolicy.research, "disabled-by-default");
   assert.equal(contract.hardRules.some((rule) => /solved project is the source of truth/i.test(rule)), true);
+});
+
+test("creation kernel requires naive-first progression for compact algorithm artifacts", () => {
+  const contract = buildUnifiedCreationContract({
+    goal: "implement a leaky bucket limiter in typescript"
+  });
+  const rules = contract.hardRules.join("\n");
+
+  assert.equal(contract.goalScope.scopeSummary, "Small real artifact");
+  assert.match(rules, /first implementation slice should be the naive version/i);
+  assert.match(rules, /concrete shortcoming/i);
+  assert.match(rules, /Do not expose production-ready private fields/i);
 });
