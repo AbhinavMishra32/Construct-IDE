@@ -90,7 +90,11 @@ import {
   buildUnifiedCreationContract,
   inferCreationGoalScope
 } from "./creationKernel";
-import { buildCreationAgentEventPayload } from "./creationMastraAgent";
+import {
+  buildCreationAgentEventPayload,
+  createCreationAgentTools,
+  type CreationAgentToolId
+} from "./creationMastraAgent";
 import { resolveArtifactLock, type ArtifactLockDecision } from "./creationPipelineV2";
 import { getCurrentUserId } from "./authContext";
 import { ConstructAuthService } from "./authService";
@@ -2861,7 +2865,7 @@ export class ConstructAgentService {
     });
 
     void this.runJob(job, async () => {
-      const result = await this.runPlanningQuestionGraph(job.jobId, request);
+      const result = await this.runCreationAgentIntake(job.jobId, request);
       return PlanningSessionStartResponseSchema.parse(result);
     });
 
@@ -2887,7 +2891,7 @@ export class ConstructAgentService {
     });
 
     void this.runJob(job, async () => {
-      const result = await this.runPlanningPlanGraph(job.jobId, request);
+      const result = await this.runCreationAgentProject(job.jobId, request);
       return PlanningSessionCompleteResponseSchema.parse(result);
     });
 
@@ -3603,107 +3607,131 @@ export class ConstructAgentService {
     }
   }
 
-  private async runPlanningQuestionGraph(
+  private async runCreationAgentTool<T>(input: {
+    jobId: string;
+    tool: CreationAgentToolId;
+    stage: string;
+    title: string;
+    detail: string;
+    summary?: string;
+    payload?: Record<string, unknown>;
+    task: () => Promise<T>;
+  }): Promise<T> {
+    let taskResult: T | null = null;
+    const tools = createCreationAgentTools({
+      [input.tool]: async () => {
+        taskResult = await input.task();
+        return {
+          ok: true,
+          tool: input.tool,
+          summary: input.summary ?? input.title
+        };
+      }
+    });
+    const toolContext = {} as Parameters<NonNullable<typeof tools[typeof input.tool]["execute"]>>[1];
+
+    await this.withStage(
+      input.jobId,
+      input.stage,
+      input.title,
+      input.detail,
+      async () => {
+        await tools[input.tool].execute?.({
+          jobId: input.jobId,
+          stage: input.stage,
+          summary: input.summary ?? input.title,
+          payload: input.payload
+        }, toolContext);
+
+        return taskResult as T;
+      }
+    );
+
+    return taskResult as T;
+  }
+
+  private async runCreationAgentIntake(
     jobId: string,
     request: PlanningSessionStartRequest
   ): Promise<PlanningSessionStartResponse> {
     await this.ensurePlanningQuestionsBuild(jobId, request);
 
-    const StateAnnotation = Annotation.Root({
-      jobId: Annotation<string>(),
-      request: Annotation<PlanningSessionStartRequest>(),
-      knowledgeBase: Annotation<UserKnowledgeBase>(),
-      artifactLock: Annotation<ArtifactLockDecision | null>(),
-      goalScope: Annotation<GoalScope | null>(),
-      projectShapeResearch: Annotation<ResearchDigest | null>(),
-      prerequisiteResearch: Annotation<ResearchDigest | null>(),
-      mergedResearch: Annotation<ResearchDigest | null>(),
-      session: Annotation<PlanningSession | null>()
+    const emptyKnowledgeBase = createEmptyKnowledgeBase(this.now().toISOString());
+    const storedKnowledgeBase = await this.runCreationAgentTool({
+      jobId,
+      tool: "scope-course",
+      stage: "knowledge-base",
+      title: "Loading learner knowledge",
+      detail: "The creation agent is loading stored concept history and past goals before it scopes the new project.",
+      task: async () => this.readKnowledgeBase()
+    });
+    const knowledgeBase = await this.runCreationAgentTool({
+      jobId,
+      tool: "scope-course",
+      stage: "goal-self-report",
+      title: "Reading learner self-description",
+      detail: "The creation agent is extracting explicit self-reported skill signals from the project prompt.",
+      task: async () => this.extractGoalSelfReportKnowledge(
+        storedKnowledgeBase ?? emptyKnowledgeBase,
+        request.goal,
+        this.buildJobUsageContext(jobId, {
+          stage: "goal-self-report",
+          operation: "goal self-report extraction"
+        })
+      )
+    });
+    const artifactLock = await this.runCreationAgentTool({
+      jobId,
+      tool: "lock-artifact",
+      stage: "artifact-lock",
+      title: "Locking the requested artifact",
+      detail: "The creation agent is pinning down the exact artifact identity before it creates any course path.",
+      task: async () => resolveArtifactLock(request.goal)
+    });
+    const goalScope = await this.runCreationAgentTool({
+      jobId,
+      tool: "scope-course",
+      stage: "scope-analysis",
+      title: "Scoping the course",
+      detail: "The creation agent is choosing the first slice, project size, and whether research is actually useful.",
+      payload: {
+        artifactKind: artifactLock.kind,
+        artifactLabel: artifactLock.label
+      },
+      task: async () => this.determineGoalScope(
+        request.goal,
+        artifactLock,
+        this.buildJobUsageContext(jobId, {
+          stage: "scope-analysis",
+          operation: "goal scope analysis"
+        })
+      )
+    });
+    const session = await this.runCreationAgentTool({
+      jobId,
+      tool: "scope-course",
+      stage: "creation-intake",
+      title: "Preparing build controls",
+      detail: "The creation agent is creating only the tiny intake needed to lock course style and learner support.",
+      payload: {
+        goalScope: goalScope.scopeSummary,
+        knowledgeUpdatedAt: knowledgeBase.updatedAt
+      },
+      task: async () => {
+        const questionDraft = PLANNING_QUESTION_DRAFT_SCHEMA.parse(
+          buildDeterministicCreationQuestionDraft({
+            goal: request.goal,
+            artifact: artifactLock,
+            goalScope
+          })
+        );
+
+        return this.buildPlanningSession(request, questionDraft);
+      }
     });
 
-    const graph = new StateGraph(StateAnnotation)
-      .addNode("loadKnowledgeBase", async (state) => ({
-        knowledgeBase: await this.withStage(jobId, "knowledge-base", "Loading learner knowledge", "Pulling stored concept history and past goals.", async () => {
-          return this.readKnowledgeBase();
-        })
-      }))
-      .addNode("extractGoalSelfReport", async (state) => ({
-        knowledgeBase: await this.withStage(jobId, "goal-self-report", "Reading learner self-description", "The creation agent is extracting any explicit self-reported skill signals directly from the project prompt before it writes intake questions.", async () => {
-          return this.extractGoalSelfReportKnowledge(
-            state.knowledgeBase,
-            state.request.goal,
-            this.buildJobUsageContext(jobId, {
-              stage: "goal-self-report",
-              operation: "goal self-report extraction"
-            })
-          );
-        })
-      }))
-      .addNode("lockArtifact", async (state) => ({
-        artifactLock: await this.withStage(jobId, "artifact-lock", "Locking the requested artifact", "The creation agent is pinning down the requested artifact before it chooses scope or tailoring questions so the project identity does not drift.", async () => {
-          return resolveArtifactLock(state.request.goal);
-        })
-      }))
-      .addNode("determineScope", async (state) => ({
-        goalScope: await this.withStage(jobId, "scope-analysis", "Scoping the request", "The creation agent is deciding how large the project should be and whether broad external research is justified.", async () => {
-          return this.determineGoalScope(
-            state.request.goal,
-            state.artifactLock ?? undefined,
-            this.buildJobUsageContext(jobId, {
-              stage: "scope-analysis",
-              operation: "goal scope analysis"
-            })
-          );
-        })
-      }))
-      .addNode("generateQuestions", async (state) => ({
-        session: await this.withStage(jobId, "creation-intake", "Preparing build controls", "Construct is locking the artifact and creating a tiny deterministic intake instead of asking the model to invent questions.", async () => {
-          const artifactLock = state.artifactLock ?? resolveArtifactLock(state.request.goal);
-          const goalScope = state.goalScope ?? inferCreationGoalScope(state.request.goal, artifactLock);
-          const questionDraft = PLANNING_QUESTION_DRAFT_SCHEMA.parse(
-            buildDeterministicCreationQuestionDraft({
-              goal: state.request.goal,
-              artifact: artifactLock,
-              goalScope
-            })
-          );
-
-          return this.buildPlanningSession(state.request, questionDraft);
-        })
-      }))
-      .addEdge(START, "loadKnowledgeBase")
-      .addEdge("loadKnowledgeBase", "extractGoalSelfReport")
-      .addEdge("extractGoalSelfReport", "lockArtifact")
-      .addEdge("lockArtifact", "determineScope")
-      .addEdge("determineScope", "generateQuestions")
-      .addEdge("generateQuestions", END)
-      .compile();
-
-    const result = await graph.invoke(
-      {
-        jobId,
-        request,
-        knowledgeBase: createEmptyKnowledgeBase(this.now().toISOString()),
-        artifactLock: null,
-        goalScope: null,
-        projectShapeResearch: null,
-        prerequisiteResearch: null,
-        mergedResearch: null,
-        session: null
-      },
-      {
-        runName: "construct:planning-questions",
-        tags: ["construct", "planning-questions"],
-        metadata: {
-          buildId: this.buildIdsByJobId.get(jobId) ?? null,
-          goal: request.goal,
-          langSmithProject: resolveLangSmithProjectName()
-        }
-      }
-    );
-
     await this.writePlanningState({
-      session: result.session,
+      session,
       plan: null,
       answers: []
     });
@@ -3711,37 +3739,37 @@ export class ConstructAgentService {
     await this.mutateBlueprintBuildForJob(jobId, (current) => ({
       ...(current ??
         createBlueprintBuildRecord({
-          id: result.session?.sessionId ?? randomUUID(),
-          sessionId: result.session?.sessionId ?? null,
+          id: session.sessionId,
+          sessionId: session.sessionId,
           goal: request.goal,
-          detectedLanguage: result.session?.detectedLanguage ?? null,
-          detectedDomain: result.session?.detectedDomain ?? null,
+          detectedLanguage: session.detectedLanguage,
+          detectedDomain: session.detectedDomain,
           status: "questions-ready",
           currentStage: "question-generation",
-          currentStageTitle: "Tailoring questions ready",
+          currentStageTitle: "Creation controls ready",
           currentStageStatus: "completed",
           createdAt: this.now().toISOString(),
           updatedAt: this.now().toISOString()
         })),
-      sessionId: result.session?.sessionId ?? current?.sessionId ?? null,
-      goal: result.session?.goal ?? request.goal,
-      detectedLanguage: result.session?.detectedLanguage ?? current?.detectedLanguage ?? null,
-      detectedDomain: result.session?.detectedDomain ?? current?.detectedDomain ?? null,
+      sessionId: session.sessionId,
+      goal: session.goal,
+      detectedLanguage: session.detectedLanguage,
+      detectedDomain: session.detectedDomain,
       status: "questions-ready",
-      currentStage: "question-generation",
-      currentStageTitle: "Tailoring questions ready",
+      currentStage: "creation-intake",
+      currentStageTitle: "Creation controls ready",
       currentStageStatus: "completed",
-      planningSession: result.session,
+      planningSession: session,
       updatedAt: this.now().toISOString(),
       lastError: null
     }));
 
     return PlanningSessionStartResponseSchema.parse({
-      session: result.session
+      session
     });
   }
 
-  private async runPlanningPlanGraph(
+  private async runCreationAgentProject(
     jobId: string,
     request: PlanningSessionCompleteRequest
   ): Promise<PlanningSessionCompleteResponse> {
@@ -3759,6 +3787,7 @@ export class ConstructAgentService {
       request.sessionId,
       answersSignature
     );
+
     await this.ensurePlanningPlanBuild(jobId, request, session);
     await this.writePlanningState({
       session,
@@ -3766,455 +3795,434 @@ export class ConstructAgentService {
       answers: request.answers
     });
 
-    const StateAnnotation = Annotation.Root({
-      jobId: Annotation<string>(),
-      request: Annotation<PlanningSessionCompleteRequest>(),
-      session: Annotation<PlanningSession>(),
-      resumeFromCheckpoint: Annotation<boolean>(),
-      knowledgeBase: Annotation<UserKnowledgeBase>(),
-      artifactLock: Annotation<ArtifactLockDecision | null>(),
-      goalScope: Annotation<GoalScope | null>(),
-      architectureResearch: Annotation<ResearchDigest | null>(),
-      dependencyResearch: Annotation<ResearchDigest | null>(),
-      validationResearch: Annotation<ResearchDigest | null>(),
-      mergedResearch: Annotation<ResearchDigest | null>(),
-      plan: Annotation<GeneratedProjectPlan | null>(),
-      blueprintDraft: Annotation<GeneratedBlueprintBundleDraft | null>(),
-      checkpointStage: Annotation<PlanGraphState["checkpointStage"]>(),
-      checkpointFailure: Annotation<PlanningBuildCheckpoint["failure"]>(),
-      activeBlueprintPath: Annotation<string | null>()
+    const artifactLock = resolveArtifactLock(session.goal);
+    const knowledgeBase = await this.runCreationAgentTool({
+      jobId,
+      tool: "scope-course",
+      stage: "knowledge-base",
+      title: "Loading learner knowledge",
+      detail: "The creation agent is loading learner context before it chooses the project path.",
+      task: async () => this.readKnowledgeBase()
+    });
+    const goalScope = planningCheckpoint?.goalScope ?? await this.runCreationAgentTool({
+      jobId,
+      tool: "scope-course",
+      stage: "scope-analysis",
+      title: "Scoping the course",
+      detail: "The creation agent is choosing project size and the progressive build path before generation.",
+      payload: {
+        artifactKind: artifactLock.kind,
+        artifactLabel: artifactLock.label
+      },
+      task: async () => this.determineGoalScope(
+        session.goal,
+        artifactLock,
+        this.buildJobUsageContext(jobId, {
+          sessionId: session.sessionId,
+          stage: "scope-analysis",
+          operation: "goal scope analysis"
+        })
+      )
+    });
+    const mergedResearch = planningCheckpoint?.mergedResearch ?? null;
+    const plan = planningCheckpoint?.plan
+      ? await this.runCreationAgentTool({
+          jobId,
+          tool: "plan-course",
+          stage: "plan-generation",
+          title: "Reusing the saved roadmap draft",
+          detail: "The creation agent is reusing the last valid course plan instead of generating it again.",
+          task: async () => {
+            await this.resumePlanningCheckpointStage(
+              jobId,
+              "plan-generation",
+              "Reusing the saved roadmap draft",
+              "Construct is resuming from the last successful planning stage instead of generating the roadmap again."
+            );
+            return planningCheckpoint.plan!;
+          }
+        })
+      : await this.runCreationAgentTool({
+          jobId,
+          tool: "plan-course",
+          stage: "plan-generation",
+          title: "Planning the course spine",
+          detail: "The creation agent is designing the progressive build sequence from the locked artifact and course policy.",
+          payload: {
+            answers: plannerAnswers.length,
+            goalScope: goalScope.scopeSummary
+          },
+          task: async () => {
+            const stream = this.createModelStreamForwarder(jobId, "plan-generation", "plan generation");
+            try {
+              const planDraft = await (await this.getLlm()).parse({
+                schema: GENERATED_PROJECT_PLAN_DRAFT_SCHEMA,
+                schemaName: "construct_generated_project_plan",
+                instructions: buildPlanGenerationInstructions(),
+                prompt: JSON.stringify(
+                  {
+                    session,
+                    artifactLock,
+                    creationContract: buildUnifiedCreationContract({
+                      goal: session.goal,
+                      artifact: artifactLock,
+                      goalScope
+                    }),
+                    goalScope,
+                    answers: plannerAnswers,
+                    priorKnowledge: serializeKnowledgeBaseForPrompt(knowledgeBase),
+                    research: compactResearchDigest(mergedResearch)
+                  },
+                  null,
+                  2
+                ),
+                maxOutputTokens: 16_000,
+                verbosity: "medium",
+                stream,
+                usage: this.buildJobUsageContext(jobId, {
+                  sessionId: session.sessionId,
+                  stage: "plan-generation",
+                  operation: "planning roadmap generation"
+                })
+              });
+
+              const generatedPlan = this.buildGeneratedPlan(session, planDraft);
+              await this.persistPlanningArtifacts(session, generatedPlan);
+              await this.writePlanningState({
+                session,
+                plan: generatedPlan,
+                answers: request.answers
+              });
+              await this.mutateBlueprintBuildForJob(jobId, (current) => ({
+                ...(current ??
+                  createBlueprintBuildRecord({
+                    id: session.sessionId,
+                    sessionId: session.sessionId,
+                    goal: session.goal,
+                    detectedLanguage: session.detectedLanguage,
+                    detectedDomain: session.detectedDomain,
+                    status: "running",
+                    currentStage: "plan-generation",
+                    currentStageTitle: "Project plan ready",
+                    currentStageStatus: "completed",
+                    createdAt: this.now().toISOString(),
+                    updatedAt: this.now().toISOString()
+                  })),
+                planningSession: session,
+                answers: request.answers,
+                plan: generatedPlan,
+                status: "running",
+                currentStage: "plan-generation",
+                currentStageTitle: "Project plan ready",
+                currentStageStatus: "completed",
+                updatedAt: this.now().toISOString(),
+                lastError: null
+              }));
+              await this.mergeKnowledgeBase(
+                knowledgeBase,
+                session,
+                generatedPlan,
+                plannerAnswers
+              );
+              await this.writePlanningBuildCheckpoint(session.sessionId, {
+                answersSignature,
+                stage: "plan-generated",
+                plan: generatedPlan,
+                blueprintDraft: null,
+                goalScope,
+                mergedResearch
+              });
+
+              return generatedPlan;
+            } finally {
+              stream.onComplete?.();
+            }
+          }
+        });
+
+    const checkpointStage = planningCheckpoint?.stage ?? null;
+    const checkpointDraft = planningCheckpoint?.blueprintDraft ?? null;
+    let blueprintDraft = checkpointDraft &&
+      (checkpointStage === "blueprint-drafted" || checkpointStage === "lessons-authored")
+      ? await this.runCreationAgentTool({
+          jobId,
+          tool: "generate-project",
+          stage: "blueprint-generation",
+          title: "Reusing the saved project bundle draft",
+          detail: "The creation agent is reusing the last valid project bundle draft.",
+          task: async () => {
+            await this.resumePlanningCheckpointStage(
+              jobId,
+              "blueprint-generation",
+              "Reusing the saved project bundle draft",
+              "Construct is resuming from the last successful project-bundle stage instead of drafting the bundle again."
+            );
+            return checkpointDraft;
+          }
+        })
+      : checkpointDraft && checkpointStage === "blueprint-draft-invalid"
+        ? await this.runCreationAgentTool({
+            jobId,
+            tool: "validate-project",
+            stage: "blueprint-repair",
+            title: "Repairing the saved project bundle",
+            detail: "The creation agent is repairing the rejected bundle without restarting the whole project.",
+            task: async () => this.repairPlanningBlueprintDraft({
+              jobId,
+              session,
+              plan,
+              artifactLock,
+              goalScope,
+              answers: plannerAnswers,
+              knowledgeBase,
+              mergedResearch,
+              failedDraft: checkpointDraft,
+              failure: planningCheckpoint?.failure ?? null,
+              answersSignature,
+              requestAnswers: request.answers
+            })
+          })
+        : await this.runCreationAgentTool({
+            jobId,
+            tool: "generate-project",
+            stage: "blueprint-generation",
+            title: "Generating the runnable project",
+            detail: "The creation agent is drafting solved files, learner files, hidden tests, and the next implementation frontier.",
+            payload: {
+              steps: plan.steps.length,
+              architectureNodeCount: plan.architecture.length
+            },
+            task: async () => this.generatePlanningBlueprintDraft({
+              jobId,
+              session,
+              plan,
+              artifactLock,
+              goalScope,
+              answers: plannerAnswers,
+              knowledgeBase,
+              mergedResearch,
+              answersSignature,
+              requestAnswers: request.answers
+            })
+          });
+
+    if (checkpointDraft && checkpointStage === "lessons-authored") {
+      blueprintDraft = await this.runCreationAgentTool({
+        jobId,
+        tool: "author-lessons",
+        stage: "lesson-authoring",
+        title: "Reusing the saved lesson chapters",
+        detail: "The creation agent is reusing the last valid authored lesson chapters.",
+        task: async () => {
+          await this.resumePlanningCheckpointStage(
+            jobId,
+            "lesson-authoring",
+            "Reusing the saved lesson chapters",
+            "Construct is resuming from the last successful lesson-authoring stage instead of rewriting the chapters again."
+          );
+          return checkpointDraft;
+        }
+      });
+    } else {
+      blueprintDraft = await this.authorCreationAgentLessons({
+        jobId,
+        session,
+        request,
+        plan,
+        blueprintDraft,
+        artifactLock,
+        goalScope,
+        answers: plannerAnswers,
+        knowledgeBase,
+        mergedResearch,
+        answersSignature
+      });
+    }
+
+    const activeBlueprintPath = await this.runCreationAgentTool({
+      jobId,
+      tool: "materialize-workspace",
+      stage: "blueprint-materialization",
+      title: "Materializing the generated project",
+      detail: "The creation agent is writing the authored lessons, canonical project, learner workspace, and hidden tests into the active project.",
+      payload: {
+        learnerFiles: blueprintDraft.learnerFiles.length,
+        hiddenTests: blueprintDraft.hiddenTests.length
+      },
+      task: async () => {
+        const activeBlueprintPath = await this.persistGeneratedBlueprint(
+          jobId,
+          session,
+          plan,
+          blueprintDraft
+        );
+        await this.persistence.clearPlanningBuildCheckpoint(session.sessionId);
+        return activeBlueprintPath;
+      }
     });
 
-    const graph = new StateGraph(StateAnnotation)
-      .addNode("loadKnowledgeBase", async (state) => ({
-        knowledgeBase: state.resumeFromCheckpoint
-          ? await this.readKnowledgeBase()
-          : await this.withStage(jobId, "knowledge-base", "Loading learner knowledge", "Combining stored knowledge with the current self-reported answers.", async () => {
-              return this.readKnowledgeBase();
-            })
-      }))
-      .addNode("determineScope", async (state) => ({
-        goalScope: state.goalScope ?? (
-          state.resumeFromCheckpoint
-            ? await this.determineGoalScope(
-                state.session.goal,
-                state.artifactLock ?? undefined,
-                this.buildJobUsageContext(jobId, {
-                  sessionId: state.session.sessionId,
-                  stage: "scope-analysis",
-                  operation: "goal scope analysis"
-                })
-              )
-            : await this.withStage(jobId, "scope-analysis", "Scoping the request", "The creation agent is deciding how large the generated project should be before it spends tokens on research and blueprint synthesis.", async () => {
-                return this.determineGoalScope(
-                  state.session.goal,
-                  state.artifactLock ?? undefined,
-                  this.buildJobUsageContext(jobId, {
-                    sessionId: state.session.sessionId,
-                    stage: "scope-analysis",
-                    operation: "goal scope analysis"
-                  })
-                );
-              })
-        )
-      }))
-      .addNode("generatePlan", async (state) => ({
-        plan: state.plan
-          ? await (async () => {
-              await this.resumePlanningCheckpointStage(
-                jobId,
-                "plan-generation",
-                "Reusing the saved roadmap draft",
-                "Construct is resuming from the last successful planning stage instead of generating the roadmap again."
-              );
-              return state.plan;
-            })()
-          : await this.withStage(jobId, "plan-generation", "Synthesizing the personalized roadmap", "OpenAI is merging the project dependencies, learner profile, and research into a detailed build path.", async () => {
-          const stream = this.createModelStreamForwarder(jobId, "plan-generation", "plan generation");
-          try {
-            const planDraft = await (await this.getLlm()).parse({
-              schema: GENERATED_PROJECT_PLAN_DRAFT_SCHEMA,
-              schemaName: "construct_generated_project_plan",
-              instructions: buildPlanGenerationInstructions(),
-              prompt: JSON.stringify(
-                {
-                  session: state.session,
-                  artifactLock: state.artifactLock,
-                  creationContract: buildUnifiedCreationContract({
-                    goal: state.session.goal,
-                    artifact: state.artifactLock,
-                    goalScope: state.goalScope
-                  }),
-                  goalScope: state.goalScope,
-                  answers: plannerAnswers,
-                  priorKnowledge: serializeKnowledgeBaseForPrompt(state.knowledgeBase),
-                  research: compactResearchDigest(state.mergedResearch)
-                },
-                null,
-                2
-              ),
-              maxOutputTokens: 16_000,
-              verbosity: "medium",
-              stream,
-              usage: this.buildJobUsageContext(jobId, {
-                sessionId: state.session.sessionId,
-                stage: "plan-generation",
-                operation: "planning roadmap generation"
-              })
-            });
+    void activeBlueprintPath;
+    return PlanningSessionCompleteResponseSchema.parse({
+      session,
+      plan
+    });
+  }
 
-            const plan = this.buildGeneratedPlan(state.session, planDraft);
-            await this.persistPlanningArtifacts(state.session, plan);
-            await this.writePlanningState({
-              session: state.session,
-              plan,
-              answers: request.answers
-            });
-            await this.mutateBlueprintBuildForJob(jobId, (current) => ({
-              ...(current ??
-                createBlueprintBuildRecord({
-                  id: state.session.sessionId,
-                  sessionId: state.session.sessionId,
-                  goal: state.session.goal,
-                  detectedLanguage: state.session.detectedLanguage,
-                  detectedDomain: state.session.detectedDomain,
-                  status: "running",
-                  currentStage: "plan-generation",
-                  currentStageTitle: "Project plan ready",
-                  currentStageStatus: "completed",
-                  createdAt: this.now().toISOString(),
-                  updatedAt: this.now().toISOString()
-                })),
-              planningSession: state.session,
-              answers: request.answers,
-              plan,
-              status: "running",
-              currentStage: "plan-generation",
-              currentStageTitle: "Project plan ready",
-              currentStageStatus: "completed",
-              updatedAt: this.now().toISOString(),
-              lastError: null
-            }));
-            await this.mergeKnowledgeBase(
-              state.knowledgeBase,
-              state.session,
-              plan,
-              plannerAnswers
-            );
-            await this.writePlanningBuildCheckpoint(state.session.sessionId, {
-              answersSignature,
-              stage: "plan-generated",
-              plan,
-              blueprintDraft: null,
-              goalScope: state.goalScope,
-              mergedResearch: state.mergedResearch
-            });
+  private async authorCreationAgentLessons(input: {
+    jobId: string;
+    session: PlanningSession;
+    request: PlanningSessionCompleteRequest;
+    plan: GeneratedProjectPlan;
+    blueprintDraft: GeneratedBlueprintBundleDraft;
+    artifactLock: ArtifactLockDecision;
+    goalScope: GoalScope;
+    answers: ResolvedPlanningAnswer[];
+    knowledgeBase: UserKnowledgeBase;
+    mergedResearch: ResearchDigest | null;
+    answersSignature: string;
+  }): Promise<GeneratedBlueprintBundleDraft> {
+    return this.runCreationAgentTool({
+      jobId: input.jobId,
+      tool: "author-lessons",
+      stage: "lesson-authoring",
+      title: "Writing the lesson chapters",
+      detail: "The creation agent is teaching each build slice before exposing its implementation task.",
+      payload: {
+        stepCount: input.blueprintDraft.steps.length,
+        firstStepTitle: input.blueprintDraft.steps[0]?.title ?? null
+      },
+      task: async () => {
+        const job = this.jobs.get(input.jobId);
+        const authoredSteps: GeneratedBlueprintBundleDraft["steps"] = [];
 
-            return plan;
-          } finally {
-            stream.onComplete?.();
-          }
-        }),
-        checkpointStage: state.plan ? (state.checkpointStage ?? "plan-generated") : "plan-generated"
-      }))
-      .addNode("generateBlueprint", async (state) => ({
-        blueprintDraft: state.blueprintDraft &&
-          (state.checkpointStage === "blueprint-drafted" || state.checkpointStage === "lessons-authored")
-          ? await (async () => {
-              await this.resumePlanningCheckpointStage(
-                jobId,
-                "blueprint-generation",
-                "Reusing the saved project bundle draft",
-                "Construct is resuming from the last successful project-bundle stage instead of drafting the bundle again."
-              );
-              return state.blueprintDraft;
-            })()
-          : state.blueprintDraft && state.checkpointStage === "blueprint-draft-invalid"
-            ? await this.repairPlanningBlueprintDraft({
-                jobId,
-                session: state.session,
-                plan: state.plan,
-                artifactLock: state.artifactLock,
-                goalScope: state.goalScope,
-                answers: plannerAnswers,
-                knowledgeBase: state.knowledgeBase,
-                mergedResearch: state.mergedResearch,
-                failedDraft: state.blueprintDraft,
-                failure: state.checkpointFailure,
-                answersSignature,
-                requestAnswers: request.answers
-              })
-            : await this.generatePlanningBlueprintDraft({
-                jobId,
-                session: state.session,
-                plan: state.plan,
-                artifactLock: state.artifactLock,
-                goalScope: state.goalScope,
-                answers: plannerAnswers,
-                knowledgeBase: state.knowledgeBase,
-                mergedResearch: state.mergedResearch,
-                answersSignature,
-                requestAnswers: request.answers
-              }),
-        checkpointStage:
-          state.blueprintDraft && state.checkpointStage === "lessons-authored"
-            ? state.checkpointStage
-            : "blueprint-drafted"
-      }))
-      .addNode("authorLessons", async (state) => ({
-        blueprintDraft: state.blueprintDraft && state.checkpointStage === "lessons-authored"
-          ? await (async () => {
-              await this.resumePlanningCheckpointStage(
-                jobId,
-                "lesson-authoring",
-                "Reusing the saved lesson chapters",
-                "Construct is resuming from the last successful lesson-authoring stage instead of rewriting the chapters again."
-              );
-              return state.blueprintDraft;
-            })()
-          : await this.withStage(jobId, "lesson-authoring", "Writing the lesson chapters", "The creation agent is turning each step into a docs-style lesson with substantial markdown explanations, grounded checks, and a clear implementation handoff.", async () => {
-          if (!state.plan) {
-            throw new Error("Cannot author lessons before the project plan exists.");
-          }
-
-          if (!state.blueprintDraft) {
-            throw new Error("Cannot author lessons before the blueprint draft exists.");
-          }
-
-          const lessonAuthoringContext = {
-            stepCount: state.blueprintDraft.steps.length,
-            firstStepTitle: state.blueprintDraft.steps[0]?.title ?? null,
-            firstStepSlideCount: state.blueprintDraft.steps[0]?.lessonSlides.length ?? 0,
-            firstStepCheckCount: state.blueprintDraft.steps[0]?.checks.length ?? 0
-          };
-
-          const job = this.jobs.get(jobId);
+        for (const [stepIndex, step] of input.blueprintDraft.steps.entries()) {
           if (job) {
             this.emitEvent(job, {
               stage: "lesson-authoring",
-              title: "Writing the lesson chapters",
-              detail: "The creation agent is rewriting each step as a docs-style chapter so the learner is taught clearly before any checks or code tasks.",
+              title: `Writing lesson chapter ${stepIndex + 1} of ${input.blueprintDraft.steps.length}`,
+              detail: `The creation agent is expanding ${step.title} into a detailed teaching chapter before checks or code.`,
               level: "info",
-              payload: lessonAuthoringContext
-            });
-          }
-          this.logger.info("Submitting lesson authoring request.", {
-            jobId,
-            sessionId: state.session.sessionId,
-            goal: state.session.goal,
-            ...lessonAuthoringContext
-          });
-
-          const authoredSteps: GeneratedBlueprintBundleDraft["steps"] = [];
-
-          for (const [stepIndex, step] of state.blueprintDraft.steps.entries()) {
-            if (job) {
-              this.emitEvent(job, {
-                stage: "lesson-authoring",
-                title: `Writing lesson chapter ${stepIndex + 1} of ${state.blueprintDraft.steps.length}`,
-                detail: `The creation agent is expanding ${step.title} into a hand-holding docs chapter before the learner sees checks or code.`,
-                level: "info",
-                payload: {
-                  stepId: step.id,
-                  stepTitle: step.title,
-                  stepIndex: stepIndex + 1,
-                  totalSteps: state.blueprintDraft.steps.length
-                }
-              });
-            }
-            this.logger.info("Submitting lesson authoring request for step.", {
-              jobId,
-              sessionId: state.session.sessionId,
-              stepId: step.id,
-              stepTitle: step.title,
-              stepIndex: stepIndex + 1,
-              totalSteps: state.blueprintDraft.steps.length
-            });
-
-            const stream = this.createModelStreamForwarder(
-              jobId,
-              "lesson-authoring",
-              `lesson chapter authoring for ${step.title}`
-            );
-
-            const authoredStep = await (await this.getLlm()).parse({
-              schema: LESSON_AUTHORED_STEP_DRAFT_SCHEMA,
-              schemaName: "construct_authored_blueprint_step",
-              instructions: buildLessonAuthoringInstructions({
-                stepIndex,
-                totalSteps: state.blueprintDraft.steps.length
-              }),
-              prompt: JSON.stringify(
-                {
-                  session: state.session,
-                  artifactLock: state.artifactLock,
-                  creationContract: buildUnifiedCreationContract({
-                    goal: state.session.goal,
-                    artifact: state.artifactLock,
-                    goalScope: state.goalScope
-                  }),
-                  goalScope: state.goalScope,
-                  answers: plannerAnswers,
-                  plan: state.plan,
-                  priorKnowledge: serializeKnowledgeBaseForPrompt(state.knowledgeBase),
-                  research: compactResearchDigest(state.mergedResearch),
-                  currentStep: step,
-                  lessonAuthoringBrief: buildLessonAuthoringBrief(step, stepIndex, state.blueprintDraft.steps.length)
-                },
-                null,
-                2
-              ),
-              maxOutputTokens: stepIndex === 0 ? 10_000 : 8_000,
-              verbosity: "high",
-              stream,
-              usage: this.buildJobUsageContext(jobId, {
-                sessionId: state.session.sessionId,
-                stage: "lesson-authoring",
-                operation: `lesson authoring:${step.id}`
-              })
-            }).finally(() => {
-              stream.onComplete?.();
-            });
-
-            authoredSteps.push(mergeLessonAuthoredStepDraft(step, authoredStep));
-          }
-
-          const nextBlueprintDraft = normalizeGeneratedBlueprintDraft({
-            ...state.blueprintDraft,
-            steps: authoredSteps
-          });
-
-          if (job) {
-            this.emitEvent(job, {
-              stage: "lesson-authoring",
-              title: "Lesson chapters ready",
-              detail: "The creation agent has expanded the teaching content into richer markdown chapters and aligned the checks with what was actually taught.",
-              level: "success",
               payload: {
-                stepCount: nextBlueprintDraft.steps.length,
-                firstStepSlideCount: nextBlueprintDraft.steps[0]?.lessonSlides.length ?? 0,
-                firstStepCheckCount: nextBlueprintDraft.steps[0]?.checks.length ?? 0
+                stepId: step.id,
+                stepTitle: step.title,
+                stepIndex: stepIndex + 1,
+                totalSteps: input.blueprintDraft.steps.length
               }
             });
           }
-          this.logger.info("Received lesson authoring response.", {
-            jobId,
-            sessionId: state.session.sessionId,
-            stepCount: nextBlueprintDraft.steps.length,
-            firstStepSlideCount: nextBlueprintDraft.steps[0]?.lessonSlides.length ?? 0,
-            firstStepCheckCount: nextBlueprintDraft.steps[0]?.checks.length ?? 0
-          });
-          await this.writePlanningBuildCheckpoint(state.session.sessionId, {
-            answersSignature,
-            stage: "lessons-authored",
-            plan: state.plan,
-            blueprintDraft: nextBlueprintDraft,
-            goalScope: state.goalScope,
-            mergedResearch: state.mergedResearch
-          });
-          await this.mutateBlueprintBuildForJob(jobId, (current) => ({
-            ...(current ??
-              createBlueprintBuildRecord({
-                id: state.session.sessionId,
-                sessionId: state.session.sessionId,
-                goal: state.session.goal,
-                detectedLanguage: state.session.detectedLanguage,
-                detectedDomain: state.session.detectedDomain,
-                status: "running",
-                currentStage: "lesson-authoring",
-                currentStageTitle: "Lesson chapters ready",
-                currentStageStatus: "completed",
-                createdAt: this.now().toISOString(),
-                updatedAt: this.now().toISOString()
-              })),
-            planningSession: state.session,
-            answers: request.answers,
-            plan: state.plan,
-            blueprintDraft: nextBlueprintDraft,
-            supportFiles: toBlueprintArtifactFiles(nextBlueprintDraft.supportFiles, "support"),
-            canonicalFiles: toBlueprintArtifactFiles(nextBlueprintDraft.canonicalFiles, "canonical"),
-            learnerFiles: toBlueprintArtifactFiles(nextBlueprintDraft.learnerFiles, "learner"),
-            hiddenTests: toBlueprintArtifactFiles(nextBlueprintDraft.hiddenTests, "hidden-tests"),
-            status: "running",
-            currentStage: "lesson-authoring",
-            currentStageTitle: "Lesson chapters ready",
-            currentStageStatus: "completed",
-            updatedAt: this.now().toISOString(),
-            lastError: null
-          }));
 
-          return nextBlueprintDraft;
-        }),
-        checkpointStage:
-          state.blueprintDraft && state.checkpointStage === "lessons-authored"
-            ? state.checkpointStage
-            : "lessons-authored"
-      }))
-      .addNode("persistBlueprint", async (state) => ({
-        activeBlueprintPath: await this.withStage(jobId, "blueprint-materialization", "Materializing the generated project", "Construct is writing the authored lessons, canonical project, learner workspace, and hidden tests into the active project.", async () => {
-          if (!state.plan) {
-            throw new Error("Cannot persist a blueprint before the project plan exists.");
-          }
-
-          const resolvedBlueprintDraft = this.resolvePersistablePlanningBlueprintDraft(
-            state.blueprintDraft,
-            planningCheckpoint?.blueprintDraft ?? null
+          const stream = this.createModelStreamForwarder(
+            input.jobId,
+            "lesson-authoring",
+            `lesson chapter authoring for ${step.title}`
           );
 
-          const activeBlueprintPath = await this.persistGeneratedBlueprint(
-            jobId,
-            state.session,
-            state.plan,
-            resolvedBlueprintDraft
-          );
-          await this.persistence.clearPlanningBuildCheckpoint(state.session.sessionId);
-          return activeBlueprintPath;
-        })
-      }))
-      .addEdge(START, "loadKnowledgeBase")
-      .addEdge("loadKnowledgeBase", "determineScope")
-      .addEdge("determineScope", "generatePlan")
-      .addEdge("generatePlan", "generateBlueprint")
-      .addEdge("generateBlueprint", "authorLessons")
-      .addEdge("authorLessons", "persistBlueprint")
-      .addEdge("persistBlueprint", END)
-      .compile();
+          const authoredStep = await (await this.getLlm()).parse({
+            schema: LESSON_AUTHORED_STEP_DRAFT_SCHEMA,
+            schemaName: "construct_authored_blueprint_step",
+            instructions: buildLessonAuthoringInstructions({
+              stepIndex,
+              totalSteps: input.blueprintDraft.steps.length
+            }),
+            prompt: JSON.stringify(
+              {
+                session: input.session,
+                artifactLock: input.artifactLock,
+                creationContract: buildUnifiedCreationContract({
+                  goal: input.session.goal,
+                  artifact: input.artifactLock,
+                  goalScope: input.goalScope
+                }),
+                goalScope: input.goalScope,
+                answers: input.answers,
+                plan: input.plan,
+                priorKnowledge: serializeKnowledgeBaseForPrompt(input.knowledgeBase),
+                research: compactResearchDigest(input.mergedResearch),
+                currentStep: step,
+                lessonAuthoringBrief: buildLessonAuthoringBrief(
+                  step,
+                  stepIndex,
+                  input.blueprintDraft.steps.length
+                )
+              },
+              null,
+              2
+            ),
+            maxOutputTokens: stepIndex === 0 ? 10_000 : 8_000,
+            verbosity: "high",
+            stream,
+            usage: this.buildJobUsageContext(input.jobId, {
+              sessionId: input.session.sessionId,
+              stage: "lesson-authoring",
+              operation: `lesson authoring:${step.id}`
+            })
+          }).finally(() => {
+            stream.onComplete?.();
+          });
 
-    const result = await graph.invoke(
-      {
-        jobId,
-        request,
-        session,
-        resumeFromCheckpoint: planningCheckpoint !== null,
-        knowledgeBase: createEmptyKnowledgeBase(this.now().toISOString()),
-        artifactLock: resolveArtifactLock(session.goal),
-        goalScope: planningCheckpoint?.goalScope ?? null,
-        architectureResearch: null,
-        dependencyResearch: null,
-        validationResearch: null,
-        mergedResearch: planningCheckpoint?.mergedResearch ?? null,
-        plan: planningCheckpoint?.plan ?? null,
-        blueprintDraft: planningCheckpoint?.blueprintDraft ?? null,
-        checkpointStage: planningCheckpoint?.stage ?? null,
-        checkpointFailure: planningCheckpoint?.failure ?? null,
-        activeBlueprintPath: null
-      },
-      {
-        runName: "construct:planning-plan",
-        tags: ["construct", "planning-plan"],
-        metadata: {
-          buildId: this.buildIdsByJobId.get(jobId) ?? null,
-          sessionId: session.sessionId,
-          goal: session.goal,
-          checkpointStage: planningCheckpoint?.stage ?? null,
-          langSmithProject: resolveLangSmithProjectName()
+          authoredSteps.push(mergeLessonAuthoredStepDraft(step, authoredStep));
         }
-      }
-    );
 
-    return PlanningSessionCompleteResponseSchema.parse({
-      session,
-      plan: result.plan
+        const nextBlueprintDraft = normalizeGeneratedBlueprintDraft({
+          ...input.blueprintDraft,
+          steps: authoredSteps
+        });
+
+        if (job) {
+          this.emitEvent(job, {
+            stage: "lesson-authoring",
+            title: "Lesson chapters ready",
+            detail: "The creation agent has aligned the teaching content, checks, and implementation handoff.",
+            level: "success",
+            payload: {
+              stepCount: nextBlueprintDraft.steps.length,
+              firstStepSlideCount: nextBlueprintDraft.steps[0]?.lessonSlides.length ?? 0,
+              firstStepCheckCount: nextBlueprintDraft.steps[0]?.checks.length ?? 0
+            }
+          });
+        }
+
+        await this.writePlanningBuildCheckpoint(input.session.sessionId, {
+          answersSignature: input.answersSignature,
+          stage: "lessons-authored",
+          plan: input.plan,
+          blueprintDraft: nextBlueprintDraft,
+          goalScope: input.goalScope,
+          mergedResearch: input.mergedResearch
+        });
+        await this.mutateBlueprintBuildForJob(input.jobId, (current) => ({
+          ...(current ??
+            createBlueprintBuildRecord({
+              id: input.session.sessionId,
+              sessionId: input.session.sessionId,
+              goal: input.session.goal,
+              detectedLanguage: input.session.detectedLanguage,
+              detectedDomain: input.session.detectedDomain,
+              status: "running",
+              currentStage: "lesson-authoring",
+              currentStageTitle: "Lesson chapters ready",
+              currentStageStatus: "completed",
+              createdAt: this.now().toISOString(),
+              updatedAt: this.now().toISOString()
+            })),
+          planningSession: input.session,
+          answers: input.request.answers,
+          plan: input.plan,
+          blueprintDraft: nextBlueprintDraft,
+          supportFiles: toBlueprintArtifactFiles(nextBlueprintDraft.supportFiles, "support"),
+          canonicalFiles: toBlueprintArtifactFiles(nextBlueprintDraft.canonicalFiles, "canonical"),
+          learnerFiles: toBlueprintArtifactFiles(nextBlueprintDraft.learnerFiles, "learner"),
+          hiddenTests: toBlueprintArtifactFiles(nextBlueprintDraft.hiddenTests, "hidden-tests"),
+          status: "running",
+          currentStage: "lesson-authoring",
+          currentStageTitle: "Lesson chapters ready",
+          currentStageStatus: "completed",
+          updatedAt: this.now().toISOString(),
+          lastError: null
+        }));
+
+        return nextBlueprintDraft;
+      }
     });
   }
 

@@ -7033,6 +7033,69 @@ textarea {
   color: var(--text);
 }
 
+.construct-creation-agent-cockpit {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
+  border-radius: 12px;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--panel-bg) 96%, transparent),
+      color-mix(in srgb, var(--panel-muted) 58%, transparent)
+    );
+}
+
+.construct-creation-agent-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.construct-creation-agent-identity {
+  min-width: 0;
+}
+
+.construct-creation-agent-identity h3 {
+  margin: 4px 0 0;
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.25;
+  font-weight: 650;
+}
+
+.construct-creation-agent-metrics {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  color: var(--text-soft);
+  font-family: var(--course-font-mono);
+  font-size: 10px;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.construct-creation-agent-metrics span {
+  padding: 5px 7px;
+  border: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel-bg) 74%, transparent);
+}
+
+.construct-creation-agent-live {
+  margin: 0;
+  padding: 10px 12px;
+  border-left: 2px solid color-mix(in srgb, var(--text) 58%, transparent);
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--panel-soft) 46%, transparent);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
 .construct-agent-outline {
   display: flex;
   flex-direction: column;

@@ -4771,7 +4771,7 @@ function PlanningOverlay({
                     <h2>What the creation agent is doing right now.</h2>
                   </div>
                 </div>
-                <ArchitectTaskBoard events={planningEvents} />
+                <CreationAgentCockpit events={planningEvents} />
               </section>
             ) : null}
 
@@ -4844,7 +4844,7 @@ function PlanningOverlay({
                     <h2>What the creation agent was doing before the failure.</h2>
                   </div>
                 </div>
-                <ArchitectTaskBoard events={planningEvents} />
+                <CreationAgentCockpit events={planningEvents} />
               </section>
             ) : null}
 
@@ -4981,7 +4981,7 @@ function PlanningOverlay({
                     <h2>What the creation agent is doing right now.</h2>
                   </div>
                 </div>
-                <ArchitectTaskBoard events={planningEvents} />
+                <CreationAgentCockpit events={planningEvents} />
               </section>
             ) : null}
           </div>
@@ -5017,7 +5017,7 @@ function PlanningOverlay({
                         <h2>What the creation agent has already done.</h2>
                       </div>
                     </div>
-                    <ArchitectTaskBoard events={planningEvents} />
+                    <CreationAgentCockpit events={planningEvents} />
                   </section>
                 ) : null}
               </aside>
@@ -5082,7 +5082,7 @@ function PlanningOverlay({
               </div>
             </div>
 
-            <ArchitectTaskBoard events={planningEvents} />
+            <CreationAgentCockpit events={planningEvents} />
           </section>
         ) : null}
 
@@ -6818,6 +6818,42 @@ type ArchitectTaskGroup = {
   latestEvent: AgentEvent;
   streamChunkCount: number;
 };
+
+function CreationAgentCockpit({ events }: { events: AgentEvent[] }) {
+  const groups = buildArchitectTaskGroups(events);
+  const activeGroup = groups.find((group) => group.status === "working") ?? groups.at(-1) ?? null;
+  const activePayload = activeGroup ? asAgentEventPayload(activeGroup.latestEvent) : null;
+  const activeToolLabel = typeof activePayload?.toolLabel === "string"
+    ? activePayload.toolLabel
+    : activeGroup?.label ?? "Waiting";
+  const agentName = typeof activePayload?.agentName === "string"
+    ? activePayload.agentName
+    : "Construct Creation Agent";
+  const completedCount = groups.filter((group) => group.status === "done").length;
+  const failedCount = groups.filter((group) => group.status === "error").length;
+  const liveCopy = activeGroup?.latestEvent.detail?.trim()
+    || activeGroup?.latestEvent.title
+    || "Waiting for the creation agent to choose the next tool.";
+
+  return (
+    <section className="construct-creation-agent-cockpit" aria-label="Creation agent cockpit">
+      <div className="construct-creation-agent-head">
+        <div className="construct-creation-agent-identity">
+          <div>
+            <span className="construct-panel-kicker">{agentName}</span>
+            <h3>{activeToolLabel}</h3>
+          </div>
+        </div>
+        <div className="construct-creation-agent-metrics" aria-label="Creation agent run summary">
+          <span>{completedCount}/{groups.length || 1} tools</span>
+          <span>{failedCount > 0 ? `${failedCount} failed` : "live"}</span>
+        </div>
+      </div>
+      <p className="construct-creation-agent-live">{liveCopy}</p>
+      <ArchitectTaskBoard events={events} />
+    </section>
+  );
+}
 
 function ArchitectTaskBoard({ events }: { events: AgentEvent[] }) {
   const groups = buildArchitectTaskGroups(events);
