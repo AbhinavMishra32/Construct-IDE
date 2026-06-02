@@ -999,7 +999,7 @@ export default function App() {
         setPlanningAnswers(toPlanningAnswerDrafts(planningState.answers));
         setStatusMessage(
           planningState.session
-            ? "Resume the in-progress Architect run or open an existing project."
+            ? "Resume the in-progress creation-agent run or open an existing project."
             : projects.projects.length > 0
               ? "Choose a project to resume or start a new one."
               : "Start the first project to generate a guided build."
@@ -1246,7 +1246,7 @@ export default function App() {
     setPlanningOverlayOpen(false);
     setStatusMessage(
       planningState.session
-        ? "Resume the in-progress Architect run or open an existing project."
+        ? "Resume the in-progress creation-agent run or open an existing project."
         : projects.projects.length > 0
           ? "Choose a project to resume or start a new one."
           : "Start the first project to generate a guided build."
@@ -2098,7 +2098,7 @@ export default function App() {
         if (planningState.plan) {
           setPlanningEvents([]);
           setPlanningError(
-            `${message} Your saved planning progress is still intact. Use Resume generation to continue from the failed architect step.`
+            `${message} Your saved planning progress is still intact. Use Resume generation to continue from the failed creation-agent step.`
           );
           setStatusMessage("Saved planning progress recovered. Resume generation to continue.");
         } else {
@@ -3721,7 +3721,7 @@ function ProjectsHome({
           <h1 className="construct-home-title">Pick up where you left off.</h1>
           <p className="construct-home-copy">
             Use the sidebar to jump between saved projects. This space shows the active
-            project and the learner knowledge base the Architect is already using to
+            project and the learner knowledge base the creation agent is already using to
             tailor future questions, lesson depth, and step order.
           </p>
         </div>
@@ -3769,7 +3769,7 @@ function ProjectsHome({
               </div>
 
               <p className="construct-home-surface-copy">
-                The Architect already has your context, research, and partial generation
+                The creation agent already has your context, research, and partial generation
                 state. Resume from the latest completed stage instead of starting over.
               </p>
 
@@ -3856,7 +3856,7 @@ function ProjectsHome({
                 </div>
               </div>
               <p className="construct-home-surface-copy">
-                Tell Construct what you want to build. The Architect will generate the
+                Tell Construct what you want to build. The creation agent will generate the
                 project spine, the first build frontier, hidden tests, and the initial
                 implementation path around that goal.
               </p>
@@ -4021,7 +4021,7 @@ function ProjectsHome({
             </Tabs>
           ) : (
             <div className="construct-home-empty">
-              No stored learner knowledge yet. Start a project and answer the Architect's
+              No stored learner knowledge yet. Start a project and answer the creation agent's
               tailoring questions so Construct can build a concept-level profile.
             </div>
           )}
@@ -4732,7 +4732,7 @@ function PlanningOverlay({
           </div>
           <header className={cn("construct-planning-header", "construct-planning-header--compact")}>
             <div className="construct-planning-header-copy">
-              <span className="construct-brief-kicker">Architect</span>
+              <span className="construct-brief-kicker">Creation agent</span>
               <h1>Generating your project.</h1>
               <p>
                 Construct has finished the tailoring pass and is now materializing the
@@ -4754,8 +4754,8 @@ function PlanningOverlay({
                 {planningGoal.trim()}
               </h2>
               <p>
-                The Architect is generating the project path and workspace now. This stays
-                small and centered while you watch the live activity.
+                The creation agent is choosing tools, checking the course shape, and
+                writing the workspace while you watch the live trace.
               </p>
               <div className="construct-tag-list">
                 <TagChip>{formatDetectedLabel(planningSession.detectedDomain)}</TagChip>
@@ -4767,8 +4767,8 @@ function PlanningOverlay({
               <section className="construct-planning-event-log construct-planning-event-log--minimal">
                 <div className="construct-brief-section-header">
                   <div>
-                    <span className="construct-brief-kicker">Agent Activity</span>
-                    <h2>What the Architect is doing right now.</h2>
+                    <span className="construct-brief-kicker">Agent trace</span>
+                    <h2>What the creation agent is doing right now.</h2>
                   </div>
                 </div>
                 <ArchitectTaskBoard events={planningEvents} />
@@ -4799,15 +4799,15 @@ function PlanningOverlay({
         >
           <div className="sr-only" aria-hidden="false">
             <h1>Resume project creation</h1>
-            <p>Continue the saved Architect run from the last successful planning stage.</p>
+            <p>Continue the saved creation-agent run from the last successful planning stage.</p>
           </div>
           <header className={cn("construct-planning-header", "construct-planning-header--compact")}>
             <div className="construct-planning-header-copy">
-              <span className="construct-brief-kicker">Architect</span>
+              <span className="construct-brief-kicker">Creation agent</span>
               <h1>Resume project creation.</h1>
               <p>
                 Construct already saved the tailoring answers, project plan, and the latest
-                recoverable architect state. Continue from the failed generation step instead
+                recoverable creation-agent state. Continue from the failed generation step instead
                 of starting over.
               </p>
             </div>
@@ -4826,9 +4826,8 @@ function PlanningOverlay({
                 {planningGoalLabel}
               </h2>
               <p>
-                The Architect can resume from the saved project plan and retry only the failed
-                blueprint-generation path. You should not need to answer the tailoring
-                questions again.
+                The creation agent can resume from the saved project plan and retry only the
+                failed tool path. You should not need to answer the tailoring questions again.
               </p>
               <div className="construct-tag-list">
                 <TagChip>{formatDetectedLabel(planningSession.detectedDomain)}</TagChip>
@@ -4841,8 +4840,8 @@ function PlanningOverlay({
               <section className="construct-planning-event-log construct-planning-event-log--minimal">
                 <div className="construct-brief-section-header">
                   <div>
-                    <span className="construct-brief-kicker">Agent Activity</span>
-                    <h2>What the Architect was doing before the failure.</h2>
+                    <span className="construct-brief-kicker">Agent trace</span>
+                    <h2>What the creation agent was doing before the failure.</h2>
                   </div>
                 </div>
                 <ArchitectTaskBoard events={planningEvents} />
@@ -4885,7 +4884,7 @@ function PlanningOverlay({
       >
         <div className="sr-only" aria-hidden="false">
           <h1>Create a new project</h1>
-          <p>Work with the Architect to tailor and generate a real project workspace.</p>
+          <p>Work with the creation agent to tailor and generate a real project workspace.</p>
         </div>
         <header
           className={cn(
@@ -4894,7 +4893,7 @@ function PlanningOverlay({
           )}
         >
           <div className="construct-planning-header-copy">
-            <span className="construct-brief-kicker">Architect</span>
+            <span className="construct-brief-kicker">Creation agent</span>
             <h1>Create a new project.</h1>
             <p>
               {isStartPhase
@@ -4930,7 +4929,7 @@ function PlanningOverlay({
                     <InputGroupAddon align="block-start">
                       <InputGroupText>
                         <SparklesIcon />
-                        Architect prompt
+                        Creation agent prompt
                       </InputGroupText>
                     </InputGroupAddon>
                   <InputGroupTextarea
@@ -4978,8 +4977,8 @@ function PlanningOverlay({
               <section className="construct-planning-event-log construct-planning-event-log--minimal">
                 <div className="construct-brief-section-header">
                   <div>
-                    <span className="construct-brief-kicker">Agent Activity</span>
-                    <h2>What the Architect is doing right now.</h2>
+                    <span className="construct-brief-kicker">Agent trace</span>
+                    <h2>What the creation agent is doing right now.</h2>
                   </div>
                 </div>
                 <ArchitectTaskBoard events={planningEvents} />
@@ -5014,8 +5013,8 @@ function PlanningOverlay({
                   <section className="construct-planning-event-log">
                     <div className="construct-brief-section-header">
                       <div>
-                        <span className="construct-brief-kicker">Agent Activity</span>
-                        <h2>What the Architect has already done.</h2>
+                        <span className="construct-brief-kicker">Agent trace</span>
+                        <h2>What the creation agent has already done.</h2>
                       </div>
                     </div>
                     <ArchitectTaskBoard events={planningEvents} />
@@ -5078,8 +5077,8 @@ function PlanningOverlay({
           <section className="construct-planning-event-log">
             <div className="construct-brief-section-header">
               <div>
-                <span className="construct-brief-kicker">Agent Activity</span>
-                <h2>What the Architect is doing right now.</h2>
+                <span className="construct-brief-kicker">Agent trace</span>
+                <h2>What the creation agent is doing right now.</h2>
               </div>
             </div>
 
@@ -5091,14 +5090,14 @@ function PlanningOverlay({
           <section className="construct-planning-question-shell" aria-label="Project tailoring question">
             <div className="sr-only">
               <h2>Project tailoring question</h2>
-              <p>Help the Architect personalize the project flow before generation begins.</p>
+              <p>Help the creation agent personalize the project flow before generation begins.</p>
             </div>
             <div className="construct-planning-question-modal w-[min(760px,calc(100vw-32px))] max-w-none gap-0 border border-border bg-background p-0 text-foreground shadow-2xl ring-1 ring-foreground/10">
               <div className="construct-planning-question-header">
                 <div>
                   <span className="construct-panel-kicker">Project tailoring</span>
                   <h2>
-                    Help the Architect shape {formatDetectedLabel(planningSession.detectedDomain)}{" "}
+                    Help the creation agent shape {formatDetectedLabel(planningSession.detectedDomain)}{" "}
                     in {formatDetectedLabel(planningSession.detectedLanguage)} around the
                     learner.
                   </h2>
@@ -5174,10 +5173,10 @@ function PlanningOverlay({
                     }`}
                   >
                     <div className="construct-check-option-header">
-                      <strong>Tell the Architect in your own words</strong>
+                      <strong>Tell the creation agent in your own words</strong>
                       <span>
                         Use this when none of the generated options fit. Your exact wording
-                        goes back into the Architect so the project path can adapt to the
+                        goes back into the creation agent so the project path can adapt to the
                         learner’s real background and preferences.
                       </span>
                     </div>
@@ -7159,6 +7158,7 @@ function extractAgentToolActivities(
     }
 
     const tool = typeof payload?.tool === "string" ? payload.tool : null;
+    const toolLabel = typeof payload?.toolLabel === "string" ? payload.toolLabel : null;
     const command = typeof payload?.command === "string" ? payload.command : null;
     const output = typeof payload?.output === "string" && payload.output.trim().length > 0
       ? payload.output.trim()
@@ -7172,7 +7172,7 @@ function extractAgentToolActivities(
     activities.push({
       id: event.id,
       tool: tool ?? "activity",
-      title: event.title,
+      title: toolLabel ?? event.title,
       detail: event.detail?.trim() || null,
       command,
       output,
@@ -7192,6 +7192,22 @@ function asAgentEventPayload(event: AgentEvent): Record<string, unknown> | null 
 
 function formatAgentToolLabel(tool: string): string {
   switch (tool) {
+    case "lock-artifact":
+      return "lock";
+    case "scope-course":
+      return "scope";
+    case "research-course":
+      return "research";
+    case "plan-course":
+      return "plan";
+    case "generate-project":
+      return "generate";
+    case "author-lessons":
+      return "teach";
+    case "validate-project":
+      return "validate";
+    case "materialize-workspace":
+      return "write";
     case "read_file":
       return "read";
     case "write_file":
@@ -7281,7 +7297,7 @@ function describeArchitectTask(key: string): { label: string; eyebrow: string } 
 
   return {
     label: formatAgentStageLabel(key),
-    eyebrow: "Architect"
+    eyebrow: "Creation agent"
   };
 }
 
@@ -7334,6 +7350,15 @@ function getArchitectTaskIcon(key: string): ReactNode {
 }
 
 function buildArchitectTaskChildren(group: ArchitectTaskGroup): string[] {
+  const latestPayload = asAgentEventPayload(group.latestEvent);
+  const latestToolLabel = typeof latestPayload?.toolLabel === "string"
+    ? latestPayload.toolLabel
+    : null;
+
+  if (isAgentThinkingEvent(group.latestEvent) && latestToolLabel) {
+    return [`Thinking through ${latestToolLabel.toLowerCase()}`];
+  }
+
   if (group.key.includes("construction-compiler")) {
     const payloadTitles = group.events
       .flatMap((event) => {

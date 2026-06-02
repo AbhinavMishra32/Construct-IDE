@@ -90,6 +90,7 @@ import {
   buildUnifiedCreationContract,
   inferCreationGoalScope
 } from "./creationKernel";
+import { buildCreationAgentEventPayload } from "./creationMastraAgent";
 import { resolveArtifactLock, type ArtifactLockDecision } from "./creationPipelineV2";
 import { getCurrentUserId } from "./authContext";
 import { ConstructAuthService } from "./authService";
@@ -3529,12 +3530,20 @@ export class ConstructAgentService {
     job: AgentJobRecord,
     input: Omit<AgentEvent, "id" | "jobId" | "kind" | "timestamp">
   ): void {
+    const payload = {
+      ...buildCreationAgentEventPayload({
+        stage: input.stage,
+        level: input.level
+      }),
+      ...(input.payload && typeof input.payload === "object" ? input.payload : {})
+    };
     const event = AgentEventSchema.parse({
       id: randomUUID(),
       jobId: job.jobId,
       kind: job.kind,
       timestamp: this.now().toISOString(),
-      ...input
+      ...input,
+      payload
     });
 
     job.events.push(event);
@@ -3619,7 +3628,7 @@ export class ConstructAgentService {
         })
       }))
       .addNode("extractGoalSelfReport", async (state) => ({
-        knowledgeBase: await this.withStage(jobId, "goal-self-report", "Reading learner self-description", "The Architect is extracting any explicit self-reported skill signals directly from the project prompt before it writes intake questions.", async () => {
+        knowledgeBase: await this.withStage(jobId, "goal-self-report", "Reading learner self-description", "The creation agent is extracting any explicit self-reported skill signals directly from the project prompt before it writes intake questions.", async () => {
           return this.extractGoalSelfReportKnowledge(
             state.knowledgeBase,
             state.request.goal,
@@ -3631,12 +3640,12 @@ export class ConstructAgentService {
         })
       }))
       .addNode("lockArtifact", async (state) => ({
-        artifactLock: await this.withStage(jobId, "artifact-lock", "Locking the requested artifact", "The Architect is pinning down the requested artifact before it chooses scope or tailoring questions so the project identity does not drift.", async () => {
+        artifactLock: await this.withStage(jobId, "artifact-lock", "Locking the requested artifact", "The creation agent is pinning down the requested artifact before it chooses scope or tailoring questions so the project identity does not drift.", async () => {
           return resolveArtifactLock(state.request.goal);
         })
       }))
       .addNode("determineScope", async (state) => ({
-        goalScope: await this.withStage(jobId, "scope-analysis", "Scoping the request", "The Architect is deciding how large the project should be and whether broad external research is justified.", async () => {
+        goalScope: await this.withStage(jobId, "scope-analysis", "Scoping the request", "The creation agent is deciding how large the project should be and whether broad external research is justified.", async () => {
           return this.determineGoalScope(
             state.request.goal,
             state.artifactLock ?? undefined,
@@ -3796,7 +3805,7 @@ export class ConstructAgentService {
                   operation: "goal scope analysis"
                 })
               )
-            : await this.withStage(jobId, "scope-analysis", "Scoping the request", "The Architect is deciding how large the generated project should be before it spends tokens on research and blueprint synthesis.", async () => {
+            : await this.withStage(jobId, "scope-analysis", "Scoping the request", "The creation agent is deciding how large the generated project should be before it spends tokens on research and blueprint synthesis.", async () => {
                 return this.determineGoalScope(
                   state.session.goal,
                   state.artifactLock ?? undefined,
@@ -3963,7 +3972,7 @@ export class ConstructAgentService {
               );
               return state.blueprintDraft;
             })()
-          : await this.withStage(jobId, "lesson-authoring", "Writing the lesson chapters", "The Architect is turning each step into a docs-style lesson with substantial markdown explanations, grounded checks, and a clear implementation handoff.", async () => {
+          : await this.withStage(jobId, "lesson-authoring", "Writing the lesson chapters", "The creation agent is turning each step into a docs-style lesson with substantial markdown explanations, grounded checks, and a clear implementation handoff.", async () => {
           if (!state.plan) {
             throw new Error("Cannot author lessons before the project plan exists.");
           }
@@ -3984,7 +3993,7 @@ export class ConstructAgentService {
             this.emitEvent(job, {
               stage: "lesson-authoring",
               title: "Writing the lesson chapters",
-              detail: "The Architect is rewriting each step as a docs-style chapter so the learner is taught clearly before any checks or code tasks.",
+              detail: "The creation agent is rewriting each step as a docs-style chapter so the learner is taught clearly before any checks or code tasks.",
               level: "info",
               payload: lessonAuthoringContext
             });
@@ -4003,7 +4012,7 @@ export class ConstructAgentService {
               this.emitEvent(job, {
                 stage: "lesson-authoring",
                 title: `Writing lesson chapter ${stepIndex + 1} of ${state.blueprintDraft.steps.length}`,
-                detail: `The Architect is expanding ${step.title} into a hand-holding docs chapter before the learner sees checks or code.`,
+                detail: `The creation agent is expanding ${step.title} into a hand-holding docs chapter before the learner sees checks or code.`,
                 level: "info",
                 payload: {
                   stepId: step.id,
@@ -4079,7 +4088,7 @@ export class ConstructAgentService {
             this.emitEvent(job, {
               stage: "lesson-authoring",
               title: "Lesson chapters ready",
-              detail: "The Architect has expanded the teaching content into richer markdown chapters and aligned the checks with what was actually taught.",
+              detail: "The creation agent has expanded the teaching content into richer markdown chapters and aligned the checks with what was actually taught.",
               level: "success",
               payload: {
                 stepCount: nextBlueprintDraft.steps.length,
@@ -4310,7 +4319,7 @@ export class ConstructAgentService {
         };
       })
       .addNode("generateDeepDive", async (state) => ({
-        deepDiveDraft: await this.withStage(jobId, "deep-dive-generation", "Designing a deeper walkthrough", "The Architect is generating additional concept slides and a tighter quiz for the exact blocker you hit in this step.", async () => {
+        deepDiveDraft: await this.withStage(jobId, "deep-dive-generation", "Designing a deeper walkthrough", "The creation agent is generating additional concept slides and a tighter quiz for the exact blocker you hit in this step.", async () => {
           const stream = this.createModelStreamForwarder(
             jobId,
             "deep-dive-generation",
@@ -5100,7 +5109,7 @@ export class ConstructAgentService {
       this.emitEvent(job, {
         stage: "blueprint-synthesis",
         title: "Drafting the project bundle",
-        detail: "The Architect is asking the model to write the completed project files, derive the learner-owned files, and attach hidden tests to each task.",
+        detail: "The creation agent is asking the model to write the completed project files, derive the learner-owned files, and attach hidden tests to each task.",
         level: "info",
         payload: blueprintRequestContext
       });
@@ -5173,7 +5182,7 @@ export class ConstructAgentService {
         rawDraft: rawFrontierDraft,
         successLogContext: "Received blueprint synthesis response.",
         successEventTitle: "Project bundle drafted",
-        successEventDetail: "The Architect has returned a candidate project bundle and Construct is now materializing it into a runnable workspace."
+        successEventDetail: "The creation agent has returned a candidate project bundle and Construct is now materializing it into a runnable workspace."
       });
     } catch (error) {
       const checkpoint = await this.readPlanningBuildCheckpoint(
@@ -5271,7 +5280,7 @@ export class ConstructAgentService {
       input.jobId,
       "blueprint-repair",
       "Repairing the saved project bundle",
-      "Construct is resuming from the saved architect draft and repairing only the broken blueprint bundle instead of restarting the whole planning run.",
+      "Construct is resuming from the saved creation-agent draft and repairing only the broken blueprint bundle instead of restarting the whole planning run.",
       async () => {
         let previousDraft = input.failedDraft;
         let latestFrontierDraft = filterGeneratedBundleDraftToFrontier(previousDraft, frontierPlanSteps);
@@ -5472,7 +5481,7 @@ export class ConstructAgentService {
       rawDraft: repairedFrontierDraft,
       successLogContext: "Recovered blueprint bundle from saved checkpoint.",
       successEventTitle: "Saved project bundle repaired",
-      successEventDetail: "Construct repaired the saved architect draft and is continuing from the last good planning state."
+      successEventDetail: "Construct repaired the saved creation-agent draft and is continuing from the last good planning state."
     });
   }
 
@@ -5837,7 +5846,7 @@ export class ConstructAgentService {
       frontier,
       dependencyGraph: compiledDraft.dependencyGraph,
       metadata: {
-        createdBy: "Construct Architect agent",
+        createdBy: "Construct creation agent",
         createdAt: generatedAt,
         targetLanguage: compiledDraft.language,
         tags: Array.from(new Set([
@@ -11287,7 +11296,7 @@ function inferGoalEngagementModeFallback(
 
 function buildGoalScopeInstructions(): string {
   return [
-    "You are Construct's Architect agent.",
+    "You are Construct's single Mastra-backed creation agent.",
     "Decide how large the requested project should be before planning or research begins.",
     "Also decide the request's engagementMode: implementation-first, learning-first, or balanced.",
     "If artifactLock is provided, treat it as the project-identity guardrail for the rest of this decision.",
@@ -11302,7 +11311,7 @@ function buildGoalScopeInstructions(): string {
     "complexityScore is a 0-100 estimate of how large and multi-part the project really is.",
     "shouldResearch should be false only when broad web research would clearly be wasteful for this specific request.",
     "recommendedQuestionCount should be the minimum number of intake questions needed to personalize the path.",
-    "recommendedMinSteps and recommendedMaxSteps should define the step budget the Architect should aim for.",
+    "recommendedMinSteps and recommendedMaxSteps should define the step budget the creation agent should aim for.",
     "Do not treat 'from scratch' by itself as evidence that the learner wants tiny tutorial slices or a slowed-down curriculum.",
     "Only bias toward more, smaller construction steps when the learner explicitly signals inexperience or asks for extra hand-holding with phrases like 'beginner', 'never used', or 'don't know'.",
     "Be conservative with scope expansion. If the user asks for something small, keep it small unless the request itself requires more."
@@ -11311,18 +11320,18 @@ function buildGoalScopeInstructions(): string {
 
 function buildQuestionGenerationInstructions(): string {
   return [
-    "You are Construct's Architect agent.",
+    "You are Construct's single Mastra-backed creation agent.",
     "Your job is to prepare the intake phase for a serious local AI developer IDE.",
     "Given a project goal, prior stored learner knowledge, and optional lightweight web research, generate project-tailoring intake questions.",
     "artifactLock describes the requested artifact identity and whether it still needs clarification.",
     "priorKnowledge is a recursive concept graph. Parent topics roll up from child subtopics, so inspect the deepest relevant concepts before deciding what to ask.",
     "These are tailoring questions, not assessment questions and not quiz questions.",
     "Ask only the minimum questions needed to personalize the build path.",
-    "The learner should feel like they are helping the Architect tune scope, pacing, depth, and support style for this exact project.",
+    "The learner should feel like they are helping the creation agent tune scope, pacing, depth, and support style for this exact project.",
     "Never ask the learner to recall the correct syntax, API, command, definition, keyword, or utility type name.",
     "Never write a question with a single objectively correct technical answer.",
     "Do not ask textbook questions like 'Which X does Y?' or 'What command creates Z?'.",
-    "Instead ask which statement best matches their real experience, preference, likely blocker, desired support level, or where they want the Architect to slow down.",
+    "Instead ask which statement best matches their real experience, preference, likely blocker, desired support level, or where they want the creation agent to slow down.",
     "Good questions often start with phrases like 'Which statement best matches...', 'What would help most when...', or 'Where should Construct go deeper while you build...'.",
     "For every question, generate exactly 3 answer options. Options should be specific to the question and written as first-person self-descriptions, not factual answer choices.",
     "Each option must include a confidenceSignal of comfortable, shaky, or new so Construct can normalize the answer without losing the richer user-facing wording.",
@@ -11343,7 +11352,7 @@ function buildQuestionGenerationInstructions(): string {
 
 function buildGoalSelfReportExtractionInstructions(): string {
   return [
-    "You are Construct's Architect agent.",
+    "You are Construct's single Mastra-backed creation agent.",
     "Extract only explicit learner self-report signals from the raw project prompt.",
     "This is not a general project analysis pass. Do not infer skill from the requested project alone.",
     "Only capture knowledge signals the learner directly stated or strongly implied about themselves, such as being new to Rust, being comfortable with DFA/NFA, wanting more syntax hand-holding, or preferring larger problem-solving over small drills.",
@@ -11362,7 +11371,7 @@ function buildGoalSelfReportExtractionInstructions(): string {
 
 function buildPlanGenerationInstructions(): string {
   return [
-    "You are Construct's Architect agent.",
+    "You are Construct's single Mastra-backed creation agent.",
     "Generate the stable spine for a serious developer IDE that helps the learner build real systems in-place.",
     "The learner will build the real project in-place, so every step must contribute to the final system.",
     "artifactLock is the project-identity guardrail. Use it to keep the requested artifact faithful all the way through the plan.",
@@ -11399,7 +11408,7 @@ function buildPlanGenerationInstructions(): string {
 
 function buildBlueprintGenerationInstructions(): string {
   return [
-    "You are Construct's Architect agent.",
+    "You are Construct's single Mastra-backed creation agent.",
     "Generate a real project blueprint for the learner to implement in-place.",
     "Construct now follows a stable spine plus adaptive frontier architecture.",
     "artifactLock is the project-identity guardrail for this blueprint. Do not let the authored files drift away from it.",
@@ -11504,7 +11513,7 @@ function buildBlueprintGenerationInstructions(): string {
 
 function buildBlueprintRepairInstructions(): string {
   return [
-    "You are Construct's Architect agent.",
+    "You are Construct's single Mastra-backed creation agent.",
     "Repair a previously generated project blueprint draft without restarting the whole project design.",
     "artifactLock is still binding during repair. Do not use repair as an excuse to substitute a different artifact.",
     "You will receive previousDraft plus validationFailure describing exactly why the saved draft was rejected.",
@@ -11528,7 +11537,7 @@ function buildBlueprintRepairInstructions(): string {
 
 function buildBlueprintFilePatchRepairInstructions(): string {
   return [
-    "You are Construct's Architect repair agent.",
+    "You are Construct's single Mastra-backed creation repair agent.",
     "Repair only the file or files named in repairTargets.",
     "artifactLock is still binding during repair. Keep the requested artifact faithful while fixing only the targeted files.",
     "Return only the corrected file contents in the matching supportFiles, canonicalFiles, learnerFiles, or hiddenTests arrays.",
@@ -11834,7 +11843,7 @@ function mergeGeneratedBlueprintFilePatch(
 
 function buildAdaptiveFrontierGenerationInstructions(): string {
   return [
-    "You are Construct's Architect agent.",
+    "You are Construct's single Mastra-backed creation agent.",
     "Regenerate only the next adaptive frontier for a real project-building IDE.",
     "The stable spine already exists. Do not rewrite the entire project.",
     "Return only learnerFiles, hiddenTests, and steps for the selectedFrontierSteps in the prompt.",
@@ -11871,7 +11880,7 @@ function buildLessonAuthoringInstructions(context: {
   totalSteps: number;
 }): string {
   return [
-    "You are Construct's Architect agent.",
+    "You are Construct's single Mastra-backed creation agent.",
     "You are in the lesson-authoring phase of project generation.",
     `You are authoring a single step chapter (${context.stepIndex + 1} of ${context.totalSteps}).`,
     "The project structure, learner files, hidden tests, anchors, and overall step order already exist.",
@@ -11947,7 +11956,7 @@ function buildLessonAuthoringInstructions(context: {
 
 function buildBlueprintDeepDiveInstructions(): string {
   return [
-    "You are Construct's Architect agent.",
+    "You are Construct's single Mastra-backed creation agent.",
     "The learner is stuck on a real implementation step and needs a deeper conceptual walkthrough before retrying the task.",
     "Generate additional markdown lesson slides and follow-up comprehension checks for the exact blocker in this step.",
     "Do not replace the task. Strengthen the teaching that comes before the task.",

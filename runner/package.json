@@ -8,7 +8,7 @@
     "db:bootstrap": "tsx scripts/bootstrap-prisma-db.ts",
     "build": "tsup src/index.ts src/testRunner.ts src/fileManager.ts src/snapshots.ts --format esm --clean",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test --test-concurrency=1 src/activeBlueprint.test.ts src/agentLanguageModel.test.ts src/agentPersistence.test.ts src/agentService.test.ts src/creationPipelineV2.test.ts src/fileManager.test.ts src/snapshots.test.ts src/testRunner.test.ts src/taskLifecycle.test.ts src/workspaceMaterializer.test.ts",
+    "test": "node --import tsx --test --test-concurrency=1 src/activeBlueprint.test.ts src/agentLanguageModel.test.ts src/agentPersistence.test.ts src/agentService.test.ts src/creationMastraAgent.test.ts src/creationPipelineV2.test.ts src/fileManager.test.ts src/snapshots.test.ts src/testRunner.test.ts src/taskLifecycle.test.ts src/workspaceMaterializer.test.ts",
     "blueprint:test": "node --import tsx src/testRunner.ts --all",
     "task:test": "node --import tsx src/testRunner.ts --step step.state-merge"
   },
@@ -17,13 +17,14 @@
     "@langchain/core": "^1.1.32",
     "@langchain/langgraph": "^1.2.2",
     "@langchain/openai": "^1.0.7",
-    "@prisma/client": "^6.16.0",
+    "@mastra/core": "^1.37.1",
     "@neondatabase/serverless": "^1.0.1",
+    "@prisma/client": "^6.16.0",
     "@tavily/core": "^0.7.2",
     "deepagents": "^1.8.6",
     "jsdom": "^26.1.0",
-    "zod-to-json-schema": "^3.24.6",
-    "zod": "^3.25.76"
+    "zod": "^3.25.76",
+    "zod-to-json-schema": "^3.24.6"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
