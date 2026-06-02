@@ -1660,7 +1660,7 @@ const FEATURE_FLAG_CATALOG = {
     title: "Knowledge sync",
     description:
       "Allow Construct to use quiz answers and task outcomes to decide whether the current project path should adapt.",
-    defaultEnabled: true
+    defaultEnabled: false
   }
 } satisfies Record<
   FeatureFlagKey,

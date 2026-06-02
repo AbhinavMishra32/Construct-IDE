@@ -65,8 +65,9 @@ test("creation kernel scopes and asks intake deterministically without model-sha
 
   assert.equal(scope.shouldResearch, false);
   assert.equal(scope.engagementMode, "implementation-first");
-  assert.equal(intake.questions.length, 2);
-  assert.equal(intake.questions[0]?.conceptId, "artifact.first-slice");
+  assert.equal(intake.questions.length, 1);
+  assert.equal(intake.questions[0]?.conceptId, "teaching.depth");
+  assert.equal(intake.questions.some((question) => question.conceptId === "artifact.first-slice"), false);
   assert.doesNotMatch(intake.questions.map((question) => question.prompt).join("\n"), /which command|what syntax|correct api/i);
 });
 

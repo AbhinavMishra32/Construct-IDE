@@ -128,6 +128,8 @@ const DEFAULT_COURSE_CREATOR_SYSTEM_PROMPT = [
   "Every generated file, step, explanation, check, and hidden test must serve that course shape."
 ].join("\n");
 
+const FIRST_SLICE_INTAKE_ENABLED = false;
+
 function getCourseCreatorSystemPromptOverride(): string | null {
   const override = process.env.CONSTRUCT_COURSE_CREATOR_SYSTEM_PROMPT?.trim();
   return override && override.length > 0 ? override : null;
@@ -351,7 +353,7 @@ export function buildDeterministicCreationQuestionDraft(input: {
         }
       ]
     });
-  } else {
+  } else if (FIRST_SLICE_INTAKE_ENABLED) {
     questions.push({
       conceptId: "artifact.first-slice",
       category: "workflow",

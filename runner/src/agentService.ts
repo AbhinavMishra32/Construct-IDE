@@ -347,6 +347,8 @@ type GoalScope = {
   rationale: string;
 };
 
+const ADAPTIVE_PROJECT_IMPROVEMENTS_ENABLED = false;
+
 const WORKSPACE_BOOTSTRAP_RESPONSE_SCHEMA = z.object({
   summary: z.string().min(1),
   ready: z.boolean(),
@@ -801,6 +803,10 @@ export class ConstructAgentService {
   }
 
   private async isFeatureEnabled(key: FeatureFlagKey): Promise<boolean> {
+    if (key === "adaptive-project-improvements" && !ADAPTIVE_PROJECT_IMPROVEMENTS_ENABLED) {
+      return false;
+    }
+
     const flags = await this.persistence.listFeatureFlags();
     return flags.find((flag) => flag.key === key)?.enabled ?? true;
   }

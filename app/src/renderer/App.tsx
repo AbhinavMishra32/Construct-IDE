@@ -255,11 +255,16 @@ type ProjectImprovementPhase = {
 };
 
 const ADAPTIVE_PROJECT_IMPROVEMENTS_FLAG = "adaptive-project-improvements";
+const ADAPTIVE_PROJECT_IMPROVEMENTS_ENABLED = false;
 
 function getFeatureEnabled(
   featureFlags: FeatureFlagsResponse | null,
   key: FeatureFlag["key"]
 ): boolean {
+  if (key === ADAPTIVE_PROJECT_IMPROVEMENTS_FLAG && !ADAPTIVE_PROJECT_IMPROVEMENTS_ENABLED) {
+    return false;
+  }
+
   return featureFlags?.flags.find((flag) => flag.key === key)?.enabled === true;
 }
 
@@ -1978,8 +1983,10 @@ export default function App() {
         setGuideVisible(false);
         setSurfaceMode("focus");
         setStatusMessage(
-          submission.projectImprovement?.detail
-          ?? `Passed ${currentStep.title} on attempt ${submission.attempt.attempt}.`
+          ADAPTIVE_PROJECT_IMPROVEMENTS_ENABLED
+            ? submission.projectImprovement?.detail
+              ?? `Passed ${currentStep.title} on attempt ${submission.attempt.attempt}.`
+            : `Passed ${currentStep.title} on attempt ${submission.attempt.attempt}.`
         );
       }
     } catch (error) {
