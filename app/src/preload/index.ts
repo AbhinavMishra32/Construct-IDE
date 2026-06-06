@@ -13,6 +13,12 @@ contextBridge.exposeInMainWorld("construct", {
 contextBridge.exposeInMainWorld("constructProjects", {
   ensureProject: (input: unknown) =>
     ipcRenderer.invoke("construct:project:ensure", input),
+  importProject: (input: unknown) =>
+    ipcRenderer.invoke("construct:project:import", input),
+  openConstructFile: () =>
+    ipcRenderer.invoke("construct:dialog:open-construct-file"),
+  selectWorkspaceDirectory: (input: unknown) =>
+    ipcRenderer.invoke("construct:dialog:select-workspace-directory", input),
   listProjects: () => ipcRenderer.invoke("construct:project:list"),
   openProject: (id: string) => ipcRenderer.invoke("construct:project:open", id),
   updateProject: (input: unknown) =>

@@ -25,9 +25,24 @@ function api(): ConstructProjectsApi {
 
 export function ensureProject(input: {
   source: string;
+  sourcePath?: string | null;
   program: ConstructProgram;
 }): Promise<ProjectRecord> {
   return api().ensureProject(input);
+}
+
+export function importProject(input: Parameters<ConstructProjectsApi["importProject"]>[0]): Promise<ProjectRecord> {
+  return api().importProject(input);
+}
+
+export function openConstructFile(): Promise<{ path: string; source: string } | null> {
+  return api().openConstructFile();
+}
+
+export function selectWorkspaceDirectory(input?: {
+  defaultPath?: string;
+}): Promise<string | null> {
+  return api().selectWorkspaceDirectory(input);
 }
 
 export function listProjects(): Promise<ProjectSummary[]> {

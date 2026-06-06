@@ -1,4 +1,5 @@
 import path from "node:path";
+import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
   mkdir,
@@ -9,8 +10,9 @@ import {
   writeFile
 } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { promisify } from "node:util";
 
-import { app, BrowserWindow, ipcMain, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import * as pty from "@homebridge/node-pty-prebuilt-multiarch";
 
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
@@ -21,6 +23,7 @@ const ignoredWorkspaceEntries = new Set([
   "dist",
   "node_modules"
 ]);
+const execFileAsync = promisify(execFile);
 
 type StoredProject = {
   id: string;
@@ -30,6 +33,7 @@ type StoredProject = {
   lastOpenedAt: string | null;
   workspacePath: string;
   source: string;
+  sourcePath: string | null;
   program: {
     id: string;
     title: string;
@@ -65,6 +69,10 @@ function projectsManifestPath(): string {
 
 function workspacePathForProject(projectId: string): string {
   return path.join(constructProjectsRoot(), "workspaces", projectId);
+}
+
+function defaultWorkspaceParent(): string {
+  return path.join(constructProjectsRoot(), "workspaces");
 }
 
 async function readProjects(): Promise<StoredProject[]> {
@@ -112,8 +120,8 @@ function calculateProgress(project: StoredProject): number {
   return Math.min(100, Math.round((completed / blockCount) * 100));
 }
 
-function safeProjectPath(projectId: string, relativePath: string): string {
-  const workspace = workspacePathForProject(projectId);
+function safeProjectPath(project: Pick<StoredProject, "workspacePath">, relativePath: string): string {
+  const workspace = path.resolve(project.workspacePath);
   const normalized = path.normalize(relativePath);
 
   if (
@@ -136,7 +144,7 @@ async function materializeInitialFiles(project: StoredProject): Promise<void> {
   await mkdir(project.workspacePath, { recursive: true });
 
   for (const file of project.program.files) {
-    const target = safeProjectPath(project.id, file.path);
+    const target = safeProjectPath(project, file.path);
     await mkdir(path.dirname(target), { recursive: true });
 
     if (!existsSync(target)) {
@@ -145,8 +153,8 @@ async function materializeInitialFiles(project: StoredProject): Promise<void> {
   }
 }
 
-async function listWorkspaceTree(projectId: string, root = ""): Promise<unknown[]> {
-  const absoluteRoot = safeProjectPath(projectId, root || ".");
+async function listWorkspaceTree(project: StoredProject, root = ""): Promise<unknown[]> {
+  const absoluteRoot = safeProjectPath(project, root || ".");
   const entries = await readdir(absoluteRoot, { withFileTypes: true });
   const nodes = await Promise.all(
     entries
@@ -159,7 +167,7 @@ async function listWorkspaceTree(projectId: string, root = ""): Promise<unknown[
           path: relativePath,
           type: entry.isDirectory() ? "directory" : "file",
           children: entry.isDirectory()
-            ? await listWorkspaceTree(projectId, path.join(root, entry.name))
+            ? await listWorkspaceTree(project, path.join(root, entry.name))
             : undefined
         };
 
@@ -170,7 +178,119 @@ async function listWorkspaceTree(projectId: string, root = ""): Promise<unknown[
   return nodes;
 }
 
+function findProject(projects: StoredProject[], id: string): StoredProject {
+  const project = projects.find((candidate) => candidate.id === id);
+
+  if (!project) {
+    throw new Error(`Unknown Construct project: ${id}`);
+  }
+
+  return project;
+}
+
+async function initializeGitRepository(workspacePath: string): Promise<void> {
+  if (existsSync(path.join(workspacePath, ".git"))) {
+    return;
+  }
+
+  await execFileAsync("git", ["init"], { cwd: workspacePath });
+}
+
 function installConstructProjectIpcHandlers(): void {
+  ipcMain.handle("construct:dialog:open-construct-file", async () => {
+    const result = await dialog.showOpenDialog({
+      title: "Open .construct project",
+      properties: ["openFile"],
+      filters: [
+        { name: "Construct Projects", extensions: ["construct"] },
+        { name: "All Files", extensions: ["*"] }
+      ]
+    });
+
+    if (result.canceled || result.filePaths[0] == null) {
+      return null;
+    }
+
+    const sourcePath = result.filePaths[0];
+    return {
+      path: sourcePath,
+      source: await readFile(sourcePath, "utf8")
+    };
+  });
+
+  ipcMain.handle("construct:dialog:select-workspace-directory", async (_event, input) => {
+    const result = await dialog.showOpenDialog({
+      title: "Choose project workspace",
+      defaultPath: typeof input?.defaultPath === "string" ? input.defaultPath : defaultWorkspaceParent(),
+      properties: ["openDirectory", "createDirectory"]
+    });
+
+    if (result.canceled || result.filePaths[0] == null) {
+      return null;
+    }
+
+    return result.filePaths[0];
+  });
+
+  ipcMain.handle("construct:project:import", async (_event, input) => {
+    const projects = await readProjects();
+    const existingIndex = projects.findIndex((project) => project.id === input.program.id);
+    const now = new Date().toISOString();
+    const workspacePath =
+      typeof input.workspacePath === "string" && input.workspacePath.trim()
+        ? path.resolve(input.workspacePath)
+        : workspacePathForProject(input.program.id);
+
+    if (existingIndex >= 0) {
+      const existing = projects[existingIndex];
+      projects[existingIndex] = {
+        ...existing,
+        source: input.source,
+        sourcePath: typeof input.sourcePath === "string" ? input.sourcePath : existing.sourcePath ?? null,
+        program: input.program,
+        title: input.program.title,
+        description: input.program.description,
+        workspacePath,
+        lastOpenedAt: now
+      };
+      projects[existingIndex].progress = calculateProgress(projects[existingIndex]);
+      await materializeInitialFiles(projects[existingIndex]);
+      if (input.initializeGit === true) {
+        await initializeGitRepository(projects[existingIndex].workspacePath);
+      }
+      await writeProjects(projects);
+      return projects[existingIndex];
+    }
+
+    const project: StoredProject = {
+      id: input.program.id,
+      title: input.program.title,
+      description: input.program.description,
+      progress: 0,
+      lastOpenedAt: now,
+      workspacePath,
+      source: input.source,
+      sourcePath: typeof input.sourcePath === "string" ? input.sourcePath : null,
+      program: input.program,
+      currentStepIndex: 0,
+      currentBlockIndex: 0,
+      activeFilePath: input.program.files[0]?.path ?? null,
+      fileTreeExpanded: [],
+      typingProgress: {},
+      editAnchors: {},
+      completedBlocks: {},
+      completedAt: null
+    };
+
+    await materializeInitialFiles(project);
+    if (input.initializeGit === true) {
+      await initializeGitRepository(project.workspacePath);
+    }
+    projects.push(project);
+    await writeProjects(projects);
+    return project;
+  });
+
   ipcMain.handle("construct:project:ensure", async (_event, input) => {
     const projects = await readProjects();
     const existing = projects.find((project) => project.id === input.program.id);
@@ -181,6 +301,7 @@ function installConstructProjectIpcHandlers(): void {
       existing.program = input.program;
       existing.title = input.program.title;
       existing.description = input.program.description;
+      existing.sourcePath = typeof input.sourcePath === "string" ? input.sourcePath : existing.sourcePath ?? null;
       existing.progress = calculateProgress(existing);
       await materializeInitialFiles(existing);
       await writeProjects(projects);
@@ -195,6 +316,7 @@ function installConstructProjectIpcHandlers(): void {
       lastOpenedAt: null,
       workspacePath: workspacePathForProject(input.program.id),
       source: input.source,
+      sourcePath: typeof input.sourcePath === "string" ? input.sourcePath : null,
       program: input.program,
       currentStepIndex: 0,
       currentBlockIndex: 0,
@@ -220,17 +342,14 @@ function installConstructProjectIpcHandlers(): void {
       description: project.description,
       progress: project.progress,
       lastOpenedAt: project.lastOpenedAt,
-      workspacePath: project.workspacePath
+      workspacePath: project.workspacePath,
+      sourcePath: project.sourcePath ?? null
     }));
   });
 
   ipcMain.handle("construct:project:open", async (_event, id: string) => {
     const projects = await readProjects();
-    const project = projects.find((candidate) => candidate.id === id);
-
-    if (!project) {
-      throw new Error(`Unknown Construct project: ${id}`);
-    }
+    const project = findProject(projects, id);
 
     project.lastOpenedAt = new Date().toISOString();
     await materializeInitialFiles(project);
@@ -256,12 +375,14 @@ function installConstructProjectIpcHandlers(): void {
   });
 
   ipcMain.handle("construct:project:list-files", async (_event, projectId: string) => {
-    await mkdir(workspacePathForProject(projectId), { recursive: true });
-    return listWorkspaceTree(projectId);
+    const project = findProject(await readProjects(), projectId);
+    await mkdir(project.workspacePath, { recursive: true });
+    return listWorkspaceTree(project);
   });
 
   ipcMain.handle("construct:project:read-file", async (_event, input) => {
-    const target = safeProjectPath(input.projectId, input.path);
+    const project = findProject(await readProjects(), input.projectId);
+    const target = safeProjectPath(project, input.path);
     const fileStat = await stat(target);
 
     if (!fileStat.isFile()) {
@@ -275,7 +396,8 @@ function installConstructProjectIpcHandlers(): void {
   });
 
   ipcMain.handle("construct:project:write-file", async (_event, input) => {
-    const target = safeProjectPath(input.projectId, input.path);
+    const project = findProject(await readProjects(), input.projectId);
+    const target = safeProjectPath(project, input.path);
     await mkdir(path.dirname(target), { recursive: true });
     await writeFile(target, input.content, "utf8");
     return {
@@ -285,13 +407,14 @@ function installConstructProjectIpcHandlers(): void {
   });
 
   ipcMain.handle("construct:project:terminal-create", async (_event, input) => {
+    const project = findProject(await readProjects(), input.projectId);
     const sessionId = randomUUID();
     const shellPath = process.env.SHELL || "/bin/zsh";
     const child = pty.spawn(shellPath, ["-i"], {
       name: "xterm-256color",
       cols: typeof input.cols === "number" ? input.cols : 80,
       rows: typeof input.rows === "number" ? input.rows : 24,
-      cwd: workspacePathForProject(input.projectId),
+      cwd: project.workspacePath,
       env: {
         ...process.env,
         TERM: "xterm-256color",

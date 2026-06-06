@@ -70,6 +70,7 @@ export type ProjectSummary = {
   description: string;
   progress: number;
   lastOpenedAt: string | null;
+  sourcePath: string | null;
   workspacePath: string;
 };
 
@@ -111,8 +112,20 @@ export type TerminalExitEvent = {
 export type ConstructProjectsApi = {
   ensureProject(input: {
     source: string;
+    sourcePath?: string | null;
     program: ConstructProgram;
   }): Promise<ProjectRecord>;
+  importProject(input: {
+    initializeGit: boolean;
+    source: string;
+    sourcePath: string | null;
+    program: ConstructProgram;
+    workspacePath: string;
+  }): Promise<ProjectRecord>;
+  openConstructFile(): Promise<{ path: string; source: string } | null>;
+  selectWorkspaceDirectory(input?: {
+    defaultPath?: string;
+  }): Promise<string | null>;
   listProjects(): Promise<ProjectSummary[]>;
   openProject(id: string): Promise<ProjectRecord>;
   updateProject(input: {

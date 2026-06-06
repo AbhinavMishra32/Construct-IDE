@@ -43,6 +43,7 @@ describe(".construct parser", () => {
       description: program.description,
       progress: 0,
       lastOpenedAt: null,
+      sourcePath: null,
       workspacePath: "/tmp/construct-test",
       source: traceFailureProjectSource,
       program,

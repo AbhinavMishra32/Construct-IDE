@@ -1,20 +1,30 @@
-import { ensureProject, listProjects, openProject } from "./bridge";
+import { importProject, listProjects, openProject } from "./bridge";
 import { parseConstructSource } from "./parser";
-import { traceFailureProjectSource } from "../samples/traceFailureProject";
 import type { ProjectRecord, ProjectSummary } from "../types";
 
 export async function bootstrapProjects(): Promise<ProjectSummary[]> {
-  const program = parseConstructSource(traceFailureProjectSource);
-  await ensureProject({
-    source: traceFailureProjectSource,
-    program
-  });
-
   return listProjects();
 }
 
 export async function openSavedProject(id: string): Promise<ProjectRecord> {
   return openProject(id);
+}
+
+export async function createProjectFromConstructFile(input: {
+  initializeGit: boolean;
+  source: string;
+  sourcePath: string;
+  workspacePath: string;
+}): Promise<ProjectRecord> {
+  const program = parseConstructSource(input.source);
+
+  return importProject({
+    initializeGit: input.initializeGit,
+    source: input.source,
+    sourcePath: input.sourcePath,
+    program,
+    workspacePath: input.workspacePath
+  });
 }
 
 export function formatLastOpened(value: string | null): string {
@@ -34,4 +44,3 @@ export function formatLastOpened(value: string | null): string {
     minute: "2-digit"
   }).format(date);
 }
-
