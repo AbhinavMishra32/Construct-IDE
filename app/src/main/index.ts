@@ -2,6 +2,7 @@ import path from "node:path";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
+  cp,
   mkdir,
   readFile,
   readdir,
@@ -51,6 +52,10 @@ type StoredProject = {
   completedAt: string | null;
 };
 
+type StoredSettings = {
+  workspaceRoot: string;
+};
+
 const terminalSessions = new Map<string, pty.IPty>();
 
 function sendToRenderers(channel: string, payload: unknown): void {
@@ -65,6 +70,10 @@ function constructProjectsRoot(): string {
 
 function projectsManifestPath(): string {
   return path.join(constructProjectsRoot(), "projects.json");
+}
+
+function settingsPath(): string {
+  return path.join(constructProjectsRoot(), "settings.json");
 }
 
 function workspacePathForProject(projectId: string): string {
@@ -104,6 +113,28 @@ async function writeProjects(projects: StoredProject[]): Promise<void> {
   const temporary = `${target}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`;
   await writeFile(temporary, `${JSON.stringify(projects, null, 2)}\n`, "utf8");
   await rename(temporary, target);
+}
+
+async function readSettings(): Promise<StoredSettings> {
+  await mkdir(constructProjectsRoot(), { recursive: true });
+
+  if (!existsSync(settingsPath())) {
+    return { workspaceRoot: defaultWorkspaceParent() };
+  }
+
+  try {
+    const parsed = JSON.parse(await readFile(settingsPath(), "utf8")) as Partial<StoredSettings>;
+    return {
+      workspaceRoot: parsed.workspaceRoot || defaultWorkspaceParent()
+    };
+  } catch {
+    return { workspaceRoot: defaultWorkspaceParent() };
+  }
+}
+
+async function writeSettings(settings: StoredSettings): Promise<void> {
+  await mkdir(constructProjectsRoot(), { recursive: true });
+  await writeFile(settingsPath(), `${JSON.stringify(settings, null, 2)}\n`, "utf8");
 }
 
 function calculateProgress(project: StoredProject): number {
@@ -196,6 +227,18 @@ async function initializeGitRepository(workspacePath: string): Promise<void> {
   await execFileAsync("git", ["init"], { cwd: workspacePath });
 }
 
+function summarizeProject(project: StoredProject) {
+  return {
+    id: project.id,
+    title: project.title,
+    description: project.description,
+    progress: project.progress,
+    lastOpenedAt: project.lastOpenedAt,
+    workspacePath: project.workspacePath,
+    sourcePath: project.sourcePath ?? null
+  };
+}
+
 function installConstructProjectIpcHandlers(): void {
   ipcMain.handle("construct:dialog:open-construct-file", async () => {
     const result = await dialog.showOpenDialog({
@@ -232,14 +275,48 @@ function installConstructProjectIpcHandlers(): void {
     return result.filePaths[0];
   });
 
+  ipcMain.handle("construct:settings:get", async () => {
+    return readSettings();
+  });
+
+  ipcMain.handle("construct:settings:set-workspace-root", async (_event, input) => {
+    const workspaceRoot = path.resolve(String(input.workspaceRoot || defaultWorkspaceParent()));
+    await mkdir(workspaceRoot, { recursive: true });
+    const projects = await readProjects();
+
+    for (const project of projects) {
+      const currentWorkspace = path.resolve(project.workspacePath);
+      if (currentWorkspace === workspaceRoot || currentWorkspace.startsWith(`${workspaceRoot}${path.sep}`)) {
+        continue;
+      }
+
+      const nextWorkspace = path.join(workspaceRoot, project.id);
+      if (existsSync(currentWorkspace) && !existsSync(nextWorkspace)) {
+        await cp(currentWorkspace, nextWorkspace, { recursive: true });
+      }
+      await mkdir(nextWorkspace, { recursive: true });
+      project.workspacePath = nextWorkspace;
+    }
+
+    const settings = { workspaceRoot };
+    await writeSettings(settings);
+    await writeProjects(projects);
+
+    return {
+      settings,
+      projects: projects.map(summarizeProject)
+    };
+  });
+
   ipcMain.handle("construct:project:import", async (_event, input) => {
     const projects = await readProjects();
+    const settings = await readSettings();
     const existingIndex = projects.findIndex((project) => project.id === input.program.id);
     const now = new Date().toISOString();
     const workspacePath =
       typeof input.workspacePath === "string" && input.workspacePath.trim()
         ? path.resolve(input.workspacePath)
-        : workspacePathForProject(input.program.id);
+        : path.join(settings.workspaceRoot, input.program.id);
 
     if (existingIndex >= 0) {
       const existing = projects[existingIndex];
@@ -336,15 +413,7 @@ function installConstructProjectIpcHandlers(): void {
   });
 
   ipcMain.handle("construct:project:list", async () => {
-    return (await readProjects()).map((project) => ({
-      id: project.id,
-      title: project.title,
-      description: project.description,
-      progress: project.progress,
-      lastOpenedAt: project.lastOpenedAt,
-      workspacePath: project.workspacePath,
-      sourcePath: project.sourcePath ?? null
-    }));
+    return (await readProjects()).map(summarizeProject);
   });
 
   ipcMain.handle("construct:project:open", async (_event, id: string) => {

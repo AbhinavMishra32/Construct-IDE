@@ -45,6 +45,14 @@ export function selectWorkspaceDirectory(input?: {
   return api().selectWorkspaceDirectory(input);
 }
 
+export function getSettings(): ReturnType<ConstructProjectsApi["getSettings"]> {
+  return api().getSettings();
+}
+
+export function setWorkspaceRoot(input: Parameters<ConstructProjectsApi["setWorkspaceRoot"]>[0]) {
+  return api().setWorkspaceRoot(input);
+}
+
 export function listProjects(): Promise<ProjectSummary[]> {
   return api().listProjects();
 }

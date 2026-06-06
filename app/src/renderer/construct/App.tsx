@@ -24,6 +24,7 @@ import {
 import { Dashboard } from "./components/Dashboard";
 import { FileTree } from "./components/FileTree";
 import { NewProjectDialog } from "./components/NewProjectDialog";
+import { SettingsDialog } from "./components/SettingsDialog";
 import { TerminalPanel, type TerminalPanelHandle } from "./components/TerminalPanel";
 import { Workspace } from "./components/Workspace";
 import {
@@ -265,12 +266,21 @@ export default function ConstructApp() {
           });
         }}
       />
-      {isSettingsOpen ? (
-        <div className="construct-settings-toast" role="status">
-          Project location settings are next in this pass.
-          <button onClick={() => setIsSettingsOpen(false)} type="button">Close</button>
-        </div>
-      ) : null}
+      <SettingsDialog
+        open={isSettingsOpen}
+        onOpenChange={setIsSettingsOpen}
+        onProjectsChange={(nextProjects) => {
+          setProjects(nextProjects);
+          setActiveProject((current) => {
+            if (!current) {
+              return current;
+            }
+
+            const summary = nextProjects.find((project) => project.id === current.id);
+            return summary ? { ...current, workspacePath: summary.workspacePath } : current;
+          });
+        }}
+      />
     </>
   );
 }

@@ -87,6 +87,10 @@ export type ProjectRecord = ProjectSummary & {
   completedAt: string | null;
 };
 
+export type ProjectSettings = {
+  workspaceRoot: string;
+};
+
 export type WorkspaceFile = {
   path: string;
   content: string;
@@ -126,6 +130,13 @@ export type ConstructProjectsApi = {
   selectWorkspaceDirectory(input?: {
     defaultPath?: string;
   }): Promise<string | null>;
+  getSettings(): Promise<ProjectSettings>;
+  setWorkspaceRoot(input: {
+    workspaceRoot: string;
+  }): Promise<{
+    settings: ProjectSettings;
+    projects: ProjectSummary[];
+  }>;
   listProjects(): Promise<ProjectSummary[]>;
   openProject(id: string): Promise<ProjectRecord>;
   updateProject(input: {
