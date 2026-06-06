@@ -1,7 +1,7 @@
 import "@/components/open-shell/tokens/codex-theme.css";
 import "./styles/construct.css";
 
-import { PanelBottomIcon, PanelLeftIcon, PanelRightIcon, TerminalIcon } from "lucide-react";
+import { PanelBottomIcon, PanelLeftIcon, PanelRightIcon, TerminalIcon, HouseIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import {
@@ -14,13 +14,14 @@ import {
 } from "@/components/open-shell";
 
 import { Dashboard } from "./components/Dashboard";
+import { FileTree } from "./components/FileTree";
 import { TerminalPanel, type TerminalPanelHandle } from "./components/TerminalPanel";
 import { Workspace } from "./components/Workspace";
 import {
   bootstrapProjects,
   openSavedProject
 } from "./lib/projectStore";
-import type { ProjectRecord, ProjectSummary } from "./types";
+import type { ProjectRecord, ProjectSummary, WorkspaceTreeNode } from "./types";
 
 export default function ConstructApp() {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
@@ -29,8 +30,27 @@ export default function ConstructApp() {
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const terminalRef = useRef<TerminalPanelHandle | null>(null);
+  const [treeData, setTreeData] = useState<{
+    tree: WorkspaceTreeNode[];
+    activePath: string | null;
+    relevantPath: string | null;
+    openFile: ((path: string) => void) | null;
+  }>({
+    tree: [],
+    activePath: null,
+    relevantPath: null,
+    openFile: null
+  });
+
   const runCommand = useCallback((command: string, cwd: string) => {
     terminalRef.current?.runCommand(command, cwd);
+  }, []);
+
+  const handleBack = useCallback(() => {
+    setRightPanel(null);
+    setActiveProject(null);
+    setTreeData({ tree: [], activePath: null, relevantPath: null, openFile: null });
+    void refresh();
   }, []);
 
   useEffect(() => {
@@ -86,14 +106,13 @@ export default function ConstructApp() {
   const main = activeProject ? (
       <Workspace
         project={activeProject}
-        onBack={() => {
-          setRightPanel(null);
-          setActiveProject(null);
-          void refresh();
-        }}
+        onBack={handleBack}
         onGuidePanelChange={setRightPanel}
         onProjectChange={setActiveProject}
         onRunCommand={runCommand}
+        onTreeChange={(tree, activePath, relevantPath, openFile) => {
+          setTreeData({ tree, activePath, relevantPath, openFile });
+        }}
     />
   ) : (
     <Dashboard
@@ -107,6 +126,7 @@ export default function ConstructApp() {
 
   return (
     <AppShell
+      showSidebarChrome={false}
       headerTabs={[
         {
           id: activeProject?.id ?? "dashboard",
@@ -137,23 +157,45 @@ export default function ConstructApp() {
           : undefined
       }
       sidebar={
-        <Sidebar
-          projects={sidebarProjects}
-          items={[]}
-          onProjectSelect={(projectId) => void openProject(projectId)}
-        />
+        activeProject ? (
+          <Sidebar projects={[]} items={[]}>
+            <div className="construct-sidebar-active">
+              <div className="construct-sidebar-header">
+                <button
+                  className="construct-sidebar-home-btn"
+                  onClick={handleBack}
+                  title="Go back to projects"
+                  aria-label="Go home"
+                >
+                  <HouseIcon size={16} />
+                </button>
+                <span className="construct-sidebar-project-title" title={activeProject.title}>
+                  {activeProject.title}
+                </span>
+              </div>
+              <div className="construct-sidebar-tree-container">
+                {treeData.openFile && (
+                  <FileTree
+                    nodes={treeData.tree}
+                    activePath={treeData.activePath}
+                    relevantPath={treeData.relevantPath}
+                    onOpenFile={treeData.openFile}
+                  />
+                )}
+              </div>
+            </div>
+          </Sidebar>
+        ) : (
+          <Sidebar
+            projects={sidebarProjects}
+            items={[]}
+            onProjectSelect={(projectId) => void openProject(projectId)}
+          />
+        )
       }
       main={main}
       rightPanel={activeProject ? rightPanel : null}
-      composer={
-        <Composer
-          placeholder="Construct is project-runtime only. Follow the guide, type code, and run commands below."
-          readOnly
-          value=""
-          footerLeading={<div className="construct-composer-status">Linear .construct tape runtime</div>}
-          footerTrailing={<div className="construct-composer-status">No agent generation in this MVP</div>}
-        />
-      }
+
       bottomPanel={
         activeProject ? (
           <BottomPanel

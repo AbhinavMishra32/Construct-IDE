@@ -40,12 +40,10 @@ export const TerminalPanel = forwardRef<
   useImperativeHandle(ref, () => ({
     runCommand(command: string, cwd: string) {
       const sessionId = sessionIdRef.current;
-      const terminal = terminalRef.current;
       const actualCommand = cwd && cwd !== "." ? `(cd ${shellQuote(cwd)} && ${command})` : command;
 
-      terminal?.write(`\r\n$ ${actualCommand}\r\n`);
       if (sessionId) {
-        void terminalInput(sessionId, `${actualCommand}\n`);
+        void terminalInput(sessionId, actualCommand);
         return;
       }
 
@@ -54,16 +52,17 @@ export const TerminalPanel = forwardRef<
   }));
 
   useEffect(() => {
+    const isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
     const terminal = new XTerm({
       cursorBlink: true,
       convertEol: true,
-      fontFamily: '"Geist Mono", "SF Mono", Menlo, monospace',
+      fontFamily: '"Geist Mono Variable", "SF Mono", Menlo, monospace',
       fontSize: 12,
       theme: {
-        background: "#0f1012",
-        foreground: "#f4f4f2",
-        cursor: "#f4f4f2",
-        selectionBackground: "#3b82f633"
+        background: isDark ? "#101112" : "#ffffff",
+        foreground: isDark ? "#f4f4f2" : "#1d1d1f",
+        cursor: isDark ? "#f4f4f2" : "#1d1d1f",
+        selectionBackground: isDark ? "#4f8cff44" : "#0a84ff33"
       }
     });
     const fitAddon = new FitAddon();
@@ -73,7 +72,6 @@ export const TerminalPanel = forwardRef<
     if (containerRef.current) {
       terminal.open(containerRef.current);
       fitAddon.fit();
-      terminal.write("Construct terminal ready\r\n");
     }
 
     const resizeObserver = new ResizeObserver(() => {
@@ -85,7 +83,6 @@ export const TerminalPanel = forwardRef<
     }
 
     const dataSubscription = terminal.onData((data) => {
-      terminal.write(data);
       const sessionId = sessionIdRef.current;
       if (sessionId) {
         void terminalInput(sessionId, data);
@@ -108,7 +105,7 @@ export const TerminalPanel = forwardRef<
       sessionIdRef.current = sessionId;
       setStatus("running");
       for (const command of pendingCommandsRef.current.splice(0)) {
-        void terminalInput(sessionId, `${command}\n`);
+        void terminalInput(sessionId, command);
       }
     });
 

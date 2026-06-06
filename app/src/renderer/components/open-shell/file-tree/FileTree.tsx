@@ -6,6 +6,7 @@ export type FileTreeItem = {
   decoration?: ReactNode;
   gitStatus?: "added" | "modified" | "deleted" | "renamed";
   id?: string;
+  icon?: ReactNode;
   locked?: boolean;
   name: string;
   path: string;
@@ -13,24 +14,47 @@ export type FileTreeItem = {
   type?: "file" | "directory";
 };
 
-export function FileTree({
-  coloredIcons = true,
-  items,
-  onSelectPath,
-  search = true,
-}: {
+export type FileTreeProps = {
+  className?: string;
   coloredIcons?: boolean;
+  gitLane?: boolean;
   items: FileTreeItem[];
   onSelectPath?: (path: string, item: FileTreeItem) => void;
   search?: boolean;
-}) {
+  searchAriaLabel?: string;
+  searchLabel?: string;
+  searchPlaceholder?: string;
+  showActions?: boolean;
+  style?: CSSProperties;
+  variant?: "default" | "sidebar";
+};
+
+export function FileTree({
+  className,
+  coloredIcons = true,
+  gitLane = true,
+  items,
+  onSelectPath,
+  search = true,
+  searchAriaLabel = "Filter files",
+  searchLabel = "Filter files",
+  searchPlaceholder = "Filter files...",
+  showActions = true,
+  style,
+  variant = "default",
+}: FileTreeProps) {
   return (
-    <div className="codex-file-tree" data-file-tree-colored-icons={coloredIcons ? "true" : undefined}>
+    <div
+      className={joinClassNames("codex-file-tree", className)}
+      data-file-tree-colored-icons={coloredIcons ? "true" : undefined}
+      data-file-tree-variant={variant}
+      style={style}
+    >
       <FileTreeIconSprite />
       <div
         className="codex-file-tree-root"
-        data-file-tree-has-context-menu-action-lane="true"
-        data-file-tree-has-git-lane="true"
+        data-file-tree-has-context-menu-action-lane={showActions ? "true" : "false"}
+        data-file-tree-has-git-lane={gitLane ? "true" : "false"}
         data-file-tree-virtualized-root="true"
         role="tree"
         tabIndex={-1}
@@ -38,15 +62,15 @@ export function FileTree({
         {search ? (
           <div data-file-tree-search-container="true">
             <label className="codex-file-tree-search-label" htmlFor="codex-file-tree-search">
-              Filter files
+              {searchLabel}
             </label>
             <div className="codex-file-tree-search-field">
               <SearchIcon />
               <input
                 id="codex-file-tree-search"
                 data-file-tree-search-input="true"
-                placeholder="Filter files…"
-                aria-label="Filter files"
+                placeholder={searchPlaceholder}
+                aria-label={searchAriaLabel}
               />
             </div>
           </div>
@@ -54,7 +78,14 @@ export function FileTree({
         <div data-file-tree-virtualized-scroll="true">
           <div data-file-tree-virtualized-list="true">
             {items.map((item) => (
-              <FileTreeRow key={item.path} item={item} level={1} onSelectPath={onSelectPath} />
+              <FileTreeRow
+                gitLane={gitLane}
+                key={item.path}
+                item={item}
+                level={1}
+                onSelectPath={onSelectPath}
+                showActions={showActions}
+              />
             ))}
           </div>
         </div>
@@ -64,13 +95,17 @@ export function FileTree({
 }
 
 function FileTreeRow({
+  gitLane,
   item,
   level,
   onSelectPath,
+  showActions,
 }: {
+  gitLane: boolean;
   item: FileTreeItem;
   level: number;
   onSelectPath?: (path: string, item: FileTreeItem) => void;
+  showActions: boolean;
 }) {
   const isDirectory = item.type === "directory" || item.children != null;
   const iconName = isDirectory ? "file-tree-icon-chevron" : item.locked === true ? "file-tree-icon-lock" : "file-tree-icon-file";
@@ -94,24 +129,35 @@ function FileTreeRow({
         style={{ "--tree-depth": String(level - 1) } as CSSProperties}
       >
         <span data-item-section="icon">
-          <svg data-icon-name={iconName} data-icon-token={iconToken} aria-hidden="true">
-            <use href={`#${iconName}`} />
-          </svg>
+          {item.icon ?? (
+            <svg data-icon-name={iconName} data-icon-token={iconToken} aria-hidden="true">
+              <use href={`#${iconName}`} />
+            </svg>
+          )}
         </span>
         <span data-item-section="content">{item.name}</span>
         <span data-item-section="decoration">
           {item.decoration}
         </span>
-        <span data-item-section="git">{item.gitStatus != null ? <GitDot status={item.gitStatus} /> : null}</span>
-        <span data-item-section="action">
-          <svg data-icon-name="file-tree-icon-ellipsis" aria-hidden="true">
-            <use href="#file-tree-icon-ellipsis" />
-          </svg>
-        </span>
+        {gitLane ? <span data-item-section="git">{item.gitStatus != null ? <GitDot status={item.gitStatus} /> : null}</span> : null}
+        {showActions ? (
+          <span data-item-section="action">
+            <svg data-icon-name="file-tree-icon-ellipsis" aria-hidden="true">
+              <use href="#file-tree-icon-ellipsis" />
+            </svg>
+          </span>
+        ) : null}
       </button>
       {isDirectory
         ? item.children?.map((child) => (
-            <FileTreeRow key={child.path} item={child} level={level + 1} onSelectPath={onSelectPath} />
+            <FileTreeRow
+              gitLane={gitLane}
+              key={child.path}
+              item={child}
+              level={level + 1}
+              onSelectPath={onSelectPath}
+              showActions={showActions}
+            />
           ))
         : null}
     </>
@@ -146,6 +192,10 @@ function getIconToken(name: string, isDirectory: boolean) {
     return "markdown";
   }
   return "default";
+}
+
+function joinClassNames(...classNames: Array<string | undefined>) {
+  return classNames.filter(Boolean).join(" ");
 }
 
 function SearchIcon() {

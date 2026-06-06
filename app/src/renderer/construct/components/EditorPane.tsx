@@ -3,7 +3,29 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { editor as MonacoEditor } from "monaco-editor";
 
 import { monaco } from "../../monaco";
+import {
+  CONSTRUCT_DARK,
+  CONSTRUCT_LIGHT,
+  registerConstructThemes
+} from "../editorThemes";
 import type { EditBlock } from "../types";
+
+registerConstructThemes();
+
+function useEditorTheme() {
+  const [dark, setDark] = useState(
+    () => window.matchMedia("(prefers-color-scheme: dark)").matches
+  );
+
+  useEffect(() => {
+    const mql = window.matchMedia("(prefers-color-scheme: dark)");
+    const handler = (event: MediaQueryListEvent) => setDark(event.matches);
+    mql.addEventListener("change", handler);
+    return () => mql.removeEventListener("change", handler);
+  }, []);
+
+  return dark ? CONSTRUCT_DARK : CONSTRUCT_LIGHT;
+}
 
 type GuidedState = {
   activeEdit: EditBlock | null;
@@ -38,6 +60,7 @@ export function EditorPane({
     onGuidedProgress
   });
   const [wrongInput, setWrongInput] = useState(false);
+  const editorTheme = useEditorTheme();
   const typed = activeEdit?.content.slice(0, editProgress) ?? "";
   const remaining = activeEdit?.content.slice(editProgress) ?? "";
   const isGuided = Boolean(activeEdit && activeEdit.path === path);
@@ -83,7 +106,10 @@ export function EditorPane({
                 ghostEnd.column
               ),
               options: {
-                inlineClassName: "construct-monaco-ghost-text"
+                inlineClassName: "construct-monaco-ghost-text",
+                stickiness:
+                  monaco.editor.TrackedRangeStickiness
+                    .NeverGrowsWhenTypingAtEdges
               }
             }
           ]
@@ -112,18 +138,24 @@ export function EditorPane({
         options={{
           automaticLayout: true,
           cursorBlinking: "smooth",
-          fontFamily: "var(--codex-font-mono)",
+          cursorSmoothCaretAnimation: "on",
+          fontFamily:
+            '"Geist Mono Variable", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
           fontLigatures: true,
-          fontSize: 13,
-          lineHeight: 21,
+          fontSize: 13.5,
+          letterSpacing: 0.2,
+          lineHeight: 22,
           minimap: { enabled: false },
-          padding: { top: 14, bottom: 14 },
-          renderLineHighlight: "line",
+          padding: { top: 16, bottom: 16 },
+          renderLineHighlight: "all",
+          renderWhitespace: "selection",
+          roundedSelection: true,
           scrollBeyondLastLine: false,
+          smoothScrolling: true,
           tabSize: 2,
           wordWrap: "on"
         }}
-        theme="vs-dark"
+        theme={editorTheme}
         value={displayContent}
         onChange={(value) => {
           if (!isGuided) {

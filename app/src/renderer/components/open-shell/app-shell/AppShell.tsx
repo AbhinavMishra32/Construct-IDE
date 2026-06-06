@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import type { ButtonHTMLAttributes, CSSProperties, HTMLAttributes, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import {
   ContextMenu,
@@ -15,9 +15,13 @@ export type AppShellTabItem = {
 };
 
 export type AppShellState = {
+  canNavigateBack: boolean;
+  canNavigateForward: boolean;
   isBottomPanelOpen: boolean;
   isRightPanelOpen: boolean;
   isSidebarOpen: boolean;
+  navigateBack: () => void;
+  navigateForward: () => void;
   setBottomPanelOpen: (open: boolean) => void;
   setRightPanelOpen: (open: boolean) => void;
   setSidebarOpen: (open: boolean) => void;
@@ -28,8 +32,10 @@ export type AppShellState = {
 
 export type AppShellProps = {
   bottomPanel?: ReactNode;
+  canNavigateBack?: boolean;
+  canNavigateForward?: boolean;
   chromeControls?: ReactNode | ((state: AppShellState) => ReactNode);
-  composer: ReactNode;
+  composer?: ReactNode;
   collapsedSidebarTrigger?: ReactNode | ((state: AppShellState) => ReactNode);
   defaultBottomPanelOpen?: boolean;
   defaultRightPanelOpen?: boolean;
@@ -43,8 +49,12 @@ export type AppShellProps = {
   renderHeaderTabMenu?: (tab: AppShellTabItem, state: AppShellState) => ReactNode;
   rightPanel?: ReactNode;
   sidebar: ReactNode;
+  sidebarChrome?: ReactNode | ((state: AppShellState) => ReactNode);
   sidebarMaxWidth?: number;
   sidebarMinWidth?: number;
+  showSidebarChrome?: boolean;
+  onNavigateBack?: () => void;
+  onNavigateForward?: () => void;
 };
 
 export type AppShellSlotProps = HTMLAttributes<HTMLDivElement>;
@@ -52,6 +62,8 @@ export type AppShellButtonProps = ButtonHTMLAttributes<HTMLButtonElement>;
 
 export function AppShell({
   bottomPanel,
+  canNavigateBack = false,
+  canNavigateForward = false,
   chromeControls,
   composer,
   collapsedSidebarTrigger,
@@ -67,8 +79,12 @@ export function AppShell({
   renderHeaderTabMenu,
   rightPanel,
   sidebar,
+  sidebarChrome,
   sidebarMaxWidth = 520,
   sidebarMinWidth = 240,
+  showSidebarChrome = true,
+  onNavigateBack,
+  onNavigateForward,
 }: AppShellProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(defaultSidebarOpen);
   const [sidebarWidth, setSidebarWidth] = useState(defaultSidebarWidth);
@@ -84,23 +100,24 @@ export function AppShell({
   const toggleBottomPanel = useCallback(() => {
     setIsBottomPanelOpen((value) => !value);
   }, []);
+  const navigateBack = useCallback(() => {
+    onNavigateBack?.();
+  }, [onNavigateBack]);
+  const navigateForward = useCallback(() => {
+    onNavigateForward?.();
+  }, [onNavigateForward]);
 
-  useEffect(() => {
-    if (rightPanel != null) {
-      setIsRightPanelOpen(true);
-    }
-  }, [rightPanel]);
-
-  useEffect(() => {
-    if (bottomPanel != null) {
-      setIsBottomPanelOpen(true);
-    }
-  }, [bottomPanel]);
+  // Panels are toggled explicitly by the user — we no longer auto-open
+  // them whenever their content slot changes.
 
   const shellState: AppShellState = {
+    canNavigateBack,
+    canNavigateForward,
     isBottomPanelOpen,
     isRightPanelOpen,
     isSidebarOpen,
+    navigateBack,
+    navigateForward,
     setBottomPanelOpen: setIsBottomPanelOpen,
     setRightPanelOpen: setIsRightPanelOpen,
     setSidebarOpen: setIsSidebarOpen,
@@ -158,6 +175,11 @@ export function AppShell({
         data-open={isSidebarOpen ? "true" : "false"}
         data-resizing={isSidebarResizing ? "true" : "false"}
       >
+        {showSidebarChrome ? (
+          <AppShellSidebarChrome>
+            {sidebarChrome != null ? resolveSlot(sidebarChrome, shellState) : <DefaultSidebarChrome state={shellState} />}
+          </AppShellSidebarChrome>
+        ) : null}
         <div className="codex-left-panel-inner">{sidebar}</div>
         <div
           className="codex-sidebar-resize-handle"
@@ -204,7 +226,7 @@ export function AppShell({
                 data-app-shell-main-content-top-fade="false"
               />
               <AppShellContent>{main}</AppShellContent>
-              <AppShellComposer>{composer}</AppShellComposer>
+              {composer != null ? <AppShellComposer>{composer}</AppShellComposer> : null}
             </div>
           </section>
           {rightPanel != null ? (
@@ -237,6 +259,30 @@ export function AppShellChromeControls({ children, className, ...props }: AppShe
     <div className={joinClassNames("codex-shell-chrome-controls", className)} {...props}>
       {children}
     </div>
+  );
+}
+
+export function AppShellSidebarChrome({ children, className, ...props }: AppShellSlotProps) {
+  return (
+    <div className={joinClassNames("codex-sidebar-chrome", className)} {...props}>
+      {children}
+    </div>
+  );
+}
+
+function DefaultSidebarChrome({ state }: { state: AppShellState }) {
+  return (
+    <>
+      <AppShellChromeButton aria-label={state.isSidebarOpen ? "Hide sidebar" : "Show sidebar"} onClick={state.toggleSidebar}>
+        <SidebarToggleIcon />
+      </AppShellChromeButton>
+      <AppShellChromeButton aria-label="Back" disabled={!state.canNavigateBack} onClick={state.navigateBack}>
+        <BackIcon />
+      </AppShellChromeButton>
+      <AppShellChromeButton aria-label="Forward" disabled={!state.canNavigateForward} onClick={state.navigateForward}>
+        <ForwardIcon />
+      </AppShellChromeButton>
+    </>
   );
 }
 
@@ -373,6 +419,32 @@ export function AppShellBottomPanel({ children, className, ...props }: AppShellS
 
 function resolveSlot(slot: ReactNode | ((state: AppShellState) => ReactNode), state: AppShellState) {
   return typeof slot === "function" ? slot(state) : slot;
+}
+
+function SidebarToggleIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M6.83 4c-.45 0-.82.01-1.14.04-.39.03-.66.08-.88.16a2.9 2.9 0 0 0-1.56 1.47c-.13.25-.21.56-.25 1.08-.04.52-.04 1.19-.04 2.13v2.24c0 .94 0 1.61.04 2.13.04.52.12.83.25 1.08.3.59.78 1.06 1.37 1.34.22.08.49.13.88.16.32.03.69.04 1.14.04V4Zm1.33 11.99h3.97c.94 0 1.61 0 2.13-.04.52-.04.83-.12 1.08-.25.42-.22.76-.56.98-.98.13-.25.21-.56.25-1.08.04-.52.04-1.19.04-2.13V8.49c0-.94 0-1.61-.04-2.13-.04-.52-.12-.83-.25-1.08a2.6 2.6 0 0 0-.98-.98c-.25-.13-.56-.21-1.08-.25-.52-.04-1.19-.04-2.13-.04H8.16v11.98Z" />
+    </svg>
+  );
+}
+
+function BackIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M12.75 4.5 7.25 10l5.5 5.5" />
+      <path d="M7.75 10h8" />
+    </svg>
+  );
+}
+
+function ForwardIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <path d="m7.25 4.5 5.5 5.5-5.5 5.5" />
+      <path d="M12.25 10h-8" />
+    </svg>
+  );
 }
 
 function joinClassNames(...classNames: Array<string | undefined>) {

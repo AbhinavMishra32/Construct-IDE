@@ -135,6 +135,22 @@
   align-items: center;
 }
 
+.codex-sidebar-chrome {
+  -webkit-app-region: drag;
+  position: absolute;
+  top: calc(-1 * var(--height-toolbar));
+  left: 0;
+  right: 0;
+  z-index: 55;
+  display: flex;
+  height: var(--height-toolbar);
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px 0 96px;
+  color: color-mix(in srgb, var(--codex-text-secondary) 76%, transparent);
+  pointer-events: auto;
+}
+
 .codex-app-main {
   position: relative;
   isolation: isolate;

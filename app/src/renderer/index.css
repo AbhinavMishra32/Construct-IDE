@@ -1,6 +1,7 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -58,7 +59,7 @@
   --course-prose-strong: #111111;
   --course-prose-code: #0f172a;
   --course-font-sans: "Geist", "Inter", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --course-font-mono: "Geist Mono", "SF Mono", "Menlo", monospace;
+  --course-font-mono: "Geist Mono Variable", "SF Mono", "Menlo", monospace;
   --radius-xs: 8px;
   --radius-sm: 10px;
   --radius-md: 12px;

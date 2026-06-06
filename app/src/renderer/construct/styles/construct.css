@@ -309,6 +309,7 @@
 
 .construct-monaco-ghost-text {
   opacity: 0.28;
+  pointer-events: none;
 }
 
 .guide-panel {
@@ -384,4 +385,123 @@
   .dashboard__stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+
+/* Sidebar File Tree Styles */
+.construct-sidebar-active {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.construct-sidebar-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: var(--codex-titlebar-height);
+  min-height: var(--codex-titlebar-height);
+  padding: 0 16px;
+  border-bottom: 1px solid var(--codex-border-subtle);
+}
+
+[data-codex-os="darwin"] .construct-sidebar-header {
+  padding-left: 96px;
+}
+
+.codex-app-shell:has(.construct-sidebar-active) .codex-left-panel {
+  padding-top: 0 !important;
+}
+
+.construct-sidebar-home-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--codex-border-subtle);
+  border-radius: var(--codex-radius-md);
+  background: var(--codex-bg-tertiary);
+  color: var(--codex-text-secondary);
+  cursor: default;
+  transition: all 0.15s ease;
+}
+
+.construct-sidebar-home-btn:hover {
+  background: var(--color-token-list-hover-background);
+  color: var(--codex-text-primary);
+  border-color: color-mix(in srgb, var(--codex-border-subtle) 80%, var(--codex-text-primary));
+}
+
+.construct-sidebar-project-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--codex-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.construct-sidebar-tree-container {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px 4px;
+}
+
+/* Ensure file tree background is completely transparent to inherit sidebar style */
+.construct-sidebar-tree-container .codex-file-tree,
+.construct-sidebar-tree-container .codex-file-tree-root,
+.construct-sidebar-tree-container [data-file-tree-virtualized-list],
+.construct-sidebar-tree-container .codex-file-tree-row {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+/* Steps in right panel bottom styles */
+.workspace-right-panel-content {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.workspace-right-panel-content .guide-panel {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0;
+}
+
+.workspace-right-panel-steps {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--codex-border-subtle);
+  margin-top: 12px;
+  padding-top: 12px;
+}
+
+.workspace-right-panel-steps .workspace-panel__header {
+  height: auto;
+  padding: 0 0 8px 0;
+  color: var(--codex-text-tertiary);
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+}
+
+.workspace-right-panel-steps .step-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0;
+}
+
+.codex-right-panel:has(.workspace-right-panel-content) {
+  overflow: hidden !important;
+  display: flex;
+  flex-direction: column;
 }

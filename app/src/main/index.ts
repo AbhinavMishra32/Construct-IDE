@@ -1,5 +1,4 @@
 import path from "node:path";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
   mkdir,
@@ -12,6 +11,7 @@ import {
 import { existsSync } from "node:fs";
 
 import { app, BrowserWindow, ipcMain, shell } from "electron";
+import * as pty from "@homebridge/node-pty-prebuilt-multiarch";
 
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
 const shouldOpenDevTools = process.env.CONSTRUCT_OPEN_DEVTOOLS === "1";
@@ -47,7 +47,7 @@ type StoredProject = {
   completedAt: string | null;
 };
 
-const terminalSessions = new Map<string, ChildProcessWithoutNullStreams>();
+const terminalSessions = new Map<string, pty.IPty>();
 
 function sendToRenderers(channel: string, payload: unknown): void {
   for (const window of BrowserWindow.getAllWindows()) {
@@ -286,29 +286,28 @@ function installConstructProjectIpcHandlers(): void {
 
   ipcMain.handle("construct:project:terminal-create", async (_event, input) => {
     const sessionId = randomUUID();
-    const shell = process.env.SHELL || "/bin/zsh";
-    const child = spawn(shell, ["-l"], {
+    const shellPath = process.env.SHELL || "/bin/zsh";
+    const child = pty.spawn(shellPath, ["-i"], {
+      name: "xterm-256color",
+      cols: typeof input.cols === "number" ? input.cols : 80,
+      rows: typeof input.rows === "number" ? input.rows : 24,
       cwd: workspacePathForProject(input.projectId),
       env: {
         ...process.env,
-        TERM: "xterm-256color"
+        TERM: "xterm-256color",
+        COLORTERM: "truecolor",
+        LANG: process.env.LANG || "en_US.UTF-8"
       }
     });
 
     terminalSessions.set(sessionId, child);
-    child.stdout.on("data", (chunk) => {
+    child.onData((data) => {
       sendToRenderers("construct:project:terminal-data", {
         sessionId,
-        data: chunk.toString()
+        data
       });
     });
-    child.stderr.on("data", (chunk) => {
-      sendToRenderers("construct:project:terminal-data", {
-        sessionId,
-        data: chunk.toString()
-      });
-    });
-    child.on("exit", (exitCode) => {
+    child.onExit(({ exitCode }) => {
       terminalSessions.delete(sessionId);
       sendToRenderers("construct:project:terminal-exit", {
         sessionId,
@@ -320,7 +319,18 @@ function installConstructProjectIpcHandlers(): void {
   });
 
   ipcMain.handle("construct:project:terminal-input", async (_event, input) => {
-    terminalSessions.get(input.sessionId)?.stdin.write(input.data);
+    terminalSessions.get(input.sessionId)?.write(input.data);
+  });
+
+  ipcMain.handle("construct:project:terminal-resize", async (_event, input) => {
+    const session = terminalSessions.get(input.sessionId);
+    if (session && input.cols > 0 && input.rows > 0) {
+      try {
+        session.resize(input.cols, input.rows);
+      } catch {
+        // Ignore resize races when the pty is tearing down.
+      }
+    }
   });
 
   ipcMain.handle("construct:project:terminal-kill", async (_event, input) => {

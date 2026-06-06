@@ -1,10 +1,6 @@
-import { ArrowLeftIcon, CheckCircle2Icon } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
-import { Button, FileBrowserPanel, Pill, StatusDot } from "@/components/open-shell";
-
 import { EditorPane } from "./EditorPane";
-import { FileTree } from "./FileTree";
 import { GuidePanel } from "./GuidePanel";
 import { StepList } from "./StepList";
 import {
@@ -25,13 +21,15 @@ export function Workspace({
   onBack,
   onGuidePanelChange,
   onProjectChange,
-  onRunCommand
+  onRunCommand,
+  onTreeChange
 }: {
   project: ProjectRecord;
   onBack: () => void;
   onGuidePanelChange: (panel: ReactNode | null) => void;
   onProjectChange: (project: ProjectRecord) => void;
   onRunCommand: (command: string, cwd: string) => void;
+  onTreeChange: (tree: WorkspaceTreeNode[], activePath: string | null, relevantPath: string | null, openFile: (path: string) => void) => void;
 }) {
   const [tree, setTree] = useState<WorkspaceTreeNode[]>([]);
   const [activeFileContent, setActiveFileContent] = useState("");
@@ -69,19 +67,33 @@ export function Workspace({
     void prepareEdit(activeEdit);
   }, [activeEdit?.id, project.id]);
 
+  // Push guide + steps into the right panel.
   useEffect(() => {
     onGuidePanelChange(
-      <GuidePanel
-        project={project}
-        block={block}
-        editComplete={editComplete}
-        onNext={() => void handleNext()}
-        onRunCommand={onRunCommand}
-      />
+      <div className="workspace-right-panel-content">
+        <GuidePanel
+          project={project}
+          block={block}
+          editComplete={editComplete}
+          onNext={() => void handleNext()}
+          onRunCommand={onRunCommand}
+        />
+        <div className="workspace-right-panel-steps">
+          <div className="workspace-panel__header">Steps</div>
+          <StepList project={project} />
+        </div>
+      </div>
     );
 
     return () => onGuidePanelChange(null);
   }, [block, editComplete, onGuidePanelChange, onRunCommand, project]);
+
+  // Expose tree data to parent for sidebar rendering.
+  useEffect(() => {
+    onTreeChange(tree, activeFilePath, relevantPath, (path: string) => {
+      void openFile(path);
+    });
+  }, [tree, activeFilePath, relevantPath]);
 
   async function refreshTree() {
     setTree(await listFiles(project.id));
@@ -179,68 +191,15 @@ export function Workspace({
   }
 
   return (
-    <div className="workspace workspace--shell">
-      <FileBrowserPanel
-        fileName={activeFilePath ?? "Select a file"}
-        breadcrumbs={activeFilePath ? activeFilePath.split("/") : [project.title]}
-        headerActions={
-          <div className="workspace__browser-actions">
-            <Pill>{project.progress}% complete</Pill>
-            {project.completedAt ? (
-              <span>
-                <CheckCircle2Icon size={15} />
-                Finished
-              </span>
-            ) : (
-              <span>
-                <StatusDot tone="green" />
-                Active project
-              </span>
-            )}
-          </div>
-        }
-        pathActions={
-          <Button variant="ghost" size="icon" onClick={onBack} aria-label="Back to dashboard">
-            <ArrowLeftIcon size={15} />
-          </Button>
-        }
-        toolbar={
-          <div className="workspace__browser-toolbar">
-            <div>
-              <h1>{project.title}</h1>
-              <p>{projectProgressLabel}</p>
-            </div>
-          </div>
-        }
-        sidePanel={
-          <aside className="workspace__file-rail">
-            <div className="workspace-panel">
-              <div className="workspace-panel__header">Files</div>
-              <FileTree
-                nodes={tree}
-                activePath={activeFilePath}
-                relevantPath={relevantPath}
-                onOpenFile={(path) => void openFile(path)}
-              />
-            </div>
-            <div className="workspace-panel">
-              <div className="workspace-panel__header">Steps</div>
-              <StepList project={project} />
-            </div>
-          </aside>
-        }
-        sidePanelPosition="left"
-        editor={
-          <EditorPane
-            path={activeFilePath}
-            content={activeFileContent}
-            activeEdit={activeEdit}
-            editAnchor={editAnchor}
-            editProgress={editProgress}
-            onFreeEdit={(content) => void handleFreeEdit(content)}
-            onGuidedProgress={(progress) => void handleGuidedProgress(progress)}
-          />
-        }
+    <div className="workspace workspace--editor-only">
+      <EditorPane
+        path={activeFilePath}
+        content={activeFileContent}
+        activeEdit={activeEdit}
+        editAnchor={editAnchor}
+        editProgress={editProgress}
+        onFreeEdit={(content) => void handleFreeEdit(content)}
+        onGuidedProgress={(progress) => void handleGuidedProgress(progress)}
       />
     </div>
   );
