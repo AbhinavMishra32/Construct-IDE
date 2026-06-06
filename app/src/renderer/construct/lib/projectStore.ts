@@ -3,7 +3,7 @@ import { parseConstructSource } from "./parser";
 import type { ProjectRecord, ProjectSummary } from "../types";
 
 export async function bootstrapProjects(): Promise<ProjectSummary[]> {
-  return listProjects();
+  return (await listProjects()).filter((project) => project.sourcePath);
 }
 
 export async function openSavedProject(id: string): Promise<ProjectRecord> {
