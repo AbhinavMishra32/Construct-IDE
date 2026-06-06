@@ -34,6 +34,7 @@ export const TerminalPanel = forwardRef<
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<XTerm | null>(null);
   const sessionIdRef = useRef<string | null>(null);
+  const pendingCommandsRef = useRef<string[]>([]);
   const [status, setStatus] = useState("starting");
 
   useImperativeHandle(ref, () => ({
@@ -45,7 +46,10 @@ export const TerminalPanel = forwardRef<
       terminal?.write(`\r\n$ ${actualCommand}\r\n`);
       if (sessionId) {
         void terminalInput(sessionId, `${actualCommand}\n`);
+        return;
       }
+
+      pendingCommandsRef.current.push(actualCommand);
     }
   }));
 
@@ -103,6 +107,9 @@ export const TerminalPanel = forwardRef<
     void terminalCreate(projectId).then(({ sessionId }) => {
       sessionIdRef.current = sessionId;
       setStatus("running");
+      for (const command of pendingCommandsRef.current.splice(0)) {
+        void terminalInput(sessionId, `${command}\n`);
+      }
     });
 
     return () => {
