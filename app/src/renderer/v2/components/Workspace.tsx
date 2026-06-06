@@ -76,8 +76,8 @@ export function Workspace({
   }
 
   async function openFile(path: string) {
-    const file = await readFile({ projectId: project.id, path });
-    setActiveFileContent(file.content);
+    const file = await readMaybeFile(path);
+    setActiveFileContent(file);
     await persistProject({ activeFilePath: path });
   }
 
