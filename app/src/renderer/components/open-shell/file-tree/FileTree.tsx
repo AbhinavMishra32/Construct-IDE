@@ -21,7 +21,7 @@ export function FileTree({
 }: {
   coloredIcons?: boolean;
   items: FileTreeItem[];
-  onSelectPath?: (path: string) => void;
+  onSelectPath?: (path: string, item: FileTreeItem) => void;
   search?: boolean;
 }) {
   return (
@@ -66,11 +66,11 @@ export function FileTree({
 function FileTreeRow({
   item,
   level,
-  onSelectPath
+  onSelectPath,
 }: {
   item: FileTreeItem;
   level: number;
-  onSelectPath?: (path: string) => void;
+  onSelectPath?: (path: string, item: FileTreeItem) => void;
 }) {
   const isDirectory = item.type === "directory" || item.children != null;
   const iconName = isDirectory ? "file-tree-icon-chevron" : item.locked === true ? "file-tree-icon-lock" : "file-tree-icon-file";
@@ -89,13 +89,9 @@ function FileTreeRow({
         aria-level={level}
         data-item-selected={item.selected ? "true" : undefined}
         data-item-type={isDirectory ? "directory" : "file"}
+        onClick={() => onSelectPath?.(item.path, item)}
         type="button"
         style={{ "--tree-depth": String(level - 1) } as CSSProperties}
-        onClick={() => {
-          if (!isDirectory) {
-            onSelectPath?.(item.path);
-          }
-        }}
       >
         <span data-item-section="icon">
           <svg data-icon-name={iconName} data-icon-token={iconToken} aria-hidden="true">
@@ -115,12 +111,7 @@ function FileTreeRow({
       </button>
       {isDirectory
         ? item.children?.map((child) => (
-            <FileTreeRow
-              key={child.path}
-              item={child}
-              level={level + 1}
-              onSelectPath={onSelectPath}
-            />
+            <FileTreeRow key={child.path} item={child} level={level + 1} onSelectPath={onSelectPath} />
           ))
         : null}
     </>

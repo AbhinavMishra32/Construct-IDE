@@ -191,8 +191,3 @@ html[data-codex-bottom-panel-resizing="true"] .codex-bottom-panel-resize-handle:
   padding: 10px 18px 18px;
   white-space: pre-wrap;
 }
-
-.codex-terminal-buffer-live {
-  padding: 0;
-  white-space: normal;
-}

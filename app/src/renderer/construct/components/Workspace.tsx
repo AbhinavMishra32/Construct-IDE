@@ -1,7 +1,7 @@
 import { ArrowLeftIcon, CheckCircle2Icon } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
-import { Button, Pill, StatusDot } from "@/components/open-shell";
+import { Button, FileBrowserPanel, Pill, StatusDot } from "@/components/open-shell";
 
 import { EditorPane } from "./EditorPane";
 import { FileTree } from "./FileTree";
@@ -23,11 +23,13 @@ import type {
 export function Workspace({
   project,
   onBack,
+  onGuidePanelChange,
   onProjectChange,
   onRunCommand
 }: {
   project: ProjectRecord;
   onBack: () => void;
+  onGuidePanelChange: (panel: ReactNode | null) => void;
   onProjectChange: (project: ProjectRecord) => void;
   onRunCommand: (command: string, cwd: string) => void;
 }) {
@@ -66,6 +68,20 @@ export function Workspace({
 
     void prepareEdit(activeEdit);
   }, [activeEdit?.id, project.id]);
+
+  useEffect(() => {
+    onGuidePanelChange(
+      <GuidePanel
+        project={project}
+        block={block}
+        editComplete={editComplete}
+        onNext={() => void handleNext()}
+        onRunCommand={onRunCommand}
+      />
+    );
+
+    return () => onGuidePanelChange(null);
+  }, [block, editComplete, onGuidePanelChange, onRunCommand, project]);
 
   async function refreshTree() {
     setTree(await listFiles(project.id));
@@ -163,68 +179,69 @@ export function Workspace({
   }
 
   return (
-    <div className="workspace">
-      <header className="workspace__topbar">
-        <div className="workspace__title">
+    <div className="workspace workspace--shell">
+      <FileBrowserPanel
+        fileName={activeFilePath ?? "Select a file"}
+        breadcrumbs={activeFilePath ? activeFilePath.split("/") : [project.title]}
+        headerActions={
+          <div className="workspace__browser-actions">
+            <Pill>{project.progress}% complete</Pill>
+            {project.completedAt ? (
+              <span>
+                <CheckCircle2Icon size={15} />
+                Finished
+              </span>
+            ) : (
+              <span>
+                <StatusDot tone="green" />
+                Active project
+              </span>
+            )}
+          </div>
+        }
+        pathActions={
           <Button variant="ghost" size="icon" onClick={onBack} aria-label="Back to dashboard">
             <ArrowLeftIcon size={15} />
           </Button>
-          <div>
-            <h1>{project.title}</h1>
-            <p>{projectProgressLabel}</p>
+        }
+        toolbar={
+          <div className="workspace__browser-toolbar">
+            <div>
+              <h1>{project.title}</h1>
+              <p>{projectProgressLabel}</p>
+            </div>
           </div>
-        </div>
-        <div className="workspace__status">
-          <Pill>{project.progress}% complete</Pill>
-          {project.completedAt ? (
-            <span>
-              <CheckCircle2Icon size={15} />
-              Finished
-            </span>
-          ) : (
-            <span>
-              <StatusDot tone="green" />
-              Active project
-            </span>
-          )}
-        </div>
-      </header>
-
-      <div className="workspace__body">
-        <aside className="workspace__left">
-          <div className="workspace-panel">
-            <div className="workspace-panel__header">Files</div>
-            <FileTree
-              nodes={tree}
-              activePath={activeFilePath}
-              relevantPath={relevantPath}
-              onOpenFile={(path) => void openFile(path)}
-            />
-          </div>
-          <div className="workspace-panel">
-            <div className="workspace-panel__header">Steps</div>
-            <StepList project={project} />
-          </div>
-        </aside>
-
-        <EditorPane
-          path={activeFilePath}
-          content={activeFileContent}
-          activeEdit={activeEdit}
-          editAnchor={editAnchor}
-          editProgress={editProgress}
-          onFreeEdit={(content) => void handleFreeEdit(content)}
-          onGuidedProgress={(progress) => void handleGuidedProgress(progress)}
-        />
-
-        <GuidePanel
-          project={project}
-          block={block}
-          editComplete={editComplete}
-          onNext={() => void handleNext()}
-          onRunCommand={onRunCommand}
-        />
-      </div>
+        }
+        sidePanel={
+          <aside className="workspace__file-rail">
+            <div className="workspace-panel">
+              <div className="workspace-panel__header">Files</div>
+              <FileTree
+                nodes={tree}
+                activePath={activeFilePath}
+                relevantPath={relevantPath}
+                onOpenFile={(path) => void openFile(path)}
+              />
+            </div>
+            <div className="workspace-panel">
+              <div className="workspace-panel__header">Steps</div>
+              <StepList project={project} />
+            </div>
+          </aside>
+        }
+        sidePanelPosition="left"
+        editor={
+          <EditorPane
+            path={activeFilePath}
+            content={activeFileContent}
+            activeEdit={activeEdit}
+            editAnchor={editAnchor}
+            editProgress={editProgress}
+            onFreeEdit={(content) => void handleFreeEdit(content)}
+            onGuidedProgress={(progress) => void handleGuidedProgress(progress)}
+          />
+        }
+      />
     </div>
   );
 }

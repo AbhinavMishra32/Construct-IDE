@@ -108,7 +108,7 @@ export type TerminalExitEvent = {
   exitCode: number | null;
 };
 
-export type ConstructV2Api = {
+export type ConstructProjectsApi = {
   ensureProject(input: {
     source: string;
     program: ConstructProgram;
@@ -144,4 +144,3 @@ export type ConstructV2Api = {
   onTerminalData(callback: (event: TerminalEvent) => void): () => void;
   onTerminalExit(callback: (event: TerminalExitEvent) => void): () => void;
 };
-

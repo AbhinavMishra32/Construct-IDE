@@ -1,14 +1,14 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 
-import AppV2 from "./v2/AppV2";
+import ConstructApp from "./construct/App";
 import { TooltipProvider } from "./components/ui/tooltip";
 import "./index.css";
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <TooltipProvider>
-      <AppV2 />
+      <ConstructApp />
     </TooltipProvider>
   </React.StrictMode>
 );

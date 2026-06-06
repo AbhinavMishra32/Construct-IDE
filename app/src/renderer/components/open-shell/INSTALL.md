@@ -8,8 +8,8 @@ You own these files now. Edit them, theme them, and wire them to your product da
 ## Usage
 
 ```tsx
-import "@/components/open-shell/tokens/codex-theme.css";
-import { AppShell, Composer, Sidebar, ThreadSurface } from "@/components/open-shell";
+import "./app/src/renderer/components/open-shell/tokens/codex-theme.css";
+import { AppShell, Composer, Sidebar, ThreadSurface } from "./app/src/renderer/components/open-shell";
 ```
 
 ## Required packages

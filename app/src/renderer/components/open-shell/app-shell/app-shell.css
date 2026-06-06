@@ -7,6 +7,8 @@
   background: transparent;
   --codex-left-panel-width: 300px;
   --codex-left-panel-visible-width: var(--codex-left-panel-width);
+  --codex-left-panel-max-width: 520px;
+  --codex-left-panel-min-content: 320px;
 }
 
 .codex-app-shell[data-sidebar-open="false"] {
@@ -67,17 +69,30 @@
   color: color-mix(in srgb, var(--codex-text-secondary) 76%, transparent);
   background: transparent;
   pointer-events: auto;
+}
+
+.codex-sidebar-reopen-trigger {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  padding: 0;
+  color: inherit;
+  background: transparent;
   transition:
     background-color var(--transition-duration-basic) var(--cubic-enter),
     color var(--transition-duration-basic) var(--cubic-enter),
     opacity var(--transition-duration-basic) var(--cubic-enter);
 }
 
-.codex-sidebar-reopen-button:hover {
+.codex-sidebar-reopen-trigger:hover {
   background: color-mix(in srgb, var(--codex-text-primary) 7%, transparent);
   color: var(--codex-text-primary);
 }
 
+.codex-sidebar-reopen-trigger svg,
 .codex-sidebar-reopen-button svg {
   width: 18px;
   height: 18px;
@@ -115,6 +130,11 @@
   stroke: none;
 }
 
+.codex-app-tab-actions {
+  display: inline-flex;
+  align-items: center;
+}
+
 .codex-app-main {
   position: relative;
   isolation: isolate;
@@ -144,7 +164,7 @@
   display: flex;
   width: var(--codex-left-panel-visible-width);
   min-width: 0;
-  max-width: min(520px, calc(100vw - 320px));
+  max-width: min(var(--codex-left-panel-max-width), calc(100vw - var(--codex-left-panel-min-content)));
   height: 100%;
   flex: 0 0 auto;
   overflow: visible;

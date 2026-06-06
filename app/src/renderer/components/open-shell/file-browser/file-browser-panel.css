@@ -184,6 +184,19 @@
   grid-template-columns: minmax(0, 1fr) minmax(260px, 34%);
 }
 
+.codex-file-browser-body[data-side-panel-position="left"] {
+  grid-template-columns: minmax(260px, 30%) minmax(0, 1fr);
+}
+
+.codex-file-browser-body[data-side-panel-position="left"] > :first-child {
+  grid-column: 2;
+}
+
+.codex-file-browser-body[data-side-panel-position="left"] > :last-child {
+  grid-column: 1;
+  grid-row: 1;
+}
+
 .codex-file-browser-code {
   min-width: 0;
   min-height: 0;

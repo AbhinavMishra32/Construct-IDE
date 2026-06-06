@@ -1,10 +1,30 @@
-export { AppShell } from "./app-shell/AppShell";
+export {
+  AppShell,
+  AppShellBottomPanel,
+  AppShellChromeButton,
+  AppShellChromeControls,
+  AppShellCollapsedSidebarTrigger,
+  AppShellComposer,
+  AppShellContent,
+  AppShellHeader,
+  AppShellHeaderActions,
+  AppShellHeaderContextSurface,
+  AppShellHeaderPillButton,
+  AppShellHeaderToolButton,
+  AppShellRightPanel,
+  AppShellTab,
+  AppShellTabActionButton,
+  AppShellTabActions,
+  AppShellTabController,
+  AppShellTabStrip,
+} from "./app-shell/AppShell";
+export type { AppShellProps, AppShellState, AppShellTabItem } from "./app-shell/AppShell";
 export { BottomPanel, TerminalSurface, clampBottomPanelHeight } from "./bottom-panel/BottomPanel";
 export type { BottomPanelTab } from "./bottom-panel/BottomPanel";
 export { Composer } from "./composer/Composer";
 export { FileTree } from "./file-tree/FileTree";
 export type { FileTreeItem } from "./file-tree/FileTree";
-export { FileBrowserPanel } from "./file-browser/FileBrowserPanel";
+export { FileBrowserBreadcrumbs, FileBrowserPanel, FileBrowserTab } from "./file-browser/FileBrowserPanel";
 export type { FileBrowserPanelProps } from "./file-browser/FileBrowserPanel";
 export { CodexMark } from "./icons/CodexMark";
 export { Button, IconButton, Pill, StatusDot } from "./primitives/Button";
@@ -54,8 +74,17 @@ export {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "./primitives/DropdownMenu";
-export { Sidebar } from "./sidebar/Sidebar";
-export type { SidebarItem, SidebarProject } from "./sidebar/Sidebar";
+export {
+  Sidebar,
+  SidebarFooter,
+  SidebarNavItemRow,
+  SidebarPrimary,
+  SidebarProjectRow,
+  SidebarScroll,
+  SidebarSection,
+  SidebarThreadRow,
+} from "./sidebar/Sidebar";
+export type { SidebarItem, SidebarNavItem, SidebarProject, SidebarProps } from "./sidebar/Sidebar";
 export { appActionAttributeNames, appActionAttributes } from "./sidebar/appActionAttributes";
-export { ThreadSurface } from "./thread/ThreadSurface";
-export type { ThreadMessage } from "./thread/ThreadSurface";
+export { ThreadMessageRow, ThreadSurface } from "./thread/ThreadSurface";
+export type { ThreadMessage, ThreadSurfaceProps } from "./thread/ThreadSurface";

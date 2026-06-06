@@ -54,20 +54,20 @@ function sendToRenderers(channel: string, payload: unknown): void {
   }
 }
 
-function v2Root(): string {
-  return path.join(app.getPath("userData"), "construct-v2");
+function constructProjectsRoot(): string {
+  return path.join(app.getPath("userData"), "construct-projects");
 }
 
 function projectsManifestPath(): string {
-  return path.join(v2Root(), "projects.json");
+  return path.join(constructProjectsRoot(), "projects.json");
 }
 
 function workspacePathForProject(projectId: string): string {
-  return path.join(v2Root(), "workspaces", projectId);
+  return path.join(constructProjectsRoot(), "workspaces", projectId);
 }
 
 async function readProjects(): Promise<StoredProject[]> {
-  await mkdir(v2Root(), { recursive: true });
+  await mkdir(constructProjectsRoot(), { recursive: true });
 
   if (!existsSync(projectsManifestPath())) {
     return [];
@@ -81,7 +81,7 @@ async function readProjects(): Promise<StoredProject[]> {
 }
 
 async function writeProjects(projects: StoredProject[]): Promise<void> {
-  await mkdir(v2Root(), { recursive: true });
+  await mkdir(constructProjectsRoot(), { recursive: true });
   await writeFile(projectsManifestPath(), `${JSON.stringify(projects, null, 2)}\n`, "utf8");
 }
 
@@ -157,8 +157,8 @@ async function listWorkspaceTree(projectId: string, root = ""): Promise<unknown[
   return nodes;
 }
 
-function installV2IpcHandlers(): void {
-  ipcMain.handle("construct:v2:ensure-project", async (_event, input) => {
+function installConstructProjectIpcHandlers(): void {
+  ipcMain.handle("construct:project:ensure", async (_event, input) => {
     const projects = await readProjects();
     const existing = projects.find((project) => project.id === input.program.id);
     const now = new Date().toISOString();
@@ -200,7 +200,7 @@ function installV2IpcHandlers(): void {
     return project;
   });
 
-  ipcMain.handle("construct:v2:list-projects", async () => {
+  ipcMain.handle("construct:project:list", async () => {
     return (await readProjects()).map((project) => ({
       id: project.id,
       title: project.title,
@@ -211,12 +211,12 @@ function installV2IpcHandlers(): void {
     }));
   });
 
-  ipcMain.handle("construct:v2:open-project", async (_event, id: string) => {
+  ipcMain.handle("construct:project:open", async (_event, id: string) => {
     const projects = await readProjects();
     const project = projects.find((candidate) => candidate.id === id);
 
     if (!project) {
-      throw new Error(`Unknown Construct v2 project: ${id}`);
+      throw new Error(`Unknown Construct project: ${id}`);
     }
 
     project.lastOpenedAt = new Date().toISOString();
@@ -225,12 +225,12 @@ function installV2IpcHandlers(): void {
     return project;
   });
 
-  ipcMain.handle("construct:v2:update-project", async (_event, input) => {
+  ipcMain.handle("construct:project:update", async (_event, input) => {
     const projects = await readProjects();
     const index = projects.findIndex((project) => project.id === input.id);
 
     if (index < 0) {
-      throw new Error(`Unknown Construct v2 project: ${input.id}`);
+      throw new Error(`Unknown Construct project: ${input.id}`);
     }
 
     projects[index] = {
@@ -242,12 +242,12 @@ function installV2IpcHandlers(): void {
     return projects[index];
   });
 
-  ipcMain.handle("construct:v2:list-files", async (_event, projectId: string) => {
+  ipcMain.handle("construct:project:list-files", async (_event, projectId: string) => {
     await mkdir(workspacePathForProject(projectId), { recursive: true });
     return listWorkspaceTree(projectId);
   });
 
-  ipcMain.handle("construct:v2:read-file", async (_event, input) => {
+  ipcMain.handle("construct:project:read-file", async (_event, input) => {
     const target = safeProjectPath(input.projectId, input.path);
     const fileStat = await stat(target);
 
@@ -261,7 +261,7 @@ function installV2IpcHandlers(): void {
     };
   });
 
-  ipcMain.handle("construct:v2:write-file", async (_event, input) => {
+  ipcMain.handle("construct:project:write-file", async (_event, input) => {
     const target = safeProjectPath(input.projectId, input.path);
     await mkdir(path.dirname(target), { recursive: true });
     await writeFile(target, input.content, "utf8");
@@ -271,7 +271,7 @@ function installV2IpcHandlers(): void {
     };
   });
 
-  ipcMain.handle("construct:v2:terminal-create", async (_event, input) => {
+  ipcMain.handle("construct:project:terminal-create", async (_event, input) => {
     const sessionId = randomUUID();
     const shell = process.env.SHELL || "/bin/zsh";
     const child = spawn(shell, ["-l"], {
@@ -284,20 +284,20 @@ function installV2IpcHandlers(): void {
 
     terminalSessions.set(sessionId, child);
     child.stdout.on("data", (chunk) => {
-      sendToRenderers("construct:v2:terminal-data", {
+      sendToRenderers("construct:project:terminal-data", {
         sessionId,
         data: chunk.toString()
       });
     });
     child.stderr.on("data", (chunk) => {
-      sendToRenderers("construct:v2:terminal-data", {
+      sendToRenderers("construct:project:terminal-data", {
         sessionId,
         data: chunk.toString()
       });
     });
     child.on("exit", (exitCode) => {
       terminalSessions.delete(sessionId);
-      sendToRenderers("construct:v2:terminal-exit", {
+      sendToRenderers("construct:project:terminal-exit", {
         sessionId,
         exitCode
       });
@@ -306,11 +306,11 @@ function installV2IpcHandlers(): void {
     return { sessionId };
   });
 
-  ipcMain.handle("construct:v2:terminal-input", async (_event, input) => {
+  ipcMain.handle("construct:project:terminal-input", async (_event, input) => {
     terminalSessions.get(input.sessionId)?.stdin.write(input.data);
   });
 
-  ipcMain.handle("construct:v2:terminal-kill", async (_event, input) => {
+  ipcMain.handle("construct:project:terminal-kill", async (_event, input) => {
     terminalSessions.get(input.sessionId)?.kill();
     terminalSessions.delete(input.sessionId);
   });
@@ -341,7 +341,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
-  installV2IpcHandlers();
+  installConstructProjectIpcHandlers();
   createWindow();
 
   app.on("activate", () => {

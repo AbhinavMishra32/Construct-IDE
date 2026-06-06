@@ -28,7 +28,7 @@ export function Dashboard({
     <main className="dashboard">
       <header className="dashboard__header">
         <div>
-          <p className="eyebrow">Construct v2</p>
+          <p className="eyebrow">Construct</p>
           <h1>Project workbench</h1>
           <p>
             Local `.construct` projects that open directly into files, editor,

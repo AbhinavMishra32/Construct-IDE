@@ -1,5 +1,4 @@
-import { CodexMark } from "../icons/CodexMark";
-import { Pill } from "../primitives/Button";
+import type { ReactNode } from "react";
 import "./thread-surface.css";
 
 export type ThreadMessage = {
@@ -8,84 +7,83 @@ export type ThreadMessage = {
   status?: string;
 };
 
-export function ThreadSurface({ messages, title }: { messages: ThreadMessage[]; title: string }) {
+export type ThreadSurfaceProps = {
+  afterMessages?: ReactNode;
+  beforeMessages?: ReactNode;
+  headerActions?: ReactNode;
+  messages: ThreadMessage[];
+  renderAssistantActivity?: (message: ThreadMessage, index: number) => ReactNode;
+  renderMessage?: (message: ThreadMessage, index: number) => ReactNode;
+  subtitle?: ReactNode;
+  title: ReactNode;
+};
+
+export function ThreadSurface({
+  afterMessages,
+  beforeMessages,
+  headerActions,
+  messages,
+  renderAssistantActivity,
+  renderMessage,
+  subtitle,
+  title,
+}: ThreadSurfaceProps) {
   return (
     <div className="codex-thread">
       <header className="codex-thread-header">
         <div>
           <h1>{title}</h1>
-          <span>Component-system reconstruction</span>
+          {subtitle != null ? <span>{subtitle}</span> : null}
         </div>
-        <div className="codex-thread-header-pills">
-          <Pill>non-agent</Pill>
-          <Pill>library</Pill>
-        </div>
+        {headerActions != null ? <div className="codex-thread-header-pills">{headerActions}</div> : null}
       </header>
 
-      <section className="codex-thread-brief">
-        <div className="codex-thread-brief-icon">
-          <CodexMark className="codex-thread-brief-logo" />
-        </div>
-        <div>
-          <strong>Codex UI copy app</strong>
-          <p>
-            Static Electron shell using stripped shared UI primitives. Literal upstream assets stay in
-            `src/component-library`; readable components live in `src/lib/codex-ui`.
-          </p>
-        </div>
-      </section>
+      {beforeMessages}
 
       <div className="codex-thread-messages">
         {messages.map((message, index) => (
-          <article className="codex-message" data-role={message.role} key={`${message.role}-${index}`}>
-            {message.role === "assistant" ? (
-              <>
-                <div className="codex-message-activity">
-                  <CodexMark className="codex-message-logo" />
-                  <span>{message.status ?? "Looked at Electron"}</span>
-                </div>
-                <div className="codex-message-copy">{renderBody(message.body)}</div>
-              </>
-            ) : (
-              <div className="codex-message-user-bubble">{renderBody(message.body)}</div>
-            )}
-          </article>
+          renderMessage?.(message, index) ?? (
+            <ThreadMessageRow
+              key={`${message.role}-${index}`}
+              message={message}
+              renderAssistantActivity={renderAssistantActivity}
+              index={index}
+            />
+          )
         ))}
       </div>
 
-      <section className="codex-run-card">
-        <div className="codex-run-card-header">
-          <div>
-            <span className="codex-run-card-icon">
-              <EditedFilesIcon />
-            </span>
-            <div>
-              <strong>Edited 2 files</strong>
-              <span>
-                <span className="codex-diff-added">+162</span>
-                <span className="codex-diff-removed"> -31</span>
-              </span>
-            </div>
-          </div>
-          <div className="codex-run-card-actions">
-            <button type="button">Undo <UndoIcon /></button>
-            <button type="button">Review</button>
-          </div>
-        </div>
-        <div className="codex-run-rows">
-          <span>packages/ui/src/app-shell/AppShell.tsx</span>
-          <span>
-            <span className="codex-diff-added">+50</span>
-            <span className="codex-diff-removed"> -26</span>
-          </span>
-          <span>packages/ui/src/app-shell/app-shell.css</span>
-          <span>
-            <span className="codex-diff-added">+112</span>
-            <span className="codex-diff-removed"> -5</span>
-          </span>
-        </div>
-      </section>
+      {afterMessages}
     </div>
+  );
+}
+
+export function ThreadMessageRow({
+  index,
+  message,
+  renderAssistantActivity,
+}: {
+  index: number;
+  message: ThreadMessage;
+  renderAssistantActivity?: (message: ThreadMessage, index: number) => ReactNode;
+}) {
+  return (
+    <article className="codex-message" data-role={message.role} key={`${message.role}-${index}`}>
+      {message.role === "assistant" ? (
+        <>
+          {renderAssistantActivity != null ? (
+            renderAssistantActivity(message, index)
+          ) : message.status != null ? (
+            <div className="codex-message-activity">
+              <span>{message.status}</span>
+            </div>
+          ) : null}
+          <div className="codex-message-copy">{renderBody(message.body)}</div>
+        </>
+      ) : (
+        <div className="codex-message-user-bubble">{renderBody(message.body)}</div>
+      )}
+    </article>
   );
 }
 
@@ -95,25 +93,4 @@ function renderBody(body: string) {
       {line}
     </p>
   ));
-}
-
-function EditedFilesIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <rect x="4.5" y="3.5" width="11" height="13" rx="2" />
-      <path d="M7.25 8.25h5.5" />
-      <path d="M7.25 11.75h5.5" />
-      <path d="M10 6.25v4" />
-      <path d="M8 8.25h4" />
-    </svg>
-  );
-}
-
-function UndoIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <path d="M7 6.5H4.25V3.75" />
-      <path d="M4.5 6.25A6.5 6.5 0 1 1 5.75 14" />
-    </svg>
-  );
 }

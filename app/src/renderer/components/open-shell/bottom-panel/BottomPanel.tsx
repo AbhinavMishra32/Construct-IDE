@@ -160,20 +160,13 @@ export function BottomPanel({
 }
 
 export function TerminalSurface({ children, cwd }: { children: ReactNode; cwd?: string }) {
-  const content =
-    typeof children === "string" || typeof children === "number" ? (
-      <pre className="codex-terminal-buffer">{children}</pre>
-    ) : (
-      <div className="codex-terminal-buffer codex-terminal-buffer-live">{children}</div>
-    );
-
   return (
     <div className="codex-terminal-surface" data-codex-terminal="true">
       <div className="codex-terminal-header">
         <span className="codex-terminal-dot" />
         <span>{cwd ?? "~/solin/general/desktop-agent-app"}</span>
       </div>
-      {content}
+      <div className="codex-terminal-buffer">{children}</div>
     </div>
   );
 }

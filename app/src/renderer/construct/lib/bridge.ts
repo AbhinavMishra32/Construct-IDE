@@ -1,6 +1,6 @@
 import type {
   ConstructProgram,
-  ConstructV2Api,
+  ConstructProjectsApi,
   ProjectRecord,
   ProjectSummary,
   TerminalEvent,
@@ -11,16 +11,16 @@ import type {
 
 declare global {
   interface Window {
-    constructV2: ConstructV2Api;
+    constructProjects: ConstructProjectsApi;
   }
 }
 
-function api(): ConstructV2Api {
-  if (!window.constructV2) {
-    throw new Error("Construct v2 bridge is unavailable.");
+function api(): ConstructProjectsApi {
+  if (!window.constructProjects) {
+    throw new Error("Construct project bridge is unavailable.");
   }
 
-  return window.constructV2;
+  return window.constructProjects;
 }
 
 export function ensureProject(input: {
@@ -38,7 +38,7 @@ export function openProject(id: string): Promise<ProjectRecord> {
   return api().openProject(id);
 }
 
-export function updateProject(input: Parameters<ConstructV2Api["updateProject"]>[0]) {
+export function updateProject(input: Parameters<ConstructProjectsApi["updateProject"]>[0]) {
   return api().updateProject(input);
 }
 
@@ -80,4 +80,3 @@ export function onTerminalData(callback: (event: TerminalEvent) => void): () => 
 export function onTerminalExit(callback: (event: TerminalExitEvent) => void): () => void {
   return api().onTerminalExit(callback);
 }
-
