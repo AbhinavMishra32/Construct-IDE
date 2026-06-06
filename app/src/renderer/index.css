@@ -137,6 +137,11 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+[data-codex-window-type="electron"] body {
+  overflow: hidden;
+  background: transparent;
+}
+
 * {
   box-sizing: border-box;
 }

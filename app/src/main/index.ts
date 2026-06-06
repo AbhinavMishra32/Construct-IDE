@@ -5,12 +5,13 @@ import {
   mkdir,
   readFile,
   readdir,
+  rename,
   stat,
   writeFile
 } from "node:fs/promises";
 import { existsSync } from "node:fs";
 
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, ipcMain, shell } from "electron";
 
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
 const shouldOpenDevTools = process.env.CONSTRUCT_OPEN_DEVTOOLS === "1";
@@ -73,16 +74,28 @@ async function readProjects(): Promise<StoredProject[]> {
     return [];
   }
 
-  try {
-    return JSON.parse(await readFile(projectsManifestPath(), "utf8")) as StoredProject[];
-  } catch {
-    return [];
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return JSON.parse(await readFile(projectsManifestPath(), "utf8")) as StoredProject[];
+    } catch (error) {
+      if (attempt === 2) {
+        console.error("[construct-projects] Failed to read project manifest.", error);
+        return [];
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
   }
+
+  return [];
 }
 
 async function writeProjects(projects: StoredProject[]): Promise<void> {
   await mkdir(constructProjectsRoot(), { recursive: true });
-  await writeFile(projectsManifestPath(), `${JSON.stringify(projects, null, 2)}\n`, "utf8");
+  const target = projectsManifestPath();
+  const temporary = `${target}.${process.pid}.${Date.now()}.tmp`;
+  await writeFile(temporary, `${JSON.stringify(projects, null, 2)}\n`, "utf8");
+  await rename(temporary, target);
 }
 
 function calculateProgress(project: StoredProject): number {
@@ -318,15 +331,30 @@ function installConstructProjectIpcHandlers(): void {
 
 function createWindow(): void {
   const window = new BrowserWindow({
-    width: 1440,
-    height: 920,
-    backgroundColor: "#08111f",
+    width: 1180,
+    height: 780,
+    minWidth: 860,
+    minHeight: 560,
+    backgroundColor: "#00000000",
+    transparent: true,
+    vibrancy: process.platform === "darwin" ? "menu" : undefined,
+    trafficLightPosition: { x: 16, y: 16 },
+    titleBarStyle: "hiddenInset",
     title: "Construct",
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
-      nodeIntegration: false
-    }
+      nodeIntegration: false,
+      sandbox: false
+    },
+    show: false
+  });
+
+  window.once("ready-to-show", () => window.show());
+
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    void shell.openExternal(url);
+    return { action: "deny" };
   });
 
   if (isDev && process.env.VITE_DEV_SERVER_URL) {

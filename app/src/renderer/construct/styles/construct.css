@@ -1,17 +1,7 @@
 .dashboard {
   display: grid;
-  gap: 18px;
-  height: 100%;
-  overflow: auto;
-  padding: 28px;
-  background: var(--codex-bg-primary);
-}
-
-.dashboard__header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 24px;
+  gap: 12px;
+  margin-top: 4px;
 }
 
 .eyebrow {
@@ -43,15 +33,15 @@
 .dashboard__stats {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
+  gap: 8px;
 }
 
 .dashboard__stats > div {
-  min-height: 76px;
+  min-height: 68px;
   border: 1px solid var(--codex-border-subtle);
-  border-radius: var(--codex-radius-md);
+  border-radius: var(--codex-radius-lg);
   padding: 12px;
-  background: var(--codex-bg-secondary);
+  background: color-mix(in srgb, var(--codex-bg-elevated) 78%, transparent);
   box-shadow: var(--codex-shadow-card);
 }
 
@@ -76,7 +66,7 @@
 
 .dashboard__projects {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .dashboard__error {
@@ -94,9 +84,9 @@
   align-items: center;
   gap: 14px;
   border: 1px solid var(--codex-border-subtle);
-  border-radius: var(--codex-radius-md);
+  border-radius: var(--codex-radius-xl);
   padding: 14px;
-  background: var(--codex-bg-primary);
+  background: color-mix(in srgb, var(--codex-bg-elevated) 84%, transparent);
   box-shadow: var(--codex-shadow-card);
 }
 

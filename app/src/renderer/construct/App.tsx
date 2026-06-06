@@ -32,6 +32,7 @@ export default function ConstructApp() {
 
   useEffect(() => {
     document.documentElement.dataset.codexWindowType = "electron";
+    document.documentElement.dataset.windowType = "electron";
     document.documentElement.dataset.codexOs = window.construct.getRuntimeInfo().platform;
     void refresh();
   }, []);
@@ -65,13 +66,14 @@ export default function ConstructApp() {
     () =>
       projects.map((project) => ({
         id: project.id,
-        label: project.title,
+        label: "construct",
         active: activeProject?.id === project.id,
         threads: [
           {
             id: `${project.id}:progress`,
-            title: `${project.progress}% complete`,
-            meta: "project"
+            title: project.title,
+            meta: `${project.progress}%`,
+            active: activeProject?.id === project.id
           }
         ]
       })),
@@ -114,23 +116,23 @@ export default function ConstructApp() {
           <PanelLeftIcon size={15} />
         </AppShellCollapsedSidebarTrigger>
       )}
-      headerActions={(state) => (
-        <>
-          <AppShellHeaderToolButton onClick={state.toggleSidebar} aria-label="Toggle sidebar">
-            <PanelLeftIcon size={15} />
-          </AppShellHeaderToolButton>
-          {activeProject ? (
-            <>
-              <AppShellHeaderToolButton onClick={state.toggleRightPanel} aria-label="Toggle guide panel">
-                <PanelRightIcon size={15} />
-              </AppShellHeaderToolButton>
-              <AppShellHeaderToolButton onClick={state.toggleBottomPanel} aria-label="Toggle terminal">
-                <PanelBottomIcon size={15} />
-              </AppShellHeaderToolButton>
-            </>
-          ) : null}
-        </>
-      )}
+      headerActions={
+        activeProject
+          ? (state) => (
+              <>
+                <AppShellHeaderToolButton onClick={state.toggleSidebar} aria-label="Toggle sidebar">
+                  <PanelLeftIcon size={15} />
+                </AppShellHeaderToolButton>
+                <AppShellHeaderToolButton onClick={state.toggleRightPanel} aria-label="Toggle guide panel">
+                  <PanelRightIcon size={15} />
+                </AppShellHeaderToolButton>
+                <AppShellHeaderToolButton onClick={state.toggleBottomPanel} aria-label="Toggle terminal">
+                  <PanelBottomIcon size={15} />
+                </AppShellHeaderToolButton>
+              </>
+            )
+          : undefined
+      }
       sidebar={
         <Sidebar
           projects={sidebarProjects}
