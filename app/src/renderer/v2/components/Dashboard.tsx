@@ -6,7 +6,7 @@ import {
   TerminalSquareIcon
 } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
+import { Button, StatusDot } from "@/components/open-shell";
 
 import { ProjectCard } from "./ProjectCard";
 import type { ProjectSummary } from "../types";
@@ -35,7 +35,7 @@ export function Dashboard({
             terminal, and checkpoints.
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={onRefresh} disabled={busy}>
+        <Button variant="secondary" size="small" onClick={onRefresh} disabled={busy}>
           <RefreshCwIcon size={15} />
           Refresh
         </Button>
@@ -59,7 +59,7 @@ export function Dashboard({
         </div>
         <div>
           <DatabaseIcon size={17} />
-          <span>local</span>
+          <span><StatusDot tone="green" /> local</span>
           <p>project state</p>
         </div>
       </section>
@@ -78,4 +78,3 @@ export function Dashboard({
     </main>
   );
 }
-

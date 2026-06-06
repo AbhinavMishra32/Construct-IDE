@@ -1,0 +1,96 @@
+.codex-button {
+  display: inline-flex;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 0 9px;
+  color: var(--codex-text-primary);
+  background: transparent;
+  cursor: default;
+  font-size: 13px;
+  line-height: 18px;
+  user-select: none;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease,
+    transform 120ms ease;
+}
+
+.codex-button:hover {
+  background: var(--codex-bg-tertiary);
+}
+
+.codex-button:active {
+  transform: translateY(1px);
+}
+
+.codex-button-primary {
+  background: var(--codex-text-primary);
+  color: var(--codex-bg-primary);
+}
+
+.codex-button-primary:hover {
+  background: color-mix(in srgb, var(--codex-text-primary) 86%, transparent);
+}
+
+.codex-button-secondary {
+  background: color-mix(in srgb, var(--codex-text-primary) 6%, transparent);
+  color: var(--codex-text-primary);
+}
+
+.codex-button-soft {
+  background: var(--codex-accent-soft);
+  color: var(--codex-accent);
+}
+
+.codex-button-danger {
+  color: var(--codex-danger);
+}
+
+.codex-button-small {
+  height: 24px;
+  padding: 0 7px;
+  font-size: 12px;
+}
+
+.codex-button.codex-button-icon {
+  width: 28px;
+  padding: 0;
+  border-radius: var(--codex-radius-md);
+}
+
+.codex-button-icon-glyph {
+  display: inline-grid;
+  place-items: center;
+}
+
+.codex-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--codex-text-tertiary);
+}
+
+.codex-status-dot[data-tone="green"] {
+  background: var(--codex-accent);
+}
+
+.codex-status-dot[data-tone="orange"] {
+  background: var(--codex-warning);
+}
+
+.codex-pill {
+  display: inline-flex;
+  height: 22px;
+  align-items: center;
+  border: 1px solid var(--codex-border-subtle);
+  border-radius: 999px;
+  padding: 0 8px;
+  background: var(--codex-bg-fog);
+  color: var(--codex-text-tertiary);
+  font-size: 12px;
+}

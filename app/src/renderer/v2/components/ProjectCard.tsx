@@ -1,6 +1,6 @@
 import { ArrowRightIcon, Clock3Icon, FolderCodeIcon } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
+import { Button, Pill } from "@/components/open-shell";
 
 import { formatLastOpened } from "../lib/projectStore";
 import type { ProjectSummary } from "../types";
@@ -20,7 +20,7 @@ export function ProjectCard({
       <div className="project-card__body">
         <div className="project-card__title-row">
           <h2>{project.title}</h2>
-          <span>{project.progress}%</span>
+          <Pill>{project.progress}%</Pill>
         </div>
         <p>{project.description}</p>
         <div className="project-card__meta">
@@ -34,11 +34,10 @@ export function ProjectCard({
           <span style={{ width: `${project.progress}%` }} />
         </div>
       </div>
-      <Button className="project-card__open" size="sm" onClick={() => onOpen(project.id)}>
+      <Button className="project-card__open" size="small" variant="secondary" onClick={() => onOpen(project.id)}>
         Open
         <ArrowRightIcon size={15} />
       </Button>
     </article>
   );
 }
-

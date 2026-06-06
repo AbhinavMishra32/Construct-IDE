@@ -1,0 +1,198 @@
+.codex-bottom-panel {
+  position: relative;
+  z-index: 30;
+  width: 100%;
+  height: var(--app-shell-bottom-panel-height, 280px);
+  min-height: 160px;
+  flex: 0 0 var(--app-shell-bottom-panel-height, 280px);
+  overflow: visible;
+  border-top: 1px solid var(--codex-border-subtle);
+  background: var(--codex-bg-primary);
+  box-shadow: 0 -1px 0 #00000005;
+}
+
+.codex-bottom-panel-resize-handle {
+  position: absolute;
+  top: -4px;
+  right: 0;
+  left: 0;
+  z-index: 1;
+  height: 8px;
+  cursor: row-resize;
+  touch-action: none;
+}
+
+.codex-bottom-panel-resize-handle::before {
+  position: absolute;
+  top: 3px;
+  right: 0;
+  left: 0;
+  height: 1px;
+  background: var(--codex-border-subtle);
+  content: "";
+}
+
+.codex-bottom-panel-resize-handle:hover::before,
+html[data-codex-bottom-panel-resizing="true"] .codex-bottom-panel-resize-handle::before {
+  top: 2px;
+  height: 2px;
+  background: color-mix(in srgb, var(--codex-accent) 72%, var(--codex-border-subtle));
+}
+
+.codex-bottom-panel-inner {
+  display: grid;
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: 34px minmax(0, 1fr);
+  overflow: hidden;
+  contain: layout paint;
+}
+
+.codex-bottom-panel-tabbar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 16px 5px;
+  background: var(--codex-bg-primary);
+}
+
+.codex-bottom-panel-tabs {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+.codex-bottom-panel-tab {
+  position: relative;
+  display: inline-flex;
+  max-width: 190px;
+  height: 34px;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 12px;
+  padding: 0 12px;
+  background: transparent;
+  color: var(--codex-text-secondary);
+  font-size: 15px;
+}
+
+.codex-bottom-panel-tab[data-state="active"] {
+  background: color-mix(in srgb, var(--codex-text-primary) 5%, var(--codex-bg-primary));
+  color: var(--codex-text-primary);
+}
+
+.codex-bottom-panel-tab-icon {
+  display: inline-grid;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  place-items: center;
+}
+
+.codex-bottom-panel-tab-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.codex-bottom-panel-tab-close {
+  display: none;
+  margin-left: 2px;
+  color: var(--codex-text-tertiary);
+}
+
+.codex-bottom-panel-tab:hover .codex-bottom-panel-tab-close {
+  display: inline;
+}
+
+.codex-bottom-panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.codex-bottom-panel-action {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--codex-text-tertiary);
+  font-size: 22px;
+  line-height: 1;
+}
+
+.codex-bottom-panel-action:hover {
+  background: color-mix(in srgb, var(--codex-text-primary) 6%, transparent);
+  color: var(--codex-text-primary);
+}
+
+.codex-bottom-panel-outlet {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.codex-bottom-panel-launcher-menu {
+  min-width: 270px;
+}
+
+.codex-bottom-panel-launcher-icon {
+  display: inline-grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  color: var(--codex-text-secondary);
+}
+
+.codex-bottom-panel-launcher-shortcut {
+  margin-left: auto;
+  color: var(--codex-text-tertiary);
+  font-family: var(--codex-font-sans);
+}
+
+.codex-terminal-surface {
+  display: grid;
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: 30px minmax(0, 1fr);
+  background: var(--vscode-terminal-background, var(--codex-bg-primary));
+  color: var(--vscode-terminal-foreground, var(--codex-text-primary));
+  font-family: var(--codex-font-mono);
+  font-size: 14px;
+}
+
+.codex-terminal-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 18px;
+  color: var(--codex-text-secondary);
+}
+
+.codex-terminal-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--codex-accent);
+}
+
+.codex-terminal-buffer {
+  min-height: 0;
+  margin: 0;
+  overflow: auto;
+  padding: 10px 18px 18px;
+  white-space: pre-wrap;
+}
+
+.codex-terminal-buffer-live {
+  padding: 0;
+  white-space: normal;
+}

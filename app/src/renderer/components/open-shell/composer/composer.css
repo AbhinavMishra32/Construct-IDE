@@ -1,0 +1,211 @@
+.codex-composer {
+  width: min(840px, 100%);
+  margin: 0 auto;
+  border: 1px solid var(--codex-border-strong);
+  border-radius: var(--codex-radius-composer);
+  background: var(--codex-bg-elevated);
+  box-shadow: var(--codex-shadow-float);
+}
+
+.codex-composer textarea {
+  display: block;
+  width: 100%;
+  min-height: 86px;
+  resize: none;
+  border: 0;
+  outline: 0;
+  padding: 18px 20px 8px;
+  color: var(--codex-text-primary);
+  background: transparent;
+  font-size: 14px;
+}
+
+.codex-composer textarea::placeholder {
+  color: var(--codex-text-tertiary);
+}
+
+.codex-composer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+}
+
+.codex-composer-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.codex-composer-model-controls {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.codex-composer-round-button,
+.codex-composer-mic {
+  display: inline-grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--codex-text-primary) 5%, transparent);
+  color: var(--codex-text-tertiary);
+  font-size: 22px;
+}
+
+.codex-composer-access-button,
+.codex-composer-model-button {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  border-radius: 999px;
+  padding: 0 9px;
+  background: transparent;
+  color: #e95412;
+  font-size: 14.5px;
+}
+
+.codex-composer-model-trigger {
+  position: relative;
+  display: inline-flex;
+}
+
+.codex-composer-model-button {
+  color: var(--codex-text-primary);
+  transition:
+    background-color var(--transition-duration-basic) var(--cubic-enter),
+    color var(--transition-duration-basic) var(--cubic-enter);
+}
+
+.codex-composer-model-button:hover,
+.codex-composer-model-button[data-state="open"] {
+  background: color-mix(in srgb, var(--codex-text-primary) 7%, transparent);
+}
+
+.codex-composer-model-button svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.65;
+}
+
+.codex-composer-model-version {
+  color: var(--codex-text-primary);
+}
+
+.codex-composer-model-reasoning {
+  color: var(--codex-text-tertiary);
+}
+
+.codex-composer-model-tooltip {
+  pointer-events: none;
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 9px);
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid color-mix(in srgb, var(--codex-border-subtle) 80%, transparent);
+  border-radius: 14px;
+  padding: 0 10px;
+  background: color-mix(in srgb, var(--color-background-elevated-primary-opaque) 92%, transparent);
+  box-shadow: var(--shadow-xl-spread);
+  color: var(--codex-text-primary);
+  font-size: 13.5px;
+  line-height: 18px;
+  opacity: 0;
+  transform: translateY(2px) scale(0.98);
+  transition:
+    opacity var(--transition-duration-basic) var(--cubic-enter),
+    transform var(--transition-duration-basic) var(--cubic-enter);
+  white-space: nowrap;
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+
+.codex-composer-model-trigger:hover .codex-composer-model-tooltip,
+.codex-composer-model-trigger:focus-within .codex-composer-model-tooltip {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.codex-composer-model-button[data-state="open"] + .codex-composer-model-tooltip {
+  opacity: 0;
+}
+
+.codex-composer-model-tooltip kbd {
+  border-radius: 999px;
+  padding: 1px 8px;
+  background: color-mix(in srgb, var(--codex-text-primary) 8%, transparent);
+  color: var(--codex-text-secondary);
+  font: inherit;
+}
+
+.codex-composer-shield {
+  display: inline-grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  border: 1.5px solid currentColor;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.codex-composer-chevron {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.codex-composer-plus-menu {
+  min-width: 255px;
+}
+
+.codex-composer-model-menu,
+.codex-composer-model-submenu {
+  min-width: 244px;
+}
+
+.codex-composer-menu-label {
+  padding: 7px 8px 5px;
+  color: var(--codex-text-tertiary);
+  font-size: 13.5px;
+}
+
+.codex-menu-icon {
+  display: inline-grid;
+  width: 20px;
+  place-items: center;
+  color: var(--codex-text-secondary);
+}
+
+.codex-menu-check {
+  margin-left: auto;
+  width: 18px;
+  height: 18px;
+  color: var(--codex-text-secondary);
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.codex-composer-mic svg {
+  width: 19px;
+  height: 19px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.6;
+}
