@@ -31,12 +31,20 @@ const PROVIDER_CATALOG: Array<{
   title: string;
   description: string;
   placeholder: string;
+  defaultBaseUrl?: string;
 }> = [
   {
     provider: "openai",
     title: "OpenAI",
     description: "Used for project planning, frontier generation, and runtime guidance when you want personal credentials instead of shared env keys.",
     placeholder: "sk-..."
+  },
+  {
+    provider: "openrouter",
+    title: "OpenRouter",
+    description: "OpenAI-compatible gateway for routing to third-party models through a single API key and base URL.",
+    placeholder: "sk-or-...",
+    defaultBaseUrl: "https://openrouter.ai/api/v1"
   },
   {
     provider: "codex",
@@ -459,7 +467,7 @@ export function AccountSettingsPanel({
                   ) ?? null;
                 const draft = providerDrafts[entry.provider] ?? {
                   apiKey: "",
-                  baseUrl: connection?.baseUrl ?? ""
+                  baseUrl: connection?.baseUrl ?? entry.defaultBaseUrl ?? ""
                 };
                 const busy = providerBusy === entry.provider;
 

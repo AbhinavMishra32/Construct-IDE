@@ -153,7 +153,7 @@ type ResearchDigest = {
 };
 
 type AgentConfig = {
-  provider: "openai";
+  provider: "openai" | "openrouter";
   searchProvider: "tavily" | "exa";
   openAiModel: string;
   openAiFastModel: string;
@@ -639,14 +639,14 @@ const GENERATED_DEEP_DIVE_DRAFT_SCHEMA = z.object({
 
 const EXPLICIT_GOAL_SELF_REPORT_DRAFT_SCHEMA = z.object({
   signals: z.array(
-    z.object({
-      conceptId: z.string().min(1),
-      label: z.string().min(1),
-      category: z.enum(["language", "domain", "workflow"]),
-      score: z.number().int().min(0).max(100),
-      rationale: z.string().min(1),
-      labelPath: z.array(z.string().min(1)).min(1).max(8).optional()
-    })
+      z.object({
+        conceptId: z.string().min(1),
+        label: z.string().min(1),
+        category: z.enum(["language", "domain", "workflow"]),
+        score: z.number().int().min(0).max(100),
+        rationale: z.string().min(1),
+        labelPath: z.array(z.string().min(1)).min(1).max(8).nullable().default(null)
+      })
   ).default([])
 }).transform((value) => ({
   ...value,
@@ -2735,12 +2735,13 @@ export class ConstructAgentService {
 
     const config = await this.getAgentConfig();
     const llm = new OpenAIStructuredLanguageModel({
-        apiKey: config.openAiApiKey,
-        baseUrl: config.openAiBaseUrl,
-        model: config.openAiModel,
-        logger: this.logger,
-        persistence: this.persistence
-      });
+      provider: config.provider,
+      apiKey: config.openAiApiKey,
+      baseUrl: config.openAiBaseUrl,
+      model: config.openAiModel,
+      logger: this.logger,
+      persistence: this.persistence
+    });
     this.llmByUserId.set(userId, llm);
 
     return llm;
@@ -2759,6 +2760,7 @@ export class ConstructAgentService {
 
     const config = await this.getAgentConfig();
     const llm = new OpenAIStructuredLanguageModel({
+      provider: config.provider,
       apiKey: config.openAiApiKey,
       baseUrl: config.openAiBaseUrl,
       model: config.openAiFastModel,
@@ -2783,6 +2785,7 @@ export class ConstructAgentService {
 
     const config = await this.getAgentConfig();
     const llm = new OpenAIStructuredLanguageModel({
+      provider: config.provider,
       apiKey: config.openAiApiKey,
       baseUrl: config.openAiBaseUrl,
       model: config.openAiRepairModel,
@@ -2840,7 +2843,7 @@ export class ConstructAgentService {
     const [openAiConnection, tavilyConnection] = await Promise.all([
       this.auth.resolveProviderSecret({
         userId,
-        provider: "openai"
+        provider: envConfig.provider
       }),
       this.auth.resolveProviderSecret({
         userId,
@@ -6783,7 +6786,10 @@ export class ConstructAgentService {
     usage: LanguageModelUsageContext
   ): Promise<ChatOpenAI> {
     const config = await this.getAgentConfig();
-    const callbacks = this.buildDeepAgentUsageCallbacks(usage);
+    const callbacks = this.buildDeepAgentUsageCallbacks(usage, {
+      provider: config.provider,
+      model: config.openAiModel
+    });
 
     return new ChatOpenAI({
       apiKey: config.openAiApiKey,
@@ -6798,7 +6804,11 @@ export class ConstructAgentService {
   }
 
   private buildDeepAgentUsageCallbacks(
-    usage: LanguageModelUsageContext
+    usage: LanguageModelUsageContext,
+    config: {
+      provider: "openai" | "openrouter";
+      model: string;
+    }
   ): BaseCallbackHandler[] {
     const handler = BaseCallbackHandler.fromMethods({
       handleLLMEnd: async (output) => {
@@ -6815,9 +6825,9 @@ export class ConstructAgentService {
 
           await this.persistence.recordApiUsageEvent({
             id: randomUUID(),
-            provider: "openai",
+            provider: config.provider,
             kind: "llm",
-            model: (await this.getAgentConfig()).openAiModel,
+            model: config.model,
             operation: usage.operation?.trim() || "deep agent",
             stage: usage.stage?.trim() || null,
             schemaName: null,
@@ -7106,11 +7116,13 @@ export class ConstructAgentService {
 
 export class OpenAIStructuredLanguageModel implements StructuredLanguageModel {
   private readonly client: LanguageModelClient;
+  private readonly provider: "openai" | "openrouter";
   private readonly model: string;
   private readonly logger: AgentLogger;
   private readonly persistence: AgentPersistence | null;
 
   constructor(input: {
+    provider?: "openai" | "openrouter";
     apiKey: string;
     baseUrl?: string;
     model: string;
@@ -7130,6 +7142,7 @@ export class OpenAIStructuredLanguageModel implements StructuredLanguageModel {
           : undefined
       });
     this.model = input.model;
+    this.provider = input.provider ?? "openai";
     this.logger = input.logger;
     this.persistence = input.persistence ?? null;
   }
@@ -7150,14 +7163,16 @@ export class OpenAIStructuredLanguageModel implements StructuredLanguageModel {
     usage?: LanguageModelUsageContext;
   }): Promise<z.infer<T>> {
     const startedAt = Date.now();
-    this.logger.info("Starting OpenAI structured generation.", {
+    this.logger.info("Starting OpenAI-compatible structured generation.", {
+      provider: this.provider,
       model: this.model,
       schemaName: input.schemaName,
       promptChars: input.prompt.length,
       maxOutputTokens: input.maxOutputTokens ?? 4_000,
       verbosity: input.verbosity ?? "medium"
     });
-    this.logger.trace?.("OpenAI generation request trace.", {
+    this.logger.trace?.("OpenAI-compatible generation request trace.", {
+      provider: this.provider,
       model: this.model,
       schemaName: input.schemaName,
       instructions: input.instructions,
@@ -7168,7 +7183,8 @@ export class OpenAIStructuredLanguageModel implements StructuredLanguageModel {
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       try {
         const parsed = await this.invokeStructuredResponse(input);
-        this.logger.info("Completed OpenAI structured generation.", {
+        this.logger.info("Completed OpenAI-compatible structured generation.", {
+          provider: this.provider,
           model: this.model,
           schemaName: input.schemaName,
           durationMs: Date.now() - startedAt,
@@ -7202,7 +7218,8 @@ export class OpenAIStructuredLanguageModel implements StructuredLanguageModel {
           );
 
           const repaired = await this.repairStructuredOutputFailure(input, lastError);
-          this.logger.info("Completed OpenAI structured generation.", {
+          this.logger.info("Completed OpenAI-compatible structured generation.", {
+            provider: this.provider,
             model: this.model,
             schemaName: input.schemaName,
             durationMs: Date.now() - startedAt,
@@ -7229,7 +7246,8 @@ export class OpenAIStructuredLanguageModel implements StructuredLanguageModel {
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       try {
         const parsed = await this.invokeJsonFallback(input);
-        this.logger.info("Completed OpenAI structured generation.", {
+        this.logger.info("Completed OpenAI-compatible structured generation.", {
+          provider: this.provider,
           model: this.model,
           schemaName: input.schemaName,
           durationMs: Date.now() - startedAt,
@@ -7523,7 +7541,7 @@ export class OpenAIStructuredLanguageModel implements StructuredLanguageModel {
 
       await this.persistence.recordApiUsageEvent({
         id: randomUUID(),
-        provider: "openai",
+        provider: this.provider,
         kind: "llm",
         model: this.model,
         operation: input.usage?.operation?.trim() || input.schemaName,
@@ -7720,7 +7738,7 @@ function normalizeGoalSelfReportSignals(
     category: "language" | "domain" | "workflow";
     score: number;
     rationale: string;
-    labelPath?: string[];
+    labelPath?: string[] | null;
   }>
 ): Array<{
   conceptId: string;
@@ -7752,7 +7770,7 @@ function normalizeGoalSelfReportSignals(
       conceptId,
       label: signal.label.trim(),
       rationale: signal.rationale.trim(),
-      labelPath: signal.labelPath?.slice(0, 8)
+      labelPath: signal.labelPath?.slice(0, 8) ?? undefined
     });
 
     if (deduped.length >= 8) {
@@ -8080,16 +8098,28 @@ function resolveAgentConfig(): AgentConfig {
   const searchProvider = (process.env.CONSTRUCT_SEARCH_PROVIDER ?? "tavily")
     .trim()
     .toLowerCase();
-  const openAiApiKey = process.env.OPENAI_API_KEY?.trim();
+  const openAiApiKey = (
+    provider === "openrouter"
+      ? process.env.CONSTRUCT_OPENROUTER_API_KEY ?? process.env.OPENROUTER_API_KEY
+      : process.env.OPENAI_API_KEY
+  )?.trim();
   const tavilyApiKey = process.env.TAVILY_API_KEY?.trim();
-  const openAiModel = process.env.CONSTRUCT_OPENAI_MODEL?.trim() || "gpt-5.4";
-  const openAiFastModel = process.env.CONSTRUCT_OPENAI_FAST_MODEL?.trim() || "gpt-5-nano";
+  const openAiModel =
+    provider === "openrouter"
+      ? process.env.CONSTRUCT_OPENROUTER_MODEL?.trim() || "openai/gpt-5.4"
+      : process.env.CONSTRUCT_OPENAI_MODEL?.trim() || "gpt-5.4";
+  const openAiFastModel =
+    provider === "openrouter"
+      ? process.env.CONSTRUCT_OPENROUTER_FAST_MODEL?.trim() || "openai/gpt-5-nano"
+      : process.env.CONSTRUCT_OPENAI_FAST_MODEL?.trim() || "gpt-5-nano";
   const openAiRepairModel =
-    process.env.CONSTRUCT_OPENAI_REPAIR_MODEL?.trim() || openAiModel;
+    provider === "openrouter"
+      ? process.env.CONSTRUCT_OPENROUTER_REPAIR_MODEL?.trim() || openAiModel
+      : process.env.CONSTRUCT_OPENAI_REPAIR_MODEL?.trim() || openAiModel;
 
-  if (provider !== "openai") {
+  if (provider !== "openai" && provider !== "openrouter") {
     throw new Error(
-      `Unsupported agent provider "${provider}". Construct currently supports CONSTRUCT_AGENT_PROVIDER=openai.`
+      `Unsupported agent provider "${provider}". Construct currently supports CONSTRUCT_AGENT_PROVIDER=openai or openrouter.`
     );
   }
 
@@ -8100,7 +8130,11 @@ function resolveAgentConfig(): AgentConfig {
   }
 
   if (!openAiApiKey) {
-    throw new Error("OPENAI_API_KEY is required for the real Construct agent stack.");
+    throw new Error(
+      provider === "openrouter"
+        ? "OPENROUTER_API_KEY (or CONSTRUCT_OPENROUTER_API_KEY) is required for the real Construct agent stack."
+        : "OPENAI_API_KEY is required for the real Construct agent stack."
+    );
   }
 
   if (!tavilyApiKey) {
@@ -8108,10 +8142,13 @@ function resolveAgentConfig(): AgentConfig {
   }
 
   return {
-    provider: "openai",
+    provider: provider as "openai" | "openrouter",
     searchProvider,
     openAiApiKey,
-    openAiBaseUrl: process.env.CONSTRUCT_OPENAI_BASE_URL?.trim(),
+    openAiBaseUrl:
+      provider === "openrouter"
+        ? process.env.CONSTRUCT_OPENROUTER_BASE_URL?.trim() || "https://openrouter.ai/api/v1"
+        : process.env.CONSTRUCT_OPENAI_BASE_URL?.trim(),
     openAiModel,
     openAiFastModel,
     openAiRepairModel,

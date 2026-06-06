@@ -23,6 +23,7 @@ export type AuthIdentityProvider = "password" | "openai" | "codex";
 
 export type ConnectedProvider =
   | "openai"
+  | "openrouter"
   | "codex"
   | "anthropic"
   | "tavily"

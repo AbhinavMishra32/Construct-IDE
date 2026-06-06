@@ -10,6 +10,7 @@ export const AuthIdentityProviderSchema = z.enum([
 
 export const ConnectedProviderSchema = z.enum([
   "openai",
+  "openrouter",
   "codex",
   "anthropic",
   "tavily",

@@ -113,7 +113,7 @@ export async function updateFeatureFlag(input: {
 }
 
 export async function saveProviderApiKey(input: {
-  provider: "openai" | "codex" | "anthropic" | "tavily" | "langsmith" | "exa";
+  provider: "openai" | "openrouter" | "codex" | "anthropic" | "tavily" | "langsmith" | "exa";
   label?: string;
   apiKey: string;
   baseUrl?: string;
@@ -129,7 +129,7 @@ export async function saveProviderApiKey(input: {
 }
 
 export async function removeProviderConnection(input: {
-  provider: "openai" | "codex" | "anthropic" | "tavily" | "langsmith" | "exa";
+  provider: "openai" | "openrouter" | "codex" | "anthropic" | "tavily" | "langsmith" | "exa";
   authType: "api-key" | "oauth";
 }): Promise<ProviderConnectionsResponse> {
   return postJson<ProviderConnectionsResponse>(

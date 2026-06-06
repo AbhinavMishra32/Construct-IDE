@@ -138,7 +138,7 @@ It is still an active work in progress, but the main system is already real and 
 - Node.js 25+
 - pnpm 10+
 - PostgreSQL if using Prisma persistence
-- OpenAI and Tavily API keys for live agent generation
+- OpenAI or OpenRouter and Tavily API keys for live agent generation
 
 ### Install
 
@@ -149,7 +149,7 @@ pnpm prisma:generate
 
 ### Environment
 
-Copy values from [`/Users/abhinavmishra/solin/socrates/.env.example`](/Users/abhinavmishra/solin/socrates/.env.example) into your local `.env`.
+Copy values from [`.env.example`](/Users/abhinavmishra/solin/construct/.env.example) into your local `.env`.
 
 Typical local setup:
 
@@ -158,8 +158,14 @@ CONSTRUCT_STORAGE_BACKEND=prisma
 DATABASE_URL=...
 DIRECT_URL=...
 OPENAI_API_KEY=...
+OPENROUTER_API_KEY=...
 TAVILY_API_KEY=...
 ```
+
+OpenRouter works through the same OpenAI-compatible chat surface the runner already uses. If you switch
+`CONSTRUCT_AGENT_PROVIDER=openrouter`, point `CONSTRUCT_OPENROUTER_BASE_URL` at
+`https://openrouter.ai/api/v1` and use an OpenRouter model id such as `openrouter/owl-alpha`.
+Streaming is supported by OpenRouter as well; the runner will request streaming-compatible responses when the model path supports them.
 
 If you want to initialize the database:
 
