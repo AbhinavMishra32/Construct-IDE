@@ -93,7 +93,7 @@ async function readProjects(): Promise<StoredProject[]> {
 async function writeProjects(projects: StoredProject[]): Promise<void> {
   await mkdir(constructProjectsRoot(), { recursive: true });
   const target = projectsManifestPath();
-  const temporary = `${target}.${process.pid}.${Date.now()}.tmp`;
+  const temporary = `${target}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`;
   await writeFile(temporary, `${JSON.stringify(projects, null, 2)}\n`, "utf8");
   await rename(temporary, target);
 }

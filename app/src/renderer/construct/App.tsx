@@ -2,7 +2,7 @@ import "@/components/open-shell/tokens/codex-theme.css";
 import "./styles/construct.css";
 
 import { PanelBottomIcon, PanelLeftIcon, PanelRightIcon, TerminalIcon } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import {
   AppShell,
@@ -29,6 +29,9 @@ export default function ConstructApp() {
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const terminalRef = useRef<TerminalPanelHandle | null>(null);
+  const runCommand = useCallback((command: string, cwd: string) => {
+    terminalRef.current?.runCommand(command, cwd);
+  }, []);
 
   useEffect(() => {
     document.documentElement.dataset.codexWindowType = "electron";
@@ -90,7 +93,7 @@ export default function ConstructApp() {
         }}
         onGuidePanelChange={setRightPanel}
         onProjectChange={setActiveProject}
-        onRunCommand={(command, cwd) => terminalRef.current?.runCommand(command, cwd)}
+        onRunCommand={runCommand}
     />
   ) : (
     <Dashboard
