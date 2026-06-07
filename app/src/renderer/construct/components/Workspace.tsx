@@ -106,6 +106,7 @@ function FileChooserContent({
 
 export function Workspace({
   project,
+  theme,
   onGuidePanelChange,
   onProjectChange,
   onRunCommand,
@@ -116,6 +117,7 @@ export function Workspace({
   onFileOpened
 }: {
   project: ProjectRecord;
+  theme: "light" | "dark" | "system";
   onGuidePanelChange: (panel: ReactNode | null) => void;
   onProjectChange: (project: ProjectRecord) => void;
   onRunCommand: (command: string, cwd: string) => void;
@@ -320,11 +322,12 @@ export function Workspace({
     <GuidePanel
       project={project}
       block={block}
+      theme={theme}
       editComplete={editComplete}
       onNext={() => void handleNext()}
       onRunCommand={onRunCommand}
     />
-  ), [block, editComplete, onRunCommand, project]);
+  ), [block, editComplete, onRunCommand, project, theme]);
 
   const stepsTabContent = useMemo(() => (
     <div className={`workspace-right-panel-steps ${isStepsCollapsed ? "is-collapsed" : ""}`}>
@@ -402,6 +405,7 @@ export function Workspace({
             onFreeEdit={(content) => void handleFreeEdit(content)}
             onGuidedProgress={(progress) => void handleGuidedProgress(progress)}
             fileList={flattenTree(tree)}
+            theme={theme}
             pendingJump={tabPath === activeFilePath ? pendingJump : null}
             onJumpComplete={() => setPendingJump(null)}
             onOpenFileAndJump={async (path, line, col) => {
@@ -413,7 +417,7 @@ export function Workspace({
         ),
       };
     });
-  }, [openTabs, activeFilePath, activeFileContent, activeEdit, editAnchor, editProgress, tree, pendingJump, handleReadFileContent]);
+  }, [openTabs, activeFilePath, activeFileContent, activeEdit, editAnchor, editProgress, tree, pendingJump, handleReadFileContent, theme]);
 
   // Launcher items for the editor + button
   const fileList = useMemo(() => flattenTree(tree), [tree]);

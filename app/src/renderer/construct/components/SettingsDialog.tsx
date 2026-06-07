@@ -21,10 +21,14 @@ import type { ProjectSummary } from "../types";
 export function SettingsDialog({
   open,
   onOpenChange,
+  theme,
+  onThemeChange,
   onProjectsChange
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  theme: "light" | "dark" | "system";
+  onThemeChange: (theme: "light" | "dark" | "system") => void;
   onProjectsChange: (projects: ProjectSummary[]) => void;
 }) {
   const [workspaceRoot, setWorkspaceRootValue] = useState("");
@@ -94,6 +98,20 @@ export function SettingsDialog({
                   Browse
                 </button>
               </div>
+            </label>
+          </DialogSection>
+          <DialogSection>
+            <label className="construct-field">
+              <span>Color theme</span>
+              <select
+                value={theme}
+                onChange={(event) => onThemeChange(event.target.value as any)}
+                className="construct-select"
+              >
+                <option value="system">System default</option>
+                <option value="dark">Dark theme</option>
+                <option value="light">Light theme</option>
+              </select>
             </label>
           </DialogSection>
           {error ? <div className="construct-dialog-error">{error}</div> : null}

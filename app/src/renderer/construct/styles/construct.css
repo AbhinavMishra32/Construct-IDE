@@ -459,55 +459,56 @@
   min-height: 0;
 }
 
-.construct-sidebar-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  height: var(--codex-titlebar-height);
-  min-height: var(--codex-titlebar-height);
-  padding: 0 16px;
-  border-bottom: 1px solid var(--codex-border-subtle);
-}
-
-[data-codex-os="darwin"] .construct-sidebar-header {
-  padding-left: 96px;
-}
-
 .codex-app-shell:has(.construct-sidebar-active) .codex-left-panel {
   padding-top: 0 !important;
+  flex-direction: column !important;
 }
 
-.construct-sidebar-home-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
+.codex-app-shell:has(.construct-sidebar-active) .codex-sidebar-chrome {
+  position: relative !important;
+  top: 0 !important;
+  flex-shrink: 0 !important;
+}
+
+.codex-app-shell:has(.construct-sidebar-active) .codex-left-panel-inner {
+  height: auto !important;
+  min-height: 0 !important;
+  flex: 1 !important;
+}
+
+.codex-app-shell:has(.construct-sidebar-active) .construct-sidebar-chrome-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--codex-text-primary);
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.construct-collapsed-toolbar {
+  display: flex;
+  gap: 2px;
+}
+
+.codex-app-shell[data-sidebar-open="false"] .codex-sidebar-reopen-button {
+  width: auto !important;
+  height: auto !important;
+  display: flex !important;
+  gap: 10px !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
   color: var(--codex-text-secondary);
-  cursor: default;
-  transition: all 0.15s ease;
+  backdrop-filter: none !important;
+  box-shadow: none !important;
 }
 
-.construct-sidebar-home-btn:hover {
-  background: var(--color-token-list-hover-background);
+.codex-app-shell[data-sidebar-open="false"] .codex-sidebar-reopen-button:hover {
   color: var(--codex-text-primary);
 }
 
 /* Do not truncate the main project tab in the header */
 .codex-app-tab-strip .codex-app-tab {
   max-width: none !important;
-}
-
-.construct-sidebar-project-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--codex-text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .construct-sidebar-tree-container {
@@ -1761,10 +1762,6 @@
   overflow: visible;
   text-overflow: clip;
   white-space: nowrap;
-}
-
-.codex-app-shell:has(.construct-sidebar-active) .construct-sidebar-header {
-  padding-left: 16px;
 }
 
 .construct-guide-slot-panel {

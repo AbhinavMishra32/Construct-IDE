@@ -12,17 +12,25 @@ import type { EditBlock } from "../types";
 
 registerConstructThemes();
 
-function useEditorTheme() {
-  const [dark, setDark] = useState(
-    () => window.matchMedia("(prefers-color-scheme: dark)").matches
-  );
+function useEditorTheme(appTheme: "light" | "dark" | "system") {
+  const [dark, setDark] = useState(() => {
+    if (appTheme === "system") {
+      return window.matchMedia("(prefers-color-scheme: dark)").matches;
+    }
+    return appTheme === "dark";
+  });
 
   useEffect(() => {
-    const mql = window.matchMedia("(prefers-color-scheme: dark)");
-    const handler = (event: MediaQueryListEvent) => setDark(event.matches);
-    mql.addEventListener("change", handler);
-    return () => mql.removeEventListener("change", handler);
-  }, []);
+    if (appTheme === "system") {
+      const mql = window.matchMedia("(prefers-color-scheme: dark)");
+      const handler = (event: MediaQueryListEvent) => setDark(event.matches);
+      mql.addEventListener("change", handler);
+      setDark(mql.matches);
+      return () => mql.removeEventListener("change", handler);
+    } else {
+      setDark(appTheme === "dark");
+    }
+  }, [appTheme]);
 
   return dark ? CONSTRUCT_DARK : CONSTRUCT_LIGHT;
 }
@@ -43,6 +51,7 @@ export function EditorPane({
   onFreeEdit,
   onGuidedProgress,
   fileList = [],
+  theme,
   pendingJump = null,
   onJumpComplete,
   onOpenFileAndJump,
@@ -56,6 +65,7 @@ export function EditorPane({
   onFreeEdit: (content: string) => void;
   onGuidedProgress: (progress: number) => void;
   fileList?: string[];
+  theme: "light" | "dark" | "system";
   pendingJump?: { line: number; column: number } | null;
   onJumpComplete?: () => void;
   onOpenFileAndJump?: (path: string, line: number, column: number) => void;
@@ -70,7 +80,7 @@ export function EditorPane({
     onGuidedProgress
   });
   const [wrongInput, setWrongInput] = useState(false);
-  const editorTheme = useEditorTheme();
+  const editorTheme = useEditorTheme(theme);
 
   const localProgressRef = useRef(editProgress);
   const lastSentProgressRef = useRef(editProgress);

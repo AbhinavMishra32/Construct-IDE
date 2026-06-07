@@ -421,12 +421,22 @@ function installConstructProjectIpcHandlers(): void {
   });
 
   ipcMain.handle("construct:project:open", async (_event, id: string) => {
+    console.log("[construct] open project requested", { id });
     const projects = await readProjects();
     const project = findProject(projects, id);
 
     project.lastOpenedAt = new Date().toISOString();
     await materializeInitialFiles(project);
     await writeProjects(projects);
+    console.log("[construct] open project resolved", {
+      id: project.id,
+      title: project.title,
+      stepCount: project.program.steps.length,
+      fileCount: project.program.files.length,
+      activeFilePath: project.activeFilePath,
+      currentStepIndex: project.currentStepIndex,
+      currentBlockIndex: project.currentBlockIndex
+    });
     return project;
   });
 

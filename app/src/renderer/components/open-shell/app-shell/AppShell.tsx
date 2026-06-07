@@ -77,7 +77,7 @@ export function AppShell({
   defaultBottomPanelOpen,
   defaultRightPanelOpen,
   defaultSidebarOpen = true,
-  defaultSidebarWidth = 300,
+  defaultSidebarWidth = 260,
   headerActions,
   headerTabs = [],
   history,
@@ -222,9 +222,6 @@ export function AppShell({
       }
     >
       {chromeControls != null ? <AppShellChromeControls>{resolveSlot(chromeControls, shellState)}</AppShellChromeControls> : null}
-      {!isSidebarOpen && collapsedSidebarTrigger != null ? (
-        <div className="codex-sidebar-reopen-button">{resolveSlot(collapsedSidebarTrigger, shellState)}</div>
-      ) : null}
       <aside
         className="codex-left-panel app-shell-left-panel"
         data-open={isSidebarOpen ? "true" : "false"}
@@ -248,6 +245,9 @@ export function AppShell({
       </aside>
       <main className="codex-app-main">
         <AppShellHeader>
+          {collapsedSidebarTrigger != null ? (
+            <div className="codex-sidebar-reopen-button">{resolveSlot(collapsedSidebarTrigger, shellState)}</div>
+          ) : null}
           <AppShellHeaderContextSurface>
             <AppShellTabStrip>
               {headerTabs.map((tab, index) => (

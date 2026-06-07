@@ -1,10 +1,9 @@
 import "@/components/open-shell/tokens/codex-theme.css";
 import "./styles/construct.css";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { PanelLeft, PanelRight, PanelBottom } from "lucide-react";
+import { Component, useCallback, useEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from "react";
+import { ArrowLeft, ArrowRight, PanelLeft, PanelRight, PanelBottom } from "lucide-react";
 import {
-  ArrowLeft,
   Folder,
   GearSix,
   Plus,
@@ -13,6 +12,7 @@ import {
 
 import {
   AppShell,
+  AppShellChromeButton,
   AppShellCollapsedSidebarTrigger,
   AppShellHeaderToolButton,
   BottomPanel,
@@ -141,6 +141,33 @@ export default function ConstructApp() {
     });
   }, [pushHistory]);
 
+  const handleRightSlotChange = useCallback((slotId: string) => {
+    if (!activeProject) {
+      return;
+    }
+
+    setActiveRightSlotId(slotId);
+    pushHistory({
+      id: `right-slot:${activeProject.id}:${slotId}`,
+      payload: { projectId: activeProject.id, slotId },
+      title: slotId === "steps" ? "Steps" : "Guide",
+      type: "right-slot"
+    });
+  }, [activeProject, pushHistory]);
+
+  const handleFileOpened = useCallback((filePath: string) => {
+    if (!activeProject) {
+      return;
+    }
+
+    pushHistory({
+      id: `file:${activeProject.id}:${filePath}`,
+      payload: { filePath, projectId: activeProject.id },
+      title: filePath,
+      type: "file"
+    });
+  }, [activeProject, pushHistory]);
+
   useEffect(() => {
     const active = resolveActiveTheme(theme);
     document.documentElement.dataset.constructTheme = active;
@@ -168,15 +195,39 @@ export default function ConstructApp() {
     document.documentElement.dataset.codexWindowType = "electron";
     document.documentElement.dataset.windowType = "electron";
     document.documentElement.dataset.codexOs = window.construct.getRuntimeInfo().platform;
+    console.log("[construct] renderer boot", {
+      platform: window.construct.getRuntimeInfo().platform,
+      theme: getInitialTheme()
+    });
+
+    const handleWindowError = (event: ErrorEvent) => {
+      console.error("[construct] window error", event.error ?? event.message);
+    };
+
+    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      console.error("[construct] unhandled rejection", event.reason);
+    };
+
+    window.addEventListener("error", handleWindowError);
+    window.addEventListener("unhandledrejection", handleUnhandledRejection);
     void refresh();
+
+    return () => {
+      window.removeEventListener("error", handleWindowError);
+      window.removeEventListener("unhandledrejection", handleUnhandledRejection);
+    };
   }, []);
 
   async function refresh() {
     try {
+      console.log("[construct] refresh projects");
       setBusy(true);
       setError(null);
-      setProjects(await bootstrapProjects());
+      const nextProjects = await bootstrapProjects();
+      console.log("[construct] refresh projects resolved", { count: nextProjects.length });
+      setProjects(nextProjects);
     } catch (caught) {
+      console.error("[construct] refresh projects failed", caught);
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
       setBusy(false);
@@ -185,13 +236,25 @@ export default function ConstructApp() {
 
   async function openProject(projectId: string, options: { filePath?: string; recordHistory?: boolean } = {}) {
     try {
+      console.log("[construct] open project start", { projectId, options });
       setBusy(true);
       setError(null);
       const project = await openSavedProject(projectId);
       const nextProject = options.filePath ? { ...project, activeFilePath: options.filePath } : project;
+      console.log("[construct] open project loaded", {
+        id: project.id,
+        title: project.title,
+        stepCount: project.program.steps.length,
+        fileCount: project.program.files.length,
+        activeFilePath: nextProject.activeFilePath,
+        currentStepIndex: project.currentStepIndex,
+        currentBlockIndex: project.currentBlockIndex
+      });
       setSettingsSurface(null);
       setActiveProject(nextProject);
-      setProjects(await bootstrapProjects());
+      const nextProjects = await bootstrapProjects();
+      console.log("[construct] open project refreshed list", { count: nextProjects.length });
+      setProjects(nextProjects);
       if (options.recordHistory !== false) {
         pushHistory({
           id: options.filePath ? `file:${projectId}:${options.filePath}` : `project:${projectId}`,
@@ -201,6 +264,7 @@ export default function ConstructApp() {
         });
       }
     } catch (caught) {
+      console.error("[construct] open project failed", { projectId, options, caught });
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
       setBusy(false);
@@ -275,27 +339,13 @@ export default function ConstructApp() {
   ) : activeProject ? (
       <Workspace
         project={activeProject}
+        theme={theme}
         onGuidePanelChange={setRightPanel}
         onProjectChange={setActiveProject}
         onRunCommand={runCommand}
         activeRightSlotId={activeRightSlotId}
-        onRightSlotChange={(slotId) => {
-          setActiveRightSlotId(slotId);
-          pushHistory({
-            id: `right-slot:${activeProject.id}:${slotId}`,
-            payload: { projectId: activeProject.id, slotId },
-            title: slotId === "steps" ? "Steps" : "Guide",
-            type: "right-slot"
-          });
-        }}
-        onFileOpened={(filePath) => {
-          pushHistory({
-            id: `file:${activeProject.id}:${filePath}`,
-            payload: { filePath, projectId: activeProject.id },
-            title: filePath,
-            type: "file"
-          });
-        }}
+        onRightSlotChange={handleRightSlotChange}
+        onFileOpened={handleFileOpened}
         onTreeChange={(tree, activePath, relevantPath, openFile) => {
           setTreeData({ tree, activePath, relevantPath, openFile });
         }}
@@ -330,7 +380,7 @@ export default function ConstructApp() {
   }
 
   return (
-    <>
+    <AppErrorBoundary>
       <AppShell
         key={activeProject?.id ?? "dashboard"}
         history={history}
@@ -354,10 +404,82 @@ export default function ConstructApp() {
           </button>
         )}
         collapsedSidebarTrigger={(state) => (
-          <AppShellCollapsedSidebarTrigger onClick={state.toggleSidebar} aria-label="Open sidebar">
-            <PanelLeft size={16} />
-          </AppShellCollapsedSidebarTrigger>
+          <div className="construct-collapsed-toolbar">
+            <AppShellCollapsedSidebarTrigger onClick={state.toggleSidebar} aria-label="Open sidebar">
+              <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20, overflow: "visible" }}>
+                <rect x="3.5" y="4.5" width="13" height="11" rx="2" />
+                <path d="M7.5 4.5v11" />
+                <circle cx="16.5" cy="4.5" r="2.5" fill="#007aff" stroke="var(--codex-bg-primary)" strokeWidth="1.5" />
+              </svg>
+            </AppShellCollapsedSidebarTrigger>
+            <AppShellCollapsedSidebarTrigger onClick={handleBack} aria-label="Home">
+              <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20 }}>
+                <path d="M3 9.5 L10 3.5 L17 9.5" />
+                <path d="M4.25 9.5 v5.25a1 1 0 0 0 1 1 h9.5 a1 1 0 0 0 1-1 v-5.25" />
+                <path d="M8.5 15.75 v-3.75 h3 v3.75" />
+              </svg>
+            </AppShellCollapsedSidebarTrigger>
+            <AppShellCollapsedSidebarTrigger onClick={state.navigateBack} disabled={!state.canNavigateBack} aria-label="Back">
+              <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20 }}>
+                <line x1="19" y1="12" x2="5" y2="12" />
+                <polyline points="12 19 5 12 12 5" />
+              </svg>
+            </AppShellCollapsedSidebarTrigger>
+            <AppShellCollapsedSidebarTrigger onClick={state.navigateForward} disabled={!state.canNavigateForward} aria-label="Forward">
+              <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20 }}>
+                <line x1="5" y1="12" x2="19" y2="12" />
+                <polyline points="12 5 19 12 12 19" />
+              </svg>
+            </AppShellCollapsedSidebarTrigger>
+          </div>
         )}
+        sidebarChrome={
+          activeProject && !settingsSurface
+            ? (state) => (
+                <>
+                  <AppShellChromeButton
+                    aria-label={state.isSidebarOpen ? "Close sidebar" : "Open sidebar"}
+                    onClick={state.toggleSidebar}
+                  >
+                    <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20 }}>
+                      <rect x="3.5" y="4.5" width="13" height="11" rx="2" />
+                      <path d="M7.5 4.5v11" />
+                    </svg>
+                  </AppShellChromeButton>
+                  <AppShellChromeButton
+                    aria-label="Home"
+                    onClick={handleBack}
+                  >
+                    <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20 }}>
+                      <path d="M3 9.5 L10 3.5 L17 9.5" />
+                      <path d="M4.25 9.5 v5.25a1 1 0 0 0 1 1 h9.5 a1 1 0 0 0 1-1 v-5.25" />
+                      <path d="M8.5 15.75 v-3.75 h3 v3.75" />
+                    </svg>
+                  </AppShellChromeButton>
+                  <AppShellChromeButton
+                    aria-label="Back"
+                    disabled={!state.canNavigateBack}
+                    onClick={state.navigateBack}
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20 }}>
+                      <line x1="19" y1="12" x2="5" y2="12" />
+                      <polyline points="12 19 5 12 12 5" />
+                    </svg>
+                  </AppShellChromeButton>
+                  <AppShellChromeButton
+                    aria-label="Forward"
+                    disabled={!state.canNavigateForward}
+                    onClick={state.navigateForward}
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20 }}>
+                      <line x1="5" y1="12" x2="19" y2="12" />
+                      <polyline points="12 5 19 12 12 19" />
+                    </svg>
+                  </AppShellChromeButton>
+                </>
+              )
+            : undefined
+        }
         headerActions={
           activeProject && !settingsSurface
             ? (state) => (
@@ -394,19 +516,6 @@ export default function ConstructApp() {
           ) : activeProject ? (
             <Sidebar projects={[]} items={[]} footer={<SidebarSettingsButton onClick={() => openSettingsSurface("workspace")} />}>
               <div className="construct-sidebar-active">
-                <div className="construct-sidebar-header">
-                  <button
-                    className="construct-sidebar-home-btn"
-                    onClick={handleBack}
-                    title="Projects"
-                    aria-label="Projects"
-                  >
-                    <ArrowLeft size={16} weight="bold" />
-                  </button>
-                  <span className="construct-sidebar-project-title">
-                    Explorer
-                  </span>
-                </div>
                 <div className="construct-sidebar-tree-container">
                   {treeData.openFile ? (
                     <FileTree
@@ -421,8 +530,7 @@ export default function ConstructApp() {
             </Sidebar>
           ) : (
             <Sidebar
-              projects={[]}
-              items={[]}
+              projects={[]} items={[]}
               primaryItems={[
                 {
                   id: "new-project",
@@ -564,8 +672,38 @@ export default function ConstructApp() {
           });
         }}
       />
-    </>
+    </AppErrorBoundary>
   );
+}
+
+class AppErrorBoundary extends Component<
+  { children: ReactNode },
+  { error: Error | null }
+> {
+  state: { error: Error | null } = { error: null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error("[construct] render crash", error, info);
+  }
+
+  render() {
+    const { error } = this.state;
+
+    if (error) {
+      return (
+        <div className="construct-app construct-render-error">
+          <h1>Project view crashed</h1>
+          <pre>{error.message}</pre>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
 }
 
 function ConstructSettingsSurface({

@@ -403,6 +403,12 @@ test("TestRunnerManager provides a DOM-backed TypeScript-aware runtime for hidde
     await mkdir(path.join(temporaryDirectory, "hidden_tests"), { recursive: true });
 
     await writeFile(
+      path.join(temporaryDirectory, "package.json"),
+      JSON.stringify({ type: "module" }),
+      "utf8"
+    );
+
+    await writeFile(
       path.join(temporaryDirectory, "src", "vdom.ts"),
       [
         "export function createElement(type: string, props: any, ...children: any[]) {",

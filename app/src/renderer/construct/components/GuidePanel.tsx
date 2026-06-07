@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import {
   CheckCircle2Icon,
   ChevronRightIcon,
@@ -17,17 +18,26 @@ import { Button } from "@/components/open-shell";
 import { blockLabel, currentBlockNumber, totalBlocks } from "../lib/runtime";
 import type { ConstructBlock, ProjectRecord } from "../types";
 
-function getConstructThemeMode(): "light" | "dark" {
-  const isSystemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-  const constructTheme = document.documentElement.dataset.constructTheme;
-  if (constructTheme === "dark") return "dark";
-  if (constructTheme === "light") return "light";
-  if (document.documentElement.classList.contains("dark")) return "dark";
-  return isSystemDark ? "dark" : "light";
-}
+function MarkdownBlock({ content, theme }: { content: string; theme: "light" | "dark" | "system" }) {
+  const [isDark, setIsDark] = useState(() => {
+    if (theme === "system") {
+      return window.matchMedia("(prefers-color-scheme: dark)").matches;
+    }
+    return theme === "dark";
+  });
 
-function MarkdownBlock({ content }: { content: string }) {
-  const isDark = getConstructThemeMode() === "dark";
+  useEffect(() => {
+    if (theme === "system") {
+      const mql = window.matchMedia("(prefers-color-scheme: dark)");
+      const handler = (event: MediaQueryListEvent) => setIsDark(event.matches);
+      mql.addEventListener("change", handler);
+      setIsDark(mql.matches);
+      return () => mql.removeEventListener("change", handler);
+    } else {
+      setIsDark(theme === "dark");
+    }
+  }, [theme]);
+
   const codeTheme = isDark ? oneDark : oneLight;
 
   const markdownComponents: Components = {
@@ -134,12 +144,14 @@ function MarkdownBlock({ content }: { content: string }) {
 export function GuidePanel({
   project,
   block,
+  theme,
   editComplete,
   onNext,
   onRunCommand
 }: {
   project: ProjectRecord;
   block: ConstructBlock | null;
+  theme: "light" | "dark" | "system";
   editComplete: boolean;
   onNext: () => void;
   onRunCommand: (command: string, cwd: string) => void;
@@ -164,7 +176,7 @@ export function GuidePanel({
         </span>
       </div>
       <h2>{project.program.steps[project.currentStepIndex]?.title}</h2>
-      <GuideBlock block={block} onRunCommand={onRunCommand} />
+      <GuideBlock block={block} theme={theme} onRunCommand={onRunCommand} />
       <div className="guide-panel__actions">
         {block.kind === "run" ? (
           <Button variant="secondary" onClick={() => onRunCommand(block.command, block.cwd)}>
@@ -187,9 +199,11 @@ export function GuidePanel({
 
 function GuideBlock({
   block,
+  theme,
   onRunCommand
 }: {
   block: ConstructBlock;
+  theme: "light" | "dark" | "system";
   onRunCommand: (command: string, cwd: string) => void;
 }) {
   if (block.kind === "run") {
@@ -216,7 +230,7 @@ function GuideBlock({
 
   return (
     <div className="guide-block">
-      <MarkdownBlock content={block.content} />
+      <MarkdownBlock content={block.content} theme={theme} />
     </div>
   );
 }
