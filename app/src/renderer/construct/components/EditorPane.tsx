@@ -551,12 +551,11 @@ export function EditorPane({
             }
 
             // Keyboard shortcuts to skip current line:
-            // Tab (when not typing indentation), Ctrl + \ or Alt + Enter
-            const isTab = event.keyCode === monaco.KeyCode.Tab;
+            // Ctrl + \ or Alt + Enter
             const isCtrlBackslash = event.keyCode === monaco.KeyCode.Backslash && (event.ctrlKey || event.metaKey);
             const isAltEnter = event.keyCode === monaco.KeyCode.Enter && event.altKey;
 
-            if (isGuided && (isTab || isCtrlBackslash || isAltEnter)) {
+            if (isGuided && (isCtrlBackslash || isAltEnter)) {
               const model = editor.getModel();
               const cursor = editor.getPosition();
               if (model && cursor) {
@@ -627,11 +626,11 @@ export function EditorPane({
             zIndex: 100,
           }}
           onClick={handleSkipLine}
-          title="Skip Line (Tab / Alt+Enter)"
+          title="Skip Line (Alt+Enter / Ctrl+\)"
           type="button"
         >
           <span>Skip Line</span>
-          <kbd>Tab</kbd>
+          <kbd>Alt+Enter</kbd>
         </button>
       )}
     </section>
