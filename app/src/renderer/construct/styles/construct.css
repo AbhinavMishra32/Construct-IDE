@@ -2175,12 +2175,17 @@
   border: 1px solid var(--codex-border-strong);
   border-radius: 3.5px;
   background: var(--codex-bg-primary);
-  color: var(--codex-text-primary);
-  font-family: var(--codex-font-sans); /* Use sans-serif for better symbol rendering */
+  color: var(--codex-text-secondary);
+  font-family: var(--codex-font-sans);
   font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
   line-height: 1;
+  transition: color 0.12s ease;
+}
+
+.construct-editor-skip-button:hover kbd {
+  color: var(--codex-text-primary);
 }
 
 .construct-editor-skip-shortcut {
