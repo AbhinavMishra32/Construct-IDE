@@ -441,7 +441,7 @@ export default function ConstructApp() {
                     aria-label={state.isSidebarOpen ? "Close sidebar" : "Open sidebar"}
                     onClick={state.toggleSidebar}
                   >
-                    <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 24, height: 24 }}>
+                    <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20 }}>
                       <rect x="3.5" y="4.5" width="13" height="11" rx="2" />
                       <path d="M7.5 4.5v11" />
                     </svg>
@@ -450,7 +450,7 @@ export default function ConstructApp() {
                     aria-label="Home"
                     onClick={handleBack}
                   >
-                    <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 24, height: 24 }}>
+                    <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20 }}>
                       <path d="M3 9.5 L10 3.5 L17 9.5" />
                       <path d="M4.25 9.5 v5.25a1 1 0 0 0 1 1 h9.5 a1 1 0 0 0 1-1 v-5.25" />
                       <path d="M8.5 15.75 v-3.75 h3 v3.75" />
@@ -461,7 +461,7 @@ export default function ConstructApp() {
                     disabled={!state.canNavigateBack}
                     onClick={state.navigateBack}
                   >
-                    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 24, height: 24 }}>
+                    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20 }}>
                       <line x1="19" y1="12" x2="5" y2="12" />
                       <polyline points="12 19 5 12 12 5" />
                     </svg>
@@ -471,7 +471,7 @@ export default function ConstructApp() {
                     disabled={!state.canNavigateForward}
                     onClick={state.navigateForward}
                   >
-                    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 24, height: 24 }}>
+                    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20 }}>
                       <line x1="5" y1="12" x2="19" y2="12" />
                       <polyline points="12 5 19 12 12 19" />
                     </svg>
@@ -486,10 +486,10 @@ export default function ConstructApp() {
                 <>
                   <SavingIndicator isSaving={isSaving} />
                   <AppShellHeaderToolButton onClick={state.toggleRightPanel} aria-label="Toggle guide panel">
-                    <PanelRight size={24} />
+                    <PanelRight size={20} />
                   </AppShellHeaderToolButton>
                   <AppShellHeaderToolButton onClick={state.toggleBottomPanel} aria-label="Toggle terminal">
-                    <PanelBottom size={24} />
+                    <PanelBottom size={20} />
                   </AppShellHeaderToolButton>
                 </>
               )

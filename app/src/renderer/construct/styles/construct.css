@@ -506,6 +506,12 @@
   color: var(--codex-text-primary);
 }
 
+/* Shrink top-right header tool buttons to match top-left chrome buttons */
+.codex-header-tool-button svg {
+  width: 20px;
+  height: 20px;
+}
+
 /* Do not truncate the main project tab in the header */
 .codex-app-tab-strip .codex-app-tab {
   max-width: none !important;
