@@ -80,6 +80,8 @@ export function EditorPane({
     onGuidedProgress
   });
   const [wrongInput, setWrongInput] = useState(false);
+  const [buttonTop, setButtonTop] = useState<number | null>(null);
+  const [showSkipButton, setShowSkipButton] = useState(false);
   const editorTheme = useEditorTheme(theme);
 
   const localProgressRef = useRef(editProgress);
@@ -110,6 +112,36 @@ export function EditorPane({
     }
   }, [activeEdit]);
 
+  const updateSkipButtonPosition = useCallback(() => {
+    const editor = editorRef.current;
+    if (!editor) {
+      setShowSkipButton(false);
+      return;
+    }
+
+    const model = editor.getModel();
+    if (!model || !isGuided || !activeEdit) {
+      setShowSkipButton(false);
+      return;
+    }
+
+    const ghostPosition = model.getPositionAt(editAnchor.length + localProgressRef.current);
+    const lineNum = ghostPosition.lineNumber;
+
+    const remainingLength = activeEdit.content.length - localProgressRef.current;
+    if (remainingLength <= 0) {
+      setShowSkipButton(false);
+      return;
+    }
+
+    const topInModel = editor.getTopForLineNumber(lineNum);
+    const scrollTop = editor.getScrollTop();
+    const viewportTop = topInModel - scrollTop;
+
+    setButtonTop(viewportTop + 1);
+    setShowSkipButton(true);
+  }, [activeEdit, editAnchor.length, isGuided]);
+
   const updateEditorState = useCallback(() => {
     const editor = editorRef.current;
     if (!editor) return;
@@ -119,6 +151,7 @@ export function EditorPane({
 
     if (!isGuided || !activeEdit) {
       ghostDecorationsRef.current?.clear();
+      setShowSkipButton(false);
       return;
     }
 
@@ -154,7 +187,29 @@ export function EditorPane({
     } else {
       ghostDecorationsRef.current?.clear();
     }
-  }, [activeEdit, editAnchor.length, isGuided]);
+
+    updateSkipButtonPosition();
+  }, [activeEdit, editAnchor.length, isGuided, updateSkipButtonPosition]);
+
+  const handleSkipLine = useCallback(() => {
+    const editor = editorRef.current;
+    if (!editor || !activeEdit) return;
+
+    const model = editor.getModel();
+    if (!model) return;
+
+    const currentProgress = localProgressRef.current;
+    if (currentProgress >= activeEdit.content.length) return;
+
+    const nextNewlineIndex = activeEdit.content.indexOf("\n", currentProgress);
+    const targetProgress = nextNewlineIndex !== -1 ? nextNewlineIndex + 1 : activeEdit.content.length;
+
+    localProgressRef.current = targetProgress;
+    updateEditorState();
+    updateProgress(targetProgress);
+
+    editor.focus();
+  }, [activeEdit, updateEditorState, updateProgress]);
 
   useEffect(() => {
     guidedStateRef.current = {
@@ -489,6 +544,19 @@ export function EditorPane({
               return;
             }
 
+            // Keyboard shortcuts to skip current line:
+            // Tab (when not typing indentation), Ctrl + \ or Alt + Enter
+            const isTab = event.keyCode === monaco.KeyCode.Tab;
+            const isCtrlBackslash = event.keyCode === monaco.KeyCode.Backslash && (event.ctrlKey || event.metaKey);
+            const isAltEnter = event.keyCode === monaco.KeyCode.Enter && event.altKey;
+
+            if (isGuided && (isTab || isCtrlBackslash || isAltEnter)) {
+              event.preventDefault();
+              event.stopPropagation();
+              handleSkipLine();
+              return;
+            }
+
             if (event.metaKey || event.ctrlKey || event.altKey) {
               return;
             }
@@ -521,6 +589,14 @@ export function EditorPane({
             window.setTimeout(() => setWrongInput(false), 170);
           });
 
+          editor.onDidScrollChange(() => {
+            updateSkipButtonPosition();
+          });
+
+          editor.onDidChangeCursorPosition(() => {
+            updateSkipButtonPosition();
+          });
+
           localProgressRef.current = editProgress;
           lastRevealedLineRef.current = null;
           updateEditorState();
@@ -528,6 +604,23 @@ export function EditorPane({
           editor.focus();
         }}
       />
+      {buttonTop !== null && (
+        <button
+          className={`construct-editor-skip-button ${showSkipButton ? "is-visible" : ""}`}
+          style={{
+            position: "absolute",
+            top: buttonTop,
+            right: 28,
+            zIndex: 100,
+          }}
+          onClick={handleSkipLine}
+          title="Skip Line (Tab / Alt+Enter)"
+          type="button"
+        >
+          <span>Skip Line</span>
+          <kbd>Tab</kbd>
+        </button>
+      )}
     </section>
   );
 }

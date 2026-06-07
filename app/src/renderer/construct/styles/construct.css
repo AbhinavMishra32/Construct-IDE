@@ -2122,3 +2122,62 @@
     display: none;
   }
 }
+
+/* Skip Line Button Styles */
+.construct-editor-skip-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 20px;
+  border: 1px solid var(--codex-border-subtle);
+  border-radius: 6px;
+  padding: 0 6px;
+  background: var(--codex-bg-secondary);
+  color: var(--codex-text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  user-select: none;
+  opacity: 0;
+  transform: translateY(2px);
+  pointer-events: none;
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease,
+    background 0.12s ease,
+    border-color 0.12s ease,
+    color 0.12s ease;
+}
+
+.editor-pane:hover .construct-editor-skip-button.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.construct-editor-skip-button:hover {
+  background: var(--codex-bg-tertiary);
+  color: var(--codex-text-primary);
+  border-color: var(--codex-border-strong);
+}
+
+.construct-editor-skip-button:active {
+  transform: translateY(1px);
+}
+
+.construct-editor-skip-button kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 14px;
+  padding: 0 4px;
+  border: 1px solid var(--codex-border-strong);
+  border-radius: 3px;
+  background: var(--codex-bg-primary);
+  color: var(--codex-text-tertiary);
+  font-family: var(--codex-font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
