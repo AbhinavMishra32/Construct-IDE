@@ -5,6 +5,9 @@ import type {
   ProjectSummary,
   TerminalEvent,
   TerminalExitEvent,
+  RecallBlock,
+  ReferenceCard,
+  VerificationResult,
   WorkspaceFile,
   WorkspaceTreeNode
 } from "../types";
@@ -86,6 +89,14 @@ export function writeFile(input: {
   content: string;
 }): Promise<WorkspaceFile> {
   return api().writeFile(input);
+}
+
+export function verifyRecall(input: {
+  projectId: string;
+  recall: RecallBlock;
+  references: ReferenceCard[];
+}): Promise<VerificationResult> {
+  return api().verifyRecall(input);
 }
 
 export function terminalCreate(projectId: string, size?: { cols: number; rows: number }): Promise<{ sessionId: string }> {

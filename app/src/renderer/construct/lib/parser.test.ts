@@ -11,12 +11,17 @@ const traceFailureProjectSource = readFileSync(
   fileURLToPath(new URL("../samples/trace-failure-learning-project.construct", import.meta.url)),
   "utf8"
 );
+const tensorNumelProjectSource = readFileSync(
+  fileURLToPath(new URL("../samples/tensor-numel-learning-project.construct", import.meta.url)),
+  "utf8"
+);
 
 describe(".construct parser", () => {
   it("parses the sample project into files and a linear tape", () => {
     const program = parseConstructSource(traceFailureProjectSource);
 
     assert.equal(program.id, "trace-failure-learning-project");
+    assert.equal(program.spec, "tape-0.1");
     assert.equal(program.files.length, 3);
     assert.equal(program.steps.length, 4);
     assert.equal(totalBlocks(program), 13);
@@ -53,6 +58,8 @@ describe(".construct parser", () => {
       fileTreeExpanded: [],
       typingProgress: {},
       editAnchors: {},
+      assistance: {},
+      verificationResults: {},
       completedBlocks: {},
       completedAt: null
     };
@@ -63,5 +70,40 @@ describe(".construct parser", () => {
       currentBlockIndex: 1,
       completedAt: null
     });
+  });
+
+  it("parses tape-0.2 learning blocks with references, focus anchors, recall, and agent verification", () => {
+    const program = parseConstructSource(tensorNumelProjectSource);
+
+    assert.equal(program.spec, "tape-0.2");
+    assert.deepEqual(program.requires, [
+      "ghost-edit",
+      "recall-check",
+      "focus-ranges",
+      "reference-cards",
+      "mastra-verify",
+      "real-terminal"
+    ]);
+    assert.equal(program.references.length, 1);
+    assert.equal(program.references[0]?.id, "tensor-numel-card");
+    assert.equal(program.references[0]?.links[0]?.anchor, "tensor.numel");
+    assert.equal(program.targets[0]?.id, "main.numel-smoke");
+
+    const edit = program.steps[0]?.blocks.find((block) => block.kind === "edit");
+    assert.equal(edit?.kind, "edit");
+    assert.equal(edit?.anchor, "tensor.numel");
+    assert.equal(edit?.notes.length, 2);
+
+    const focusedExplain = program.steps[0]?.blocks.find(
+      (block) => block.kind === "explain" && block.focus === "tensor.numel"
+    );
+    assert.equal(focusedExplain?.kind, "explain");
+
+    const recall = program.steps[1]?.blocks.find((block) => block.kind === "recall");
+    assert.equal(recall?.kind, "recall");
+    assert.deepEqual(recall?.references, ["tensor-numel-card"]);
+    assert.equal(recall?.verify?.kind, "agent");
+    assert.equal(recall?.verify?.evidence.files.length, 3);
+    assert.match(recall?.verify?.rubric ?? "", /Do not pass if the learner only hardcodes/);
   });
 });

@@ -1,0 +1,200 @@
+@construct spec="tape-0.2"
+@id "tensor-numel-learning-project"
+@title "Tensor Numel Learning Project"
+@description "Learn shape-to-storage reasoning through a tiny tensor runtime."
+@root "."
+@requires "ghost-edit recall-check focus-ranges reference-cards mastra-verify real-terminal"
+
+::files
+
+::file path="CMakeLists.txt"
+```cmake
+cmake_minimum_required(VERSION 3.16)
+project(inferlab LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+add_executable(inferlab
+  src/main.cpp
+  src/tensor.cpp
+)
+target_include_directories(inferlab PRIVATE include)
+```
+::end
+
+::file path="include/tensor.hpp"
+```cpp
+#pragma once
+
+#include <cstdint>
+#include <vector>
+
+class Tensor {
+public:
+  explicit Tensor(std::vector<int64_t> shape);
+
+  const std::vector<int64_t>& sizes() const;
+  int64_t numel() const;
+
+private:
+  std::vector<int64_t> shape_;
+};
+```
+::end
+
+::file path="src/tensor.cpp"
+```cpp
+#include "tensor.hpp"
+
+Tensor::Tensor(std::vector<int64_t> shape) : shape_(std::move(shape)) {}
+
+const std::vector<int64_t>& Tensor::sizes() const {
+  return shape_;
+}
+```
+::end
+
+::file path="src/main.cpp"
+```cpp
+#include "tensor.hpp"
+
+#include <iostream>
+#include <string>
+
+int main(int argc, char** argv) {
+  const bool smokeTensor = argc > 1 && std::string(argv[1]) == "--smoke-tensor";
+
+  if (smokeTensor) {
+    Tensor t({2, 3, 4});
+    // TODO: print the tensor scalar count through the Tensor API.
+    return 0;
+  }
+
+  std::cout << "inferlab ready\n";
+  return 0;
+}
+```
+::end
+
+::end
+
+::target id="main.numel-smoke" path="src/main.cpp" find="// TODO: print the tensor scalar count through the Tensor API."
+::end
+
+::reference id="tensor-numel-card" title="Tensor scalar count" kind="recall-card" reveal="signature-and-concept"
+
+::body
+`numel()` answers: how many scalar values does this tensor contain?
+
+Shape `{2, 3, 4}` means:
+
+2 x 3 x 4 = 24
+
+Use `t.numel()` when you need storage size from shape metadata.
+
+Common mistake:
+Do not hardcode the final value. Derive it through the tensor API.
+::end
+
+::links
+anchor="tensor.numel"
+file="src/tensor.cpp"
+label="Open numel"
+::end
+
+::end
+
+::step id="write-numel-step" title="Write shape-to-storage logic"
+
+::explain
+A tensor shape is metadata, but runtime allocation needs a scalar count.
+
+You will write the small bridge that multiplies dimensions into storage size.
+::end
+
+::edit id="write-numel" path="src/tensor.cpp" mode="append" typing="ghost" anchor="tensor.numel"
+
+::note when="start"
+You are about to write the function that converts tensor shape into scalar storage size.
+::end
+
+::note when="done"
+This tiny function becomes a runtime invariant used by allocation and kernel dispatch.
+::end
+
+```cpp
+
+int64_t Tensor::numel() const {
+  int64_t total = 1;
+  for (int64_t dim : shape_) {
+    total *= dim;
+  }
+  return total;
+}
+```
+::end
+
+::explain focus="tensor.numel"
+You just wrote the bridge between shape metadata and actual memory size.
+
+For shape `[2, 3, 4]`, this returns `24`.
+
+This matters later when the runtime allocates hidden states, logits, attention buffers, and KV cache memory.
+::end
+
+::end
+
+::step id="use-numel-step" title="Use the tensor API from a smoke path"
+
+::recall id="use-numel" target="main.numel-smoke" references="tensor-numel-card" difficulty="supported-recall"
+
+::task
+Create a tensor with shape `{2, 3, 4}` and print its scalar count using the tensor API.
+::end
+
+::support
+Use the idea you just built.
+
+Relevant API:
+`t.numel()`
+
+The expected scalar count for shape `{2, 3, 4}` is `24`.
+
+Do not hardcode `24`; derive it from the tensor.
+::end
+
+::verify id="verify-numel" kind="agent"
+
+::goal
+Verify that the learner used the tensor API to derive the scalar count for shape `{2, 3, 4}`.
+::end
+
+::evidence
+files="src/main.cpp src/tensor.cpp include/tensor.hpp"
+terminal_command="cmake -S . -B build && cmake --build build && ./build/inferlab --smoke-tensor"
+terminal_output="latest"
+::end
+
+::rubric
+Pass if the implementation demonstrates the relationship between shape and scalar count through the tensor API.
+
+Do not pass if the learner only hardcodes the number 24 without using the tensor API.
+Do not pass if the code does not compile.
+Do not pass if the runtime output is unrelated or does not provide enough evidence.
+::end
+
+::messages
+success="Good. You used the tensor API as a real runtime abstraction."
+failure="Not quite. Use the reference card and call the tensor scalar-counting API instead of hardcoding the answer."
+::end
+
+::end
+
+::end
+
+::checkpoint id="numel-protocol-complete"
+You completed the protocol demo: guided write, focused explanation, supported recall, reference use, terminal evidence, and agent verification.
+::end
+
+::end

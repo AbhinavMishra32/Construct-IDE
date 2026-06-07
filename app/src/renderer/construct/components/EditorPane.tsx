@@ -40,6 +40,7 @@ type GuidedState = {
   editProgress: number;
   onFreeEdit: (content: string) => void;
   onGuidedProgress: (progress: number) => void;
+  onRevealLine: () => void;
 };
 
 export function EditorPane({
@@ -50,9 +51,11 @@ export function EditorPane({
   editProgress,
   onFreeEdit,
   onGuidedProgress,
+  onRevealLine,
   fileList = [],
   theme,
   pendingJump = null,
+  focusRange = null,
   onJumpComplete,
   onOpenFileAndJump,
   readFileContent
@@ -64,20 +67,24 @@ export function EditorPane({
   editProgress: number;
   onFreeEdit: (content: string) => void;
   onGuidedProgress: (progress: number) => void;
+  onRevealLine: () => void;
   fileList?: string[];
   theme: "light" | "dark" | "system";
   pendingJump?: { line: number; column: number } | null;
+  focusRange?: { line: number; endLine?: number; column?: number } | null;
   onJumpComplete?: () => void;
   onOpenFileAndJump?: (path: string, line: number, column: number) => void;
   readFileContent?: (path: string) => Promise<string>;
 }) {
   const editorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
   const ghostDecorationsRef = useRef<MonacoEditor.IEditorDecorationsCollection | null>(null);
+  const focusDecorationsRef = useRef<MonacoEditor.IEditorDecorationsCollection | null>(null);
   const guidedStateRef = useRef<GuidedState>({
     activeEdit,
     editProgress,
     onFreeEdit,
-    onGuidedProgress
+    onGuidedProgress,
+    onRevealLine
   });
   const [wrongInput, setWrongInput] = useState(false);
   const [buttonTop, setButtonTop] = useState<number | null>(null);
@@ -220,6 +227,7 @@ export function EditorPane({
     const targetProgress = nextNewlineIndex !== -1 ? nextNewlineIndex + 1 : activeEdit.content.length;
 
     localProgressRef.current = targetProgress;
+    guidedStateRef.current.onRevealLine();
     updateEditorState();
     updateProgress(targetProgress);
 
@@ -231,14 +239,16 @@ export function EditorPane({
       activeEdit,
       editProgress,
       onFreeEdit,
-      onGuidedProgress
+      onGuidedProgress,
+      onRevealLine
     };
-  }, [activeEdit, editProgress, onFreeEdit, onGuidedProgress]);
+  }, [activeEdit, editProgress, onFreeEdit, onGuidedProgress, onRevealLine]);
 
   // Clean up stale editor refs when files/edits change
   useEffect(() => {
     editorRef.current = null;
     ghostDecorationsRef.current = null;
+    focusDecorationsRef.current = null;
     localProgressRef.current = editProgress;
     lastSentProgressRef.current = editProgress;
   }, [path, activeEdit?.id]);
@@ -294,6 +304,40 @@ export function EditorPane({
       onJumpComplete?.();
     }
   }, [pendingJump, onJumpComplete]);
+
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor || !focusRange) {
+      return;
+    }
+
+    const model = editor.getModel();
+    if (!model) {
+      return;
+    }
+
+    const line = clamp(focusRange.line, 1, model.getLineCount());
+    const endLine = clamp(focusRange.endLine ?? line, line, model.getLineCount());
+    const column = focusRange.column ?? 1;
+    const position = { lineNumber: line, column };
+    editor.setPosition(position);
+    editor.revealLineInCenter(line);
+    focusDecorationsRef.current?.set([
+      {
+        range: new monaco.Range(
+          line,
+          1,
+          endLine,
+          model.getLineMaxColumn(endLine)
+        ),
+        options: {
+          isWholeLine: true,
+          className: "construct-monaco-focus-line",
+          linesDecorationsClassName: "construct-monaco-focus-glyph"
+        }
+      }
+    ]);
+  }, [focusRange]);
 
   // Register Monaco Definition Provider for Go to Definition (LSP)
   useEffect(() => {
@@ -439,6 +483,7 @@ export function EditorPane({
         onMount={(editor) => {
           editorRef.current = editor;
           ghostDecorationsRef.current = editor.createDecorationsCollection();
+          focusDecorationsRef.current = editor.createDecorationsCollection();
 
           editor.updateOptions({
             readOnly: isGuided,
@@ -672,6 +717,10 @@ function normalizeMonacoKey(event: monaco.IKeyboardEvent): string | null {
   }
 
   return null;
+}
+
+function clamp(value: number, minimum: number, maximum: number): number {
+  return Math.max(minimum, Math.min(maximum, value));
 }
 
 

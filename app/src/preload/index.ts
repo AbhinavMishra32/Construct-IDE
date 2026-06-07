@@ -32,6 +32,8 @@ contextBridge.exposeInMainWorld("constructProjects", {
     ipcRenderer.invoke("construct:project:list-files", projectId),
   readFile: (input: unknown) => ipcRenderer.invoke("construct:project:read-file", input),
   writeFile: (input: unknown) => ipcRenderer.invoke("construct:project:write-file", input),
+  verifyRecall: (input: unknown) =>
+    ipcRenderer.invoke("construct:project:verify-recall", input),
   terminalCreate: (input: unknown) =>
     ipcRenderer.invoke("construct:project:terminal-create", input),
   terminalInput: (input: unknown) =>

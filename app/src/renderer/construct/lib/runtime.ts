@@ -1,4 +1,4 @@
-import type { ConstructBlock, ConstructProgram, ProjectRecord } from "../types";
+import type { BlockAssistance, ConstructBlock, ConstructProgram, ProjectRecord } from "../types";
 
 export function currentBlock(project: ProjectRecord): ConstructBlock | null {
   return (
@@ -64,7 +64,9 @@ export function blockLabel(block: ConstructBlock): string {
     case "explain":
       return "Explain";
     case "edit":
-      return "Edit";
+      return "Guided Write";
+    case "recall":
+      return "Recall Check";
     case "run":
       return "Run";
     case "expect":
@@ -74,3 +76,40 @@ export function blockLabel(block: ConstructBlock): string {
   }
 }
 
+export function emptyBlockAssistance(): BlockAssistance {
+  return {
+    revealLineCount: 0,
+    revealBlockCount: 0,
+    referenceCardsOpened: [],
+    referenceCardsPinned: [],
+    extraExplanationCount: 0,
+    recallAttemptCount: 0,
+    verificationFailureCount: 0
+  };
+}
+
+export function assistanceLabel(assistance: BlockAssistance | undefined): string {
+  if (!assistance) {
+    return "unaided so far";
+  }
+
+  const parts: string[] = [];
+
+  if (assistance.referenceCardsOpened.length > 0) {
+    parts.push("with reference");
+  }
+
+  if (assistance.revealLineCount > 0) {
+    parts.push(`${assistance.revealLineCount} line reveal${assistance.revealLineCount === 1 ? "" : "s"}`);
+  }
+
+  if (assistance.verificationFailureCount > 0) {
+    parts.push(`${assistance.verificationFailureCount} retry${assistance.verificationFailureCount === 1 ? "" : "ies"}`);
+  }
+
+  if (parts.length === 0) {
+    return "unaided so far";
+  }
+
+  return parts.join(" · ");
+}

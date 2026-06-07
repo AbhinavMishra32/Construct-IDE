@@ -1,5 +1,5 @@
 import path from "node:path";
-import { execFile } from "node:child_process";
+import { exec, execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
   cp,
@@ -16,6 +16,8 @@ import { promisify } from "node:util";
 import { app, BrowserWindow, dialog, ipcMain, shell, nativeImage, nativeTheme } from "electron";
 import * as pty from "@homebridge/node-pty-prebuilt-multiarch";
 
+import { runConstructVerifierAgent, type VerificationResult } from "./constructVerifierAgent";
+
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
 const shouldOpenDevTools = process.env.CONSTRUCT_OPEN_DEVTOOLS === "1";
 const ignoredWorkspaceEntries = new Set([
@@ -25,6 +27,7 @@ const ignoredWorkspaceEntries = new Set([
   "node_modules"
 ]);
 const execFileAsync = promisify(execFile);
+const execAsync = promisify(exec);
 
 type StoredProject = {
   id: string;
@@ -40,6 +43,11 @@ type StoredProject = {
     title: string;
     description: string;
     files: Array<{ path: string; content: string }>;
+    references?: Array<{
+      id: string;
+      title: string;
+      body: string;
+    }>;
     steps: Array<{ blocks: Array<{ id: string }> }>;
   };
   currentStepIndex: number;
@@ -48,8 +56,20 @@ type StoredProject = {
   fileTreeExpanded: string[];
   typingProgress: Record<string, number>;
   editAnchors: Record<string, string>;
+  assistance: Record<string, StoredBlockAssistance>;
+  verificationResults: Record<string, VerificationResult>;
   completedBlocks: Record<string, boolean>;
   completedAt: string | null;
+};
+
+type StoredBlockAssistance = {
+  revealLineCount: number;
+  revealBlockCount: number;
+  referenceCardsOpened: string[];
+  referenceCardsPinned: string[];
+  extraExplanationCount: number;
+  recallAttemptCount: number;
+  verificationFailureCount: number;
 };
 
 type StoredSettings = {
@@ -57,6 +77,7 @@ type StoredSettings = {
 };
 
 const terminalSessions = new Map<string, pty.IPty>();
+const latestTerminalOutputByProject = new Map<string, string>();
 
 function sendToRenderers(channel: string, payload: unknown): void {
   for (const window of BrowserWindow.getAllWindows()) {
@@ -93,7 +114,8 @@ async function readProjects(): Promise<StoredProject[]> {
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      return JSON.parse(await readFile(projectsManifestPath(), "utf8")) as StoredProject[];
+      return (JSON.parse(await readFile(projectsManifestPath(), "utf8")) as StoredProject[])
+        .map(normalizeStoredProject);
     } catch (error) {
       if (attempt === 2) {
         console.error("[construct-projects] Failed to read project manifest.", error);
@@ -105,6 +127,19 @@ async function readProjects(): Promise<StoredProject[]> {
   }
 
   return [];
+}
+
+function normalizeStoredProject(project: StoredProject): StoredProject {
+  return {
+    ...project,
+    assistance: project.assistance ?? {},
+    verificationResults: project.verificationResults ?? {},
+    fileTreeExpanded: project.fileTreeExpanded ?? [],
+    typingProgress: project.typingProgress ?? {},
+    editAnchors: project.editAnchors ?? {},
+    completedBlocks: project.completedBlocks ?? {},
+    completedAt: project.completedAt ?? null
+  };
 }
 
 async function writeProjects(projects: StoredProject[]): Promise<void> {
@@ -239,6 +274,45 @@ function summarizeProject(project: StoredProject) {
   };
 }
 
+function appendTerminalOutput(projectId: string, data: string): void {
+  const previous = latestTerminalOutputByProject.get(projectId) ?? "";
+  const next = `${previous}${data}`;
+  latestTerminalOutputByProject.set(projectId, next.slice(-30_000));
+}
+
+async function runVerificationCommand(
+  project: StoredProject,
+  command: string
+): Promise<string> {
+  try {
+    const { stdout, stderr } = await execAsync(command, {
+      cwd: project.workspacePath,
+      maxBuffer: 2 * 1024 * 1024,
+      shell: process.env.SHELL || "/bin/zsh"
+    });
+
+    return [
+      `$ ${command}`,
+      stdout,
+      stderr
+    ].filter(Boolean).join("\n");
+  } catch (error) {
+    const failed = error as Error & {
+      stdout?: string;
+      stderr?: string;
+      code?: number | string;
+    };
+
+    return [
+      `$ ${command}`,
+      `[exit ${failed.code ?? "unknown"}]`,
+      failed.stdout ?? "",
+      failed.stderr ?? "",
+      failed.message
+    ].filter(Boolean).join("\n");
+  }
+}
+
 function installConstructProjectIpcHandlers(): void {
   ipcMain.handle("construct:theme:set", async (_event, theme: "light" | "dark" | "system") => {
     nativeTheme.themeSource = theme;
@@ -359,6 +433,8 @@ function installConstructProjectIpcHandlers(): void {
       fileTreeExpanded: [],
       typingProgress: {},
       editAnchors: {},
+      assistance: {},
+      verificationResults: {},
       completedBlocks: {},
       completedAt: null
     };
@@ -405,6 +481,8 @@ function installConstructProjectIpcHandlers(): void {
       fileTreeExpanded: [],
       typingProgress: {},
       editAnchors: {},
+      assistance: {},
+      verificationResults: {},
       completedBlocks: {},
       completedAt: null
     };
@@ -489,6 +567,85 @@ function installConstructProjectIpcHandlers(): void {
     };
   });
 
+  ipcMain.handle("construct:project:verify-recall", async (_event, input) => {
+    const project = findProject(await readProjects(), input.projectId);
+    const recall = input.recall;
+    const verify = recall?.verify;
+
+    if (!verify || verify.kind !== "agent") {
+      return {
+        passed: false,
+        confidence: "low",
+        reason: "This Construct build only supports agent verification for recall blocks.",
+        evidence: [],
+        suggestion: "Use a ::verify block with kind=\"agent\"."
+      } satisfies VerificationResult;
+    }
+
+    const declaredFiles = Array.isArray(verify.evidence?.files) ? verify.evidence.files : [];
+    const files = await Promise.all(
+      declaredFiles.map(async (relativePath: string) => {
+        try {
+          const target = safeProjectPath(project, relativePath);
+          return {
+            path: relativePath,
+            content: await readFile(target, "utf8")
+          };
+        } catch (error) {
+          return {
+            path: relativePath,
+            content: `[missing or unreadable file: ${error instanceof Error ? error.message : String(error)}]`
+          };
+        }
+      })
+    );
+
+    const terminalCommand =
+      typeof verify.evidence?.terminalCommand === "string"
+        ? verify.evidence.terminalCommand
+        : undefined;
+    let terminalOutput = latestTerminalOutputByProject.get(project.id) ?? "";
+
+    if (terminalCommand) {
+      terminalOutput = await runVerificationCommand(project, terminalCommand);
+      appendTerminalOutput(project.id, terminalOutput);
+    }
+
+    try {
+      return await runConstructVerifierAgent({
+        goal: String(verify.goal ?? ""),
+        rubric: String(verify.rubric ?? ""),
+        task: String(recall.task ?? ""),
+        support: String(recall.support ?? ""),
+        references: Array.isArray(input.references)
+          ? input.references.map((reference: { id?: unknown; title?: unknown; body?: unknown }) => ({
+              id: String(reference.id ?? ""),
+              title: String(reference.title ?? ""),
+              body: String(reference.body ?? "")
+            }))
+          : [],
+        files,
+        terminalCommand,
+        terminalOutput,
+        messages: {
+          success: String(verify.messages?.success ?? ""),
+          failure: String(verify.messages?.failure ?? "")
+        }
+      });
+    } catch (error) {
+      return {
+        passed: false,
+        confidence: "low",
+        reason: `Construct verifier could not complete: ${error instanceof Error ? error.message : String(error)}`,
+        evidence: [
+          terminalCommand ? `terminal command: ${terminalCommand}` : "terminal command: none",
+          `files supplied: ${files.map((file) => file.path).join(", ") || "none"}`
+        ],
+        suggestion: "Check verifier credentials and rerun verification when the project evidence is ready."
+      } satisfies VerificationResult;
+    }
+  });
+
   ipcMain.handle("construct:project:terminal-create", async (_event, input) => {
     const project = findProject(await readProjects(), input.projectId);
     const sessionId = randomUUID();
@@ -508,6 +665,7 @@ function installConstructProjectIpcHandlers(): void {
 
     terminalSessions.set(sessionId, child);
     child.onData((data) => {
+      appendTerminalOutput(project.id, data);
       sendToRenderers("construct:project:terminal-data", {
         sessionId,
         data

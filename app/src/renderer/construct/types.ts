@@ -1,11 +1,15 @@
 export type ConstructProgram = {
+  spec: string;
   version: string;
   id: string;
   title: string;
   description: string;
   root: string;
+  requires: string[];
   source: string;
   files: ConstructFile[];
+  references: ReferenceCard[];
+  targets: ConstructTarget[];
   steps: ConstructStep[];
 };
 
@@ -24,6 +28,7 @@ export type ConstructStep = {
 export type ConstructBlock =
   | ExplainBlock
   | EditBlock
+  | RecallBlock
   | RunBlock
   | ExpectBlock
   | CheckpointBlock;
@@ -32,6 +37,7 @@ export type ExplainBlock = {
   kind: "explain";
   id: string;
   content: string;
+  focus?: string;
 };
 
 export type EditBlock = {
@@ -40,8 +46,88 @@ export type EditBlock = {
   path: string;
   mode: "create" | "append" | "replace";
   typing: "ghost";
+  anchor?: string;
+  notes: ConstructNote[];
   language: string;
   content: string;
+};
+
+export type ConstructNote = {
+  when: "start" | "done" | "progress";
+  content: string;
+};
+
+export type ReferenceCard = {
+  id: string;
+  title: string;
+  kind: string;
+  reveal: string;
+  body: string;
+  links: ReferenceLink[];
+};
+
+export type ReferenceLink = {
+  anchor?: string;
+  file?: string;
+  label?: string;
+};
+
+export type ConstructTarget = {
+  id: string;
+  path: string;
+  find?: string;
+  line?: number;
+  anchor?: string;
+};
+
+export type RecallBlock = {
+  kind: "recall";
+  id: string;
+  path?: string;
+  target?: string;
+  references: string[];
+  difficulty: "supported-recall" | string;
+  task: string;
+  support: string;
+  verify?: VerificationBlock;
+};
+
+export type VerificationBlock = {
+  id: string;
+  kind: "agent" | string;
+  goal: string;
+  evidence: VerificationEvidence;
+  rubric: string;
+  messages: VerificationMessages;
+};
+
+export type VerificationEvidence = {
+  files: string[];
+  terminalCommand?: string;
+  terminalOutput?: "latest" | string;
+};
+
+export type VerificationMessages = {
+  success: string;
+  failure: string;
+};
+
+export type VerificationResult = {
+  passed: boolean;
+  confidence: "low" | "medium" | "high";
+  reason: string;
+  evidence: string[];
+  suggestion?: string;
+};
+
+export type BlockAssistance = {
+  revealLineCount: number;
+  revealBlockCount: number;
+  referenceCardsOpened: string[];
+  referenceCardsPinned: string[];
+  extraExplanationCount: number;
+  recallAttemptCount: number;
+  verificationFailureCount: number;
 };
 
 export type RunBlock = {
@@ -83,6 +169,8 @@ export type ProjectRecord = ProjectSummary & {
   fileTreeExpanded: string[];
   typingProgress: Record<string, number>;
   editAnchors: Record<string, string>;
+  assistance: Record<string, BlockAssistance>;
+  verificationResults: Record<string, VerificationResult>;
   completedBlocks: Record<string, boolean>;
   completedAt: string | null;
 };
@@ -153,6 +241,8 @@ export type ConstructProjectsApi = {
         | "fileTreeExpanded"
         | "typingProgress"
         | "editAnchors"
+        | "assistance"
+        | "verificationResults"
         | "completedBlocks"
         | "completedAt"
       >
@@ -165,6 +255,11 @@ export type ConstructProjectsApi = {
     path: string;
     content: string;
   }): Promise<WorkspaceFile>;
+  verifyRecall(input: {
+    projectId: string;
+    recall: RecallBlock;
+    references: ReferenceCard[];
+  }): Promise<VerificationResult>;
   terminalCreate(input: { projectId: string; cols?: number; rows?: number }): Promise<{ sessionId: string }>;
   terminalInput(input: { sessionId: string; data: string }): Promise<void>;
   terminalResize(input: { sessionId: string; cols: number; rows: number }): Promise<void>;

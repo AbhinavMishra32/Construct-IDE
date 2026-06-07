@@ -1,145 +1,18 @@
-import { useEffect, useState } from "react";
 import {
+  BookOpenIcon,
   CheckCircle2Icon,
   ChevronRightIcon,
   PlayIcon,
-  TerminalIcon
+  TerminalIcon,
+  WandSparklesIcon,
+  XCircleIcon
 } from "lucide-react";
-import ReactMarkdown, { type Components } from "react-markdown";
-import remarkGfm from "remark-gfm";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import {
-  oneDark,
-  oneLight
-} from "react-syntax-highlighter/dist/esm/styles/prism";
 
 import { Button } from "@/components/open-shell";
 
-import { blockLabel, currentBlockNumber, totalBlocks } from "../lib/runtime";
-import type { ConstructBlock, ProjectRecord } from "../types";
-
-function MarkdownBlock({ content, theme }: { content: string; theme: "light" | "dark" | "system" }) {
-  const [isDark, setIsDark] = useState(() => {
-    if (theme === "system") {
-      return window.matchMedia("(prefers-color-scheme: dark)").matches;
-    }
-    return theme === "dark";
-  });
-
-  useEffect(() => {
-    if (theme === "system") {
-      const mql = window.matchMedia("(prefers-color-scheme: dark)");
-      const handler = (event: MediaQueryListEvent) => setIsDark(event.matches);
-      mql.addEventListener("change", handler);
-      setIsDark(mql.matches);
-      return () => mql.removeEventListener("change", handler);
-    } else {
-      setIsDark(theme === "dark");
-    }
-  }, [theme]);
-
-  const codeTheme = isDark ? oneDark : oneLight;
-
-  const markdownComponents: Components = {
-    code({ className, children, ...props }) {
-      const languageMatch = /language-([\w-]+)/.exec(className ?? "");
-      const rawCode = String(children);
-      const code = rawCode.replace(/\n$/, "");
-      const isInlineLike = !languageMatch && !rawCode.includes("\n");
-
-      if (isInlineLike) {
-        return (
-          <code className="construct-markdown-inline-code" {...props}>
-            {children}
-          </code>
-        );
-      }
-
-      return (
-        <div className="construct-markdown-code-frame">
-          <div className="construct-markdown-code-header">
-            <span>{languageMatch?.[1] ?? "code"}</span>
-          </div>
-          <SyntaxHighlighter
-            style={codeTheme}
-            language={languageMatch?.[1] ?? "text"}
-            PreTag="div"
-            className="construct-markdown-code-block"
-            customStyle={{
-              margin: 0,
-              padding: "12px 14px",
-              background: "transparent",
-              borderRadius: 0,
-              fontSize: "12.5px",
-              lineHeight: "1.6",
-              overflowX: "auto"
-            }}
-            codeTagProps={{
-              style: {
-                fontFamily: "var(--codex-font-mono)"
-              }
-            }}
-          >
-            {code}
-          </SyntaxHighlighter>
-        </div>
-      );
-    },
-    a({ className, ...props }) {
-      return <a className={`construct-markdown-link ${className ?? ""}`.trim()} {...props} />;
-    },
-    ul({ className, ...props }) {
-      return (
-        <ul
-          className={`construct-markdown-list construct-markdown-list--unordered ${className ?? ""}`.trim()}
-          {...props}
-        />
-      );
-    },
-    ol({ className, ...props }) {
-      return (
-        <ol
-          className={`construct-markdown-list construct-markdown-list--ordered ${className ?? ""}`.trim()}
-          {...props}
-        />
-      );
-    },
-    li({ className, ...props }) {
-      return (
-        <li
-          className={`construct-markdown-list-item ${className ?? ""}`.trim()}
-          {...props}
-        />
-      );
-    },
-    table({ className, ...props }) {
-      return (
-        <div className="construct-markdown-table-wrap">
-          <table className={`construct-markdown-table ${className ?? ""}`.trim()} {...props} />
-        </div>
-      );
-    },
-    blockquote({ className, ...props }) {
-      return (
-        <blockquote
-          className={`construct-markdown-quote ${className ?? ""}`.trim()}
-          {...props}
-        />
-      );
-    },
-    hr({ className, ...props }) {
-      return <hr className={`construct-markdown-divider ${className ?? ""}`.trim()} {...props} />;
-    }
-  };
-
-  return (
-    <div className="construct-markdown">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-        {content}
-      </ReactMarkdown>
-    </div>
-  );
-}
+import { MarkdownBlock } from "./MarkdownBlock";
+import { assistanceLabel, blockLabel, currentBlockNumber, totalBlocks } from "../lib/runtime";
+import type { ConstructBlock, ProjectRecord, ReferenceCard, VerificationResult } from "../types";
 
 export function GuidePanel({
   project,
@@ -147,7 +20,10 @@ export function GuidePanel({
   theme,
   editComplete,
   onNext,
-  onRunCommand
+  onRunCommand,
+  onOpenReference,
+  onVerifyRecall,
+  verifyingId
 }: {
   project: ProjectRecord;
   block: ConstructBlock | null;
@@ -155,6 +31,9 @@ export function GuidePanel({
   editComplete: boolean;
   onNext: () => void;
   onRunCommand: (command: string, cwd: string) => void;
+  onOpenReference: (referenceId: string) => void;
+  onVerifyRecall: () => void;
+  verifyingId: string | null;
 }) {
   if (!block) {
     return (
@@ -165,7 +44,13 @@ export function GuidePanel({
     );
   }
 
-  const canContinue = block.kind !== "edit" || editComplete;
+  const verification = block.kind === "recall" && block.verify
+    ? project.verificationResults[block.verify.id]
+    : undefined;
+  const canContinue =
+    (block.kind !== "edit" || editComplete) &&
+    (block.kind !== "recall" || !block.verify || verification?.passed === true);
+  const assistance = project.assistance[block.id];
 
   return (
     <aside className="guide-panel">
@@ -176,12 +61,33 @@ export function GuidePanel({
         </span>
       </div>
       <h2>{project.program.steps[project.currentStepIndex]?.title}</h2>
-      <GuideBlock block={block} theme={theme} onRunCommand={onRunCommand} />
+      <GuideBlock
+        block={block}
+        theme={theme}
+        editComplete={editComplete}
+        references={project.program.references}
+        verification={verification}
+        verifyingId={verifyingId}
+        onOpenReference={onOpenReference}
+        onRunCommand={onRunCommand}
+        onVerifyRecall={onVerifyRecall}
+      />
+      <p className="guide-panel__assist">{assistanceLabel(assistance)}</p>
       <div className="guide-panel__actions">
         {block.kind === "run" ? (
           <Button variant="secondary" onClick={() => onRunCommand(block.command, block.cwd)}>
             <PlayIcon size={15} />
             Run
+          </Button>
+        ) : null}
+        {block.kind === "recall" && block.verify ? (
+          <Button
+            variant="secondary"
+            onClick={onVerifyRecall}
+            disabled={verifyingId === block.verify.id}
+          >
+            <WandSparklesIcon size={15} />
+            {verifyingId === block.verify.id ? "Checking" : "Verify"}
           </Button>
         ) : null}
         <Button onClick={onNext} disabled={!canContinue}>
@@ -200,11 +106,23 @@ export function GuidePanel({
 function GuideBlock({
   block,
   theme,
-  onRunCommand
+  editComplete,
+  references,
+  verification,
+  verifyingId,
+  onOpenReference,
+  onRunCommand,
+  onVerifyRecall
 }: {
   block: ConstructBlock;
   theme: "light" | "dark" | "system";
+  editComplete: boolean;
+  references: ReferenceCard[];
+  verification?: VerificationResult;
+  verifyingId: string | null;
+  onOpenReference: (referenceId: string) => void;
   onRunCommand: (command: string, cwd: string) => void;
+  onVerifyRecall: () => void;
 }) {
   if (block.kind === "run") {
     return (
@@ -219,11 +137,63 @@ function GuideBlock({
   }
 
   if (block.kind === "edit") {
+    const note = block.notes.find((candidate) => candidate.when === (editComplete ? "done" : "start"));
+
     return (
       <div className="guide-block">
         <p className="guide-panel__copy">
           Type the ghost text in <code>{block.path}</code>.
         </p>
+        {note ? (
+          <div className="guide-panel__note">
+            <MarkdownBlock content={note.content} theme={theme} />
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  if (block.kind === "recall") {
+    const linkedReferences = block.references
+      .map((referenceId) => references.find((reference) => reference.id === referenceId))
+      .filter((reference): reference is ReferenceCard => Boolean(reference));
+
+    return (
+      <div className="guide-block recall-task">
+        <div className="recall-task__section">
+          <p className="guide-panel__label">Task</p>
+          <MarkdownBlock content={block.task} theme={theme} />
+        </div>
+        {block.support ? (
+          <div className="recall-task__section recall-task__support">
+            <p className="guide-panel__label">Support</p>
+            <MarkdownBlock content={block.support} theme={theme} />
+          </div>
+        ) : null}
+        {linkedReferences.length > 0 ? (
+          <div className="recall-task__references">
+            {linkedReferences.map((reference) => (
+              <button
+                key={reference.id}
+                className="recall-task__reference-button"
+                type="button"
+                onClick={() => onOpenReference(reference.id)}
+              >
+                <BookOpenIcon size={14} />
+                <span>{reference.title}</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
+        {block.verify ? (
+          <VerificationPanel
+            result={verification}
+            verifying={verifyingId === block.verify.id}
+            successMessage={block.verify.messages.success}
+            failureMessage={block.verify.messages.failure}
+            onVerify={onVerifyRecall}
+          />
+        ) : null}
       </div>
     );
   }
@@ -231,6 +201,56 @@ function GuideBlock({
   return (
     <div className="guide-block">
       <MarkdownBlock content={block.content} theme={theme} />
+    </div>
+  );
+}
+
+function VerificationPanel({
+  result,
+  verifying,
+  successMessage,
+  failureMessage,
+  onVerify
+}: {
+  result?: VerificationResult;
+  verifying: boolean;
+  successMessage: string;
+  failureMessage: string;
+  onVerify: () => void;
+}) {
+  if (verifying) {
+    return (
+      <div className="verification-panel is-running">
+        <WandSparklesIcon size={15} />
+        <span>Construct verifier is reading the code, terminal evidence, and rubric.</span>
+      </div>
+    );
+  }
+
+  if (!result) {
+    return (
+      <div className="verification-panel">
+        <div>
+          <p className="guide-panel__label">Verification</p>
+          <p>Run the verifier when the engineering outcome is ready.</p>
+        </div>
+        <Button variant="secondary" onClick={onVerify}>
+          <WandSparklesIcon size={15} />
+          Verify
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`verification-panel ${result.passed ? "is-passed" : "is-failed"}`}>
+      <div className="verification-panel__status">
+        {result.passed ? <CheckCircle2Icon size={16} /> : <XCircleIcon size={16} />}
+        <span>{result.passed ? successMessage : failureMessage}</span>
+      </div>
+      <p>{result.reason}</p>
+      <small>Confidence: {result.confidence}</small>
+      {result.suggestion ? <p className="verification-panel__suggestion">{result.suggestion}</p> : null}
     </div>
   );
 }

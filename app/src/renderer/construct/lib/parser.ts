@@ -2,7 +2,13 @@ import type {
   ConstructBlock,
   ConstructFile,
   ConstructProgram,
-  ConstructStep
+  ConstructStep,
+  ConstructTarget,
+  ConstructNote,
+  ReferenceCard,
+  ReferenceLink,
+  VerificationBlock,
+  VerificationEvidence
 } from "../types";
 
 type Cursor = {
@@ -17,6 +23,8 @@ export function parseConstructSource(source: string): ConstructProgram {
   };
   const metadata: Record<string, string> = {};
   const files: ConstructFile[] = [];
+  const references: ReferenceCard[] = [];
+  const targets: ConstructTarget[] = [];
   const steps: ConstructStep[] = [];
 
   while (!done(cursor)) {
@@ -40,6 +48,16 @@ export function parseConstructSource(source: string): ConstructProgram {
       continue;
     }
 
+    if (line.startsWith("::reference")) {
+      references.push(parseReference(cursor));
+      continue;
+    }
+
+    if (line.startsWith("::target")) {
+      targets.push(parseTarget(cursor));
+      continue;
+    }
+
     if (line.startsWith("::step")) {
       steps.push(parseStep(cursor));
       continue;
@@ -49,13 +67,17 @@ export function parseConstructSource(source: string): ConstructProgram {
   }
 
   return {
-    version: metadata.construct || "0.1",
+    spec: normalizeSpec(metadata.construct || "tape-0.1"),
+    version: normalizeSpec(metadata.construct || "tape-0.1"),
     id: required(metadata, "id"),
     title: required(metadata, "title"),
     description: required(metadata, "description"),
     root: metadata.root || ".",
+    requires: splitList(metadata.requires),
     source,
     files,
+    references,
+    targets,
     steps
   };
 }
@@ -63,7 +85,7 @@ export function parseConstructSource(source: string): ConstructProgram {
 function parseMetadataLine(line: string): { key: string; value: string } {
   if (line.startsWith("@construct")) {
     const attrs = parseAttributes(line.replace(/^@construct\s*/, ""));
-    return { key: "construct", value: attrs.version || "0.1" };
+    return { key: "construct", value: attrs.spec || attrs.version || "tape-0.1" };
   }
 
   const match = line.match(/^@([a-zA-Z0-9_-]+)\s+"([\s\S]*)"$/);
@@ -137,9 +159,11 @@ function parseStep(cursor: Cursor): ConstructStep {
     }
 
     if (line.startsWith("::explain")) {
+      const blockAttrs = parseAttributes(line.replace(/^::explain\s*/, ""));
       blocks.push({
         kind: "explain",
         id: `${required(attrs, "id")}:explain:${blocks.length + 1}`,
+        focus: blockAttrs.focus,
         content: parsePlainBody(cursor, "::explain")
       });
       continue;
@@ -147,6 +171,11 @@ function parseStep(cursor: Cursor): ConstructStep {
 
     if (line.startsWith("::edit")) {
       blocks.push(parseEdit(cursor));
+      continue;
+    }
+
+    if (line.startsWith("::recall")) {
+      blocks.push(parseRecall(cursor));
       continue;
     }
 
@@ -174,6 +203,30 @@ function parseStep(cursor: Cursor): ConstructStep {
 function parseEdit(cursor: Cursor): ConstructBlock {
   const attrs = parseAttributes(peek(cursor).replace(/^::edit\s*/, ""));
   cursor.index += 1;
+  const notes: ConstructNote[] = [];
+
+  while (!done(cursor)) {
+    const line = peek(cursor).trim();
+
+    if (!line) {
+      cursor.index += 1;
+      continue;
+    }
+
+    if (line.startsWith("::note")) {
+      const noteAttrs = parseAttributes(line.replace(/^::note\s*/, ""));
+      const when: ConstructNote["when"] =
+        noteAttrs.when === "done" || noteAttrs.when === "progress" ? noteAttrs.when : "start";
+      notes.push({
+        when,
+        content: parsePlainBody(cursor, "::note")
+      });
+      continue;
+    }
+
+    break;
+  }
+
   const fenced = parseFencedBody(cursor);
   expectEnd(cursor, "::edit");
 
@@ -183,8 +236,229 @@ function parseEdit(cursor: Cursor): ConstructBlock {
     path: required(attrs, "path"),
     mode: parseEditMode(attrs.mode),
     typing: "ghost",
+    anchor: attrs.anchor,
+    notes,
     language: fenced.language,
     content: fenced.content
+  };
+}
+
+function parseRecall(cursor: Cursor): ConstructBlock {
+  const attrs = parseAttributes(peek(cursor).replace(/^::recall\s*/, ""));
+  cursor.index += 1;
+  let task = "";
+  let support = "";
+  let verify: VerificationBlock | undefined;
+
+  while (!done(cursor)) {
+    const line = peek(cursor).trim();
+
+    if (line === "::end") {
+      cursor.index += 1;
+      return {
+        kind: "recall",
+        id: required(attrs, "id"),
+        path: attrs.path,
+        target: attrs.target,
+        references: splitList(attrs.references),
+        difficulty: attrs.difficulty || "supported-recall",
+        task,
+        support,
+        verify
+      };
+    }
+
+    if (!line) {
+      cursor.index += 1;
+      continue;
+    }
+
+    if (line.startsWith("::task")) {
+      task = parsePlainBody(cursor, "::task");
+      continue;
+    }
+
+    if (line.startsWith("::support")) {
+      support = parsePlainBody(cursor, "::support");
+      continue;
+    }
+
+    if (line.startsWith("::verify")) {
+      verify = parseVerify(cursor);
+      continue;
+    }
+
+    throw new Error(`Unexpected recall block line ${cursor.index + 1}: ${line}`);
+  }
+
+  throw new Error(`Unclosed ::recall ${attrs.id || ""}.`);
+}
+
+function parseVerify(cursor: Cursor): VerificationBlock {
+  const attrs = parseAttributes(peek(cursor).replace(/^::verify\s*/, ""));
+  cursor.index += 1;
+  let goal = "";
+  let rubric = "";
+  let evidence: VerificationEvidence = {
+    files: []
+  };
+  let messages = {
+    success: "",
+    failure: ""
+  };
+
+  while (!done(cursor)) {
+    const line = peek(cursor).trim();
+
+    if (line === "::end") {
+      cursor.index += 1;
+      return {
+        id: required(attrs, "id"),
+        kind: attrs.kind || "agent",
+        goal,
+        evidence,
+        rubric,
+        messages
+      };
+    }
+
+    if (!line) {
+      cursor.index += 1;
+      continue;
+    }
+
+    if (line.startsWith("::goal")) {
+      goal = parsePlainBody(cursor, "::goal");
+      continue;
+    }
+
+    if (line.startsWith("::evidence")) {
+      evidence = parseEvidence(cursor);
+      continue;
+    }
+
+    if (line.startsWith("::rubric")) {
+      rubric = parsePlainBody(cursor, "::rubric");
+      continue;
+    }
+
+    if (line.startsWith("::messages")) {
+      messages = parseMessages(cursor);
+      continue;
+    }
+
+    throw new Error(`Unexpected verify block line ${cursor.index + 1}: ${line}`);
+  }
+
+  throw new Error(`Unclosed ::verify ${attrs.id || ""}.`);
+}
+
+function parseEvidence(cursor: Cursor) {
+  const attrs = parseAttributes(peek(cursor).replace(/^::evidence\s*/, ""));
+  cursor.index += 1;
+  const bodyAttrs = parseAttributeLines(cursor, "::evidence");
+  const merged = {
+    ...attrs,
+    ...bodyAttrs
+  };
+
+  return {
+    files: splitList(merged.files),
+    terminalCommand: merged.terminal_command || merged.terminalCommand,
+    terminalOutput: merged.terminal_output || merged.terminalOutput
+  };
+}
+
+function parseMessages(cursor: Cursor) {
+  const attrs = parseAttributes(peek(cursor).replace(/^::messages\s*/, ""));
+  cursor.index += 1;
+  const bodyAttrs = parseAttributeLines(cursor, "::messages");
+  const merged = {
+    ...attrs,
+    ...bodyAttrs
+  };
+
+  return {
+    success: merged.success || "",
+    failure: merged.failure || ""
+  };
+}
+
+function parseReference(cursor: Cursor): ReferenceCard {
+  const attrs = parseAttributes(peek(cursor).replace(/^::reference\s*/, ""));
+  cursor.index += 1;
+  let body = "";
+  const links: ReferenceLink[] = [];
+
+  while (!done(cursor)) {
+    const line = peek(cursor).trim();
+
+    if (line === "::end") {
+      cursor.index += 1;
+      return {
+        id: required(attrs, "id"),
+        title: required(attrs, "title"),
+        kind: attrs.kind || "reference-card",
+        reveal: attrs.reveal || "concept",
+        body,
+        links
+      };
+    }
+
+    if (!line) {
+      cursor.index += 1;
+      continue;
+    }
+
+    if (line.startsWith("::body")) {
+      body = parsePlainBody(cursor, "::body");
+      continue;
+    }
+
+    if (line.startsWith("::links")) {
+      links.push(...parseReferenceLinks(cursor));
+      continue;
+    }
+
+    throw new Error(`Unexpected reference card line ${cursor.index + 1}: ${line}`);
+  }
+
+  throw new Error(`Unclosed ::reference ${attrs.id || ""}.`);
+}
+
+function parseReferenceLinks(cursor: Cursor): ReferenceLink[] {
+  const attrs = parseAttributes(peek(cursor).replace(/^::links\s*/, ""));
+  cursor.index += 1;
+  const bodyAttrs = parseAttributeLines(cursor, "::links");
+  const merged = {
+    ...attrs,
+    ...bodyAttrs
+  };
+
+  if (!merged.anchor && !merged.file) {
+    return [];
+  }
+
+  return [
+    {
+      anchor: merged.anchor,
+      file: merged.file,
+      label: merged.label
+    }
+  ];
+}
+
+function parseTarget(cursor: Cursor): ConstructTarget {
+  const attrs = parseAttributes(peek(cursor).replace(/^::target\s*/, ""));
+  cursor.index += 1;
+  expectEnd(cursor, "::target");
+
+  return {
+    id: required(attrs, "id"),
+    path: required(attrs, "path"),
+    find: attrs.find,
+    line: attrs.line ? Number(attrs.line) : undefined,
+    anchor: attrs.anchor
   };
 }
 
@@ -265,6 +539,29 @@ function parsePlainBody(cursor: Cursor, blockName: string): string {
   throw new Error(`Unclosed ${blockName} block.`);
 }
 
+function parseAttributeLines(cursor: Cursor, blockName: string): Record<string, string> {
+  const attrs: Record<string, string> = {};
+
+  while (!done(cursor)) {
+    const line = peek(cursor).trim();
+
+    if (line === "::end") {
+      cursor.index += 1;
+      return attrs;
+    }
+
+    if (!line) {
+      cursor.index += 1;
+      continue;
+    }
+
+    Object.assign(attrs, parseAttributes(line));
+    cursor.index += 1;
+  }
+
+  throw new Error(`Unclosed ${blockName} block.`);
+}
+
 function expectEnd(cursor: Cursor, blockName: string): void {
   skipBlankLines(cursor);
   if (peek(cursor).trim() !== "::end") {
@@ -291,6 +588,25 @@ function parseEditMode(value: string | undefined): "create" | "append" | "replac
   }
 
   return "create";
+}
+
+function normalizeSpec(value: string): string {
+  if (value === "0.1") {
+    return "tape-0.1";
+  }
+
+  return value;
+}
+
+function splitList(value: string | undefined): string[] {
+  if (!value) {
+    return [];
+  }
+
+  return value
+    .split(/[\s,]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function required(values: Record<string, string>, key: string): string {
@@ -328,4 +644,3 @@ function peek(cursor: Cursor): string {
 function done(cursor: Cursor): boolean {
   return cursor.index >= cursor.lines.length;
 }
-

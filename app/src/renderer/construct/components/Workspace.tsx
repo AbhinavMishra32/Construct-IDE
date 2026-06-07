@@ -15,17 +15,22 @@ import { SlotPanel } from "@/components/open-shell";
 import type { SlotPanelHandle, SlotTab, SlotLauncherItem } from "@/components/open-shell";
 import { EditorPane } from "./EditorPane";
 import { GuidePanel } from "./GuidePanel";
+import { ReferenceCard } from "./ReferenceCard";
 import { StepList } from "./StepList";
 import {
   listFiles,
   readFile,
   updateProject,
+  verifyRecall,
   writeFile
 } from "../lib/bridge";
-import { currentBlock, nextPosition } from "../lib/runtime";
+import { currentBlock, emptyBlockAssistance, nextPosition } from "../lib/runtime";
 import type {
+  BlockAssistance,
   EditBlock,
   ProjectRecord,
+  RecallBlock,
+  ReferenceLink,
   WorkspaceTreeNode
 } from "../types";
 
@@ -132,7 +137,12 @@ export function Workspace({
   const [openTabs, setOpenTabs] = useState<string[]>([]);
   const [isStepsCollapsed, setIsStepsCollapsed] = useState(false);
   const [pendingJump, setPendingJump] = useState<{ line: number; column: number } | null>(null);
+  const [focusRange, setFocusRange] = useState<{ line: number; endLine?: number; column?: number } | null>(null);
+  const [openReferenceIds, setOpenReferenceIds] = useState<string[]>([]);
+  const [pinnedReferenceIds, setPinnedReferenceIds] = useState<string[]>([]);
+  const [verifyingId, setVerifyingId] = useState<string | null>(null);
   const editorPanelRef = useRef<SlotPanelHandle>(null);
+  const autoOpenedRecallRef = useRef<string | null>(null);
 
   const block = currentBlock(project);
   const activeEdit = block?.kind === "edit" ? block : null;
@@ -146,6 +156,11 @@ export function Workspace({
   useEffect(() => {
     setOpenTabs(activeFilePath ? [activeFilePath] : []);
     setPendingJump(null);
+    setFocusRange(null);
+    setOpenReferenceIds([]);
+    setPinnedReferenceIds([]);
+    setVerifyingId(null);
+    autoOpenedRecallRef.current = null;
   }, [project.id]);
 
   // Sync open tabs with active file
@@ -196,6 +211,21 @@ export function Workspace({
     void prepareEdit(activeEdit);
   }, [activeEdit?.id, project.id]);
 
+  useEffect(() => {
+    if (!block) {
+      return;
+    }
+
+    if (block.kind === "explain" && block.focus) {
+      void focusAnchor(block.focus);
+      return;
+    }
+
+    if (block.kind === "recall") {
+      void prepareRecall(block);
+    }
+  }, [block?.id, project.id]);
+
   // Expose tree data to parent for sidebar rendering.
   useEffect(() => {
     onTreeChange(tree, activeFilePath, relevantPath, (path: string) => {
@@ -209,6 +239,188 @@ export function Workspace({
 
   async function persistProject(patch: Parameters<typeof updateProject>[0]["patch"]) {
     onProjectChange(await updateProject({ id: project.id, patch }));
+  }
+
+  async function persistAssistance(
+    blockId: string,
+    update: (assistance: BlockAssistance) => BlockAssistance
+  ) {
+    const current = {
+      ...emptyBlockAssistance(),
+      ...(project.assistance[blockId] ?? {})
+    };
+    await persistProject({
+      assistance: {
+        ...project.assistance,
+        [blockId]: update(current)
+      }
+    });
+  }
+
+  function openReferenceCard(referenceId: string) {
+    setOpenReferenceIds((current) => (
+      current.includes(referenceId) ? current : [...current, referenceId]
+    ));
+
+    if (block) {
+      void persistAssistance(block.id, (assistance) => ({
+        ...assistance,
+        referenceCardsOpened: uniqueStrings([
+          ...assistance.referenceCardsOpened,
+          referenceId
+        ])
+      }));
+    }
+  }
+
+  function closeReferenceCard(referenceId: string) {
+    setOpenReferenceIds((current) => current.filter((id) => id !== referenceId));
+    setPinnedReferenceIds((current) => current.filter((id) => id !== referenceId));
+  }
+
+  function setReferencePinned(referenceId: string, pinned: boolean) {
+    setPinnedReferenceIds((current) => {
+      const next = pinned
+        ? uniqueStrings([...current, referenceId])
+        : current.filter((id) => id !== referenceId);
+
+      return next;
+    });
+
+    if (pinned && block) {
+      void persistAssistance(block.id, (assistance) => ({
+        ...assistance,
+        referenceCardsPinned: uniqueStrings([
+          ...assistance.referenceCardsPinned,
+          referenceId
+        ])
+      }));
+    }
+  }
+
+  async function prepareRecall(recall: RecallBlock) {
+    setFocusRange(null);
+    const targetPath = await resolveRecallPath(recall);
+
+    if (targetPath) {
+      await openFile(targetPath);
+      await focusRecallTarget(recall);
+    }
+
+    if (autoOpenedRecallRef.current !== recall.id) {
+      autoOpenedRecallRef.current = recall.id;
+      for (const referenceId of recall.references) {
+        openReferenceCard(referenceId);
+      }
+    }
+  }
+
+  async function resolveRecallPath(recall: RecallBlock): Promise<string | null> {
+    if (recall.path) {
+      return recall.path;
+    }
+
+    if (recall.target) {
+      const target = project.program.targets.find((candidate) => candidate.id === recall.target);
+      if (target) {
+        return target.path;
+      }
+
+      const edit = findEditByAnchor(recall.target);
+      if (edit) {
+        return edit.path;
+      }
+    }
+
+    return null;
+  }
+
+  async function focusRecallTarget(recall: RecallBlock) {
+    if (!recall.target) {
+      return;
+    }
+
+    const target = project.program.targets.find((candidate) => candidate.id === recall.target);
+    if (target) {
+      await focusTarget(target.id);
+      return;
+    }
+
+    await focusAnchor(recall.target);
+  }
+
+  async function focusReferenceLink(link: ReferenceLink) {
+    if (link.anchor) {
+      await focusAnchor(link.anchor);
+      return;
+    }
+
+    if (link.file) {
+      await openFile(link.file);
+      setFocusRange({ line: 1, column: 1 });
+    }
+  }
+
+  async function focusTarget(targetId: string) {
+    const target = project.program.targets.find((candidate) => candidate.id === targetId);
+    if (!target) {
+      return;
+    }
+
+    await openFile(target.path);
+
+    if (target.anchor) {
+      await focusAnchor(target.anchor);
+      return;
+    }
+
+    if (target.line) {
+      setFocusRange({ line: target.line, column: 1 });
+      return;
+    }
+
+    if (target.find) {
+      const content = await readMaybeFile(target.path);
+      const offset = content.indexOf(target.find);
+      if (offset >= 0) {
+        setFocusRange({
+          line: lineNumberForOffset(content, offset),
+          column: 1
+        });
+      }
+    }
+  }
+
+  async function focusAnchor(anchor: string) {
+    const edit = findEditByAnchor(anchor);
+    if (!edit) {
+      return;
+    }
+
+    await openFile(edit.path);
+    const content = await readMaybeFile(edit.path);
+    const needle = edit.content.trim();
+    const offset = needle ? content.indexOf(needle) : -1;
+    const line = offset >= 0 ? lineNumberForOffset(content, offset) : 1;
+    const lineCount = edit.content.split("\n").length;
+
+    setFocusRange({
+      line,
+      endLine: Math.max(line, line + lineCount - 1),
+      column: 1
+    });
+  }
+
+  function findEditByAnchor(anchor: string): EditBlock | null {
+    for (const step of project.program.steps) {
+      for (const candidate of step.blocks) {
+        if (candidate.kind === "edit" && candidate.anchor === anchor) {
+          return candidate;
+        }
+      }
+    }
+
+    return null;
   }
 
   async function openFile(path: string) {
@@ -302,6 +514,55 @@ export function Workspace({
     }
   }
 
+  async function handleRevealLineAssistance() {
+    if (!activeEdit) {
+      return;
+    }
+
+    await persistAssistance(activeEdit.id, (assistance) => ({
+      ...assistance,
+      revealLineCount: assistance.revealLineCount + 1
+    }));
+  }
+
+  async function handleVerifyRecall() {
+    if (!block || block.kind !== "recall" || !block.verify) {
+      return;
+    }
+
+    setVerifyingId(block.verify.id);
+    await persistAssistance(block.id, (assistance) => ({
+      ...assistance,
+      recallAttemptCount: assistance.recallAttemptCount + 1
+    }));
+
+    try {
+      const result = await verifyRecall({
+        projectId: project.id,
+        recall: block,
+        references: block.references
+          .map((referenceId) => project.program.references.find((reference) => reference.id === referenceId))
+          .filter((reference): reference is (typeof project.program.references)[number] => Boolean(reference))
+      });
+      await persistProject({
+        verificationResults: {
+          ...project.verificationResults,
+          [block.verify.id]: result
+        }
+      });
+
+      if (!result.passed) {
+        await persistAssistance(block.id, (assistance) => ({
+          ...assistance,
+          recallAttemptCount: assistance.recallAttemptCount + 1,
+          verificationFailureCount: assistance.verificationFailureCount + 1
+        }));
+      }
+    } finally {
+      setVerifyingId(null);
+    }
+  }
+
   async function handleNext() {
     if (!block) {
       return;
@@ -326,8 +587,11 @@ export function Workspace({
       editComplete={editComplete}
       onNext={() => void handleNext()}
       onRunCommand={onRunCommand}
+      onOpenReference={openReferenceCard}
+      onVerifyRecall={() => void handleVerifyRecall()}
+      verifyingId={verifyingId}
     />
-  ), [block, editComplete, onRunCommand, project, theme]);
+  ), [block, editComplete, onRunCommand, project, theme, verifyingId]);
 
   const stepsTabContent = useMemo(() => (
     <div className={`workspace-right-panel-steps ${isStepsCollapsed ? "is-collapsed" : ""}`}>
@@ -404,9 +668,11 @@ export function Workspace({
             editProgress={tabPath === activeFilePath ? editProgress : 0}
             onFreeEdit={(content) => void handleFreeEdit(content)}
             onGuidedProgress={(progress) => void handleGuidedProgress(progress)}
+            onRevealLine={() => void handleRevealLineAssistance()}
             fileList={flattenTree(tree)}
             theme={theme}
             pendingJump={tabPath === activeFilePath ? pendingJump : null}
+            focusRange={tabPath === activeFilePath ? focusRange : null}
             onJumpComplete={() => setPendingJump(null)}
             onOpenFileAndJump={async (path, line, col) => {
               setPendingJump({ line, column: col });
@@ -417,7 +683,7 @@ export function Workspace({
         ),
       };
     });
-  }, [openTabs, activeFilePath, activeFileContent, activeEdit, editAnchor, editProgress, tree, pendingJump, handleReadFileContent, theme]);
+  }, [openTabs, activeFilePath, activeFileContent, activeEdit, editAnchor, editProgress, tree, pendingJump, focusRange, handleReadFileContent, theme]);
 
   // Launcher items for the editor + button
   const fileList = useMemo(() => flattenTree(tree), [tree]);
@@ -472,6 +738,24 @@ export function Workspace({
         onTabChange={handleTabChange}
         onTabClose={handleTabClose}
       />
+      {openReferenceIds.length > 0 ? (
+        <div className="construct-floating-card-layer" aria-label="Open reference cards">
+          {openReferenceIds
+            .map((referenceId) => project.program.references.find((reference) => reference.id === referenceId))
+            .filter((reference): reference is (typeof project.program.references)[number] => Boolean(reference))
+            .map((reference) => (
+              <ReferenceCard
+                key={reference.id}
+                card={reference}
+                pinned={pinnedReferenceIds.includes(reference.id)}
+                theme={theme}
+                onClose={() => closeReferenceCard(reference.id)}
+                onPinChange={(pinned) => setReferencePinned(reference.id, pinned)}
+                onOpenLink={(link) => void focusReferenceLink(link)}
+              />
+            ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -487,4 +771,12 @@ function flattenTree(nodes: WorkspaceTreeNode[]): string[] {
   }
   nodes.forEach(visit);
   return result;
+}
+
+function lineNumberForOffset(content: string, offset: number): number {
+  return content.slice(0, offset).split("\n").length;
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values)];
 }
