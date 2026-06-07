@@ -473,8 +473,7 @@
   gap: 8px;
 }
 
-.codex-header-agent-button,
-.codex-header-tool-button {
+.codex-header-agent-button {
   display: inline-grid;
   place-items: center;
   border: 0;
@@ -484,6 +483,19 @@
     background-color var(--transition-duration-basic) var(--cubic-enter),
     box-shadow var(--transition-duration-basic) var(--cubic-enter),
     color var(--transition-duration-basic) var(--cubic-enter);
+}
+
+.codex-header-tool-button {
+  display: inline-grid;
+  place-items: center;
+  border: 0;
+  color: color-mix(in srgb, var(--codex-text-secondary) 78%, transparent);
+  background: transparent;
+  transition:
+    background-color var(--transition-duration-basic) var(--cubic-enter),
+    box-shadow var(--transition-duration-basic) var(--cubic-enter),
+    color var(--transition-duration-basic) var(--cubic-enter),
+    transform var(--transition-duration-basic) var(--cubic-enter);
 }
 
 .codex-header-agent-button {
@@ -524,9 +536,14 @@
 }
 
 .codex-header-tool-button {
-  width: 34px;
-  height: 34px;
-  border-radius: 13px;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+}
+
+.codex-header-tool-button:active {
+  transform: scale(0.9);
+  background: color-mix(in srgb, var(--codex-text-primary) 12%, transparent);
 }
 
 .codex-header-tool-button[data-active="true"] {

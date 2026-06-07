@@ -486,10 +486,10 @@ export default function ConstructApp() {
                 <>
                   <SavingIndicator isSaving={isSaving} />
                   <AppShellHeaderToolButton onClick={state.toggleRightPanel} aria-label="Toggle guide panel">
-                    <PanelRight size={16} />
+                    <PanelRight size={20} />
                   </AppShellHeaderToolButton>
                   <AppShellHeaderToolButton onClick={state.toggleBottomPanel} aria-label="Toggle terminal">
-                    <PanelBottom size={16} />
+                    <PanelBottom size={20} />
                   </AppShellHeaderToolButton>
                 </>
               )
