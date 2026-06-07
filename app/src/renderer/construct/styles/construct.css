@@ -2169,17 +2169,18 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 14px;
-  height: 15px;
+  min-width: 16px;
+  height: 16px;
   padding: 0 4px;
   border: 1px solid var(--codex-border-strong);
-  border-radius: 3px;
+  border-radius: 3.5px;
   background: var(--codex-bg-primary);
   color: var(--codex-text-primary);
-  font-family: var(--codex-font-mono);
-  font-size: 10px;
+  font-family: var(--codex-font-sans); /* Use sans-serif for better symbol rendering */
+  font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
+  line-height: 1;
 }
 
 .construct-editor-skip-shortcut {
