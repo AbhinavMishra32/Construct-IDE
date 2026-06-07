@@ -143,8 +143,8 @@
 
 .codex-sidebar-reopen-trigger svg,
 .codex-sidebar-reopen-button svg {
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
 }
 
 .codex-sidebar-reopen-button svg circle {
@@ -164,8 +164,8 @@
 }
 
 .codex-shell-chrome-button svg {
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
 }
 
 .codex-app-tab-actions {
@@ -557,8 +557,8 @@
 
 .codex-header-agent-button svg,
 .codex-header-tool-button svg {
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   fill: none;
   stroke: currentColor;
   stroke-linecap: round;
