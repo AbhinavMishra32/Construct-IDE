@@ -2169,15 +2169,35 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 24px;
-  height: 14px;
+  min-width: 14px;
+  height: 15px;
   padding: 0 4px;
   border: 1px solid var(--codex-border-strong);
   border-radius: 3px;
   background: var(--codex-bg-primary);
-  color: var(--codex-text-tertiary);
+  color: var(--codex-text-primary);
   font-family: var(--codex-font-mono);
-  font-size: 9px;
-  font-weight: 600;
+  font-size: 10px;
+  font-weight: 700;
   text-transform: uppercase;
+}
+
+.construct-editor-skip-shortcut {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 6px;
+  color: var(--codex-text-secondary);
+}
+
+.construct-editor-skip-shortcut svg {
+  margin-right: 1px;
+  color: var(--codex-text-secondary);
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+.construct-editor-skip-btn-icon {
+  margin-right: 1px;
+  flex-shrink: 0;
 }

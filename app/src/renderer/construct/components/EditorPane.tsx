@@ -84,6 +84,37 @@ export function EditorPane({
   const [showSkipButton, setShowSkipButton] = useState(false);
   const editorTheme = useEditorTheme(theme);
 
+  const os = useMemo(() => {
+    const ua = window.navigator.userAgent.toLowerCase();
+    if (ua.includes("mac")) return "mac";
+    if (ua.includes("win")) return "windows";
+    if (ua.includes("linux")) return "linux";
+    return "windows";
+  }, []);
+
+  const osIcon = useMemo(() => {
+    if (os === "mac") {
+      return (
+        <svg width="10" height="10" viewBox="0 0 170 170" fill="currentColor" style={{ opacity: 0.8 }}>
+          <path d="M150.37 130.25c-2.45 5.66-5.35 10.87-8.71 15.66-4.58 6.53-8.33 11.05-11.22 13.56-4.48 4.12-9.28 6.23-14.42 6.35-3.69 0-8.14-1.05-13.32-3.18-5.19-2.12-9.97-3.17-14.34-3.17-4.58 0-9.49 1.05-14.75 3.17-5.26 2.13-9.5 3.24-12.74 3.35-4.34.13-9.13-1.92-14.36-6.13-2.92-2.51-6.73-7.03-11.45-13.56-5.26-7.25-9.57-15.54-12.92-24.85-3.35-9.31-5.04-18.22-5.04-26.74 0-11.73 3.01-21.5 9.04-29.3 6.03-7.8 13.88-11.73 23.54-11.73 4.8 0 9.96 1.34 15.48 4.02 5.51 2.68 9.3 4.02 11.36 4.02 1.89 0 5.46-1.29 10.7-3.86 6.37-3.02 12.02-4.42 16.94-4.2 12.06.45 21.52 4.91 28.37 13.39-10.28 6.25-15.29 14.8-15.02 25.64.3 9.71 4 17.69 11.12 23.95 7.11 6.26 15.65 9.58 25.62 9.97-2.68 7.7-6.03 15.34-10.08 22.92zM119.22 32.4c0-7.7 2.76-14.88 8.27-21.56 6.81-8.13 15.02-12.33 24.62-10.84 1.13 8.32-1.77 16.14-8.71 23.47-5.59 6.02-12.87 10.02-21.84 10.02-.9 0-1.74-.03-2.34-.09z" />
+        </svg>
+      );
+    }
+    if (os === "windows") {
+      return (
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" style={{ opacity: 0.8 }}>
+          <path d="M0 3.449L9.75 2.1v9.45H0V3.449zM0 12.45h9.75v9.45L0 20.551v-8.1zM10.8 1.95L24 0v11.55H10.8V1.95zM10.8 12.45H24v11.55l-13.2-1.95v-9.6z" />
+        </svg>
+      );
+    }
+    return (
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.8 }}>
+        <polyline points="4 17 10 11 4 5" />
+        <line x1="12" y1="19" x2="20" y2="19" />
+      </svg>
+    );
+  }, [os]);
+
   const localProgressRef = useRef(editProgress);
   const lastSentProgressRef = useRef(editProgress);
   const lastRevealedLineRef = useRef<number | null>(null);
@@ -626,11 +657,28 @@ export function EditorPane({
             zIndex: 100,
           }}
           onClick={handleSkipLine}
-          title="Skip Line (Alt+Enter / Ctrl+\)"
+          title={os === "mac" ? "Skip Line (Option+Enter / Ctrl+\\)" : "Skip Line (Alt+Enter / Ctrl+\\)"}
           type="button"
         >
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="construct-editor-skip-btn-icon">
+            <path d="M5 4l10 8-10 8V4z" />
+            <line x1="19" y1="5" x2="19" y2="19" />
+          </svg>
           <span>Skip Line</span>
-          <kbd>Alt+Enter</kbd>
+          <div className="construct-editor-skip-shortcut">
+            {osIcon}
+            {os === "mac" ? (
+              <>
+                <kbd>⌥</kbd>
+                <kbd>⏎</kbd>
+              </>
+            ) : (
+              <>
+                <kbd>Alt</kbd>
+                <kbd>Enter</kbd>
+              </>
+            )}
+          </div>
         </button>
       )}
     </section>
