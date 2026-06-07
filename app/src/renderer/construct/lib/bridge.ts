@@ -23,6 +23,10 @@ function api(): ConstructProjectsApi {
   return window.constructProjects;
 }
 
+export function setThemeSource(theme: "light" | "dark" | "system"): Promise<void> {
+  return api().setThemeSource(theme);
+}
+
 export function ensureProject(input: {
   source: string;
   sourcePath?: string | null;
@@ -84,12 +88,16 @@ export function writeFile(input: {
   return api().writeFile(input);
 }
 
-export function terminalCreate(projectId: string): Promise<{ sessionId: string }> {
-  return api().terminalCreate({ projectId });
+export function terminalCreate(projectId: string, size?: { cols: number; rows: number }): Promise<{ sessionId: string }> {
+  return api().terminalCreate({ projectId, ...size });
 }
 
 export function terminalInput(sessionId: string, data: string): Promise<void> {
   return api().terminalInput({ sessionId, data });
+}
+
+export function terminalResize(sessionId: string, cols: number, rows: number): Promise<void> {
+  return api().terminalResize({ sessionId, cols, rows });
 }
 
 export function terminalKill(sessionId: string): Promise<void> {

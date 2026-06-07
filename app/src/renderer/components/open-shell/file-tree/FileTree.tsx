@@ -12,6 +12,7 @@ export type FileTreeItem = {
   path: string;
   selected?: boolean;
   type?: "file" | "directory";
+  expanded?: boolean;
 };
 
 export type FileTreeProps = {
@@ -120,14 +121,29 @@ function FileTreeRow({
         data-path={item.path}
         data-type="item"
         role="treeitem"
-        aria-expanded={isDirectory ? "true" : undefined}
+        aria-expanded={isDirectory ? (item.expanded !== false ? "true" : "false") : undefined}
         aria-level={level}
         data-item-selected={item.selected ? "true" : undefined}
         data-item-type={isDirectory ? "directory" : "file"}
         onClick={() => onSelectPath?.(item.path, item)}
         type="button"
-        style={{ "--tree-depth": String(level - 1) } as CSSProperties}
+        style={
+          {
+            "--tree-depth": String(level - 1),
+            "--tree-depth-offset": `${(level - 1) * 18}px`,
+            "--tree-parent-offset": `${Math.max(0, level - 2) * 18}px`,
+          } as CSSProperties
+        }
       >
+        {isDirectory ? (
+          <span className="codex-file-tree-chevron-container">
+            <svg data-icon-name="file-tree-icon-chevron" aria-hidden="true">
+              <use href="#file-tree-icon-chevron" />
+            </svg>
+          </span>
+        ) : (
+          <span className="codex-file-tree-chevron-spacer" />
+        )}
         <span data-item-section="icon">
           {item.icon ?? (
             <svg data-icon-name={iconName} data-icon-token={iconToken} aria-hidden="true">
@@ -148,8 +164,12 @@ function FileTreeRow({
           </span>
         ) : null}
       </button>
-      {isDirectory
-        ? item.children?.map((child) => (
+      {isDirectory ? (
+        <div
+          className="codex-file-tree-submenu"
+          data-open={item.expanded !== false ? "true" : "false"}
+        >
+          {item.children?.map((child) => (
             <FileTreeRow
               gitLane={gitLane}
               key={child.path}
@@ -158,8 +178,9 @@ function FileTreeRow({
               onSelectPath={onSelectPath}
               showActions={showActions}
             />
-          ))
-        : null}
+          ))}
+        </div>
+      ) : null}
     </>
   );
 }

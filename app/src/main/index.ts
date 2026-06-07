@@ -13,7 +13,7 @@ import {
 import { existsSync } from "node:fs";
 import { promisify } from "node:util";
 
-import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, shell, nativeImage, nativeTheme } from "electron";
 import * as pty from "@homebridge/node-pty-prebuilt-multiarch";
 
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
@@ -240,6 +240,10 @@ function summarizeProject(project: StoredProject) {
 }
 
 function installConstructProjectIpcHandlers(): void {
+  ipcMain.handle("construct:theme:set", async (_event, theme: "light" | "dark" | "system") => {
+    nativeTheme.themeSource = theme;
+  });
+
   ipcMain.handle("construct:dialog:open-construct-file", async () => {
     const result = await dialog.showOpenDialog({
       title: "Open .construct project",
@@ -532,6 +536,8 @@ function installConstructProjectIpcHandlers(): void {
 }
 
 function createWindow(): void {
+  const iconPath = path.join(__dirname, "..", "assets", "icon.png");
+
   const window = new BrowserWindow({
     width: 1180,
     height: 780,
@@ -543,6 +549,7 @@ function createWindow(): void {
     trafficLightPosition: { x: 16, y: 16 },
     titleBarStyle: "hiddenInset",
     title: "Construct",
+    icon: iconPath,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
@@ -551,6 +558,14 @@ function createWindow(): void {
     },
     show: false
   });
+
+  if (process.platform === "darwin" && app.dock && existsSync(iconPath)) {
+    try {
+      app.dock.setIcon(nativeImage.createFromPath(iconPath));
+    } catch (err) {
+      console.error("Failed to set dock icon:", err);
+    }
+  }
 
   window.once("ready-to-show", () => window.show());
 

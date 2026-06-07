@@ -5,6 +5,8 @@ import {
   ContextMenuContent,
   ContextMenuTrigger,
 } from "../primitives/ContextMenu";
+import { ShellHistoryProvider } from "../history/ShellHistory";
+import type { ShellHistoryController } from "../history/ShellHistory";
 import "./app-shell.css";
 
 export type AppShellTabItem = {
@@ -17,6 +19,7 @@ export type AppShellTabItem = {
 export type AppShellState = {
   canNavigateBack: boolean;
   canNavigateForward: boolean;
+  history?: ShellHistoryController<any>;
   isBottomPanelOpen: boolean;
   isRightPanelOpen: boolean;
   isSidebarOpen: boolean;
@@ -31,7 +34,7 @@ export type AppShellState = {
 };
 
 export type AppShellProps = {
-  bottomPanel?: ReactNode;
+  bottomPanel?: ReactNode | ((state: AppShellState) => ReactNode);
   canNavigateBack?: boolean;
   canNavigateForward?: boolean;
   chromeControls?: ReactNode | ((state: AppShellState) => ReactNode);
@@ -43,6 +46,7 @@ export type AppShellProps = {
   defaultSidebarWidth?: number;
   headerActions?: ReactNode | ((state: AppShellState) => ReactNode);
   headerTabs?: AppShellTabItem[];
+  history?: ShellHistoryController<any>;
   main: ReactNode;
   renderHeaderTab?: (tab: AppShellTabItem, state: AppShellState) => ReactNode;
   renderHeaderTabActions?: (tab: AppShellTabItem, state: AppShellState) => ReactNode;
@@ -53,6 +57,9 @@ export type AppShellProps = {
   sidebarMaxWidth?: number;
   sidebarMinWidth?: number;
   showSidebarChrome?: boolean;
+  defaultRightPanelWidth?: number;
+  rightPanelMinWidth?: number;
+  rightPanelMaxWidth?: number;
   onNavigateBack?: () => void;
   onNavigateForward?: () => void;
 };
@@ -62,8 +69,8 @@ export type AppShellButtonProps = ButtonHTMLAttributes<HTMLButtonElement>;
 
 export function AppShell({
   bottomPanel,
-  canNavigateBack = false,
-  canNavigateForward = false,
+  canNavigateBack,
+  canNavigateForward,
   chromeControls,
   composer,
   collapsedSidebarTrigger,
@@ -73,6 +80,7 @@ export function AppShell({
   defaultSidebarWidth = 300,
   headerActions,
   headerTabs = [],
+  history,
   main,
   renderHeaderTab,
   renderHeaderTabActions,
@@ -83,6 +91,9 @@ export function AppShell({
   sidebarMaxWidth = 520,
   sidebarMinWidth = 240,
   showSidebarChrome = true,
+  defaultRightPanelWidth = 292,
+  rightPanelMinWidth = 240,
+  rightPanelMaxWidth = 600,
   onNavigateBack,
   onNavigateForward,
 }: AppShellProps) {
@@ -90,6 +101,8 @@ export function AppShell({
   const [sidebarWidth, setSidebarWidth] = useState(defaultSidebarWidth);
   const [isSidebarResizing, setIsSidebarResizing] = useState(false);
   const [isRightPanelOpen, setIsRightPanelOpen] = useState(defaultRightPanelOpen ?? rightPanel != null);
+  const [rightPanelWidth, setRightPanelWidth] = useState(defaultRightPanelWidth);
+  const [isRightPanelResizing, setIsRightPanelResizing] = useState(false);
   const [isBottomPanelOpen, setIsBottomPanelOpen] = useState(defaultBottomPanelOpen ?? bottomPanel != null);
   const toggleSidebar = useCallback(() => {
     setIsSidebarOpen((value) => !value);
@@ -100,19 +113,32 @@ export function AppShell({
   const toggleBottomPanel = useCallback(() => {
     setIsBottomPanelOpen((value) => !value);
   }, []);
+  const resolvedCanNavigateBack = canNavigateBack ?? history?.canGoBack ?? false;
+  const resolvedCanNavigateForward = canNavigateForward ?? history?.canGoForward ?? false;
   const navigateBack = useCallback(() => {
-    onNavigateBack?.();
-  }, [onNavigateBack]);
+    if (onNavigateBack != null) {
+      onNavigateBack();
+      return;
+    }
+
+    history?.goBack();
+  }, [history, onNavigateBack]);
   const navigateForward = useCallback(() => {
-    onNavigateForward?.();
-  }, [onNavigateForward]);
+    if (onNavigateForward != null) {
+      onNavigateForward();
+      return;
+    }
+
+    history?.goForward();
+  }, [history, onNavigateForward]);
 
   // Panels are toggled explicitly by the user — we no longer auto-open
   // them whenever their content slot changes.
 
   const shellState: AppShellState = {
-    canNavigateBack,
-    canNavigateForward,
+    canNavigateBack: resolvedCanNavigateBack,
+    canNavigateForward: resolvedCanNavigateForward,
+    history,
     isBottomPanelOpen,
     isRightPanelOpen,
     isSidebarOpen,
@@ -153,8 +179,36 @@ export function AppShell({
     },
     [sidebarMaxWidth, sidebarMinWidth, sidebarWidth],
   );
+  const startRightPanelResize = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      event.currentTarget.setPointerCapture(event.pointerId);
+      setIsRightPanelResizing(true);
+      const startX = event.clientX;
+      const startWidth = rightPanelWidth;
 
-  return (
+      function move(pointerEvent: PointerEvent) {
+        const nextWidth = Math.max(0, Math.min(rightPanelMaxWidth, startWidth - (pointerEvent.clientX - startX)));
+        if (nextWidth < rightPanelMinWidth) {
+          setIsRightPanelOpen(false);
+          return;
+        }
+        setIsRightPanelOpen(true);
+        setRightPanelWidth(nextWidth);
+      }
+
+      function stop() {
+        setIsRightPanelResizing(false);
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", stop);
+      }
+
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", stop, { once: true });
+    },
+    [rightPanelMaxWidth, rightPanelMinWidth, rightPanelWidth],
+  );
+
+  const shell = (
     <div
       className="codex-app-shell"
       data-sidebar-open={isSidebarOpen ? "true" : "false"}
@@ -163,6 +217,7 @@ export function AppShell({
           "--codex-left-panel-max-width": `${sidebarMaxWidth}px`,
           "--codex-left-panel-min-content": `${sidebarMinWidth + 80}px`,
           "--codex-left-panel-width": `${sidebarWidth}px`,
+          "--codex-right-panel-width": `${rightPanelWidth}px`,
         } as CSSProperties
       }
     >
@@ -233,8 +288,18 @@ export function AppShell({
             <aside
               className="codex-right-panel-slot"
               data-open={isRightPanelOpen ? "true" : "false"}
+              data-resizing={isRightPanelResizing ? "true" : "false"}
               data-app-shell-focus-area="right-panel"
             >
+              <div
+                className="codex-right-panel-resize-handle"
+                role="separator"
+                aria-orientation="vertical"
+                aria-disabled={!isRightPanelOpen}
+                onPointerDown={isRightPanelOpen ? startRightPanelResize : undefined}
+              >
+                <div className="codex-right-panel-resize-handle-line" />
+              </div>
               <AppShellRightPanel>{rightPanel}</AppShellRightPanel>
             </aside>
           ) : null}
@@ -246,12 +311,14 @@ export function AppShell({
             data-open={isBottomPanelOpen ? "true" : "false"}
             data-app-shell-focus-area="bottom-panel"
           >
-            <AppShellBottomPanel>{bottomPanel}</AppShellBottomPanel>
+            <AppShellBottomPanel>{resolveSlot(bottomPanel, shellState)}</AppShellBottomPanel>
           </section>
         ) : null}
       </main>
     </div>
   );
+
+  return history != null ? <ShellHistoryProvider history={history}>{shell}</ShellHistoryProvider> : shell;
 }
 
 export function AppShellChromeControls({ children, className, ...props }: AppShellSlotProps) {

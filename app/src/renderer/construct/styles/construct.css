@@ -319,6 +319,70 @@
   background: transparent;
 }
 
+/* Guide Panel Markdown & Theme overrides */
+.guide-panel .construct-markdown {
+  color: var(--codex-text-secondary);
+  font-family: var(--codex-font-sans);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.guide-panel .construct-markdown h1,
+.guide-panel .construct-markdown h2,
+.guide-panel .construct-markdown h3,
+.guide-panel .construct-markdown h4 {
+  color: var(--codex-text-primary);
+  font-family: var(--codex-font-sans);
+  font-weight: 650;
+  margin: 16px 0 8px;
+}
+
+.guide-panel .construct-markdown h1 { font-size: 18px; }
+.guide-panel .construct-markdown h2 { font-size: 16px; }
+.guide-panel .construct-markdown h3 { font-size: 14px; }
+.guide-panel .construct-markdown h4 { font-size: 13px; }
+
+.guide-panel .construct-markdown p,
+.guide-panel .construct-markdown li {
+  color: var(--codex-text-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.guide-panel .construct-markdown strong {
+  color: var(--codex-text-primary);
+  font-weight: 600;
+}
+
+.guide-panel .construct-markdown-inline-code {
+  background: color-mix(in srgb, var(--codex-text-primary) 8%, transparent);
+  color: var(--codex-text-primary);
+  border: 1px solid var(--codex-border-subtle);
+  border-radius: var(--codex-radius-sm, 6px);
+  font-family: var(--codex-font-mono);
+  font-size: 0.85em;
+  padding: 1px 4px;
+  margin: 0 1px;
+}
+
+.guide-panel .construct-markdown-link {
+  color: var(--codex-accent);
+  text-decoration: none;
+}
+
+.guide-panel .construct-markdown-link:hover {
+  text-decoration: underline;
+}
+
+.guide-panel .construct-markdown-list {
+  padding-left: 18px;
+  margin: 8px 0;
+}
+
+.guide-panel .construct-markdown-list-item {
+  margin-bottom: 4px;
+}
+
 .guide-panel__meta {
   justify-content: space-between;
   color: var(--codex-text-tertiary);
@@ -417,11 +481,11 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: 1px solid var(--codex-border-subtle);
-  border-radius: var(--codex-radius-md);
-  background: var(--codex-bg-tertiary);
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
   color: var(--codex-text-secondary);
   cursor: default;
   transition: all 0.15s ease;
@@ -430,7 +494,11 @@
 .construct-sidebar-home-btn:hover {
   background: var(--color-token-list-hover-background);
   color: var(--codex-text-primary);
-  border-color: color-mix(in srgb, var(--codex-border-subtle) 80%, var(--codex-text-primary));
+}
+
+/* Do not truncate the main project tab in the header */
+.codex-app-tab-strip .codex-app-tab {
+  max-width: none !important;
 }
 
 .construct-sidebar-project-title {
@@ -446,16 +514,35 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 12px 4px;
+  padding: 12px 2px;
 }
 
 /* Ensure file tree background is completely transparent to inherit sidebar style */
 .construct-sidebar-tree-container .codex-file-tree,
 .construct-sidebar-tree-container .codex-file-tree-root,
-.construct-sidebar-tree-container [data-file-tree-virtualized-list],
-.construct-sidebar-tree-container .codex-file-tree-row {
+.construct-sidebar-tree-container [data-file-tree-virtualized-list] {
   background: transparent !important;
   background-color: transparent !important;
+}
+
+/* File Tree Row Legibility and Color Overrides */
+.construct-sidebar-tree-container .codex-file-tree-row {
+  color: var(--codex-text-primary) !important;
+  font-weight: 500;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.construct-sidebar-tree-container .codex-file-tree-row:hover {
+  background-color: var(--color-token-list-hover-background) !important;
+}
+
+.construct-sidebar-tree-container .codex-file-tree-row[data-item-selected="true"] {
+  font-weight: 600;
+  background-color: color-mix(in srgb, var(--codex-text-primary) 10%, transparent) !important;
+}
+
+.construct-sidebar-tree-container .codex-file-tree-row [data-icon-name="file-tree-icon-chevron"] {
+  color: var(--codex-text-secondary);
 }
 
 /* Steps in right panel bottom styles */
@@ -512,81 +599,127 @@
   gap: 8px;
 }
 
-.dashboard-command-center {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  border: 1px solid var(--codex-border-subtle);
-  border-radius: 18px;
-  overflow: hidden;
-  background: color-mix(in srgb, var(--codex-bg-elevated) 62%, transparent);
-}
-
-.dashboard-command-center__metric {
-  display: grid;
-  gap: 4px;
-  min-height: 76px;
-  align-content: center;
-  border-left: 1px solid var(--codex-border-subtle);
-  padding: 14px 16px;
-}
-
-.dashboard-command-center__metric:first-child {
-  border-left: 0;
-}
-
-.dashboard-command-center__metric strong {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
+/* Minimalist Dashboard Layout */
+.construct-home {
+  max-width: 600px;
+  margin: 64px auto;
+  padding: 0 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 36px;
   color: var(--codex-text-primary);
-  font-size: 20px;
-  font-weight: 680;
-  letter-spacing: -0.02em;
+  font-family: var(--codex-font-sans);
 }
 
-.dashboard-command-center__metric span {
-  color: var(--codex-text-tertiary);
-  font-size: 12px;
+.construct-home-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
-.dashboard-runtime-table {
-  display: grid;
-  border: 1px solid var(--codex-border-subtle);
-  border-radius: 18px;
-  overflow: hidden;
+.construct-home-title {
+  font-family: var(--codex-font-mono);
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  text-transform: uppercase;
+  color: var(--codex-text-primary);
+  margin: 0;
 }
 
-.dashboard-runtime-table > div {
-  display: grid;
-  grid-template-columns: 24px minmax(94px, 0.36fr) minmax(0, 1fr);
+.construct-home-subtitle {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--codex-text-secondary);
+  margin: 0;
+}
+
+.construct-home-actions {
+  display: flex;
   align-items: center;
   gap: 12px;
-  min-height: 44px;
-  border-top: 1px solid var(--codex-border-subtle);
-  padding: 0 14px;
+  margin-top: 4px;
 }
 
-.dashboard-runtime-table > div:first-child {
-  border-top: 0;
-}
-
-.dashboard-runtime-table svg {
-  color: var(--codex-text-tertiary);
-}
-
-.dashboard-runtime-table span {
-  color: var(--codex-text-tertiary);
+.construct-home-stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 24px;
   font-size: 12px;
+  color: var(--codex-text-tertiary);
+  padding: 12px 0;
+  border-top: 1px solid var(--codex-border-subtle);
+  border-bottom: 1px solid var(--codex-border-subtle);
 }
 
-.dashboard-runtime-table strong {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--codex-text-secondary);
+.construct-home-stat-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.construct-home-stat-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--codex-text-tertiary);
+}
+
+.construct-home-stat-dot.is-active {
+  background: var(--codex-accent);
+}
+
+.construct-home-stat-dot.is-green {
+  background: var(--codex-success, #22c55e);
+}
+
+.construct-home-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.construct-home-list-header {
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+  color: var(--codex-text-tertiary);
+  letter-spacing: 0.05em;
+  margin: 0 0 4px 0;
+}
+
+.construct-home-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 24px;
+}
+
+.construct-home-item-number {
+  font-family: var(--codex-font-mono);
   font-size: 13px;
-  font-weight: 560;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  color: var(--codex-text-tertiary);
+  margin-top: 2px;
+}
+
+.construct-home-item-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.construct-home-item-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--codex-text-primary);
+  margin: 0;
+}
+
+.construct-home-item-desc {
+  font-size: 13px;
+  color: var(--codex-text-secondary);
+  line-height: 1.5;
+  margin: 0;
 }
 
 .construct-sidebar-project-list {
@@ -779,6 +912,29 @@
   font: inherit;
 }
 
+.construct-select {
+  width: 100%;
+  height: 34px;
+  border: 1px solid var(--codex-border-subtle);
+  border-radius: 11px;
+  padding: 0 11px;
+  background: color-mix(in srgb, var(--codex-bg-primary) 76%, transparent);
+  color: var(--codex-text-primary);
+  outline: none;
+  font: inherit;
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='%23888' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='3 4.5 6 7.5 9 4.5'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 32px;
+}
+
+.construct-select option {
+  background: var(--codex-bg-elevated);
+  color: var(--codex-text-primary);
+}
+
 .construct-checkbox {
   display: inline-flex;
   align-items: center;
@@ -806,6 +962,75 @@
   position: relative;
   flex: 0 0 min(42%, 280px);
   max-height: 280px;
+  overflow: hidden;
+  transition:
+    flex-basis 0.3s cubic-bezier(0.2, 0, 0, 1),
+    max-height 0.3s cubic-bezier(0.2, 0, 0, 1),
+    margin-top 0.3s cubic-bezier(0.2, 0, 0, 1),
+    padding-top 0.3s cubic-bezier(0.2, 0, 0, 1),
+    border-color 0.3s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.workspace-right-panel-steps.is-collapsed {
+  flex-basis: 22px;
+  max-height: 22px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top-color: transparent;
+}
+
+.workspace-right-panel-steps-timeline-container {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity 0.2s cubic-bezier(0.2, 0, 0, 1),
+    transform 0.3s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.workspace-right-panel-steps.is-collapsed .workspace-right-panel-steps-timeline-container {
+  opacity: 0;
+  transform: translateY(10px);
+  pointer-events: none;
+}
+
+.workspace-right-panel-steps button.workspace-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: transparent;
+  border: 0;
+  cursor: default;
+  padding: 0 0 8px 0;
+  margin: 0;
+  outline: none;
+  font: inherit;
+  color: var(--codex-text-tertiary);
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+  user-select: none;
+}
+
+.workspace-right-panel-steps button.workspace-panel__header:hover {
+  color: var(--codex-text-secondary);
+}
+
+.workspace-right-panel-steps button.workspace-panel__header .workspace-panel__header-chevron {
+  color: var(--codex-text-tertiary);
+  transition: transform 0.3s cubic-bezier(0.2, 0, 0, 1), color 0.15s ease;
+}
+
+.workspace-right-panel-steps.is-collapsed button.workspace-panel__header .workspace-panel__header-chevron {
+  transform: rotate(-180deg);
+}
+
+.workspace-right-panel-steps button.workspace-panel__header:hover .workspace-panel__header-chevron {
+  color: var(--codex-text-secondary);
 }
 
 .workspace-right-panel-steps::before,
@@ -816,6 +1041,14 @@
   z-index: 1;
   height: 18px;
   content: "";
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 0.2s ease;
+}
+
+.workspace-right-panel-steps.is-collapsed::before,
+.workspace-right-panel-steps.is-collapsed::after {
+  opacity: 0;
   pointer-events: none;
 }
 
@@ -996,5 +1229,899 @@
 
   .new-project-dialog__choices {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Saving Indicator */
+.construct-saving-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--codex-text-secondary);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--codex-bg-tertiary) 40%, transparent);
+
+  /* Layout transitions for fluid Apple-like feeling */
+  max-width: 0;
+  margin-right: 0;
+  padding-left: 0;
+  padding-right: 0;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  opacity: 0;
+  transform: scale(0.95);
+  overflow: hidden;
+  white-space: nowrap;
+  pointer-events: none;
+
+  transition:
+    opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+    max-width 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+    margin-right 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+    padding-left 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+    padding-right 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.construct-saving-indicator.is-visible {
+  opacity: 1;
+  transform: scale(1);
+  max-width: 100px;
+  margin-right: 12px;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+.construct-saving-spinner {
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid var(--codex-border-subtle);
+  border-top-color: var(--codex-text-secondary);
+  border-radius: 50%;
+  animation: construct-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes construct-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Editor SlotPanel overrides — scrollable tabs */
+.construct-editor-slot-panel {
+  border-bottom: 1px solid var(--codex-border-subtle);
+}
+
+.construct-editor-slot-panel .codex-slot-panel-tabs-container {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.construct-editor-slot-panel .codex-slot-panel-tabs {
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex-wrap: nowrap;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.construct-editor-slot-panel .codex-slot-panel-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.construct-editor-slot-panel .codex-slot-panel-tab {
+  flex: 0 0 auto;
+  min-width: 100px;
+  max-width: 180px;
+}
+
+/* Flex layout adjustments for tab integration */
+.workspace--editor-only {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.workspace--editor-only .editor-pane {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+}
+
+.workspace--editor-only .codex-slot-panel-outlet .editor-pane {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+}
+
+/* ====================================================================
+   File Chooser (editor + → Open file)
+   ==================================================================== */
+.construct-file-chooser {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--codex-bg-primary);
+}
+
+.construct-file-chooser-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--codex-border-subtle);
+  background: var(--codex-bg-fog, var(--codex-bg-primary));
+}
+
+.construct-file-chooser-search-icon {
+  flex-shrink: 0;
+  color: var(--codex-text-tertiary);
+}
+
+.construct-file-chooser-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--codex-text-primary);
+  font-size: 13px;
+  outline: none;
+  font-family: var(--codex-font-sans, inherit);
+}
+
+.construct-file-chooser-input::placeholder {
+  color: var(--codex-text-tertiary);
+}
+
+.construct-file-chooser-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.construct-file-chooser-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 16px;
+  border: none;
+  background: transparent;
+  color: var(--codex-text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s ease;
+}
+
+.construct-file-chooser-item:hover {
+  background: color-mix(in srgb, var(--codex-text-primary) 5%, transparent);
+}
+
+.construct-file-chooser-item-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--codex-text-secondary);
+}
+
+.construct-file-chooser-item-name {
+  font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.construct-file-chooser-item-path {
+  color: var(--codex-text-tertiary);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.construct-file-chooser-empty {
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--codex-text-tertiary);
+  font-size: 13px;
+}
+
+/* Reduce translucency in light mode (make it more native macOS light grey, preserve blur levels) */
+@media (prefers-color-scheme: light) {
+  :root:not([data-construct-theme="dark"]) {
+    --panel-bg: #ffffff !important;
+    --glass-bg: rgba(255, 255, 255, 0.73) !important;
+    --glass-strong: rgba(255, 255, 255, 0.83) !important;
+    --card-bg: rgba(255, 255, 255, 0.81) !important;
+    --panel-overlay: rgba(255, 255, 255, 0.79) !important;
+  }
+
+  :root:not([data-construct-theme="dark"]) .construct-explorer {
+    background: color-mix(in srgb, #f5f5f7 82%, transparent) !important;
+  }
+
+  :root:not([data-construct-theme="dark"]) .construct-guide-rail {
+    background: color-mix(in srgb, #f5f5f7 84%, transparent) !important;
+  }
+
+  :root:not([data-construct-theme="dark"]) .construct-floating-card {
+    background: color-mix(in srgb, #f5f5f7 84%, transparent) !important;
+  }
+
+  :root:not([data-construct-theme="dark"]) .construct-floating-card-header {
+    background: color-mix(in srgb, #f5f5f7 88%, transparent) !important;
+  }
+
+  :root:not([data-construct-theme="dark"]) .construct-floating-card-minibar {
+    background: color-mix(in srgb, #f5f5f7 84%, transparent) !important;
+  }
+
+  :root:not([data-construct-theme="dark"]) .construct-metadata-panel,
+  :root:not([data-construct-theme="dark"]) .construct-info-panel,
+  :root:not([data-construct-theme="dark"]) .construct-check-card,
+  :root:not([data-construct-theme="dark"]) .construct-task-results,
+  :root:not([data-construct-theme="dark"]) .construct-floating-hints {
+    background: color-mix(in srgb, #ffffff 77%, transparent) !important;
+  }
+
+
+}
+
+/* Fallback for explicit data-attribute light theme overrides */
+:root[data-construct-theme="light"] {
+  --panel-bg: #ffffff !important;
+  --glass-bg: rgba(255, 255, 255, 0.73) !important;
+  --glass-strong: rgba(255, 255, 255, 0.83) !important;
+  --card-bg: rgba(255, 255, 255, 0.81) !important;
+  --panel-overlay: rgba(255, 255, 255, 0.79) !important;
+}
+
+:root[data-construct-theme="light"] .construct-explorer {
+  background: color-mix(in srgb, #f5f5f7 82%, transparent) !important;
+}
+
+:root[data-construct-theme="light"] .construct-guide-rail {
+  background: color-mix(in srgb, #f5f5f7 84%, transparent) !important;
+}
+
+:root[data-construct-theme="light"] .construct-floating-card {
+  background: color-mix(in srgb, #f5f5f7 84%, transparent) !important;
+}
+
+:root[data-construct-theme="light"] .construct-floating-card-header {
+  background: color-mix(in srgb, #f5f5f7 88%, transparent) !important;
+}
+
+:root[data-construct-theme="light"] .construct-floating-card-minibar {
+  background: color-mix(in srgb, #f5f5f7 84%, transparent) !important;
+}
+
+:root[data-construct-theme="light"] .construct-metadata-panel,
+:root[data-construct-theme="light"] .construct-info-panel,
+:root[data-construct-theme="light"] .construct-check-card,
+:root[data-construct-theme="light"] .construct-task-results,
+:root[data-construct-theme="light"] .construct-floating-hints {
+  background: color-mix(in srgb, #ffffff 77%, transparent) !important;
+}
+
+
+
+/* Reduce translucency in dark mode (make it more native macOS dark grey, preserve blur levels) */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-construct-theme="light"]) {
+    --panel-bg: #1e1e1e !important;
+    --glass-bg: rgba(30, 30, 30, 0.73) !important;
+    --glass-strong: rgba(30, 30, 30, 0.83) !important;
+    --card-bg: rgba(30, 30, 30, 0.81) !important;
+    --panel-overlay: rgba(30, 30, 30, 0.79) !important;
+  }
+
+  :root:not([data-construct-theme="light"]) .construct-explorer {
+    background: color-mix(in srgb, #1c1c1e 82%, transparent) !important;
+  }
+
+  :root:not([data-construct-theme="light"]) .construct-guide-rail {
+    background: color-mix(in srgb, #1c1c1e 84%, transparent) !important;
+  }
+
+  :root:not([data-construct-theme="light"]) .construct-floating-card {
+    background: color-mix(in srgb, #1c1c1e 84%, transparent) !important;
+  }
+
+  :root:not([data-construct-theme="light"]) .construct-floating-card-header {
+    background: color-mix(in srgb, #1c1c1e 88%, transparent) !important;
+  }
+
+  :root:not([data-construct-theme="light"]) .construct-floating-card-minibar {
+    background: color-mix(in srgb, #1c1c1e 84%, transparent) !important;
+  }
+
+  :root:not([data-construct-theme="light"]) .construct-metadata-panel,
+  :root:not([data-construct-theme="light"]) .construct-info-panel,
+  :root:not([data-construct-theme="light"]) .construct-check-card,
+  :root:not([data-construct-theme="light"]) .construct-task-results,
+  :root:not([data-construct-theme="light"]) .construct-floating-hints {
+    background: color-mix(in srgb, #2d2d2d 77%, transparent) !important;
+  }
+
+
+}
+
+/* Fallback for explicit data-attribute dark theme overrides */
+:root[data-construct-theme="dark"] {
+  --panel-bg: #1e1e1e !important;
+  --glass-bg: rgba(30, 30, 30, 0.73) !important;
+  --glass-strong: rgba(30, 30, 30, 0.83) !important;
+  --card-bg: rgba(30, 30, 30, 0.81) !important;
+  --panel-overlay: rgba(30, 30, 30, 0.79) !important;
+}
+
+:root[data-construct-theme="dark"] .construct-explorer {
+  background: color-mix(in srgb, #1c1c1e 82%, transparent) !important;
+}
+
+:root[data-construct-theme="dark"] .construct-guide-rail {
+  background: color-mix(in srgb, #1c1c1e 84%, transparent) !important;
+}
+
+:root[data-construct-theme="dark"] .construct-floating-card {
+  background: color-mix(in srgb, #1c1c1e 84%, transparent) !important;
+}
+
+:root[data-construct-theme="dark"] .construct-floating-card-header {
+  background: color-mix(in srgb, #1c1c1e 88%, transparent) !important;
+}
+
+:root[data-construct-theme="dark"] .construct-floating-card-minibar {
+  background: color-mix(in srgb, #1c1c1e 84%, transparent) !important;
+}
+
+:root[data-construct-theme="dark"] .construct-metadata-panel,
+:root[data-construct-theme="dark"] .construct-info-panel,
+:root[data-construct-theme="dark"] .construct-check-card,
+:root[data-construct-theme="dark"] .construct-task-results,
+:root[data-construct-theme="dark"] .construct-floating-hints {
+  background: color-mix(in srgb, #2d2d2d 77%, transparent) !important;
+}
+
+
+
+/* Native macOS style file tree sizing and spacing */
+.construct-sidebar-tree-container .codex-file-tree {
+  --trees-font-size: 13px !important;
+  --trees-row-height: 28px !important;
+  --trees-border-radius: 5px !important;
+  --trees-item-row-gap: 2px !important;
+  --trees-item-padding-x: 6px !important;
+}
+
+.construct-sidebar-tree-container .codex-file-tree-row {
+  margin: 0 2px !important;
+  border-radius: 5px !important;
+  padding-right: 6px !important;
+  padding-left: calc(6px + var(--tree-depth-offset, 0px)) !important;
+  transition: none !important;
+}
+
+/* Native macOS style file tree selection and hover highlights */
+.construct-sidebar-tree-container .codex-file-tree-row:hover {
+  background-color: rgba(0, 0, 0, 0.05) !important;
+}
+
+@media (prefers-color-scheme: dark) {
+  .construct-sidebar-tree-container .codex-file-tree-row:hover {
+    background-color: rgba(255, 255, 255, 0.08) !important;
+  }
+}
+
+:root[data-construct-theme="dark"] .construct-sidebar-tree-container .codex-file-tree-row:hover {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+.construct-sidebar-tree-container .codex-file-tree-row[data-item-selected="true"] {
+  background-color: #0063e1 !important;
+  color: #ffffff !important;
+  font-weight: 500 !important;
+}
+
+/* Ensure all icons (SVG and Phosphor) inside the selected row turn white */
+.construct-sidebar-tree-container .codex-file-tree-row[data-item-selected="true"] svg,
+.construct-sidebar-tree-container .codex-file-tree-row[data-item-selected="true"] path,
+.construct-sidebar-tree-container .codex-file-tree-row[data-item-selected="true"] [data-item-section="icon"] * {
+  color: #ffffff !important;
+  fill: #ffffff !important;
+}
+
+/* Make chevron container match current color and align opacity */
+.construct-sidebar-tree-container .codex-file-tree-row .codex-file-tree-chevron-container {
+  color: currentColor !important;
+  opacity: 0.65;
+}
+
+.construct-sidebar-tree-container .codex-file-tree-row[data-item-selected="true"] .codex-file-tree-chevron-container {
+  opacity: 1;
+}
+
+/* Native Apple macOS styles for the search container & field */
+.construct-sidebar-tree-container [data-file-tree-search-container] {
+  margin: 0 4px 10px !important;
+}
+
+.construct-sidebar-tree-container .codex-file-tree-search-field {
+  background-color: rgba(0, 0, 0, 0.05) !important;
+  border: 1px solid rgba(0, 0, 0, 0.05) !important;
+  border-radius: 6px !important;
+  height: 28px !important;
+  transition: all 0.15s ease !important;
+}
+
+@media (prefers-color-scheme: dark) {
+  .construct-sidebar-tree-container .codex-file-tree-search-field {
+    background-color: rgba(255, 255, 255, 0.06) !important;
+    border-color: rgba(255, 255, 255, 0.06) !important;
+  }
+}
+
+:root[data-construct-theme="dark"] .construct-sidebar-tree-container .codex-file-tree-search-field {
+  background-color: rgba(255, 255, 255, 0.06) !important;
+  border-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+.construct-sidebar-tree-container .codex-file-tree-search-field:has([data-file-tree-search-input]:focus) {
+  border-color: #007aff !important;
+  box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.25) !important;
+  background-color: #ffffff !important;
+}
+
+@media (prefers-color-scheme: dark) {
+  .construct-sidebar-tree-container .codex-file-tree-search-field:has([data-file-tree-search-input]:focus) {
+    border-color: #007aff !important;
+    box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.35) !important;
+    background-color: #1e1e1e !important;
+  }
+}
+
+:root[data-construct-theme="dark"] .construct-sidebar-tree-container .codex-file-tree-search-field:has([data-file-tree-search-input]:focus) {
+  border-color: #007aff !important;
+  box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.35) !important;
+  background-color: #1e1e1e !important;
+}
+
+.construct-sidebar-tree-container [data-file-tree-search-input] {
+  font-size: 13px !important;
+  line-height: 26px !important;
+  height: 26px !important;
+}
+
+.construct-sidebar-tree-container .codex-file-tree-search-icon {
+  width: 14px !important;
+  height: 14px !important;
+  margin-left: 8px !important;
+}
+
+/* Synchronize collapse/expand animations so fade and height transitions occur simultaneously */
+.codex-file-tree-submenu {
+  transition:
+    max-height 0.22s cubic-bezier(0.2, 0, 0, 1),
+    opacity 0.22s cubic-bezier(0.2, 0, 0, 1) !important;
+}
+
+/* Sleek active editing step file indicator in file tree list */
+.construct-file-tree-active-step-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--codex-accent, #10a37f);
+  opacity: 0.85;
+  margin-right: 4px;
+}
+
+.codex-file-tree-row:hover .construct-file-tree-active-step-indicator {
+  opacity: 1;
+}
+
+.codex-file-tree-row[data-item-selected="true"] .construct-file-tree-active-step-indicator {
+  color: #ffffff !important;
+  opacity: 1;
+}
+
+.codex-app-tab-controller:has(.construct-header-title-tab) {
+  max-width: none;
+  flex: 1 1 auto;
+  contain: none;
+}
+
+.construct-header-title-tab {
+  -webkit-app-region: no-drag;
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  height: 34px;
+  align-items: center;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--codex-text-primary);
+  cursor: default;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 620;
+  line-height: 22px;
+  text-align: left;
+}
+
+.construct-header-title-tab span {
+  min-width: 0;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
+.codex-app-shell:has(.construct-sidebar-active) .construct-sidebar-header {
+  padding-left: 16px;
+}
+
+.construct-guide-slot-panel {
+  height: 100%;
+  min-height: 0;
+  background: transparent;
+}
+
+.construct-guide-slot-panel .codex-slot-panel-tabbar {
+  padding-inline: 0;
+  background: transparent;
+}
+
+.construct-guide-slot-panel .codex-slot-panel-tabs-container {
+  padding-inline: 0;
+}
+
+.construct-guide-slot-panel .codex-slot-panel-outlet {
+  overflow: auto;
+}
+
+.construct-guide-slot-panel .guide-panel {
+  height: 100%;
+  padding: 2px 0 0;
+}
+
+.construct-dashboard {
+  display: grid;
+  gap: 18px;
+  width: min(1120px, calc(100% - 48px));
+  margin: 0 auto;
+  padding: 34px 0 44px;
+}
+
+.construct-dashboard__topbar,
+.construct-dashboard__actions,
+.construct-dashboard__panel-header,
+.construct-dashboard__project {
+  display: flex;
+  align-items: center;
+}
+
+.construct-dashboard__topbar {
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.construct-dashboard__eyebrow {
+  margin: 0 0 4px;
+  color: var(--codex-text-tertiary);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.construct-dashboard__topbar h1 {
+  margin: 0;
+  color: var(--codex-text-primary);
+  font-size: 24px;
+  font-weight: 680;
+  letter-spacing: 0;
+}
+
+.construct-dashboard__actions {
+  gap: 8px;
+}
+
+.construct-dashboard__metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid var(--codex-border-subtle);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--codex-bg-primary) 76%, transparent);
+}
+
+.construct-dashboard__metric {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: center;
+  gap: 4px 8px;
+  min-height: 72px;
+  border-left: 1px solid var(--codex-border-subtle);
+  padding: 14px 16px;
+}
+
+.construct-dashboard__metric:first-child {
+  border-left: 0;
+}
+
+.construct-dashboard__metric svg {
+  grid-row: span 2;
+  color: var(--codex-text-secondary);
+}
+
+.construct-dashboard__metric span {
+  color: var(--codex-text-tertiary);
+  font-size: 12px;
+}
+
+.construct-dashboard__metric strong {
+  color: var(--codex-text-primary);
+  font-size: 18px;
+  font-weight: 650;
+}
+
+.construct-dashboard__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
+  gap: 18px;
+  min-height: 0;
+}
+
+.construct-dashboard__panel {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--codex-border-subtle);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--codex-bg-primary) 78%, transparent);
+}
+
+.construct-dashboard__panel-header {
+  justify-content: space-between;
+  min-height: 42px;
+  border-bottom: 1px solid var(--codex-border-subtle);
+  padding: 0 14px;
+}
+
+.construct-dashboard__panel-header h2 {
+  margin: 0;
+  color: var(--codex-text-primary);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.construct-dashboard__panel-header span {
+  color: var(--codex-text-tertiary);
+  font-size: 12px;
+}
+
+.construct-dashboard__project-table {
+  display: grid;
+  gap: 0;
+}
+
+.construct-dashboard__project {
+  position: relative;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) minmax(64px, 120px) 42px 24px;
+  gap: 10px;
+  width: 100%;
+  min-height: 58px;
+  align-items: center;
+  border: 0;
+  border-top: 1px solid var(--codex-border-subtle);
+  padding: 8px 12px;
+  background: transparent;
+  color: var(--codex-text-primary);
+  cursor: default;
+  text-align: left;
+}
+
+.construct-dashboard__project:first-child {
+  border-top: 0;
+}
+
+.construct-dashboard__project:hover {
+  background: color-mix(in srgb, var(--codex-text-primary) 5%, transparent);
+}
+
+.construct-dashboard__project-icon,
+.construct-sidebar-project-row__icon {
+  display: inline-grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  color: color-mix(in srgb, var(--codex-text-secondary) 86%, transparent);
+}
+
+.construct-dashboard__project-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.construct-dashboard__project-copy strong,
+.construct-dashboard__project-copy small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.construct-dashboard__project-copy strong {
+  font-size: 13px;
+  font-weight: 620;
+}
+
+.construct-dashboard__project-copy small,
+.construct-dashboard__percent {
+  color: var(--codex-text-tertiary);
+  font-size: 12px;
+}
+
+.construct-dashboard__progress {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--codex-text-primary) 8%, transparent);
+}
+
+.construct-dashboard__progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--codex-accent);
+}
+
+.construct-dashboard__project-settings {
+  display: inline-grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 7px;
+  color: var(--codex-text-tertiary);
+  opacity: 0;
+}
+
+.construct-dashboard__project:hover .construct-dashboard__project-settings,
+.construct-dashboard__project-settings:focus-visible {
+  opacity: 1;
+}
+
+.construct-dashboard__project-settings:hover {
+  background: color-mix(in srgb, var(--codex-text-primary) 8%, transparent);
+  color: var(--codex-text-primary);
+}
+
+.construct-dashboard__side {
+  display: grid;
+  align-content: start;
+  gap: 18px;
+}
+
+.construct-dashboard__feed-item {
+  display: grid;
+  gap: 2px;
+  border-top: 1px solid var(--codex-border-subtle);
+  padding: 11px 14px;
+}
+
+.construct-dashboard__feed-item span {
+  color: var(--codex-text-primary);
+  font-size: 13px;
+  font-weight: 560;
+}
+
+.construct-dashboard__feed-item small {
+  color: var(--codex-text-tertiary);
+  font-size: 12px;
+}
+
+.construct-dashboard__feed-item[data-muted="true"] {
+  opacity: 0.64;
+}
+
+.construct-dashboard__empty {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 18px 14px;
+  color: var(--codex-text-tertiary);
+  font-size: 13px;
+}
+
+.construct-sidebar-project-row {
+  grid-template-columns: 24px minmax(0, 1fr) 24px auto;
+  gap: 7px;
+  padding: 5px 10px 5px 10px;
+}
+
+.construct-sidebar-project-row__settings {
+  display: inline-grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 7px;
+  color: var(--codex-text-tertiary);
+  opacity: 0;
+}
+
+.construct-sidebar-project-row:hover .construct-sidebar-project-row__settings,
+.construct-sidebar-project-row__settings:focus-visible {
+  opacity: 1;
+}
+
+.construct-sidebar-project-row__settings:hover {
+  background: color-mix(in srgb, var(--codex-text-primary) 8%, transparent);
+  color: var(--codex-text-primary);
+}
+
+.construct-settings-path-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+}
+
+.construct-settings-input {
+  width: 100%;
+  min-width: 0;
+  min-height: 32px;
+  border: 1px solid var(--codex-border-subtle);
+  border-radius: 9px;
+  padding: 0 10px;
+  background: color-mix(in srgb, var(--codex-bg-primary) 76%, transparent);
+  color: var(--codex-text-primary);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.construct-settings-input:focus {
+  border-color: color-mix(in srgb, var(--codex-accent) 56%, var(--codex-border-subtle));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--codex-accent) 18%, transparent);
+}
+
+.construct-settings-input--textarea {
+  min-height: 72px;
+  padding-block: 8px;
+  resize: vertical;
+}
+
+.codex-settings-toggle:disabled {
+  opacity: 0.72;
+}
+
+@media (max-width: 980px) {
+  .construct-dashboard__metrics,
+  .construct-dashboard__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .construct-dashboard__metric {
+    border-left: 0;
+    border-top: 1px solid var(--codex-border-subtle);
+  }
+
+  .construct-dashboard__metric:first-child {
+    border-top: 0;
+  }
+
+  .construct-dashboard__project {
+    grid-template-columns: 28px minmax(0, 1fr) 42px 24px;
+  }
+
+  .construct-dashboard__progress {
+    display: none;
   }
 }

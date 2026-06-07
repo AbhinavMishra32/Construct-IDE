@@ -19,14 +19,50 @@ export {
   AppShellTabStrip,
 } from "./app-shell/AppShell";
 export type { AppShellProps, AppShellState, AppShellTabItem } from "./app-shell/AppShell";
+export { SlotPanel } from "./slot-panel/SlotPanel";
+export type { SlotTab, SlotPanelHandle, SlotPanelProps, SlotLauncherItem } from "./slot-panel/SlotPanel";
+export {
+  ShellHistoryProvider,
+  useShellHistory,
+  useShellHistoryContext,
+} from "./history/ShellHistory";
+export type {
+  ShellHistoryController,
+  ShellHistoryEntry,
+  ShellHistoryProviderProps,
+  ShellHistoryState,
+  UseShellHistoryOptions,
+} from "./history/ShellHistory";
 export { BottomPanel, TerminalSurface, clampBottomPanelHeight } from "./bottom-panel/BottomPanel";
-export type { BottomPanelTab } from "./bottom-panel/BottomPanel";
+export type { BottomPanelTab, BottomPanelHandle } from "./bottom-panel/BottomPanel";
 export { Composer } from "./composer/Composer";
 export { FileTree } from "./file-tree/FileTree";
 export type { FileTreeItem } from "./file-tree/FileTree";
 export { FileBrowserBreadcrumbs, FileBrowserPanel, FileBrowserTab } from "./file-browser/FileBrowserPanel";
 export type { FileBrowserPanelProps } from "./file-browser/FileBrowserPanel";
 export { CodexMark } from "./icons/CodexMark";
+export {
+  SettingsCard,
+  SettingsOptionCard,
+  SettingsPanel,
+  SettingsRow,
+  SettingsSection,
+  SettingsSelect,
+  SettingsSidebar,
+  SettingsToggle,
+} from "./settings/Settings";
+export type {
+  SettingsCardProps,
+  SettingsNavItem,
+  SettingsNavSection,
+  SettingsOptionCardProps,
+  SettingsPanelProps,
+  SettingsRowProps,
+  SettingsSectionProps,
+  SettingsSelectProps,
+  SettingsSidebarProps,
+  SettingsToggleProps,
+} from "./settings/Settings";
 export { Button, IconButton, Pill, StatusDot } from "./primitives/Button";
 export {
   ContextMenu,

@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld("construct", {
 });
 
 contextBridge.exposeInMainWorld("constructProjects", {
+  setThemeSource: (theme: "light" | "dark" | "system") =>
+    ipcRenderer.invoke("construct:theme:set", theme),
   ensureProject: (input: unknown) =>
     ipcRenderer.invoke("construct:project:ensure", input),
   importProject: (input: unknown) =>
@@ -34,6 +36,8 @@ contextBridge.exposeInMainWorld("constructProjects", {
     ipcRenderer.invoke("construct:project:terminal-create", input),
   terminalInput: (input: unknown) =>
     ipcRenderer.invoke("construct:project:terminal-input", input),
+  terminalResize: (input: unknown) =>
+    ipcRenderer.invoke("construct:project:terminal-resize", input),
   terminalKill: (input: unknown) =>
     ipcRenderer.invoke("construct:project:terminal-kill", input),
   onTerminalData: (callback: (event: unknown) => void) => {

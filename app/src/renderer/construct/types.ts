@@ -114,6 +114,7 @@ export type TerminalExitEvent = {
 };
 
 export type ConstructProjectsApi = {
+  setThemeSource(theme: "light" | "dark" | "system"): Promise<void>;
   ensureProject(input: {
     source: string;
     sourcePath?: string | null;
@@ -147,6 +148,8 @@ export type ConstructProjectsApi = {
         | "currentStepIndex"
         | "currentBlockIndex"
         | "activeFilePath"
+        | "title"
+        | "description"
         | "fileTreeExpanded"
         | "typingProgress"
         | "editAnchors"
@@ -162,8 +165,9 @@ export type ConstructProjectsApi = {
     path: string;
     content: string;
   }): Promise<WorkspaceFile>;
-  terminalCreate(input: { projectId: string }): Promise<{ sessionId: string }>;
+  terminalCreate(input: { projectId: string; cols?: number; rows?: number }): Promise<{ sessionId: string }>;
   terminalInput(input: { sessionId: string; data: string }): Promise<void>;
+  terminalResize(input: { sessionId: string; cols: number; rows: number }): Promise<void>;
   terminalKill(input: { sessionId: string }): Promise<void>;
   onTerminalData(callback: (event: TerminalEvent) => void): () => void;
   onTerminalExit(callback: (event: TerminalExitEvent) => void): () => void;

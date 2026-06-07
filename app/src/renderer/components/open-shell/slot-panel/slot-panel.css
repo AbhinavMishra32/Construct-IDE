@@ -1,0 +1,366 @@
+/* ==========================================================================
+   SlotPanel — Generic tab system for any shell slot
+   ========================================================================== */
+
+.codex-slot-panel {
+  display: grid;
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: 36px minmax(0, 1fr);
+  overflow: hidden;
+  contain: layout paint;
+}
+
+.codex-slot-panel-tabbar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  height: 36px;
+  padding: 0 10px 0 12px;
+  background: var(--codex-bg-primary);
+  user-select: none;
+}
+
+.codex-slot-panel-tabs-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.codex-slot-panel-tabs {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 2px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.codex-slot-panel-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.codex-slot-panel-scroll-affordance {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--codex-border-subtle) 72%, transparent);
+  border-radius: 999px;
+  padding: 0;
+  background:
+    linear-gradient(var(--codex-bg-primary), var(--codex-bg-primary)) padding-box,
+    color-mix(in srgb, var(--codex-text-primary) 4%, transparent);
+  color: color-mix(in srgb, var(--codex-text-secondary) 86%, transparent);
+  cursor: default;
+  box-shadow:
+    0 1px 2px #0000000d,
+    0 0 0 3px color-mix(in srgb, var(--codex-bg-primary) 86%, transparent);
+}
+
+.codex-slot-panel-scroll-affordance:hover {
+  background: color-mix(in srgb, var(--codex-text-primary) 7%, var(--codex-bg-primary));
+  color: var(--codex-text-primary);
+}
+
+.codex-slot-panel-tab {
+  position: relative;
+  display: inline-flex;
+  max-width: 140px;
+  height: 28px;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 8px;
+  padding: 0 10px;
+  color: var(--codex-text-secondary);
+  background: transparent;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 16px;
+  transition: none !important;
+}
+
+.codex-slot-panel-tab:hover {
+  background: color-mix(in srgb, var(--codex-text-primary) 5%, transparent);
+  color: var(--codex-text-primary);
+}
+
+.codex-slot-panel-tab[data-state="active"],
+.codex-slot-panel-tab[data-active="true"] {
+  background: color-mix(in srgb, var(--codex-text-primary) 7%, transparent);
+  color: var(--codex-text-primary);
+  box-shadow: none;
+}
+
+/* Icon wrapper */
+.codex-slot-panel-tab-icon-wrapper {
+  position: relative;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.codex-slot-panel-tab-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  color: inherit;
+}
+
+/* Close badge */
+.codex-slot-panel-tab-close {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--codex-text-primary) 35%, transparent);
+  color: var(--codex-bg-primary);
+  cursor: pointer;
+}
+
+.codex-slot-panel-tab-close:hover {
+  background: var(--codex-text-primary);
+}
+
+.codex-slot-panel-tab[data-closable="true"]:hover .codex-slot-panel-tab-icon {
+  display: none;
+}
+
+.codex-slot-panel-tab[data-closable="true"]:hover .codex-slot-panel-tab-close {
+  display: flex;
+}
+
+.codex-slot-panel-tab-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Add button */
+.codex-slot-panel-add-action {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  padding: 0;
+  background: transparent;
+  color: var(--codex-text-secondary);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition:
+    background-color var(--transition-duration-basic, 120ms) var(--cubic-enter, ease),
+    color var(--transition-duration-basic, 120ms) var(--cubic-enter, ease);
+}
+
+.codex-slot-panel-add-action:hover,
+.codex-slot-panel-add-action[data-state="open"] {
+  background: color-mix(in srgb, var(--codex-text-primary) 7%, transparent);
+  color: var(--codex-text-primary);
+}
+
+/* Panel actions (close button) */
+.codex-slot-panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.codex-slot-panel-close-action {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--codex-text-secondary);
+  cursor: pointer;
+  font-size: 16px;
+  transition:
+    background-color var(--transition-duration-basic, 120ms) var(--cubic-enter, ease),
+    color var(--transition-duration-basic, 120ms) var(--cubic-enter, ease);
+}
+
+.codex-slot-panel-close-action:hover {
+  background: color-mix(in srgb, var(--codex-text-primary) 7%, transparent);
+  color: var(--codex-text-primary);
+}
+
+/* Content outlet */
+.codex-slot-panel-outlet {
+  min-height: 0;
+  overflow: hidden;
+  height: 100%;
+}
+
+.codex-slot-panel-outlet[hidden] {
+  display: none;
+}
+
+/* Launcher dropdown menu */
+.codex-slot-panel-launcher-menu {
+  min-width: 200px;
+  background: var(--codex-bg-elevated, #ffffff);
+  border-radius: 12px;
+  padding: 6px;
+  border: 1px solid var(--codex-border-subtle);
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.12), 0 1px 4px rgba(0, 0, 0, 0.03);
+}
+
+.codex-slot-panel-launcher-menu .codex-dropdown-menu-item {
+  min-height: 32px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13.5px;
+  font-weight: 450;
+  color: var(--codex-text-primary);
+}
+
+.codex-slot-panel-launcher-menu .codex-dropdown-menu-item[data-highlighted] {
+  background: color-mix(in srgb, var(--codex-text-primary) 6%, transparent);
+}
+
+.codex-slot-panel-launcher-menu .codex-dropdown-menu-item > svg {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.65;
+}
+
+.codex-slot-panel-launcher-shortcut {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--codex-text-tertiary);
+  font-family: var(--codex-font-sans);
+  letter-spacing: 0.5px;
+}
+
+/* ==========================================================================
+   Launcher empty state
+   ========================================================================== */
+
+.codex-slot-panel-launcher-container {
+  background: var(--codex-bg-secondary);
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.codex-slot-panel-launcher-grid {
+  max-width: 640px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.codex-slot-launcher-header {
+  text-align: center;
+}
+
+.codex-slot-launcher-header h3 {
+  margin: 0 0 4px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--codex-text-primary);
+}
+
+.codex-slot-launcher-header p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--codex-text-secondary);
+}
+
+.codex-slot-launcher-cards {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.codex-slot-launcher-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--codex-border-subtle);
+  border-radius: var(--codex-radius-lg, 12px);
+  background: var(--codex-bg-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: var(--codex-shadow-card, 0 1px 2px rgba(0,0,0,0.04));
+}
+
+.codex-slot-launcher-card:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--codex-accent) 35%, var(--codex-border-subtle));
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.06);
+}
+
+.codex-slot-launcher-card:active {
+  transform: translateY(0);
+}
+
+.codex-slot-launcher-card-icon {
+  display: inline-flex;
+  padding: 8px;
+  border-radius: var(--codex-radius-md, 8px);
+  background: var(--codex-bg-secondary);
+  color: var(--codex-text-secondary);
+  transition: all 0.2s ease;
+}
+
+.codex-slot-launcher-card:hover .codex-slot-launcher-card-icon {
+  background: var(--codex-accent-soft, #e6f4ef);
+  color: var(--codex-accent, #10a37f);
+}
+
+.codex-slot-launcher-card-info h4 {
+  margin: 0 0 3px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--codex-text-primary);
+}
+
+.codex-slot-launcher-card-info p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--codex-text-tertiary);
+}

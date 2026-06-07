@@ -17,7 +17,8 @@ import {
   onTerminalExit,
   terminalCreate,
   terminalInput,
-  terminalKill
+  terminalKill,
+  terminalResize
 } from "../lib/bridge";
 
 export type TerminalPanelHandle = {
@@ -40,7 +41,7 @@ export const TerminalPanel = forwardRef<
   useImperativeHandle(ref, () => ({
     runCommand(command: string, cwd: string) {
       const sessionId = sessionIdRef.current;
-      const actualCommand = cwd && cwd !== "." ? `(cd ${shellQuote(cwd)} && ${command})` : command;
+      const actualCommand = `${cwd && cwd !== "." ? `(cd ${shellQuote(cwd)} && ${command})` : command}\r`;
 
       if (sessionId) {
         void terminalInput(sessionId, actualCommand);
@@ -69,13 +70,26 @@ export const TerminalPanel = forwardRef<
     terminal.loadAddon(fitAddon);
     terminalRef.current = terminal;
 
+    function fitAndResize() {
+      try {
+        fitAddon.fit();
+      } catch {
+        return;
+      }
+
+      const sessionId = sessionIdRef.current;
+      if (sessionId) {
+        void terminalResize(sessionId, terminal.cols, terminal.rows);
+      }
+    }
+
     if (containerRef.current) {
       terminal.open(containerRef.current);
-      fitAddon.fit();
+      fitAndResize();
     }
 
     const resizeObserver = new ResizeObserver(() => {
-      fitAddon.fit();
+      fitAndResize();
     });
 
     if (containerRef.current) {
@@ -101,9 +115,10 @@ export const TerminalPanel = forwardRef<
       }
     });
 
-    void terminalCreate(projectId).then(({ sessionId }) => {
+    void terminalCreate(projectId, { cols: terminal.cols, rows: terminal.rows }).then(({ sessionId }) => {
       sessionIdRef.current = sessionId;
       setStatus("running");
+      void terminalResize(sessionId, terminal.cols, terminal.rows);
       for (const command of pendingCommandsRef.current.splice(0)) {
         void terminalInput(sessionId, command);
       }

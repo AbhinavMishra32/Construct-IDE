@@ -22,7 +22,7 @@
   --trees-git-lane-width: 24px;
   --trees-icon-width: 20px;
   --trees-icon-nudge: 1px;
-  --tree-indent: 24px;
+  --tree-indent: 18px;
   --trees-file-icon-color-css: #7b61ff;
   --trees-file-icon-color-default: var(--codex-text-tertiary);
   --trees-file-icon-color-javascript: #d6a900;
@@ -163,7 +163,7 @@
   border-radius: var(--trees-border-radius);
   margin: 0 var(--trees-item-margin-x);
   padding: 0 var(--trees-item-padding-x);
-  padding-left: calc(var(--trees-item-padding-x) + var(--tree-depth, 0) * 24px);
+  padding-left: calc(var(--trees-item-padding-x) + var(--tree-depth-offset, 0px));
   background: var(--trees-bg);
   color: var(--trees-fg-muted);
   font-family: var(--trees-font-family);
@@ -272,8 +272,52 @@
   color: var(--trees-file-icon-color-typescript);
 }
 
-[data-icon-name="file-tree-icon-chevron"] {
-  transform: translateY(var(--trees-icon-nudge));
+.codex-file-tree-chevron-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  margin-right: 4px;
+  color: var(--codex-text-secondary);
+}
+
+.codex-file-tree-chevron-container svg {
+  width: 12px;
+  height: 12px;
+  fill: currentColor;
+  transition: transform 0.15s ease;
+}
+
+.codex-file-tree-row[aria-expanded="false"] .codex-file-tree-chevron-container svg {
+  transform: rotate(-90deg);
+}
+
+.codex-file-tree-chevron-spacer {
+  flex: 0 0 auto;
+  width: 16px;
+}
+
+.codex-file-tree-row::before {
+  content: "";
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  left: calc(var(--trees-item-padding-x) + var(--tree-parent-offset, 0px) + 6px);
+  width: 1px;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--codex-text-primary) 22%, transparent);
+  opacity: 0.75;
+  transition: opacity 0.2s ease;
+}
+
+.codex-file-tree-row[aria-level="1"]::before {
+  display: none;
+}
+
+.codex-file-tree:hover .codex-file-tree-row::before {
+  opacity: 0.9;
 }
 
 .codex-file-tree-git-dot {
@@ -298,4 +342,22 @@
 
 .codex-file-tree-git-dot[data-git-status="deleted"] {
   color: var(--codex-danger);
+}
+
+/* Submenu collapse/expand animations */
+.codex-file-tree-submenu {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  opacity: 1;
+  max-height: 1000px;
+  transition:
+    max-height 0.3s cubic-bezier(0.2, 0, 0, 1),
+    opacity 0.2s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.codex-file-tree-submenu[data-open="false"] {
+  max-height: 0;
+  opacity: 0;
+  pointer-events: none;
 }
