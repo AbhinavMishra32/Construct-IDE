@@ -134,6 +134,12 @@ export function EditorPane({
       return;
     }
 
+    const currentCursor = editor.getPosition();
+    if (!currentCursor || currentCursor.lineNumber !== lineNum) {
+      setShowSkipButton(false);
+      return;
+    }
+
     const topInModel = editor.getTopForLineNumber(lineNum);
     const scrollTop = editor.getScrollTop();
     const viewportTop = topInModel - scrollTop;
@@ -551,10 +557,17 @@ export function EditorPane({
             const isAltEnter = event.keyCode === monaco.KeyCode.Enter && event.altKey;
 
             if (isGuided && (isTab || isCtrlBackslash || isAltEnter)) {
-              event.preventDefault();
-              event.stopPropagation();
-              handleSkipLine();
-              return;
+              const model = editor.getModel();
+              const cursor = editor.getPosition();
+              if (model && cursor) {
+                const ghostPosition = model.getPositionAt(editAnchor.length + localProgressRef.current);
+                if (cursor.lineNumber === ghostPosition.lineNumber) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  handleSkipLine();
+                  return;
+                }
+              }
             }
 
             if (event.metaKey || event.ctrlKey || event.altKey) {
