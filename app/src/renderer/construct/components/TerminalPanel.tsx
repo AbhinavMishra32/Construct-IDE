@@ -79,13 +79,36 @@ export const TerminalPanel = forwardRef<
       }
     }
 
+    let lastResizeTime = 0;
+    let resizeTimeout: NodeJS.Timeout | null = null;
+
+    function throttledFitAndResize() {
+      const now = Date.now();
+      const throttleMs = 100;
+      
+      if (resizeTimeout) {
+        clearTimeout(resizeTimeout);
+        resizeTimeout = null;
+      }
+
+      if (now - lastResizeTime >= throttleMs) {
+        fitAndResize();
+        lastResizeTime = now;
+      } else {
+        resizeTimeout = setTimeout(() => {
+          fitAndResize();
+          lastResizeTime = Date.now();
+        }, throttleMs - (now - lastResizeTime));
+      }
+    }
+
     if (containerRef.current) {
       terminal.open(containerRef.current);
       fitAndResize();
     }
 
     const resizeObserver = new ResizeObserver(() => {
-      fitAndResize();
+      throttledFitAndResize();
     });
 
     if (containerRef.current) {
@@ -121,6 +144,9 @@ export const TerminalPanel = forwardRef<
     });
 
     return () => {
+      if (resizeTimeout) {
+        clearTimeout(resizeTimeout);
+      }
       const sessionId = sessionIdRef.current;
       if (sessionId) {
         void terminalKill(sessionId);
