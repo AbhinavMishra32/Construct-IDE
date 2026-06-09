@@ -10,7 +10,7 @@ import {
   useState
 } from "react";
 
-import { TerminalSurface } from "@/components/open-shell";
+import { TerminalSurface } from "@opaline/ui";
 
 import {
   onTerminalData,

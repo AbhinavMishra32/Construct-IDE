@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
-  FileTree as OpenShellFileTree,
+  FileTree as OpalineFileTree,
   type FileTreeItem,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
-} from "@/components/open-shell";
+} from "@opaline/ui";
 import {
   Atom,
   File,
@@ -186,7 +186,7 @@ export function FileTree({
     setIsCreating(false);
   }
 
-  // ── Context menu generator callback passed to OpenShellFileTree ──
+  // ── Context menu generator callback passed to OpalineFileTree ──
   const renderRowContextMenu = useCallback((item: FileTreeItem) => {
     const isDir = item.type === "directory";
     const path = item.path;
@@ -374,7 +374,7 @@ export function FileTree({
     return <ContextMenuContent>{items}</ContextMenuContent>;
   }, [onCreateFile, onCreateFolder, onRenameFile, onDuplicateFile, onDeleteFile, copiedPath]);
 
-  // Transform nodes to OpenShell items, injecting the new file/folder creation row if active
+  // Transform nodes to Opaline items, injecting the new file/folder creation row if active
   const openShellItems = useMemo(() => {
     function mapNode(node: WorkspaceTreeNode): FileTreeItem {
       const isExpanded = node.type === "directory" ? !!expandedPaths[node.path] : undefined;
@@ -530,7 +530,7 @@ export function FileTree({
       ) : null}
 
       <div className="construct-file-tree-container-inner">
-        <OpenShellFileTree
+        <OpalineFileTree
           items={openShellItems}
           gitLane={false}
           onSelectPath={(path, item) => {

@@ -6,6 +6,8 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
+      "@opaline/ui/styles.css": path.resolve(__dirname, "../opaline/packages/ui/src/styles.css"),
+      "@opaline/ui": path.resolve(__dirname, "../opaline/packages/ui/src/index.ts"),
       "@": path.resolve(__dirname, "src/renderer")
     }
   },

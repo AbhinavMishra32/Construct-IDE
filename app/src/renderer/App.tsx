@@ -33,7 +33,7 @@ import {
   ContextMenuSub,
   ContextMenuSubTrigger,
   ContextMenuSubContent
-} from "@/components/open-shell";
+} from "@opaline/ui";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   BookOpenTextIcon,

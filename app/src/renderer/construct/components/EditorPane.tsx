@@ -19,7 +19,7 @@ import {
   ContextMenuSub,
   ContextMenuSubTrigger,
   ContextMenuSubContent
-} from "@/components/open-shell";
+} from "@opaline/ui";
 import {
   ArrowSquareOut,
   Eye,

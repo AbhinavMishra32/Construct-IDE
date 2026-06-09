@@ -1,0 +1,3 @@
+[submodule "opaline"]
+	path = opaline
+	url = https://github.com/AbhinavMishra32/open-shell.git

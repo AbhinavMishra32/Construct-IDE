@@ -11,9 +11,9 @@ import {
 } from "@phosphor-icons/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
-import { SlotPanel } from "@/components/open-shell";
+import { SlotPanel } from "@opaline/ui";
 import { logStore } from "../lib/logStore";
-import type { SlotPanelHandle, SlotTab, SlotLauncherItem } from "@/components/open-shell";
+import type { SlotPanelHandle, SlotTab, SlotLauncherItem } from "@opaline/ui";
 import { EditorPane } from "./EditorPane";
 import { GuidePanel } from "./GuidePanel";
 import { ReferenceCard } from "./ReferenceCard";

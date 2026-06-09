@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { logStore, type LogChannel, type LogEntry } from "../lib/logStore";
-import { TerminalSurface, SettingsSelect, Button } from "@/components/open-shell";
+import { TerminalSurface, SettingsSelect, Button } from "@opaline/ui";
 
 export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ theme }) => {
   const [activeChannel, setActiveChannel] = useState<LogChannel>("lsp-server");

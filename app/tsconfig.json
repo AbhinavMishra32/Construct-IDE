@@ -5,6 +5,12 @@
       "@/*": [
         "app/src/renderer/*"
       ],
+      "@opaline/ui": [
+        "opaline/packages/ui/src/index.ts"
+      ],
+      "@opaline/ui/styles.css": [
+        "opaline/packages/ui/src/styles.css"
+      ],
       "@construct/shared": [
         "pkg/shared/src/index.ts"
       ],

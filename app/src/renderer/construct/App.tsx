@@ -1,4 +1,4 @@
-import "@/components/open-shell/tokens/codex-theme.css";
+import "@opaline/ui/styles.css";
 import "./styles/construct.css";
 import { lspClient } from "./lib/lspClient";
 
@@ -30,8 +30,8 @@ import {
   SettingsSidebar,
   SettingsToggle,
   useShellHistory
-} from "@/components/open-shell";
-import type { SettingsNavItem, SettingsNavSection, ShellHistoryEntry } from "@/components/open-shell";
+} from "@opaline/ui";
+import type { SettingsNavItem, SettingsNavSection, ShellHistoryEntry } from "@opaline/ui";
 
 import { Dashboard } from "./components/Dashboard";
 import { FileTree } from "./components/FileTree";
