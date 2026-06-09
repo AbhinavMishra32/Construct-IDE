@@ -65,6 +65,7 @@ type GuidedState = {
 
 export function EditorPane({
   path,
+  workspacePath,
   content,
   activeEdit,
   editAnchor,
@@ -82,6 +83,7 @@ export function EditorPane({
   readFileContent
 }: {
   path: string | null;
+  workspacePath: string;
   content: string;
   activeEdit: EditBlock | null;
   editAnchor: string;
@@ -311,9 +313,22 @@ export function EditorPane({
     updateEditorState();
   }, [editProgress, updateEditorState]);
 
+  const absolutePath = useMemo(() => {
+    if (!path) return "";
+    if (path.startsWith("/") || path.includes(":\\") || path.includes(":/")) {
+      return path;
+    }
+    return `${workspacePath}/${path}`;
+  }, [path, workspacePath]);
+
   const isOutsideWorkspace = useMemo(() => {
-    return !!(path && (path.startsWith("/") || path.includes(":\\") || path.includes(":/")));
-  }, [path]);
+    if (!absolutePath || !workspacePath) return false;
+    const normPath = absolutePath.replace(/\\/g, "/");
+    const normWs = workspacePath.replace(/\\/g, "/");
+    const isUnderWorkspace = normPath.startsWith(normWs);
+    const isNodeModules = normPath.includes("/node_modules/");
+    return !isUnderWorkspace || isNodeModules;
+  }, [absolutePath, workspacePath]);
 
   // Update editor options and trigger decoration updates when guided status changes
   useEffect(() => {
@@ -491,7 +506,8 @@ export function EditorPane({
       <ContextMenuTrigger asChild>
         <section className="editor-pane" data-guided={isGuided ? "true" : "false"} data-wrong={wrongInput ? "true" : "false"}>
           <Editor
-            key={`${path}:${activeEdit?.id ?? "free"}:${editAnchor.length}`}
+            key={`${absolutePath}:${activeEdit?.id ?? "free"}:${editAnchor.length}`}
+            path={absolutePath}
             className="editor-pane__monaco"
             height="100%"
             language={language}
@@ -528,9 +544,8 @@ export function EditorPane({
           ghostDecorationsRef.current = editor.createDecorationsCollection();
           focusDecorationsRef.current = editor.createDecorationsCollection();
 
-          const isOutsideWorkspace = path && (path.startsWith("/") || path.includes(":\\") || path.includes(":/"));
           editor.updateOptions({
-            readOnly: isGuided || !!isOutsideWorkspace,
+            readOnly: isGuided || isOutsideWorkspace,
             readOnlyMessage: isGuided
               ? { value: "Type the highlighted ghost text manually to advance." }
               : { value: "This file is outside the workspace and is read-only." }
