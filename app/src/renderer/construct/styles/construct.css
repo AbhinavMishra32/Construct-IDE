@@ -2197,6 +2197,15 @@
 /* Editor SlotPanel overrides — scrollable tabs */
 .construct-editor-slot-panel {
   border-bottom: 1px solid var(--opaline-border-subtle);
+  overflow: visible;
+}
+
+.construct-editor-slot-panel .opaline-slot-panel-outlet,
+.construct-editor-slot-panel .editor-pane,
+.construct-editor-slot-panel .editor-pane__monaco,
+.construct-editor-slot-panel .monaco-editor,
+.construct-editor-slot-panel .overflowingContentWidgets {
+  overflow: visible !important;
 }
 
 .construct-editor-slot-panel .opaline-slot-panel-tabs-container {

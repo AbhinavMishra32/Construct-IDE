@@ -428,7 +428,7 @@ export function EditorPane({
                 '"Geist Mono Variable", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
               fontLigatures: true,
               fontSize: 13.5,
-              fixedOverflowWidgets: true,
+              fixedOverflowWidgets: false,
               letterSpacing: 0.2,
               lineHeight: 22,
               minimap: { enabled: false },
