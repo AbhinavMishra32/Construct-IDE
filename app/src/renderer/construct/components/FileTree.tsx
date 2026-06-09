@@ -83,7 +83,7 @@ function getIconForExtension(ext: string) {
   if (extLower === "go") return <FileCode {...props} color="#00add8" />;
   if (extLower === "swift") return <FileCode {...props} color="#f05138" />;
   if (extLower === "rs") return <FileCode {...props} color="#dea584" />;
-  return <File {...props} color="var(--codex-text-tertiary)" />;
+  return <File {...props} color="var(--opaline-text-tertiary)" />;
 }
 
 // ─── Helpers to find a node by path in the tree ────────────────────────────────

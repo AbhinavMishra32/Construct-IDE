@@ -71,7 +71,7 @@ export function MarkdownBlock({
             }}
             codeTagProps={{
               style: {
-                fontFamily: "var(--codex-font-mono)"
+                fontFamily: "var(--opaline-font-mono)"
               }
             }}
           >

@@ -138,7 +138,7 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-[data-codex-window-type="electron"] body {
+[data-opaline-window-type="electron"] body {
   overflow: hidden;
   background: transparent;
 }

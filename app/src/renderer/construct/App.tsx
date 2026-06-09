@@ -88,14 +88,14 @@ function resolveActiveTheme(theme: ThemeMode): "light" | "dark" {
 function applyDocumentTheme(active: "light" | "dark"): void {
   const root = document.documentElement;
   root.dataset.constructTheme = active;
-  root.dataset.codexTheme = active;
+  root.dataset.opalineTheme = active;
   root.dataset.theme = active;
   root.classList.toggle("dark", active === "dark");
   root.style.colorScheme = active;
 
   if (document.body) {
     document.body.dataset.constructTheme = active;
-    document.body.dataset.codexTheme = active;
+    document.body.dataset.opalineTheme = active;
     document.body.style.colorScheme = active;
   }
 }
@@ -432,9 +432,9 @@ export default function ConstructApp() {
   }, [openBottomTabIds, activeBottomTabId]);
 
   useEffect(() => {
-    document.documentElement.dataset.codexWindowType = "electron";
+    document.documentElement.dataset.opalineWindowType = "electron";
     document.documentElement.dataset.windowType = "electron";
-    document.documentElement.dataset.codexOs = window.construct.getRuntimeInfo().platform;
+    document.documentElement.dataset.opalineOs = window.construct.getRuntimeInfo().platform;
     console.log("[construct] renderer boot", {
       platform: window.construct.getRuntimeInfo().platform,
       theme: getInitialTheme()
@@ -684,7 +684,7 @@ export default function ConstructApp() {
                 <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20, overflow: "visible" }}>
                   <rect x="3.5" y="4.5" width="13" height="11" rx="2" />
                   <path d="M7.5 4.5v11" />
-                  <circle cx="16.5" cy="4.5" r="2.5" fill="#007aff" stroke="var(--codex-bg-primary)" strokeWidth="1.5" />
+                  <circle cx="16.5" cy="4.5" r="2.5" fill="#007aff" stroke="var(--opaline-bg-primary)" strokeWidth="1.5" />
                 </svg>
               </AppShellCollapsedSidebarTrigger>
               <AppShellCollapsedSidebarTrigger onClick={handleBack} aria-label="Home">
