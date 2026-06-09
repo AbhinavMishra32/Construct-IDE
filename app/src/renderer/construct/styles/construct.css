@@ -3384,3 +3384,105 @@
   font-size: 12px !important;
   color: var(--codex-text-primary) !important;
 }
+
+/* ─── Premium Monaco Zone Widgets & Peek Views (Open-Shell theme) ───────────── */
+
+/* Targets the main visible wrappers: .zone-widget-container and .peekview-container */
+.monaco-editor .zone-widget-container,
+.monaco-editor .peekview-widget .peekview-container {
+  background: color-mix(in srgb, var(--color-token-dropdown-background, var(--codex-bg-elevated, #f3f3f3)) 92%, transparent) !important;
+  backdrop-filter: blur(14px) !important;
+  -webkit-backdrop-filter: blur(14px) !important;
+  border: 1px solid color-mix(in srgb, var(--color-token-border, var(--codex-border-subtle, rgba(0, 0, 0, 0.12))) 65%, transparent) !important;
+  border-radius: 12px !important;
+  overflow: hidden !important;
+  box-shadow: var(--shadow-xl-spread, 0 10px 30px -5px rgba(0,0,0,0.15), 0 10px 10px -5px rgba(0,0,0,0.1)) !important;
+}
+
+/* Ensure the parent absolute-positioned wrappers do not have borders, backgrounds, shadows, or clip overflow */
+.monaco-editor .zone-widget,
+.monaco-editor .peekview-widget {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: none !important;
+  border-radius: 0 !important;
+  overflow: visible !important;
+  box-shadow: none !important;
+}
+
+/* Header areas: both standard head and internal peekview-title */
+.monaco-editor .zone-widget .head,
+.monaco-editor .zone-widget-container .head,
+.monaco-editor .peekview-widget .head,
+.monaco-editor .peekview-widget .peekview-title {
+  background: color-mix(in srgb, var(--color-token-dropdown-background, var(--codex-bg-elevated, #f3f3f3)) 95%, transparent) !important;
+  backdrop-filter: blur(14px) !important;
+  -webkit-backdrop-filter: blur(14px) !important;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-token-border, var(--codex-border-subtle, rgba(0, 0, 0, 0.12))) 50%, transparent) !important;
+  font-family: var(--codex-font-sans, system-ui, sans-serif) !important;
+  color: var(--codex-text-primary) !important;
+}
+
+/* Body areas - clear solid background on body divs so glassmorphism on container shows through */
+.monaco-editor .zone-widget .body,
+.monaco-editor .zone-widget-container .body,
+.monaco-editor .marker-widget .body,
+.monaco-editor .peekview-widget .body,
+.monaco-editor .peekview-widget .peekview-body {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Zone widget/peekview editor parts (internal editors) */
+.monaco-editor .peekview-widget .body .view-container,
+.monaco-editor .peekview-widget .peekview-editor {
+  background: transparent !important;
+}
+
+.monaco-editor .peekview-widget .body .list-container,
+.monaco-editor .peekview-widget .peekview-list {
+  background: color-mix(in srgb, var(--color-token-dropdown-background, var(--codex-bg-elevated, #f3f3f3)) 80%, transparent) !important;
+  border-left: 1px solid color-mix(in srgb, var(--color-token-border, var(--codex-border-subtle, rgba(0, 0, 0, 0.12))) 40%, transparent) !important;
+}
+
+.monaco-editor .peekview-widget .head .peekview-title,
+.monaco-editor .zone-widget .head .title {
+  color: var(--codex-text-primary) !important;
+  font-weight: 500 !important;
+  font-size: 13px !important;
+}
+
+.monaco-editor .peekview-widget .head .peekview-title .filename {
+  color: var(--codex-text-secondary) !important;
+  font-size: 12px !important;
+  margin-left: 8px !important;
+}
+
+.monaco-editor .zone-widget .head .title {
+  color: var(--codex-text-primary) !important;
+  font-size: 13px !important;
+}
+
+.monaco-editor .zone-widget .head .description {
+  color: var(--codex-text-secondary) !important;
+  font-size: 12px !important;
+}
+
+.monaco-editor .peekview-widget .body .list-container .monaco-list-row,
+.monaco-editor .peekview-widget .peekview-list .monaco-list-row {
+  color: var(--codex-text-secondary) !important;
+  border-radius: 6px !important;
+  margin: 1px 4px !important;
+}
+
+.monaco-editor .peekview-widget .body .list-container .monaco-list-row:hover,
+.monaco-editor .peekview-widget .body .list-container .monaco-list-row.focused,
+.monaco-editor .peekview-widget .peekview-list .monaco-list-row:hover,
+.monaco-editor .peekview-widget .peekview-list .monaco-list-row.focused {
+  background-color: var(--color-token-list-hover-background, rgba(0,0,0,0.06)) !important;
+  color: var(--codex-text-primary) !important;
+}
+
+

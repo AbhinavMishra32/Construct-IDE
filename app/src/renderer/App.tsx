@@ -2,22 +2,38 @@ import Editor from "@monaco-editor/react";
 import {
   ArrowClockwise as PhArrowClockwise,
   ArrowSquareIn as PhArrowSquareIn,
+  ArrowSquareOut as PhArrowSquareOut,
   ArrowsInSimple as PhArrowsInSimple,
   ArrowsOutSimple as PhArrowsOutSimple,
   BookOpenText as PhBookOpenText,
   Brain as PhBrain,
   CompassTool as PhCompassTool,
+  Eye as PhEye,
   EyeSlash as PhEyeSlash,
   Flask as PhFlask,
   Lightbulb as PhLightbulb,
   MagicWand as PhMagicWand,
+  MagnifyingGlass as PhMagnifyingGlass,
   PaperPlaneTilt as PhPaperPlaneTilt,
+  PencilSimpleLine as PhPencilSimpleLine,
   SidebarSimple as PhSidebarSimple,
   Sparkle as PhSparkle,
   Stack as PhStack,
   Target as PhTarget,
+  Terminal as PhTerminal,
+  TextAlignLeft as PhTextAlignLeft,
   TestTube as PhTestTube
 } from "@phosphor-icons/react";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+  ContextMenuSub,
+  ContextMenuSubTrigger,
+  ContextMenuSubContent
+} from "@/components/open-shell";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   BookOpenTextIcon,
@@ -52,6 +68,7 @@ import {
 import type { editor as MonacoEditor } from "monaco-editor";
 import {
   Fragment,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -730,6 +747,14 @@ export default function App() {
   const [projectImprovementState, setProjectImprovementState] =
     useState<ProjectImprovementPhase | null>(null);
   const editorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
+  const triggerAction = useCallback((actionId: string) => {
+    if (editorRef.current) {
+      editorRef.current.focus();
+      editorRef.current.trigger("keyboard", actionId, null);
+    }
+  }, []);
+
+
   const decorationIdsRef = useRef<string[]>([]);
   const activeRequestIdRef = useRef(0);
   const telemetryRef = useRef<TaskTelemetry>(createEmptyTelemetry());
@@ -2550,108 +2575,197 @@ export default function App() {
 
                         <div className="construct-editor-main">
                           {activeFilePath ? (
-                            <Editor
-                              height="100%"
-                              theme={editorTheme}
-                              path={activeFilePath}
-                              language={languageForPath(activeFilePath)}
-                              value={editorValue}
-                              onMount={(editor) => {
-                                editorRef.current = editor;
-                                applyAnchorDecoration(
-                                  editor,
-                                  anchorLocation,
-                                  decorationIdsRef.current,
-                                  {
-                                    setDecorationIds(nextIds) {
-                                      decorationIdsRef.current = nextIds;
-                                    }
-                                  }
-                                );
+                            <ContextMenu>
+                              <ContextMenuTrigger asChild>
+                                <div style={{ height: "100%" }}>
+                                  <Editor
+                                    height="100%"
+                                    theme={editorTheme}
+                                    path={activeFilePath}
+                                    language={languageForPath(activeFilePath)}
+                                    value={editorValue}
+                                    onMount={(editor) => {
+                                      editorRef.current = editor;
+                                      applyAnchorDecoration(
+                                        editor,
+                                        anchorLocation,
+                                        decorationIdsRef.current,
+                                        {
+                                          setDecorationIds(nextIds) {
+                                            decorationIdsRef.current = nextIds;
+                                          }
+                                        }
+                                      );
 
-                                const domNode = editor.getDomNode();
-                                const pasteTarget =
-                                  domNode?.querySelector(".inputarea") ?? domNode;
-                                const handlePaste = (event: Event) => {
-                                  if (rewriteGateRef.current) {
-                                    event.preventDefault();
-                                    setStatusMessage(
-                                      "Verification rewrite is active. Retype the anchored code from memory instead of pasting."
-                                    );
-                                    return;
-                                  }
 
-                                  const clipboardEvent = event as ClipboardEvent;
-                                  const pastedText =
-                                    clipboardEvent.clipboardData?.getData("text") ?? "";
 
-                                  if (pastedText.length > 0) {
-                                    pendingPasteCharsRef.current += pastedText.length;
-                                  }
-                                };
-                                const changeDisposable = editor.onDidChangeModelContent((event) => {
-                                  if (event.isFlush || event.isUndoing || event.isRedoing) {
-                                    return;
-                                  }
+                                      const domNode = editor.getDomNode();
+                                      const pasteTarget =
+                                        domNode?.querySelector(".inputarea") ?? domNode;
+                                      const handlePaste = (event: Event) => {
+                                        if (rewriteGateRef.current) {
+                                          event.preventDefault();
+                                          setStatusMessage(
+                                            "Verification rewrite is active. Retype the anchored code from memory instead of pasting."
+                                          );
+                                          return;
+                                        }
 
-                                  let insertedCharacters = event.changes.reduce(
-                                    (total, change) => total + change.text.length,
-                                    0
-                                  );
+                                        const clipboardEvent = event as ClipboardEvent;
+                                        const pastedText =
+                                          clipboardEvent.clipboardData?.getData("text") ?? "";
 
-                                  if (insertedCharacters <= 0) {
-                                    return;
-                                  }
+                                        if (pastedText.length > 0) {
+                                          pendingPasteCharsRef.current += pastedText.length;
+                                        }
+                                      };
+                                      const changeDisposable = editor.onDidChangeModelContent((event) => {
+                                        if (event.isFlush || event.isUndoing || event.isRedoing) {
+                                          return;
+                                        }
 
-                                  if (pendingPasteCharsRef.current > 0) {
-                                    const pastedCharacters = Math.min(
-                                      pendingPasteCharsRef.current,
-                                      insertedCharacters
-                                    );
-                                    telemetryRef.current = {
-                                      ...telemetryRef.current,
-                                      pastedChars:
-                                        telemetryRef.current.pastedChars + pastedCharacters
-                                    };
-                                    pendingPasteCharsRef.current -= pastedCharacters;
-                                    insertedCharacters -= pastedCharacters;
-                                  }
+                                        let insertedCharacters = event.changes.reduce(
+                                          (total, change) => total + change.text.length,
+                                          0
+                                        );
 
-                                  if (insertedCharacters > 0) {
-                                    telemetryRef.current = {
-                                      ...telemetryRef.current,
-                                      typedChars:
-                                        telemetryRef.current.typedChars + insertedCharacters
-                                    };
-                                  }
+                                        if (insertedCharacters <= 0) {
+                                          return;
+                                        }
 
-                                  syncTelemetry();
-                                });
+                                        if (pendingPasteCharsRef.current > 0) {
+                                          const pastedCharacters = Math.min(
+                                            pendingPasteCharsRef.current,
+                                            insertedCharacters
+                                          );
+                                          telemetryRef.current = {
+                                            ...telemetryRef.current,
+                                            pastedChars:
+                                              telemetryRef.current.pastedChars + pastedCharacters
+                                          };
+                                          pendingPasteCharsRef.current -= pastedCharacters;
+                                          insertedCharacters -= pastedCharacters;
+                                        }
 
-                                pasteTarget?.addEventListener("paste", handlePaste);
-                                editor.onDidDispose(() => {
-                                  changeDisposable.dispose();
-                                  pasteTarget?.removeEventListener("paste", handlePaste);
-                                });
-                              }}
-                              onChange={(value) => {
-                                setEditorValue(value ?? "");
-                              }}
-                              options={{
-                                fontFamily: "'SF Mono', 'JetBrains Mono', monospace",
-                                fontSize: 14,
-                                smoothScrolling: true,
-                                minimap: { enabled: false },
-                                scrollBeyondLastLine: false,
-                                glyphMargin: true,
-                                lineNumbersMinChars: 4,
-                                tabSize: 2,
-                                padding: {
-                                  top: 22,
-                                  bottom: 104
-                                }
-                              }}
-                            />
+                                        if (insertedCharacters > 0) {
+                                          telemetryRef.current = {
+                                            ...telemetryRef.current,
+                                            typedChars:
+                                              telemetryRef.current.typedChars + insertedCharacters
+                                          };
+                                        }
+
+                                        syncTelemetry();
+                                      });
+
+                                      pasteTarget?.addEventListener("paste", handlePaste);
+                                      editor.onDidDispose(() => {
+                                        changeDisposable.dispose();
+                                        pasteTarget?.removeEventListener("paste", handlePaste);
+                                      });
+                                    }}
+                                    onChange={(value) => {
+                                      setEditorValue(value ?? "");
+                                    }}
+                                    options={{
+                                      fontFamily: "'SF Mono', 'JetBrains Mono', monospace",
+                                      fontSize: 14,
+                                      smoothScrolling: true,
+                                      minimap: { enabled: false },
+                                      scrollBeyondLastLine: false,
+                                      glyphMargin: true,
+                                      lineNumbersMinChars: 4,
+                                      tabSize: 2,
+                                      contextmenu: false,
+                                      padding: {
+                                        top: 22,
+                                        bottom: 104
+                                      }
+                                    }}
+                                  />
+                                </div>
+                              </ContextMenuTrigger>
+                              <ContextMenuContent className="construct-editor-context-menu">
+                                <ContextMenuSub>
+                                  <ContextMenuSubTrigger>
+                                    <PhArrowSquareOut size={14} weight="duotone" />
+                                    <span>Go to...</span>
+                                  </ContextMenuSubTrigger>
+                                  <ContextMenuSubContent>
+                                    <ContextMenuItem
+                                      onClick={() => triggerAction("editor.action.revealDefinition")}
+                                      onSelect={() => triggerAction("editor.action.revealDefinition")}
+                                    >
+                                      <PhArrowSquareOut size={14} weight="duotone" />
+                                      <span>Go to Definition</span>
+                                      <kbd style={{ marginLeft: "auto", fontSize: "11px", color: "var(--codex-text-tertiary)", fontFamily: "inherit" }}>F12</kbd>
+                                    </ContextMenuItem>
+                                    
+                                    <ContextMenuItem
+                                      onClick={() => triggerAction("editor.action.peekDefinition")}
+                                      onSelect={() => triggerAction("editor.action.peekDefinition")}
+                                    >
+                                      <PhEye size={14} weight="duotone" />
+                                      <span>Peek Definition</span>
+                                      <kbd style={{ marginLeft: "auto", fontSize: "11px", color: "var(--codex-text-tertiary)", fontFamily: "inherit" }}>⌥F12</kbd>
+                                    </ContextMenuItem>
+                                    
+                                    <ContextMenuItem
+                                      onClick={() => triggerAction("editor.action.referenceSearch.trigger")}
+                                      onSelect={() => triggerAction("editor.action.referenceSearch.trigger")}
+                                    >
+                                      <PhMagnifyingGlass size={14} weight="duotone" />
+                                      <span>Find All References</span>
+                                      <kbd style={{ marginLeft: "auto", fontSize: "11px", color: "var(--codex-text-tertiary)", fontFamily: "inherit" }}>⇧F12</kbd>
+                                    </ContextMenuItem>
+                                  </ContextMenuSubContent>
+                                </ContextMenuSub>
+
+                                <ContextMenuSeparator />
+
+                                <ContextMenuItem
+                                  onClick={() => triggerAction("editor.action.rename")}
+                                  onSelect={() => triggerAction("editor.action.rename")}
+                                >
+                                  <PhPencilSimpleLine size={14} weight="duotone" />
+                                  <span>Rename Symbol</span>
+                                  <kbd style={{ marginLeft: "auto", fontSize: "11px", color: "var(--codex-text-tertiary)", fontFamily: "inherit" }}>F2</kbd>
+                                </ContextMenuItem>
+
+                                <ContextMenuItem
+                                  onClick={() => triggerAction("editor.action.changeAll")}
+                                  onSelect={() => triggerAction("editor.action.changeAll")}
+                                >
+                                  <PhStack size={14} weight="duotone" />
+                                  <span>Change All Occurrences</span>
+                                  <kbd style={{ marginLeft: "auto", fontSize: "11px", color: "var(--codex-text-tertiary)", fontFamily: "inherit" }}>⌘F2</kbd>
+                                </ContextMenuItem>
+
+                                <ContextMenuSeparator />
+
+                                <ContextMenuItem
+                                  onClick={() => triggerAction("editor.action.formatDocument")}
+                                  onSelect={() => triggerAction("editor.action.formatDocument")}
+                                >
+                                  <PhTextAlignLeft size={14} weight="duotone" />
+                                  <span>Format Document</span>
+                                  <kbd style={{ marginLeft: "auto", fontSize: "11px", color: "var(--codex-text-tertiary)", fontFamily: "inherit" }}>⌥⇧F</kbd>
+                                </ContextMenuItem>
+
+                                <ContextMenuSeparator />
+
+                                <ContextMenuItem
+                                  onClick={() => triggerAction("editor.action.quickCommand")}
+                                  onSelect={() => triggerAction("editor.action.quickCommand")}
+                                >
+                                  <PhTerminal size={14} weight="duotone" />
+                                  <span>Command Palette</span>
+                                  <kbd style={{ marginLeft: "auto", fontSize: "11px", color: "var(--codex-text-tertiary)", fontFamily: "inherit" }}>F1</kbd>
+                                </ContextMenuItem>
+                              </ContextMenuContent>
+
+
+                            </ContextMenu>
                           ) : (
                             <EmptyPanel
                               className="construct-editor-empty"

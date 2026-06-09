@@ -112,6 +112,8 @@ export function EditorPane({
   const [showSkipButton, setShowSkipButton] = useState(false);
   const editorTheme = useEditorTheme(theme);
 
+
+
   const triggerAction = useCallback((actionId: string) => {
     if (editorRef.current) {
       editorRef.current.focus();
@@ -457,19 +459,7 @@ export function EditorPane({
             }
           }
 
-          // 3. Check if it's an external library/framework/module import or external symbol
-          const isExternal = isExternalSymbolOrImport(word, lineText, currentContent, language, currentFilePath, fileList);
-          if (isExternal) {
-            return {
-              uri: model.uri,
-              range: new monaco.Range(
-                position.lineNumber,
-                wordInfo.startColumn,
-                position.lineNumber,
-                wordInfo.endColumn
-              )
-            };
-          }
+
 
           return null;
         }
@@ -536,6 +526,8 @@ export function EditorPane({
             readOnlyMessage: { value: "Type the highlighted ghost text manually to advance." }
           });
 
+
+
           // Intercept Cmd+Click for cross-file definitions and external documentation links
           editor.onMouseUp((e) => {
             const isCmdClick = e.event.metaKey || e.event.ctrlKey;
@@ -582,10 +574,7 @@ export function EditorPane({
               }
             }
 
-            const url = getDocsUrlForPosition(word, lineText, currentContent, language, currentFilePath, fileList);
-            if (url) {
-              window.open(url, "_blank");
-            }
+
           });
 
           editor.onKeyDown((event) => {
@@ -633,12 +622,7 @@ export function EditorPane({
                       }
                     }
 
-                    const url = getDocsUrlForPosition(word, lineText, currentContent, language, currentFilePath, fileList);
-                    if (url) {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      window.open(url, "_blank");
-                    }
+
                   }
                 }
               }
@@ -841,6 +825,8 @@ export function EditorPane({
           <kbd style={{ marginLeft: "auto", fontSize: "11px", color: "var(--codex-text-tertiary)", fontFamily: "inherit" }}>F1</kbd>
         </ContextMenuItem>
       </ContextMenuContent>
+
+
     </ContextMenu>
   );
 }
@@ -1204,139 +1190,4 @@ function hasRealLocalDefinition(currentContent: string, word: string): boolean {
     }
   }
   return false;
-}
-
-function isExternalSymbolOrImport(
-  word: string,
-  lineText: string,
-  currentContent: string,
-  language: string,
-  currentFilePath: string,
-  fileList: string[]
-): boolean {
-  // 1. Quoted import path click
-  const quoteMatches = [...lineText.matchAll(/(?:import|from|require|@import)\s+['"`]([^'"`]+)['"`]/g)];
-  for (const match of quoteMatches) {
-    const pathContent = match[1];
-    const resolved = resolvePath(currentFilePath, pathContent);
-    const target = findFileInWorkspace(resolved, fileList);
-    if (!target) {
-      if (getExternalModuleDocsUrl(pathContent, language)) return true;
-    }
-  }
-
-  // 2. Unquoted import module name click
-  if (language === "swift" || language === "python" || language === "py") {
-    const importMatch = lineText.match(/^\s*import\s+([A-Za-z0-9_,\s]+)/);
-    if (importMatch) {
-      const modules = importMatch[1].split(",").map(m => m.trim());
-      if (modules.includes(word)) {
-        if (getExternalModuleDocsUrl(word, language)) return true;
-      }
-    }
-
-    const fromImportMatch = lineText.match(/^\s*from\s+([A-Za-z0-9_.]+)\s+import/);
-    if (fromImportMatch) {
-      const moduleName = fromImportMatch[1];
-      if (word === moduleName) {
-        if (getExternalModuleDocsUrl(moduleName, language)) return true;
-      }
-      const importedSymbolsPart = lineText.split("import")[1] || "";
-      const symbols = importedSymbolsPart.split(",").map(s => s.trim().split(/\s+/)[0]);
-      if (symbols.includes(word)) {
-        if (getExternalModuleDocsUrl(moduleName, language)) return true;
-      }
-    }
-  }
-
-  // 3. Checked if defined locally in this file
-  if (hasRealLocalDefinition(currentContent, word)) {
-    return false;
-  }
-
-  // 4. Imported from another file
-  const importPath = findImportPathForSymbol(currentContent, word);
-  if (importPath) {
-    const resolved = resolvePath(currentFilePath, importPath);
-    const target = findFileInWorkspace(resolved, fileList);
-    if (target) {
-      return false; // local file, not external
-    }
-    return true; // imported from an external package
-  }
-
-  // 5. Fallback search engine check
-  if (getExternalSymbolSearchUrl(word, language)) {
-    return true;
-  }
-
-  return false;
-}
-
-function getDocsUrlForPosition(
-  word: string,
-  lineText: string,
-  currentContent: string,
-  language: string,
-  currentFilePath: string,
-  fileList: string[]
-): string | null {
-  // 1. Quoted import path click
-  const quoteMatches = [...lineText.matchAll(/(?:import|from|require|@import)\s+['"`]([^'"`]+)['"`]/g)];
-  for (const match of quoteMatches) {
-    const pathContent = match[1];
-    const resolved = resolvePath(currentFilePath, pathContent);
-    const target = findFileInWorkspace(resolved, fileList);
-    if (!target) {
-      const url = getExternalModuleDocsUrl(pathContent, language);
-      if (url) return url;
-    }
-  }
-
-  // 2. Unquoted import module name click
-  if (language === "swift" || language === "python" || language === "py") {
-    const importMatch = lineText.match(/^\s*import\s+([A-Za-z0-9_,\s]+)/);
-    if (importMatch) {
-      const modules = importMatch[1].split(",").map(m => m.trim());
-      if (modules.includes(word)) {
-        const url = getExternalModuleDocsUrl(word, language);
-        if (url) return url;
-      }
-    }
-
-    const fromImportMatch = lineText.match(/^\s*from\s+([A-Za-z0-9_.]+)\s+import/);
-    if (fromImportMatch) {
-      const moduleName = fromImportMatch[1];
-      if (word === moduleName) {
-        const url = getExternalModuleDocsUrl(moduleName, language);
-        if (url) return url;
-      }
-      const importedSymbolsPart = lineText.split("import")[1] || "";
-      const symbols = importedSymbolsPart.split(",").map(s => s.trim().split(/\s+/)[0]);
-      if (symbols.includes(word)) {
-        const url = getExternalModuleDocsUrl(moduleName, language);
-        if (url) return url;
-      }
-    }
-  }
-
-  // 3. Checked if defined locally in this file
-  if (hasRealLocalDefinition(currentContent, word)) {
-    return null;
-  }
-
-  // 4. Imported from another file
-  const importPath = findImportPathForSymbol(currentContent, word);
-  if (importPath) {
-    const resolved = resolvePath(currentFilePath, importPath);
-    const target = findFileInWorkspace(resolved, fileList);
-    if (target) {
-      return null; // Local workspace file
-    }
-    const url = getExternalModuleDocsUrl(importPath, language);
-    if (url) return url;
-  }
-
-  // 5. Fallback documentation search
-  return getExternalSymbolSearchUrl(word, language);
 }

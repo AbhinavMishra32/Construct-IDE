@@ -88,7 +88,17 @@
   justify-content: space-between;
 }
 
+.codex-context-menu-sub-trigger .codex-context-menu-item-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
 .codex-context-menu-item-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
