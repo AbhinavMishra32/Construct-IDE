@@ -9,6 +9,22 @@ import {
   registerConstructThemes
 } from "../editorThemes";
 import type { EditBlock } from "../types";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger
+} from "@/components/open-shell";
+import {
+  ArrowSquareOut,
+  Eye,
+  MagnifyingGlass,
+  PencilSimpleLine,
+  Stack,
+  TextAlignLeft,
+  Terminal
+} from "@phosphor-icons/react";
 
 registerConstructThemes();
 
@@ -92,6 +108,13 @@ export function EditorPane({
   const [buttonTop, setButtonTop] = useState<number | null>(null);
   const [showSkipButton, setShowSkipButton] = useState(false);
   const editorTheme = useEditorTheme(theme);
+
+  const triggerAction = useCallback((actionId: string) => {
+    if (editorRef.current) {
+      editorRef.current.focus();
+      editorRef.current.trigger("keyboard", actionId, null);
+    }
+  }, []);
 
   const os = useMemo(() => {
     const ua = window.navigator.userAgent.toLowerCase();
@@ -464,32 +487,35 @@ export function EditorPane({
   }
 
   return (
-    <section className="editor-pane" data-guided={isGuided ? "true" : "false"} data-wrong={wrongInput ? "true" : "false"}>
-      <Editor
-        key={`${path}:${activeEdit?.id ?? "free"}:${editAnchor.length}`}
-        className="editor-pane__monaco"
-        height="100%"
-        language={language}
-        options={{
-          automaticLayout: true,
-          cursorBlinking: "smooth",
-          cursorSmoothCaretAnimation: "on",
-          fontFamily:
-            '"Geist Mono Variable", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
-          fontLigatures: true,
-          fontSize: 13.5,
-          letterSpacing: 0.2,
-          lineHeight: 22,
-          minimap: { enabled: false },
-          padding: { top: 16, bottom: 16 },
-          renderLineHighlight: "all",
-          renderWhitespace: "selection",
-          roundedSelection: true,
-          scrollBeyondLastLine: false,
-          smoothScrolling: true,
-          tabSize: 2,
-          wordWrap: "on"
-        }}
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <section className="editor-pane" data-guided={isGuided ? "true" : "false"} data-wrong={wrongInput ? "true" : "false"}>
+          <Editor
+            key={`${path}:${activeEdit?.id ?? "free"}:${editAnchor.length}`}
+            className="editor-pane__monaco"
+            height="100%"
+            language={language}
+            options={{
+              automaticLayout: true,
+              contextmenu: false,
+              cursorBlinking: "smooth",
+              cursorSmoothCaretAnimation: "on",
+              fontFamily:
+                '"Geist Mono Variable", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
+              fontLigatures: true,
+              fontSize: 13.5,
+              letterSpacing: 0.2,
+              lineHeight: 22,
+              minimap: { enabled: false },
+              padding: { top: 16, bottom: 16 },
+              renderLineHighlight: "all",
+              renderWhitespace: "selection",
+              roundedSelection: true,
+              scrollBeyondLastLine: false,
+              smoothScrolling: true,
+              tabSize: 2,
+              wordWrap: "on"
+            }}
         theme={editorTheme}
         value={displayContent}
         onChange={(value) => {
@@ -728,7 +754,83 @@ export function EditorPane({
           <span>Ghost Progress: {Math.min(totalLines, typedLines)} / {totalLines} lines ({percent}%)</span>
         </div>
       )}
-    </section>
+        </section>
+      </ContextMenuTrigger>
+
+      <ContextMenuContent className="construct-editor-context-menu">
+        <ContextMenuItem
+          onClick={() => triggerAction("editor.action.revealDefinition")}
+          onSelect={() => triggerAction("editor.action.revealDefinition")}
+        >
+          <ArrowSquareOut size={14} weight="duotone" />
+          <span>Go to Definition</span>
+          <kbd style={{ marginLeft: "auto", fontSize: "11px", color: "var(--codex-text-tertiary)", fontFamily: "inherit" }}>F12</kbd>
+        </ContextMenuItem>
+        
+        <ContextMenuItem
+          onClick={() => triggerAction("editor.action.peekDefinition")}
+          onSelect={() => triggerAction("editor.action.peekDefinition")}
+        >
+          <Eye size={14} weight="duotone" />
+          <span>Peek Definition</span>
+          <kbd style={{ marginLeft: "auto", fontSize: "11px", color: "var(--codex-text-tertiary)", fontFamily: "inherit" }}>⌥F12</kbd>
+        </ContextMenuItem>
+        
+        <ContextMenuItem
+          onClick={() => triggerAction("editor.action.referenceSearch.trigger")}
+          onSelect={() => triggerAction("editor.action.referenceSearch.trigger")}
+        >
+          <MagnifyingGlass size={14} weight="duotone" />
+          <span>Find All References</span>
+          <kbd style={{ marginLeft: "auto", fontSize: "11px", color: "var(--codex-text-tertiary)", fontFamily: "inherit" }}>⇧F12</kbd>
+        </ContextMenuItem>
+
+        <ContextMenuSeparator />
+
+        <ContextMenuItem
+          disabled={isGuided}
+          onClick={() => triggerAction("editor.action.rename")}
+          onSelect={() => triggerAction("editor.action.rename")}
+        >
+          <PencilSimpleLine size={14} weight="duotone" />
+          <span>Rename Symbol</span>
+          <kbd style={{ marginLeft: "auto", fontSize: "11px", color: "var(--codex-text-tertiary)", fontFamily: "inherit" }}>F2</kbd>
+        </ContextMenuItem>
+
+        <ContextMenuItem
+          disabled={isGuided}
+          onClick={() => triggerAction("editor.action.changeAll")}
+          onSelect={() => triggerAction("editor.action.changeAll")}
+        >
+          <Stack size={14} weight="duotone" />
+          <span>Change All Occurrences</span>
+          <kbd style={{ marginLeft: "auto", fontSize: "11px", color: "var(--codex-text-tertiary)", fontFamily: "inherit" }}>⌘F2</kbd>
+        </ContextMenuItem>
+
+        <ContextMenuSeparator />
+
+        <ContextMenuItem
+          disabled={isGuided}
+          onClick={() => triggerAction("editor.action.formatDocument")}
+          onSelect={() => triggerAction("editor.action.formatDocument")}
+        >
+          <TextAlignLeft size={14} weight="duotone" />
+          <span>Format Document</span>
+          <kbd style={{ marginLeft: "auto", fontSize: "11px", color: "var(--codex-text-tertiary)", fontFamily: "inherit" }}>⌥⇧F</kbd>
+        </ContextMenuItem>
+
+        <ContextMenuSeparator />
+
+        <ContextMenuItem
+          onClick={() => triggerAction("editor.action.quickCommand")}
+          onSelect={() => triggerAction("editor.action.quickCommand")}
+        >
+          <Terminal size={14} weight="duotone" />
+          <span>Command Palette</span>
+          <kbd style={{ marginLeft: "auto", fontSize: "11px", color: "var(--codex-text-tertiary)", fontFamily: "inherit" }}>F1</kbd>
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 
