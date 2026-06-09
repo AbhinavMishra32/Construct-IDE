@@ -63,57 +63,57 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
   const getLevelColor = (level: LogEntry["level"]) => {
     switch (level) {
       case "error":
-        return "text-[#ff6b6b]";
+        return "text-[var(--codex-danger)] font-medium";
       case "warn":
-        return "text-[#ffd43b]";
+        return "text-[var(--codex-warning)] font-medium";
       case "debug":
-        return "text-[#a0aec0] opacity-80";
+        return "text-[var(--codex-text-tertiary)] opacity-80";
       default:
-        return "text-[#e2e8f0]";
+        return "text-[var(--codex-text-primary)]";
     }
   };
 
   return (
     <TerminalSurface cwd={`Output Logs · ${activeChannel}`}>
-      <div className="flex flex-col h-full bg-[#101112] text-[#f4f4f2] overflow-hidden select-text">
+      <div className="flex flex-col h-full bg-[var(--codex-bg-primary)] text-[var(--codex-text-primary)] font-[var(--codex-font-sans)] overflow-hidden select-text">
         {/* Top Controls Toolbar */}
-        <div className="flex items-center justify-between px-4 py-2 border-b border-[#2d2e30] bg-[#151618]">
+        <div className="flex items-center justify-between px-4 py-2 border-b border-[var(--codex-border-subtle)] bg-[var(--codex-bg-secondary)]">
           <div className="flex items-center gap-2">
-            <span className="text-xs text-neutral-400 font-medium select-none">Show output from:</span>
+            <span className="text-xs text-[var(--codex-text-secondary)] font-medium select-none">Show output from:</span>
             <select
               value={activeChannel}
               onChange={(e) => setActiveChannel(e.target.value as LogChannel)}
-              className="bg-[#202124] text-xs text-neutral-200 border border-[#3e4042] rounded px-2 py-1 outline-none cursor-pointer focus:border-[#4f8cff]"
+              className="bg-[color-mix(in_srgb,var(--codex-text-primary)_7%,transparent)] text-xs text-[var(--codex-text-primary)] border-0 rounded-[8px] px-3 py-1 outline-none cursor-pointer font-sans h-[30px]"
             >
-              <option value="lsp-server">TypeScript LSP Server (stderr)</option>
-              <option value="lsp-protocol">TypeScript LSP Protocol (JSON-RPC)</option>
-              <option value="main">Electron Main Process</option>
-              <option value="renderer">Renderer Console</option>
-              <option value="verifier">Verifier Agent</option>
+              <option value="lsp-server" className="bg-[var(--codex-bg-primary)] text-[var(--codex-text-primary)]">TypeScript LSP Server (stderr)</option>
+              <option value="lsp-protocol" className="bg-[var(--codex-bg-primary)] text-[var(--codex-text-primary)]">TypeScript LSP Protocol (JSON-RPC)</option>
+              <option value="main" className="bg-[var(--codex-bg-primary)] text-[var(--codex-text-primary)]">Electron Main Process</option>
+              <option value="renderer" className="bg-[var(--codex-bg-primary)] text-[var(--codex-text-primary)]">Renderer Console</option>
+              <option value="verifier" className="bg-[var(--codex-bg-primary)] text-[var(--codex-text-primary)]">Verifier Agent</option>
             </select>
           </div>
 
           <div className="flex items-center gap-3">
-            <label className="flex items-center gap-1.5 text-xs text-neutral-400 select-none cursor-pointer">
+            <label className="flex items-center gap-1.5 text-xs text-[var(--codex-text-secondary)] select-none cursor-pointer font-medium">
               <input
                 type="checkbox"
                 checked={autoScroll}
                 onChange={(e) => setAutoScroll(e.target.checked)}
-                className="accent-[#4f8cff]"
+                className="accent-[var(--codex-accent)]"
               />
               Auto-scroll
             </label>
 
             <button
               onClick={handleCopyAll}
-              className="text-xs text-neutral-300 hover:text-white bg-[#202124] hover:bg-[#2d2e30] border border-[#3e4042] px-2 py-1 rounded transition-colors"
+              className="text-xs text-[var(--codex-text-primary)] hover:bg-[color-mix(in_srgb,var(--codex-text-primary)_12%,transparent)] bg-[color-mix(in_srgb,var(--codex-text-primary)_7%,transparent)] px-3 h-[30px] rounded-[8px] transition-colors font-medium"
             >
               Copy All
             </button>
 
             <button
               onClick={handleClear}
-              className="text-xs text-[#ff6b6b] hover:text-white bg-[#202124] hover:bg-[#ff6b6b]/20 border border-[#ff6b6b]/40 px-2 py-1 rounded transition-colors"
+              className="text-xs text-[var(--codex-danger)] hover:bg-[color-mix(in_srgb,var(--codex-danger)_10%,transparent)] bg-[color-mix(in_srgb,var(--codex-danger)_5%,transparent)] px-3 h-[30px] rounded-[8px] transition-colors font-medium"
             >
               Clear
             </button>
@@ -123,14 +123,14 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
         {/* Logs container */}
         <div
           ref={containerRef}
-          className="flex-1 overflow-auto p-4 font-mono text-xs leading-relaxed select-text space-y-1 scrollbar-thin"
+          className="flex-1 overflow-auto p-4 font-[var(--codex-font-mono)] text-[13px] leading-relaxed select-text space-y-1 scrollbar-thin bg-[var(--codex-bg-primary)]"
         >
           {logs.length === 0 ? (
-            <div className="text-neutral-500 italic select-none">No logs available in this channel.</div>
+            <div className="text-[var(--codex-text-tertiary)] italic select-none">No logs available in this channel.</div>
           ) : (
             logs.map((log, index) => (
-              <div key={index} className="flex items-start hover:bg-[#2d2e30]/30 py-[1px] px-1 rounded">
-                <span className="text-[#718096] select-none mr-3 flex-shrink-0 font-light">
+              <div key={index} className="flex items-start hover:bg-[color-mix(in_srgb,var(--codex-text-primary)_4%,transparent)] py-[1px] px-1 rounded">
+                <span className="text-[var(--codex-text-tertiary)] select-none mr-3 flex-shrink-0 font-light text-[12px]">
                   [{formatTimestamp(log.timestamp)}]
                 </span>
                 <span className={`whitespace-pre-wrap break-all ${getLevelColor(log.level)}`}>
