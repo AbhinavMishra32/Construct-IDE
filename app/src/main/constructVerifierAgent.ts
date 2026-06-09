@@ -6,11 +6,13 @@ export const CONSTRUCT_VERIFIER_AGENT_ID = "construct-verifier-agent";
 export const CONSTRUCT_VERIFIER_AGENT_NAME = "Construct Verifier Agent";
 
 const VerificationResultSchema = z.object({
+  status: z.enum(["pass", "fail", "almost"]).optional(),
   passed: z.boolean(),
   confidence: z.enum(["low", "medium", "high"]),
   reason: z.string().min(1),
   evidence: z.array(z.string().min(1)),
-  suggestion: z.string().optional()
+  suggestion: z.string().optional(),
+  relatedConceptIds: z.array(z.string().min(1)).optional()
 });
 
 export type VerificationLogEntry = {
@@ -34,6 +36,20 @@ export type VerifierInput = {
     title: string;
     body: string;
   }>;
+  concepts?: Array<{
+    id: string;
+    title: string;
+    summary: string;
+    why: string;
+    example: string;
+  }>;
+  savedKnowledge?: Array<{
+    id: string;
+    title: string;
+    summary: string;
+    why: string;
+    example: string;
+  }>;
   files: Array<{
     path: string;
     content: string;
@@ -55,11 +71,14 @@ export async function runConstructVerifierAgent(input: VerifierInput): Promise<V
       "You are the Construct runtime verifier.",
       "You judge whether a learner achieved the engineering outcome described by the .construct verification contract.",
       "You analyze evidence only: task, support text, reference cards, listed files, terminal command, terminal output, goal, and rubric.",
+      "When concept cards or saved knowledge are supplied, use them to explain the missing concept precisely, but never use them as proof that the code is correct.",
       "You do not modify files, suggest broad rewrites, or invent evidence.",
       "Do not pass just because output contains a magic string.",
       "Pass only when the files and runtime evidence satisfy the rubric.",
       "If evidence is missing or ambiguous, return passed=false with confidence=low.",
-      "Give one concrete next suggestion on failure."
+      "Use status=almost when the learner is close but one concrete requirement is missing.",
+      "Keep passed=true only when status=pass.",
+      "Give one concrete next suggestion on failure or almost."
     ].join("\n"),
     model,
     maxRetries: 1
@@ -143,6 +162,12 @@ function buildVerifierPrompt(input: VerifierInput): string {
           .join("\n\n")
       : "(none)",
     "",
+    "Concept cards used by this task:",
+    formatConcepts(input.concepts ?? []),
+    "",
+    "Learner saved knowledge cards:",
+    formatConcepts(input.savedKnowledge ?? []),
+    "",
     "Rubric:",
     input.rubric,
     "",
@@ -165,6 +190,22 @@ function buildVerifierPrompt(input: VerifierInput): string {
     "Terminal output:",
     input.terminalOutput || "(none)",
     "",
-    "Return a structured result. Evidence entries should name the concrete file/output facts you used."
+    "Return a structured result. Evidence entries should name the concrete file/output facts you used.",
+    "Set status to pass, fail, or almost. Set passed=true only for pass."
   ].join("\n");
+}
+
+function formatConcepts(concepts: NonNullable<VerifierInput["concepts"]>): string {
+  if (concepts.length === 0) {
+    return "(none)";
+  }
+
+  return concepts
+    .map((concept) => [
+      `# ${concept.id}: ${concept.title}`,
+      concept.summary ? `Summary: ${concept.summary}` : "",
+      concept.why ? `Why: ${concept.why}` : "",
+      concept.example ? `Example:\n${concept.example}` : ""
+    ].filter(Boolean).join("\n"))
+    .join("\n\n");
 }

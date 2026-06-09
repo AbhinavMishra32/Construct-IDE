@@ -187,7 +187,7 @@ function resolveTerminalDark(theme: "light" | "dark" | "system"): boolean {
 
 function terminalTheme(isDark: boolean) {
   return {
-    background: isDark ? "#101112" : "#ffffff",
+    background: "#00000000",
     foreground: isDark ? "#f4f4f2" : "#1d1d1f",
     cursor: isDark ? "#f4f4f2" : "#1d1d1f",
     selectionBackground: isDark ? "#4f8cff44" : "#0a84ff33"

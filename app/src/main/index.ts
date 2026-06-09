@@ -58,6 +58,15 @@ function sendLogToRenderer(level: "info" | "warn" | "error", ...args: any[]) {
   }
 }
 
+function logCrashSurface(scope: string, error: unknown): void {
+  if (error instanceof Error) {
+    console.error(`[crash:${scope}] ${error.message}`, error.stack ?? "");
+    return;
+  }
+
+  console.error(`[crash:${scope}]`, error);
+}
+
 console.log = (...args: any[]) => {
   originalLog(...args);
   sendLogToRenderer("info", ...args);
@@ -72,6 +81,18 @@ console.warn = (...args: any[]) => {
   originalWarn(...args);
   sendLogToRenderer("warn", ...args);
 };
+
+process.on("uncaughtException", (error) => {
+  logCrashSurface("main:uncaughtException", error);
+});
+
+process.on("unhandledRejection", (reason) => {
+  logCrashSurface("main:unhandledRejection", reason);
+});
+
+process.on("warning", (warning) => {
+  console.warn("[process warning]", warning.name, warning.message, warning.stack ?? "");
+});
 
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
 const shouldOpenDevTools = process.env.CONSTRUCT_OPEN_DEVTOOLS === "1";
@@ -159,6 +180,45 @@ function workspacePathForProject(projectId: string): string {
 
 function defaultWorkspaceParent(): string {
   return path.join(constructProjectsRoot(), "workspaces");
+}
+
+function isInsidePath(candidate: string, parent: string): boolean {
+  const relative = path.relative(path.resolve(parent), path.resolve(candidate));
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+function resolveImportWorkspacePath(input: {
+  program: { id: string };
+  sourcePath?: string | null;
+  workspacePath?: string | null;
+}, settings: StoredSettings): string {
+  const fallback = path.join(settings.workspaceRoot, input.program.id);
+  const requested =
+    typeof input.workspacePath === "string" && input.workspacePath.trim()
+      ? path.resolve(input.workspacePath)
+      : fallback;
+  const appSourceRoot = path.resolve(app.getAppPath(), "src");
+
+  if (isInsidePath(requested, appSourceRoot)) {
+    console.warn("[construct] import workspace was inside app source; using configured workspace root instead", {
+      requested,
+      fallback
+    });
+    return fallback;
+  }
+
+  if (typeof input.sourcePath === "string" && isInsidePath(path.resolve(input.sourcePath), appSourceRoot)) {
+    const sourceDirectory = path.dirname(path.resolve(input.sourcePath));
+    if (isInsidePath(requested, sourceDirectory)) {
+      console.warn("[construct] sample workspace was beside app source .construct file; using configured workspace root instead", {
+        requested,
+        fallback
+      });
+      return fallback;
+    }
+  }
+
+  return requested;
 }
 
 async function readProjects(): Promise<StoredProject[]> {
@@ -269,6 +329,7 @@ function safeProjectPath(project: Pick<StoredProject, "workspacePath">, relative
 
 async function materializeInitialFiles(project: StoredProject): Promise<void> {
   await mkdir(project.workspacePath, { recursive: true });
+  const initialContentByPath = new Map(project.program.files.map((file) => [file.path, file.content]));
 
   for (const file of project.program.files) {
     const target = safeProjectPath(project, file.path);
@@ -276,8 +337,52 @@ async function materializeInitialFiles(project: StoredProject): Promise<void> {
 
     if (!existsSync(target)) {
       await writeFile(target, file.content, "utf8");
+      continue;
+    }
+
+    const existing = await readFile(target, "utf8").catch(() => "");
+    if (shouldRepairInitialFile(file.path, existing, file.content, initialContentByPath)) {
+      console.warn("[construct] repairing corrupted initial project file", {
+        projectId: project.id,
+        path: file.path,
+        workspacePath: project.workspacePath
+      });
+      await writeFile(target, file.content, "utf8");
     }
   }
+}
+
+function shouldRepairInitialFile(
+  filePath: string,
+  existing: string,
+  expected: string,
+  initialContentByPath: Map<string, string>
+): boolean {
+  if (!existing || existing === expected) {
+    return false;
+  }
+
+  for (const [otherPath, otherContent] of initialContentByPath) {
+    if (otherPath !== filePath && existing === otherContent) {
+      return true;
+    }
+  }
+
+  if (filePath.endsWith("package.json")) {
+    try {
+      JSON.parse(existing);
+      return false;
+    } catch {
+      try {
+        JSON.parse(expected);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+  }
+
+  return false;
 }
 
 async function listWorkspaceTree(project: StoredProject, root = ""): Promise<unknown[]> {
@@ -321,6 +426,155 @@ async function initializeGitRepository(workspacePath: string): Promise<void> {
   }
 
   await execFileAsync("git", ["init"], { cwd: workspacePath });
+}
+
+async function getProjectGitStatus(project: StoredProject): Promise<{
+  isRepo: boolean;
+  branch: string | null;
+  hasRemote: boolean;
+  dirtyFiles: string[];
+}> {
+  try {
+    await execFileAsync("git", ["rev-parse", "--is-inside-work-tree"], { cwd: project.workspacePath });
+  } catch {
+    return {
+      isRepo: false,
+      branch: null,
+      hasRemote: false,
+      dirtyFiles: []
+    };
+  }
+
+  const branch = await execFileAsync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: project.workspacePath })
+    .then(({ stdout }) => String(stdout).trim() || null)
+    .catch(() => null);
+  const hasRemote = await execFileAsync("git", ["remote", "get-url", "origin"], { cwd: project.workspacePath })
+    .then(() => true)
+    .catch(() => false);
+  const dirtyFiles = await execFileAsync("git", ["status", "--porcelain=v1", "-uall"], { cwd: project.workspacePath })
+    .then(({ stdout }) => String(stdout)
+      .split(/\r?\n/)
+      .map((line) => line.trimEnd())
+      .filter(Boolean)
+      .map((line) => {
+        const value = line.slice(3);
+        const renameIndex = value.indexOf(" -> ");
+        return renameIndex >= 0 ? value.slice(renameIndex + 4) : value;
+      }))
+    .catch(() => []);
+
+  return {
+    isRepo: true,
+    branch,
+    hasRemote,
+    dirtyFiles
+  };
+}
+
+async function commitProjectMilestone(
+  project: StoredProject,
+  message: string,
+  paths: string[]
+): Promise<{ success: boolean; output: string; commitHash?: string }> {
+  const gitStatus = await getProjectGitStatus(project);
+  if (!gitStatus.isRepo) {
+    return {
+      success: false,
+      output: "This project workspace is not a git repository."
+    };
+  }
+
+  const normalizedMessage = message.trim();
+  if (!normalizedMessage) {
+    return {
+      success: false,
+      output: "Commit message is required."
+    };
+  }
+
+  const includePaths = paths
+    .map((includePath) => String(includePath || "").trim())
+    .filter(Boolean);
+  const existingPaths: string[] = [];
+
+  for (const includePath of includePaths) {
+    safeProjectPath(project, includePath);
+    if (existsSync(path.resolve(project.workspacePath, includePath))) {
+      existingPaths.push(includePath);
+    }
+  }
+
+  if (includePaths.length > 0 && existingPaths.length === 0) {
+    return {
+      success: false,
+      output: `None of the included paths exist yet: ${includePaths.join(", ")}`
+    };
+  }
+
+  const addArgs = includePaths.length > 0 ? ["add", "--", ...existingPaths] : ["add", "-A"];
+  await execFileAsync("git", addArgs, { cwd: project.workspacePath });
+
+  const staged = await execFileAsync("git", ["diff", "--cached", "--name-only"], { cwd: project.workspacePath })
+    .then(({ stdout }) => String(stdout).trim());
+  if (!staged) {
+    return {
+      success: false,
+      output: "No staged changes are available for this milestone."
+    };
+  }
+
+  try {
+    const { stdout, stderr } = await execFileAsync("git", ["commit", "-m", normalizedMessage], {
+      cwd: project.workspacePath,
+      maxBuffer: 2 * 1024 * 1024
+    });
+    const commitHash = await execFileAsync("git", ["rev-parse", "--short", "HEAD"], { cwd: project.workspacePath })
+      .then(({ stdout }) => String(stdout).trim())
+      .catch(() => undefined);
+    return {
+      success: true,
+      output: [stdout, stderr].map(String).join("").trim(),
+      commitHash
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      output: String(error?.stderr || error?.stdout || error?.message || error)
+    };
+  }
+}
+
+async function pushProjectGit(project: StoredProject): Promise<{ success: boolean; output: string }> {
+  const gitStatus = await getProjectGitStatus(project);
+  if (!gitStatus.isRepo) {
+    return {
+      success: false,
+      output: "This project workspace is not a git repository."
+    };
+  }
+
+  if (!gitStatus.hasRemote) {
+    return {
+      success: false,
+      output: "No git remote named origin is configured for this workspace."
+    };
+  }
+
+  try {
+    const { stdout, stderr } = await execFileAsync("git", ["push"], {
+      cwd: project.workspacePath,
+      maxBuffer: 2 * 1024 * 1024
+    });
+    return {
+      success: true,
+      output: [stdout, stderr].map(String).join("").trim()
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      output: String(error?.stderr || error?.stdout || error?.message || error)
+    };
+  }
 }
 
 function summarizeProject(project: StoredProject) {
@@ -410,130 +664,284 @@ async function runVerificationCommand(
   }
 }
 
-let lspProcess: ChildProcess | null = null;
-let lspBuffer = "";
-const pendingRequests = new Map<number, { resolve: Function; reject: Function }>();
+type LspLanguage = "typescript" | "python";
+type LspStatus = "not-installed" | "running" | "stopped" | "installing";
+type LspStartResult = {
+  languages: LspLanguage[];
+  workspacePath: string;
+};
+type LspStatusReport = Record<LspLanguage, {
+  command: string;
+  installCommand: string;
+  installed: boolean;
+  label: string;
+  resolvedPath: string | null;
+  status: LspStatus;
+}>;
+type LspServerState = {
+  buffer: string;
+  pendingRequests: Map<number, { resolve: (value: unknown) => void; reject: (reason?: unknown) => void }>;
+  process: ChildProcess | null;
+  workspacePath: string | null;
+};
+
+const lspConfigs: Record<LspLanguage, {
+  command: string;
+  installPackages: string[];
+  label: string;
+  scriptPath: string[];
+}> = {
+  typescript: {
+    command: "typescript-language-server --stdio",
+    installPackages: ["typescript-language-server", "typescript"],
+    label: "TypeScript / JavaScript",
+    scriptPath: ["typescript-language-server", "lib", "cli.mjs"]
+  },
+  python: {
+    command: "pyright-langserver --stdio",
+    installPackages: ["pyright"],
+    label: "Python",
+    scriptPath: ["pyright", "langserver.index.js"]
+  }
+};
+
+const lspServers: Record<LspLanguage, LspServerState> = {
+  typescript: { buffer: "", pendingRequests: new Map(), process: null, workspacePath: null },
+  python: { buffer: "", pendingRequests: new Map(), process: null, workspacePath: null }
+};
 let activeWebContents: Electron.WebContents | null = null;
 let isInstallingLsp = false;
 
-function stopLspServer() {
-  if (lspProcess) {
-    console.log("[LSP] Stopping typescript-language-server");
-    try {
-      lspProcess.kill();
-    } catch (err) {
-      console.error("[LSP] Error killing process:", err);
+function findNodeModuleScript(workspacePath: string, relativeScriptPath: string[]): string | null {
+  const candidates = [
+    path.join(workspacePath, "node_modules", ...relativeScriptPath),
+    path.join(__dirname, "..", "node_modules", ...relativeScriptPath),
+    path.join(app.getAppPath(), "node_modules", ...relativeScriptPath),
+    path.join(process.cwd(), "node_modules", ...relativeScriptPath),
+    path.join(process.cwd(), "app", "node_modules", ...relativeScriptPath)
+  ];
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      return candidate;
     }
-    lspProcess = null;
   }
-  lspBuffer = "";
-  for (const pending of pendingRequests.values()) {
-    pending.reject(new Error("LSP server stopped"));
-  }
-  pendingRequests.clear();
+
+  console.warn(`[LSP] Could not resolve ${relativeScriptPath.join("/")} from candidates:\n${candidates.join("\n")}`);
+  return null;
 }
 
-function startLspServer(workspacePath: string) {
-  stopLspServer();
-
-  console.log("[LSP] Starting typescript-language-server in:", workspacePath);
-
-  // Check if we have a local installation in the project workspace first
-  let lspScript = path.join(
-    workspacePath,
-    "node_modules",
-    "typescript-language-server",
-    "lib",
-    "cli.mjs"
-  );
-
-  if (!existsSync(lspScript)) {
-    // Fallback to application's node_modules
-    lspScript = path.join(
-      app.getAppPath(),
-      "node_modules",
-      "typescript-language-server",
-      "lib",
-      "cli.mjs"
-    );
+function lspLanguageForPath(filePath: string): LspLanguage | null {
+  const lower = filePath.toLowerCase().split("?")[0] ?? filePath.toLowerCase();
+  if (lower.endsWith(".py") || lower.endsWith(".pyi")) {
+    return "python";
   }
 
-  if (!existsSync(lspScript)) {
-    console.error("[LSP] Could not start server. typescript-language-server is not installed. Path tried: " + lspScript);
-    return;
+  if (
+    lower.endsWith(".ts") ||
+    lower.endsWith(".tsx") ||
+    lower.endsWith(".mts") ||
+    lower.endsWith(".cts") ||
+    lower.endsWith(".js") ||
+    lower.endsWith(".jsx") ||
+    lower.endsWith(".mjs") ||
+    lower.endsWith(".cjs") ||
+    lower.endsWith(".json")
+  ) {
+    return "typescript";
   }
 
-  console.log("[LSP] Using server binary script path: " + lspScript);
+  return null;
+}
 
-  // Spawn typescript-language-server CLI script using Electron's Node.js runtime
-  lspProcess = spawn(process.execPath, [lspScript, "--stdio"], {
+function languagesForProject(project: StoredProject): LspLanguage[] {
+  const languages = new Set<LspLanguage>();
+
+  for (const file of project.program.files ?? []) {
+    const language = lspLanguageForPath(file.path);
+    if (language) {
+      languages.add(language);
+    }
+  }
+
+  if (project.activeFilePath) {
+    const language = lspLanguageForPath(project.activeFilePath);
+    if (language) {
+      languages.add(language);
+    }
+  }
+
+  return [...languages];
+}
+
+function emitLspLog(language: LspLanguage, level: "info" | "warn" | "error", text: string) {
+  const line = `[${lspConfigs[language].label}] ${text}`;
+  if (activeWebContents && !activeWebContents.isDestroyed()) {
+    activeWebContents.send("construct:lsp:stderr", { language, level, text: line });
+  }
+}
+
+function stopLspServer(language?: LspLanguage) {
+  const languages = language ? [language] : (Object.keys(lspServers) as LspLanguage[]);
+
+  for (const currentLanguage of languages) {
+    const server = lspServers[currentLanguage];
+    if (server.process) {
+      console.log(`[LSP] Stopping ${lspConfigs[currentLanguage].command}`);
+      emitLspLog(currentLanguage, "info", `Stopping ${lspConfigs[currentLanguage].command}`);
+      try {
+        server.process.kill();
+      } catch (err) {
+        console.error("[LSP] Error killing process:", err);
+      }
+      server.process = null;
+    }
+    server.buffer = "";
+    server.workspacePath = null;
+    for (const pending of server.pendingRequests.values()) {
+      pending.reject(new Error("LSP server stopped"));
+    }
+    server.pendingRequests.clear();
+  }
+}
+
+function startLspServer(workspacePath: string, language: LspLanguage): boolean {
+  const server = lspServers[language];
+  if (server.process && server.workspacePath === workspacePath) {
+    return true;
+  }
+
+  stopLspServer(language);
+
+  console.log(`[LSP] Starting ${lspConfigs[language].command} in:`, workspacePath);
+  emitLspLog(language, "info", `Starting ${lspConfigs[language].command} in ${workspacePath}`);
+
+  const lspScript = findNodeModuleScript(workspacePath, lspConfigs[language].scriptPath);
+
+  if (!lspScript) {
+    const message = `${lspConfigs[language].label} server is not installed. Expected ${lspConfigs[language].scriptPath.join("/")}`;
+    console.error("[LSP] " + message);
+    emitLspLog(language, "error", message);
+    return false;
+  }
+
+  console.log(`[LSP] Using ${language} server script path: ${lspScript}`);
+  emitLspLog(language, "info", `Using server script ${lspScript}`);
+
+  server.process = spawn(process.execPath, [lspScript, "--stdio"], {
     cwd: workspacePath,
     env: {
       ...process.env,
       ELECTRON_RUN_AS_NODE: "1"
     }
   });
+  server.workspacePath = workspacePath;
 
-  lspProcess.stdout?.on("data", (chunk: Buffer) => {
-    handleLspData(chunk);
+  server.process.stdout?.on("data", (chunk: Buffer) => {
+    handleLspData(language, chunk);
   });
 
-  lspProcess.stderr?.on("data", (data: Buffer) => {
+  server.process.stderr?.on("data", (data: Buffer) => {
     const text = data.toString("utf8");
-    console.warn("[LSP stderr]:", text);
-    if (activeWebContents && !activeWebContents.isDestroyed()) {
-      activeWebContents.send("construct:lsp:stderr", text);
+    console.warn(`[LSP ${language} stderr]:`, text);
+    emitLspLog(language, "warn", text);
+  });
+
+  server.process.on("close", (code, signal) => {
+    const detail = `Process exited with code ${code ?? "null"}${signal ? ` signal ${signal}` : ""}`;
+    console.log(`[LSP] ${language} ${detail}`);
+    emitLspLog(language, code === 0 ? "info" : "warn", detail);
+    server.process = null;
+    server.buffer = "";
+    server.workspacePath = null;
+    for (const pending of server.pendingRequests.values()) {
+      pending.reject(new Error("LSP server stopped"));
     }
+    server.pendingRequests.clear();
   });
 
-  lspProcess.on("close", (code) => {
-    console.log(`[LSP] Process exited with code ${code}`);
-    stopLspServer();
+  server.process.on("error", (err) => {
+    console.error(`[LSP] ${language} process error:`, err);
+    emitLspLog(language, "error", err instanceof Error ? err.message : String(err));
+    stopLspServer(language);
   });
 
-  lspProcess.on("error", (err) => {
-    console.error("[LSP] Process error:", err);
-    stopLspServer();
-  });
+  return true;
 }
 
-function getLspStatus(projectId?: string): "not-installed" | "installed" | "running" | "stopped" | "installing" {
-  if (lspProcess) {
-    return "running";
+function startAvailableLspServers(project: StoredProject): LspStartResult {
+  const languages = languagesForProject(project);
+  const startedLanguages: LspLanguage[] = [];
+
+  if (languages.length === 0) {
+    console.log("[LSP] No supported language files found for project", { id: project.id });
   }
 
-  if (isInstallingLsp) {
-    return "installing";
-  }
-
-  // Check if app node_modules script exists
-  const appLspPath = path.join(
-    app.getAppPath(),
-    "node_modules",
-    "typescript-language-server",
-    "lib",
-    "cli.mjs"
-  );
-  if (existsSync(appLspPath)) {
-    return "stopped";
-  }
-
-  // Check if workspace node_modules script exists
-  if (projectId) {
-    const wsPath = workspacePathForProject(projectId);
-    const wsLspPath = path.join(
-      wsPath,
-      "node_modules",
-      "typescript-language-server",
-      "lib",
-      "cli.mjs"
-    );
-    if (existsSync(wsLspPath)) {
-      return "stopped";
+  for (const language of languages) {
+    if (findNodeModuleScript(project.workspacePath, lspConfigs[language].scriptPath)) {
+      if (startLspServer(project.workspacePath, language)) {
+        startedLanguages.push(language);
+      }
+    } else {
+      emitLspLog(language, "warn", `Skipping ${lspConfigs[language].label}; server is not installed.`);
     }
   }
 
-  return "not-installed";
+  for (const language of Object.keys(lspConfigs) as LspLanguage[]) {
+    if (!languages.includes(language)) {
+      stopLspServer(language);
+    }
+  }
+
+  return {
+    languages: startedLanguages,
+    workspacePath: project.workspacePath
+  };
+}
+
+function inferLspLanguage(payload: any): LspLanguage {
+  if (payload?.languageId === "python" || payload?.languageId === "typescript") {
+    return payload.languageId;
+  }
+
+  const uri = payload?.params?.textDocument?.uri;
+  if (typeof uri === "string") {
+    const clean = uri.split("?")[0]?.toLowerCase() ?? "";
+    if (clean.endsWith(".py") || clean.endsWith(".pyi")) {
+      return "python";
+    }
+  }
+
+  return "typescript";
+}
+
+function getLspStatus(projectId?: string): LspStatusReport {
+  const wsPath = projectId ? workspacePathForProject(projectId) : process.cwd();
+  const report = {} as LspStatusReport;
+
+  for (const language of Object.keys(lspConfigs) as LspLanguage[]) {
+    const server = lspServers[language];
+    const resolvedPath = findNodeModuleScript(wsPath, lspConfigs[language].scriptPath);
+    const installed = resolvedPath != null;
+    const status: LspStatus = server.process
+      ? "running"
+      : isInstallingLsp
+        ? "installing"
+        : installed
+          ? "stopped"
+          : "not-installed";
+
+    report[language] = {
+      command: lspConfigs[language].command,
+      installCommand: `npm install --save-dev ${lspConfigs[language].installPackages.join(" ")}`,
+      installed,
+      label: lspConfigs[language].label,
+      resolvedPath,
+      status
+    };
+  }
+
+  return report;
 }
 
 async function installLsp(workspacePath: string): Promise<boolean> {
@@ -543,10 +951,11 @@ async function installLsp(workspacePath: string): Promise<boolean> {
   isInstallingLsp = true;
   console.log("[LSP Installer] Starting npm install in workspace:", workspacePath);
 
+  const packages = Array.from(new Set(Object.values(lspConfigs).flatMap((config) => config.installPackages)));
+
   return new Promise((resolve) => {
     const shell = process.env.SHELL || "/bin/zsh";
-    // Run npm install --save-dev typescript-language-server typescript
-    const npmProcess = spawn(shell, ["-c", "npm install --save-dev typescript-language-server typescript"], {
+    const npmProcess = spawn(shell, ["-c", `npm install --save-dev ${packages.join(" ")}`], {
       cwd: workspacePath,
       env: {
         ...process.env
@@ -557,7 +966,7 @@ async function installLsp(workspacePath: string): Promise<boolean> {
       const text = data.toString("utf8");
       console.log("[LSP Installer stdout]:", text);
       if (activeWebContents && !activeWebContents.isDestroyed()) {
-        activeWebContents.send("construct:lsp:install-progress", { type: "stdout", text });
+        activeWebContents.send("construct:lsp:install-progress", { language: "all", type: "stdout", text });
       }
     });
 
@@ -565,18 +974,14 @@ async function installLsp(workspacePath: string): Promise<boolean> {
       const text = data.toString("utf8");
       console.warn("[LSP Installer stderr]:", text);
       if (activeWebContents && !activeWebContents.isDestroyed()) {
-        activeWebContents.send("construct:lsp:install-progress", { type: "stderr", text });
+        activeWebContents.send("construct:lsp:install-progress", { language: "all", type: "stderr", text });
       }
     });
 
     npmProcess.on("close", (code) => {
       isInstallingLsp = false;
       console.log(`[LSP Installer] Process finished with exit code: ${code}`);
-      if (code === 0) {
-        resolve(true);
-      } else {
-        resolve(false);
-      }
+      resolve(code === 0);
     });
 
     npmProcess.on("error", (err) => {
@@ -587,53 +992,56 @@ async function installLsp(workspacePath: string): Promise<boolean> {
   });
 }
 
-function handleLspData(chunk: Buffer) {
-  lspBuffer += chunk.toString("utf8");
+function handleLspData(language: LspLanguage, chunk: Buffer) {
+  const server = lspServers[language];
+  server.buffer += chunk.toString("utf8");
   while (true) {
-    const contentLengthIndex = lspBuffer.indexOf("Content-Length:");
+    const contentLengthIndex = server.buffer.indexOf("Content-Length:");
     if (contentLengthIndex === -1) {
       break;
     }
 
-    const headerEndIndex = lspBuffer.indexOf("\r\n\r\n", contentLengthIndex);
+    const headerEndIndex = server.buffer.indexOf("\r\n\r\n", contentLengthIndex);
     if (headerEndIndex === -1) {
       break;
     }
 
-    const contentLengthStr = lspBuffer.slice(contentLengthIndex + 15, headerEndIndex).trim();
+    const contentLengthStr = server.buffer.slice(contentLengthIndex + 15, headerEndIndex).trim();
     const contentLength = parseInt(contentLengthStr, 10);
     if (isNaN(contentLength)) {
-      lspBuffer = "";
+      server.buffer = "";
       break;
     }
 
     const bodyStartIndex = headerEndIndex + 4;
-    if (lspBuffer.length < bodyStartIndex + contentLength) {
+    if (server.buffer.length < bodyStartIndex + contentLength) {
       break;
     }
 
-    const body = lspBuffer.slice(bodyStartIndex, bodyStartIndex + contentLength);
-    lspBuffer = lspBuffer.slice(bodyStartIndex + contentLength);
+    const body = server.buffer.slice(bodyStartIndex, bodyStartIndex + contentLength);
+    server.buffer = server.buffer.slice(bodyStartIndex + contentLength);
 
     try {
       const message = JSON.parse(body);
-      handleLspMessage(message);
+      handleLspMessage(language, message);
     } catch (err) {
       console.error("[LSP] Failed to parse JSON body:", err);
+      emitLspLog(language, "error", `Failed to parse server JSON: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 }
 
-function handleLspMessage(message: any) {
+function handleLspMessage(language: LspLanguage, message: any) {
+  const server = lspServers[language];
   if (message.id !== undefined) {
-    const pending = pendingRequests.get(message.id);
+    const pending = server.pendingRequests.get(message.id);
     if (pending) {
-      pendingRequests.delete(message.id);
+      server.pendingRequests.delete(message.id);
       pending.resolve(message);
     }
   } else if (message.method !== undefined) {
     if (activeWebContents && !activeWebContents.isDestroyed()) {
-      activeWebContents.send("construct:lsp:notification", message);
+      activeWebContents.send("construct:lsp:notification", { ...message, languageId: language });
     }
   }
 }
@@ -660,11 +1068,13 @@ function installConstructProjectIpcHandlers(): void {
       const projects = await readProjects();
       const project = findProject(projects, projectId);
       activeWebContents = _event.sender;
-      startLspServer(project.workspacePath);
-      return true;
+      return startAvailableLspServers(project);
     } catch (err) {
       console.error("[LSP] Start server error:", err);
-      return false;
+      return {
+        languages: [],
+        workspacePath: ""
+      };
     }
   });
 
@@ -678,21 +1088,24 @@ function installConstructProjectIpcHandlers(): void {
 
   ipcMain.handle("construct:lsp:request", async (_event, payload: any) => {
     return new Promise((resolve, reject) => {
-      if (!lspProcess || !lspProcess.stdin) {
-        reject(new Error("LSP process not running"));
+      const language = inferLspLanguage(payload);
+      const server = lspServers[language];
+      if (!server.process || !server.process.stdin) {
+        reject(new Error(`${lspConfigs[language].label} LSP process not running`));
         return;
       }
 
       activeWebContents = _event.sender;
 
       if (payload.id !== undefined) {
-        pendingRequests.set(payload.id, { resolve, reject });
+        server.pendingRequests.set(payload.id, { resolve, reject });
       }
 
-      const jsonStr = JSON.stringify(payload);
+      const { languageId: _languageId, ...message } = payload;
+      const jsonStr = JSON.stringify(message);
       const formatted = `Content-Length: ${Buffer.byteLength(jsonStr, "utf8")}\r\n\r\n${jsonStr}`;
 
-      lspProcess.stdin.write(formatted, "utf8");
+      server.process.stdin.write(formatted, "utf8");
 
       if (payload.id === undefined) {
         resolve(null);
@@ -773,10 +1186,7 @@ function installConstructProjectIpcHandlers(): void {
     const settings = await readSettings();
     const existingIndex = projects.findIndex((project) => project.id === input.program.id);
     const now = new Date().toISOString();
-    const workspacePath =
-      typeof input.workspacePath === "string" && input.workspacePath.trim()
-        ? path.resolve(input.workspacePath)
-        : path.join(settings.workspaceRoot, input.program.id);
+    const workspacePath = resolveImportWorkspacePath(input, settings);
 
     if (existingIndex >= 0) {
       const existing = projects[existingIndex];
@@ -886,10 +1296,32 @@ function installConstructProjectIpcHandlers(): void {
     const project = findProject(projects, id);
 
     project.lastOpenedAt = new Date().toISOString();
+    if (isInsidePath(project.workspacePath, path.resolve(app.getAppPath(), "src"))) {
+      const nextWorkspacePath = workspacePathForProject(project.id);
+      console.warn("[construct] project workspace was inside app source; migrating workspace reference", {
+        id: project.id,
+        previousWorkspacePath: project.workspacePath,
+        nextWorkspacePath
+      });
+      project.workspacePath = nextWorkspacePath;
+    }
+    if (project.activeFilePath && path.isAbsolute(project.activeFilePath)) {
+      const workspace = path.resolve(project.workspacePath);
+      const activePath = path.resolve(project.activeFilePath);
+      if (isInsidePath(activePath, workspace)) {
+        project.activeFilePath = path.relative(workspace, activePath).split(path.sep).join("/");
+      } else {
+        console.warn("[construct] active file escaped workspace; resetting to first project file", {
+          id: project.id,
+          activeFilePath: project.activeFilePath,
+          workspacePath: project.workspacePath
+        });
+        project.activeFilePath = project.program.files[0]?.path ?? null;
+      }
+    }
     await materializeInitialFiles(project);
     await writeProjects(projects);
     activeWebContents = _event.sender;
-    startLspServer(project.workspacePath);
     console.log("[construct] open project resolved", {
       id: project.id,
       title: project.title,
@@ -927,9 +1359,7 @@ function installConstructProjectIpcHandlers(): void {
 
   ipcMain.handle("construct:project:read-file", async (_event, input) => {
     const project = findProject(await readProjects(), input.projectId);
-    const target = path.isAbsolute(input.path)
-      ? path.resolve(input.path)
-      : safeProjectPath(project, input.path);
+    const target = safeProjectPath(project, input.path);
     const fileStat = await stat(target);
 
     if (!fileStat.isFile()) {
@@ -986,6 +1416,25 @@ function installConstructProjectIpcHandlers(): void {
     await cp(srcTarget, destTarget, { recursive: true });
   });
 
+  ipcMain.handle("construct:project:git-status", async (_event, projectId: string) => {
+    const project = findProject(await readProjects(), projectId);
+    return getProjectGitStatus(project);
+  });
+
+  ipcMain.handle("construct:project:git-commit", async (_event, input) => {
+    const project = findProject(await readProjects(), input.projectId);
+    return commitProjectMilestone(
+      project,
+      String(input.message ?? ""),
+      Array.isArray(input.paths) ? input.paths.map(String) : []
+    );
+  });
+
+  ipcMain.handle("construct:project:git-push", async (_event, projectId: string) => {
+    const project = findProject(await readProjects(), projectId);
+    return pushProjectGit(project);
+  });
+
   ipcMain.handle("construct:project:verify-recall", async (_event, input) => {
     const project = findProject(await readProjects(), input.projectId);
     const recall = input.recall;
@@ -1004,6 +1453,40 @@ function installConstructProjectIpcHandlers(): void {
     }
 
     addVerificationLog(logs, "running", "Loaded verification contract", String(verify.id ?? "agent verifier"));
+    addVerificationLog(logs, "done", "Loaded recall task", String(recall.task ?? "No task text supplied."));
+    addVerificationLog(
+      logs,
+      "done",
+      "Loaded support context",
+      String(recall.support ?? "").trim() || "No support text supplied."
+    );
+
+    const referenceCount = Array.isArray(input.references) ? input.references.length : 0;
+    addVerificationLog(
+      logs,
+      referenceCount > 0 ? "done" : "warning",
+      "Collected reference cards",
+      referenceCount > 0 ? `${referenceCount} reference card${referenceCount === 1 ? "" : "s"} supplied.` : "No reference cards supplied."
+    );
+
+    const conceptCount = Array.isArray(input.concepts) ? input.concepts.length : 0;
+    const savedKnowledgeCount = Array.isArray(input.savedKnowledge) ? input.savedKnowledge.length : 0;
+    addVerificationLog(
+      logs,
+      conceptCount > 0 ? "done" : "warning",
+      "Collected concept context",
+      conceptCount > 0
+        ? `${conceptCount} concept card${conceptCount === 1 ? "" : "s"} linked to this task.`
+        : "No concept cards were linked to this recall task."
+    );
+    addVerificationLog(
+      logs,
+      savedKnowledgeCount > 0 ? "done" : "warning",
+      "Checked saved knowledge",
+      savedKnowledgeCount > 0
+        ? `${savedKnowledgeCount} saved card${savedKnowledgeCount === 1 ? "" : "s"} available to the verifier.`
+        : "No saved knowledge cards are available yet."
+    );
 
     const declaredFiles = Array.isArray(verify.evidence?.files) ? verify.evidence.files : [];
     addVerificationLog(
@@ -1062,6 +1545,7 @@ function installConstructProjectIpcHandlers(): void {
     }
 
     try {
+      addVerificationLog(logs, "running", "Evaluating rubric", String(verify.rubric ?? "No rubric supplied."));
       addVerificationLog(logs, "running", "Asking Construct Verifier Agent", "Comparing goal, rubric, files, terminal output, task, support, and reference cards.");
       const result = await runConstructVerifierAgent({
         goal: String(verify.goal ?? ""),
@@ -1075,6 +1559,24 @@ function installConstructProjectIpcHandlers(): void {
               body: String(reference.body ?? "")
             }))
           : [],
+        concepts: Array.isArray(input.concepts)
+          ? input.concepts.map((concept: { id?: unknown; title?: unknown; summary?: unknown; why?: unknown; example?: unknown }) => ({
+              id: String(concept.id ?? ""),
+              title: String(concept.title ?? ""),
+              summary: String(concept.summary ?? ""),
+              why: String(concept.why ?? ""),
+              example: String(concept.example ?? "")
+            }))
+          : [],
+        savedKnowledge: Array.isArray(input.savedKnowledge)
+          ? input.savedKnowledge.map((concept: { id?: unknown; title?: unknown; summary?: unknown; why?: unknown; example?: unknown }) => ({
+              id: String(concept.id ?? ""),
+              title: String(concept.title ?? ""),
+              summary: String(concept.summary ?? ""),
+              why: String(concept.why ?? ""),
+              example: String(concept.example ?? "")
+            }))
+          : [],
         files,
         terminalCommand,
         terminalOutput,
@@ -1086,7 +1588,7 @@ function installConstructProjectIpcHandlers(): void {
       addVerificationLog(
         logs,
         result.passed ? "done" : "failed",
-        result.passed ? "Verifier passed the recall task" : "Verifier did not pass the recall task",
+        result.passed ? "Verifier passed the recall task" : result.status === "almost" ? "Verifier found the solution is close" : "Verifier did not pass the recall task",
         result.reason
       );
       return withVerificationLogs(result, logs);
@@ -1197,8 +1699,35 @@ function createWindow(): void {
 
   window.once("ready-to-show", () => window.show());
 
+  window.webContents.on("console-message", (_event, level, message, line, sourceId) => {
+    const logLevel = level >= 3 ? "error" : level >= 2 ? "warn" : "info";
+    console[logLevel]("[renderer console]", message, { sourceId, line });
+  });
+
+  window.webContents.on("render-process-gone", (_event, details) => {
+    console.error("[crash:renderer]", details);
+  });
+
+  window.webContents.on("unresponsive", () => {
+    console.warn("[crash:renderer] window became unresponsive");
+  });
+
+  window.webContents.on("responsive", () => {
+    console.log("[renderer] window became responsive");
+  });
+
+  window.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL) => {
+    console.error("[renderer] failed to load", { errorCode, errorDescription, validatedURL });
+  });
+
+  app.on("child-process-gone", (_event, details) => {
+    console.error("[crash:child-process]", details);
+  });
+
   window.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url);
+    void shell.openExternal(url).catch((error) => {
+      console.error("[shell] failed to open external URL", { url, error });
+    });
     return { action: "deny" };
   });
 

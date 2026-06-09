@@ -1,12 +1,16 @@
 import type {
+  ConceptCard,
   ConstructBlock,
   ConstructFile,
+  ConstructLintWarning,
   ConstructProgram,
   ConstructStep,
   ConstructTarget,
   ConstructNote,
+  GitMilestone,
   ReferenceCard,
   ReferenceLink,
+  SupportSection,
   VerificationBlock,
   VerificationEvidence
 } from "../types";
@@ -23,6 +27,8 @@ export function parseConstructSource(source: string): ConstructProgram {
   };
   const metadata: Record<string, string> = {};
   const files: ConstructFile[] = [];
+  const concepts: ConceptCard[] = [];
+  const gitMilestones: GitMilestone[] = [];
   const references: ReferenceCard[] = [];
   const targets: ConstructTarget[] = [];
   const steps: ConstructStep[] = [];
@@ -53,6 +59,16 @@ export function parseConstructSource(source: string): ConstructProgram {
       continue;
     }
 
+    if (line.startsWith("::concept")) {
+      concepts.push(parseConcept(cursor));
+      continue;
+    }
+
+    if (line.startsWith("::git")) {
+      gitMilestones.push(parseGitMilestone(cursor));
+      continue;
+    }
+
     if (line.startsWith("::target")) {
       targets.push(parseTarget(cursor));
       continue;
@@ -66,7 +82,7 @@ export function parseConstructSource(source: string): ConstructProgram {
     throw new Error(`Unexpected .construct line ${cursor.index + 1}: ${line}`);
   }
 
-  return {
+  const program: ConstructProgram = {
     spec: normalizeSpec(metadata.construct || "tape-0.1"),
     version: normalizeSpec(metadata.construct || "tape-0.1"),
     id: required(metadata, "id"),
@@ -76,10 +92,15 @@ export function parseConstructSource(source: string): ConstructProgram {
     requires: splitList(metadata.requires),
     source,
     files,
+    concepts,
+    gitMilestones,
+    warnings: [],
     references,
     targets,
     steps
   };
+  program.warnings = lintProgram(program);
+  return program;
 }
 
 function parseMetadataLine(line: string): { key: string; value: string } {
@@ -164,6 +185,7 @@ function parseStep(cursor: Cursor): ConstructStep {
         kind: "explain",
         id: `${required(attrs, "id")}:explain:${blocks.length + 1}`,
         focus: blockAttrs.focus,
+        concepts: splitList(blockAttrs.concepts),
         content: parsePlainBody(cursor, "::explain")
       });
       continue;
@@ -248,6 +270,7 @@ function parseRecall(cursor: Cursor): ConstructBlock {
   cursor.index += 1;
   let task = "";
   let support = "";
+  let supportSections: SupportSection[] = [];
   let verify: VerificationBlock | undefined;
 
   while (!done(cursor)) {
@@ -261,9 +284,11 @@ function parseRecall(cursor: Cursor): ConstructBlock {
         path: attrs.path,
         target: attrs.target,
         references: splitList(attrs.references),
+        concepts: splitList(attrs.uses || attrs.concepts),
         difficulty: attrs.difficulty || "supported-recall",
         task,
         support,
+        supportSections,
         verify
       };
     }
@@ -279,7 +304,9 @@ function parseRecall(cursor: Cursor): ConstructBlock {
     }
 
     if (line.startsWith("::support")) {
-      support = parsePlainBody(cursor, "::support");
+      const parsed = parseSupport(cursor);
+      support = parsed.content;
+      supportSections = parsed.sections;
       continue;
     }
 
@@ -384,6 +411,156 @@ function parseMessages(cursor: Cursor) {
   };
 }
 
+function parseConcept(cursor: Cursor): ConceptCard {
+  const attrs = parseAttributes(peek(cursor).replace(/^::concept\s*/, ""));
+  cursor.index += 1;
+  let summary = "";
+  let why = "";
+  let example = "";
+  const docs: ConceptCard["docs"] = [];
+
+  while (!done(cursor)) {
+    const line = peek(cursor).trim();
+
+    if (line === "::end") {
+      cursor.index += 1;
+      return {
+        id: required(attrs, "id"),
+        title: required(attrs, "title"),
+        kind: attrs.kind || "concept",
+        tags: splitList(attrs.tags),
+        summary,
+        why,
+        example,
+        docs
+      };
+    }
+
+    if (!line) {
+      cursor.index += 1;
+      continue;
+    }
+
+    if (line.startsWith("::summary")) {
+      summary = parsePlainBody(cursor, "::summary");
+      continue;
+    }
+
+    if (line.startsWith("::why")) {
+      why = parsePlainBody(cursor, "::why");
+      continue;
+    }
+
+    if (line.startsWith("::example")) {
+      example = parseFlexibleBody(cursor, "::example");
+      continue;
+    }
+
+    if (line.startsWith("::docs")) {
+      docs.push(parseDocsLink(cursor));
+      continue;
+    }
+
+    throw new Error(`Unexpected concept block line ${cursor.index + 1}: ${line}`);
+  }
+
+  throw new Error(`Unclosed ::concept ${attrs.id || ""}.`);
+}
+
+function parseDocsLink(cursor: Cursor): ConceptCard["docs"][number] {
+  const attrs = parseAttributes(peek(cursor).replace(/^::docs\s*/, ""));
+  cursor.index += 1;
+  const bodyAttrs = parseAttributeLines(cursor, "::docs");
+  const merged = {
+    ...attrs,
+    ...bodyAttrs
+  };
+
+  return {
+    title: merged.title || merged.url || "Documentation",
+    url: required(merged, "url"),
+    why: merged.why
+  };
+}
+
+function parseGitMilestone(cursor: Cursor): GitMilestone {
+  const attrs = parseAttributes(peek(cursor).replace(/^::git\s*/, ""));
+  cursor.index += 1;
+  let message = "";
+  let description = "";
+  let includePaths: string[] = [];
+
+  while (!done(cursor)) {
+    const line = peek(cursor).trim();
+
+    if (line === "::end") {
+      cursor.index += 1;
+      return {
+        id: required(attrs, "id"),
+        after: required(attrs, "after"),
+        message,
+        description,
+        includePaths
+      };
+    }
+
+    if (!line) {
+      cursor.index += 1;
+      continue;
+    }
+
+    if (line.startsWith("::suggest")) {
+      const suggestAttrs = parseBlockAttributes(cursor, "::suggest");
+      message = suggestAttrs.message || "";
+      description = suggestAttrs.description || "";
+      continue;
+    }
+
+    if (line.startsWith("::include")) {
+      const includeAttrs = parseBlockAttributes(cursor, "::include");
+      includePaths = splitList(includeAttrs.paths);
+      continue;
+    }
+
+    throw new Error(`Unexpected git block line ${cursor.index + 1}: ${line}`);
+  }
+
+  throw new Error(`Unclosed ::git ${attrs.id || ""}.`);
+}
+
+function parseSupport(cursor: Cursor): { content: string; sections: SupportSection[] } {
+  cursor.index += 1;
+  const plain: string[] = [];
+  const sections: SupportSection[] = [];
+
+  while (!done(cursor)) {
+    const line = peek(cursor);
+    const trimmed = line.trim();
+
+    if (trimmed === "::end") {
+      cursor.index += 1;
+      return {
+        content: trimOuterBlankLines(plain).join("\n"),
+        sections
+      };
+    }
+
+    const sectionMatch = trimmed.match(/^::(intent|concepts|api|mental-model|common-mistake)\b/);
+    if (sectionMatch) {
+      sections.push({
+        kind: sectionMatch[1],
+        content: parsePlainBody(cursor, `::${sectionMatch[1]}`)
+      });
+      continue;
+    }
+
+    plain.push(line);
+    cursor.index += 1;
+  }
+
+  throw new Error("Unclosed ::support block.");
+}
+
 function parseReference(cursor: Cursor): ReferenceCard {
   const attrs = parseAttributes(peek(cursor).replace(/^::reference\s*/, ""));
   cursor.index += 1;
@@ -424,6 +601,15 @@ function parseReference(cursor: Cursor): ReferenceCard {
   }
 
   throw new Error(`Unclosed ::reference ${attrs.id || ""}.`);
+}
+
+function parseBlockAttributes(cursor: Cursor, blockName: string): Record<string, string> {
+  const attrs = parseAttributes(peek(cursor).replace(new RegExp(`^${blockName}\\s*`), ""));
+  cursor.index += 1;
+  return {
+    ...attrs,
+    ...parseAttributeLines(cursor, blockName)
+  };
 }
 
 function parseReferenceLinks(cursor: Cursor): ReferenceLink[] {
@@ -539,6 +725,30 @@ function parsePlainBody(cursor: Cursor, blockName: string): string {
   throw new Error(`Unclosed ${blockName} block.`);
 }
 
+function parseFlexibleBody(cursor: Cursor, blockName: string): string {
+  cursor.index += 1;
+  skipBlankLines(cursor);
+  if (!done(cursor) && peek(cursor).trim().startsWith("```")) {
+    const fenced = parseFencedBody(cursor);
+    expectEnd(cursor, blockName);
+    return fenced.content;
+  }
+
+  const body: string[] = [];
+  while (!done(cursor)) {
+    const line = peek(cursor);
+    if (line.trim() === "::end") {
+      cursor.index += 1;
+      return trimOuterBlankLines(body).join("\n");
+    }
+
+    body.push(line);
+    cursor.index += 1;
+  }
+
+  throw new Error(`Unclosed ${blockName} block.`);
+}
+
 function parseAttributeLines(cursor: Cursor, blockName: string): Record<string, string> {
   const attrs: Record<string, string> = {};
 
@@ -594,6 +804,12 @@ function normalizeSpec(value: string): string {
   if (value === "0.1") {
     return "tape-0.1";
   }
+  if (value === "0.2") {
+    return "tape-0.2";
+  }
+  if (value === "0.3") {
+    return "tape-0.3";
+  }
 
   return value;
 }
@@ -616,6 +832,85 @@ function required(values: Record<string, string>, key: string): string {
   }
 
   return value;
+}
+
+function lintProgram(program: ConstructProgram): ConstructLintWarning[] {
+  const warnings: ConstructLintWarning[] = [];
+  const conceptIds = new Set(program.concepts.map((concept) => concept.id));
+  const completableIds = new Set<string>();
+
+  for (const step of program.steps) {
+    for (const block of step.blocks) {
+      completableIds.add(block.id);
+
+      if (block.kind === "recall") {
+        for (const conceptId of block.concepts) {
+          if (!conceptIds.has(conceptId)) {
+            warnings.push({
+              id: `missing-concept:${block.id}:${conceptId}`,
+              severity: "warning",
+              target: block.id,
+              message: `Recall uses concept "${conceptId}" but no ::concept card introduces it.`
+            });
+          }
+        }
+
+        if (block.supportSections.length === 0 && /z\.object|z\.number|defineTool|KV cache|Server Actions|QKV/.test(block.support)) {
+          warnings.push({
+            id: `compressed-support:${block.id}`,
+            severity: "info",
+            target: block.id,
+            message: "Support text includes compressed API snippets. tape-0.3 support sections can make this easier to learn."
+          });
+        }
+
+        if (block.verify) {
+          completableIds.add(block.verify.id);
+          if (!block.verify.goal || !block.verify.rubric || block.verify.evidence.files.length === 0 || (!block.verify.messages.success && !block.verify.messages.failure)) {
+            warnings.push({
+              id: `incomplete-verify:${block.verify.id}`,
+              severity: "warning",
+              target: block.verify.id,
+              message: "::verify kind=\"agent\" should include goal, evidence files, rubric, and messages."
+            });
+          }
+        }
+      }
+
+      if (block.kind === "edit" && block.content.split("\n").length > 120) {
+        warnings.push({
+          id: `large-ghost-edit:${block.id}`,
+          severity: "warning",
+          target: block.id,
+          message: "Ghost edit block is large. Consider splitting it into smaller guided edits."
+        });
+      }
+    }
+  }
+
+  for (const concept of program.concepts) {
+    if (concept.kind.includes("library") && concept.docs.length === 0) {
+      warnings.push({
+        id: `concept-docs:${concept.id}`,
+        severity: "info",
+        target: concept.id,
+        message: `External/library concept "${concept.title}" has no docs link.`
+      });
+    }
+  }
+
+  for (const milestone of program.gitMilestones) {
+    if (!completableIds.has(milestone.after)) {
+      warnings.push({
+        id: `git-after:${milestone.id}`,
+        severity: "warning",
+        target: milestone.id,
+        message: `Git milestone "${milestone.id}" references unknown block "${milestone.after}".`
+      });
+    }
+  }
+
+  return warnings;
 }
 
 function skipBlankLines(cursor: Cursor): void {

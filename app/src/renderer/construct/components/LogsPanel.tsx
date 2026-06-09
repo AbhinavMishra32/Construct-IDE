@@ -75,9 +75,9 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
 
   return (
     <TerminalSurface cwd={`Output Logs · ${activeChannel}`}>
-      <div className="flex flex-col h-full bg-[var(--opaline-bg-primary)] text-[var(--opaline-text-primary)] font-[var(--opaline-font-sans)] overflow-hidden select-text">
+      <div className="flex flex-col h-full bg-transparent text-[var(--opaline-text-primary)] font-[var(--opaline-font-sans)] overflow-hidden select-text">
         {/* Top Controls Toolbar */}
-        <div className="flex items-center justify-between px-4 py-2 border-b border-[var(--opaline-border-subtle)] bg-[var(--opaline-bg-secondary)]">
+        <div className="flex items-center justify-between px-4 py-2 border-b border-[var(--opaline-border-subtle)] bg-transparent">
           <div className="flex items-center gap-2">
             <span className="text-xs text-[var(--opaline-text-secondary)] font-medium select-none">Show output from:</span>
             <SettingsSelect
@@ -85,8 +85,8 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
               onChange={(e) => setActiveChannel(e.target.value as LogChannel)}
               className="text-xs h-[30px] min-w-[200px]"
             >
-              <option value="lsp-server" className="bg-[var(--opaline-bg-primary)] text-[var(--opaline-text-primary)] font-sans">TypeScript LSP Server (stderr)</option>
-              <option value="lsp-protocol" className="bg-[var(--opaline-bg-primary)] text-[var(--opaline-text-primary)] font-sans">TypeScript LSP Protocol (JSON-RPC)</option>
+              <option value="lsp-server" className="bg-[var(--opaline-bg-primary)] text-[var(--opaline-text-primary)] font-sans">Language Servers</option>
+              <option value="lsp-protocol" className="bg-[var(--opaline-bg-primary)] text-[var(--opaline-text-primary)] font-sans">LSP Protocol</option>
               <option value="main" className="bg-[var(--opaline-bg-primary)] text-[var(--opaline-text-primary)] font-sans">Electron Main Process</option>
               <option value="renderer" className="bg-[var(--opaline-bg-primary)] text-[var(--opaline-text-primary)] font-sans">Renderer Console</option>
               <option value="verifier" className="bg-[var(--opaline-bg-primary)] text-[var(--opaline-text-primary)] font-sans">Verifier Agent</option>
@@ -127,7 +127,7 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
         {/* Logs container */}
         <div
           ref={containerRef}
-          className="flex-1 overflow-auto p-4 text-[13px] leading-relaxed select-text space-y-1 scrollbar-thin bg-[var(--opaline-bg-primary)]"
+          className="flex-1 overflow-auto p-4 text-[13px] leading-relaxed select-text space-y-1 scrollbar-thin bg-transparent"
           style={{ fontFamily: "var(--opaline-font-mono)" }}
         >
           {logs.length === 0 ? (

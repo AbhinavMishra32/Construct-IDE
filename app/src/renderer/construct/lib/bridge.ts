@@ -6,6 +6,7 @@ import type {
   TerminalEvent,
   TerminalExitEvent,
   RecallBlock,
+  ConceptCard,
   ReferenceCard,
   VerificationResult,
   WorkspaceFile,
@@ -125,8 +126,22 @@ export function verifyRecall(input: {
   projectId: string;
   recall: RecallBlock;
   references: ReferenceCard[];
+  concepts?: ConceptCard[];
+  savedKnowledge?: ConceptCard[];
 }): Promise<VerificationResult> {
   return api().verifyRecall(input);
+}
+
+export function gitStatus(projectId: string): ReturnType<ConstructProjectsApi["gitStatus"]> {
+  return api().gitStatus(projectId);
+}
+
+export function gitCommit(input: Parameters<ConstructProjectsApi["gitCommit"]>[0]): ReturnType<ConstructProjectsApi["gitCommit"]> {
+  return api().gitCommit(input);
+}
+
+export function gitPush(projectId: string): ReturnType<ConstructProjectsApi["gitPush"]> {
+  return api().gitPush(projectId);
 }
 
 export function terminalCreate(projectId: string, size?: { cols: number; rows: number }): Promise<{ sessionId: string }> {

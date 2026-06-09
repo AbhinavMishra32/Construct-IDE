@@ -96,6 +96,8 @@ function applyDocumentTheme(active: "light" | "dark"): void {
   if (document.body) {
     document.body.dataset.constructTheme = active;
     document.body.dataset.opalineTheme = active;
+    document.body.dataset.theme = active;
+    document.body.classList.toggle("dark", active === "dark");
     document.body.style.colorScheme = active;
   }
 }
@@ -343,7 +345,13 @@ export default function ConstructApp() {
       const enabled = localStorage.getItem("construct.lsp.enabled") !== "false";
       if (enabled) {
         console.log("[LSP Client] Workspace path changed, initializing LSP for:", activeProject.workspacePath);
-        void lspClient.initialize(activeProject.workspacePath);
+        void window.constructProjects.lspStart(activeProject.id).then((result) => {
+          if (result.languages.length > 0) {
+            void lspClient.initialize(activeProject.workspacePath, { languages: result.languages });
+          } else {
+            console.log("[LSP Client] No supported language servers were started for this project.");
+          }
+        });
       } else {
         console.log("[LSP Client] LSP disabled in settings, stopping server process.");
         void window.constructProjects.lspStop();
@@ -1061,6 +1069,48 @@ class AppErrorBoundary extends Component<
   }
 }
 
+type LspLanguageId = "typescript" | "python";
+type LspServerStatus = "not-installed" | "running" | "stopped" | "installing";
+type LspStatusReport = Record<LspLanguageId, {
+  command: string;
+  installCommand: string;
+  installed: boolean;
+  label: string;
+  resolvedPath: string | null;
+  status: LspServerStatus;
+}>;
+
+const lspLanguageOrder: LspLanguageId[] = ["typescript", "python"];
+
+function createEmptyLspStatusReport(): LspStatusReport {
+  return {
+    typescript: {
+      command: "typescript-language-server --stdio",
+      installCommand: "npm install --save-dev typescript-language-server typescript",
+      installed: false,
+      label: "TypeScript / JavaScript",
+      resolvedPath: null,
+      status: "not-installed"
+    },
+    python: {
+      command: "pyright-langserver --stdio",
+      installCommand: "npm install --save-dev pyright",
+      installed: false,
+      label: "Python",
+      resolvedPath: null,
+      status: "not-installed"
+    }
+  };
+}
+
+function aggregateLspStatus(report: LspStatusReport): LspServerStatus {
+  const statuses = lspLanguageOrder.map((language) => report[language].status);
+  if (statuses.includes("installing")) return "installing";
+  if (statuses.includes("running")) return "running";
+  if (statuses.includes("stopped")) return "stopped";
+  return "not-installed";
+}
+
 function ConstructSettingsSurface({
   activeItemId,
   projectId,
@@ -1088,9 +1138,10 @@ function ConstructSettingsSurface({
   const [lspEnabled, setLspEnabled] = useState(() => {
     return window.localStorage.getItem("construct.lsp.enabled") !== "false";
   });
-  const [lspStatus, setLspStatus] = useState<"not-installed" | "installed" | "running" | "stopped" | "installing">("not-installed");
+  const [lspStatus, setLspStatus] = useState<LspStatusReport>(() => createEmptyLspStatusReport());
   const [lspLogs, setLspLogs] = useState<string[]>([]);
   const [installBusy, setInstallBusy] = useState(false);
+  const aggregateStatus = aggregateLspStatus(lspStatus);
 
   useEffect(() => {
     if (!projectId) return;
@@ -1116,7 +1167,7 @@ function ConstructSettingsSurface({
   }, [projectId]);
 
   useEffect(() => {
-    if (lspStatus === "installing" || installBusy) {
+    if (aggregateStatus === "installing" || installBusy) {
       setLspLogs(logStore.getLogs("lsp-server").map((l: LogEntry) => l.message));
 
       const unsubscribe = logStore.subscribe((channel: LogChannel, entry: LogEntry) => {
@@ -1126,7 +1177,7 @@ function ConstructSettingsSurface({
       });
       return unsubscribe;
     }
-  }, [lspStatus, installBusy]);
+  }, [aggregateStatus, installBusy]);
 
   async function handleToggleLsp(enabled: boolean) {
     setLspEnabled(enabled);
@@ -1136,9 +1187,13 @@ function ConstructSettingsSurface({
       if (enabled) {
         if (projectId) {
           const status = await window.constructProjects.lspGetStatus(projectId);
-          if (status !== "not-installed") {
-            await window.constructProjects.lspStart(projectId);
-            void lspClient.initialize(project?.workspacePath || "");
+          setLspStatus(status);
+          if (aggregateLspStatus(status) !== "not-installed") {
+            const startResult = await window.constructProjects.lspStart(projectId);
+            setLspStatus(await window.constructProjects.lspGetStatus(projectId));
+            if (startResult.languages.length > 0) {
+              void lspClient.initialize(project?.workspacePath || "", { languages: startResult.languages });
+            }
           }
         }
       } else {
@@ -1153,22 +1208,29 @@ function ConstructSettingsSurface({
   async function handleInstallLsp() {
     if (!projectId) return;
     setInstallBusy(true);
-    setLspStatus("installing");
+    setLspStatus((current) => {
+      const next = { ...current };
+      for (const language of lspLanguageOrder) {
+        next[language] = { ...next[language], status: "installing" };
+      }
+      return next;
+    });
     setLspLogs([]);
 
     try {
       const success = await window.constructProjects.lspInstall(projectId);
       if (success) {
-        setLspStatus("stopped");
-        await window.constructProjects.lspStart(projectId);
-        setLspStatus("running");
-        void lspClient.initialize(project?.workspacePath || "");
+        const startResult = await window.constructProjects.lspStart(projectId);
+        setLspStatus(await window.constructProjects.lspGetStatus(projectId));
+        if (startResult.languages.length > 0) {
+          void lspClient.initialize(project?.workspacePath || "", { languages: startResult.languages });
+        }
       } else {
-        setLspStatus("not-installed");
+        setLspStatus(await window.constructProjects.lspGetStatus(projectId));
       }
     } catch (err) {
       console.error("LSP installation error:", err);
-      setLspStatus("not-installed");
+      setLspStatus(await window.constructProjects.lspGetStatus(projectId));
     } finally {
       setInstallBusy(false);
     }
@@ -1177,16 +1239,20 @@ function ConstructSettingsSurface({
   async function handleStartLsp() {
     if (!projectId) return;
     try {
-      await window.constructProjects.lspStart(projectId);
-      setLspStatus("running");
-      void lspClient.initialize(project?.workspacePath || "");
+      const startResult = await window.constructProjects.lspStart(projectId);
+      setLspStatus(await window.constructProjects.lspGetStatus(projectId));
+      if (startResult.languages.length > 0) {
+        void lspClient.initialize(project?.workspacePath || "", { languages: startResult.languages });
+      }
     } catch {}
   }
 
   async function handleStopLsp() {
     try {
       await window.constructProjects.lspStop();
-      setLspStatus("stopped");
+      if (projectId) {
+        setLspStatus(await window.constructProjects.lspGetStatus(projectId));
+      }
       lspClient.dispose();
     } catch {}
   }
@@ -1195,9 +1261,12 @@ function ConstructSettingsSurface({
     if (!projectId) return;
     try {
       await window.constructProjects.lspStop();
-      await window.constructProjects.lspStart(projectId);
-      setLspStatus("running");
-      void lspClient.initialize(project?.workspacePath || "");
+      lspClient.dispose();
+      const startResult = await window.constructProjects.lspStart(projectId);
+      setLspStatus(await window.constructProjects.lspGetStatus(projectId));
+      if (startResult.languages.length > 0) {
+        void lspClient.initialize(project?.workspacePath || "", { force: true, languages: startResult.languages });
+      }
     } catch {}
   }
 
@@ -1303,12 +1372,12 @@ function ConstructSettingsSurface({
 
   if (activeItemId === "lsp-settings") {
     return (
-      <SettingsPanel title="Language Server" subtitle="Manage TypeScript language server installation, status, and logging.">
+      <SettingsPanel title="Language Server" subtitle="Manage editor intelligence, diagnostics, and code navigation for this workspace.">
         <SettingsSection title="Configuration">
           <SettingsCard>
             <SettingsRow
               title="Enable Language Server"
-              description="Enable real-time code diagnostics, autocomplete, hover cards, and code navigation (Go to Definition)."
+              description="Enable diagnostics, autocomplete, hover cards, references, go to definition, type definition, and implementation lookup."
               control={
                 <SettingsToggle
                   checked={lspEnabled}
@@ -1320,54 +1389,73 @@ function ConstructSettingsSurface({
         </SettingsSection>
         
         {lspEnabled && (
-          <SettingsSection title="Server Status">
+          <SettingsSection title="Installed servers">
+            <SettingsCard>
+              {lspLanguageOrder.map((language) => {
+                const server = lspStatus[language];
+                const statusClass =
+                  server.status === "running" ? "is-running" :
+                  server.status === "stopped" ? "is-stopped" :
+                  server.status === "installing" ? "is-installing" : "is-missing";
+
+                return (
+                  <SettingsRow
+                    key={language}
+                    title={server.label}
+                    description={
+                      <div className="construct-lsp-server-meta">
+                        <span className={`construct-lsp-status ${statusClass}`}>
+                          <span />
+                          {server.status.replace("-", " ")}
+                        </span>
+                        <code>{server.command}</code>
+                        <small>{server.resolvedPath ?? server.installCommand}</small>
+                      </div>
+                    }
+                  />
+                );
+              })}
+            </SettingsCard>
+          </SettingsSection>
+        )}
+
+        {lspEnabled && (
+          <SettingsSection title="Controls">
             <SettingsCard>
               <SettingsRow
-                title="Status"
-                description={
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className={`inline-block w-2.5 h-2.5 rounded-full ${
-                      lspStatus === "running" ? "bg-emerald-500 animate-pulse" :
-                      lspStatus === "stopped" ? "bg-amber-500" :
-                      lspStatus === "installing" ? "bg-blue-500 animate-pulse" : "bg-red-500"
-                    }`} />
-                    <span className="text-xs font-semibold capitalize text-neutral-300">{lspStatus.replace("-", " ")}</span>
-                  </div>
-                }
+                title="Server lifecycle"
+                description="Starts every installed language server for the active workspace. Install adds TypeScript language server, TypeScript, and Pyright when missing."
                 control={
                   <div className="flex items-center gap-2">
-                    {lspStatus === "running" && (
+                    {aggregateStatus === "running" ? (
                       <>
                         <Button variant="secondary" size="small" onClick={() => void handleRestartLsp()}>
                           Restart
                         </Button>
-                        <Button variant="danger" size="small" className="text-red-400 hover:text-red-300" onClick={() => void handleStopLsp()}>
+                        <Button variant="danger" size="small" onClick={() => void handleStopLsp()}>
                           Stop
                         </Button>
                       </>
-                    )}
-                    {lspStatus === "stopped" && (
-                      <Button size="small" onClick={() => void handleStartLsp()}>
+                    ) : (
+                      <Button size="small" disabled={aggregateStatus === "not-installed"} onClick={() => void handleStartLsp()}>
                         Start
                       </Button>
                     )}
-                    {(lspStatus === "not-installed" || lspStatus === "stopped") && (
-                      <Button variant="secondary" size="small" disabled={installBusy} onClick={() => void handleInstallLsp()}>
-                        {lspStatus === "not-installed" ? "Download & Install" : "Reinstall / Update"}
-                      </Button>
-                    )}
+                    <Button variant="secondary" size="small" disabled={installBusy} onClick={() => void handleInstallLsp()}>
+                      {aggregateStatus === "not-installed" ? "Download & Install" : "Reinstall / Update"}
+                    </Button>
                   </div>
                 }
               />
               
               {/* Installer Logs Box */}
-              {(lspStatus === "installing" || lspLogs.length > 0) && (
-                <div className="mt-4 border border-[#2d2e30] rounded bg-[#101112] p-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-medium text-neutral-400 font-sans">Installation Console Output</span>
-                    {installBusy && <span className="text-xs text-blue-400 animate-pulse font-sans">Running npm install...</span>}
+              {(aggregateStatus === "installing" || lspLogs.length > 0) && (
+                <div className="construct-lsp-install-log">
+                  <div className="construct-lsp-install-log__header">
+                    <span>Installation output</span>
+                    {installBusy && <span>Running npm install...</span>}
                   </div>
-                  <div className="h-48 overflow-y-auto font-mono text-[10px] text-neutral-300 leading-normal whitespace-pre-wrap select-text border border-neutral-800 p-2 rounded bg-black/40">
+                  <div className="construct-lsp-install-log__body">
                     {lspLogs.length === 0 ? "Starting installer..." : lspLogs.join("\n")}
                   </div>
                 </div>
@@ -1472,7 +1560,7 @@ function ConstructSettingsSurface({
 
 function buildSettingsSections(projects: ProjectSummary[], projectId?: string): SettingsNavSection[] {
   const project = projectId ? projects.find((item) => item.id === projectId) : null;
-  return [
+  const sections: SettingsNavSection[] = [
     {
       id: "app",
       label: "Construct",
@@ -1481,33 +1569,35 @@ function buildSettingsSections(projects: ProjectSummary[], projectId?: string): 
         { id: "appearance", label: "Appearance", icon: <GearSix size={18} weight="duotone" /> },
         { id: "lsp-settings", label: "Language Server", icon: <Notebook size={18} weight="duotone" /> }
       ]
-    },
-    {
+    }
+  ];
+
+  if (project) {
+    sections.push({
       id: "project",
       label: "Project",
       items: [
         {
           id: "project-overview",
-          label: project?.title ?? "Project overview",
-          icon: <Folder size={18} weight="duotone" />,
-          muted: !project
+          label: project.title,
+          icon: <Folder size={18} weight="duotone" />
         },
         {
           id: "project-runtime",
           label: "Runtime",
-          icon: <TerminalWindow size={18} weight="duotone" />,
-          muted: !project
+          icon: <TerminalWindow size={18} weight="duotone" />
         },
         {
           id: "project-slots",
           label: "Slots",
           icon: <PanelRight size={18} />,
-          badge: project ? `${project.progress}%` : undefined,
-          muted: !project
+          badge: `${project.progress}%`
         }
       ]
-    }
-  ];
+    });
+  }
+
+  return sections;
 }
 
 function settingsTitle(itemId: string, projectId: string | undefined, projects: ProjectSummary[]) {

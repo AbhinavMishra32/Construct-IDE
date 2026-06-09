@@ -42,6 +42,7 @@ export function GuidePanel({
   onNext,
   onRunCommand,
   onOpenReference,
+  onOpenConcept,
   onCreateFile,
   onVerifyRecall,
   verifyingId,
@@ -55,6 +56,7 @@ export function GuidePanel({
   onNext: () => void;
   onRunCommand: (command: string, cwd: string) => void;
   onOpenReference: (referenceId: string) => void;
+  onOpenConcept: (conceptId: string) => void;
   onCreateFile: (path: string) => Promise<void> | void;
   onVerifyRecall: () => void;
   verifyingId: string | null;
@@ -119,6 +121,7 @@ export function GuidePanel({
             recallMissingFiles={recallMissingFiles}
             verifyingId={verifyingId}
             onOpenReference={onOpenReference}
+            onOpenConcept={onOpenConcept}
             onCreateFile={onCreateFile}
           />
           <p className="guide-panel__assist">{assistanceLabel(assistance)}</p>
@@ -169,6 +172,7 @@ function GuideBlock({
   recallMissingFiles,
   verifyingId,
   onOpenReference,
+  onOpenConcept,
   onCreateFile
 }: {
   block: ConstructBlock;
@@ -181,6 +185,7 @@ function GuideBlock({
   recallMissingFiles: string[];
   verifyingId: string | null;
   onOpenReference: (referenceId: string) => void;
+  onOpenConcept: (conceptId: string) => void;
   onCreateFile: (path: string) => Promise<void> | void;
 }) {
   if (block.kind === "run") {
@@ -206,7 +211,7 @@ function GuideBlock({
         {ghostProgress ? <GhostProgressMeter progress={ghostProgress} /> : null}
         {note ? (
           <div className="guide-panel__note">
-            <MarkdownBlock content={note.content} theme={theme} />
+            <MarkdownBlock content={note.content} theme={theme} onOpenConcept={onOpenConcept} />
           </div>
         ) : null}
       </div>
@@ -222,18 +227,28 @@ function GuideBlock({
       <div className="guide-block recall-task">
         <div className="recall-task__section recall-task__task">
           <p className="guide-panel__label">Task</p>
-          <MarkdownBlock content={block.task} theme={theme} />
+          <MarkdownBlock content={block.task} theme={theme} onOpenConcept={onOpenConcept} />
         </div>
         {recallMissingFiles.length > 0 ? (
           <MissingFilesPanel files={recallMissingFiles} onCreateFile={onCreateFile} />
         ) : null}
-        {block.support ? (
+        {block.support || block.supportSections.length > 0 ? (
           <div className="recall-task__section recall-task__support">
             <div className="recall-task__support-header">
               <LightbulbIcon size={13} className="support-icon" />
               <p className="guide-panel__label">Support</p>
             </div>
-            <MarkdownBlock content={block.support} theme={theme} />
+            {block.support ? <MarkdownBlock content={block.support} theme={theme} onOpenConcept={onOpenConcept} /> : null}
+            {block.supportSections.length > 0 ? (
+              <div className="recall-task__support-sections">
+                {block.supportSections.map((section) => (
+                  <section key={section.kind} className="recall-task__support-subsection">
+                    <p>{supportSectionLabel(section.kind)}</p>
+                    <MarkdownBlock content={section.content} theme={theme} onOpenConcept={onOpenConcept} />
+                  </section>
+                ))}
+              </div>
+            ) : null}
           </div>
         ) : null}
         {linkedReferences.length > 0 ? (
@@ -266,16 +281,33 @@ function GuideBlock({
 
   return (
     <div className="guide-block">
-      <MarkdownBlock content={block.content} theme={theme} />
+      <MarkdownBlock content={block.content} theme={theme} onOpenConcept={onOpenConcept} />
     </div>
   );
 }
 
+function supportSectionLabel(kind: string): string {
+  switch (kind) {
+    case "intent":
+      return "Intent";
+    case "concepts":
+      return "Concepts";
+    case "api":
+      return "API shape";
+    case "mental-model":
+      return "Mental model";
+    case "common-mistake":
+      return "Common mistake";
+    default:
+      return kind.replace(/-/g, " ");
+  }
+}
+
 function GhostProgressMeter({ progress }: { progress: GhostProgress }) {
   return (
-    <div className="ghost-progress" aria-label="Ghost text progress">
+    <div className="ghost-progress" aria-label="Guided write progress">
       <div className="ghost-progress__row">
-        <span>Ghost text</span>
+        <span>Guided write progress</span>
         <strong>
           {progress.typedLines} / {progress.totalLines} lines · {progress.percent}%
         </strong>
@@ -379,11 +411,15 @@ function VerificationPanel({
     return null;
   }
 
+  const isAlmost = result.status === "almost";
+  const panelState = result.passed ? "is-passed" : isAlmost ? "is-almost" : "is-failed";
+  const statusText = result.passed ? successMessage : isAlmost ? "Close. One piece is still missing." : failureMessage;
+
   return (
-    <div className={`verification-panel ${result.passed ? "is-passed" : "is-failed"}`}>
+    <div className={`verification-panel ${panelState}`}>
       <div className="verification-panel__status">
-        {result.passed ? <CheckCircle2Icon size={16} /> : <XCircleIcon size={16} />}
-        <span>{result.passed ? successMessage : failureMessage}</span>
+        {result.passed ? <CheckCircle2Icon size={16} /> : isAlmost ? <AlertCircleIcon size={16} /> : <XCircleIcon size={16} />}
+        <span>{statusText}</span>
       </div>
       <div className="verification-panel__body">
         <p className="verification-panel__reason">{result.reason}</p>

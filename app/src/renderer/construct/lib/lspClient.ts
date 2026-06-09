@@ -1,15 +1,19 @@
 import { monaco } from "../../monaco";
 import { logStore } from "./logStore";
 
+type LspLanguage = "typescript" | "python";
+
 class LspClientClass {
   private isInitialized = false;
   private disposables: monaco.IDisposable[] = [];
   private nextRequestId = 1;
   private activeWorkspacePath = "";
   private modelListeners = new Map<string, monaco.IDisposable[]>();
+  private initializedLanguages = new Set<LspLanguage>();
+  private workspaceFiles: string[] = [];
 
-  async initialize(workspacePath: string) {
-    if (this.isInitialized && this.activeWorkspacePath === workspacePath) {
+  async initialize(workspacePath: string, options: { force?: boolean; languages?: LspLanguage[] } = {}) {
+    if (!options.force && this.isInitialized && this.activeWorkspacePath === workspacePath) {
       return;
     }
 
@@ -20,63 +24,14 @@ class LspClientClass {
     console.log("[LSP Client] Initializing handshake for:", workspacePath);
 
     try {
-      // 1. Send initialize request
-      await this.sendRequest("initialize", {
-        processId: null,
-        clientInfo: { name: "Construct-Monaco-LSP", version: "1.0.0" },
-        rootPath: workspacePath,
-        rootUri: "file://" + workspacePath,
-        capabilities: {
-          textDocument: {
-            synchronization: {
-              dynamicRegistration: true,
-              willSave: false,
-              willSaveWaitUntil: false,
-              didSave: true
-            },
-            completion: {
-              dynamicRegistration: true,
-              completionItem: {
-                snippetSupport: true,
-                commitCharactersSupport: true,
-                documentationFormat: ["markdown", "plaintext"],
-                deprecatedSupport: true,
-                preselectSupport: true
-              },
-              contextSupport: true
-            },
-            hover: {
-              dynamicRegistration: true,
-              contentFormat: ["markdown", "plaintext"]
-            },
-            signatureHelp: {
-              dynamicRegistration: true,
-              signatureInformation: {
-                documentationFormat: ["markdown", "plaintext"]
-              }
-            },
-            definition: {
-              dynamicRegistration: true,
-              linkSupport: true
-            },
-            references: {
-              dynamicRegistration: true
-            },
-            publishDiagnostics: {
-              relatedInformation: true,
-              tagSupport: { valueSet: [1, 2] },
-              versionSupport: true
-            }
-          }
-        },
-        workspaceFolders: [{
-          uri: "file://" + workspacePath,
-          name: workspacePath.split("/").pop() || "workspace"
-        }]
-      });
-
-      // 2. Send initialized notification
-      this.sendNotification("initialized", {});
+      const languages = options.languages?.length ? options.languages : (["typescript"] as LspLanguage[]);
+      for (const language of languages) {
+        try {
+          await this.initializeLanguage(language, workspacePath);
+        } catch (err) {
+          logStore.addLog("lsp-server", `[${language}] ${err instanceof Error ? err.message : String(err)}`, "warn");
+        }
+      }
 
       console.log("[LSP Client] Handshake completed successfully.");
 
@@ -126,8 +81,10 @@ class LspClientClass {
 
       // Listen to LSP stderr
       this.disposables.push({
-        dispose: window.constructProjects.onLspStderr((text) => {
-          logStore.addLog("lsp-server", text, "info");
+        dispose: window.constructProjects.onLspStderr((payload) => {
+          const text = typeof payload === "string" ? payload : payload.text;
+          const level = typeof payload === "string" ? "info" : payload.level;
+          logStore.addLog("lsp-server", text, level);
         })
       });
 
@@ -137,12 +94,92 @@ class LspClientClass {
     }
   }
 
+  private async initializeLanguage(language: LspLanguage, workspacePath: string) {
+    await this.sendRequest("initialize", {
+      processId: null,
+      clientInfo: { name: "Construct-Monaco-LSP", version: "1.0.0" },
+      rootPath: workspacePath,
+      rootUri: "file://" + workspacePath,
+      capabilities: {
+        textDocument: {
+          synchronization: {
+            dynamicRegistration: true,
+            willSave: false,
+            willSaveWaitUntil: false,
+            didSave: true
+          },
+          completion: {
+            dynamicRegistration: true,
+            completionItem: {
+              snippetSupport: true,
+              commitCharactersSupport: true,
+              documentationFormat: ["markdown", "plaintext"],
+              deprecatedSupport: true,
+              preselectSupport: true
+            },
+            contextSupport: true
+          },
+          hover: {
+            dynamicRegistration: true,
+            contentFormat: ["markdown", "plaintext"]
+          },
+          signatureHelp: {
+            dynamicRegistration: true,
+            signatureInformation: {
+              documentationFormat: ["markdown", "plaintext"]
+            }
+          },
+          definition: {
+            dynamicRegistration: true,
+            linkSupport: true
+          },
+          typeDefinition: {
+            dynamicRegistration: true,
+            linkSupport: true
+          },
+          implementation: {
+            dynamicRegistration: true,
+            linkSupport: true
+          },
+          references: {
+            dynamicRegistration: true
+          },
+          publishDiagnostics: {
+            relatedInformation: true,
+            tagSupport: { valueSet: [1, 2] },
+            versionSupport: true
+          }
+        },
+        workspace: {
+          configuration: true,
+          workspaceFolders: true
+        }
+      },
+      initializationOptions: language === "typescript"
+        ? {
+            preferences: {
+              includePackageJsonAutoImports: "on",
+              includeCompletionsForModuleExports: true
+            }
+          }
+        : undefined,
+      workspaceFolders: [{
+        uri: "file://" + workspacePath,
+        name: workspacePath.split("/").pop() || "workspace"
+      }]
+    }, language);
+
+    this.sendNotification("initialized", {}, language);
+    this.initializedLanguages.add(language);
+    logStore.addLog("lsp-server", `[${language}] initialized`, "info");
+  }
+
   // JSON-RPC requests
-  async sendRequest(method: string, params: any): Promise<any> {
+  async sendRequest(method: string, params: any, language: LspLanguage = "typescript"): Promise<any> {
     const id = this.nextRequestId++;
-    const payload = { jsonrpc: "2.0", id, method, params };
+    const payload = { jsonrpc: "2.0", id, languageId: language, method, params };
     
-    logStore.addLog("lsp-protocol", `--> Request: ${method} (id: ${id})\n${JSON.stringify(params, null, 2)}`, "info");
+    logStore.addLog("lsp-protocol", `--> ${language} Request: ${method} (id: ${id})\n${JSON.stringify(params, null, 2)}`, "info");
     
     try {
       const response: any = await window.constructProjects.lspRequest(payload);
@@ -159,13 +196,13 @@ class LspClientClass {
   }
 
   // JSON-RPC notifications
-  sendNotification(method: string, params: any) {
-    const payload = { jsonrpc: "2.0", method, params };
-    logStore.addLog("lsp-protocol", `--> Notification: ${method}\n${JSON.stringify(params, null, 2)}`, "info");
+  sendNotification(method: string, params: any, language: LspLanguage = "typescript") {
+    const payload = { jsonrpc: "2.0", languageId: language, method, params };
+    logStore.addLog("lsp-protocol", `--> ${language} Notification: ${method}\n${JSON.stringify(params, null, 2)}`, "info");
     
     window.constructProjects.lspRequest(payload).catch((err) => {
       console.error("[LSP Client] Notification error:", err);
-      logStore.addLog("lsp-protocol", `[Notification Error] ${method}: ${err instanceof Error ? err.message : String(err)}`, "error");
+      logStore.addLog("lsp-protocol", `[${language} Notification Error] ${method}: ${err instanceof Error ? err.message : String(err)}`, "error");
     });
   }
 
@@ -202,25 +239,25 @@ class LspClientClass {
     const uri = model.uri.toString();
     if (!uri.startsWith("file://")) return;
 
-    let languageId = "typescript";
-    const ext = model.uri.path.split(".").pop() || "";
-    if (ext === "js" || ext === "jsx") languageId = "javascript";
-    else if (ext === "ts" || ext === "tsx") languageId = "typescript";
-    else if (ext === "json") languageId = "json";
+    const language = languageForModel(model);
+    if (!language || !this.initializedLanguages.has(language.server)) return;
 
     this.sendNotification("textDocument/didOpen", {
       textDocument: {
         uri,
-        languageId,
+        languageId: language.languageId,
         version: model.getVersionId(),
         text: model.getValue()
       }
-    });
+    }, language.server);
   }
 
   private changeModel(model: monaco.editor.ITextModel) {
     const uri = model.uri.toString();
     if (!uri.startsWith("file://")) return;
+
+    const language = languageForModel(model);
+    if (!language || !this.initializedLanguages.has(language.server)) return;
 
     this.sendNotification("textDocument/didChange", {
       textDocument: {
@@ -228,16 +265,19 @@ class LspClientClass {
         version: model.getVersionId()
       },
       contentChanges: [{ text: model.getValue() }]
-    });
+    }, language.server);
   }
 
   private closeModel(model: monaco.editor.ITextModel) {
     const uri = model.uri.toString();
     if (!uri.startsWith("file://")) return;
 
+    const language = languageForModel(model);
+    if (!language || !this.initializedLanguages.has(language.server)) return;
+
     this.sendNotification("textDocument/didClose", {
       textDocument: { uri }
-    });
+    }, language.server);
 
     monaco.editor.setModelMarkers(model, "lsp", []);
   }
@@ -246,9 +286,12 @@ class LspClientClass {
     const uri = model.uri.toString();
     if (!uri.startsWith("file://")) return;
 
+    const language = languageForModel(model);
+    if (!language || !this.initializedLanguages.has(language.server)) return;
+
     this.sendNotification("textDocument/didSave", {
       textDocument: { uri }
-    });
+    }, language.server);
   }
 
   private setupDiagnostics() {
@@ -270,7 +313,7 @@ class LspClientClass {
           return {
             severity,
             message: d.message,
-            source: d.source || "ts",
+            source: d.source || notification.languageId || "lsp",
             startLineNumber: d.range.start.line + 1,
             startColumn: d.range.start.character + 1,
             endLineNumber: d.range.end.line + 1,
@@ -285,7 +328,7 @@ class LspClientClass {
   }
 
   private registerProviders() {
-    const languages = ["typescript", "javascript", "json"];
+    const languages = ["typescript", "javascript", "json", "python"];
 
     languages.forEach((lang) => {
       // 1. Hover
@@ -296,10 +339,12 @@ class LspClientClass {
             if (!uri.startsWith("file://")) return null;
 
             try {
+              const language = languageForModel(model);
+              if (!language || !this.initializedLanguages.has(language.server)) return null;
               const res = await this.sendRequest("textDocument/hover", {
                 textDocument: { uri },
                 position: toLspPosition(position)
-              });
+              }, language.server);
               if (!res) return null;
               return toMonacoHover(res);
             } catch (err) {
@@ -318,18 +363,61 @@ class LspClientClass {
             if (!uri.startsWith("file://")) return null;
 
             try {
+              const language = languageForModel(model);
+              if (!language || !this.initializedLanguages.has(language.server)) return null;
               const res = await this.sendRequest("textDocument/definition", {
                 textDocument: { uri },
                 position: toLspPosition(position)
-              });
+              }, language.server);
               if (!res) return null;
 
-              if (Array.isArray(res)) {
-                return res.map(toMonacoLocation);
-              }
-              return toMonacoLocation(res);
+              return toMonacoLocations(res);
             } catch (err) {
               console.error("[LSP Definition error]:", err);
+              return null;
+            }
+          }
+        })
+      );
+
+      this.disposables.push(
+        monaco.languages.registerTypeDefinitionProvider(lang, {
+          provideTypeDefinition: async (model, position) => {
+            const uri = model.uri.toString();
+            if (!uri.startsWith("file://")) return null;
+
+            try {
+              const language = languageForModel(model);
+              if (!language || !this.initializedLanguages.has(language.server)) return null;
+              const res = await this.sendRequest("textDocument/typeDefinition", {
+                textDocument: { uri },
+                position: toLspPosition(position)
+              }, language.server);
+              return res ? toMonacoLocations(res) : null;
+            } catch (err) {
+              console.error("[LSP Type Definition error]:", err);
+              return null;
+            }
+          }
+        })
+      );
+
+      this.disposables.push(
+        monaco.languages.registerImplementationProvider(lang, {
+          provideImplementation: async (model, position) => {
+            const uri = model.uri.toString();
+            if (!uri.startsWith("file://")) return null;
+
+            try {
+              const language = languageForModel(model);
+              if (!language || !this.initializedLanguages.has(language.server)) return null;
+              const res = await this.sendRequest("textDocument/implementation", {
+                textDocument: { uri },
+                position: toLspPosition(position)
+              }, language.server);
+              return res ? toMonacoLocations(res) : null;
+            } catch (err) {
+              console.error("[LSP Implementation error]:", err);
               return null;
             }
           }
@@ -344,13 +432,15 @@ class LspClientClass {
             if (!uri.startsWith("file://")) return null;
 
             try {
+              const language = languageForModel(model);
+              if (!language || !this.initializedLanguages.has(language.server)) return null;
               const res = await this.sendRequest("textDocument/references", {
                 textDocument: { uri },
                 position: toLspPosition(position),
                 context: {
                   includeDeclaration: context.includeDeclaration
                 }
-              });
+              }, language.server);
               if (!res || !Array.isArray(res)) return null;
               return res.map(toMonacoLocation);
             } catch (err) {
@@ -370,6 +460,8 @@ class LspClientClass {
             if (!uri.startsWith("file://")) return null;
 
             try {
+              const language = languageForModel(model);
+              if (!language || !this.initializedLanguages.has(language.server)) return null;
               const res = await this.sendRequest("textDocument/completion", {
                 textDocument: { uri },
                 position: toLspPosition(position),
@@ -377,7 +469,7 @@ class LspClientClass {
                   triggerKind: context.triggerKind,
                   triggerCharacter: context.triggerCharacter
                 }
-              });
+              }, language.server);
               if (!res) return null;
 
               const items = Array.isArray(res) ? res : res.items || [];
@@ -404,11 +496,51 @@ class LspClientClass {
         })
       );
     });
+
+    this.registerImportPathProvider();
+  }
+
+  setWorkspaceFiles(files: string[]) {
+    this.workspaceFiles = [...new Set(files.map(normalizeWorkspacePath).filter(Boolean))];
+  }
+
+  private registerImportPathProvider() {
+    const languages = ["typescript", "javascript"];
+    languages.forEach((lang) => {
+      this.disposables.push(
+        monaco.languages.registerCompletionItemProvider(lang, {
+          triggerCharacters: [".", "/", "\"", "'"],
+          provideCompletionItems: (model, position) => {
+            const request = getImportPathRequest(model, position, this.activeWorkspacePath);
+            if (!request) {
+              return { suggestions: [] };
+            }
+
+            const suggestions = buildImportPathSuggestions(this.workspaceFiles, request).map((item) => ({
+              label: item.label,
+              kind: item.isDirectory
+                ? monaco.languages.CompletionItemKind.Folder
+                : monaco.languages.CompletionItemKind.File,
+              insertText: item.insertText,
+              range: request.range,
+              sortText: item.isDirectory ? `0_${item.label}` : `1_${item.label}`,
+              command: item.isDirectory
+                ? { id: "editor.action.triggerSuggest", title: "Suggest" }
+                : undefined
+            }));
+
+            return { suggestions };
+          }
+        })
+      );
+    });
   }
 
   dispose() {
     this.isInitialized = false;
     this.activeWorkspacePath = "";
+    this.initializedLanguages.clear();
+    this.workspaceFiles = [];
 
     this.disposables.forEach((d) => {
       try {
@@ -460,10 +592,39 @@ function toLspPosition(monacoPosition: monaco.Position): { line: number; charact
 }
 
 function toMonacoLocation(lspLocation: any): monaco.languages.Location {
+  const uri = lspLocation.uri ?? lspLocation.targetUri;
+  const range = lspLocation.range ?? lspLocation.targetSelectionRange ?? lspLocation.targetRange;
   return {
-    uri: monaco.Uri.parse(lspLocation.uri),
-    range: toMonacoRange(lspLocation.range)
+    uri: monaco.Uri.parse(uri),
+    range: toMonacoRange(range)
   };
+}
+
+function toMonacoLocations(lspResult: any): monaco.languages.Location | monaco.languages.Location[] {
+  return Array.isArray(lspResult) ? lspResult.map(toMonacoLocation) : toMonacoLocation(lspResult);
+}
+
+function languageForModel(model: monaco.editor.ITextModel): { languageId: string; server: LspLanguage } | null {
+  const languageId = model.getLanguageId();
+  const ext = model.uri.path.split(".").pop()?.toLowerCase() ?? "";
+
+  if (languageId === "python" || ext === "py" || ext === "pyi") {
+    return { languageId: "python", server: "python" };
+  }
+
+  if (languageId === "javascript" || ext === "js" || ext === "jsx") {
+    return { languageId: "javascript", server: "typescript" };
+  }
+
+  if (languageId === "json" || ext === "json") {
+    return { languageId: "json", server: "typescript" };
+  }
+
+  if (languageId === "typescript" || ext === "ts" || ext === "tsx") {
+    return { languageId: "typescript", server: "typescript" };
+  }
+
+  return null;
 }
 
 function toMonacoHover(lspHover: any): monaco.languages.Hover {
@@ -535,6 +696,167 @@ function toMonacoCompletionItem(
     filterText: lspItem.filterText,
     preselect: lspItem.preselect
   };
+}
+
+type ImportPathRequest = {
+  currentFile: string;
+  prefix: string;
+  range: monaco.Range;
+};
+
+type ImportPathSuggestion = {
+  label: string;
+  insertText: string;
+  isDirectory: boolean;
+};
+
+function getImportPathRequest(
+  model: monaco.editor.ITextModel,
+  position: monaco.Position,
+  workspacePath: string
+): ImportPathRequest | null {
+  const uri = model.uri.toString();
+  if (!uri.startsWith("file://")) {
+    return null;
+  }
+
+  const linePrefix = model.getLineContent(position.lineNumber).slice(0, position.column - 1);
+  const quoteIndex = Math.max(linePrefix.lastIndexOf("\""), linePrefix.lastIndexOf("'"));
+  if (quoteIndex < 0) {
+    return null;
+  }
+
+  const prefix = linePrefix.slice(quoteIndex + 1);
+  if (!prefix.startsWith(".")) {
+    return null;
+  }
+
+  const beforeQuote = linePrefix.slice(0, quoteIndex);
+  if (!/\b(from|import|require)\b|\bimport\s*\($/.test(beforeQuote)) {
+    return null;
+  }
+
+  const currentFile = getRelativePath(workspacePath, model.uri.fsPath || model.uri.path);
+  if (!currentFile) {
+    return null;
+  }
+
+  return {
+    currentFile,
+    prefix,
+    range: new monaco.Range(
+      position.lineNumber,
+      quoteIndex + 2,
+      position.lineNumber,
+      position.column
+    )
+  };
+}
+
+function buildImportPathSuggestions(files: string[], request: ImportPathRequest): ImportPathSuggestion[] {
+  const currentDir = dirname(request.currentFile);
+  const prefix = request.prefix;
+  const slashIndex = prefix.lastIndexOf("/");
+  const typedDir = slashIndex >= 0 ? prefix.slice(0, slashIndex + 1) : "";
+  const typedLeaf = slashIndex >= 0 ? prefix.slice(slashIndex + 1) : prefix;
+  const targetDir = normalizeWorkspacePath(joinWorkspacePath(currentDir, typedDir || "."));
+  const seen = new Set<string>();
+  const suggestions: ImportPathSuggestion[] = [];
+
+  for (const file of files) {
+    if (file === request.currentFile) {
+      continue;
+    }
+
+    const normalizedFile = normalizeWorkspacePath(file);
+    const containingDir = dirname(normalizedFile);
+    if (containingDir === targetDir) {
+      const leaf = basename(normalizedFile);
+      if (leaf.startsWith(typedLeaf)) {
+        pushSuggestion(seen, suggestions, prefix, typedDir, leaf, false);
+      }
+      continue;
+    }
+
+    const isInsideTargetDir = targetDir
+      ? normalizedFile.startsWith(`${targetDir}/`)
+      : normalizedFile.includes("/");
+    if (isInsideTargetDir) {
+      const rest = targetDir ? normalizedFile.slice(targetDir.length + 1) : normalizedFile;
+      const directory = rest.split("/")[0];
+      if (directory && directory.startsWith(typedLeaf)) {
+        pushSuggestion(seen, suggestions, prefix, typedDir, directory, true);
+      }
+    }
+  }
+
+  return suggestions.sort((a, b) => Number(b.isDirectory) - Number(a.isDirectory) || a.label.localeCompare(b.label));
+}
+
+function pushSuggestion(
+  seen: Set<string>,
+  suggestions: ImportPathSuggestion[],
+  prefix: string,
+  typedDir: string,
+  leaf: string,
+  isDirectory: boolean
+) {
+  const insertText = `${typedDir}${leaf}${isDirectory ? "/" : ""}`;
+  if (seen.has(insertText)) {
+    return;
+  }
+
+  seen.add(insertText);
+  suggestions.push({
+    label: isDirectory ? `${leaf}/` : leaf,
+    insertText,
+    isDirectory
+  });
+}
+
+function getRelativePath(workspacePath: string, absolutePath: string): string {
+  const abs = normalizeWorkspacePath(absolutePath);
+  const ws = normalizeWorkspacePath(workspacePath);
+  if (!ws || !abs.startsWith(ws)) {
+    return "";
+  }
+  return normalizeWorkspacePath(abs.slice(ws.length));
+}
+
+function normalizeWorkspacePath(path: string): string {
+  return path
+    .trim()
+    .replace(/\\/g, "/")
+    .replace(/^file:\/\//, "")
+    .replace(/^\/+/, "")
+    .replace(/\/+/g, "/");
+}
+
+function joinWorkspacePath(base: string, relative: string): string {
+  const parts = base ? base.split("/") : [];
+  for (const part of relative.split("/")) {
+    if (!part || part === ".") {
+      continue;
+    }
+    if (part === "..") {
+      parts.pop();
+      continue;
+    }
+    parts.push(part);
+  }
+  return parts.join("/");
+}
+
+function dirname(path: string): string {
+  const normalized = normalizeWorkspacePath(path);
+  const slash = normalized.lastIndexOf("/");
+  return slash >= 0 ? normalized.slice(0, slash) : "";
+}
+
+function basename(path: string): string {
+  const normalized = normalizeWorkspacePath(path);
+  const slash = normalized.lastIndexOf("/");
+  return slash >= 0 ? normalized.slice(slash + 1) : normalized;
 }
 
 export const lspClient = new LspClientClass();

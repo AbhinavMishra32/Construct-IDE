@@ -74,13 +74,11 @@ export function EditorPane({
   onGuidedProgress,
   onRevealLine,
   onSave,
-  fileList = [],
   theme,
   pendingJump = null,
   focusRange = null,
   onJumpComplete,
-  onOpenFileAndJump,
-  readFileContent
+  onOpenFileAndJump
 }: {
   path: string | null;
   workspacePath: string;
@@ -92,13 +90,11 @@ export function EditorPane({
   onGuidedProgress: (progress: number) => void;
   onRevealLine: () => void;
   onSave?: () => void;
-  fileList?: string[];
   theme: "light" | "dark" | "system";
   pendingJump?: { line: number; column: number } | null;
   focusRange?: { line: number; endLine?: number; column?: number } | null;
   onJumpComplete?: () => void;
   onOpenFileAndJump?: (path: string, line: number, column: number) => void;
-  readFileContent?: (path: string) => Promise<string>;
 }) {
   const editorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
   const ghostDecorationsRef = useRef<MonacoEditor.IEditorDecorationsCollection | null>(null);
@@ -399,99 +395,11 @@ export function EditorPane({
           isWholeLine: true,
           blockClassName: "construct-monaco-focus-block",
           blockDoesNotCollapse: true,
-          blockPadding: [3, 0, 3, 0],
-          linesDecorationsClassName: "construct-monaco-focus-glyph"
+          blockPadding: [6, 0, 6, 0]
         } as MonacoEditor.IModelDecorationOptions
       }
     ]);
   }, [focusRange]);
-
-  // Register Monaco Definition Provider for Go to Definition (LSP)
-  useEffect(() => {
-    const editor = editorRef.current;
-    if (!editor) return;
-
-    const languages = [
-      "python", "css", "html",
-      "rust", "go", "cpp", "c", "csharp", "java", "kotlin", "swift",
-      "ruby", "php", "shell", "sql", "lua"
-    ];
-
-    const disposables = languages.map((lang) =>
-      monaco.languages.registerDefinitionProvider(lang, {
-        async provideDefinition(model, position, token) {
-          const lineText = model.getLineContent(position.lineNumber);
-          const wordInfo = model.getWordAtPosition(position);
-          if (!wordInfo) return null;
-
-          const word = wordInfo.word;
-          const currentContent = model.getValue();
-          const currentFilePath = path || "";
-
-          // 1. Check if defined locally in the current file
-          const localDef = findSymbolDefinition(currentContent, word);
-          if (localDef && localDef.line !== position.lineNumber) {
-            if (hasRealLocalDefinition(currentContent, word)) {
-              return {
-                uri: model.uri,
-                range: new monaco.Range(
-                  localDef.line,
-                  localDef.column,
-                  localDef.line,
-                  localDef.column + word.length
-                )
-              };
-            }
-          }
-
-          // 2. Check if it's a cross-file workspace definition or quoted import path
-          const importPath = findImportPathForSymbol(currentContent, word);
-          if (importPath) {
-            const resolved = resolvePath(currentFilePath, importPath);
-            const target = findFileInWorkspace(resolved, fileList);
-            if (target) {
-              return {
-                uri: model.uri,
-                range: new monaco.Range(
-                  position.lineNumber,
-                  wordInfo.startColumn,
-                  position.lineNumber,
-                  wordInfo.endColumn
-                )
-              };
-            }
-          }
-
-          const quoteMatches = [...lineText.matchAll(/(?:import|from|require|@import)\s+['"`]([^'"`]+)['"`]/g)];
-          for (const match of quoteMatches) {
-            const pathContent = match[1];
-            const resolved = resolvePath(currentFilePath, pathContent);
-            const target = findFileInWorkspace(resolved, fileList);
-            if (target) {
-              const pathContentStart = lineText.indexOf(pathContent);
-              return {
-                uri: model.uri,
-                range: new monaco.Range(
-                  position.lineNumber,
-                  pathContentStart + 1,
-                  position.lineNumber,
-                  pathContentStart + pathContent.length + 1
-                )
-              };
-            }
-          }
-
-
-
-          return null;
-        }
-      })
-    );
-
-    return () => {
-      disposables.forEach((d) => d.dispose());
-    };
-  }, [path, fileList, onOpenFileAndJump, readFileContent, language]);
 
   if (!path) {
     return (
@@ -506,7 +414,7 @@ export function EditorPane({
       <ContextMenuTrigger asChild>
         <section className="editor-pane" data-guided={isGuided ? "true" : "false"} data-wrong={wrongInput ? "true" : "false"}>
           <Editor
-            key={`${absolutePath}:${activeEdit?.id ?? "free"}:${editAnchor.length}`}
+            key={absolutePath}
             path={absolutePath}
             className="editor-pane__monaco"
             height="100%"
@@ -520,6 +428,7 @@ export function EditorPane({
                 '"Geist Mono Variable", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
               fontLigatures: true,
               fontSize: 13.5,
+              fixedOverflowWidgets: true,
               letterSpacing: 0.2,
               lineHeight: 22,
               minimap: { enabled: false },
@@ -530,6 +439,7 @@ export function EditorPane({
               scrollBeyondLastLine: false,
               smoothScrolling: true,
               tabSize: 2,
+              wordBasedSuggestions: "off",
               wordWrap: "on"
             }}
         theme={editorTheme}
@@ -697,7 +607,14 @@ export function EditorPane({
       )}
       {isGuided && activeEdit && (
         <div className="construct-editor-ghost-badge">
-          <span>Ghost Progress: {Math.min(totalLines, typedLines)} / {totalLines} lines ({percent}%)</span>
+          <div className="construct-editor-ghost-badge__copy">
+          <span>Guided write</span>
+            <strong>{Math.min(totalLines, typedLines)} / {totalLines} lines</strong>
+          </div>
+          <div className="construct-editor-ghost-badge__meter" aria-hidden="true">
+            <span style={{ width: `${percent}%` }} />
+          </div>
+          <b>{percent}%</b>
         </div>
       )}
         </section>
@@ -909,244 +826,4 @@ function languageForPath(path: string | null) {
   };
 
   return extensionMap[ext] || "plaintext";
-}
-
-function resolvePath(currentPath: string, importPath: string): string {
-  if (importPath.startsWith("@/")) {
-    return "app/src/renderer/" + importPath.slice(2);
-  }
-
-  const parts = currentPath.split("/");
-  parts.pop(); // remove filename
-
-  const importParts = importPath.split("/");
-  for (const part of importParts) {
-    if (part === ".") {
-      continue;
-    } else if (part === "..") {
-      parts.pop();
-    } else {
-      parts.push(part);
-    }
-  }
-
-  return parts.join("/");
-}
-
-function findFileInWorkspace(resolvedPath: string, fileList: string[]): string | null {
-  if (fileList.includes(resolvedPath)) {
-    return resolvedPath;
-  }
-
-  const extensions = [
-    ".ts", ".tsx", ".js", ".jsx", ".css", ".json",
-    ".py", ".pyw", ".ipy", ".rs", ".go", ".c", ".h", ".cpp", ".cc", ".cxx", ".hpp",
-    ".swift", ".rb", ".kt", ".kts", ".java", ".sh", ".bash", ".zsh"
-  ];
-  for (const ext of extensions) {
-    const pathWithExt = resolvedPath + ext;
-    if (fileList.includes(pathWithExt)) {
-      return pathWithExt;
-    }
-  }
-
-  for (const ext of extensions) {
-    const pathWithIndex = `${resolvedPath}/index${ext}`;
-    if (fileList.includes(pathWithIndex)) {
-      return pathWithIndex;
-    }
-  }
-
-  return null;
-}
-
-function findSymbolDefinition(content: string, word: string): { line: number, column: number } | null {
-  const lines = content.split("\n");
-  const escapedWord = word.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-
-  const regexes = [
-    new RegExp(`\\b(function|class|interface|type|enum)\\s+${escapedWord}\\b`),
-    new RegExp(`\\b(const|let|var)\\s+${escapedWord}\\s*=`),
-    new RegExp(`\\b(def|class)\\s+${escapedWord}\\b`),
-    new RegExp(`\\b${escapedWord}\\s*\\([^)]*\\)\\s*\\{`),
-    new RegExp(`\\b${escapedWord}\\s*:\\s*\\([^)]*\\)\\s*=>`)
-  ];
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    for (const regex of regexes) {
-      const match = line.match(regex);
-      if (match) {
-        const col = line.indexOf(word);
-        return { line: i + 1, column: col !== -1 ? col + 1 : 1 };
-      }
-    }
-  }
-
-  const fallbackRegex = new RegExp(`\\b${escapedWord}\\b`);
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (fallbackRegex.test(line)) {
-      const col = line.indexOf(word);
-      return { line: i + 1, column: col !== -1 ? col + 1 : 1 };
-    }
-  }
-
-  return null;
-}
-
-function findImportPathForSymbol(currentContent: string, symbol: string): string | null {
-  const lines = currentContent.split("\n");
-  const escapedSymbol = symbol.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-
-  for (const line of lines) {
-    if (!line.includes("import") && !line.includes("require")) {
-      continue;
-    }
-
-    const symbolRegex = new RegExp(`\\b${escapedSymbol}\\b`);
-    if (!symbolRegex.test(line)) {
-      continue;
-    }
-
-    const pathMatch = line.match(/['"`]([^'"`]+)['"`]/);
-    if (pathMatch) {
-      return pathMatch[1];
-    }
-  }
-
-  return null;
-}
-
-function getExternalModuleDocsUrl(moduleName: string, language: string): string | null {
-  const cleanModule = moduleName.trim().replace(/^['"`]|['"`]$/g, "");
-  const lower = cleanModule.toLowerCase();
-
-  if (language === "swift") {
-    const swiftFrameworks = [
-      "foundation", "uikit", "swiftui", "appkit", "combine", "dispatch",
-      "coredata", "coregraphics", "coreanimation", "quartzcore", "metal",
-      "metalkit", "avfoundation", "avkit", "webkit", "spritekit", "scenekit",
-      "mapkit", "contacts", "eventkit", "safariservices", "localauthentication",
-      "security", "cryptokit", "compression", "network", "os", "metrickit",
-      "corelocation", "corebluetooth", "coremotion", "audiotoolbox", "mediaplayer"
-    ];
-    if (swiftFrameworks.includes(lower)) {
-      return `https://developer.apple.com/documentation/${lower}`;
-    }
-    if (/^[A-Z][a-zA-Z0-9_]*$/.test(cleanModule)) {
-      return `https://developer.apple.com/documentation/${lower}`;
-    }
-  }
-
-  if (language === "python" || language === "py") {
-    const pythonStdLibs = [
-      "os", "sys", "math", "json", "re", "datetime", "time", "random", "collections",
-      "itertools", "functools", "pathlib", "shutil", "glob", "fnmatch", "pickle",
-      "sqlite3", "csv", "zlib", "gzip", "tarfile", "zipfile", "socket", "ssl",
-      "select", "selectors", "asyncio", "threading", "multiprocessing", "subprocess",
-      "queue", "urllib", "http", "ftplib", "smtplib", "email", "xml", "hashlib",
-      "hmac", "secrets", "uuid", "argparse", "logging", "unittest", "mock",
-      "tempfile", "io", "copy", "traceback", "linecache", "ast", "symtable", "string"
-    ];
-    if (pythonStdLibs.includes(lower)) {
-      return `https://docs.python.org/3/library/${lower}.html`;
-    }
-    return `https://pypi.org/project/${cleanModule}/`;
-  }
-
-  if (language === "javascript" || language === "typescript" || language === "js" || language === "ts" || language === "tsx" || language === "jsx") {
-    const nodeStdLibs = [
-      "fs", "path", "os", "http", "https", "crypto", "child_process", "dns", "events",
-      "readline", "stream", "util", "url", "zlib", "buffer", "net", "tls", "dgram",
-      "querystring", "string_decoder", "timers", "v8", "vm", "worker_threads"
-    ];
-    let moduleWithoutNodePrefix = cleanModule;
-    if (cleanModule.startsWith("node:")) {
-      moduleWithoutNodePrefix = cleanModule.slice(5);
-    }
-    const cleanLower = moduleWithoutNodePrefix.toLowerCase();
-    if (nodeStdLibs.includes(cleanLower)) {
-      return `https://nodejs.org/api/${cleanLower}.html`;
-    }
-    if (!cleanModule.startsWith(".") && !cleanModule.startsWith("/")) {
-      return `https://www.npmjs.com/package/${cleanModule}`;
-    }
-  }
-
-  if (language === "go") {
-    return `https://pkg.go.dev/${cleanModule}`;
-  }
-
-  if (language === "rust" || language === "rs") {
-    if (cleanModule.startsWith("std::") || cleanModule === "std") {
-      let sub = cleanModule;
-      if (cleanModule.startsWith("std::")) {
-        sub = cleanModule.slice(5);
-      }
-      const parts = sub.split("::");
-      if (parts.length > 1) {
-        const modulePath = parts.slice(0, -1).join("/");
-        const typeName = parts[parts.length - 1];
-        if (typeName[0] === typeName[0].toUpperCase()) {
-          return `https://doc.rust-lang.org/std/${modulePath}/struct.${typeName}.html`;
-        } else {
-          return `https://doc.rust-lang.org/std/${modulePath}/${typeName}/index.html`;
-        }
-      }
-      return `https://doc.rust-lang.org/std/${sub}/index.html`;
-    }
-    return `https://crates.io/crates/${cleanModule}`;
-  }
-
-  return null;
-}
-
-function getExternalSymbolSearchUrl(word: string, language: string): string | null {
-  if (!/^[a-zA-Z0-9_]+$/.test(word)) {
-    return null;
-  }
-  if (word.length < 3) {
-    return null;
-  }
-
-  if (language === "swift") {
-    return `https://developer.apple.com/search/?q=${word}`;
-  }
-  if (language === "python" || language === "py") {
-    return `https://docs.python.org/3/search.html?q=${word}`;
-  }
-  if (language === "javascript" || language === "typescript" || language === "js" || language === "ts" || language === "tsx" || language === "jsx") {
-    if (/^[A-Z]/.test(word) || ["fetch", "window", "document", "console", "require"].includes(word)) {
-      return `https://developer.mozilla.org/en-US/search?q=${word}`;
-    }
-    return `https://www.npmjs.com/search?q=${word}`;
-  }
-  if (language === "go") {
-    return `https://pkg.go.dev/search?q=${word}`;
-  }
-  if (language === "rust" || language === "rs") {
-    return `https://docs.rs/releases/search?query=${word}`;
-  }
-  return null;
-}
-
-function hasRealLocalDefinition(currentContent: string, word: string): boolean {
-  const lines = currentContent.split("\n");
-  const escapedWord = word.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-  const definitionRegexes = [
-    new RegExp(`\\b(function|class|interface|type|enum)\\s+${escapedWord}\\b`),
-    new RegExp(`\\b(const|let|var)\\s+${escapedWord}\\s*=`),
-    new RegExp(`\\b(def|class)\\s+${escapedWord}\\b`),
-    new RegExp(`\\b${escapedWord}\\s*\\([^)]*\\)\\s*\\{`),
-    new RegExp(`\\b${escapedWord}\\s*:\\s*\\([^)]*\\)\\s*=>`)
-  ];
-  for (const line of lines) {
-    for (const regex of definitionRegexes) {
-      if (regex.test(line)) {
-        return true;
-      }
-    }
-  }
-  return false;
 }

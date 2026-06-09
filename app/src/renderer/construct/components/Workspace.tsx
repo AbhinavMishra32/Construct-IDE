@@ -1,5 +1,8 @@
 import {
   CaretDown,
+  BookOpen,
+  BookmarkSimple,
+  CheckCircle,
   File,
   FileCode,
   FileCss,
@@ -7,21 +10,28 @@ import {
   FileMd,
   FileTs,
   FileTsx,
+  GitBranch,
+  WarningCircle,
   MagnifyingGlass
 } from "@phosphor-icons/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { SlotPanel } from "@opaline/ui";
 import { logStore } from "../lib/logStore";
+import { lspClient } from "../lib/lspClient";
 import type { SlotPanelHandle, SlotTab, SlotLauncherItem } from "@opaline/ui";
 import { EditorPane } from "./EditorPane";
 import { GuidePanel } from "./GuidePanel";
 import { ReferenceCard } from "./ReferenceCard";
+import { KnowledgeCard } from "./KnowledgeCard";
 import { StepList } from "./StepList";
 import {
   createFolder,
   deleteFile,
   duplicateFile,
+  gitCommit,
+  gitPush,
+  gitStatus,
   listFiles,
   onVerifyLog,
   readFile,
@@ -33,7 +43,12 @@ import {
 import { currentBlock, emptyBlockAssistance, nextPosition } from "../lib/runtime";
 import type {
   BlockAssistance,
+  ConceptCard,
   EditBlock,
+  GitActionResult,
+  GitMilestone,
+  GitMilestoneStatus,
+  GitStatus,
   ProjectRecord,
   RecallBlock,
   ReferenceLink,
@@ -151,27 +166,46 @@ export function Workspace({
 }) {
   const [tree, setTree] = useState<WorkspaceTreeNode[]>([]);
   const [activeFileContent, setActiveFileContent] = useState("");
+  const [fileContents, setFileContents] = useState<Record<string, string>>({});
+  const fileContentsRef = useRef<Record<string, string>>({});
+  const [localActiveFilePath, setLocalActiveFilePath] = useState<string | null | undefined>(undefined);
   const [openTabs, setOpenTabs] = useState<string[]>([]);
   const [isStepsCollapsed, setIsStepsCollapsed] = useState(false);
   const [pendingJump, setPendingJump] = useState<{ line: number; column: number } | null>(null);
   const [focusRange, setFocusRange] = useState<{ line: number; endLine?: number; column?: number } | null>(null);
   const [openReferenceIds, setOpenReferenceIds] = useState<string[]>([]);
   const [pinnedReferenceIds, setPinnedReferenceIds] = useState<string[]>([]);
+  const [openConceptIds, setOpenConceptIds] = useState<string[]>([]);
+  const [savedConceptIds, setSavedConceptIds] = useState<string[]>(() => readSavedConceptIds());
+  const [gitMilestoneStates, setGitMilestoneStates] = useState<Record<string, StoredGitMilestoneState>>(() =>
+    readGitMilestoneStates(project.id)
+  );
+  const [gitMilestoneMessages, setGitMilestoneMessages] = useState<Record<string, string>>({});
+  const [gitProjectStatus, setGitProjectStatus] = useState<GitStatus | null>(null);
+  const [gitBusyId, setGitBusyId] = useState<string | null>(null);
   const [verifyingId, setVerifyingId] = useState<string | null>(null);
   const [verificationLogs, setVerificationLogs] = useState<Record<string, VerificationLogEntry[]>>({});
   const editorPanelRef = useRef<SlotPanelHandle>(null);
   const autoOpenedRecallRef = useRef<string | null>(null);
+  const fileLoadSequenceRef = useRef(0);
 
   const typingProgress = project.typingProgress ?? {};
   const editAnchors = project.editAnchors ?? {};
   const assistance = project.assistance ?? {};
   const verificationResults = project.verificationResults ?? {};
   const references = project.program.references ?? [];
+  const concepts = project.program.concepts ?? [];
+  const gitMilestones = project.program.gitMilestones ?? [];
+  const authoringWarnings = project.program.warnings ?? [];
   const targets = project.program.targets ?? [];
   const block = currentBlock(project);
   const activeEdit = block?.kind === "edit" ? block : null;
   const relevantPath = activeEdit?.path ?? null;
-  const activeFilePath = project.activeFilePath ?? relevantPath ?? project.program.files[0]?.path ?? null;
+  const activeFilePath = normalizeOptionalWorkspacePath(
+    localActiveFilePath !== undefined
+      ? localActiveFilePath
+      : project.activeFilePath ?? relevantPath ?? project.program.files[0]?.path ?? null
+  );
   const editProgress = activeEdit ? typingProgress[activeEdit.id] ?? 0 : 0;
   const editComplete = activeEdit ? editProgress >= activeEdit.content.length : false;
   const editAnchor = activeEdit ? editAnchors[activeEdit.id] ?? "" : "";
@@ -212,9 +246,24 @@ export function Workspace({
     return block.verify.evidence.files.filter((filePath) => !fileSet.has(filePath));
   }, [block, fileSet]);
 
+  useEffect(() => {
+    fileContentsRef.current = fileContents;
+  }, [fileContents]);
+
+  useEffect(() => {
+    lspClient.setWorkspaceFiles(fileList);
+  }, [fileList]);
+
+  useEffect(() => {
+    setLocalActiveFilePath(normalizeOptionalWorkspacePath(project.activeFilePath ?? relevantPath ?? project.program.files[0]?.path ?? null));
+  }, [project.id]);
+
   // Reset tabs when project changes
   useEffect(() => {
     setOpenTabs(activeFilePath ? [activeFilePath] : []);
+    setLocalActiveFilePath(activeFilePath);
+    setFileContents({});
+    setActiveFileContent("");
     setPendingJump(null);
     setFocusRange(null);
     setOpenReferenceIds([]);
@@ -224,32 +273,71 @@ export function Workspace({
     autoOpenedRecallRef.current = null;
   }, [project.id]);
 
+  useEffect(() => {
+    setGitMilestoneStates(readGitMilestoneStates(project.id));
+    setGitMilestoneMessages(Object.fromEntries(gitMilestones.map((milestone) => [milestone.id, milestone.message])));
+    setGitProjectStatus(null);
+  }, [project.id, gitMilestones]);
+
+  useEffect(() => {
+    let disposed = false;
+    gitStatus(project.id)
+      .then((status) => {
+        if (!disposed) {
+          setGitProjectStatus(status);
+        }
+      })
+      .catch(() => {
+        if (!disposed) {
+          setGitProjectStatus({
+            isRepo: false,
+            branch: null,
+            hasRemote: false,
+            dirtyFiles: []
+          });
+        }
+      });
+
+    return () => {
+      disposed = true;
+    };
+  }, [project.id, project.completedBlocks, project.verificationResults]);
+
   // Sync open tabs with active file
   useEffect(() => {
-    if (activeFilePath && !openTabs.includes(activeFilePath)) {
-      setOpenTabs((prev) => [...prev, activeFilePath]);
+    if (activeFilePath) {
+      setOpenTabs((prev) => uniqueStrings([...prev.map(normalizeWorkspacePath).filter(Boolean), activeFilePath]));
     }
   }, [activeFilePath]);
 
   // Handle closing a tab
-  async function closeTab(tabPath: string) {
-    const nextTabs = openTabs.filter((t) => t !== tabPath);
+  async function closeTab(rawTabPath: string) {
+    const tabPath = normalizeWorkspacePath(rawTabPath);
+    if (!tabPath) {
+      return;
+    }
+
+    const nextTabs = openTabs
+      .map(normalizeWorkspacePath)
+      .filter((path) => path && path !== tabPath);
     setOpenTabs(nextTabs);
+    setFileContents((current) => {
+      const next = { ...current };
+      delete next[tabPath];
+      return next;
+    });
 
     if (activeFilePath === tabPath) {
       if (nextTabs.length > 0) {
         const nextActive = nextTabs[nextTabs.length - 1];
-        await openFile(nextActive);
+        await navigateToFile(nextActive, { persist: true });
       } else {
+        setLocalActiveFilePath(null);
         setActiveFileContent("");
         await persistProject({ activeFilePath: null });
       }
     }
   }
-
-  const handleReadFileContent = useCallback(async (path: string) => {
-    return await readMaybeFile(path);
-  }, [project.id]);
 
   useEffect(() => {
     void refreshTree();
@@ -261,7 +349,7 @@ export function Workspace({
       return;
     }
 
-    void openFile(activeFilePath);
+    void loadActiveFile(activeFilePath);
   }, [activeFilePath, project.id]);
 
   useEffect(() => {
@@ -384,6 +472,24 @@ export function Workspace({
     setPinnedReferenceIds((current) => current.filter((id) => id !== referenceId));
   }
 
+  function openConceptCard(conceptId: string) {
+    setOpenConceptIds((current) => (
+      current.includes(conceptId) ? current : [...current, conceptId]
+    ));
+  }
+
+  function closeConceptCard(conceptId: string) {
+    setOpenConceptIds((current) => current.filter((id) => id !== conceptId));
+  }
+
+  function setConceptSaved(conceptId: string, saved: boolean) {
+    setSavedConceptIds((current) => {
+      const next = saved ? uniqueStrings([...current, conceptId]) : current.filter((id) => id !== conceptId);
+      writeSavedConceptIds(next);
+      return next;
+    });
+  }
+
   function setReferencePinned(referenceId: string, pinned: boolean) {
     setPinnedReferenceIds((current) => {
       const next = pinned
@@ -409,7 +515,7 @@ export function Workspace({
     const targetPath = await resolveRecallPath(recall);
 
     if (targetPath) {
-      await openFile(targetPath);
+      await navigateToFile(targetPath, { persist: true });
       await focusRecallTarget(recall);
     }
 
@@ -462,7 +568,7 @@ export function Workspace({
     }
 
     if (link.file) {
-      await openFile(link.file);
+      await navigateToFile(link.file, { persist: true });
       setFocusRange({ line: 1, column: 1 });
     }
   }
@@ -473,7 +579,7 @@ export function Workspace({
       return;
     }
 
-    await openFile(target.path);
+    await navigateToFile(target.path, { persist: true });
 
     if (target.anchor) {
       await focusAnchor(target.anchor);
@@ -503,7 +609,7 @@ export function Workspace({
       return;
     }
 
-    await openFile(edit.path);
+    await navigateToFile(edit.path, { persist: true });
     const content = await readMaybeFile(edit.path);
     const needle = edit.content.trim();
     const offset = needle ? content.indexOf(needle) : -1;
@@ -529,15 +635,61 @@ export function Workspace({
     return null;
   }
 
-  async function openFile(path: string) {
-    const file = await readMaybeFile(path);
+  async function loadActiveFile(rawPath: string) {
+    const nextPath = normalizeWorkspacePath(rawPath);
+    if (!nextPath) {
+      return;
+    }
+
+    const sequence = fileLoadSequenceRef.current + 1;
+    fileLoadSequenceRef.current = sequence;
+    if (fileContentsRef.current[nextPath] != null) {
+      setActiveFileContent(fileContentsRef.current[nextPath]);
+    }
+
+    const file = await readMaybeFile(nextPath);
+    if (fileLoadSequenceRef.current !== sequence) {
+      return;
+    }
+
     setActiveFileContent(file);
-    await persistProject({ activeFilePath: path });
+    setFileContents((current) => ({ ...current, [nextPath]: file }));
+  }
+
+  async function navigateToFile(rawPath: string, options: { persist?: boolean } = {}) {
+    const nextPath = normalizeWorkspacePath(rawPath);
+    if (!nextPath) {
+      return;
+    }
+
+    const sequence = fileLoadSequenceRef.current + 1;
+    fileLoadSequenceRef.current = sequence;
+    setLocalActiveFilePath(nextPath);
+    setOpenTabs((current) => uniqueStrings([...current.map(normalizeWorkspacePath).filter(Boolean), nextPath]));
+    if (fileContentsRef.current[nextPath] != null) {
+      setActiveFileContent(fileContentsRef.current[nextPath]);
+    }
+
+    const file = await readMaybeFile(nextPath);
+    if (fileLoadSequenceRef.current !== sequence) {
+      return;
+    }
+
+    setActiveFileContent(file);
+    setFileContents((current) => ({ ...current, [nextPath]: file }));
+    if (options.persist !== false && project.activeFilePath !== nextPath) {
+      await persistProject({ activeFilePath: nextPath });
+    }
   }
 
   async function openFileAndRecord(path: string) {
-    await openFile(path);
-    onFileOpened?.(path);
+    const nextPath = normalizeWorkspacePath(path);
+    if (!nextPath) {
+      return;
+    }
+
+    await navigateToFile(nextPath, { persist: true });
+    onFileOpened?.(nextPath);
   }
 
   async function deleteWorkspaceFile(rawPath: string) {
@@ -630,24 +782,31 @@ export function Workspace({
           progress: typingProgress[edit.id] ?? 0
         });
 
+      const editPath = normalizeWorkspacePath(edit.path);
+      if (!editPath) {
+        return;
+      }
+
       if (!editAnchors[edit.id]) {
         await persistProject({
-          activeFilePath: edit.path,
+          activeFilePath: editPath,
           editAnchors: {
             ...editAnchors,
             [edit.id]: anchor
           }
         });
-      } else if (project.activeFilePath !== edit.path) {
-        await persistProject({ activeFilePath: edit.path });
+      } else if (project.activeFilePath !== editPath) {
+        await persistProject({ activeFilePath: editPath });
       }
 
       await writeFile({
         projectId: project.id,
-        path: edit.path,
+        path: editPath,
         content: `${anchor}${edit.content.slice(0, typingProgress[edit.id] ?? 0)}`
       });
-      setActiveFileContent(`${anchor}${edit.content.slice(0, typingProgress[edit.id] ?? 0)}`);
+      const nextContent = `${anchor}${edit.content.slice(0, typingProgress[edit.id] ?? 0)}`;
+      setActiveFileContent(nextContent);
+      setFileContents((current) => ({ ...current, [editPath]: nextContent }));
       await refreshTree();
     } finally {
       onSavingChange?.(false);
@@ -662,29 +821,36 @@ export function Workspace({
     }
   }
 
-  async function handleFreeEdit(content: string) {
-    if (!activeFilePath) {
+  async function handleFreeEditForPath(rawPath: string, content: string) {
+    const targetPath = normalizeOptionalWorkspacePath(rawPath);
+    if (!targetPath) {
       return;
     }
 
     onSavingChange?.(true);
     try {
-      setActiveFileContent(content);
-      await writeFile({ projectId: project.id, path: activeFilePath, content });
+      if (targetPath === activeFilePath) {
+        setActiveFileContent(content);
+      }
+      setFileContents((current) => ({ ...current, [targetPath]: content }));
+      await writeFile({ projectId: project.id, path: targetPath, content });
       await refreshTree();
     } finally {
       onSavingChange?.(false);
     }
   }
 
-  async function handleManualSave() {
-    if (!activeFilePath) {
+  async function handleManualSaveForPath(rawPath: string) {
+    const targetPath = normalizeOptionalWorkspacePath(rawPath);
+    if (!targetPath) {
       return;
     }
+    const content = fileContentsRef.current[targetPath] ?? (targetPath === activeFilePath ? activeFileContent : "");
 
     onSavingChange?.(true);
     try {
-      await writeFile({ projectId: project.id, path: activeFilePath, content: activeFileContent });
+      await writeFile({ projectId: project.id, path: targetPath, content });
+      setFileContents((current) => ({ ...current, [targetPath]: content }));
       await refreshTree();
     } finally {
       onSavingChange?.(false);
@@ -699,10 +865,14 @@ export function Workspace({
     onSavingChange?.(true);
     try {
       const nextContent = `${editAnchor}${activeEdit.content.slice(0, progress)}`;
+      const editPath = normalizeWorkspacePath(activeEdit.path);
       setActiveFileContent(nextContent);
+      if (editPath) {
+        setFileContents((current) => ({ ...current, [editPath]: nextContent }));
+      }
       await writeFile({
         projectId: project.id,
-        path: activeEdit.path,
+        path: editPath || activeEdit.path,
         content: nextContent
       });
       await persistProject({
@@ -748,7 +918,13 @@ export function Workspace({
         recall: block,
         references: block.references
           .map((referenceId) => references.find((reference) => reference.id === referenceId))
-          .filter((reference): reference is (typeof references)[number] => Boolean(reference))
+          .filter((reference): reference is (typeof references)[number] => Boolean(reference)),
+        concepts: block.concepts
+          .map((conceptId) => concepts.find((concept) => concept.id === conceptId))
+          .filter((concept): concept is ConceptCard => Boolean(concept)),
+        savedKnowledge: savedConceptIds
+          .map((conceptId) => concepts.find((concept) => concept.id === conceptId))
+          .filter((concept): concept is ConceptCard => Boolean(concept))
       });
       setVerificationLogs((current) => ({
         ...current,
@@ -807,6 +983,54 @@ export function Workspace({
     });
   }
 
+  async function refreshGitProjectStatus() {
+    setGitProjectStatus(await gitStatus(project.id));
+  }
+
+  function updateGitMilestoneState(milestoneId: string, patch: Partial<StoredGitMilestoneState>) {
+    setGitMilestoneStates((current) => {
+      const next = {
+        ...current,
+        [milestoneId]: {
+          ...(current[milestoneId] ?? {}),
+          ...patch,
+          updatedAt: new Date().toISOString()
+        }
+      };
+      writeGitMilestoneStates(project.id, next);
+      return next;
+    });
+  }
+
+  async function handleCommitMilestone(milestone: GitMilestone, pushAfterCommit: boolean) {
+    const message = gitMilestoneMessages[milestone.id] ?? milestone.message;
+    setGitBusyId(milestone.id);
+    updateGitMilestoneState(milestone.id, {
+      status: "suggested",
+      message
+    });
+
+    try {
+      const commitResult = await gitCommit({
+        projectId: project.id,
+        message,
+        paths: milestone.includePaths
+      });
+      updateGitMilestoneState(milestone.id, gitResultToMilestoneState(commitResult, "committed", message));
+
+      if (!commitResult.success || !pushAfterCommit) {
+        await refreshGitProjectStatus();
+        return;
+      }
+
+      const pushResult = await gitPush(project.id);
+      updateGitMilestoneState(milestone.id, gitResultToMilestoneState(pushResult, "pushed", message, commitResult.commitHash));
+      await refreshGitProjectStatus();
+    } finally {
+      setGitBusyId(null);
+    }
+  }
+
   // Build SlotPanel tabs from openTabs state
   const guideTabContent = useMemo(() => (
     <GuidePanel
@@ -817,6 +1041,7 @@ export function Workspace({
       onNext={() => void handleNext()}
       onRunCommand={onRunCommand}
       onOpenReference={openReferenceCard}
+      onOpenConcept={openConceptCard}
       onCreateFile={(path) => createWorkspaceFile(path)}
       onVerifyRecall={() => void handleVerifyRecall()}
       verifyingId={verifyingId}
@@ -848,6 +1073,166 @@ export function Workspace({
     </div>
   ), [isStepsCollapsed, project, furthestUnlockedStepIndex]);
 
+  const knowledgeTabContent = useMemo(() => {
+    const currentConceptIds = block?.kind === "recall" || block?.kind === "explain" ? block.concepts : [];
+    const currentConcepts = currentConceptIds
+      .map((conceptId) => concepts.find((concept) => concept.id === conceptId))
+      .filter((concept): concept is ConceptCard => Boolean(concept));
+    const savedConcepts = savedConceptIds
+      .map((conceptId) => concepts.find((concept) => concept.id === conceptId))
+      .filter((concept): concept is ConceptCard => Boolean(concept));
+    const recentlyOpenedConcepts = openConceptIds
+      .map((conceptId) => concepts.find((concept) => concept.id === conceptId))
+      .filter((concept): concept is ConceptCard => Boolean(concept));
+
+    const renderConceptItem = (concept: ConceptCard, badge?: string) => (
+      <div className="knowledge-panel__item" key={`${badge ?? "concept"}:${concept.id}`}>
+        <button type="button" onClick={() => openConceptCard(concept.id)}>
+          <span>
+            <strong>{concept.title}</strong>
+            <small>{concept.summary || concept.kind}</small>
+          </span>
+        </button>
+        <div className="knowledge-panel__item-actions">
+          {badge ? <span className="knowledge-panel__badge">{badge}</span> : null}
+          <button
+            type="button"
+            className="knowledge-panel__save"
+            data-saved={savedConceptIds.includes(concept.id)}
+            onClick={() => setConceptSaved(concept.id, !savedConceptIds.includes(concept.id))}
+          >
+            <BookmarkSimple size={12} weight={savedConceptIds.includes(concept.id) ? "fill" : "regular"} />
+            {savedConceptIds.includes(concept.id) ? "Saved" : "Save"}
+          </button>
+        </div>
+      </div>
+    );
+
+    return (
+      <div className="knowledge-panel">
+        <div className="knowledge-panel__hero">
+          <BookOpen size={17} weight="duotone" />
+          <div>
+            <strong>{savedConceptIds.length} saved</strong>
+            <span>{concepts.length} concept card{concepts.length === 1 ? "" : "s"} in this tape</span>
+          </div>
+        </div>
+
+        <section className="knowledge-panel__section">
+          <p className="knowledge-panel__label">Current Block</p>
+          {currentConcepts.length > 0
+            ? currentConcepts.map((concept) => renderConceptItem(concept, "Now"))
+            : <p className="knowledge-panel__empty">No concept cards are linked to this block.</p>}
+        </section>
+
+        {recentlyOpenedConcepts.length > 0 ? (
+          <section className="knowledge-panel__section">
+            <p className="knowledge-panel__label">Recently Opened</p>
+            {recentlyOpenedConcepts.map((concept) => renderConceptItem(concept, "Open"))}
+          </section>
+        ) : null}
+
+        <section className="knowledge-panel__section">
+          <p className="knowledge-panel__label">Saved Knowledge</p>
+          {savedConcepts.length > 0
+            ? savedConcepts.map((concept) => renderConceptItem(concept))
+            : <p className="knowledge-panel__empty">Saved concepts will stay available here during recall and verification.</p>}
+        </section>
+
+        {authoringWarnings.length > 0 ? (
+          <section className="knowledge-panel__section knowledge-panel__warnings">
+            <p className="knowledge-panel__label">Authoring Warnings</p>
+            {authoringWarnings.map((warning) => (
+              <div className="knowledge-panel__warning" data-severity={warning.severity} key={warning.id}>
+                <WarningCircle size={13} weight="duotone" />
+                <span>{warning.message}</span>
+              </div>
+            ))}
+          </section>
+        ) : null}
+
+        <section className="knowledge-panel__section">
+          <p className="knowledge-panel__label">All Concepts</p>
+          {concepts.length > 0
+            ? concepts.map((concept) => renderConceptItem(concept))
+            : <p className="knowledge-panel__empty">This project has not introduced tape-0.3 concepts yet.</p>}
+        </section>
+      </div>
+    );
+  }, [authoringWarnings, block, concepts, openConceptIds, savedConceptIds]);
+
+  const gitTabContent = useMemo(() => (
+    <div className="git-panel">
+      <div className="git-panel__status">
+        <GitBranch size={16} weight="duotone" />
+        <div>
+          <strong>{gitProjectStatus?.isRepo ? gitProjectStatus.branch ?? "Git repository" : "No repository"}</strong>
+          <span>
+            {gitProjectStatus?.isRepo
+              ? `${gitProjectStatus.dirtyFiles.length} changed file${gitProjectStatus.dirtyFiles.length === 1 ? "" : "s"}${gitProjectStatus.hasRemote ? " · remote ready" : ""}`
+              : "Initialize git when importing a project to enable milestone commits."}
+          </span>
+        </div>
+      </div>
+
+      <div className="git-panel__timeline">
+        {gitMilestones.length > 0 ? gitMilestones.map((milestone) => {
+          const stored = gitMilestoneStates[milestone.id];
+          const status = resolveMilestoneStatus(milestone, stored, project);
+          const isBusy = gitBusyId === milestone.id;
+          const message = gitMilestoneMessages[milestone.id] ?? milestone.message;
+          const canCommit = gitProjectStatus?.isRepo === true && status !== "pending" && status !== "committed" && status !== "pushed" && !isBusy;
+
+          return (
+            <div className="git-panel__milestone" data-status={status} key={milestone.id}>
+              <span className="git-panel__dot" />
+              <div className="git-panel__milestone-body">
+                <div className="git-panel__milestone-head">
+                  <span>{milestoneStatusLabel(status)}</span>
+                  <small>{milestone.after}</small>
+                </div>
+                <input
+                  value={message}
+                  onChange={(event) => setGitMilestoneMessages((current) => ({
+                    ...current,
+                    [milestone.id]: event.target.value
+                  }))}
+                  aria-label={`Commit message for ${milestone.id}`}
+                />
+                <p>{milestone.description || "Suggested commit for this learning milestone."}</p>
+                <div className="git-panel__files">
+                  {milestone.includePaths.length > 0
+                    ? milestone.includePaths.map((includePath) => <code key={includePath}>{includePath}</code>)
+                    : <code>all changed files</code>}
+                </div>
+                {stored?.output ? <pre>{stored.output}</pre> : null}
+                <div className="git-panel__actions">
+                  <button type="button" disabled={!canCommit} onClick={() => void handleCommitMilestone(milestone, false)}>
+                    <CheckCircle size={13} weight="duotone" />
+                    {isBusy ? "Committing" : "Commit"}
+                  </button>
+                  <button type="button" disabled={!canCommit || gitProjectStatus?.hasRemote !== true} onClick={() => void handleCommitMilestone(milestone, true)}>
+                    <GitBranch size={13} weight="duotone" />
+                    Commit + Push
+                  </button>
+                  <button
+                    type="button"
+                    disabled={status === "pending" || isBusy}
+                    onClick={() => updateGitMilestoneState(milestone.id, { status: "pending", output: "Deferred for later." })}
+                  >
+                    Later
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        }) : (
+          <p className="git-panel__empty">No git milestones are declared in this tape yet.</p>
+        )}
+      </div>
+    </div>
+  ), [gitBusyId, gitMilestoneMessages, gitMilestoneStates, gitMilestones, gitProjectStatus, project]);
+
   useEffect(() => {
     const panelTabs: SlotTab[] = [
       {
@@ -863,6 +1248,20 @@ export function Workspace({
         icon: <File size={13} weight="duotone" />,
         active: activeRightSlotId === "steps",
         content: stepsTabContent
+      },
+      {
+        id: "knowledge",
+        title: "Knowledge",
+        icon: <BookOpen size={13} weight="duotone" />,
+        active: activeRightSlotId === "knowledge",
+        content: knowledgeTabContent
+      },
+      {
+        id: "git",
+        title: "Git",
+        icon: <GitBranch size={13} weight="duotone" />,
+        active: activeRightSlotId === "git",
+        content: gitTabContent
       }
     ];
 
@@ -874,7 +1273,7 @@ export function Workspace({
         launcherItems={panelTabs.map((tab) => ({
           type: tab.id,
           title: tab.title,
-          description: tab.id === "guide" ? "Current block explainer" : "Project step timeline",
+          description: rightPanelLauncherDescription(tab.id),
           icon: tab.icon ?? <File size={13} weight="duotone" />,
           createTab: () => tab
         }))}
@@ -885,47 +1284,47 @@ export function Workspace({
     );
 
     return () => onGuidePanelChange(null);
-  }, [activeRightSlotId, guideTabContent, onGuidePanelChange, onRightSlotChange, stepsTabContent]);
+  }, [activeRightSlotId, gitTabContent, guideTabContent, knowledgeTabContent, onGuidePanelChange, onRightSlotChange, stepsTabContent]);
 
   // Build SlotPanel tabs from openTabs state
   const editorSlotTabs: SlotTab[] = useMemo(() => {
-    return openTabs.map((tabPath) => {
+    return uniqueStrings(openTabs.map(normalizeWorkspacePath).filter(Boolean)).map((tabPath) => {
       const filename = tabPath.split("/").pop() || "";
+      const isActiveTab = tabPath === activeFilePath;
+      const tabContent = fileContents[tabPath] ?? (isActiveTab ? activeFileContent : "");
       const tabActiveEdit =
-        tabPath === activeFilePath && isActiveEditReady ? activeEdit : null;
+        isActiveTab && isActiveEditReady ? activeEdit : null;
       return {
         id: tabPath,
         title: filename,
         icon: iconForFile(filename),
         closable: true,
-        active: tabPath === activeFilePath,
+        active: isActiveTab,
         content: (
           <EditorPane
             path={tabPath}
             workspacePath={project.workspacePath}
-            content={tabPath === activeFilePath ? activeFileContent : ""}
+            content={tabContent}
             activeEdit={tabActiveEdit}
-            editAnchor={tabPath === activeFilePath ? editAnchor : ""}
-            editProgress={tabPath === activeFilePath ? editProgress : 0}
-            onFreeEdit={(content) => void handleFreeEdit(content)}
+            editAnchor={isActiveTab ? editAnchor : ""}
+            editProgress={isActiveTab ? editProgress : 0}
+            onFreeEdit={(content) => void handleFreeEditForPath(tabPath, content)}
             onGuidedProgress={(progress) => void handleGuidedProgress(progress)}
             onRevealLine={() => void handleRevealLineAssistance()}
-            onSave={() => void handleManualSave()}
-            fileList={flattenTree(tree)}
+            onSave={() => void handleManualSaveForPath(tabPath)}
             theme={theme}
-            pendingJump={tabPath === activeFilePath ? pendingJump : null}
-            focusRange={tabPath === activeFilePath ? focusRange : null}
+            pendingJump={isActiveTab ? pendingJump : null}
+            focusRange={isActiveTab ? focusRange : null}
             onJumpComplete={() => setPendingJump(null)}
             onOpenFileAndJump={async (path, line, col) => {
-              setPendingJump({ line, column: col });
               await openFileAndRecord(path);
+              setPendingJump({ line, column: col });
             }}
-            readFileContent={handleReadFileContent}
           />
         ),
       };
     });
-  }, [openTabs, activeFilePath, activeFileContent, activeEdit, isActiveEditReady, editAnchor, editProgress, tree, pendingJump, focusRange, handleReadFileContent, theme]);
+  }, [openTabs, activeFilePath, activeFileContent, fileContents, activeEdit, isActiveEditReady, editAnchor, editProgress, pendingJump, focusRange, theme]);
 
   // Launcher items for the editor + button
   const editorLauncherItems: SlotLauncherItem[] = useMemo(() => [
@@ -956,8 +1355,9 @@ export function Workspace({
   const handleTabChange = useCallback((tabId: string) => {
     // Don't switch to file-chooser tabs
     if (tabId.startsWith("__file-chooser-")) return;
-    if (tabId !== activeFilePath) {
-      void openFileAndRecord(tabId);
+    const nextPath = normalizeWorkspacePath(tabId);
+    if (nextPath && nextPath !== activeFilePath) {
+      void openFileAndRecord(nextPath);
     }
   }, [activeFilePath]);
 
@@ -970,7 +1370,7 @@ export function Workspace({
     <div className="workspace workspace--editor-only">
       <SlotPanel
         ref={editorPanelRef}
-        activeTabId={activeFilePath}
+        activeTabId={activeFilePath ?? undefined}
         tabs={editorSlotTabs}
         syncTabs
         launcherItems={editorLauncherItems}
@@ -979,8 +1379,8 @@ export function Workspace({
         onTabChange={handleTabChange}
         onTabClose={handleTabClose}
       />
-      {openReferenceIds.length > 0 ? (
-        <div className="construct-floating-card-layer" aria-label="Open reference cards">
+      {openReferenceIds.length > 0 || openConceptIds.length > 0 ? (
+        <div className="construct-floating-card-layer" aria-label="Open reference and knowledge cards">
           {openReferenceIds
             .map((referenceId) => references.find((reference) => reference.id === referenceId))
             .filter((reference): reference is (typeof references)[number] => Boolean(reference))
@@ -993,6 +1393,20 @@ export function Workspace({
                 onClose={() => closeReferenceCard(reference.id)}
                 onPinChange={(pinned) => setReferencePinned(reference.id, pinned)}
                 onOpenLink={(link) => void focusReferenceLink(link)}
+              />
+            ))}
+          {openConceptIds
+            .map((conceptId) => project.program.concepts.find((concept) => concept.id === conceptId))
+            .filter((concept): concept is (typeof project.program.concepts)[number] => Boolean(concept))
+            .map((concept) => (
+              <KnowledgeCard
+                key={concept.id}
+                concept={concept}
+                saved={savedConceptIds.includes(concept.id)}
+                theme={theme}
+                onClose={() => closeConceptCard(concept.id)}
+                onOpenConcept={openConceptCard}
+                onSaveChange={(saved) => setConceptSaved(concept.id, saved)}
               />
             ))}
         </div>
@@ -1020,6 +1434,111 @@ function lineNumberForOffset(content: string, offset: number): number {
 
 function uniqueStrings(values: string[]): string[] {
   return [...new Set(values)];
+}
+
+const savedConceptStorageKey = "construct.knowledge.savedConceptIds";
+
+type StoredGitMilestoneState = {
+  status?: GitMilestoneStatus;
+  message?: string;
+  output?: string;
+  commitHash?: string;
+  updatedAt?: string;
+};
+
+function readSavedConceptIds(): string[] {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(savedConceptStorageKey) ?? "[]");
+    return Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeSavedConceptIds(ids: string[]): void {
+  window.localStorage.setItem(savedConceptStorageKey, JSON.stringify(uniqueStrings(ids)));
+}
+
+function gitMilestoneStorageKey(projectId: string): string {
+  return `construct.git.milestones.${projectId}`;
+}
+
+function readGitMilestoneStates(projectId: string): Record<string, StoredGitMilestoneState> {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(gitMilestoneStorageKey(projectId)) ?? "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as Record<string, StoredGitMilestoneState>
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeGitMilestoneStates(projectId: string, states: Record<string, StoredGitMilestoneState>): void {
+  window.localStorage.setItem(gitMilestoneStorageKey(projectId), JSON.stringify(states));
+}
+
+function gitResultToMilestoneState(
+  result: GitActionResult,
+  successStatus: GitMilestoneStatus,
+  message: string,
+  fallbackCommitHash?: string
+): StoredGitMilestoneState {
+  return {
+    status: result.success ? successStatus : "failed",
+    message,
+    output: result.output || (result.success ? "Done." : "Git command failed."),
+    commitHash: result.commitHash ?? fallbackCommitHash
+  };
+}
+
+function resolveMilestoneStatus(
+  milestone: GitMilestone,
+  stored: StoredGitMilestoneState | undefined,
+  project: ProjectRecord
+): GitMilestoneStatus {
+  if (stored?.status === "committed" || stored?.status === "pushed" || stored?.status === "failed") {
+    return stored.status;
+  }
+
+  const linkedVerificationPassed = project.verificationResults?.[milestone.after]?.passed === true;
+  const linkedBlockCompleted = project.completedBlocks?.[milestone.after] === true;
+  if (linkedVerificationPassed || linkedBlockCompleted) {
+    return "suggested";
+  }
+
+  return "pending";
+}
+
+function milestoneStatusLabel(status: GitMilestoneStatus): string {
+  switch (status) {
+    case "suggested":
+      return "Suggested";
+    case "committed":
+      return "Committed";
+    case "pushed":
+      return "Pushed";
+    case "failed":
+      return "Failed";
+    case "pending":
+    default:
+      return "Waiting";
+  }
+}
+
+function rightPanelLauncherDescription(tabId: string): string {
+  switch (tabId) {
+    case "guide":
+      return "Current block explainer";
+    case "steps":
+      return "Project step timeline";
+    case "knowledge":
+      return "Saved concepts and warnings";
+    case "git":
+      return "Suggested git milestones";
+    default:
+      return "Construct panel";
+  }
 }
 
 function isGuidedEditReady(
@@ -1105,6 +1624,15 @@ function normalizeWorkspacePath(path: string): string {
     .replace(/\\/g, "/")
     .replace(/^\/+/, "")
     .replace(/\/+/g, "/");
+}
+
+function normalizeOptionalWorkspacePath(path: string | null | undefined): string | null {
+  if (!path) {
+    return null;
+  }
+
+  const normalized = normalizeWorkspacePath(path);
+  return normalized || null;
 }
 
 function generateCopyPath(srcPath: string): string {

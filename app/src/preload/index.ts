@@ -38,6 +38,12 @@ contextBridge.exposeInMainWorld("constructProjects", {
   duplicateFile: (input: unknown) => ipcRenderer.invoke("construct:project:duplicate-file", input),
   verifyRecall: (input: unknown) =>
     ipcRenderer.invoke("construct:project:verify-recall", input),
+  gitStatus: (projectId: string) =>
+    ipcRenderer.invoke("construct:project:git-status", projectId),
+  gitCommit: (input: unknown) =>
+    ipcRenderer.invoke("construct:project:git-commit", input),
+  gitPush: (projectId: string) =>
+    ipcRenderer.invoke("construct:project:git-push", projectId),
   terminalCreate: (input: unknown) =>
     ipcRenderer.invoke("construct:project:terminal-create", input),
   terminalInput: (input: unknown) =>
@@ -76,8 +82,8 @@ contextBridge.exposeInMainWorld("constructProjects", {
     ipcRenderer.on("construct:lsp:notification", listener);
     return () => ipcRenderer.off("construct:lsp:notification", listener);
   },
-  onLspStderr: (callback: (text: string) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, payload: string) => {
+  onLspStderr: (callback: (payload: unknown) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
       callback(payload);
     };
     ipcRenderer.on("construct:lsp:stderr", listener);
@@ -90,8 +96,8 @@ contextBridge.exposeInMainWorld("constructProjects", {
     ipcRenderer.on("construct:main:log", listener);
     return () => ipcRenderer.off("construct:main:log", listener);
   },
-  onLspInstallProgress: (callback: (payload: { type: "stdout" | "stderr"; text: string }) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, payload: { type: "stdout" | "stderr"; text: string }) => {
+  onLspInstallProgress: (callback: (payload: { language?: string; type: "stdout" | "stderr"; text: string }) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: { language?: string; type: "stdout" | "stderr"; text: string }) => {
       callback(payload);
     };
     ipcRenderer.on("construct:lsp:install-progress", listener);
@@ -102,4 +108,3 @@ contextBridge.exposeInMainWorld("constructProjects", {
   lspStart: (projectId: string) => ipcRenderer.invoke("construct:lsp:start-server", projectId),
   lspStop: () => ipcRenderer.invoke("construct:lsp:stop-server")
 });
-

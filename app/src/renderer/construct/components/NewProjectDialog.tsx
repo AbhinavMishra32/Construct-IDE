@@ -17,7 +17,7 @@ import {
   DialogSection
 } from "@opaline/ui";
 
-import { openConstructFile, selectWorkspaceDirectory } from "../lib/bridge";
+import { getSettings, openConstructFile, selectWorkspaceDirectory } from "../lib/bridge";
 import { parseConstructSource } from "../lib/parser";
 import { createProjectFromConstructFile } from "../lib/projectStore";
 import type { ConstructProgram, ProjectRecord } from "../types";
@@ -58,7 +58,8 @@ export function NewProjectDialog({
         source: file.source,
         program
       });
-      setWorkspacePath(suggestWorkspacePath(file.path, program.id));
+      const settings = await getSettings().catch(() => null);
+      setWorkspacePath(suggestWorkspacePath(file.path, program.id, settings?.workspaceRoot));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
@@ -188,8 +189,12 @@ export function NewProjectDialog({
   );
 }
 
-function suggestWorkspacePath(sourcePath: string, projectId: string): string {
+function suggestWorkspacePath(sourcePath: string, projectId: string, workspaceRoot?: string): string {
   const normalized = sourcePath.replace(/\\/g, "/");
+  if (workspaceRoot && normalized.includes("/app/src/")) {
+    return `${workspaceRoot.replace(/\/+$/, "")}/${projectId}`;
+  }
+
   const lastSlash = normalized.lastIndexOf("/");
   const directory = lastSlash >= 0 ? normalized.slice(0, lastSlash) : "";
   return directory ? `${directory}/${projectId}` : projectId;

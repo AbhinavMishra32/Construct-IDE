@@ -9,10 +9,12 @@ import {
 
 export function MarkdownBlock({
   content,
-  theme
+  theme,
+  onOpenConcept
 }: {
   content: string;
   theme: "light" | "dark" | "system";
+  onOpenConcept?: (conceptId: string) => void;
 }) {
   const [isDark, setIsDark] = useState(() => {
     if (theme === "system") {
@@ -81,6 +83,19 @@ export function MarkdownBlock({
       );
     },
     a({ className, ...props }) {
+      const href = typeof props.href === "string" ? props.href : "";
+      if (href.startsWith("construct-concept:")) {
+        const conceptId = decodeURIComponent(href.slice("construct-concept:".length));
+        return (
+          <button
+            className="construct-concept-chip"
+            type="button"
+            onClick={() => onOpenConcept?.(conceptId)}
+          >
+            {props.children}
+          </button>
+        );
+      }
       return <a className={`construct-markdown-link ${className ?? ""}`.trim()} {...props} />;
     },
     ul({ className, ...props }) {
@@ -130,8 +145,14 @@ export function MarkdownBlock({
   return (
     <div className="construct-markdown">
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-        {content}
+        {renderConceptLinks(content)}
       </ReactMarkdown>
     </div>
   );
+}
+
+function renderConceptLinks(content: string): string {
+  return content.replace(/\[\[([a-zA-Z0-9_.:-]+)\|([^\]]+)\]\]/g, (_match, id, label) => {
+    return `[${label}](construct-concept:${encodeURIComponent(id)})`;
+  });
 }

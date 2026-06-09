@@ -48,7 +48,8 @@ if (window.constructProjects && typeof window.constructProjects.onMainLog === "f
 // 3. Capture LSP installation progress logs
 if (window.constructProjects && typeof window.constructProjects.onLspInstallProgress === "function") {
   window.constructProjects.onLspInstallProgress((payload) => {
-    logStore.addLog("lsp-server", payload.text, payload.type === "stderr" ? "warn" : "info");
+    const prefix = payload.language && payload.language !== "all" ? `[${payload.language}] ` : "[installer] ";
+    logStore.addLog("lsp-server", `${prefix}${payload.text}`, payload.type === "stderr" ? "warn" : "info");
   });
 }
 

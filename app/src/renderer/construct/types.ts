@@ -8,6 +8,9 @@ export type ConstructProgram = {
   requires: string[];
   source: string;
   files: ConstructFile[];
+  concepts: ConceptCard[];
+  gitMilestones: GitMilestone[];
+  warnings: ConstructLintWarning[];
   references: ReferenceCard[];
   targets: ConstructTarget[];
   steps: ConstructStep[];
@@ -38,6 +41,7 @@ export type ExplainBlock = {
   id: string;
   content: string;
   focus?: string;
+  concepts: string[];
 };
 
 export type EditBlock = {
@@ -72,6 +76,65 @@ export type ReferenceLink = {
   label?: string;
 };
 
+export type ConceptDocsLink = {
+  title: string;
+  url: string;
+  why?: string;
+};
+
+export type ConceptCard = {
+  id: string;
+  title: string;
+  kind: string;
+  tags: string[];
+  summary: string;
+  why: string;
+  example: string;
+  docs: ConceptDocsLink[];
+};
+
+export type SupportSection = {
+  kind: "intent" | "concepts" | "api" | "mental-model" | "common-mistake" | string;
+  content: string;
+};
+
+export type GitMilestone = {
+  id: string;
+  after: string;
+  message: string;
+  description: string;
+  includePaths: string[];
+};
+
+export type GitMilestoneStatus = "pending" | "suggested" | "committed" | "pushed" | "failed";
+
+export type GitStatus = {
+  isRepo: boolean;
+  branch: string | null;
+  hasRemote: boolean;
+  dirtyFiles: string[];
+};
+
+export type GitActionResult = {
+  success: boolean;
+  output: string;
+  commitHash?: string;
+};
+
+export type LspLanguageId = "typescript" | "python";
+
+export type LspStartResult = {
+  languages: LspLanguageId[];
+  workspacePath: string;
+};
+
+export type ConstructLintWarning = {
+  id: string;
+  severity: "info" | "warning" | "error";
+  message: string;
+  target?: string;
+};
+
 export type ConstructTarget = {
   id: string;
   path: string;
@@ -86,9 +149,11 @@ export type RecallBlock = {
   path?: string;
   target?: string;
   references: string[];
+  concepts: string[];
   difficulty: "supported-recall" | string;
   task: string;
   support: string;
+  supportSections: SupportSection[];
   verify?: VerificationBlock;
 };
 
@@ -113,11 +178,13 @@ export type VerificationMessages = {
 };
 
 export type VerificationResult = {
+  status?: "pass" | "fail" | "almost";
   passed: boolean;
   confidence: "low" | "medium" | "high";
   reason: string;
   evidence: string[];
   suggestion?: string;
+  relatedConceptIds?: string[];
   logs?: VerificationLogEntry[];
 };
 
@@ -271,7 +338,12 @@ export type ConstructProjectsApi = {
     projectId: string;
     recall: RecallBlock;
     references: ReferenceCard[];
+    concepts?: ConceptCard[];
+    savedKnowledge?: ConceptCard[];
   }): Promise<VerificationResult>;
+  gitStatus(projectId: string): Promise<GitStatus>;
+  gitCommit(input: { projectId: string; message: string; paths: string[] }): Promise<GitActionResult>;
+  gitPush(projectId: string): Promise<GitActionResult>;
   terminalCreate(input: { projectId: string; cols?: number; rows?: number }): Promise<{ sessionId: string }>;
   terminalInput(input: { sessionId: string; data: string }): Promise<void>;
   terminalResize(input: { sessionId: string; cols: number; rows: number }): Promise<void>;
@@ -281,12 +353,18 @@ export type ConstructProjectsApi = {
   onVerifyLog(callback: (event: { entry: VerificationLogEntry }) => void): () => void;
   lspRequest(payload: unknown): Promise<unknown>;
   onLspNotification(callback: (payload: any) => void): () => void;
-  onLspStderr(callback: (text: string) => void): () => void;
+  onLspStderr(callback: (payload: string | { language: "typescript" | "python"; level: "info" | "warn" | "error"; text: string }) => void): () => void;
   onMainLog(callback: (payload: { level: string; message: string; timestamp: string }) => void): () => void;
-  onLspInstallProgress(callback: (payload: { type: "stdout" | "stderr"; text: string }) => void): () => void;
-  lspGetStatus(projectId: string): Promise<"not-installed" | "installed" | "running" | "stopped" | "installing">;
+  onLspInstallProgress(callback: (payload: { language?: "all" | "typescript" | "python"; type: "stdout" | "stderr"; text: string }) => void): () => void;
+  lspGetStatus(projectId: string): Promise<Record<"typescript" | "python", {
+    command: string;
+    installCommand: string;
+    installed: boolean;
+    label: string;
+    resolvedPath: string | null;
+    status: "not-installed" | "running" | "stopped" | "installing";
+  }>>;
   lspInstall(projectId: string): Promise<boolean>;
-  lspStart(projectId: string): Promise<boolean>;
+  lspStart(projectId: string): Promise<LspStartResult>;
   lspStop(): Promise<void>;
 };
-

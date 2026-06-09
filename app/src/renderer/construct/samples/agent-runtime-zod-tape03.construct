@@ -1,0 +1,296 @@
+@construct spec="tape-0.3"
+@id "agent-runtime-zod-tape03"
+@title "Agent Runtime Tool Contracts"
+@description "Teach Zod schemas, tool contracts, verification, and git milestones in one small runtime loop."
+@root "."
+@requires "ghost-edit recall-check focus-ranges reference-cards mastra-verify real-terminal concept-cards git-milestones"
+
+::files
+
+::file path="package.json"
+```json
+{
+  "name": "agent-runtime-zod-demo",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  }
+}
+```
+::end
+
+::file path="tsconfig.json"
+```json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "skipLibCheck": true,
+    "outDir": "dist"
+  },
+  "include": ["src/**/*.ts"]
+}
+```
+::end
+
+::file path="src/tools/tool.ts"
+```ts
+import type { z } from "zod";
+
+export type AnyTool = {
+  name: string;
+  description: string;
+  schema: z.ZodTypeAny;
+  execute: (args: unknown) => unknown | Promise<unknown>;
+};
+
+export function defineTool<TSchema extends z.ZodTypeAny, TResult>(config: {
+  name: string;
+  description: string;
+  schema: TSchema;
+  execute: (args: z.infer<TSchema>) => TResult | Promise<TResult>;
+}) {
+  return config;
+}
+```
+::end
+
+::file path="src/index.ts"
+```ts
+export type { AnyTool } from "./tools/tool.js";
+```
+::end
+
+::end
+
+::target id="index.public-api" path="src/index.ts" find="export type { AnyTool } from \"./tools/tool.js\";"
+::end
+
+::concept id="zod.object-schema" title="Zod object schema" kind="library-concept" tags="typescript validation tools agents"
+
+::summary
+A Zod object schema describes the shape of a JavaScript object while the program is running.
+
+TypeScript types are erased after compilation. Zod schemas still exist at runtime, so generated JSON can be checked before real code executes.
+::end
+
+::why
+An LLM can request a tool call with JSON arguments.
+
+Those arguments are untrusted until the runtime validates them.
+
+`z.object({ a: z.number(), b: z.number() })` means the value must be an object with numeric `a` and `b` fields.
+::end
+
+::example
+```ts
+const schema = z.object({
+  a: z.number(),
+  b: z.number(),
+});
+
+const args = schema.parse({ a: 2, b: 5 });
+```
+::end
+
+::docs
+title="Zod documentation"
+url="https://zod.dev/"
+why="Use this for the official schema, parsing, and validation APIs."
+::end
+
+::end
+
+::concept id="agent.tool-contract" title="Agent tool contract" kind="runtime-concept" tags="agents tools runtime"
+
+::summary
+A tool contract is the boundary between a model request and code that can actually run.
+::end
+
+::why
+The contract names the tool, explains what it does, defines the input schema, and provides the execute function.
+
+That lets the runtime decide whether a model request is valid before calling application code.
+::end
+
+::example
+```ts
+defineTool({
+  name: "add",
+  description: "Add two numbers",
+  schema,
+  execute: ({ a, b }) => ({ result: a + b }),
+});
+```
+::end
+
+::end
+
+::concept id="runtime.validation" title="Runtime validation" kind="runtime-concept" tags="validation agents safety"
+
+::summary
+Runtime validation checks values when the program is executing, not only when TypeScript compiles.
+::end
+
+::why
+Tool calls cross a trust boundary. The model may emit invalid JSON, missing fields, or the wrong value types.
+
+Validation catches that before the runtime runs the tool.
+::end
+
+::example
+```ts
+const parsed = schema.parse(modelArgs);
+return tool.execute(parsed);
+```
+::end
+
+::end
+
+::reference id="tool-contract-card" title="Tool contract" kind="recall-card" reveal="shape-without-answer"
+
+::body
+A useful tool definition has four pieces:
+
+- `name`
+- `description`
+- `schema`
+- `execute`
+
+For the add tool, the schema should require numeric `a` and `b`.
+::end
+
+::links
+file="src/tools/tool.ts"
+label="Open defineTool"
+::end
+
+::end
+
+::git id="commit-add-tool" after="verify-add-tool"
+
+::suggest
+message="feat: add first validated tool"
+description="You defined a real add tool with a runtime schema and passed agent verification."
+::end
+
+::include
+paths="src/index.ts src/demo/tools.ts"
+::end
+
+::end
+
+::step id="tool-contracts" title="Introduce tool contracts"
+
+::explain concepts="zod.object-schema agent.tool-contract runtime.validation"
+Agent tools need more than TypeScript types.
+
+The model sends JSON, and JSON arrives at runtime. That is why a tool contract combines [[agent.tool-contract|a named tool contract]] with [[zod.object-schema|a Zod object schema]] and [[runtime.validation|runtime validation]].
+::end
+
+::edit id="export-tool-helper" path="src/index.ts" mode="append" typing="ghost" anchor="index.public-api"
+
+::note when="start"
+Expose the helper from the package entrypoint so consumers can import it.
+::end
+
+```ts
+
+export { defineTool } from "./tools/tool.js";
+```
+::end
+
+::explain focus="index.public-api" concepts="agent.tool-contract"
+The public boundary now exports the type surface and the helper function.
+
+That means consumer code can import `defineTool` from the package entrypoint instead of reaching into internal folders.
+::end
+
+::end
+
+::step id="define-add-tool-step" title="Define the first real tool"
+
+::recall id="define-add-tool" path="src/demo/tools.ts" references="tool-contract-card" uses="zod.object-schema agent.tool-contract runtime.validation" difficulty="supported-recall"
+
+::task
+Create an `addTool` using `defineTool`.
+
+It should accept `{ a: number, b: number }` and return `{ result: a + b }`.
+::end
+
+::support
+
+::intent
+Create the first real tool contract.
+::end
+
+::concepts
+[[zod.object-schema|Zod object schema]]
+[[agent.tool-contract|Tool contract]]
+[[runtime.validation|Runtime validation]]
+::end
+
+::api
+`defineTool({ name, description, schema, execute })`
+
+`z.object({ a: z.number(), b: z.number() })`
+::end
+
+::mental-model
+The model may request a tool call, but the runtime should not trust model-generated JSON.
+
+The schema is the gate between model output and real code execution.
+::end
+
+::common-mistake
+Do not use `z.object({})` for a tool that needs `a` and `b`.
+
+An empty object schema does not describe the numeric arguments your tool needs.
+::end
+
+::end
+
+::verify id="verify-add-tool" kind="agent"
+
+::goal
+Verify that consumers can import the tool helper and define a typed add tool with a runtime Zod schema.
+::end
+
+::evidence
+files="src/index.ts src/tools/tool.ts src/demo/tools.ts"
+terminal_command="npm run typecheck"
+terminal_output="latest"
+::end
+
+::rubric
+Pass if `src/index.ts` exports `defineTool` and the useful tool type surface.
+Pass if `src/demo/tools.ts` defines `addTool` with `defineTool`.
+Pass if the add tool schema requires numeric `a` and `b` using Zod.
+Pass if execute returns `{ result: a + b }`.
+Do not require exact ordering.
+Do not pass if TypeScript fails.
+::end
+
+::messages
+success="Nice. Tool definitions are now part of the public runtime API."
+failure="The add tool is not a valid typed tool contract yet."
+::end
+
+::end
+
+::end
+
+::checkpoint id="tool-contract-loop-complete"
+You used concept cards, a task-local reference, runtime verification, and a suggested git milestone for one complete learning loop.
+::end
+
+::end

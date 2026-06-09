@@ -15,6 +15,10 @@ const tensorNumelProjectSource = readFileSync(
   fileURLToPath(new URL("../samples/tensor-numel-learning-project.construct", import.meta.url)),
   "utf8"
 );
+const agentRuntimeZodProjectSource = readFileSync(
+  fileURLToPath(new URL("../samples/agent-runtime-zod-tape03.construct", import.meta.url)),
+  "utf8"
+);
 
 describe(".construct parser", () => {
   it("parses the sample project into files and a linear tape", () => {
@@ -105,5 +109,35 @@ describe(".construct parser", () => {
     assert.equal(recall?.verify?.kind, "agent");
     assert.equal(recall?.verify?.evidence.files.length, 3);
     assert.match(recall?.verify?.rubric ?? "", /Do not pass if the learner only hardcodes/);
+  });
+
+  it("parses tape-0.3 concept cards, rich support, and git milestones", () => {
+    const program = parseConstructSource(agentRuntimeZodProjectSource);
+
+    assert.equal(program.spec, "tape-0.3");
+    assert.equal(program.concepts.length, 3);
+    assert.equal(program.concepts[0]?.id, "zod.object-schema");
+    assert.equal(program.concepts[0]?.docs[0]?.url, "https://zod.dev/");
+    assert.equal(program.gitMilestones[0]?.after, "verify-add-tool");
+    assert.equal(program.warnings.length, 0);
+
+    const explain = program.steps[0]?.blocks.find((block) => block.kind === "explain");
+    assert.equal(explain?.kind, "explain");
+    assert.deepEqual(explain?.concepts, [
+      "zod.object-schema",
+      "agent.tool-contract",
+      "runtime.validation"
+    ]);
+
+    const recall = program.steps[1]?.blocks.find((block) => block.kind === "recall");
+    assert.equal(recall?.kind, "recall");
+    assert.deepEqual(recall?.concepts, [
+      "zod.object-schema",
+      "agent.tool-contract",
+      "runtime.validation"
+    ]);
+    assert.equal(recall?.supportSections.length, 5);
+    assert.equal(recall?.supportSections[0]?.kind, "intent");
+    assert.equal(recall?.verify?.id, "verify-add-tool");
   });
 });

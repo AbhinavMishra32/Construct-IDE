@@ -25,6 +25,15 @@ export default defineConfig({
   },
   server: {
     host: "127.0.0.1",
-    port: 5173
+    port: 5173,
+    watch: {
+      ignored: [
+        "**/.construct/**",
+        "**/construct-projects/**",
+        "**/samples/*/node_modules/**",
+        "**/samples/*/dist/**",
+        "**/samples/*/.git/**"
+      ]
+    }
   }
 });
