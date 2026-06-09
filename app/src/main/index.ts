@@ -28,6 +28,51 @@ if (typeof process.loadEnvFile === "function") {
   try { process.loadEnvFile(envPath); } catch { /* .env doesn't exist */ }
 }
 
+// Intercept console logs in Electron Main process and forward them to the renderer
+const originalLog = console.log;
+const originalError = console.error;
+const originalWarn = console.warn;
+
+function sendLogToRenderer(level: "info" | "warn" | "error", ...args: any[]) {
+  try {
+    const message = args.map(arg => {
+      if (arg instanceof Error) {
+        return `${arg.message}\n${arg.stack}`;
+      }
+      if (typeof arg === "object" && arg !== null) {
+        try { return JSON.stringify(arg, null, 2); } catch { return String(arg); }
+      }
+      return String(arg);
+    }).join(" ");
+
+    // activeWebContents is declared as a global let variable further down
+    if (activeWebContents && !activeWebContents.isDestroyed()) {
+      activeWebContents.send("construct:main:log", {
+        level,
+        message,
+        timestamp: new Date().toISOString()
+      });
+    }
+  } catch (err) {
+    originalError("Error in sendLogToRenderer:", err);
+  }
+}
+
+console.log = (...args: any[]) => {
+  originalLog(...args);
+  sendLogToRenderer("info", ...args);
+};
+
+console.error = (...args: any[]) => {
+  originalError(...args);
+  sendLogToRenderer("error", ...args);
+};
+
+console.warn = (...args: any[]) => {
+  originalWarn(...args);
+  sendLogToRenderer("warn", ...args);
+};
+
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
 const shouldOpenDevTools = process.env.CONSTRUCT_OPEN_DEVTOOLS === "1";
 const ignoredWorkspaceEntries = new Set([
@@ -369,6 +414,7 @@ let lspProcess: ChildProcess | null = null;
 let lspBuffer = "";
 const pendingRequests = new Map<number, { resolve: Function; reject: Function }>();
 let activeWebContents: Electron.WebContents | null = null;
+let isInstallingLsp = false;
 
 function stopLspServer() {
   if (lspProcess) {
@@ -392,11 +438,40 @@ function startLspServer(workspacePath: string) {
 
   console.log("[LSP] Starting typescript-language-server in:", workspacePath);
 
-  // Spawn typescript-language-server inside the workspacePath
-  lspProcess = spawn("npx", ["typescript-language-server", "--stdio"], {
+  // Check if we have a local installation in the project workspace first
+  let lspScript = path.join(
+    workspacePath,
+    "node_modules",
+    "typescript-language-server",
+    "lib",
+    "cli.mjs"
+  );
+
+  if (!existsSync(lspScript)) {
+    // Fallback to application's node_modules
+    lspScript = path.join(
+      app.getAppPath(),
+      "node_modules",
+      "typescript-language-server",
+      "lib",
+      "cli.mjs"
+    );
+  }
+
+  if (!existsSync(lspScript)) {
+    console.error("[LSP] Could not start server. typescript-language-server is not installed. Path tried: " + lspScript);
+    return;
+  }
+
+  console.log("[LSP] Using server binary script path: " + lspScript);
+
+  // Spawn typescript-language-server CLI script using Electron's Node.js runtime
+  lspProcess = spawn(process.execPath, [lspScript, "--stdio"], {
     cwd: workspacePath,
-    env: { ...process.env },
-    shell: true
+    env: {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: "1"
+    }
   });
 
   lspProcess.stdout?.on("data", (chunk: Buffer) => {
@@ -404,7 +479,11 @@ function startLspServer(workspacePath: string) {
   });
 
   lspProcess.stderr?.on("data", (data: Buffer) => {
-    console.warn("[LSP stderr]:", data.toString("utf8"));
+    const text = data.toString("utf8");
+    console.warn("[LSP stderr]:", text);
+    if (activeWebContents && !activeWebContents.isDestroyed()) {
+      activeWebContents.send("construct:lsp:stderr", text);
+    }
   });
 
   lspProcess.on("close", (code) => {
@@ -415,6 +494,96 @@ function startLspServer(workspacePath: string) {
   lspProcess.on("error", (err) => {
     console.error("[LSP] Process error:", err);
     stopLspServer();
+  });
+}
+
+function getLspStatus(projectId?: string): "not-installed" | "installed" | "running" | "stopped" | "installing" {
+  if (lspProcess) {
+    return "running";
+  }
+
+  if (isInstallingLsp) {
+    return "installing";
+  }
+
+  // Check if app node_modules script exists
+  const appLspPath = path.join(
+    app.getAppPath(),
+    "node_modules",
+    "typescript-language-server",
+    "lib",
+    "cli.mjs"
+  );
+  if (existsSync(appLspPath)) {
+    return "stopped";
+  }
+
+  // Check if workspace node_modules script exists
+  if (projectId) {
+    const wsPath = workspacePathForProject(projectId);
+    const wsLspPath = path.join(
+      wsPath,
+      "node_modules",
+      "typescript-language-server",
+      "lib",
+      "cli.mjs"
+    );
+    if (existsSync(wsLspPath)) {
+      return "stopped";
+    }
+  }
+
+  return "not-installed";
+}
+
+async function installLsp(workspacePath: string): Promise<boolean> {
+  if (isInstallingLsp) {
+    return false;
+  }
+  isInstallingLsp = true;
+  console.log("[LSP Installer] Starting npm install in workspace:", workspacePath);
+
+  return new Promise((resolve) => {
+    const shell = process.env.SHELL || "/bin/zsh";
+    // Run npm install --save-dev typescript-language-server typescript
+    const npmProcess = spawn(shell, ["-c", "npm install --save-dev typescript-language-server typescript"], {
+      cwd: workspacePath,
+      env: {
+        ...process.env
+      }
+    });
+
+    npmProcess.stdout?.on("data", (data: Buffer) => {
+      const text = data.toString("utf8");
+      console.log("[LSP Installer stdout]:", text);
+      if (activeWebContents && !activeWebContents.isDestroyed()) {
+        activeWebContents.send("construct:lsp:install-progress", { type: "stdout", text });
+      }
+    });
+
+    npmProcess.stderr?.on("data", (data: Buffer) => {
+      const text = data.toString("utf8");
+      console.warn("[LSP Installer stderr]:", text);
+      if (activeWebContents && !activeWebContents.isDestroyed()) {
+        activeWebContents.send("construct:lsp:install-progress", { type: "stderr", text });
+      }
+    });
+
+    npmProcess.on("close", (code) => {
+      isInstallingLsp = false;
+      console.log(`[LSP Installer] Process finished with exit code: ${code}`);
+      if (code === 0) {
+        resolve(true);
+      } else {
+        resolve(false);
+      }
+    });
+
+    npmProcess.on("error", (err) => {
+      isInstallingLsp = false;
+      console.error("[LSP Installer] Process spawn error:", err);
+      resolve(false);
+    });
   });
 }
 
@@ -470,6 +639,39 @@ function handleLspMessage(message: any) {
 }
 
 function installConstructProjectIpcHandlers(): void {
+  ipcMain.handle("construct:lsp:get-status", async (_event, projectId: string) => {
+    return getLspStatus(projectId);
+  });
+
+  ipcMain.handle("construct:lsp:install", async (_event, projectId: string) => {
+    try {
+      const projects = await readProjects();
+      const project = findProject(projects, projectId);
+      activeWebContents = _event.sender;
+      return await installLsp(project.workspacePath);
+    } catch (err) {
+      console.error("[LSP Installer] Error:", err);
+      return false;
+    }
+  });
+
+  ipcMain.handle("construct:lsp:start-server", async (_event, projectId: string) => {
+    try {
+      const projects = await readProjects();
+      const project = findProject(projects, projectId);
+      activeWebContents = _event.sender;
+      startLspServer(project.workspacePath);
+      return true;
+    } catch (err) {
+      console.error("[LSP] Start server error:", err);
+      return false;
+    }
+  });
+
+  ipcMain.handle("construct:lsp:stop-server", async () => {
+    stopLspServer();
+  });
+
   ipcMain.handle("construct:theme:set", async (_event, theme: "light" | "dark" | "system") => {
     nativeTheme.themeSource = theme;
   });

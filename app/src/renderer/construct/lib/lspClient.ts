@@ -1,4 +1,5 @@
 import { monaco } from "../../monaco";
+import { logStore } from "./logStore";
 
 class LspClientClass {
   private isInitialized = false;
@@ -123,6 +124,13 @@ class LspClientClass {
         this.watchModel(model);
       });
 
+      // Listen to LSP stderr
+      this.disposables.push({
+        dispose: window.constructProjects.onLspStderr((text) => {
+          logStore.addLog("lsp-server", text, "info");
+        })
+      });
+
     } catch (err) {
       console.error("[LSP Client] Failed to initialize LSP:", err);
       this.isInitialized = false;
@@ -133,18 +141,31 @@ class LspClientClass {
   async sendRequest(method: string, params: any): Promise<any> {
     const id = this.nextRequestId++;
     const payload = { jsonrpc: "2.0", id, method, params };
-    const response: any = await window.constructProjects.lspRequest(payload);
-    if (response && response.error) {
-      throw new Error(response.error.message || JSON.stringify(response.error));
+    
+    logStore.addLog("lsp-protocol", `--> Request: ${method} (id: ${id})\n${JSON.stringify(params, null, 2)}`, "info");
+    
+    try {
+      const response: any = await window.constructProjects.lspRequest(payload);
+      if (response && response.error) {
+        logStore.addLog("lsp-protocol", `<-- Error Response: ${method} (id: ${id})\n${JSON.stringify(response.error, null, 2)}`, "error");
+        throw new Error(response.error.message || JSON.stringify(response.error));
+      }
+      logStore.addLog("lsp-protocol", `<-- Response: ${method} (id: ${id})\n${JSON.stringify(response ? response.result : null, null, 2)}`, "info");
+      return response ? response.result : null;
+    } catch (err) {
+      logStore.addLog("lsp-protocol", `[Request Failed] ${method} (id: ${id}): ${err instanceof Error ? err.message : String(err)}`, "error");
+      throw err;
     }
-    return response ? response.result : null;
   }
 
   // JSON-RPC notifications
   sendNotification(method: string, params: any) {
     const payload = { jsonrpc: "2.0", method, params };
+    logStore.addLog("lsp-protocol", `--> Notification: ${method}\n${JSON.stringify(params, null, 2)}`, "info");
+    
     window.constructProjects.lspRequest(payload).catch((err) => {
       console.error("[LSP Client] Notification error:", err);
+      logStore.addLog("lsp-protocol", `[Notification Error] ${method}: ${err instanceof Error ? err.message : String(err)}`, "error");
     });
   }
 
@@ -232,6 +253,8 @@ class LspClientClass {
 
   private setupDiagnostics() {
     const cleanup = window.constructProjects.onLspNotification((notification: any) => {
+      logStore.addLog("lsp-protocol", `<-- Notification: ${notification.method}\n${JSON.stringify(notification.params, null, 2)}`, "info");
+      
       if (notification.method === "textDocument/publishDiagnostics") {
         const { uri, diagnostics } = notification.params;
         const model = monaco.editor.getModel(monaco.Uri.parse(uri));

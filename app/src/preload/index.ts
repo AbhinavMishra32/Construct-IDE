@@ -75,5 +75,31 @@ contextBridge.exposeInMainWorld("constructProjects", {
     };
     ipcRenderer.on("construct:lsp:notification", listener);
     return () => ipcRenderer.off("construct:lsp:notification", listener);
-  }
+  },
+  onLspStderr: (callback: (text: string) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: string) => {
+      callback(payload);
+    };
+    ipcRenderer.on("construct:lsp:stderr", listener);
+    return () => ipcRenderer.off("construct:lsp:stderr", listener);
+  },
+  onMainLog: (callback: (payload: { level: string; message: string; timestamp: string }) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: { level: string; message: string; timestamp: string }) => {
+      callback(payload);
+    };
+    ipcRenderer.on("construct:main:log", listener);
+    return () => ipcRenderer.off("construct:main:log", listener);
+  },
+  onLspInstallProgress: (callback: (payload: { type: "stdout" | "stderr"; text: string }) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: { type: "stdout" | "stderr"; text: string }) => {
+      callback(payload);
+    };
+    ipcRenderer.on("construct:lsp:install-progress", listener);
+    return () => ipcRenderer.off("construct:lsp:install-progress", listener);
+  },
+  lspGetStatus: (projectId: string) => ipcRenderer.invoke("construct:lsp:get-status", projectId),
+  lspInstall: (projectId: string) => ipcRenderer.invoke("construct:lsp:install", projectId),
+  lspStart: (projectId: string) => ipcRenderer.invoke("construct:lsp:start-server", projectId),
+  lspStop: () => ipcRenderer.invoke("construct:lsp:stop-server")
 });
+

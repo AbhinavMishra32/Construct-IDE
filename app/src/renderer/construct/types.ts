@@ -281,4 +281,12 @@ export type ConstructProjectsApi = {
   onVerifyLog(callback: (event: { entry: VerificationLogEntry }) => void): () => void;
   lspRequest(payload: unknown): Promise<unknown>;
   onLspNotification(callback: (payload: any) => void): () => void;
+  onLspStderr(callback: (text: string) => void): () => void;
+  onMainLog(callback: (payload: { level: string; message: string; timestamp: string }) => void): () => void;
+  onLspInstallProgress(callback: (payload: { type: "stdout" | "stderr"; text: string }) => void): () => void;
+  lspGetStatus(projectId: string): Promise<"not-installed" | "installed" | "running" | "stopped" | "installing">;
+  lspInstall(projectId: string): Promise<boolean>;
+  lspStart(projectId: string): Promise<boolean>;
+  lspStop(): Promise<void>;
 };
+

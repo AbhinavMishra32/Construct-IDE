@@ -8,8 +8,10 @@ import {
   Folder,
   GearSix,
   Plus,
-  TerminalWindow
+  TerminalWindow,
+  Notebook
 } from "@phosphor-icons/react";
+import { logStore, type LogChannel, type LogEntry } from "./lib/logStore";
 
 import {
   AppShell,
@@ -36,6 +38,7 @@ import { FileTree } from "./components/FileTree";
 import { NewProjectDialog } from "./components/NewProjectDialog";
 import { TerminalPanel, type TerminalPanelHandle } from "./components/TerminalPanel";
 import { Workspace } from "./components/Workspace";
+import { LogsPanel } from "./components/LogsPanel";
 import {
   bootstrapProjects,
   openSavedProject
@@ -336,8 +339,14 @@ export default function ConstructApp() {
 
   useEffect(() => {
     if (activeProject) {
-      console.log("[LSP Client] Workspace path changed, initializing LSP for:", activeProject.workspacePath);
-      void lspClient.initialize(activeProject.workspacePath);
+      const enabled = localStorage.getItem("construct.lsp.enabled") !== "false";
+      if (enabled) {
+        console.log("[LSP Client] Workspace path changed, initializing LSP for:", activeProject.workspacePath);
+        void lspClient.initialize(activeProject.workspacePath);
+      } else {
+        console.log("[LSP Client] LSP disabled in settings, stopping server process.");
+        void window.constructProjects.lspStop();
+      }
     } else {
       console.log("[LSP Client] No active project, disposing LSP");
       lspClient.dispose();
@@ -836,7 +845,7 @@ export default function ConstructApp() {
                   {
                     id: "terminal",
                     title: "Terminal",
-                    active: true,
+                    active: activeBottomTabId === "terminal",
                     icon: <TerminalWindow size={14} weight="duotone" />,
                     content: (
                       <TerminalPanel
@@ -845,6 +854,15 @@ export default function ConstructApp() {
                         cwd={activeProject.workspacePath}
                         theme={theme}
                       />
+                    )
+                  },
+                  {
+                    id: "logs",
+                    title: "Output",
+                    active: activeBottomTabId === "logs",
+                    icon: <Notebook size={14} weight="duotone" />,
+                    content: (
+                      <LogsPanel theme={theme} />
                     )
                   }
                 ]}
@@ -867,6 +885,19 @@ export default function ConstructApp() {
                           theme={theme}
                         />
                       )
+                    })
+                  },
+                  {
+                    type: "logs",
+                    title: "Output",
+                    description: "View LSP and system logs",
+                    icon: <Notebook size={16} weight="duotone" />,
+                    createTab: () => ({
+                      id: "logs",
+                      title: "Output",
+                      icon: <Notebook size={14} weight="duotone" />,
+                      closable: true,
+                      content: <LogsPanel theme={theme} />
                     })
                   }
                 ]}
@@ -960,6 +991,123 @@ function ConstructSettingsSurface({
   const [projectDescription, setProjectDescription] = useState(project?.description ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [lspEnabled, setLspEnabled] = useState(() => {
+    return window.localStorage.getItem("construct.lsp.enabled") !== "false";
+  });
+  const [lspStatus, setLspStatus] = useState<"not-installed" | "installed" | "running" | "stopped" | "installing">("not-installed");
+  const [lspLogs, setLspLogs] = useState<string[]>([]);
+  const [installBusy, setInstallBusy] = useState(false);
+
+  useEffect(() => {
+    if (!projectId) return;
+
+    let isMounted = true;
+    const checkStatus = async () => {
+      try {
+        const status = await window.constructProjects.lspGetStatus(projectId);
+        if (isMounted) {
+          setLspStatus(status);
+        }
+      } catch (err) {
+        console.error("Failed to check LSP status:", err);
+      }
+    };
+
+    checkStatus();
+    const interval = setInterval(checkStatus, 3000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [projectId]);
+
+  useEffect(() => {
+    if (lspStatus === "installing" || installBusy) {
+      setLspLogs(logStore.getLogs("lsp-server").map((l: LogEntry) => l.message));
+
+      const unsubscribe = logStore.subscribe((channel: LogChannel, entry: LogEntry) => {
+        if (channel === "lsp-server") {
+          setLspLogs((prev) => [...prev, entry.message]);
+        }
+      });
+      return unsubscribe;
+    }
+  }, [lspStatus, installBusy]);
+
+  async function handleToggleLsp(enabled: boolean) {
+    setLspEnabled(enabled);
+    window.localStorage.setItem("construct.lsp.enabled", String(enabled));
+
+    try {
+      if (enabled) {
+        if (projectId) {
+          const status = await window.constructProjects.lspGetStatus(projectId);
+          if (status !== "not-installed") {
+            await window.constructProjects.lspStart(projectId);
+            void lspClient.initialize(project?.workspacePath || "");
+          }
+        }
+      } else {
+        await window.constructProjects.lspStop();
+        lspClient.dispose();
+      }
+    } catch (err) {
+      console.error("Failed to toggle LSP:", err);
+    }
+  }
+
+  async function handleInstallLsp() {
+    if (!projectId) return;
+    setInstallBusy(true);
+    setLspStatus("installing");
+    setLspLogs([]);
+
+    try {
+      const success = await window.constructProjects.lspInstall(projectId);
+      if (success) {
+        setLspStatus("stopped");
+        await window.constructProjects.lspStart(projectId);
+        setLspStatus("running");
+        void lspClient.initialize(project?.workspacePath || "");
+      } else {
+        setLspStatus("not-installed");
+      }
+    } catch (err) {
+      console.error("LSP installation error:", err);
+      setLspStatus("not-installed");
+    } finally {
+      setInstallBusy(false);
+    }
+  }
+
+  async function handleStartLsp() {
+    if (!projectId) return;
+    try {
+      await window.constructProjects.lspStart(projectId);
+      setLspStatus("running");
+      void lspClient.initialize(project?.workspacePath || "");
+    } catch {}
+  }
+
+  async function handleStopLsp() {
+    try {
+      await window.constructProjects.lspStop();
+      setLspStatus("stopped");
+      lspClient.dispose();
+    } catch {}
+  }
+
+  async function handleRestartLsp() {
+    if (!projectId) return;
+    try {
+      await window.constructProjects.lspStop();
+      await window.constructProjects.lspStart(projectId);
+      setLspStatus("running");
+      void lspClient.initialize(project?.workspacePath || "");
+    } catch {}
+  }
+
 
   useEffect(() => {
     void getSettings()
@@ -1056,6 +1204,85 @@ function ConstructSettingsSurface({
             />
           </SettingsCard>
         </SettingsSection>
+      </SettingsPanel>
+    );
+  }
+
+  if (activeItemId === "lsp-settings") {
+    return (
+      <SettingsPanel title="Language Server" subtitle="Manage TypeScript language server installation, status, and logging.">
+        <SettingsSection title="Configuration">
+          <SettingsCard>
+            <SettingsRow
+              title="Enable Language Server"
+              description="Enable real-time code diagnostics, autocomplete, hover cards, and code navigation (Go to Definition)."
+              control={
+                <SettingsToggle
+                  checked={lspEnabled}
+                  onCheckedChange={(checked) => void handleToggleLsp(checked)}
+                />
+              }
+            />
+          </SettingsCard>
+        </SettingsSection>
+        
+        {lspEnabled && (
+          <SettingsSection title="Server Status">
+            <SettingsCard>
+              <SettingsRow
+                title="Status"
+                description={
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className={`inline-block w-2.5 h-2.5 rounded-full ${
+                      lspStatus === "running" ? "bg-emerald-500 animate-pulse" :
+                      lspStatus === "stopped" ? "bg-amber-500" :
+                      lspStatus === "installing" ? "bg-blue-500 animate-pulse" : "bg-red-500"
+                    }`} />
+                    <span className="text-xs font-semibold capitalize text-neutral-300">{lspStatus.replace("-", " ")}</span>
+                  </div>
+                }
+                control={
+                  <div className="flex items-center gap-2">
+                    {lspStatus === "running" && (
+                      <>
+                        <Button variant="secondary" size="small" onClick={() => void handleRestartLsp()}>
+                          Restart
+                        </Button>
+                        <Button variant="danger" size="small" className="text-red-400 hover:text-red-300" onClick={() => void handleStopLsp()}>
+                          Stop
+                        </Button>
+                      </>
+                    )}
+                    {lspStatus === "stopped" && (
+                      <Button size="small" onClick={() => void handleStartLsp()}>
+                        Start
+                      </Button>
+                    )}
+                    {(lspStatus === "not-installed" || lspStatus === "stopped") && (
+                      <Button variant="secondary" size="small" disabled={installBusy} onClick={() => void handleInstallLsp()}>
+                        {lspStatus === "not-installed" ? "Download & Install" : "Reinstall / Update"}
+                      </Button>
+                    )}
+                  </div>
+                }
+              />
+              
+              {/* Installer Logs Box */}
+              {(lspStatus === "installing" || lspLogs.length > 0) && (
+                <div className="mt-4 border border-[#2d2e30] rounded bg-[#101112] p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-medium text-neutral-400 font-sans">Installation Console Output</span>
+                    {installBusy && <span className="text-xs text-blue-400 animate-pulse font-sans">Running npm install...</span>}
+                  </div>
+                  <div className="h-48 overflow-y-auto font-mono text-[10px] text-neutral-300 leading-normal whitespace-pre-wrap select-text border border-neutral-800 p-2 rounded bg-black/40">
+                    {lspLogs.length === 0 ? "Starting installer..." : lspLogs.join("\n")}
+                  </div>
+                </div>
+              )}
+            </SettingsCard>
+          </SettingsSection>
+        )}
+        {error ? <div className="construct-dialog-error">{error}</div> : null}
       </SettingsPanel>
     );
   }
@@ -1158,7 +1385,8 @@ function buildSettingsSections(projects: ProjectSummary[], projectId?: string): 
       label: "Construct",
       items: [
         { id: "workspace", label: "Workspace", icon: <Folder size={18} weight="duotone" /> },
-        { id: "appearance", label: "Appearance", icon: <GearSix size={18} weight="duotone" /> }
+        { id: "appearance", label: "Appearance", icon: <GearSix size={18} weight="duotone" /> },
+        { id: "lsp-settings", label: "Language Server", icon: <Notebook size={18} weight="duotone" /> }
       ]
     },
     {
@@ -1192,6 +1420,9 @@ function buildSettingsSections(projects: ProjectSummary[], projectId?: string): 
 function settingsTitle(itemId: string, projectId: string | undefined, projects: ProjectSummary[]) {
   if (itemId === "appearance") {
     return "Appearance";
+  }
+  if (itemId === "lsp-settings") {
+    return "Language Server";
   }
   if (itemId.startsWith("project-") && projectId) {
     return projects.find((project) => project.id === projectId)?.title ?? "Project settings";

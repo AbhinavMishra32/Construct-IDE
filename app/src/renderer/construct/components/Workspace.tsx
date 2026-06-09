@@ -12,6 +12,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { SlotPanel } from "@/components/open-shell";
+import { logStore } from "../lib/logStore";
 import type { SlotPanelHandle, SlotTab, SlotLauncherItem } from "@/components/open-shell";
 import { EditorPane } from "./EditorPane";
 import { GuidePanel } from "./GuidePanel";
@@ -278,6 +279,11 @@ export function Workspace({
         setVerificationLogs((current) => {
           const currentLogs = current[verifyId] ?? [];
           const log = event.entry;
+          
+          // Also log to the global verifier log channel
+          const msg = `[${log.status.toUpperCase()}] ${log.message}${log.detail ? ` - ${log.detail}` : ""}`;
+          logStore.addLog("verifier", msg, log.status === "failed" ? "error" : log.status === "warning" ? "warn" : "info");
+
           if (currentLogs.some((l) => l.message === log.message && l.status === log.status && l.detail === log.detail)) {
             return current;
           }
@@ -896,6 +902,7 @@ export function Workspace({
         content: (
           <EditorPane
             path={tabPath}
+            workspacePath={project.workspacePath}
             content={tabPath === activeFilePath ? activeFileContent : ""}
             activeEdit={tabActiveEdit}
             editAnchor={tabPath === activeFilePath ? editAnchor : ""}
