@@ -1,5 +1,5 @@
-import type { CSSProperties, PointerEvent, ReactNode } from "react";
-import React, { useEffect, useRef, useState } from "react";
+import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import "./bottom-panel.css";
 
 // Re-export SlotPanel types with Bottom-panel aliases for backwards compat
@@ -71,7 +71,6 @@ export const BottomPanel = React.forwardRef<SlotPanelHandle, BottomPanelProps>(
     ref,
   ) {
     const [panelHeight, setPanelHeight] = useState(() => clampBottomPanelHeight(height, mainContentHeight));
-    const dragStateRef = useRef<{ pointerId: number; startHeight: number; startY: number } | null>(null);
 
     useEffect(() => {
       setPanelHeight((h) => clampBottomPanelHeight(h, mainContentHeight));
@@ -83,25 +82,29 @@ export const BottomPanel = React.forwardRef<SlotPanelHandle, BottomPanelProps>(
       onHeightChange?.(clamped);
     }
 
-    function handlePointerDown(e: PointerEvent<HTMLDivElement>) {
-      e.preventDefault();
-      dragStateRef.current = { pointerId: e.pointerId, startHeight: panelHeight, startY: e.clientY };
-      e.currentTarget.setPointerCapture(e.pointerId);
-      document.documentElement.dataset.codexBottomPanelResizing = "true";
-    }
+    const startResize = useCallback(
+      (event: ReactPointerEvent<HTMLDivElement>) => {
+        event.preventDefault();
+        event.currentTarget.setPointerCapture(event.pointerId);
+        const startY = event.clientY;
+        const startHeight = panelHeight;
+        document.documentElement.dataset.codexBottomPanelResizing = "true";
 
-    function handlePointerMove(e: PointerEvent<HTMLDivElement>) {
-      const s = dragStateRef.current;
-      if (!s || s.pointerId !== e.pointerId) return;
-      commitHeight(s.startHeight + (s.startY - e.clientY));
-    }
+        function move(pointerEvent: PointerEvent) {
+          commitHeight(startHeight + (startY - pointerEvent.clientY));
+        }
 
-    function handlePointerUp(e: PointerEvent<HTMLDivElement>) {
-      if (dragStateRef.current?.pointerId === e.pointerId) {
-        dragStateRef.current = null;
-        document.documentElement.dataset.codexBottomPanelResizing = "false";
-      }
-    }
+        function stop() {
+          document.documentElement.dataset.codexBottomPanelResizing = "false";
+          window.removeEventListener("pointermove", move);
+          window.removeEventListener("pointerup", stop);
+        }
+
+        window.addEventListener("pointermove", move);
+        window.addEventListener("pointerup", stop, { once: true });
+      },
+      [mainContentHeight, onHeightChange, panelHeight]
+    );
 
     return (
       <div
@@ -113,10 +116,7 @@ export const BottomPanel = React.forwardRef<SlotPanelHandle, BottomPanelProps>(
           className="codex-bottom-panel-resize-handle"
           aria-label="Resize bottom panel"
           role="separator"
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerUp}
-          onPointerCancel={handlePointerUp}
+          onPointerDown={startResize}
         />
         <SlotPanel
           ref={ref}
