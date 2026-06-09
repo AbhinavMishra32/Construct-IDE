@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { logStore, type LogChannel, type LogEntry } from "../lib/logStore";
-import { TerminalSurface } from "@/components/open-shell";
+import { TerminalSurface, SettingsSelect, Button } from "@/components/open-shell";
 
 export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ theme }) => {
   const [activeChannel, setActiveChannel] = useState<LogChannel>("lsp-server");
@@ -67,7 +67,7 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
       case "warn":
         return "text-[var(--codex-warning)] font-medium";
       case "debug":
-        return "text-[var(--codex-text-tertiary)] opacity-80";
+        return "text-[var(--codex-text-tertiary)] opacity-85";
       default:
         return "text-[var(--codex-text-primary)]";
     }
@@ -80,17 +80,17 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
         <div className="flex items-center justify-between px-4 py-2 border-b border-[var(--codex-border-subtle)] bg-[var(--codex-bg-secondary)]">
           <div className="flex items-center gap-2">
             <span className="text-xs text-[var(--codex-text-secondary)] font-medium select-none">Show output from:</span>
-            <select
+            <SettingsSelect
               value={activeChannel}
               onChange={(e) => setActiveChannel(e.target.value as LogChannel)}
-              className="bg-[color-mix(in_srgb,var(--codex-text-primary)_7%,transparent)] text-xs text-[var(--codex-text-primary)] border-0 rounded-[8px] px-3 py-1 outline-none cursor-pointer font-sans h-[30px]"
+              className="text-xs h-[30px] min-w-[200px]"
             >
-              <option value="lsp-server" className="bg-[var(--codex-bg-primary)] text-[var(--codex-text-primary)]">TypeScript LSP Server (stderr)</option>
-              <option value="lsp-protocol" className="bg-[var(--codex-bg-primary)] text-[var(--codex-text-primary)]">TypeScript LSP Protocol (JSON-RPC)</option>
-              <option value="main" className="bg-[var(--codex-bg-primary)] text-[var(--codex-text-primary)]">Electron Main Process</option>
-              <option value="renderer" className="bg-[var(--codex-bg-primary)] text-[var(--codex-text-primary)]">Renderer Console</option>
-              <option value="verifier" className="bg-[var(--codex-bg-primary)] text-[var(--codex-text-primary)]">Verifier Agent</option>
-            </select>
+              <option value="lsp-server" className="bg-[var(--codex-bg-primary)] text-[var(--codex-text-primary)] font-sans">TypeScript LSP Server (stderr)</option>
+              <option value="lsp-protocol" className="bg-[var(--codex-bg-primary)] text-[var(--codex-text-primary)] font-sans">TypeScript LSP Protocol (JSON-RPC)</option>
+              <option value="main" className="bg-[var(--codex-bg-primary)] text-[var(--codex-text-primary)] font-sans">Electron Main Process</option>
+              <option value="renderer" className="bg-[var(--codex-bg-primary)] text-[var(--codex-text-primary)] font-sans">Renderer Console</option>
+              <option value="verifier" className="bg-[var(--codex-bg-primary)] text-[var(--codex-text-primary)] font-sans">Verifier Agent</option>
+            </SettingsSelect>
           </div>
 
           <div className="flex items-center gap-3">
@@ -104,36 +104,43 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
               Auto-scroll
             </label>
 
-            <button
+            <Button
               onClick={handleCopyAll}
-              className="text-xs text-[var(--codex-text-primary)] hover:bg-[color-mix(in_srgb,var(--codex-text-primary)_12%,transparent)] bg-[color-mix(in_srgb,var(--codex-text-primary)_7%,transparent)] px-3 h-[30px] rounded-[8px] transition-colors font-medium"
+              variant="secondary"
+              size="small"
+              className="h-[30px] rounded-[8px] font-medium"
             >
               Copy All
-            </button>
+            </Button>
 
-            <button
+            <Button
               onClick={handleClear}
-              className="text-xs text-[var(--codex-danger)] hover:bg-[color-mix(in_srgb,var(--codex-danger)_10%,transparent)] bg-[color-mix(in_srgb,var(--codex-danger)_5%,transparent)] px-3 h-[30px] rounded-[8px] transition-colors font-medium"
+              variant="danger"
+              size="small"
+              className="h-[30px] rounded-[8px] font-medium"
             >
               Clear
-            </button>
+            </Button>
           </div>
         </div>
 
         {/* Logs container */}
         <div
           ref={containerRef}
-          className="flex-1 overflow-auto p-4 font-[var(--codex-font-mono)] text-[13px] leading-relaxed select-text space-y-1 scrollbar-thin bg-[var(--codex-bg-primary)]"
+          className="flex-1 overflow-auto p-4 text-[13px] leading-relaxed select-text space-y-1 scrollbar-thin bg-[var(--codex-bg-primary)]"
+          style={{ fontFamily: "var(--codex-font-mono)" }}
         >
           {logs.length === 0 ? (
-            <div className="text-[var(--codex-text-tertiary)] italic select-none">No logs available in this channel.</div>
+            <div className="text-[var(--codex-text-tertiary)] italic select-none" style={{ fontFamily: "var(--codex-font-mono)" }}>
+              No logs available in this channel.
+            </div>
           ) : (
             logs.map((log, index) => (
-              <div key={index} className="flex items-start hover:bg-[color-mix(in_srgb,var(--codex-text-primary)_4%,transparent)] py-[1px] px-1 rounded">
-                <span className="text-[var(--codex-text-tertiary)] select-none mr-3 flex-shrink-0 font-light text-[12px]">
+              <div key={index} className="flex items-start hover:bg-[color-mix(in_srgb,var(--codex-text-primary)_4%,transparent)] py-[1px] px-1 rounded" style={{ fontFamily: "var(--codex-font-mono)" }}>
+                <span className="text-[var(--codex-text-tertiary)] select-none mr-3 flex-shrink-0 font-light text-[12px]" style={{ fontFamily: "var(--codex-font-mono)" }}>
                   [{formatTimestamp(log.timestamp)}]
                 </span>
-                <span className={`whitespace-pre-wrap break-all ${getLevelColor(log.level)}`}>
+                <span className={`whitespace-pre-wrap break-all ${getLevelColor(log.level)}`} style={{ fontFamily: "var(--codex-font-mono)" }}>
                   {log.message}
                 </span>
               </div>

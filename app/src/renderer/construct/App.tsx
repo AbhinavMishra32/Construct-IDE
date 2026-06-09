@@ -3,7 +3,7 @@ import "./styles/construct.css";
 import { lspClient } from "./lib/lspClient";
 
 import { Component, useCallback, useEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from "react";
-import { ArrowLeft, ArrowRight, PanelLeft, PanelRight, PanelBottom } from "lucide-react";
+import { ArrowLeft, ArrowRight, PanelLeft, PanelRight, PanelBottom, FileTerminalIcon, FileTextIcon } from "lucide-react";
 import {
   Folder,
   GearSix,
@@ -114,6 +114,7 @@ export default function ConstructApp() {
   const [settingsQuery, setSettingsQuery] = useState("");
   const [activeRightSlotId, setActiveRightSlotId] = useState("guide");
   const [activeBottomTabId, setActiveBottomTabId] = useState("terminal");
+  const [openBottomTabIds, setOpenBottomTabIds] = useState<string[]>(["terminal", "logs"]);
   const [theme, setTheme] = useState<ThemeMode>(() => getInitialTheme());
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -369,6 +370,68 @@ export default function ConstructApp() {
   }, [theme]);
 
   useEffect(() => {
+    if (activeProject) {
+      setOpenBottomTabIds(["terminal", "logs"]);
+      setActiveBottomTabId("terminal");
+    } else {
+      setOpenBottomTabIds([]);
+    }
+  }, [activeProject?.id]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Toggle Terminal: Ctrl+` or Cmd+`
+      if ((e.ctrlKey || e.metaKey) && e.key === "`") {
+        e.preventDefault();
+        setOpenBottomTabIds((prev) => {
+          const isTerminalActive = activeBottomTabId === "terminal";
+          if (prev.includes("terminal") && isTerminalActive) {
+            const next = prev.filter((id) => id !== "terminal");
+            if (next.length > 0) {
+              setActiveBottomTabId(next[next.length - 1]);
+            } else {
+              setActiveBottomTabId(null as any);
+            }
+            return next;
+          } else {
+            setActiveBottomTabId("terminal");
+            if (!prev.includes("terminal")) {
+              return [...prev, "terminal"];
+            }
+            return prev;
+          }
+        });
+      }
+
+      // Toggle Output: Ctrl+Shift+U or Cmd+Shift+U
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "u") {
+        e.preventDefault();
+        setOpenBottomTabIds((prev) => {
+          const isLogsActive = activeBottomTabId === "logs";
+          if (prev.includes("logs") && isLogsActive) {
+            const next = prev.filter((id) => id !== "logs");
+            if (next.length > 0) {
+              setActiveBottomTabId(next[next.length - 1]);
+            } else {
+              setActiveBottomTabId(null as any);
+            }
+            return next;
+          } else {
+            setActiveBottomTabId("logs");
+            if (!prev.includes("logs")) {
+              return [...prev, "logs"];
+            }
+            return prev;
+          }
+        });
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [openBottomTabIds, activeBottomTabId]);
+
+  useEffect(() => {
     document.documentElement.dataset.codexWindowType = "electron";
     document.documentElement.dataset.windowType = "electron";
     document.documentElement.dataset.codexOs = window.construct.getRuntimeInfo().platform;
@@ -555,6 +618,40 @@ export default function ConstructApp() {
 
     handleBack();
   }
+
+  const bottomPanelTabs = useMemo(() => {
+    if (!activeProject) {
+      return [];
+    }
+
+    const allTabs = [
+      {
+        id: "terminal",
+        title: "Terminal",
+        active: activeBottomTabId === "terminal",
+        icon: <FileTerminalIcon size={14} />,
+        closable: true,
+        content: (
+          <TerminalPanel
+            ref={terminalRef}
+            projectId={activeProject.id}
+            cwd={activeProject.workspacePath}
+            theme={theme}
+          />
+        )
+      },
+      {
+        id: "logs",
+        title: "Output",
+        active: activeBottomTabId === "logs",
+        icon: <FileTextIcon size={14} />,
+        closable: true,
+        content: <LogsPanel theme={theme} />
+      }
+    ];
+
+    return allTabs.filter((tab) => openBottomTabIds.includes(tab.id));
+  }, [activeProject, openBottomTabIds, activeBottomTabId, theme]);
 
   return (
     <AppErrorBoundary>
@@ -829,54 +926,50 @@ export default function ConstructApp() {
             activeProject && !settingsSurface ? (
               <BottomPanel
                 activeTabId={activeBottomTabId}
+                syncTabs
                 onActiveTabChange={(tabId) => {
-                  if (!tabId) {
-                    return;
+                  if (tabId) {
+                    setActiveBottomTabId(tabId);
+                    pushHistory({
+                      id: `bottom-tab:${activeProject.id}:${tabId}`,
+                      payload: { projectId: activeProject.id, tabId },
+                      title: tabId,
+                      type: "bottom-tab"
+                    });
                   }
-                  setActiveBottomTabId(tabId);
-                  pushHistory({
-                    id: `bottom-tab:${activeProject.id}:${tabId}`,
-                    payload: { projectId: activeProject.id, tabId },
-                    title: tabId,
-                    type: "bottom-tab"
-                  });
                 }}
-                tabs={[
-                  {
-                    id: "terminal",
-                    title: "Terminal",
-                    active: activeBottomTabId === "terminal",
-                    icon: <TerminalWindow size={14} weight="duotone" />,
-                    content: (
-                      <TerminalPanel
-                        ref={terminalRef}
-                        projectId={activeProject.id}
-                        cwd={activeProject.workspacePath}
-                        theme={theme}
-                      />
-                    )
-                  },
-                  {
-                    id: "logs",
-                    title: "Output",
-                    active: activeBottomTabId === "logs",
-                    icon: <Notebook size={14} weight="duotone" />,
-                    content: (
-                      <LogsPanel theme={theme} />
-                    )
+                onTabClose={(tabId) => {
+                  setOpenBottomTabIds((prev) => prev.filter((id) => id !== tabId));
+                  if (activeBottomTabId === tabId) {
+                    const remaining = openBottomTabIds.filter((id) => id !== tabId);
+                    if (remaining.length > 0) {
+                      setActiveBottomTabId(remaining[remaining.length - 1]);
+                    } else {
+                      setActiveBottomTabId(null as any);
+                    }
                   }
-                ]}
+                }}
+                onTabOpen={(tab) => {
+                  setOpenBottomTabIds((prev) => {
+                    if (!prev.includes(tab.id)) {
+                      return [...prev, tab.id];
+                    }
+                    return prev;
+                  });
+                  setActiveBottomTabId(tab.id);
+                }}
+                tabs={bottomPanelTabs}
                 launcherItems={[
                   {
                     type: "terminal",
                     title: "Terminal",
                     description: "Open a new terminal session",
-                    icon: <TerminalWindow size={16} weight="duotone" />,
+                    icon: <FileTerminalIcon size={16} />,
                     shortcut: "⌃`",
                     createTab: () => ({
                       id: `terminal-${Date.now()}`,
                       title: "Terminal",
-                      icon: <TerminalWindow size={14} weight="duotone" />,
+                      icon: <FileTerminalIcon size={14} />,
                       closable: true,
                       content: (
                         <TerminalPanel
@@ -891,11 +984,11 @@ export default function ConstructApp() {
                     type: "logs",
                     title: "Output",
                     description: "View LSP and system logs",
-                    icon: <Notebook size={16} weight="duotone" />,
+                    icon: <FileTextIcon size={16} />,
                     createTab: () => ({
                       id: "logs",
                       title: "Output",
-                      icon: <Notebook size={14} weight="duotone" />,
+                      icon: <FileTextIcon size={14} />,
                       closable: true,
                       content: <LogsPanel theme={theme} />
                     })
