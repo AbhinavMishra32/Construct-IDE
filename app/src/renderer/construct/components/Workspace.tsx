@@ -204,7 +204,8 @@ export function Workspace({
   const activeFilePath = normalizeOptionalWorkspacePath(
     localActiveFilePath !== undefined
       ? localActiveFilePath
-      : project.activeFilePath ?? relevantPath ?? project.program.files[0]?.path ?? null
+      : project.activeFilePath ?? relevantPath ?? project.program.files[0]?.path ?? null,
+    project.workspacePath
   );
   const editProgress = activeEdit ? typingProgress[activeEdit.id] ?? 0 : 0;
   const editComplete = activeEdit ? editProgress >= activeEdit.content.length : false;
@@ -255,7 +256,7 @@ export function Workspace({
   }, [fileList]);
 
   useEffect(() => {
-    setLocalActiveFilePath(normalizeOptionalWorkspacePath(project.activeFilePath ?? relevantPath ?? project.program.files[0]?.path ?? null));
+    setLocalActiveFilePath(normalizeOptionalWorkspacePath(project.activeFilePath ?? relevantPath ?? project.program.files[0]?.path ?? null, project.workspacePath));
   }, [project.id]);
 
   // Reset tabs when project changes
@@ -312,7 +313,7 @@ export function Workspace({
 
   // Handle closing a tab
   async function closeTab(rawTabPath: string) {
-    const tabPath = normalizeWorkspacePath(rawTabPath);
+    const tabPath = normalizeOptionalWorkspacePath(rawTabPath, project.workspacePath);
     if (!tabPath) {
       return;
     }
@@ -636,7 +637,7 @@ export function Workspace({
   }
 
   async function loadActiveFile(rawPath: string) {
-    const nextPath = normalizeWorkspacePath(rawPath);
+    const nextPath = normalizeOptionalWorkspacePath(rawPath, project.workspacePath);
     if (!nextPath) {
       return;
     }
@@ -657,7 +658,7 @@ export function Workspace({
   }
 
   async function navigateToFile(rawPath: string, options: { persist?: boolean } = {}) {
-    const nextPath = normalizeWorkspacePath(rawPath);
+    const nextPath = normalizeOptionalWorkspacePath(rawPath, project.workspacePath);
     if (!nextPath) {
       return;
     }
@@ -683,7 +684,7 @@ export function Workspace({
   }
 
   async function openFileAndRecord(path: string) {
-    const nextPath = normalizeWorkspacePath(path);
+    const nextPath = normalizeOptionalWorkspacePath(path, project.workspacePath);
     if (!nextPath) {
       return;
     }
@@ -693,7 +694,7 @@ export function Workspace({
   }
 
   async function deleteWorkspaceFile(rawPath: string) {
-    const nextPath = normalizeWorkspacePath(rawPath);
+    const nextPath = normalizeOptionalWorkspacePath(rawPath, project.workspacePath);
     if (!nextPath) return;
     onSavingChange?.(true);
     try {
@@ -705,8 +706,8 @@ export function Workspace({
   }
 
   async function renameWorkspaceFile(oldRaw: string, newRaw: string) {
-    const oldPath = normalizeWorkspacePath(oldRaw);
-    const newPath = normalizeWorkspacePath(newRaw);
+    const oldPath = normalizeOptionalWorkspacePath(oldRaw, project.workspacePath);
+    const newPath = normalizeOptionalWorkspacePath(newRaw, project.workspacePath);
     if (!oldPath || !newPath) return;
     onSavingChange?.(true);
     try {
@@ -718,7 +719,7 @@ export function Workspace({
   }
 
   async function createWorkspaceFolder(rawPath: string) {
-    const nextPath = normalizeWorkspacePath(rawPath);
+    const nextPath = normalizeOptionalWorkspacePath(rawPath, project.workspacePath);
     if (!nextPath) return;
     onSavingChange?.(true);
     try {
@@ -730,10 +731,10 @@ export function Workspace({
   }
 
   async function duplicateWorkspaceFile(rawPath: string, rawDestPath: string) {
-    const srcPath = normalizeWorkspacePath(rawPath);
+    const srcPath = normalizeOptionalWorkspacePath(rawPath, project.workspacePath);
     if (!srcPath) return;
     // Auto-generate a unique dest path: append _copy before extension
-    const destPath = rawDestPath ? normalizeWorkspacePath(rawDestPath) : generateCopyPath(srcPath);
+    const destPath = rawDestPath ? normalizeOptionalWorkspacePath(rawDestPath, project.workspacePath) : generateCopyPath(srcPath);
     if (!destPath) return;
     onSavingChange?.(true);
     try {
@@ -745,7 +746,7 @@ export function Workspace({
   }
 
   async function createWorkspaceFile(rawPath: string) {
-    const nextPath = normalizeWorkspacePath(rawPath);
+    const nextPath = normalizeOptionalWorkspacePath(rawPath, project.workspacePath);
     if (!nextPath) {
       throw new Error("Enter a project-relative file path.");
     }
@@ -782,7 +783,7 @@ export function Workspace({
           progress: typingProgress[edit.id] ?? 0
         });
 
-      const editPath = normalizeWorkspacePath(edit.path);
+      const editPath = normalizeOptionalWorkspacePath(edit.path, project.workspacePath);
       if (!editPath) {
         return;
       }
@@ -822,7 +823,7 @@ export function Workspace({
   }
 
   async function handleFreeEditForPath(rawPath: string, content: string) {
-    const targetPath = normalizeOptionalWorkspacePath(rawPath);
+    const targetPath = normalizeOptionalWorkspacePath(rawPath, project.workspacePath);
     if (!targetPath) {
       return;
     }
@@ -841,7 +842,7 @@ export function Workspace({
   }
 
   async function handleManualSaveForPath(rawPath: string) {
-    const targetPath = normalizeOptionalWorkspacePath(rawPath);
+    const targetPath = normalizeOptionalWorkspacePath(rawPath, project.workspacePath);
     if (!targetPath) {
       return;
     }
@@ -865,7 +866,7 @@ export function Workspace({
     onSavingChange?.(true);
     try {
       const nextContent = `${editAnchor}${activeEdit.content.slice(0, progress)}`;
-      const editPath = normalizeWorkspacePath(activeEdit.path);
+      const editPath = normalizeOptionalWorkspacePath(activeEdit.path, project.workspacePath);
       setActiveFileContent(nextContent);
       if (editPath) {
         setFileContents((current) => ({ ...current, [editPath]: nextContent }));
@@ -1355,11 +1356,11 @@ export function Workspace({
   const handleTabChange = useCallback((tabId: string) => {
     // Don't switch to file-chooser tabs
     if (tabId.startsWith("__file-chooser-")) return;
-    const nextPath = normalizeWorkspacePath(tabId);
+    const nextPath = normalizeOptionalWorkspacePath(tabId, project.workspacePath);
     if (nextPath && nextPath !== activeFilePath) {
       void openFileAndRecord(nextPath);
     }
-  }, [activeFilePath]);
+  }, [activeFilePath, project.workspacePath]);
 
   // When the user closes a tab in SlotPanel, propagate to Workspace state
   const handleTabClose = useCallback((tabId: string) => {
@@ -1626,13 +1627,49 @@ function normalizeWorkspacePath(path: string): string {
     .replace(/\/+/g, "/");
 }
 
-function normalizeOptionalWorkspacePath(path: string | null | undefined): string | null {
+function normalizeOptionalWorkspacePath(path: string | null | undefined, workspacePath?: string): string | null {
   if (!path) {
     return null;
   }
 
-  const normalized = normalizeWorkspacePath(path);
+  const withoutFileScheme = path.replace(/^file:\/\//, "");
+  if (isAbsoluteFilesystemPath(withoutFileScheme)) {
+    if (!workspacePath) {
+      return null;
+    }
+
+    const relative = relativeWorkspacePath(workspacePath, withoutFileScheme);
+    if (!relative) {
+      console.warn("[construct] Ignoring absolute path outside workspace", {
+        path,
+        workspacePath
+      });
+      return null;
+    }
+
+    return relative;
+  }
+
+  const normalized = normalizeWorkspacePath(withoutFileScheme);
   return normalized || null;
+}
+
+function isAbsoluteFilesystemPath(path: string): boolean {
+  return path.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(path);
+}
+
+function relativeWorkspacePath(workspacePath: string, absolutePath: string): string | null {
+  const normalizedWorkspace = workspacePath.replace(/\\/g, "/").replace(/\/+$/, "");
+  const normalizedAbsolute = absolutePath.replace(/\\/g, "/");
+  if (normalizedAbsolute === normalizedWorkspace) {
+    return "";
+  }
+
+  if (!normalizedAbsolute.startsWith(`${normalizedWorkspace}/`)) {
+    return null;
+  }
+
+  return normalizeWorkspacePath(normalizedAbsolute.slice(normalizedWorkspace.length + 1));
 }
 
 function generateCopyPath(srcPath: string): string {

@@ -79,15 +79,6 @@ class LspClientClass {
         this.watchModel(model);
       });
 
-      // Listen to LSP stderr
-      this.disposables.push({
-        dispose: window.constructProjects.onLspStderr((payload) => {
-          const text = typeof payload === "string" ? payload : payload.text;
-          const level = typeof payload === "string" ? "info" : payload.level;
-          logStore.addLog("lsp-server", text, level);
-        })
-      });
-
     } catch (err) {
       console.error("[LSP Client] Failed to initialize LSP:", err);
       this.isInitialized = false;
@@ -773,7 +764,7 @@ function buildImportPathSuggestions(files: string[], request: ImportPathRequest)
     if (containingDir === targetDir) {
       const leaf = basename(normalizedFile);
       if (leaf.startsWith(typedLeaf)) {
-        pushSuggestion(seen, suggestions, prefix, typedDir, leaf, false);
+        pushSuggestion(seen, suggestions, prefix, typedDir, importSpecifierLeaf(leaf), false);
       }
       continue;
     }
@@ -857,6 +848,10 @@ function basename(path: string): string {
   const normalized = normalizeWorkspacePath(path);
   const slash = normalized.lastIndexOf("/");
   return slash >= 0 ? normalized.slice(slash + 1) : normalized;
+}
+
+function importSpecifierLeaf(filename: string): string {
+  return filename.replace(/\.(tsx?|jsx?|mts|cts|mjs|cjs)$/, "");
 }
 
 export const lspClient = new LspClientClass();

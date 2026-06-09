@@ -388,9 +388,11 @@ function shouldRepairInitialFile(
 async function listWorkspaceTree(project: StoredProject, root = ""): Promise<unknown[]> {
   const absoluteRoot = safeProjectPath(project, root || ".");
   const entries = await readdir(absoluteRoot, { withFileTypes: true });
+  const artifactRoot = absolutePathArtifactRoot(project);
   const nodes = await Promise.all(
     entries
       .filter((entry) => !ignoredWorkspaceEntries.has(entry.name))
+      .filter((entry) => !(root === "" && artifactRoot === entry.name))
       .sort((a, b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name))
       .map(async (entry) => {
         const relativePath = path.posix.join(root.split(path.sep).join("/"), entry.name);
@@ -408,6 +410,17 @@ async function listWorkspaceTree(project: StoredProject, root = ""): Promise<unk
   );
 
   return nodes;
+}
+
+function absolutePathArtifactRoot(project: StoredProject): string | null {
+  const workspaceSegments = path.resolve(project.workspacePath).split(path.sep).filter(Boolean);
+  if (workspaceSegments.length < 2) {
+    return null;
+  }
+
+  const [firstSegment, ...rest] = workspaceSegments;
+  const artifactProbe = path.join(project.workspacePath, firstSegment, ...rest);
+  return existsSync(artifactProbe) ? firstSegment : null;
 }
 
 function findProject(projects: StoredProject[], id: string): StoredProject {

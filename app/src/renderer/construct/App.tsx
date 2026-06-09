@@ -144,6 +144,29 @@ export default function ConstructApp() {
     duplicateFile: null
   });
 
+  useEffect(() => {
+    logStore.addLog("lsp-server", "Language server log channel attached.", "debug");
+    logStore.addLog("lsp-protocol", "LSP protocol log channel attached.", "debug");
+
+    const unsubscribeLsp = window.constructProjects.onLspStderr((payload) => {
+      const text = typeof payload === "string" ? payload : payload.text;
+      const level = typeof payload === "string" ? "info" : payload.level;
+      logStore.addLog("lsp-server", text, level);
+    });
+
+    const unsubscribeMain = window.constructProjects.onMainLog((payload) => {
+      const level = payload.level === "error" || payload.level === "warn" || payload.level === "debug"
+        ? payload.level
+        : "info";
+      logStore.addLog("main", payload.message, level);
+    });
+
+    return () => {
+      unsubscribeLsp();
+      unsubscribeMain();
+    };
+  }, []);
+
   const { furthestUnlockedStepIndex, furthestUnlockedBlockIndex } = useMemo(() => {
     if (!activeProject) return { furthestUnlockedStepIndex: 0, furthestUnlockedBlockIndex: 0 };
     const completedBlocks = activeProject.completedBlocks ?? {};
