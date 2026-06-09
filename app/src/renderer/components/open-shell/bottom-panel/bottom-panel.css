@@ -65,3 +65,9 @@ html[data-codex-bottom-panel-resizing="true"] .codex-bottom-panel-resize-handle:
 .codex-terminal-surface .xterm-viewport {
   background: transparent !important;
 }
+
+/* Disable transition on bottom panel slot when drag-resizing */
+html[data-codex-bottom-panel-resizing="true"] .codex-bottom-panel-slot,
+html[data-codex-bottom-panel-resizing="true"] .codex-bottom-panel-slot-inner {
+  transition: none !important;
+}

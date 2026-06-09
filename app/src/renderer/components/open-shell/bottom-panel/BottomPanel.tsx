@@ -76,6 +76,13 @@ export const BottomPanel = React.forwardRef<SlotPanelHandle, BottomPanelProps>(
       setPanelHeight((h) => clampBottomPanelHeight(h, mainContentHeight));
     }, [mainContentHeight]);
 
+    useEffect(() => {
+      const el = document.querySelector(".codex-app-shell") || document.documentElement;
+      if (el) {
+        (el as HTMLElement).style.setProperty("--app-shell-bottom-panel-height", `${panelHeight}px`);
+      }
+    }, [panelHeight]);
+
     function commitHeight(next: number) {
       const clamped = clampBottomPanelHeight(next, mainContentHeight);
       setPanelHeight(clamped);
