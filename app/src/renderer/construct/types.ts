@@ -279,4 +279,6 @@ export type ConstructProjectsApi = {
   onTerminalData(callback: (event: TerminalEvent) => void): () => void;
   onTerminalExit(callback: (event: TerminalExitEvent) => void): () => void;
   onVerifyLog(callback: (event: { entry: VerificationLogEntry }) => void): () => void;
+  lspRequest(payload: unknown): Promise<unknown>;
+  onLspNotification(callback: (payload: any) => void): () => void;
 };

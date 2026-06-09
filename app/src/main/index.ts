@@ -1,5 +1,5 @@
 import path from "node:path";
-import { exec, execFile } from "node:child_process";
+import { exec, execFile, spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
   cp,
@@ -365,9 +365,137 @@ async function runVerificationCommand(
   }
 }
 
+let lspProcess: ChildProcess | null = null;
+let lspBuffer = "";
+const pendingRequests = new Map<number, { resolve: Function; reject: Function }>();
+let activeWebContents: Electron.WebContents | null = null;
+
+function stopLspServer() {
+  if (lspProcess) {
+    console.log("[LSP] Stopping typescript-language-server");
+    try {
+      lspProcess.kill();
+    } catch (err) {
+      console.error("[LSP] Error killing process:", err);
+    }
+    lspProcess = null;
+  }
+  lspBuffer = "";
+  for (const pending of pendingRequests.values()) {
+    pending.reject(new Error("LSP server stopped"));
+  }
+  pendingRequests.clear();
+}
+
+function startLspServer(workspacePath: string) {
+  stopLspServer();
+
+  console.log("[LSP] Starting typescript-language-server in:", workspacePath);
+
+  // Spawn typescript-language-server inside the workspacePath
+  lspProcess = spawn("npx", ["typescript-language-server", "--stdio"], {
+    cwd: workspacePath,
+    env: { ...process.env },
+    shell: true
+  });
+
+  lspProcess.stdout?.on("data", (chunk: Buffer) => {
+    handleLspData(chunk);
+  });
+
+  lspProcess.stderr?.on("data", (data: Buffer) => {
+    console.warn("[LSP stderr]:", data.toString("utf8"));
+  });
+
+  lspProcess.on("close", (code) => {
+    console.log(`[LSP] Process exited with code ${code}`);
+    stopLspServer();
+  });
+
+  lspProcess.on("error", (err) => {
+    console.error("[LSP] Process error:", err);
+    stopLspServer();
+  });
+}
+
+function handleLspData(chunk: Buffer) {
+  lspBuffer += chunk.toString("utf8");
+  while (true) {
+    const contentLengthIndex = lspBuffer.indexOf("Content-Length:");
+    if (contentLengthIndex === -1) {
+      break;
+    }
+
+    const headerEndIndex = lspBuffer.indexOf("\r\n\r\n", contentLengthIndex);
+    if (headerEndIndex === -1) {
+      break;
+    }
+
+    const contentLengthStr = lspBuffer.slice(contentLengthIndex + 15, headerEndIndex).trim();
+    const contentLength = parseInt(contentLengthStr, 10);
+    if (isNaN(contentLength)) {
+      lspBuffer = "";
+      break;
+    }
+
+    const bodyStartIndex = headerEndIndex + 4;
+    if (lspBuffer.length < bodyStartIndex + contentLength) {
+      break;
+    }
+
+    const body = lspBuffer.slice(bodyStartIndex, bodyStartIndex + contentLength);
+    lspBuffer = lspBuffer.slice(bodyStartIndex + contentLength);
+
+    try {
+      const message = JSON.parse(body);
+      handleLspMessage(message);
+    } catch (err) {
+      console.error("[LSP] Failed to parse JSON body:", err);
+    }
+  }
+}
+
+function handleLspMessage(message: any) {
+  if (message.id !== undefined) {
+    const pending = pendingRequests.get(message.id);
+    if (pending) {
+      pendingRequests.delete(message.id);
+      pending.resolve(message);
+    }
+  } else if (message.method !== undefined) {
+    if (activeWebContents && !activeWebContents.isDestroyed()) {
+      activeWebContents.send("construct:lsp:notification", message);
+    }
+  }
+}
+
 function installConstructProjectIpcHandlers(): void {
   ipcMain.handle("construct:theme:set", async (_event, theme: "light" | "dark" | "system") => {
     nativeTheme.themeSource = theme;
+  });
+
+  ipcMain.handle("construct:lsp:request", async (_event, payload: any) => {
+    return new Promise((resolve, reject) => {
+      if (!lspProcess || !lspProcess.stdin) {
+        reject(new Error("LSP process not running"));
+        return;
+      }
+
+      activeWebContents = _event.sender;
+
+      if (payload.id !== undefined) {
+        pendingRequests.set(payload.id, { resolve, reject });
+      }
+
+      const jsonStr = JSON.stringify(payload);
+      const formatted = `Content-Length: ${Buffer.byteLength(jsonStr, "utf8")}\r\n\r\n${jsonStr}`;
+
+      lspProcess.stdin.write(formatted, "utf8");
+
+      if (payload.id === undefined) {
+        resolve(null);
+      }
+    });
   });
 
   ipcMain.handle("construct:dialog:open-construct-file", async () => {
@@ -558,6 +686,8 @@ function installConstructProjectIpcHandlers(): void {
     project.lastOpenedAt = new Date().toISOString();
     await materializeInitialFiles(project);
     await writeProjects(projects);
+    activeWebContents = _event.sender;
+    startLspServer(project.workspacePath);
     console.log("[construct] open project resolved", {
       id: project.id,
       title: project.title,
@@ -894,4 +1024,8 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     app.quit();
   }
+});
+
+app.on("will-quit", () => {
+  stopLspServer();
 });

@@ -66,5 +66,14 @@ contextBridge.exposeInMainWorld("constructProjects", {
     };
     ipcRenderer.on("construct:project:verify-log", listener);
     return () => ipcRenderer.off("construct:project:verify-log", listener);
+  },
+  lspRequest: (payload: unknown) =>
+    ipcRenderer.invoke("construct:lsp:request", payload),
+  onLspNotification: (callback: (payload: any) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: any) => {
+      callback(payload);
+    };
+    ipcRenderer.on("construct:lsp:notification", listener);
+    return () => ipcRenderer.off("construct:lsp:notification", listener);
   }
 });
