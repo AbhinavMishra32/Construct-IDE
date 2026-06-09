@@ -14,7 +14,10 @@ import {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
-  ContextMenuTrigger
+  ContextMenuTrigger,
+  ContextMenuSub,
+  ContextMenuSubTrigger,
+  ContextMenuSubContent
 } from "@/components/open-shell";
 import {
   ArrowSquareOut,
@@ -758,32 +761,40 @@ export function EditorPane({
       </ContextMenuTrigger>
 
       <ContextMenuContent className="construct-editor-context-menu">
-        <ContextMenuItem
-          onClick={() => triggerAction("editor.action.revealDefinition")}
-          onSelect={() => triggerAction("editor.action.revealDefinition")}
-        >
-          <ArrowSquareOut size={14} weight="duotone" />
-          <span>Go to Definition</span>
-          <kbd style={{ marginLeft: "auto", fontSize: "11px", color: "var(--codex-text-tertiary)", fontFamily: "inherit" }}>F12</kbd>
-        </ContextMenuItem>
-        
-        <ContextMenuItem
-          onClick={() => triggerAction("editor.action.peekDefinition")}
-          onSelect={() => triggerAction("editor.action.peekDefinition")}
-        >
-          <Eye size={14} weight="duotone" />
-          <span>Peek Definition</span>
-          <kbd style={{ marginLeft: "auto", fontSize: "11px", color: "var(--codex-text-tertiary)", fontFamily: "inherit" }}>⌥F12</kbd>
-        </ContextMenuItem>
-        
-        <ContextMenuItem
-          onClick={() => triggerAction("editor.action.referenceSearch.trigger")}
-          onSelect={() => triggerAction("editor.action.referenceSearch.trigger")}
-        >
-          <MagnifyingGlass size={14} weight="duotone" />
-          <span>Find All References</span>
-          <kbd style={{ marginLeft: "auto", fontSize: "11px", color: "var(--codex-text-tertiary)", fontFamily: "inherit" }}>⇧F12</kbd>
-        </ContextMenuItem>
+        <ContextMenuSub>
+          <ContextMenuSubTrigger>
+            <ArrowSquareOut size={14} weight="duotone" />
+            <span>Go to...</span>
+          </ContextMenuSubTrigger>
+          <ContextMenuSubContent>
+            <ContextMenuItem
+              onClick={() => triggerAction("editor.action.revealDefinition")}
+              onSelect={() => triggerAction("editor.action.revealDefinition")}
+            >
+              <ArrowSquareOut size={14} weight="duotone" />
+              <span>Go to Definition</span>
+              <kbd style={{ marginLeft: "auto", fontSize: "11px", color: "var(--codex-text-tertiary)", fontFamily: "inherit" }}>F12</kbd>
+            </ContextMenuItem>
+            
+            <ContextMenuItem
+              onClick={() => triggerAction("editor.action.peekDefinition")}
+              onSelect={() => triggerAction("editor.action.peekDefinition")}
+            >
+              <Eye size={14} weight="duotone" />
+              <span>Peek Definition</span>
+              <kbd style={{ marginLeft: "auto", fontSize: "11px", color: "var(--codex-text-tertiary)", fontFamily: "inherit" }}>⌥F12</kbd>
+            </ContextMenuItem>
+            
+            <ContextMenuItem
+              onClick={() => triggerAction("editor.action.referenceSearch.trigger")}
+              onSelect={() => triggerAction("editor.action.referenceSearch.trigger")}
+            >
+              <MagnifyingGlass size={14} weight="duotone" />
+              <span>Find All References</span>
+              <kbd style={{ marginLeft: "auto", fontSize: "11px", color: "var(--codex-text-tertiary)", fontFamily: "inherit" }}>⇧F12</kbd>
+            </ContextMenuItem>
+          </ContextMenuSubContent>
+        </ContextMenuSub>
 
         <ContextMenuSeparator />
 

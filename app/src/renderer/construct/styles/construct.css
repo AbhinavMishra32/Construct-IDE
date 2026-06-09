@@ -3342,3 +3342,45 @@
 [data-codex-window-type="electron"] .construct-app {
   background: transparent !important;
 }
+
+/* ─── Premium Monaco Floating Widgets (Open-Shell Popover Theme) ───────────── */
+
+.monaco-editor .monaco-hover,
+.monaco-editor .suggest-widget,
+.monaco-editor .parameter-hints-widget {
+  background: color-mix(in srgb, var(--color-token-dropdown-background, var(--codex-bg-elevated, #f3f3f3)) 92%, transparent) !important;
+  backdrop-filter: blur(14px) !important;
+  -webkit-backdrop-filter: blur(14px) !important;
+  border: 1px solid color-mix(in srgb, var(--color-token-border, var(--codex-border-subtle, rgba(0, 0, 0, 0.12))) 65%, transparent) !important;
+  border-radius: 11px !important;
+  box-shadow: var(--shadow-xl-spread, 0 10px 30px -5px rgba(0,0,0,0.15), 0 10px 10px -5px rgba(0,0,0,0.1)) !important;
+  padding: 6px 10px !important;
+}
+
+/* Autocomplete suggestion rows */
+.monaco-editor .suggest-widget .monaco-list-row {
+  border-radius: 6px !important;
+  margin: 1px 4px !important;
+  padding: 0 4px !important;
+}
+
+.monaco-editor .suggest-widget .monaco-list-row.focused {
+  background-color: var(--color-token-list-hover-background, rgba(0,0,0,0.06)) !important;
+}
+
+/* CodeLens and Hover content text alignment */
+.monaco-editor .monaco-hover .hover-contents,
+.monaco-editor .monaco-hover .hover-row,
+.monaco-editor .parameter-hints-widget .signature {
+  font-family: var(--codex-font-sans, system-ui, sans-serif) !important;
+  color: var(--codex-text-secondary) !important;
+}
+
+/* Code signatures */
+.monaco-editor .monaco-hover code,
+.monaco-editor .monaco-hover .code,
+.monaco-editor .parameter-hints-widget code {
+  font-family: var(--codex-font-mono, monospace) !important;
+  font-size: 12px !important;
+  color: var(--codex-text-primary) !important;
+}
