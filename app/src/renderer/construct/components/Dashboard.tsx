@@ -8,7 +8,7 @@ import {
 } from "@phosphor-icons/react";
 import type { ReactNode } from "react";
 
-import { Button } from "@/components/open-shell";
+import { Button } from "@opaline/ui";
 import type { ProjectSummary } from "../types";
 
 export function Dashboard({

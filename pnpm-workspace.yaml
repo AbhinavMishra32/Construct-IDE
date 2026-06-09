@@ -3,3 +3,4 @@ packages:
   - runner
   - pkg/*
   - blueprints/*
+  - opaline/packages/*

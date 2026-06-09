@@ -21,6 +21,7 @@
     "@homebridge/node-pty-prebuilt-multiarch": "^0.13.1",
     "@mastra/core": "^1.37.1",
     "@monaco-editor/react": "^4.7.0",
+    "@opaline/ui": "workspace:*",
     "@phosphor-icons/react": "^2.1.10",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-context-menu": "^2.3.0",

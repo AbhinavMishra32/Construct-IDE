@@ -15,7 +15,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogSection
-} from "@/components/open-shell";
+} from "@opaline/ui";
 
 import { openConstructFile, selectWorkspaceDirectory } from "../lib/bridge";
 import { parseConstructSource } from "../lib/parser";

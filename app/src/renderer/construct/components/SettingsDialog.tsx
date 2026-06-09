@@ -9,7 +9,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogSection
-} from "@/components/open-shell";
+} from "@opaline/ui";
 
 import {
   getSettings,

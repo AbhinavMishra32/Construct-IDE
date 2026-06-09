@@ -33,7 +33,7 @@ import {
   ContextMenuSub,
   ContextMenuSubTrigger,
   ContextMenuSubContent
-} from "@/components/open-shell";
+} from "@opaline/ui";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   BookOpenTextIcon,
@@ -2698,7 +2698,7 @@ export default function App() {
                                     >
                                       <PhArrowSquareOut size={14} weight="duotone" />
                                       <span>Go to Definition</span>
-                                      <kbd style={{ marginLeft: "auto", fontSize: "11px", color: "var(--codex-text-tertiary)", fontFamily: "inherit" }}>F12</kbd>
+                                      <kbd style={{ marginLeft: "auto", fontSize: "11px", color: "var(--opaline-text-tertiary)", fontFamily: "inherit" }}>F12</kbd>
                                     </ContextMenuItem>
                                     
                                     <ContextMenuItem
@@ -2707,7 +2707,7 @@ export default function App() {
                                     >
                                       <PhEye size={14} weight="duotone" />
                                       <span>Peek Definition</span>
-                                      <kbd style={{ marginLeft: "auto", fontSize: "11px", color: "var(--codex-text-tertiary)", fontFamily: "inherit" }}>⌥F12</kbd>
+                                      <kbd style={{ marginLeft: "auto", fontSize: "11px", color: "var(--opaline-text-tertiary)", fontFamily: "inherit" }}>⌥F12</kbd>
                                     </ContextMenuItem>
                                     
                                     <ContextMenuItem
@@ -2716,7 +2716,7 @@ export default function App() {
                                     >
                                       <PhMagnifyingGlass size={14} weight="duotone" />
                                       <span>Find All References</span>
-                                      <kbd style={{ marginLeft: "auto", fontSize: "11px", color: "var(--codex-text-tertiary)", fontFamily: "inherit" }}>⇧F12</kbd>
+                                      <kbd style={{ marginLeft: "auto", fontSize: "11px", color: "var(--opaline-text-tertiary)", fontFamily: "inherit" }}>⇧F12</kbd>
                                     </ContextMenuItem>
                                   </ContextMenuSubContent>
                                 </ContextMenuSub>
@@ -2729,7 +2729,7 @@ export default function App() {
                                 >
                                   <PhPencilSimpleLine size={14} weight="duotone" />
                                   <span>Rename Symbol</span>
-                                  <kbd style={{ marginLeft: "auto", fontSize: "11px", color: "var(--codex-text-tertiary)", fontFamily: "inherit" }}>F2</kbd>
+                                  <kbd style={{ marginLeft: "auto", fontSize: "11px", color: "var(--opaline-text-tertiary)", fontFamily: "inherit" }}>F2</kbd>
                                 </ContextMenuItem>
 
                                 <ContextMenuItem
@@ -2738,7 +2738,7 @@ export default function App() {
                                 >
                                   <PhStack size={14} weight="duotone" />
                                   <span>Change All Occurrences</span>
-                                  <kbd style={{ marginLeft: "auto", fontSize: "11px", color: "var(--codex-text-tertiary)", fontFamily: "inherit" }}>⌘F2</kbd>
+                                  <kbd style={{ marginLeft: "auto", fontSize: "11px", color: "var(--opaline-text-tertiary)", fontFamily: "inherit" }}>⌘F2</kbd>
                                 </ContextMenuItem>
 
                                 <ContextMenuSeparator />
@@ -2749,7 +2749,7 @@ export default function App() {
                                 >
                                   <PhTextAlignLeft size={14} weight="duotone" />
                                   <span>Format Document</span>
-                                  <kbd style={{ marginLeft: "auto", fontSize: "11px", color: "var(--codex-text-tertiary)", fontFamily: "inherit" }}>⌥⇧F</kbd>
+                                  <kbd style={{ marginLeft: "auto", fontSize: "11px", color: "var(--opaline-text-tertiary)", fontFamily: "inherit" }}>⌥⇧F</kbd>
                                 </ContextMenuItem>
 
                                 <ContextMenuSeparator />
@@ -2760,7 +2760,7 @@ export default function App() {
                                 >
                                   <PhTerminal size={14} weight="duotone" />
                                   <span>Command Palette</span>
-                                  <kbd style={{ marginLeft: "auto", fontSize: "11px", color: "var(--codex-text-tertiary)", fontFamily: "inherit" }}>F1</kbd>
+                                  <kbd style={{ marginLeft: "auto", fontSize: "11px", color: "var(--opaline-text-tertiary)", fontFamily: "inherit" }}>F1</kbd>
                                 </ContextMenuItem>
                               </ContextMenuContent>
 

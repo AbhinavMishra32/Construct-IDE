@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { logStore, type LogChannel, type LogEntry } from "../lib/logStore";
-import { TerminalSurface, SettingsSelect, Button } from "@/components/open-shell";
+import { TerminalSurface, SettingsSelect, Button } from "@opaline/ui";
 
 export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ theme }) => {
   const [activeChannel, setActiveChannel] = useState<LogChannel>("lsp-server");
@@ -63,43 +63,43 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
   const getLevelColor = (level: LogEntry["level"]) => {
     switch (level) {
       case "error":
-        return "text-[var(--codex-danger)] font-medium";
+        return "text-[var(--opaline-danger)] font-medium";
       case "warn":
-        return "text-[var(--codex-warning)] font-medium";
+        return "text-[var(--opaline-warning)] font-medium";
       case "debug":
-        return "text-[var(--codex-text-tertiary)] opacity-85";
+        return "text-[var(--opaline-text-tertiary)] opacity-85";
       default:
-        return "text-[var(--codex-text-primary)]";
+        return "text-[var(--opaline-text-primary)]";
     }
   };
 
   return (
     <TerminalSurface cwd={`Output Logs · ${activeChannel}`}>
-      <div className="flex flex-col h-full bg-[var(--codex-bg-primary)] text-[var(--codex-text-primary)] font-[var(--codex-font-sans)] overflow-hidden select-text">
+      <div className="flex flex-col h-full bg-[var(--opaline-bg-primary)] text-[var(--opaline-text-primary)] font-[var(--opaline-font-sans)] overflow-hidden select-text">
         {/* Top Controls Toolbar */}
-        <div className="flex items-center justify-between px-4 py-2 border-b border-[var(--codex-border-subtle)] bg-[var(--codex-bg-secondary)]">
+        <div className="flex items-center justify-between px-4 py-2 border-b border-[var(--opaline-border-subtle)] bg-[var(--opaline-bg-secondary)]">
           <div className="flex items-center gap-2">
-            <span className="text-xs text-[var(--codex-text-secondary)] font-medium select-none">Show output from:</span>
+            <span className="text-xs text-[var(--opaline-text-secondary)] font-medium select-none">Show output from:</span>
             <SettingsSelect
               value={activeChannel}
               onChange={(e) => setActiveChannel(e.target.value as LogChannel)}
               className="text-xs h-[30px] min-w-[200px]"
             >
-              <option value="lsp-server" className="bg-[var(--codex-bg-primary)] text-[var(--codex-text-primary)] font-sans">TypeScript LSP Server (stderr)</option>
-              <option value="lsp-protocol" className="bg-[var(--codex-bg-primary)] text-[var(--codex-text-primary)] font-sans">TypeScript LSP Protocol (JSON-RPC)</option>
-              <option value="main" className="bg-[var(--codex-bg-primary)] text-[var(--codex-text-primary)] font-sans">Electron Main Process</option>
-              <option value="renderer" className="bg-[var(--codex-bg-primary)] text-[var(--codex-text-primary)] font-sans">Renderer Console</option>
-              <option value="verifier" className="bg-[var(--codex-bg-primary)] text-[var(--codex-text-primary)] font-sans">Verifier Agent</option>
+              <option value="lsp-server" className="bg-[var(--opaline-bg-primary)] text-[var(--opaline-text-primary)] font-sans">TypeScript LSP Server (stderr)</option>
+              <option value="lsp-protocol" className="bg-[var(--opaline-bg-primary)] text-[var(--opaline-text-primary)] font-sans">TypeScript LSP Protocol (JSON-RPC)</option>
+              <option value="main" className="bg-[var(--opaline-bg-primary)] text-[var(--opaline-text-primary)] font-sans">Electron Main Process</option>
+              <option value="renderer" className="bg-[var(--opaline-bg-primary)] text-[var(--opaline-text-primary)] font-sans">Renderer Console</option>
+              <option value="verifier" className="bg-[var(--opaline-bg-primary)] text-[var(--opaline-text-primary)] font-sans">Verifier Agent</option>
             </SettingsSelect>
           </div>
 
           <div className="flex items-center gap-3">
-            <label className="flex items-center gap-1.5 text-xs text-[var(--codex-text-secondary)] select-none cursor-pointer font-medium">
+            <label className="flex items-center gap-1.5 text-xs text-[var(--opaline-text-secondary)] select-none cursor-pointer font-medium">
               <input
                 type="checkbox"
                 checked={autoScroll}
                 onChange={(e) => setAutoScroll(e.target.checked)}
-                className="accent-[var(--codex-accent)]"
+                className="accent-[var(--opaline-accent)]"
               />
               Auto-scroll
             </label>
@@ -127,20 +127,20 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
         {/* Logs container */}
         <div
           ref={containerRef}
-          className="flex-1 overflow-auto p-4 text-[13px] leading-relaxed select-text space-y-1 scrollbar-thin bg-[var(--codex-bg-primary)]"
-          style={{ fontFamily: "var(--codex-font-mono)" }}
+          className="flex-1 overflow-auto p-4 text-[13px] leading-relaxed select-text space-y-1 scrollbar-thin bg-[var(--opaline-bg-primary)]"
+          style={{ fontFamily: "var(--opaline-font-mono)" }}
         >
           {logs.length === 0 ? (
-            <div className="text-[var(--codex-text-tertiary)] italic select-none" style={{ fontFamily: "var(--codex-font-mono)" }}>
+            <div className="text-[var(--opaline-text-tertiary)] italic select-none" style={{ fontFamily: "var(--opaline-font-mono)" }}>
               No logs available in this channel.
             </div>
           ) : (
             logs.map((log, index) => (
-              <div key={index} className="flex items-start hover:bg-[color-mix(in_srgb,var(--codex-text-primary)_4%,transparent)] py-[1px] px-1 rounded" style={{ fontFamily: "var(--codex-font-mono)" }}>
-                <span className="text-[var(--codex-text-tertiary)] select-none mr-3 flex-shrink-0 font-light text-[12px]" style={{ fontFamily: "var(--codex-font-mono)" }}>
+              <div key={index} className="flex items-start hover:bg-[color-mix(in_srgb,var(--opaline-text-primary)_4%,transparent)] py-[1px] px-1 rounded" style={{ fontFamily: "var(--opaline-font-mono)" }}>
+                <span className="text-[var(--opaline-text-tertiary)] select-none mr-3 flex-shrink-0 font-light text-[12px]" style={{ fontFamily: "var(--opaline-font-mono)" }}>
                   [{formatTimestamp(log.timestamp)}]
                 </span>
-                <span className={`whitespace-pre-wrap break-all ${getLevelColor(log.level)}`} style={{ fontFamily: "var(--codex-font-mono)" }}>
+                <span className={`whitespace-pre-wrap break-all ${getLevelColor(log.level)}`} style={{ fontFamily: "var(--opaline-font-mono)" }}>
                   {log.message}
                 </span>
               </div>

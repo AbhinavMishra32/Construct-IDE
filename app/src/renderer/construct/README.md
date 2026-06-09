@@ -6,10 +6,10 @@ The runtime is still intentionally small:
 
 - `lib/parser.ts` parses human-readable `.construct` source into a linear tape.
 - `lib/projectStore.ts` bootstraps saved projects from real `.construct` source.
-- `App.tsx` mounts the open-shell app frame.
+- `App.tsx` mounts the opaline app frame.
 - `components/Workspace.tsx` coordinates files, tape progress, ghost edits, and terminal commands.
 - `components/EditorPane.tsx` owns the current ghost-typing mechanic.
-- `components/TerminalPanel.tsx` adapts xterm.js into open-shell's bottom panel.
+- `components/TerminalPanel.tsx` adapts xterm.js into opaline's bottom panel.
 
 The app owns the learning flow. The agent should later generate compact
 `.construct` files, not drive the project experience directly.
