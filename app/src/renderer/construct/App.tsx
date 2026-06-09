@@ -1,5 +1,6 @@
 import "@/components/open-shell/tokens/codex-theme.css";
 import "./styles/construct.css";
+import { lspClient } from "./lib/lspClient";
 
 import { Component, useCallback, useEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from "react";
 import { ArrowLeft, ArrowRight, PanelLeft, PanelRight, PanelBottom } from "lucide-react";
@@ -332,6 +333,19 @@ export default function ConstructApp() {
     localStorage.setItem("construct.theme", theme);
     void setThemeSource(theme);
   }, [theme]);
+
+  useEffect(() => {
+    if (activeProject) {
+      console.log("[LSP Client] Workspace path changed, initializing LSP for:", activeProject.workspacePath);
+      void lspClient.initialize(activeProject.workspacePath);
+    } else {
+      console.log("[LSP Client] No active project, disposing LSP");
+      lspClient.dispose();
+    }
+    return () => {
+      lspClient.dispose();
+    };
+  }, [activeProject?.id, activeProject?.workspacePath]);
 
   useEffect(() => {
     const mql = window.matchMedia("(prefers-color-scheme: dark)");

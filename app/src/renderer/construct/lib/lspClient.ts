@@ -81,7 +81,7 @@ class LspClientClass {
 
       // 3. Disable Monaco's default TypeScript and JavaScript workers to avoid duplicate completions/diagnostics
       monaco.languages.typescript.typescriptDefaults.setModeConfiguration({
-        completions: false,
+        completionItems: false,
         hovers: false,
         documentSymbols: false,
         definitions: false,
@@ -91,7 +91,7 @@ class LspClientClass {
       });
 
       monaco.languages.typescript.javascriptDefaults.setModeConfiguration({
-        completions: false,
+        completionItems: false,
         hovers: false,
         documentSymbols: false,
         definitions: false,
@@ -231,35 +231,34 @@ class LspClientClass {
   }
 
   private setupDiagnostics() {
-    this.disposables.push(
-      window.constructProjects.onLspNotification((notification: any) => {
-        if (notification.method === "textDocument/publishDiagnostics") {
-          const { uri, diagnostics } = notification.params;
-          const model = monaco.editor.getModel(monaco.Uri.parse(uri));
-          if (!model) return;
+    const cleanup = window.constructProjects.onLspNotification((notification: any) => {
+      if (notification.method === "textDocument/publishDiagnostics") {
+        const { uri, diagnostics } = notification.params;
+        const model = monaco.editor.getModel(monaco.Uri.parse(uri));
+        if (!model) return;
 
-          const markers = diagnostics.map((d: any) => {
-            let severity = monaco.MarkerSeverity.Info;
-            if (d.severity === 1) severity = monaco.MarkerSeverity.Error;
-            else if (d.severity === 2) severity = monaco.MarkerSeverity.Warning;
-            else if (d.severity === 3) severity = monaco.MarkerSeverity.Info;
-            else if (d.severity === 4) severity = monaco.MarkerSeverity.Hint;
+        const markers = diagnostics.map((d: any) => {
+          let severity = monaco.MarkerSeverity.Info;
+          if (d.severity === 1) severity = monaco.MarkerSeverity.Error;
+          else if (d.severity === 2) severity = monaco.MarkerSeverity.Warning;
+          else if (d.severity === 3) severity = monaco.MarkerSeverity.Info;
+          else if (d.severity === 4) severity = monaco.MarkerSeverity.Hint;
 
-            return {
-              severity,
-              message: d.message,
-              source: d.source || "ts",
-              startLineNumber: d.range.start.line + 1,
-              startColumn: d.range.start.character + 1,
-              endLineNumber: d.range.end.line + 1,
-              endColumn: d.range.end.character + 1
-            };
-          });
+          return {
+            severity,
+            message: d.message,
+            source: d.source || "ts",
+            startLineNumber: d.range.start.line + 1,
+            startColumn: d.range.start.character + 1,
+            endLineNumber: d.range.end.line + 1,
+            endColumn: d.range.end.character + 1
+          };
+        });
 
-          monaco.editor.setModelMarkers(model, "lsp", markers);
-        }
-      })
-    );
+        monaco.editor.setModelMarkers(model, "lsp", markers);
+      }
+    });
+    this.disposables.push({ dispose: cleanup });
   }
 
   private registerProviders() {
@@ -404,6 +403,21 @@ class LspClientClass {
     }
     this.modelListeners.clear();
   }
+
+  getRelativePath(absolutePath: string): string {
+    if (!this.activeWorkspacePath) return absolutePath;
+    
+    // Normalize paths to use forward slashes for consistency
+    const abs = absolutePath.replace(/\\/g, "/");
+    const ws = this.activeWorkspacePath.replace(/\\/g, "/");
+    
+    if (abs.startsWith(ws)) {
+      let rel = abs.slice(ws.length);
+      if (rel.startsWith("/")) rel = rel.slice(1);
+      return rel;
+    }
+    return absolutePath;
+  }
 }
 
 function toMonacoRange(lspRange: any): monaco.Range {
@@ -491,8 +505,8 @@ function toMonacoCompletionItem(
     insertText,
     insertTextRules:
       lspItem.insertTextFormat === 2
-        ? monaco.languages.CompletionItemInsertRules.InsertAsSnippet
-        : monaco.languages.CompletionItemInsertRules.None,
+        ? monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet
+        : monaco.languages.CompletionItemInsertTextRule.None,
     range,
     sortText: lspItem.sortText,
     filterText: lspItem.filterText,

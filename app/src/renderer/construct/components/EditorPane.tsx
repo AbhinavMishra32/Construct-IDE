@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { editor as MonacoEditor } from "monaco-editor";
 
 import { monaco } from "../../monaco";
+import { lspClient } from "../lib/lspClient";
 import {
   CONSTRUCT_DARK,
   CONSTRUCT_LIGHT,
@@ -310,14 +311,20 @@ export function EditorPane({
     updateEditorState();
   }, [editProgress, updateEditorState]);
 
+  const isOutsideWorkspace = useMemo(() => {
+    return !!(path && (path.startsWith("/") || path.includes(":\\") || path.includes(":/")));
+  }, [path]);
+
   // Update editor options and trigger decoration updates when guided status changes
   useEffect(() => {
     const editor = editorRef.current;
     if (!editor) return;
 
     editor.updateOptions({
-      readOnly: isGuided,
-      readOnlyMessage: { value: "Type the highlighted ghost text manually to advance." }
+      readOnly: isGuided || isOutsideWorkspace,
+      readOnlyMessage: isGuided
+        ? { value: "Type the highlighted ghost text manually to advance." }
+        : { value: "This file is outside the workspace and is read-only." }
     });
 
     if (!isGuided || !activeEdit) {
@@ -325,7 +332,7 @@ export function EditorPane({
     } else {
       updateEditorState();
     }
-  }, [isGuided, activeEdit?.id, updateEditorState]);
+  }, [isGuided, isOutsideWorkspace, activeEdit?.id, updateEditorState]);
 
   // Clean up pending timers on unmount
   useEffect(() => {
@@ -390,7 +397,7 @@ export function EditorPane({
     if (!editor) return;
 
     const languages = [
-      "typescript", "javascript", "python", "css", "html", "json",
+      "python", "css", "html",
       "rust", "go", "cpp", "c", "csharp", "java", "kotlin", "swift",
       "ruby", "php", "shell", "sql", "lua"
     ];
@@ -521,116 +528,49 @@ export function EditorPane({
           ghostDecorationsRef.current = editor.createDecorationsCollection();
           focusDecorationsRef.current = editor.createDecorationsCollection();
 
+          const isOutsideWorkspace = path && (path.startsWith("/") || path.includes(":\\") || path.includes(":/"));
           editor.updateOptions({
-            readOnly: isGuided,
-            readOnlyMessage: { value: "Type the highlighted ghost text manually to advance." }
+            readOnly: isGuided || !!isOutsideWorkspace,
+            readOnlyMessage: isGuided
+              ? { value: "Type the highlighted ghost text manually to advance." }
+              : { value: "This file is outside the workspace and is read-only." }
           });
 
+          // Override Monaco's CodeEditorService to handle definition/reference navigation
+          const codeEditorService = (editor as any)._codeEditorService;
+          if (codeEditorService) {
+            const originalOpenCodeEditor = codeEditorService.openCodeEditor.bind(codeEditorService);
+            codeEditorService.openCodeEditor = async (input: any, source: any, sideBySide: any) => {
+              const targetUri = input.resource;
+              if (targetUri && targetUri.scheme === "file") {
+                const targetPath = targetUri.fsPath || targetUri.path;
+                const selection = input.options?.selection;
+                const line = selection ? selection.startLineNumber : 1;
+                const column = selection ? selection.startColumn : 1;
 
-
-          // Intercept Cmd+Click for cross-file definitions and external documentation links
-          editor.onMouseUp((e) => {
-            const isCmdClick = e.event.metaKey || e.event.ctrlKey;
-            if (!isCmdClick) return;
-
-            const position = e.target.position;
-            if (!position) return;
-
-            const model = editor.getModel();
-            if (!model) return;
-
-            const wordInfo = model.getWordAtPosition(position);
-            if (!wordInfo) return;
-
-            const word = wordInfo.word;
-            const lineText = model.getLineContent(position.lineNumber);
-            const currentContent = model.getValue();
-            const currentFilePath = path || "";
-
-            const importPath = findImportPathForSymbol(currentContent, word);
-            if (importPath) {
-              const resolved = resolvePath(currentFilePath, importPath);
-              const target = findFileInWorkspace(resolved, fileList);
-              if (target && onOpenFileAndJump && readFileContent) {
-                void (async () => {
-                  const targetContent = await readFileContent(target);
-                  const targetDef = findSymbolDefinition(targetContent, word);
-                  if (targetDef) {
-                    onOpenFileAndJump(target, targetDef.line, targetDef.column);
-                  }
-                })();
-                return;
-              }
-            }
-
-            const quoteMatches = [...lineText.matchAll(/(?:import|from|require|@import)\s+['"`]([^'"`]+)['"`]/g)];
-            for (const match of quoteMatches) {
-              const pathContent = match[1];
-              const resolved = resolvePath(currentFilePath, pathContent);
-              const target = findFileInWorkspace(resolved, fileList);
-              if (target && onOpenFileAndJump) {
-                onOpenFileAndJump(target, 1, 1);
-                return;
-              }
-            }
-
-
-          });
-
-          editor.onKeyDown((event) => {
-            // Handle F12 Go to Definition keypress
-            if (event.keyCode === monaco.KeyCode.F12) {
-              const position = editor.getPosition();
-              if (position) {
-                const model = editor.getModel();
-                if (model) {
-                  const wordInfo = model.getWordAtPosition(position);
-                  if (wordInfo) {
-                    const word = wordInfo.word;
-                    const lineText = model.getLineContent(position.lineNumber);
-                    const currentContent = model.getValue();
-                    const currentFilePath = path || "";
-
-                    const importPath = findImportPathForSymbol(currentContent, word);
-                    if (importPath) {
-                      const resolved = resolvePath(currentFilePath, importPath);
-                      const target = findFileInWorkspace(resolved, fileList);
-                      if (target && onOpenFileAndJump && readFileContent) {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        void (async () => {
-                          const targetContent = await readFileContent(target);
-                          const targetDef = findSymbolDefinition(targetContent, word);
-                          if (targetDef) {
-                            onOpenFileAndJump(target, targetDef.line, targetDef.column);
-                          }
-                        })();
-                        return;
-                      }
-                    }
-
-                    const quoteMatches = [...lineText.matchAll(/(?:import|from|require|@import)\s+['"`]([^'"`]+)['"`]/g)];
-                    for (const match of quoteMatches) {
-                      const pathContent = match[1];
-                      const resolved = resolvePath(currentFilePath, pathContent);
-                      const target = findFileInWorkspace(resolved, fileList);
-                      if (target && onOpenFileAndJump) {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        onOpenFileAndJump(target, 1, 1);
-                        return;
-                      }
-                    }
-
-
-                  }
+                if (onOpenFileAndJump) {
+                  const relPath = lspClient.getRelativePath(targetPath);
+                  onOpenFileAndJump(relPath, line, column);
+                  return editor;
                 }
               }
-              return;
-            }
+              return originalOpenCodeEditor(input, source, sideBySide);
+            };
+          }
 
+          editor.onKeyDown((event) => {
             const current = guidedStateRef.current;
             if (!current.activeEdit || current.activeEdit.path !== path) {
+              // Even outside active edit, support Meta+S save logic
+              if ((event.metaKey || event.ctrlKey) && event.keyCode === monaco.KeyCode.KeyS) {
+                event.preventDefault();
+                event.stopPropagation();
+                const model = editor.getModel();
+                if (model) {
+                  lspClient.notifySaveModel(model);
+                }
+                onSave?.();
+              }
               return;
             }
 
@@ -656,6 +596,10 @@ export function EditorPane({
             if ((event.metaKey || event.ctrlKey) && event.keyCode === monaco.KeyCode.KeyS) {
               event.preventDefault();
               event.stopPropagation();
+              const model = editor.getModel();
+              if (model) {
+                lspClient.notifySaveModel(model);
+              }
               onSave?.();
               return;
             }

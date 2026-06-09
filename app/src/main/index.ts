@@ -725,7 +725,9 @@ function installConstructProjectIpcHandlers(): void {
 
   ipcMain.handle("construct:project:read-file", async (_event, input) => {
     const project = findProject(await readProjects(), input.projectId);
-    const target = safeProjectPath(project, input.path);
+    const target = path.isAbsolute(input.path)
+      ? path.resolve(input.path)
+      : safeProjectPath(project, input.path);
     const fileStat = await stat(target);
 
     if (!fileStat.isFile()) {
