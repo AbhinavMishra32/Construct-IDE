@@ -47,6 +47,7 @@ import {
   updateProject
 } from "./lib/bridge";
 import type { ProjectRecord, ProjectSummary, WorkspaceTreeNode } from "./types";
+import { currentBlock, currentBlockNumber, totalBlocks, nextPosition } from "./lib/runtime";
 
 type ThemeMode = "light" | "dark" | "system";
 type ConstructHistoryEntry = ShellHistoryEntry<
@@ -80,11 +81,26 @@ function resolveActiveTheme(theme: ThemeMode): "light" | "dark" {
   return theme;
 }
 
+function applyDocumentTheme(active: "light" | "dark"): void {
+  const root = document.documentElement;
+  root.dataset.constructTheme = active;
+  root.dataset.codexTheme = active;
+  root.dataset.theme = active;
+  root.classList.toggle("dark", active === "dark");
+  root.style.colorScheme = active;
+
+  if (document.body) {
+    document.body.dataset.constructTheme = active;
+    document.body.dataset.codexTheme = active;
+    document.body.style.colorScheme = active;
+  }
+}
+
 export default function ConstructApp() {
-  const history = useShellHistory<ConstructHistoryEntry>(
-    () => [{ id: "dashboard", title: "Projects", type: "dashboard" }],
-    { maxEntries: 120 }
-  );
+  const history = useShellHistory<ConstructHistoryEntry>([
+    { id: "dashboard", title: "Projects", type: "dashboard" }
+  ]);
+
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [activeProject, setActiveProject] = useState<ProjectRecord | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -104,12 +120,154 @@ export default function ConstructApp() {
     activePath: string | null;
     relevantPath: string | null;
     openFile: ((path: string) => void) | null;
+    createFile: ((path: string) => void) | null;
+    deleteFile: ((path: string) => Promise<void>) | null;
+    renameFile: ((oldPath: string, newPath: string) => Promise<void>) | null;
+    createFolder: ((path: string) => Promise<void>) | null;
+    duplicateFile: ((path: string, destPath: string) => Promise<void>) | null;
   }>({
     tree: [],
     activePath: null,
     relevantPath: null,
-    openFile: null
+    openFile: null,
+    createFile: null,
+    deleteFile: null,
+    renameFile: null,
+    createFolder: null,
+    duplicateFile: null
   });
+
+  const { furthestUnlockedStepIndex, furthestUnlockedBlockIndex } = useMemo(() => {
+    if (!activeProject) return { furthestUnlockedStepIndex: 0, furthestUnlockedBlockIndex: 0 };
+    const completedBlocks = activeProject.completedBlocks ?? {};
+    const steps = activeProject.program.steps;
+    for (let i = 0; i < steps.length; i++) {
+      const step = steps[i];
+      for (let j = 0; j < step.blocks.length; j++) {
+        if (!completedBlocks[step.blocks[j].id]) {
+          return { furthestUnlockedStepIndex: i, furthestUnlockedBlockIndex: j };
+        }
+      }
+    }
+    const lastStepIdx = steps.length - 1;
+    const lastBlockIdx = Math.max(0, (steps[lastStepIdx]?.blocks.length ?? 1) - 1);
+    return { furthestUnlockedStepIndex: lastStepIdx, furthestUnlockedBlockIndex: lastBlockIdx };
+  }, [activeProject]);
+
+  const canContinue = useMemo(() => {
+    if (!activeProject) return false;
+    const block = currentBlock(activeProject);
+    if (!block) return false;
+
+    const typingProgress = activeProject.typingProgress ?? {};
+    const verificationResults = activeProject.verificationResults ?? {};
+
+    const activeEdit = block.kind === "edit" ? block : null;
+    const editProgress = activeEdit ? typingProgress[activeEdit.id] ?? 0 : 0;
+    const editComplete = activeEdit ? editProgress >= activeEdit.content.length : false;
+
+    const verification = block.kind === "recall" && block.verify
+      ? verificationResults[block.verify.id]
+      : undefined;
+
+    return (
+      (block.kind !== "edit" || editComplete) &&
+      (block.kind !== "recall" || !block.verify || verification?.passed === true)
+    );
+  }, [activeProject]);
+
+  const isAtEnd = useMemo(() => {
+    if (!activeProject) return true;
+    const steps = activeProject.program.steps;
+    const lastStepIdx = steps.length - 1;
+    const lastStep = steps[lastStepIdx];
+    return (
+      activeProject.currentStepIndex === lastStepIdx &&
+      activeProject.currentBlockIndex === Math.max(0, (lastStep?.blocks.length ?? 1) - 1)
+    );
+  }, [activeProject]);
+
+  async function persistProjectState(patch: Partial<ProjectRecord>) {
+    if (!activeProject) return;
+    try {
+      const updated = await updateProject({
+        id: activeProject.id,
+        patch
+      });
+      setActiveProject(updated);
+    } catch (caught) {
+      console.error("[construct] update project failed", { id: activeProject.id, patch, caught });
+    }
+  }
+
+  async function handlePrevBlock() {
+    if (!activeProject) return;
+    if (activeProject.currentBlockIndex > 0) {
+      await persistProjectState({
+        currentStepIndex: activeProject.currentStepIndex,
+        currentBlockIndex: activeProject.currentBlockIndex - 1,
+        activeFilePath: null
+      });
+    } else if (activeProject.currentStepIndex > 0) {
+      const prevStepIndex = activeProject.currentStepIndex - 1;
+      const prevStepBlocksCount = activeProject.program.steps[prevStepIndex].blocks.length;
+      await persistProjectState({
+        currentStepIndex: prevStepIndex,
+        currentBlockIndex: Math.max(0, prevStepBlocksCount - 1),
+        activeFilePath: null
+      });
+    }
+  }
+
+  async function handleNextBlock() {
+    if (!activeProject) return;
+    const currentStep = activeProject.program.steps[activeProject.currentStepIndex];
+    const isAtFrontier =
+      activeProject.currentStepIndex === furthestUnlockedStepIndex &&
+      activeProject.currentBlockIndex === furthestUnlockedBlockIndex;
+
+    if (isAtFrontier) {
+      if (canContinue) {
+        const block = currentBlock(activeProject);
+        if (block) {
+          const position = nextPosition(activeProject);
+          await persistProjectState({
+            ...position,
+            completedBlocks: {
+              ...(activeProject.completedBlocks ?? {}),
+              [block.id]: true
+            },
+            activeFilePath: null
+          });
+        }
+      }
+      return;
+    }
+
+    if (currentStep && activeProject.currentBlockIndex < currentStep.blocks.length - 1) {
+      await persistProjectState({
+        currentStepIndex: activeProject.currentStepIndex,
+        currentBlockIndex: activeProject.currentBlockIndex + 1,
+        activeFilePath: null
+      });
+    } else if (activeProject.currentStepIndex < activeProject.program.steps.length - 1) {
+      await persistProjectState({
+        currentStepIndex: activeProject.currentStepIndex + 1,
+        currentBlockIndex: 0,
+        activeFilePath: null
+      });
+    }
+  }
+
+  async function handleReturnToActive() {
+    if (activeProject) {
+      await persistProjectState({
+        currentStepIndex: furthestUnlockedStepIndex,
+        currentBlockIndex: furthestUnlockedBlockIndex,
+        activeFilePath: null
+      });
+    }
+  }
 
   const pushHistory = useCallback((entry: ConstructHistoryEntry) => {
     if (!applyingHistoryRef.current) {
@@ -125,7 +283,7 @@ export default function ConstructApp() {
     setSettingsSurface(null);
     setRightPanel(null);
     setActiveProject(null);
-    setTreeData({ tree: [], activePath: null, relevantPath: null, openFile: null });
+    setTreeData({ tree: [], activePath: null, relevantPath: null, openFile: null, createFile: null, deleteFile: null, renameFile: null, createFolder: null, duplicateFile: null });
     pushHistory({ id: "dashboard", title: "Projects", type: "dashboard" });
     void refresh();
   }, [pushHistory]);
@@ -170,9 +328,7 @@ export default function ConstructApp() {
 
   useEffect(() => {
     const active = resolveActiveTheme(theme);
-    document.documentElement.dataset.constructTheme = active;
-    document.documentElement.dataset.codexTheme = active;
-    document.documentElement.classList.toggle("dark", active === "dark");
+    applyDocumentTheme(active);
     localStorage.setItem("construct.theme", theme);
     void setThemeSource(theme);
   }, [theme]);
@@ -182,9 +338,7 @@ export default function ConstructApp() {
     const handler = () => {
       if (theme === "system") {
         const active = mql.matches ? "dark" : "light";
-        document.documentElement.dataset.constructTheme = active;
-        document.documentElement.dataset.codexTheme = active;
-        document.documentElement.classList.toggle("dark", active === "dark");
+        applyDocumentTheme(active);
       }
     };
     mql.addEventListener("change", handler);
@@ -289,7 +443,7 @@ export default function ConstructApp() {
       setSettingsSurface(null);
       setRightPanel(null);
       setActiveProject(null);
-      setTreeData({ tree: [], activePath: null, relevantPath: null, openFile: null });
+      setTreeData({ tree: [], activePath: null, relevantPath: null, openFile: null, createFile: null, deleteFile: null, renameFile: null, createFolder: null, duplicateFile: null });
       finish();
       return;
     }
@@ -346,8 +500,8 @@ export default function ConstructApp() {
         activeRightSlotId={activeRightSlotId}
         onRightSlotChange={handleRightSlotChange}
         onFileOpened={handleFileOpened}
-        onTreeChange={(tree, activePath, relevantPath, openFile) => {
-          setTreeData({ tree, activePath, relevantPath, openFile });
+        onTreeChange={(tree, activePath, relevantPath, openFile, createFile, deleteFileFn, renameFileFn, createFolderFn, duplicateFileFn) => {
+          setTreeData({ tree, activePath, relevantPath, openFile, createFile, deleteFile: deleteFileFn, renameFile: renameFileFn, createFolder: createFolderFn, duplicateFile: duplicateFileFn });
         }}
         onSavingChange={setIsSaving}
     />
@@ -381,269 +535,332 @@ export default function ConstructApp() {
 
   return (
     <AppErrorBoundary>
-      <AppShell
-        key={activeProject?.id ?? "dashboard"}
-        history={history}
-        showSidebarChrome
-        defaultBottomPanelOpen={Boolean(activeProject && !settingsSurface)}
-        defaultRightPanelOpen={Boolean(activeProject && !settingsSurface)}
-        headerTabs={[
-          {
-            id: settingsSurface
-              ? `settings-${settingsSurface.itemId}`
-              : activeProject?.id ?? "dashboard",
-            title: settingsSurface
-              ? settingsTitle(settingsSurface.itemId, settingsSurface.projectId, projects)
-              : activeProject?.title ?? "Projects",
-            active: true
-          }
-        ]}
-        renderHeaderTab={(tab) => (
-          <button className="construct-header-title-tab" type="button" title={String(tab.title)}>
-            <span>{tab.title}</span>
-          </button>
-        )}
-        collapsedSidebarTrigger={(state) => (
-          <div className="construct-collapsed-toolbar">
-            <AppShellCollapsedSidebarTrigger onClick={state.toggleSidebar} aria-label="Open sidebar">
-              <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20, overflow: "visible" }}>
-                <rect x="3.5" y="4.5" width="13" height="11" rx="2" />
-                <path d="M7.5 4.5v11" />
-                <circle cx="16.5" cy="4.5" r="2.5" fill="#007aff" stroke="var(--codex-bg-primary)" strokeWidth="1.5" />
-              </svg>
-            </AppShellCollapsedSidebarTrigger>
-            <AppShellCollapsedSidebarTrigger onClick={handleBack} aria-label="Home">
-              <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20 }}>
-                <path d="M3 9.5 L10 3.5 L17 9.5" />
-                <path d="M4.25 9.5 v5.25a1 1 0 0 0 1 1 h9.5 a1 1 0 0 0 1-1 v-5.25" />
-                <path d="M8.5 15.75 v-3.75 h3 v3.75" />
-              </svg>
-            </AppShellCollapsedSidebarTrigger>
-            <AppShellCollapsedSidebarTrigger onClick={state.navigateBack} disabled={!state.canNavigateBack} aria-label="Back">
-              <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20 }}>
-                <line x1="19" y1="12" x2="5" y2="12" />
-                <polyline points="12 19 5 12 12 5" />
-              </svg>
-            </AppShellCollapsedSidebarTrigger>
-            <AppShellCollapsedSidebarTrigger onClick={state.navigateForward} disabled={!state.canNavigateForward} aria-label="Forward">
-              <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20 }}>
-                <line x1="5" y1="12" x2="19" y2="12" />
-                <polyline points="12 5 19 12 12 19" />
-              </svg>
-            </AppShellCollapsedSidebarTrigger>
-          </div>
-        )}
-        sidebarChrome={
-          activeProject && !settingsSurface
-            ? (state) => (
-                <>
-                  <AppShellChromeButton
-                    aria-label={state.isSidebarOpen ? "Close sidebar" : "Open sidebar"}
-                    onClick={state.toggleSidebar}
-                  >
-                    <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20 }}>
-                      <rect x="3.5" y="4.5" width="13" height="11" rx="2" />
-                      <path d="M7.5 4.5v11" />
-                    </svg>
-                  </AppShellChromeButton>
-                  <AppShellChromeButton
-                    aria-label="Home"
-                    onClick={handleBack}
-                  >
-                    <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20 }}>
-                      <path d="M3 9.5 L10 3.5 L17 9.5" />
-                      <path d="M4.25 9.5 v5.25a1 1 0 0 0 1 1 h9.5 a1 1 0 0 0 1-1 v-5.25" />
-                      <path d="M8.5 15.75 v-3.75 h3 v3.75" />
-                    </svg>
-                  </AppShellChromeButton>
-                  <AppShellChromeButton
-                    aria-label="Back"
-                    disabled={!state.canNavigateBack}
-                    onClick={state.navigateBack}
-                  >
-                    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20 }}>
-                      <line x1="19" y1="12" x2="5" y2="12" />
-                      <polyline points="12 19 5 12 12 5" />
-                    </svg>
-                  </AppShellChromeButton>
-                  <AppShellChromeButton
-                    aria-label="Forward"
-                    disabled={!state.canNavigateForward}
-                    onClick={state.navigateForward}
-                  >
-                    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20 }}>
-                      <line x1="5" y1="12" x2="19" y2="12" />
-                      <polyline points="12 5 19 12 12 19" />
-                    </svg>
-                  </AppShellChromeButton>
-                </>
-              )
-            : undefined
-        }
-        headerActions={
-          activeProject && !settingsSurface
-            ? (state) => (
-                <>
-                  <SavingIndicator isSaving={isSaving} />
-                  <AppShellHeaderToolButton onClick={state.toggleRightPanel} aria-label="Toggle guide panel">
-                    <PanelRight size={20} />
-                  </AppShellHeaderToolButton>
-                  <AppShellHeaderToolButton onClick={state.toggleBottomPanel} aria-label="Toggle terminal">
-                    <PanelBottom size={20} />
-                  </AppShellHeaderToolButton>
-                </>
-              )
-            : undefined
-        }
-        sidebar={
-          settingsSurface ? (
-            <SettingsSidebar
-              activeItemId={settingsSurface.itemId}
-              backLabel={settingsSurface.projectId ? "Back to project" : "Back to projects"}
-              footer={<SidebarSettingsButton onClick={() => openSettingsSurface("workspace")} />}
-              onBack={closeSettingsSurface}
-              onItemSelect={(item: SettingsNavItem) => {
-                const projectId = item.id.startsWith("project-") ? settingsSurface.projectId : undefined;
-                if (item.id.startsWith("project-") && !projectId) {
-                  return;
-                }
-                openSettingsSurface(item.id, projectId);
-              }}
-              onSearchChange={setSettingsQuery}
-              query={settingsQuery}
-              sections={settingsSections}
-            />
-          ) : activeProject ? (
-            <Sidebar projects={[]} items={[]} footer={<SidebarSettingsButton onClick={() => openSettingsSurface("workspace")} />}>
-              <div className="construct-sidebar-active">
-                <div className="construct-sidebar-tree-container">
-                  {treeData.openFile ? (
-                    <FileTree
-                      nodes={treeData.tree}
-                      activePath={treeData.activePath}
-                      relevantPath={treeData.relevantPath}
-                      onOpenFile={treeData.openFile}
-                    />
-                  ) : null}
-                </div>
-              </div>
-            </Sidebar>
-          ) : (
-            <Sidebar
-              projects={[]} items={[]}
-              primaryItems={[
-                {
-                  id: "new-project",
-                  icon: <Plus size={18} weight="bold" />,
-                  label: "New project",
-                  onClick: () => setIsNewProjectOpen(true)
-                }
-              ]}
-              footer={<SidebarSettingsButton onClick={() => openSettingsSurface("workspace")} />}
-            >
-              <SidebarSection heading="Projects">
-                <div className="construct-sidebar-project-list">
-                  {projects.map((project) => (
-                    <button
-                      className="construct-sidebar-project-row"
-                      key={project.id}
-                      onClick={() => void openProject(project.id)}
-                      type="button"
+      <div className="construct-app">
+        <AppShell
+          key={activeProject?.id ?? "dashboard"}
+          history={history}
+          showSidebarChrome
+          defaultBottomPanelOpen={Boolean(activeProject && !settingsSurface)}
+          defaultRightPanelOpen={Boolean(activeProject && !settingsSurface)}
+          headerTabs={[
+            {
+              id: settingsSurface
+                ? `settings-${settingsSurface.itemId}`
+                : activeProject?.id ?? "dashboard",
+              title: settingsSurface
+                ? settingsTitle(settingsSurface.itemId, settingsSurface.projectId, projects)
+                : activeProject?.title ?? "Projects",
+              active: true
+            }
+          ]}
+          renderHeaderTab={(tab) => (
+            <button className="construct-header-title-tab" type="button" title={String(tab.title)}>
+              <span>{tab.title}</span>
+            </button>
+          )}
+          collapsedSidebarTrigger={(state) => (
+            <div className="construct-collapsed-toolbar">
+              <AppShellCollapsedSidebarTrigger onClick={state.toggleSidebar} aria-label="Open sidebar">
+                <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20, overflow: "visible" }}>
+                  <rect x="3.5" y="4.5" width="13" height="11" rx="2" />
+                  <path d="M7.5 4.5v11" />
+                  <circle cx="16.5" cy="4.5" r="2.5" fill="#007aff" stroke="var(--codex-bg-primary)" strokeWidth="1.5" />
+                </svg>
+              </AppShellCollapsedSidebarTrigger>
+              <AppShellCollapsedSidebarTrigger onClick={handleBack} aria-label="Home">
+                <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20 }}>
+                  <path d="M3 9.5 L10 3.5 L17 9.5" />
+                  <path d="M4.25 9.5 v5.25a1 1 0 0 0 1 1 h9.5 a1 1 0 0 0 1-1 v-5.25" />
+                  <path d="M8.5 15.75 v-3.75 h3 v3.75" />
+                </svg>
+              </AppShellCollapsedSidebarTrigger>
+              <AppShellCollapsedSidebarTrigger onClick={state.navigateBack} disabled={!state.canNavigateBack} aria-label="Back">
+                <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20 }}>
+                  <line x1="19" y1="12" x2="5" y2="12" />
+                  <polyline points="12 19 5 12 12 5" />
+                </svg>
+              </AppShellCollapsedSidebarTrigger>
+              <AppShellCollapsedSidebarTrigger onClick={state.navigateForward} disabled={!state.canNavigateForward} aria-label="Forward">
+                <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20 }}>
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                  <polyline points="12 5 19 12 12 19" />
+                </svg>
+              </AppShellCollapsedSidebarTrigger>
+            </div>
+          )}
+          sidebarChrome={
+            activeProject && !settingsSurface
+              ? (state) => (
+                  <>
+                    <AppShellChromeButton
+                      aria-label={state.isSidebarOpen ? "Close sidebar" : "Open sidebar"}
+                      onClick={state.toggleSidebar}
                     >
-                      <span className="construct-sidebar-project-row__icon">
-                        <Folder size={16} weight="duotone" />
-                      </span>
-                      <span className="construct-sidebar-project-row__title">{project.title}</span>
-                      <span
-                        className="construct-sidebar-project-row__settings"
-                        role="button"
-                        tabIndex={0}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          openSettingsSurface("project-overview", project.id);
-                        }}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            openSettingsSurface("project-overview", project.id);
+                      <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20 }}>
+                        <rect x="3.5" y="4.5" width="13" height="11" rx="2" />
+                        <path d="M7.5 4.5v11" />
+                      </svg>
+                    </AppShellChromeButton>
+                    <AppShellChromeButton
+                      aria-label="Home"
+                      onClick={handleBack}
+                    >
+                      <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20 }}>
+                        <path d="M3 9.5 L10 3.5 L17 9.5" />
+                        <path d="M4.25 9.5 v5.25a1 1 0 0 0 1 1 h9.5 a1 1 0 0 0 1-1 v-5.25" />
+                        <path d="M8.5 15.75 v-3.75 h3 v3.75" />
+                      </svg>
+                    </AppShellChromeButton>
+                    <AppShellChromeButton
+                      aria-label="Back"
+                      disabled={!state.canNavigateBack}
+                      onClick={state.navigateBack}
+                    >
+                      <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20 }}>
+                        <line x1="19" y1="12" x2="5" y2="12" />
+                        <polyline points="12 19 5 12 12 5" />
+                      </svg>
+                    </AppShellChromeButton>
+                    <AppShellChromeButton
+                      aria-label="Forward"
+                      disabled={!state.canNavigateForward}
+                      onClick={state.navigateForward}
+                    >
+                      <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20 }}>
+                        <line x1="5" y1="12" x2="19" y2="12" />
+                        <polyline points="12 5 19 12 12 19" />
+                      </svg>
+                    </AppShellChromeButton>
+                  </>
+                )
+              : undefined
+          }
+          headerActions={
+            activeProject && !settingsSurface
+              ? (state) => {
+                  const isAtFrontier =
+                    activeProject.currentStepIndex === furthestUnlockedStepIndex &&
+                    activeProject.currentBlockIndex === furthestUnlockedBlockIndex;
+                  return (
+                    <>
+                      <div
+                        className={`construct-header-progress-pill ${!isAtFrontier ? "is-past" : ""}`}
+                        onClick={() => {
+                          if (!isAtFrontier) {
+                            void handleReturnToActive();
                           }
                         }}
-                        aria-label={`Open settings for ${project.title}`}
+                        style={{ cursor: !isAtFrontier ? "pointer" : "default" }}
                       >
-                        <GearSix size={15} weight="duotone" />
-                      </span>
-                      <span className="construct-sidebar-project-row__meta">{project.progress}%</span>
-                    </button>
-                  ))}
-                  {projects.length === 0 ? (
-                    <div className="construct-sidebar-empty">
-                      Open a .construct file to start.
-                    </div>
-                  ) : null}
+                        <AppShellChromeButton
+                          className="construct-header-progress-arrow is-left"
+                          onClick={(e) => { e.stopPropagation(); void handlePrevBlock(); }}
+                          disabled={activeProject.currentStepIndex === 0 && activeProject.currentBlockIndex === 0}
+                          title="Previous Panel"
+                        >
+                          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 14, height: 14 }}>
+                            <line x1="19" y1="12" x2="5" y2="12" />
+                            <polyline points="12 19 5 12 12 5" />
+                          </svg>
+                        </AppShellChromeButton>
+
+                        <span className="construct-header-progress-text">
+                          {currentBlockNumber(activeProject)}/{totalBlocks(activeProject.program)}
+                        </span>
+
+                        {!isAtFrontier && (
+                          <AppShellChromeButton
+                            className="construct-header-progress-arrow is-right"
+                            onClick={(e) => { e.stopPropagation(); void handleNextBlock(); }}
+                            disabled={
+                              isAtEnd ||
+                              (isAtFrontier && !canContinue)
+                            }
+                            title="Next Panel"
+                          >
+                            <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 14, height: 14 }}>
+                              <line x1="5" y1="12" x2="19" y2="12" />
+                              <polyline points="12 5 19 12 12 19" />
+                            </svg>
+                          </AppShellChromeButton>
+                        )}
+
+                        {!isAtFrontier && (
+                          <div className="construct-header-progress-tooltip">
+                            Click to return to the latest step
+                          </div>
+                        )}
+                      </div>
+
+                      <SavingIndicator isSaving={isSaving} />
+                      <AppShellHeaderToolButton onClick={state.toggleRightPanel} aria-label="Toggle guide panel">
+                        <PanelRight size={20} />
+                      </AppShellHeaderToolButton>
+                      <AppShellHeaderToolButton onClick={state.toggleBottomPanel} aria-label="Toggle terminal">
+                        <PanelBottom size={20} />
+                      </AppShellHeaderToolButton>
+                    </>
+                  );
+                }
+              : undefined
+          }
+          sidebar={
+            settingsSurface ? (
+              <SettingsSidebar
+                activeItemId={settingsSurface.itemId}
+                backLabel={settingsSurface.projectId ? "Back to project" : "Back to projects"}
+                footer={<SidebarSettingsButton onClick={() => openSettingsSurface("workspace")} />}
+                onBack={closeSettingsSurface}
+                onItemSelect={(item: SettingsNavItem) => {
+                  const projectId = item.id.startsWith("project-") ? settingsSurface.projectId : undefined;
+                  if (item.id.startsWith("project-") && !projectId) {
+                    return;
+                  }
+                  openSettingsSurface(item.id, projectId);
+                }}
+                onSearchChange={setSettingsQuery}
+                query={settingsQuery}
+                sections={settingsSections}
+              />
+            ) : activeProject ? (
+              <Sidebar projects={[]} items={[]} footer={<SidebarSettingsButton onClick={() => openSettingsSurface("workspace")} />}>
+                <div className="construct-sidebar-active">
+                  <div className="construct-sidebar-tree-container">
+                    {treeData.openFile ? (
+                      <FileTree
+                        nodes={treeData.tree}
+                        activePath={treeData.activePath}
+                        relevantPath={treeData.relevantPath}
+                        onOpenFile={treeData.openFile}
+                        onCreateFile={treeData.createFile ?? undefined}
+                        onDeleteFile={treeData.deleteFile ?? undefined}
+                        onRenameFile={treeData.renameFile ?? undefined}
+                        onCreateFolder={treeData.createFolder ?? undefined}
+                        onDuplicateFile={treeData.duplicateFile ?? undefined}
+                      />
+                    ) : null}
+                  </div>
                 </div>
-              </SidebarSection>
-            </Sidebar>
-          )
-        }
-        main={main}
-        rightPanel={activeProject && !settingsSurface ? rightPanel : null}
-        bottomPanel={
-          activeProject && !settingsSurface ? (
-            <BottomPanel
-              activeTabId={activeBottomTabId}
-              onActiveTabChange={(tabId) => {
-                if (!tabId) {
-                  return;
-                }
-                setActiveBottomTabId(tabId);
-                pushHistory({
-                  id: `bottom-tab:${activeProject.id}:${tabId}`,
-                  payload: { projectId: activeProject.id, tabId },
-                  title: tabId,
-                  type: "bottom-tab"
-                });
-              }}
-              tabs={[
-                {
-                  id: "terminal",
-                  title: "Terminal",
-                  active: true,
-                  icon: <TerminalWindow size={14} weight="duotone" />,
-                  content: (
-                    <TerminalPanel
-                      ref={terminalRef}
-                      projectId={activeProject.id}
-                      cwd={activeProject.workspacePath}
-                    />
-                  )
-                }
-              ]}
-              launcherItems={[
-                {
-                  type: "terminal",
-                  title: "Terminal",
-                  description: "Open a new terminal session",
-                  icon: <TerminalWindow size={16} weight="duotone" />,
-                  shortcut: "⌃`",
-                  createTab: () => ({
-                    id: `terminal-${Date.now()}`,
+              </Sidebar>
+            ) : (
+              <Sidebar
+                projects={[]} items={[]}
+                primaryItems={[
+                  {
+                    id: "new-project",
+                    icon: <Plus size={18} weight="bold" />,
+                    label: "New project",
+                    onClick: () => setIsNewProjectOpen(true)
+                  }
+                ]}
+                footer={<SidebarSettingsButton onClick={() => openSettingsSurface("workspace")} />}
+              >
+                <SidebarSection heading="Projects">
+                  <div className="construct-sidebar-project-list">
+                    {projects.map((project) => (
+                      <button
+                        className="construct-sidebar-project-row"
+                        key={project.id}
+                        onClick={() => void openProject(project.id)}
+                        type="button"
+                      >
+                        <span className="construct-sidebar-project-row__icon">
+                          <Folder size={16} weight="duotone" />
+                        </span>
+                        <span className="construct-sidebar-project-row__title">{project.title}</span>
+                        <span
+                          className="construct-sidebar-project-row__settings"
+                          role="button"
+                          tabIndex={0}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            openSettingsSurface("project-overview", project.id);
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              openSettingsSurface("project-overview", project.id);
+                            }
+                          }}
+                          aria-label={`Open settings for ${project.title}`}
+                        >
+                          <GearSix size={15} weight="duotone" />
+                        </span>
+                        <span className="construct-sidebar-project-row__meta">{project.progress}%</span>
+                      </button>
+                    ))}
+                    {projects.length === 0 ? (
+                      <div className="construct-sidebar-empty">
+                        Open a .construct file to start.
+                      </div>
+                    ) : null}
+                  </div>
+                </SidebarSection>
+              </Sidebar>
+            )
+          }
+          main={main}
+          rightPanel={activeProject && !settingsSurface ? rightPanel : null}
+          bottomPanel={
+            activeProject && !settingsSurface ? (
+              <BottomPanel
+                activeTabId={activeBottomTabId}
+                onActiveTabChange={(tabId) => {
+                  if (!tabId) {
+                    return;
+                  }
+                  setActiveBottomTabId(tabId);
+                  pushHistory({
+                    id: `bottom-tab:${activeProject.id}:${tabId}`,
+                    payload: { projectId: activeProject.id, tabId },
+                    title: tabId,
+                    type: "bottom-tab"
+                  });
+                }}
+                tabs={[
+                  {
+                    id: "terminal",
                     title: "Terminal",
+                    active: true,
                     icon: <TerminalWindow size={14} weight="duotone" />,
-                    closable: true,
                     content: (
                       <TerminalPanel
+                        ref={terminalRef}
                         projectId={activeProject.id}
                         cwd={activeProject.workspacePath}
+                        theme={theme}
                       />
                     )
-                  })
-                }
-              ]}
-            />
-          ) : null
-        }
-      />
+                  }
+                ]}
+                launcherItems={[
+                  {
+                    type: "terminal",
+                    title: "Terminal",
+                    description: "Open a new terminal session",
+                    icon: <TerminalWindow size={16} weight="duotone" />,
+                    shortcut: "⌃`",
+                    createTab: () => ({
+                      id: `terminal-${Date.now()}`,
+                      title: "Terminal",
+                      icon: <TerminalWindow size={14} weight="duotone" />,
+                      closable: true,
+                      content: (
+                        <TerminalPanel
+                          projectId={activeProject.id}
+                          cwd={activeProject.workspacePath}
+                          theme={theme}
+                        />
+                      )
+                    })
+                  }
+                ]}
+              />
+            ) : null
+          }
+        />
+      </div>
       <NewProjectDialog
         open={isNewProjectOpen}
         onOpenChange={setIsNewProjectOpen}

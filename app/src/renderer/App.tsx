@@ -1102,6 +1102,33 @@ export default function App() {
   }, [activeFilePath, editorValue, savedValue]);
 
   useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if ((event.metaKey || event.ctrlKey) && event.key === "s") {
+        event.preventDefault();
+        if (!activeFilePath || editorValue === savedValue) {
+          return;
+        }
+        setSaveState("saving");
+        saveWorkspaceFile(activeFilePath, editorValue)
+          .then(() => {
+            setSavedValue(editorValue);
+            setSaveState("saved");
+            setStatusMessage(`Saved ${activeFilePath}.`);
+          })
+          .catch((error) => {
+            setSaveState("error");
+            setStatusMessage(
+              error instanceof Error ? error.message : `Failed to save ${activeFilePath}.`
+            );
+          });
+      }
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [activeFilePath, editorValue, savedValue]);
+
+  useEffect(() => {
     applyAnchorDecoration(editorRef.current, anchorLocation, decorationIdsRef.current, {
       setDecorationIds(nextIds) {
         decorationIdsRef.current = nextIds;

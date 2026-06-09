@@ -91,6 +91,36 @@ export function writeFile(input: {
   return api().writeFile(input);
 }
 
+export function deleteFile(input: {
+  projectId: string;
+  path: string;
+}): Promise<void> {
+  return api().deleteFile(input);
+}
+
+export function renameFile(input: {
+  projectId: string;
+  oldPath: string;
+  newPath: string;
+}): Promise<void> {
+  return api().renameFile(input);
+}
+
+export function createFolder(input: {
+  projectId: string;
+  path: string;
+}): Promise<void> {
+  return api().createFolder(input);
+}
+
+export function duplicateFile(input: {
+  projectId: string;
+  path: string;
+  destPath: string;
+}): Promise<void> {
+  return api().duplicateFile(input);
+}
+
 export function verifyRecall(input: {
   projectId: string;
   recall: RecallBlock;
@@ -121,4 +151,8 @@ export function onTerminalData(callback: (event: TerminalEvent) => void): () => 
 
 export function onTerminalExit(callback: (event: TerminalExitEvent) => void): () => void {
   return api().onTerminalExit(callback);
+}
+
+export function onVerifyLog(callback: (event: any) => void): () => void {
+  return api().onVerifyLog(callback);
 }

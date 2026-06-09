@@ -52,6 +52,7 @@ export function EditorPane({
   onFreeEdit,
   onGuidedProgress,
   onRevealLine,
+  onSave,
   fileList = [],
   theme,
   pendingJump = null,
@@ -68,6 +69,7 @@ export function EditorPane({
   onFreeEdit: (content: string) => void;
   onGuidedProgress: (progress: number) => void;
   onRevealLine: () => void;
+  onSave?: () => void;
   fileList?: string[];
   theme: "light" | "dark" | "system";
   pendingJump?: { line: number; column: number } | null;
@@ -110,6 +112,19 @@ export function EditorPane({
   const isGuided = Boolean(activeEdit && activeEdit.path === path);
   const displayContent = isGuided ? `${editAnchor}${typed}${remaining}` : content;
   const language = useMemo(() => languageForPath(path), [path]);
+  const totalLines = useMemo(() => {
+    if (!activeEdit) return 0;
+    return activeEdit.content.split("\n").length;
+  }, [activeEdit]);
+  const typedLines = useMemo(() => {
+    if (!activeEdit) return 0;
+    const typedText = activeEdit.content.slice(0, editProgress);
+    return typedText.split("\n").length;
+  }, [activeEdit, editProgress]);
+  const percent = useMemo(() => {
+    if (!activeEdit || activeEdit.content.length === 0) return 0;
+    return Math.round((editProgress / activeEdit.content.length) * 100);
+  }, [activeEdit, editProgress]);
 
   const updateProgress = useCallback((progress: number) => {
     if (debounceTimeoutRef.current) {
@@ -332,9 +347,11 @@ export function EditorPane({
         ),
         options: {
           isWholeLine: true,
-          className: "construct-monaco-focus-line",
+          blockClassName: "construct-monaco-focus-block",
+          blockDoesNotCollapse: true,
+          blockPadding: [3, 0, 3, 0],
           linesDecorationsClassName: "construct-monaco-focus-glyph"
-        }
+        } as MonacoEditor.IModelDecorationOptions
       }
     ]);
   }, [focusRange]);
@@ -449,7 +466,7 @@ export function EditorPane({
   return (
     <section className="editor-pane" data-guided={isGuided ? "true" : "false"} data-wrong={wrongInput ? "true" : "false"}>
       <Editor
-        key={`${path}:${activeEdit?.id ?? "free"}`}
+        key={`${path}:${activeEdit?.id ?? "free"}:${editAnchor.length}`}
         className="editor-pane__monaco"
         height="100%"
         language={language}
@@ -623,6 +640,13 @@ export function EditorPane({
               }
             }
 
+            if ((event.metaKey || event.ctrlKey) && event.keyCode === monaco.KeyCode.KeyS) {
+              event.preventDefault();
+              event.stopPropagation();
+              onSave?.();
+              return;
+            }
+
             if (event.metaKey || event.ctrlKey || event.altKey) {
               return;
             }
@@ -698,6 +722,11 @@ export function EditorPane({
             )}
           </div>
         </button>
+      )}
+      {isGuided && activeEdit && (
+        <div className="construct-editor-ghost-badge">
+          <span>Ghost Progress: {Math.min(totalLines, typedLines)} / {totalLines} lines ({percent}%)</span>
+        </div>
       )}
     </section>
   );

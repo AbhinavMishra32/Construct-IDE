@@ -1,4 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
+import { ContextMenu, ContextMenuTrigger } from "../primitives/ContextMenu";
 import "./file-tree.css";
 
 export type FileTreeItem = {
@@ -13,6 +14,9 @@ export type FileTreeItem = {
   selected?: boolean;
   type?: "file" | "directory";
   expanded?: boolean;
+  isEditing?: boolean;
+  onEditSubmit?: (val: string) => void;
+  onEditCancel?: () => void;
 };
 
 export type FileTreeProps = {
@@ -28,6 +32,7 @@ export type FileTreeProps = {
   showActions?: boolean;
   style?: CSSProperties;
   variant?: "default" | "sidebar";
+  renderRowContextMenu?: (item: FileTreeItem) => ReactNode;
 };
 
 export function FileTree({
@@ -43,6 +48,7 @@ export function FileTree({
   showActions = true,
   style,
   variant = "default",
+  renderRowContextMenu,
 }: FileTreeProps) {
   return (
     <div
@@ -86,6 +92,7 @@ export function FileTree({
                 level={1}
                 onSelectPath={onSelectPath}
                 showActions={showActions}
+                renderRowContextMenu={renderRowContextMenu}
               />
             ))}
           </div>
@@ -101,32 +108,24 @@ function FileTreeRow({
   level,
   onSelectPath,
   showActions,
+  renderRowContextMenu,
 }: {
   gitLane: boolean;
   item: FileTreeItem;
   level: number;
   onSelectPath?: (path: string, item: FileTreeItem) => void;
   showActions: boolean;
+  renderRowContextMenu?: (item: FileTreeItem) => ReactNode;
 }) {
   const isDirectory = item.type === "directory" || item.children != null;
   const iconName = isDirectory ? "file-tree-icon-chevron" : item.locked === true ? "file-tree-icon-lock" : "file-tree-icon-file";
   const iconToken = getIconToken(item.name, isDirectory);
 
-  return (
-    <>
-      <button
+  if (item.isEditing) {
+    return (
+      <div
         className="codex-file-tree-row"
-        data-file-tree-sticky-path={level === 1 ? item.path : undefined}
-        data-file-tree-sticky-row={level === 1 && isDirectory ? "true" : undefined}
-        data-path={item.path}
-        data-type="item"
-        role="treeitem"
         aria-expanded={isDirectory ? (item.expanded !== false ? "true" : "false") : undefined}
-        aria-level={level}
-        data-item-selected={item.selected ? "true" : undefined}
-        data-item-type={isDirectory ? "directory" : "file"}
-        onClick={() => onSelectPath?.(item.path, item)}
-        type="button"
         style={
           {
             "--tree-depth": String(level - 1),
@@ -135,6 +134,14 @@ function FileTreeRow({
           } as CSSProperties
         }
       >
+        {Array.from({ length: level - 1 }).map((_, index) => (
+          <span
+            key={index}
+            className="codex-file-tree-indent-guide"
+            style={{ "--indent-index": String(index) } as CSSProperties}
+            aria-hidden="true"
+          />
+        ))}
         {isDirectory ? (
           <span className="codex-file-tree-chevron-container">
             <svg data-icon-name="file-tree-icon-chevron" aria-hidden="true">
@@ -151,19 +158,108 @@ function FileTreeRow({
             </svg>
           )}
         </span>
-        <span data-item-section="content">{item.name}</span>
-        <span data-item-section="decoration">
-          {item.decoration}
+        <input
+          className="construct-file-inline-input"
+          defaultValue={item.name}
+          autoFocus
+          onFocus={(e) => {
+            const val = e.target.value;
+            const lastDot = val.lastIndexOf(".");
+            if (lastDot > 0 && item.type !== "directory") {
+              e.target.setSelectionRange(0, lastDot);
+            } else {
+              e.target.select();
+            }
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              item.onEditSubmit?.(e.currentTarget.value);
+            } else if (e.key === "Escape") {
+              item.onEditCancel?.();
+            }
+          }}
+          onBlur={(e) => {
+            item.onEditSubmit?.(e.currentTarget.value);
+          }}
+        />
+      </div>
+    );
+  }
+
+  const buttonElement = (
+    <button
+      className="codex-file-tree-row"
+      data-file-tree-sticky-path={level === 1 ? item.path : undefined}
+      data-file-tree-sticky-row={level === 1 && isDirectory ? "true" : undefined}
+      data-path={item.path}
+      data-type="item"
+      role="treeitem"
+      aria-expanded={isDirectory ? (item.expanded !== false ? "true" : "false") : undefined}
+      aria-level={level}
+      data-item-selected={item.selected ? "true" : undefined}
+      data-item-type={isDirectory ? "directory" : "file"}
+      data-git-status={item.gitStatus}
+      onClick={() => onSelectPath?.(item.path, item)}
+      type="button"
+      style={
+        {
+          "--tree-depth": String(level - 1),
+          "--tree-depth-offset": `${(level - 1) * 18}px`,
+          "--tree-parent-offset": `${Math.max(0, level - 2) * 18}px`,
+        } as CSSProperties
+      }
+    >
+      {Array.from({ length: level - 1 }).map((_, index) => (
+        <span
+          key={index}
+          className="codex-file-tree-indent-guide"
+          style={{ "--indent-index": String(index) } as CSSProperties}
+          aria-hidden="true"
+        />
+      ))}
+      {isDirectory ? (
+        <span className="codex-file-tree-chevron-container">
+          <svg data-icon-name="file-tree-icon-chevron" aria-hidden="true">
+            <use href="#file-tree-icon-chevron" />
+          </svg>
         </span>
-        {gitLane ? <span data-item-section="git">{item.gitStatus != null ? <GitDot status={item.gitStatus} /> : null}</span> : null}
-        {showActions ? (
-          <span data-item-section="action">
-            <svg data-icon-name="file-tree-icon-ellipsis" aria-hidden="true">
-              <use href="#file-tree-icon-ellipsis" />
-            </svg>
-          </span>
-        ) : null}
-      </button>
+      ) : (
+        <span className="codex-file-tree-chevron-spacer" />
+      )}
+      <span data-item-section="icon">
+        {item.icon ?? (
+          <svg data-icon-name={iconName} data-icon-token={iconToken} aria-hidden="true">
+            <use href={`#${iconName}`} />
+          </svg>
+        )}
+      </span>
+      <span data-item-section="content">{item.name}</span>
+      <span data-item-section="decoration">
+        {item.decoration}
+      </span>
+      {gitLane ? <span data-item-section="git">{item.gitStatus != null ? <GitDot status={item.gitStatus} /> : null}</span> : null}
+      {showActions ? (
+        <span data-item-section="action">
+          <svg data-icon-name="file-tree-icon-ellipsis" aria-hidden="true">
+            <use href="#file-tree-icon-ellipsis" />
+          </svg>
+        </span>
+      ) : null}
+    </button>
+  );
+
+  return (
+    <>
+      {renderRowContextMenu ? (
+        <ContextMenu>
+          <ContextMenuTrigger asChild>
+            {buttonElement}
+          </ContextMenuTrigger>
+          {renderRowContextMenu(item)}
+        </ContextMenu>
+      ) : (
+        buttonElement
+      )}
       {isDirectory ? (
         <div
           className="codex-file-tree-submenu"
@@ -177,6 +273,7 @@ function FileTreeRow({
               level={level + 1}
               onSelectPath={onSelectPath}
               showActions={showActions}
+              renderRowContextMenu={renderRowContextMenu}
             />
           ))}
         </div>

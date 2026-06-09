@@ -118,6 +118,14 @@ export type VerificationResult = {
   reason: string;
   evidence: string[];
   suggestion?: string;
+  logs?: VerificationLogEntry[];
+};
+
+export type VerificationLogEntry = {
+  at: string;
+  status: "pending" | "running" | "done" | "failed" | "warning";
+  message: string;
+  detail?: string;
 };
 
 export type BlockAssistance = {
@@ -255,6 +263,10 @@ export type ConstructProjectsApi = {
     path: string;
     content: string;
   }): Promise<WorkspaceFile>;
+  deleteFile(input: { projectId: string; path: string }): Promise<void>;
+  renameFile(input: { projectId: string; oldPath: string; newPath: string }): Promise<void>;
+  createFolder(input: { projectId: string; path: string }): Promise<void>;
+  duplicateFile(input: { projectId: string; path: string; destPath: string }): Promise<void>;
   verifyRecall(input: {
     projectId: string;
     recall: RecallBlock;
@@ -266,4 +278,5 @@ export type ConstructProjectsApi = {
   terminalKill(input: { sessionId: string }): Promise<void>;
   onTerminalData(callback: (event: TerminalEvent) => void): () => void;
   onTerminalExit(callback: (event: TerminalExitEvent) => void): () => void;
+  onVerifyLog(callback: (event: { entry: VerificationLogEntry }) => void): () => void;
 };

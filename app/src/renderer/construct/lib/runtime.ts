@@ -104,7 +104,11 @@ export function assistanceLabel(assistance: BlockAssistance | undefined): string
   }
 
   if (assistance.verificationFailureCount > 0) {
-    parts.push(`${assistance.verificationFailureCount} retry${assistance.verificationFailureCount === 1 ? "" : "ies"}`);
+    parts.push(
+      assistance.verificationFailureCount === 1
+        ? "1 retry"
+        : `${assistance.verificationFailureCount} retries`
+    );
   }
 
   if (parts.length === 0) {

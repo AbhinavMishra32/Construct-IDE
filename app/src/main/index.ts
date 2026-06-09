@@ -7,6 +7,7 @@ import {
   readFile,
   readdir,
   rename,
+  rm,
   stat,
   writeFile
 } from "node:fs/promises";
@@ -16,7 +17,16 @@ import { promisify } from "node:util";
 import { app, BrowserWindow, dialog, ipcMain, shell, nativeImage, nativeTheme } from "electron";
 import * as pty from "@homebridge/node-pty-prebuilt-multiarch";
 
-import { runConstructVerifierAgent, type VerificationResult } from "./constructVerifierAgent";
+import {
+  runConstructVerifierAgent,
+  type VerificationLogEntry,
+  type VerificationResult
+} from "./constructVerifierAgent";
+
+if (typeof process.loadEnvFile === "function") {
+  const envPath = path.resolve(__dirname, "../../.env");
+  try { process.loadEnvFile(envPath); } catch { /* .env doesn't exist */ }
+}
 
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
 const shouldOpenDevTools = process.env.CONSTRUCT_OPEN_DEVTOOLS === "1";
@@ -48,6 +58,7 @@ type StoredProject = {
       title: string;
       body: string;
     }>;
+    targets?: unknown[];
     steps: Array<{ blocks: Array<{ id: string }> }>;
   };
   currentStepIndex: number;
@@ -132,6 +143,11 @@ async function readProjects(): Promise<StoredProject[]> {
 function normalizeStoredProject(project: StoredProject): StoredProject {
   return {
     ...project,
+    program: {
+      ...project.program,
+      references: project.program.references ?? [],
+      targets: project.program.targets ?? []
+    },
     assistance: project.assistance ?? {},
     verificationResults: project.verificationResults ?? {},
     fileTreeExpanded: project.fileTreeExpanded ?? [],
@@ -278,6 +294,42 @@ function appendTerminalOutput(projectId: string, data: string): void {
   const previous = latestTerminalOutputByProject.get(projectId) ?? "";
   const next = `${previous}${data}`;
   latestTerminalOutputByProject.set(projectId, next.slice(-30_000));
+}
+
+function addVerificationLog(
+  logs: VerificationLogEntry[],
+  status: VerificationLogEntry["status"],
+  message: string,
+  detail?: string
+): void {
+  const entry = {
+    at: new Date().toISOString(),
+    status,
+    message,
+    detail
+  };
+  logs.push(entry);
+  console.log("[construct verifier]", status, message, detail ? { detail } : "");
+  sendToRenderers("construct:project:verify-log", { entry });
+}
+
+function withVerificationLogs(
+  result: VerificationResult,
+  logs: VerificationLogEntry[]
+): VerificationResult {
+  return {
+    ...result,
+    logs
+  };
+}
+
+function summarizeTerminalForLog(output: string): string {
+  const lines = output
+    .split(/\r?\n/)
+    .map((line) => line.trimEnd())
+    .filter(Boolean);
+  const summary = lines.slice(-8).join("\n");
+  return summary.length > 1200 ? `${summary.slice(0, 1200)}…` : summary || "(no output)";
 }
 
 async function runVerificationCommand(
@@ -567,38 +619,86 @@ function installConstructProjectIpcHandlers(): void {
     };
   });
 
+  ipcMain.handle("construct:project:delete-file", async (_event, input) => {
+    const project = findProject(await readProjects(), input.projectId);
+    const target = safeProjectPath(project, input.path);
+    const fileStat = await stat(target);
+    if (fileStat.isDirectory()) {
+      await rm(target, { recursive: true, force: true });
+    } else {
+      await rm(target, { force: true });
+    }
+  });
+
+  ipcMain.handle("construct:project:rename-file", async (_event, input) => {
+    const project = findProject(await readProjects(), input.projectId);
+    const oldTarget = safeProjectPath(project, input.oldPath);
+    const newTarget = safeProjectPath(project, input.newPath);
+    await mkdir(path.dirname(newTarget), { recursive: true });
+    await rename(oldTarget, newTarget);
+  });
+
+  ipcMain.handle("construct:project:create-folder", async (_event, input) => {
+    const project = findProject(await readProjects(), input.projectId);
+    const target = safeProjectPath(project, input.path);
+    await mkdir(target, { recursive: true });
+  });
+
+  ipcMain.handle("construct:project:duplicate-file", async (_event, input) => {
+    const project = findProject(await readProjects(), input.projectId);
+    const srcTarget = safeProjectPath(project, input.path);
+    const destTarget = safeProjectPath(project, input.destPath);
+    await mkdir(path.dirname(destTarget), { recursive: true });
+    await cp(srcTarget, destTarget, { recursive: true });
+  });
+
   ipcMain.handle("construct:project:verify-recall", async (_event, input) => {
     const project = findProject(await readProjects(), input.projectId);
     const recall = input.recall;
     const verify = recall?.verify;
+    const logs: VerificationLogEntry[] = [];
 
     if (!verify || verify.kind !== "agent") {
-      return {
+      addVerificationLog(logs, "failed", "Verification contract is not supported", "Expected ::verify kind=\"agent\".");
+      return withVerificationLogs({
         passed: false,
         confidence: "low",
         reason: "This Construct build only supports agent verification for recall blocks.",
         evidence: [],
         suggestion: "Use a ::verify block with kind=\"agent\"."
-      } satisfies VerificationResult;
+      }, logs);
     }
 
+    addVerificationLog(logs, "running", "Loaded verification contract", String(verify.id ?? "agent verifier"));
+
     const declaredFiles = Array.isArray(verify.evidence?.files) ? verify.evidence.files : [];
+    addVerificationLog(
+      logs,
+      "running",
+      "Collecting declared evidence files",
+      declaredFiles.length > 0 ? declaredFiles.join(", ") : "No files declared in ::evidence."
+    );
     const files = await Promise.all(
       declaredFiles.map(async (relativePath: string) => {
         try {
           const target = safeProjectPath(project, relativePath);
+          const content = await readFile(target, "utf8");
+          addVerificationLog(logs, "done", `Read ${relativePath}`, `${content.length} characters`);
           return {
             path: relativePath,
-            content: await readFile(target, "utf8")
+            content
           };
         } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          addVerificationLog(logs, "warning", `Could not read ${relativePath}`, message);
           return {
             path: relativePath,
-            content: `[missing or unreadable file: ${error instanceof Error ? error.message : String(error)}]`
+            content: `[missing or unreadable file: ${message}]`
           };
         }
       })
     );
+    addVerificationLog(logs, "done", "Evidence collection finished", `${files.length} file${files.length === 1 ? "" : "s"} supplied to the verifier.`);
 
     const terminalCommand =
       typeof verify.evidence?.terminalCommand === "string"
@@ -607,12 +707,29 @@ function installConstructProjectIpcHandlers(): void {
     let terminalOutput = latestTerminalOutputByProject.get(project.id) ?? "";
 
     if (terminalCommand) {
+      addVerificationLog(logs, "running", "Running verification command", terminalCommand);
       terminalOutput = await runVerificationCommand(project, terminalCommand);
       appendTerminalOutput(project.id, terminalOutput);
+      addVerificationLog(
+        logs,
+        terminalOutput.includes("[exit ") ? "failed" : "done",
+        terminalOutput.includes("[exit ") ? "Command exited with a failure" : "Command completed",
+        summarizeTerminalForLog(terminalOutput)
+      );
+    } else if (verify.evidence?.terminalOutput === "latest") {
+      addVerificationLog(
+        logs,
+        "done",
+        "Using latest terminal output",
+        terminalOutput ? summarizeTerminalForLog(terminalOutput) : "No terminal output has been captured for this project yet."
+      );
+    } else {
+      addVerificationLog(logs, "done", "No terminal command declared", "The agent will judge from files and rubric only.");
     }
 
     try {
-      return await runConstructVerifierAgent({
+      addVerificationLog(logs, "running", "Asking Construct Verifier Agent", "Comparing goal, rubric, files, terminal output, task, support, and reference cards.");
+      const result = await runConstructVerifierAgent({
         goal: String(verify.goal ?? ""),
         rubric: String(verify.rubric ?? ""),
         task: String(recall.task ?? ""),
@@ -632,17 +749,26 @@ function installConstructProjectIpcHandlers(): void {
           failure: String(verify.messages?.failure ?? "")
         }
       });
+      addVerificationLog(
+        logs,
+        result.passed ? "done" : "failed",
+        result.passed ? "Verifier passed the recall task" : "Verifier did not pass the recall task",
+        result.reason
+      );
+      return withVerificationLogs(result, logs);
     } catch (error) {
-      return {
+      const message = error instanceof Error ? error.message : String(error);
+      addVerificationLog(logs, "failed", "Verifier agent failed to return a result", message);
+      return withVerificationLogs({
         passed: false,
         confidence: "low",
-        reason: `Construct verifier could not complete: ${error instanceof Error ? error.message : String(error)}`,
+        reason: `Construct verifier could not complete: ${message}`,
         evidence: [
           terminalCommand ? `terminal command: ${terminalCommand}` : "terminal command: none",
           `files supplied: ${files.map((file) => file.path).join(", ") || "none"}`
         ],
         suggestion: "Check verifier credentials and rerun verification when the project evidence is ready."
-      } satisfies VerificationResult;
+      }, logs);
     }
   });
 

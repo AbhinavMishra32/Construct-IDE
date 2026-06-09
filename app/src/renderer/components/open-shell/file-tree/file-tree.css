@@ -298,26 +298,21 @@
   flex: 0 0 auto;
   width: 16px;
 }
-
-.codex-file-tree-row::before {
-  content: "";
+.codex-file-tree-indent-guide {
   position: absolute;
-  top: 5px;
-  bottom: 5px;
-  left: calc(var(--trees-item-padding-x) + var(--tree-parent-offset, 0px) + 6px);
+  top: 0;
+  bottom: 0;
+  left: calc(var(--trees-item-padding-x) + (var(--indent-index) * var(--tree-indent, 18px)) + 6px);
   width: 1px;
   pointer-events: none;
-  background: color-mix(in srgb, var(--codex-text-primary) 22%, transparent);
-  opacity: 0.75;
-  transition: opacity 0.2s ease;
+  background: color-mix(in srgb, var(--codex-text-primary) 20%, transparent);
+  opacity: 0.5;
+  transition: opacity 0.25s cubic-bezier(0.2, 0.8, 0.2, 1), background-color 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-.codex-file-tree-row[aria-level="1"]::before {
-  display: none;
-}
-
-.codex-file-tree:hover .codex-file-tree-row::before {
+.codex-file-tree:hover .codex-file-tree-indent-guide {
   opacity: 0.9;
+  background: color-mix(in srgb, var(--codex-text-primary) 35%, transparent);
 }
 
 .codex-file-tree-git-dot {

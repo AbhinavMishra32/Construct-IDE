@@ -32,6 +32,10 @@ contextBridge.exposeInMainWorld("constructProjects", {
     ipcRenderer.invoke("construct:project:list-files", projectId),
   readFile: (input: unknown) => ipcRenderer.invoke("construct:project:read-file", input),
   writeFile: (input: unknown) => ipcRenderer.invoke("construct:project:write-file", input),
+  deleteFile: (input: unknown) => ipcRenderer.invoke("construct:project:delete-file", input),
+  renameFile: (input: unknown) => ipcRenderer.invoke("construct:project:rename-file", input),
+  createFolder: (input: unknown) => ipcRenderer.invoke("construct:project:create-folder", input),
+  duplicateFile: (input: unknown) => ipcRenderer.invoke("construct:project:duplicate-file", input),
   verifyRecall: (input: unknown) =>
     ipcRenderer.invoke("construct:project:verify-recall", input),
   terminalCreate: (input: unknown) =>
@@ -55,5 +59,12 @@ contextBridge.exposeInMainWorld("constructProjects", {
     };
     ipcRenderer.on("construct:project:terminal-exit", listener);
     return () => ipcRenderer.off("construct:project:terminal-exit", listener);
+  },
+  onVerifyLog: (callback: (event: unknown) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
+      callback(payload);
+    };
+    ipcRenderer.on("construct:project:verify-log", listener);
+    return () => ipcRenderer.off("construct:project:verify-log", listener);
   }
 });

@@ -30,8 +30,9 @@ export const TerminalPanel = forwardRef<
   {
     projectId: string;
     cwd: string;
+    theme: "light" | "dark" | "system";
   }
->(function TerminalPanel({ projectId, cwd }, ref) {
+>(function TerminalPanel({ projectId, cwd, theme }, ref) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<XTerm | null>(null);
   const sessionIdRef = useRef<string | null>(null);
@@ -53,18 +54,13 @@ export const TerminalPanel = forwardRef<
   }));
 
   useEffect(() => {
-    const isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const isDark = resolveTerminalDark(theme);
     const terminal = new XTerm({
       cursorBlink: true,
       convertEol: true,
       fontFamily: '"Geist Mono Variable", "SF Mono", Menlo, monospace',
       fontSize: 12,
-      theme: {
-        background: isDark ? "#101112" : "#ffffff",
-        foreground: isDark ? "#f4f4f2" : "#1d1d1f",
-        cursor: isDark ? "#f4f4f2" : "#1d1d1f",
-        selectionBackground: isDark ? "#4f8cff44" : "#0a84ff33"
-      }
+      theme: terminalTheme(isDark)
     });
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
@@ -139,12 +135,38 @@ export const TerminalPanel = forwardRef<
     };
   }, [projectId]);
 
+  useEffect(() => {
+    const terminal = terminalRef.current;
+    if (!terminal) {
+      return;
+    }
+
+    terminal.options.theme = terminalTheme(resolveTerminalDark(theme));
+  }, [theme]);
+
   return (
     <TerminalSurface cwd={`${cwd} · ${status}`}>
       <div ref={containerRef} className="terminal-panel__screen" />
     </TerminalSurface>
   );
 });
+
+function resolveTerminalDark(theme: "light" | "dark" | "system"): boolean {
+  if (theme === "system") {
+    return window.matchMedia("(prefers-color-scheme: dark)").matches;
+  }
+
+  return theme === "dark";
+}
+
+function terminalTheme(isDark: boolean) {
+  return {
+    background: isDark ? "#101112" : "#ffffff",
+    foreground: isDark ? "#f4f4f2" : "#1d1d1f",
+    cursor: isDark ? "#f4f4f2" : "#1d1d1f",
+    selectionBackground: isDark ? "#4f8cff44" : "#0a84ff33"
+  };
+}
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;

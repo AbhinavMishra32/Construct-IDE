@@ -5,21 +5,34 @@ import { cn } from "@/lib/utils";
 import { blockLabel } from "../lib/runtime";
 import type { ProjectRecord } from "../types";
 
-export function StepList({ project }: { project: ProjectRecord }) {
+export function StepList({
+  project,
+  onSelectStep,
+  furthestUnlockedStepIndex
+}: {
+  project: ProjectRecord;
+  onSelectStep?: (stepIndex: number) => void;
+  furthestUnlockedStepIndex: number;
+}) {
+  const completedBlocks = project.completedBlocks ?? {};
+
   return (
     <div className="step-timeline">
       {project.program.steps.map((step, stepIndex) => {
         const isActiveStep = stepIndex === project.currentStepIndex;
-        const completed = step.blocks.every((block) => project.completedBlocks[block.id]);
+        const completed = step.blocks.every((block) => completedBlocks[block.id]);
         const activeBlock = isActiveStep ? step.blocks[project.currentBlockIndex] : null;
+        const isClickable = !!onSelectStep && stepIndex <= furthestUnlockedStepIndex;
 
         return (
           <section
             key={step.id}
             className={cn("step-timeline__step", {
               "is-active": isActiveStep,
-              "is-complete": completed
+              "is-complete": completed,
+              "is-clickable": isClickable
             })}
+            onClick={() => isClickable && onSelectStep?.(stepIndex)}
           >
             <div className="step-timeline__rail" aria-hidden="true">
               {completed ? (
@@ -41,7 +54,7 @@ export function StepList({ project }: { project: ProjectRecord }) {
                     key={block.id}
                     className={cn("step-timeline__block", {
                       "is-active": activeBlock?.id === block.id,
-                      "is-complete": project.completedBlocks[block.id]
+                      "is-complete": completedBlocks[block.id]
                     })}
                   >
                     {blockLabel(block)}

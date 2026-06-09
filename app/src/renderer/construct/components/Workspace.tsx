@@ -18,8 +18,13 @@ import { GuidePanel } from "./GuidePanel";
 import { ReferenceCard } from "./ReferenceCard";
 import { StepList } from "./StepList";
 import {
+  createFolder,
+  deleteFile,
+  duplicateFile,
   listFiles,
+  onVerifyLog,
   readFile,
+  renameFile,
   updateProject,
   verifyRecall,
   writeFile
@@ -31,6 +36,7 @@ import type {
   ProjectRecord,
   RecallBlock,
   ReferenceLink,
+  VerificationLogEntry,
   WorkspaceTreeNode
 } from "../types";
 
@@ -126,7 +132,17 @@ export function Workspace({
   onGuidePanelChange: (panel: ReactNode | null) => void;
   onProjectChange: (project: ProjectRecord) => void;
   onRunCommand: (command: string, cwd: string) => void;
-  onTreeChange: (tree: WorkspaceTreeNode[], activePath: string | null, relevantPath: string | null, openFile: (path: string) => void) => void;
+  onTreeChange: (
+    tree: WorkspaceTreeNode[],
+    activePath: string | null,
+    relevantPath: string | null,
+    openFile: (path: string) => void,
+    createFile: (path: string) => void,
+    deleteFileFn: (path: string) => Promise<void>,
+    renameFileFn: (oldPath: string, newPath: string) => Promise<void>,
+    createFolderFn: (path: string) => Promise<void>,
+    duplicateFileFn: (path: string, destPath: string) => Promise<void>
+  ) => void;
   onSavingChange?: (saving: boolean) => void;
   activeRightSlotId: string;
   onRightSlotChange: (slotId: string) => void;
@@ -141,16 +157,59 @@ export function Workspace({
   const [openReferenceIds, setOpenReferenceIds] = useState<string[]>([]);
   const [pinnedReferenceIds, setPinnedReferenceIds] = useState<string[]>([]);
   const [verifyingId, setVerifyingId] = useState<string | null>(null);
+  const [verificationLogs, setVerificationLogs] = useState<Record<string, VerificationLogEntry[]>>({});
   const editorPanelRef = useRef<SlotPanelHandle>(null);
   const autoOpenedRecallRef = useRef<string | null>(null);
 
+  const typingProgress = project.typingProgress ?? {};
+  const editAnchors = project.editAnchors ?? {};
+  const assistance = project.assistance ?? {};
+  const verificationResults = project.verificationResults ?? {};
+  const references = project.program.references ?? [];
+  const targets = project.program.targets ?? [];
   const block = currentBlock(project);
   const activeEdit = block?.kind === "edit" ? block : null;
   const relevantPath = activeEdit?.path ?? null;
   const activeFilePath = project.activeFilePath ?? relevantPath ?? project.program.files[0]?.path ?? null;
-  const editProgress = activeEdit ? project.typingProgress[activeEdit.id] ?? 0 : 0;
+  const editProgress = activeEdit ? typingProgress[activeEdit.id] ?? 0 : 0;
   const editComplete = activeEdit ? editProgress >= activeEdit.content.length : false;
-  const editAnchor = activeEdit ? project.editAnchors[activeEdit.id] ?? "" : "";
+  const editAnchor = activeEdit ? editAnchors[activeEdit.id] ?? "" : "";
+  const isActiveEditReady = activeEdit ? isGuidedEditReady(activeEdit, editAnchors) : false;
+
+  const { furthestUnlockedStepIndex, furthestUnlockedBlockIndex } = useMemo(() => {
+    const completedBlocks = project.completedBlocks ?? {};
+    const steps = project.program.steps;
+    for (let i = 0; i < steps.length; i++) {
+      const step = steps[i];
+      for (let j = 0; j < step.blocks.length; j++) {
+        if (!completedBlocks[step.blocks[j].id]) {
+          return { furthestUnlockedStepIndex: i, furthestUnlockedBlockIndex: j };
+        }
+      }
+    }
+    const lastStepIdx = steps.length - 1;
+    const lastBlockIdx = Math.max(0, (steps[lastStepIdx]?.blocks.length ?? 1) - 1);
+    return { furthestUnlockedStepIndex: lastStepIdx, furthestUnlockedBlockIndex: lastBlockIdx };
+  }, [project.completedBlocks, project.program.steps]);
+
+  const verification = block && block.kind === "recall" && block.verify
+    ? verificationResults[block.verify.id]
+    : undefined;
+
+  const canContinue =
+    block &&
+    (block.kind !== "edit" || editComplete) &&
+    (block.kind !== "recall" || !block.verify || verification?.passed === true);
+
+  const fileList = useMemo(() => flattenTree(tree), [tree]);
+  const fileSet = useMemo(() => new Set(fileList), [fileList]);
+  const recallMissingFiles = useMemo(() => {
+    if (!block || block.kind !== "recall" || !block.verify) {
+      return [];
+    }
+
+    return block.verify.evidence.files.filter((filePath) => !fileSet.has(filePath));
+  }, [block, fileSet]);
 
   // Reset tabs when project changes
   useEffect(() => {
@@ -160,6 +219,7 @@ export function Workspace({
     setOpenReferenceIds([]);
     setPinnedReferenceIds([]);
     setVerifyingId(null);
+    setVerificationLogs({});
     autoOpenedRecallRef.current = null;
   }, [project.id]);
 
@@ -212,6 +272,26 @@ export function Workspace({
   }, [activeEdit?.id, project.id]);
 
   useEffect(() => {
+    const unsubscribe = onVerifyLog((event: { entry: VerificationLogEntry }) => {
+      if (block?.kind === "recall" && block.verify) {
+        const verifyId = block.verify.id;
+        setVerificationLogs((current) => {
+          const currentLogs = current[verifyId] ?? [];
+          const log = event.entry;
+          if (currentLogs.some((l) => l.message === log.message && l.status === log.status && l.detail === log.detail)) {
+            return current;
+          }
+          return {
+            ...current,
+            [verifyId]: [...currentLogs, log]
+          };
+        });
+      }
+    });
+    return unsubscribe;
+  }, [block?.id]);
+
+  useEffect(() => {
     if (!block) {
       return;
     }
@@ -228,9 +308,29 @@ export function Workspace({
 
   // Expose tree data to parent for sidebar rendering.
   useEffect(() => {
-    onTreeChange(tree, activeFilePath, relevantPath, (path: string) => {
-      void openFileAndRecord(path);
-    });
+    onTreeChange(
+      tree,
+      activeFilePath,
+      relevantPath,
+      (path: string) => {
+        void openFileAndRecord(path);
+      },
+      (path: string) => {
+        void createWorkspaceFile(path);
+      },
+      async (path: string) => {
+        await deleteWorkspaceFile(path);
+      },
+      async (oldPath: string, newPath: string) => {
+        await renameWorkspaceFile(oldPath, newPath);
+      },
+      async (path: string) => {
+        await createWorkspaceFolder(path);
+      },
+      async (path: string, destPath: string) => {
+        await duplicateWorkspaceFile(path, destPath);
+      }
+    );
   }, [tree, activeFilePath, relevantPath]);
 
   async function refreshTree() {
@@ -247,11 +347,11 @@ export function Workspace({
   ) {
     const current = {
       ...emptyBlockAssistance(),
-      ...(project.assistance[blockId] ?? {})
+      ...(assistance[blockId] ?? {})
     };
     await persistProject({
       assistance: {
-        ...project.assistance,
+        ...assistance,
         [blockId]: update(current)
       }
     });
@@ -321,7 +421,7 @@ export function Workspace({
     }
 
     if (recall.target) {
-      const target = project.program.targets.find((candidate) => candidate.id === recall.target);
+      const target = targets.find((candidate) => candidate.id === recall.target);
       if (target) {
         return target.path;
       }
@@ -340,7 +440,7 @@ export function Workspace({
       return;
     }
 
-    const target = project.program.targets.find((candidate) => candidate.id === recall.target);
+    const target = targets.find((candidate) => candidate.id === recall.target);
     if (target) {
       await focusTarget(target.id);
       return;
@@ -362,7 +462,7 @@ export function Workspace({
   }
 
   async function focusTarget(targetId: string) {
-    const target = project.program.targets.find((candidate) => candidate.id === targetId);
+    const target = targets.find((candidate) => candidate.id === targetId);
     if (!target) {
       return;
     }
@@ -434,19 +534,101 @@ export function Workspace({
     onFileOpened?.(path);
   }
 
+  async function deleteWorkspaceFile(rawPath: string) {
+    const nextPath = normalizeWorkspacePath(rawPath);
+    if (!nextPath) return;
+    onSavingChange?.(true);
+    try {
+      await deleteFile({ projectId: project.id, path: nextPath });
+      await refreshTree();
+    } finally {
+      onSavingChange?.(false);
+    }
+  }
+
+  async function renameWorkspaceFile(oldRaw: string, newRaw: string) {
+    const oldPath = normalizeWorkspacePath(oldRaw);
+    const newPath = normalizeWorkspacePath(newRaw);
+    if (!oldPath || !newPath) return;
+    onSavingChange?.(true);
+    try {
+      await renameFile({ projectId: project.id, oldPath, newPath });
+      await refreshTree();
+    } finally {
+      onSavingChange?.(false);
+    }
+  }
+
+  async function createWorkspaceFolder(rawPath: string) {
+    const nextPath = normalizeWorkspacePath(rawPath);
+    if (!nextPath) return;
+    onSavingChange?.(true);
+    try {
+      await createFolder({ projectId: project.id, path: nextPath });
+      await refreshTree();
+    } finally {
+      onSavingChange?.(false);
+    }
+  }
+
+  async function duplicateWorkspaceFile(rawPath: string, rawDestPath: string) {
+    const srcPath = normalizeWorkspacePath(rawPath);
+    if (!srcPath) return;
+    // Auto-generate a unique dest path: append _copy before extension
+    const destPath = rawDestPath ? normalizeWorkspacePath(rawDestPath) : generateCopyPath(srcPath);
+    if (!destPath) return;
+    onSavingChange?.(true);
+    try {
+      await duplicateFile({ projectId: project.id, path: srcPath, destPath });
+      await refreshTree();
+    } finally {
+      onSavingChange?.(false);
+    }
+  }
+
+  async function createWorkspaceFile(rawPath: string) {
+    const nextPath = normalizeWorkspacePath(rawPath);
+    if (!nextPath) {
+      throw new Error("Enter a project-relative file path.");
+    }
+
+    const existing = await readMaybeFile(nextPath);
+    if (existing) {
+      await openFileAndRecord(nextPath);
+      return;
+    }
+
+    onSavingChange?.(true);
+    try {
+      await writeFile({
+        projectId: project.id,
+        path: nextPath,
+        content: ""
+      });
+      await refreshTree();
+      await openFileAndRecord(nextPath);
+    } finally {
+      onSavingChange?.(false);
+    }
+  }
+
   async function prepareEdit(edit: EditBlock) {
     onSavingChange?.(true);
     try {
       const existing = await readMaybeFile(edit.path);
       const anchor =
-        project.editAnchors[edit.id] ??
-        (edit.mode === "append" && existing ? `${existing}${existing.endsWith("\n") ? "" : "\n"}` : "");
+        editAnchors[edit.id] ??
+        deriveEditAnchor({
+          edit,
+          existing,
+          progress: typingProgress[edit.id] ?? 0
+        });
 
-      if (!project.editAnchors[edit.id]) {
+      if (!editAnchors[edit.id]) {
         await persistProject({
           activeFilePath: edit.path,
           editAnchors: {
-            ...project.editAnchors,
+            ...editAnchors,
             [edit.id]: anchor
           }
         });
@@ -457,9 +639,9 @@ export function Workspace({
       await writeFile({
         projectId: project.id,
         path: edit.path,
-        content: `${anchor}${edit.content.slice(0, project.typingProgress[edit.id] ?? 0)}`
+        content: `${anchor}${edit.content.slice(0, typingProgress[edit.id] ?? 0)}`
       });
-      setActiveFileContent(`${anchor}${edit.content.slice(0, project.typingProgress[edit.id] ?? 0)}`);
+      setActiveFileContent(`${anchor}${edit.content.slice(0, typingProgress[edit.id] ?? 0)}`);
       await refreshTree();
     } finally {
       onSavingChange?.(false);
@@ -489,6 +671,20 @@ export function Workspace({
     }
   }
 
+  async function handleManualSave() {
+    if (!activeFilePath) {
+      return;
+    }
+
+    onSavingChange?.(true);
+    try {
+      await writeFile({ projectId: project.id, path: activeFilePath, content: activeFileContent });
+      await refreshTree();
+    } finally {
+      onSavingChange?.(false);
+    }
+  }
+
   async function handleGuidedProgress(progress: number) {
     if (!activeEdit) {
       return;
@@ -505,7 +701,7 @@ export function Workspace({
       });
       await persistProject({
         typingProgress: {
-          ...project.typingProgress,
+          ...typingProgress,
           [activeEdit.id]: progress
         }
       });
@@ -531,6 +727,10 @@ export function Workspace({
     }
 
     setVerifyingId(block.verify.id);
+    setVerificationLogs((current) => ({
+      ...current,
+      [block.verify!.id]: buildVerificationStartLogs(block)
+    }));
     await persistAssistance(block.id, (assistance) => ({
       ...assistance,
       recallAttemptCount: assistance.recallAttemptCount + 1
@@ -541,12 +741,16 @@ export function Workspace({
         projectId: project.id,
         recall: block,
         references: block.references
-          .map((referenceId) => project.program.references.find((reference) => reference.id === referenceId))
-          .filter((reference): reference is (typeof project.program.references)[number] => Boolean(reference))
+          .map((referenceId) => references.find((reference) => reference.id === referenceId))
+          .filter((reference): reference is (typeof references)[number] => Boolean(reference))
       });
+      setVerificationLogs((current) => ({
+        ...current,
+        [block.verify!.id]: result.logs ?? current[block.verify!.id] ?? []
+      }));
       await persistProject({
         verificationResults: {
-          ...project.verificationResults,
+          ...verificationResults,
           [block.verify.id]: result
         }
       });
@@ -554,7 +758,6 @@ export function Workspace({
       if (!result.passed) {
         await persistAssistance(block.id, (assistance) => ({
           ...assistance,
-          recallAttemptCount: assistance.recallAttemptCount + 1,
           verificationFailureCount: assistance.verificationFailureCount + 1
         }));
       }
@@ -571,10 +774,30 @@ export function Workspace({
     const position = nextPosition(project);
     await persistProject({
       ...position,
-      completedBlocks: {
-        ...project.completedBlocks,
+        completedBlocks: {
+        ...(project.completedBlocks ?? {}),
         [block.id]: true
       }
+    });
+  }
+
+  async function handleSelectStep(stepIndex: number) {
+    if (stepIndex >= 0 && stepIndex < project.program.steps.length) {
+      if (stepIndex <= furthestUnlockedStepIndex) {
+        await persistProject({
+          currentStepIndex: stepIndex,
+          currentBlockIndex: 0,
+          activeFilePath: null
+        });
+      }
+    }
+  }
+
+  async function handleReturnToActive() {
+    await persistProject({
+      currentStepIndex: furthestUnlockedStepIndex,
+      currentBlockIndex: furthestUnlockedBlockIndex,
+      activeFilePath: null
     });
   }
 
@@ -588,10 +811,15 @@ export function Workspace({
       onNext={() => void handleNext()}
       onRunCommand={onRunCommand}
       onOpenReference={openReferenceCard}
+      onCreateFile={(path) => createWorkspaceFile(path)}
       onVerifyRecall={() => void handleVerifyRecall()}
       verifyingId={verifyingId}
+      verificationLogs={block?.kind === "recall" && block.verify
+        ? verificationLogs[block.verify.id] ?? []
+        : []}
+      recallMissingFiles={recallMissingFiles}
     />
-  ), [block, editComplete, onRunCommand, project, theme, verifyingId]);
+  ), [block, editComplete, onRunCommand, project, recallMissingFiles, theme, verificationLogs, verifyingId, furthestUnlockedStepIndex, furthestUnlockedBlockIndex]);
 
   const stepsTabContent = useMemo(() => (
     <div className={`workspace-right-panel-steps ${isStepsCollapsed ? "is-collapsed" : ""}`}>
@@ -605,10 +833,14 @@ export function Workspace({
         <CaretDown size={11} weight="bold" className="workspace-panel__header-chevron" />
       </button>
       <div className="workspace-right-panel-steps-timeline-container">
-        <StepList project={project} />
+        <StepList
+          project={project}
+          onSelectStep={(idx) => void handleSelectStep(idx)}
+          furthestUnlockedStepIndex={furthestUnlockedStepIndex}
+        />
       </div>
     </div>
-  ), [isStepsCollapsed, project]);
+  ), [isStepsCollapsed, project, furthestUnlockedStepIndex]);
 
   useEffect(() => {
     const panelTabs: SlotTab[] = [
@@ -653,6 +885,8 @@ export function Workspace({
   const editorSlotTabs: SlotTab[] = useMemo(() => {
     return openTabs.map((tabPath) => {
       const filename = tabPath.split("/").pop() || "";
+      const tabActiveEdit =
+        tabPath === activeFilePath && isActiveEditReady ? activeEdit : null;
       return {
         id: tabPath,
         title: filename,
@@ -663,12 +897,13 @@ export function Workspace({
           <EditorPane
             path={tabPath}
             content={tabPath === activeFilePath ? activeFileContent : ""}
-            activeEdit={tabPath === activeFilePath ? activeEdit : null}
+            activeEdit={tabActiveEdit}
             editAnchor={tabPath === activeFilePath ? editAnchor : ""}
             editProgress={tabPath === activeFilePath ? editProgress : 0}
             onFreeEdit={(content) => void handleFreeEdit(content)}
             onGuidedProgress={(progress) => void handleGuidedProgress(progress)}
             onRevealLine={() => void handleRevealLineAssistance()}
+            onSave={() => void handleManualSave()}
             fileList={flattenTree(tree)}
             theme={theme}
             pendingJump={tabPath === activeFilePath ? pendingJump : null}
@@ -683,10 +918,9 @@ export function Workspace({
         ),
       };
     });
-  }, [openTabs, activeFilePath, activeFileContent, activeEdit, editAnchor, editProgress, tree, pendingJump, focusRange, handleReadFileContent, theme]);
+  }, [openTabs, activeFilePath, activeFileContent, activeEdit, isActiveEditReady, editAnchor, editProgress, tree, pendingJump, focusRange, handleReadFileContent, theme]);
 
   // Launcher items for the editor + button
-  const fileList = useMemo(() => flattenTree(tree), [tree]);
   const editorLauncherItems: SlotLauncherItem[] = useMemo(() => [
     {
       type: "open-file",
@@ -741,8 +975,8 @@ export function Workspace({
       {openReferenceIds.length > 0 ? (
         <div className="construct-floating-card-layer" aria-label="Open reference cards">
           {openReferenceIds
-            .map((referenceId) => project.program.references.find((reference) => reference.id === referenceId))
-            .filter((reference): reference is (typeof project.program.references)[number] => Boolean(reference))
+            .map((referenceId) => references.find((reference) => reference.id === referenceId))
+            .filter((reference): reference is (typeof references)[number] => Boolean(reference))
             .map((reference) => (
               <ReferenceCard
                 key={reference.id}
@@ -779,4 +1013,99 @@ function lineNumberForOffset(content: string, offset: number): number {
 
 function uniqueStrings(values: string[]): string[] {
   return [...new Set(values)];
+}
+
+function isGuidedEditReady(
+  edit: EditBlock,
+  editAnchors: Record<string, string>
+): boolean {
+  return edit.mode !== "append" || Object.prototype.hasOwnProperty.call(editAnchors, edit.id);
+}
+
+function deriveEditAnchor({
+  edit,
+  existing,
+  progress
+}: {
+  edit: EditBlock;
+  existing: string;
+  progress: number;
+}): string {
+  if (edit.mode !== "append") {
+    return "";
+  }
+
+  const materializedLength = longestMaterializedEditPrefixLength(existing, edit.content, progress);
+  const base = materializedLength > 0 ? existing.slice(0, existing.length - materializedLength) : existing;
+
+  if (!base) {
+    return "";
+  }
+
+  return base.endsWith("\n") ? base : `${base}\n`;
+}
+
+function longestMaterializedEditPrefixLength(
+  existing: string,
+  editContent: string,
+  progress: number
+): number {
+  const max = Math.min(existing.length, editContent.length, progress);
+
+  for (let length = max; length > 0; length -= 1) {
+    if (existing.endsWith(editContent.slice(0, length))) {
+      return length;
+    }
+  }
+
+  return 0;
+}
+
+function buildVerificationStartLogs(recall: RecallBlock): VerificationLogEntry[] {
+  if (!recall.verify) {
+    return [];
+  }
+
+  const now = new Date().toISOString();
+  const files = recall.verify.evidence.files;
+  const command = recall.verify.evidence.terminalCommand;
+
+  return [
+    {
+      at: now,
+      status: "running",
+      message: "Preparing verifier evidence",
+      detail: files.length > 0 ? files.join(", ") : "No files declared."
+    },
+    {
+      at: now,
+      status: command ? "pending" : "done",
+      message: command ? "Terminal command queued" : "No terminal command declared",
+      detail: command ?? "The verifier will judge from files and rubric."
+    },
+    {
+      at: now,
+      status: "pending",
+      message: "Construct Verifier Agent",
+      detail: "Goal, rubric, support, references, files, and terminal evidence will be checked together."
+    }
+  ];
+}
+
+function normalizeWorkspacePath(path: string): string {
+  return path
+    .trim()
+    .replace(/\\/g, "/")
+    .replace(/^\/+/, "")
+    .replace(/\/+/g, "/");
+}
+
+function generateCopyPath(srcPath: string): string {
+  const lastDot = srcPath.lastIndexOf(".");
+  const lastSlash = srcPath.lastIndexOf("/");
+  if (lastDot > lastSlash) {
+    // Has extension
+    return `${srcPath.slice(0, lastDot)}_copy${srcPath.slice(lastDot)}`;
+  }
+  return `${srcPath}_copy`;
 }

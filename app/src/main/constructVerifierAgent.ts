@@ -13,7 +13,16 @@ const VerificationResultSchema = z.object({
   suggestion: z.string().optional()
 });
 
-export type VerificationResult = z.infer<typeof VerificationResultSchema>;
+export type VerificationLogEntry = {
+  at: string;
+  status: "pending" | "running" | "done" | "failed" | "warning";
+  message: string;
+  detail?: string;
+};
+
+export type VerificationResult = z.infer<typeof VerificationResultSchema> & {
+  logs?: VerificationLogEntry[];
+};
 
 export type VerifierInput = {
   goal: string;
