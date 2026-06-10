@@ -40,6 +40,8 @@ contextBridge.exposeInMainWorld("constructProjects", {
     ipcRenderer.invoke("construct:project:verify-recall", input),
   reviewConstructAuthoring: (input: unknown) =>
     ipcRenderer.invoke("construct:project:review-authoring", input),
+  explainSelection: (input: unknown) =>
+    ipcRenderer.invoke("construct:project:explain-selection", input),
   gitStatus: (projectId: string) =>
     ipcRenderer.invoke("construct:project:git-status", projectId),
   gitCommit: (input: unknown) =>
@@ -74,6 +76,11 @@ contextBridge.exposeInMainWorld("constructProjects", {
     };
     ipcRenderer.on("construct:project:verify-log", listener);
     return () => ipcRenderer.off("construct:project:verify-log", listener);
+  },
+  onSelectionExplanationLog: (callback: (event: unknown) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
+    ipcRenderer.on("construct:project:explain-selection-log", listener);
+    return () => ipcRenderer.off("construct:project:explain-selection-log", listener);
   },
   lspRequest: (payload: unknown) =>
     ipcRenderer.invoke("construct:lsp:request", payload),

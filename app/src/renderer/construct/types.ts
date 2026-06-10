@@ -189,6 +189,30 @@ export type VerificationResult = {
   logs?: VerificationLogEntry[];
 };
 
+export type SelectionExplanationLogEntry = {
+  at: string;
+  status: "pending" | "running" | "done" | "failed" | "warning";
+  message: string;
+  detail?: string;
+  tool?: "codebase" | "web" | "agent";
+};
+
+export type SelectionExplanationResult = {
+  title: string;
+  summary: string;
+  explanation: string;
+  sources: Array<{
+    id: string;
+    kind: "code" | "web";
+    title: string;
+    url?: string;
+    path?: string;
+    line?: number;
+    domain?: string;
+  }>;
+  researchMode: "web-and-codebase" | "codebase-only";
+};
+
 export type VerificationLogEntry = {
   at: string;
   status: "pending" | "running" | "done" | "failed" | "warning";
@@ -362,6 +386,13 @@ export type ConstructProjectsApi = {
     diagnostics: Array<{ code: string; severity: string; message: string; line: number; blockId?: string }>;
     snippets: Array<{ label: string; startLine: number; text: string }>;
   }): Promise<import("./compiler/semantic-review").AuthoringSuggestion[]>;
+  explainSelection(input: {
+    requestId: string;
+    projectId: string;
+    selection: import("./lib/selectionContext").ConstructSelectionContext;
+    learningContext?: unknown;
+  }): Promise<SelectionExplanationResult>;
+  onSelectionExplanationLog(callback: (event: { requestId: string; entry: SelectionExplanationLogEntry }) => void): () => void;
   gitStatus(projectId: string): Promise<GitStatus>;
   gitCommit(input: { projectId: string; message: string; paths: string[] }): Promise<GitActionResult>;
   gitPush(projectId: string): Promise<GitActionResult>;

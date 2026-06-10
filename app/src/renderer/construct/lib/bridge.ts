@@ -12,6 +12,7 @@ import type {
   WorkspaceFile,
   WorkspaceTreeNode
 } from "../types";
+import type { ConstructSelectionContext } from "./selectionContext";
 
 declare global {
   interface Window {
@@ -134,6 +135,19 @@ export function verifyRecall(input: {
 
 export function reviewConstructAuthoring(input: Parameters<ConstructProjectsApi["reviewConstructAuthoring"]>[0]): ReturnType<ConstructProjectsApi["reviewConstructAuthoring"]> {
   return api().reviewConstructAuthoring(input);
+}
+
+export function explainSelection(input: {
+  requestId: string;
+  projectId: string;
+  selection: ConstructSelectionContext;
+  learningContext?: unknown;
+}) {
+  return api().explainSelection(input);
+}
+
+export function onSelectionExplanationLog(callback: Parameters<ConstructProjectsApi["onSelectionExplanationLog"]>[0]): () => void {
+  return api().onSelectionExplanationLog(callback);
 }
 
 export function gitStatus(projectId: string): ReturnType<ConstructProjectsApi["gitStatus"]> {

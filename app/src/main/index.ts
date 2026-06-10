@@ -23,6 +23,10 @@ import {
   type VerificationResult
 } from "./constructVerifierAgent";
 import { runConstructAuthoringReviewAgent } from "./constructAuthoringReviewAgent";
+import {
+  runConstructSelectionExplainAgent,
+  type SelectionExplanationLogEntry
+} from "./constructSelectionExplainAgent";
 
 if (typeof process.loadEnvFile === "function") {
   const envPath = path.resolve(__dirname, "../../.env");
@@ -1685,6 +1689,45 @@ function installConstructProjectIpcHandlers(): void {
       diagnostics: Array.isArray(input?.diagnostics) ? input.diagnostics : [],
       snippets: Array.isArray(input?.snippets) ? input.snippets : []
     });
+  });
+
+  ipcMain.handle("construct:project:explain-selection", async (_event, input) => {
+    const project = findProject(await readProjects(), String(input?.projectId ?? ""));
+    const requestId = String(input?.requestId ?? randomUUID());
+    console.log("[selection explain] request started", {
+      requestId,
+      projectId: project.id,
+      source: input?.selection?.source,
+      filePath: input?.selection?.filePath
+    });
+
+    const progress = (entry: Omit<SelectionExplanationLogEntry, "at">) => {
+      const payload = { requestId, entry: { ...entry, at: new Date().toISOString() } };
+      sendToRenderers("construct:project:explain-selection-log", payload);
+      console.log("[selection explain]", entry.status, entry.message, entry.detail ?? "");
+    };
+
+    try {
+      const result = await runConstructSelectionExplainAgent({
+        projectId: project.id,
+        workspacePath: project.workspacePath,
+        selection: {
+          text: String(input?.selection?.text ?? ""),
+          source: String(input?.selection?.source ?? "workspace"),
+          sourceLabel: String(input?.selection?.sourceLabel ?? "Construct workspace"),
+          contextText: String(input?.selection?.contextText ?? "").slice(0, 18_000),
+          filePath: typeof input?.selection?.filePath === "string" ? input.selection.filePath : undefined,
+          language: typeof input?.selection?.language === "string" ? input.selection.language : undefined,
+          lineStart: Number.isInteger(input?.selection?.lineStart) ? input.selection.lineStart : undefined,
+          lineEnd: Number.isInteger(input?.selection?.lineEnd) ? input.selection.lineEnd : undefined
+        },
+        learningContext: input?.learningContext ?? {}
+      }, progress);
+      return result;
+    } catch (error) {
+      progress({ status: "failed", message: "Explanation failed", detail: error instanceof Error ? error.message : String(error), tool: "agent" });
+      throw error;
+    }
   });
 
   ipcMain.handle("construct:project:terminal-create", async (_event, input) => {
