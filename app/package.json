@@ -13,7 +13,7 @@
     "build:main": "tsup",
     "build:renderer": "vite build",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test src/renderer/lib/guide.test.ts src/renderer/construct/lib/parser.test.ts"
+    "test": "node --import tsx --test src/renderer/lib/guide.test.ts src/renderer/construct/lib/parser.test.ts src/renderer/construct/compiler/parser.test.ts src/renderer/construct/compiler/pipeline.test.ts"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.8",

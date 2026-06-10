@@ -89,6 +89,7 @@ export type ConceptCard = {
   tags: string[];
   summary: string;
   why: string;
+  commonMistake?: string;
   example: string;
   docs: ConceptDocsLink[];
 };
@@ -237,6 +238,8 @@ export type ProjectSummary = {
 
 export type ProjectRecord = ProjectSummary & {
   source: string;
+  originalSource?: string;
+  authoringFixes?: AuthoringFixRecord[];
   program: ConstructProgram;
   currentStepIndex: number;
   currentBlockIndex: number;
@@ -248,6 +251,16 @@ export type ProjectRecord = ProjectSummary & {
   verificationResults: Record<string, VerificationResult>;
   completedBlocks: Record<string, boolean>;
   completedAt: string | null;
+};
+
+export type AuthoringFixRecord = {
+  id: string;
+  title: string;
+  description: string;
+  kind: string;
+  safety: "safe-auto" | "suggested" | "semantic";
+  line?: number;
+  appliedAt: string;
 };
 
 export type ProjectSettings = {
@@ -286,6 +299,8 @@ export type ConstructProjectsApi = {
   importProject(input: {
     initializeGit: boolean;
     source: string;
+    originalSource?: string;
+    authoringFixes?: AuthoringFixRecord[];
     sourcePath: string | null;
     program: ConstructProgram;
     workspacePath: string;
@@ -341,6 +356,12 @@ export type ConstructProjectsApi = {
     concepts?: ConceptCard[];
     savedKnowledge?: ConceptCard[];
   }): Promise<VerificationResult>;
+  reviewConstructAuthoring(input: {
+    spec: string;
+    projectView: unknown;
+    diagnostics: Array<{ code: string; severity: string; message: string; line: number; blockId?: string }>;
+    snippets: Array<{ label: string; startLine: number; text: string }>;
+  }): Promise<import("./compiler/semantic-review").AuthoringSuggestion[]>;
   gitStatus(projectId: string): Promise<GitStatus>;
   gitCommit(input: { projectId: string; message: string; paths: string[] }): Promise<GitActionResult>;
   gitPush(projectId: string): Promise<GitActionResult>;

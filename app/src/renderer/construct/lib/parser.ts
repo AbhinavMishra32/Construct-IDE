@@ -416,6 +416,7 @@ function parseConcept(cursor: Cursor): ConceptCard {
   cursor.index += 1;
   let summary = "";
   let why = "";
+  let commonMistake = "";
   let example = "";
   const docs: ConceptCard["docs"] = [];
 
@@ -431,6 +432,7 @@ function parseConcept(cursor: Cursor): ConceptCard {
         tags: splitList(attrs.tags),
         summary,
         why,
+        commonMistake,
         example,
         docs
       };
@@ -458,6 +460,11 @@ function parseConcept(cursor: Cursor): ConceptCard {
 
     if (line.startsWith("::docs")) {
       docs.push(parseDocsLink(cursor));
+      continue;
+    }
+
+    if (line.startsWith("::common-mistake")) {
+      commonMistake = parsePlainBody(cursor, "::common-mistake");
       continue;
     }
 
