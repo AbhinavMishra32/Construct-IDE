@@ -10,3 +10,5 @@ coverage
 **/.construct
 .vercel
 **/.vercel
+.DS_Store
+**/.DS_Store
