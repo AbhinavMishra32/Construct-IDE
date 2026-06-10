@@ -4,7 +4,7 @@ export type LogEntry = {
   level: "info" | "warn" | "error" | "debug";
 };
 
-export type LogChannel = "lsp-server" | "lsp-protocol" | "main" | "renderer" | "verifier";
+export type LogChannel = "lsp-server" | "lsp-protocol" | "main" | "renderer" | "terminal" | "verifier";
 
 type LogListener = (channel: LogChannel, entry: LogEntry) => void;
 
@@ -14,6 +14,7 @@ class LogStoreClass {
     "lsp-protocol": [],
     main: [],
     renderer: [],
+    terminal: [],
     verifier: []
   };
 
@@ -26,9 +27,10 @@ class LogStoreClass {
       level
     };
 
-    this.logs[channel].push(entry);
-    if (this.logs[channel].length > 2000) {
-      this.logs[channel].shift();
+    const channelLogs = this.logs[channel] ?? (this.logs[channel] = []);
+    channelLogs.push(entry);
+    if (channelLogs.length > 2000) {
+      channelLogs.shift();
     }
 
     this.listeners.forEach((listener) => {
@@ -41,7 +43,7 @@ class LogStoreClass {
   }
 
   getLogs(channel: LogChannel): LogEntry[] {
-    return this.logs[channel];
+    return this.logs[channel] ?? [];
   }
 
   clearLogs(channel: LogChannel) {

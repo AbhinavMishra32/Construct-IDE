@@ -20,6 +20,7 @@ import {
   terminalKill,
   terminalResize
 } from "../lib/bridge";
+import { logStore } from "../lib/logStore";
 
 export type TerminalPanelHandle = {
   runCommand: (command: string, cwd: string) => void;
@@ -55,16 +56,27 @@ export const TerminalPanel = forwardRef<
 
   useEffect(() => {
     const isDark = resolveTerminalDark(theme);
-    const terminal = new XTerm({
-      cursorBlink: true,
-      convertEol: true,
-      fontFamily: '"Geist Mono Variable", "SF Mono", Menlo, monospace',
-      fontSize: 12,
-      theme: terminalTheme(isDark)
-    });
-    const fitAddon = new FitAddon();
-    terminal.loadAddon(fitAddon);
-    terminalRef.current = terminal;
+    let terminal: XTerm;
+    let fitAddon: FitAddon;
+    try {
+      terminal = new XTerm({
+        allowTransparency: true,
+        cursorBlink: true,
+        convertEol: true,
+        fontFamily: '"Geist Mono Variable", "SF Mono", Menlo, monospace',
+        fontSize: 12,
+        theme: terminalTheme(isDark)
+      });
+      fitAddon = new FitAddon();
+      terminal.loadAddon(fitAddon);
+      terminalRef.current = terminal;
+    } catch (error) {
+      const message = error instanceof Error ? `${error.name}: ${error.message}\n${error.stack ?? ""}` : String(error);
+      logStore.addLog("terminal", `Terminal initialization failed\n${message}`, "error");
+      console.error("[terminal] initialization failed", error);
+      setStatus("unavailable");
+      return;
+    }
 
     function fitAndResize() {
       try {
@@ -103,8 +115,15 @@ export const TerminalPanel = forwardRef<
     }
 
     if (containerRef.current) {
-      terminal.open(containerRef.current);
-      fitAndResize();
+      try {
+        terminal.open(containerRef.current);
+        fitAndResize();
+      } catch (error) {
+        const message = error instanceof Error ? `${error.name}: ${error.message}\n${error.stack ?? ""}` : String(error);
+        logStore.addLog("terminal", `Terminal mount failed\n${message}`, "error");
+        console.error("[terminal] mount failed", error);
+        setStatus("unavailable");
+      }
     }
 
     const resizeObserver = new ResizeObserver(() => {
@@ -134,14 +153,20 @@ export const TerminalPanel = forwardRef<
       }
     });
 
-    void terminalCreate(projectId, { cols: terminal.cols, rows: terminal.rows }).then(({ sessionId }) => {
-      sessionIdRef.current = sessionId;
-      setStatus("running");
-      void terminalResize(sessionId, terminal.cols, terminal.rows);
-      for (const command of pendingCommandsRef.current.splice(0)) {
-        void terminalInput(sessionId, command);
-      }
-    });
+    void terminalCreate(projectId, { cols: terminal.cols, rows: terminal.rows })
+      .then(({ sessionId }) => {
+        sessionIdRef.current = sessionId;
+        setStatus("running");
+        void terminalResize(sessionId, terminal.cols, terminal.rows);
+        for (const command of pendingCommandsRef.current.splice(0)) {
+          void terminalInput(sessionId, command);
+        }
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        logStore.addLog("terminal", `PTY session failed: ${message}`, "error");
+        setStatus("unavailable");
+      });
 
     return () => {
       if (resizeTimeout) {

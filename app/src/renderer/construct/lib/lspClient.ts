@@ -3,6 +3,8 @@ import { logStore } from "./logStore";
 
 type LspLanguage = "typescript" | "python";
 
+disableDefaultTypeScriptFeatures();
+
 class LspClientClass {
   private isInitialized = false;
   private disposables: monaco.IDisposable[] = [];
@@ -35,26 +37,8 @@ class LspClientClass {
 
       console.log("[LSP Client] Handshake completed successfully.");
 
-      // 3. Disable Monaco's default TypeScript and JavaScript workers to avoid duplicate completions/diagnostics
-      monaco.languages.typescript.typescriptDefaults.setModeConfiguration({
-        completionItems: false,
-        hovers: false,
-        documentSymbols: false,
-        definitions: false,
-        references: false,
-        signatureHelp: false,
-        diagnostics: false
-      });
-
-      monaco.languages.typescript.javascriptDefaults.setModeConfiguration({
-        completionItems: false,
-        hovers: false,
-        documentSymbols: false,
-        definitions: false,
-        references: false,
-        signatureHelp: false,
-        diagnostics: false
-      });
+      disableDefaultTypeScriptFeatures();
+      clearBuiltInTypeScriptMarkers();
 
       // 4. Register custom providers
       this.registerProviders();
@@ -148,6 +132,9 @@ class LspClientClass {
       },
       initializationOptions: language === "typescript"
         ? {
+            tsserver: {
+              path: `${workspacePath}/node_modules/typescript/lib/tsserver.js`
+            },
             preferences: {
               includePackageJsonAutoImports: "on",
               includeCompletionsForModuleExports: true
@@ -360,6 +347,7 @@ class LspClientClass {
                 textDocument: { uri },
                 position: toLspPosition(position)
               }, language.server);
+              logStore.addLog("lsp-protocol", `[definition] ${uri}:${position.lineNumber}:${position.column} returned ${locationCount(res)} location(s)`, res ? "info" : "warn");
               if (!res) return null;
 
               return toMonacoLocations(res);
@@ -384,6 +372,7 @@ class LspClientClass {
                 textDocument: { uri },
                 position: toLspPosition(position)
               }, language.server);
+              logStore.addLog("lsp-protocol", `[typeDefinition] ${uri}:${position.lineNumber}:${position.column} returned ${locationCount(res)} location(s)`, res ? "info" : "warn");
               return res ? toMonacoLocations(res) : null;
             } catch (err) {
               console.error("[LSP Type Definition error]:", err);
@@ -406,6 +395,7 @@ class LspClientClass {
                 textDocument: { uri },
                 position: toLspPosition(position)
               }, language.server);
+              logStore.addLog("lsp-protocol", `[implementation] ${uri}:${position.lineNumber}:${position.column} returned ${locationCount(res)} location(s)`, res ? "info" : "warn");
               return res ? toMonacoLocations(res) : null;
             } catch (err) {
               console.error("[LSP Implementation error]:", err);
@@ -432,6 +422,7 @@ class LspClientClass {
                   includeDeclaration: context.includeDeclaration
                 }
               }, language.server);
+              logStore.addLog("lsp-protocol", `[references] ${uri}:${position.lineNumber}:${position.column} returned ${Array.isArray(res) ? res.length : 0} location(s)`, Array.isArray(res) && res.length > 0 ? "info" : "warn");
               if (!res || !Array.isArray(res)) return null;
               return res.map(toMonacoLocation);
             } catch (err) {
@@ -548,6 +539,7 @@ class LspClientClass {
       });
     }
     this.modelListeners.clear();
+    clearBuiltInTypeScriptMarkers();
   }
 
   getRelativePath(absolutePath: string): string {
@@ -575,6 +567,28 @@ function toMonacoRange(lspRange: any): monaco.Range {
   );
 }
 
+function disableDefaultTypeScriptFeatures() {
+  const modeConfiguration = {
+    completionItems: false,
+    hovers: false,
+    documentSymbols: false,
+    definitions: false,
+    references: false,
+    signatureHelp: false,
+    diagnostics: false
+  };
+
+  monaco.languages.typescript.typescriptDefaults.setModeConfiguration(modeConfiguration);
+  monaco.languages.typescript.javascriptDefaults.setModeConfiguration(modeConfiguration);
+}
+
+function clearBuiltInTypeScriptMarkers() {
+  for (const model of monaco.editor.getModels()) {
+    monaco.editor.setModelMarkers(model, "typescript", []);
+    monaco.editor.setModelMarkers(model, "javascript", []);
+  }
+}
+
 function toLspPosition(monacoPosition: monaco.Position): { line: number; character: number } {
   return {
     line: monacoPosition.lineNumber - 1,
@@ -593,6 +607,14 @@ function toMonacoLocation(lspLocation: any): monaco.languages.Location {
 
 function toMonacoLocations(lspResult: any): monaco.languages.Location | monaco.languages.Location[] {
   return Array.isArray(lspResult) ? lspResult.map(toMonacoLocation) : toMonacoLocation(lspResult);
+}
+
+function locationCount(lspResult: any): number {
+  if (!lspResult) {
+    return 0;
+  }
+
+  return Array.isArray(lspResult) ? lspResult.length : 1;
 }
 
 function languageForModel(model: monaco.editor.ITextModel): { languageId: string; server: LspLanguage } | null {

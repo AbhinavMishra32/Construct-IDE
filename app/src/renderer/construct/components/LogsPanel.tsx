@@ -89,6 +89,7 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
               <option value="lsp-protocol" className="bg-[var(--opaline-bg-primary)] text-[var(--opaline-text-primary)] font-sans">LSP Protocol</option>
               <option value="main" className="bg-[var(--opaline-bg-primary)] text-[var(--opaline-text-primary)] font-sans">Electron Main Process</option>
               <option value="renderer" className="bg-[var(--opaline-bg-primary)] text-[var(--opaline-text-primary)] font-sans">Renderer Console</option>
+              <option value="terminal" className="bg-[var(--opaline-bg-primary)] text-[var(--opaline-text-primary)] font-sans">Terminal</option>
               <option value="verifier" className="bg-[var(--opaline-bg-primary)] text-[var(--opaline-text-primary)] font-sans">Verifier Agent</option>
             </SettingsSelect>
           </div>
