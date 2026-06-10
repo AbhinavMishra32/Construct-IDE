@@ -4,6 +4,7 @@ import type { editor as MonacoEditor } from "monaco-editor";
 
 import { monaco } from "../../monaco";
 import { lspClient } from "../lib/lspClient";
+import { emitConstructSelectionContext, excerptLines, normalizeSelectionText } from "../lib/selectionContext";
 import {
   CONSTRUCT_DARK,
   CONSTRUCT_LIGHT,
@@ -567,6 +568,32 @@ export function EditorPane({
 
           editor.onDidChangeCursorPosition(() => {
             updateSkipButtonPosition();
+          });
+
+          editor.onMouseUp(() => {
+            const model = editor.getModel();
+            const selection = editor.getSelection();
+            if (!model || !selection || selection.isEmpty()) return;
+
+            const text = normalizeSelectionText(model.getValueInRange(selection));
+            const visiblePosition = editor.getScrolledVisiblePosition(selection.getEndPosition());
+            const editorBounds = editor.getDomNode()?.getBoundingClientRect();
+            if (!text || !visiblePosition || !editorBounds) return;
+
+            emitConstructSelectionContext({
+              text,
+              source: "editor",
+              sourceLabel: path,
+              contextText: excerptLines(model.getValue(), selection.startLineNumber, selection.endLineNumber),
+              anchor: {
+                x: editorBounds.left + visiblePosition.left,
+                y: editorBounds.top + visiblePosition.top + visiblePosition.height
+              },
+              filePath: path,
+              language,
+              lineStart: selection.startLineNumber,
+              lineEnd: selection.endLineNumber
+            });
           });
 
           localProgressRef.current = editProgress;

@@ -85,6 +85,8 @@ export function ReferenceCard({
     <article
       ref={cardRef}
       className="reference-card"
+      data-construct-explainable="knowledge-card"
+      data-construct-explainable-label={card.title}
       data-dragging={dragging ? "true" : "false"}
       data-pinned={pinned ? "true" : "false"}
       style={{ transform: `translateY(${offsetY}px)` }}

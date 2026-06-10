@@ -95,7 +95,7 @@ export function GuidePanel({
     block && block.kind === "edit" ? ghostProgressForBlock(block, (project.typingProgress ?? {})[block.id] ?? 0) : null;
 
   return (
-    <aside className="guide-panel">
+    <aside className="guide-panel" data-construct-explainable="guide" data-construct-explainable-label="Guide">
       {!block ? (
         <div className="guide-panel__completed-state">
           <p className="eyebrow">Complete</p>

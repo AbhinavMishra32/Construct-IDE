@@ -85,6 +85,8 @@ export function KnowledgeCard({
     <article
       ref={cardRef}
       className="reference-card knowledge-card"
+      data-construct-explainable="knowledge-card"
+      data-construct-explainable-label={concept.title}
       data-dragging={dragging ? "true" : "false"}
       data-saved={saved ? "true" : "false"}
       style={{ transform: `translateY(${offsetY}px)` }}

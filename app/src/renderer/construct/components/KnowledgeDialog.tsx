@@ -32,6 +32,8 @@ export function KnowledgeDialog({
       <DialogContent
         size="wide"
         contentClassName="construct-knowledge-dialog"
+        data-construct-explainable="knowledge-dialog"
+        data-construct-explainable-label={concept.title}
         style={{ height: "min(720px, calc(100vh - 48px))" }}
       >
         <DialogHeader title={concept.title} subtitle={`${concept.kind} · ${concept.tags.join(" · ")}`} />
