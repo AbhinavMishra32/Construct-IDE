@@ -38,6 +38,8 @@ contextBridge.exposeInMainWorld("constructProjects", {
   duplicateFile: (input: unknown) => ipcRenderer.invoke("construct:project:duplicate-file", input),
   verifyRecall: (input: unknown) =>
     ipcRenderer.invoke("construct:project:verify-recall", input),
+  reviewConstructAuthoring: (input: unknown) =>
+    ipcRenderer.invoke("construct:project:review-authoring", input),
   gitStatus: (projectId: string) =>
     ipcRenderer.invoke("construct:project:git-status", projectId),
   gitCommit: (input: unknown) =>

@@ -1,6 +1,7 @@
 import { importProject, listProjects, openProject } from "./bridge";
 import { parseConstructSource } from "./parser";
 import type { ProjectRecord, ProjectSummary } from "../types";
+import type { AppliedConstructFix } from "../compiler/types";
 
 export async function bootstrapProjects(): Promise<ProjectSummary[]> {
   return (await listProjects()).filter((project) => project.sourcePath);
@@ -12,6 +13,8 @@ export async function openSavedProject(id: string): Promise<ProjectRecord> {
 
 export async function createProjectFromConstructFile(input: {
   initializeGit: boolean;
+  originalSource?: string;
+  appliedFixes?: AppliedConstructFix[];
   source: string;
   sourcePath: string;
   workspacePath: string;
@@ -20,6 +23,8 @@ export async function createProjectFromConstructFile(input: {
 
   return importProject({
     initializeGit: input.initializeGit,
+    originalSource: input.originalSource,
+    authoringFixes: input.appliedFixes?.map(({ id, title, description, kind, safety, line, appliedAt }) => ({ id, title, description, kind, safety, line, appliedAt })),
     source: input.source,
     sourcePath: input.sourcePath,
     program,

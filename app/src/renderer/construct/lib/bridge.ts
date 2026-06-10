@@ -132,6 +132,10 @@ export function verifyRecall(input: {
   return api().verifyRecall(input);
 }
 
+export function reviewConstructAuthoring(input: Parameters<ConstructProjectsApi["reviewConstructAuthoring"]>[0]): ReturnType<ConstructProjectsApi["reviewConstructAuthoring"]> {
+  return api().reviewConstructAuthoring(input);
+}
+
 export function gitStatus(projectId: string): ReturnType<ConstructProjectsApi["gitStatus"]> {
   return api().gitStatus(projectId);
 }

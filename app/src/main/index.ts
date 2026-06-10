@@ -22,6 +22,7 @@ import {
   type VerificationLogEntry,
   type VerificationResult
 } from "./constructVerifierAgent";
+import { runConstructAuthoringReviewAgent } from "./constructAuthoringReviewAgent";
 
 if (typeof process.loadEnvFile === "function") {
   const envPath = path.resolve(__dirname, "../../.env");
@@ -98,6 +99,7 @@ const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
 const shouldOpenDevTools = process.env.CONSTRUCT_OPEN_DEVTOOLS === "1";
 const ignoredWorkspaceEntries = new Set([
   ".git",
+  ".construct",
   ".next",
   "dist",
   "node_modules"
@@ -113,6 +115,16 @@ type StoredProject = {
   lastOpenedAt: string | null;
   workspacePath: string;
   source: string;
+  originalSource?: string;
+  authoringFixes?: Array<{
+    id: string;
+    title: string;
+    description: string;
+    kind: string;
+    safety: "safe-auto" | "suggested" | "semantic";
+    line?: number;
+    appliedAt: string;
+  }>;
   sourcePath: string | null;
   program: {
     id: string;
@@ -350,6 +362,16 @@ async function materializeInitialFiles(project: StoredProject): Promise<void> {
       await writeFile(target, file.content, "utf8");
     }
   }
+
+  await persistAuthoringArtifacts(project);
+}
+
+async function persistAuthoringArtifacts(project: StoredProject): Promise<void> {
+  const directory = safeProjectPath(project, ".construct");
+  await mkdir(directory, { recursive: true });
+  await writeFile(path.join(directory, "project.construct"), project.source, "utf8");
+  await writeFile(path.join(directory, "original.construct"), project.originalSource ?? project.source, "utf8");
+  await writeFile(path.join(directory, "repairs.json"), `${JSON.stringify(project.authoringFixes ?? [], null, 2)}\n`, "utf8");
 }
 
 function shouldRepairInitialFile(
@@ -1046,7 +1068,14 @@ function handleLspData(language: LspLanguage, chunk: Buffer) {
 
 function handleLspMessage(language: LspLanguage, message: any) {
   const server = lspServers[language];
-  if (message.id !== undefined) {
+  if (message.id !== undefined && message.method !== undefined) {
+    const result = lspClientRequestResult(message.method, message.params);
+    if (server.process?.stdin) {
+      const response = JSON.stringify({ jsonrpc: "2.0", id: message.id, result });
+      server.process.stdin.write(`Content-Length: ${Buffer.byteLength(response, "utf8")}\r\n\r\n${response}`);
+      emitLspLog(language, "info", `Responded to server request ${message.method} (${message.id})`);
+    }
+  } else if (message.id !== undefined) {
     const pending = server.pendingRequests.get(message.id);
     if (pending) {
       server.pendingRequests.delete(message.id);
@@ -1056,6 +1085,25 @@ function handleLspMessage(language: LspLanguage, message: any) {
     if (activeWebContents && !activeWebContents.isDestroyed()) {
       activeWebContents.send("construct:lsp:notification", { ...message, languageId: language });
     }
+  }
+}
+
+function lspClientRequestResult(method: string, params: any): unknown {
+  switch (method) {
+    case "workspace/configuration":
+      return Array.isArray(params?.items)
+        ? params.items.map((item: { section?: string }) => item.section === "formattingOptions"
+          ? { tabSize: 2, insertSpaces: true, trimTrailingWhitespace: true, insertFinalNewline: true }
+          : null)
+        : [];
+    case "client/registerCapability":
+    case "client/unregisterCapability":
+    case "window/workDoneProgress/create":
+      return null;
+    case "workspace/applyEdit":
+      return { applied: false, failureReason: "Construct does not apply language-server workspace edits automatically." };
+    default:
+      return null;
   }
 }
 
@@ -1206,6 +1254,8 @@ function installConstructProjectIpcHandlers(): void {
       projects[existingIndex] = {
         ...existing,
         source: input.source,
+        originalSource: typeof input.originalSource === "string" ? input.originalSource : existing.originalSource ?? input.source,
+        authoringFixes: Array.isArray(input.authoringFixes) ? input.authoringFixes : existing.authoringFixes ?? [],
         sourcePath: typeof input.sourcePath === "string" ? input.sourcePath : existing.sourcePath ?? null,
         program: input.program,
         title: input.program.title,
@@ -1230,6 +1280,8 @@ function installConstructProjectIpcHandlers(): void {
       lastOpenedAt: now,
       workspacePath,
       source: input.source,
+      originalSource: typeof input.originalSource === "string" ? input.originalSource : input.source,
+      authoringFixes: Array.isArray(input.authoringFixes) ? input.authoringFixes : [],
       sourcePath: typeof input.sourcePath === "string" ? input.sourcePath : null,
       program: input.program,
       currentStepIndex: 0,
@@ -1619,6 +1671,20 @@ function installConstructProjectIpcHandlers(): void {
         suggestion: "Check verifier credentials and rerun verification when the project evidence is ready."
       }, logs);
     }
+  });
+
+  ipcMain.handle("construct:project:review-authoring", async (_event, input) => {
+    console.log("[construct authoring] reviewing compact project view", {
+      spec: input?.spec,
+      diagnosticCount: Array.isArray(input?.diagnostics) ? input.diagnostics.length : 0,
+      snippetCount: Array.isArray(input?.snippets) ? input.snippets.length : 0
+    });
+    return runConstructAuthoringReviewAgent({
+      spec: String(input?.spec ?? "tape-0.3"),
+      projectView: input?.projectView ?? {},
+      diagnostics: Array.isArray(input?.diagnostics) ? input.diagnostics : [],
+      snippets: Array.isArray(input?.snippets) ? input.snippets : []
+    });
   });
 
   ipcMain.handle("construct:project:terminal-create", async (_event, input) => {
