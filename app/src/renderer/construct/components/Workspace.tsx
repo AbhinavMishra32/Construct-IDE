@@ -11,12 +11,11 @@ import {
   FileTs,
   FileTsx,
   GitBranch,
-  WarningCircle,
   MagnifyingGlass
 } from "@phosphor-icons/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
-import { SlotPanel } from "@opaline/ui";
+import { HoverPreview, SidebarBottomSlot, SlotPanel, Timeline } from "@opaline/ui";
 import { logStore } from "../lib/logStore";
 import { lspClient } from "../lib/lspClient";
 import type { SlotPanelHandle, SlotTab, SlotLauncherItem } from "@opaline/ui";
@@ -24,6 +23,7 @@ import { EditorPane } from "./EditorPane";
 import { GuidePanel } from "./GuidePanel";
 import { ReferenceCard } from "./ReferenceCard";
 import { KnowledgeCard } from "./KnowledgeCard";
+import { KnowledgeDialog } from "./KnowledgeDialog";
 import { StepList } from "./StepList";
 import {
   createFolder,
@@ -41,6 +41,12 @@ import {
   writeFile
 } from "../lib/bridge";
 import { currentBlock, emptyBlockAssistance, nextPosition } from "../lib/runtime";
+import {
+  readKnowledgeRecords,
+  recordKnowledgeOpen,
+  removeKnowledgeConcept,
+  saveKnowledgeConcept
+} from "../lib/knowledgeStore";
 import type {
   BlockAssistance,
   ConceptCard,
@@ -135,6 +141,7 @@ export function Workspace({
   project,
   theme,
   onGuidePanelChange,
+  onKnowledgePanelChange,
   onProjectChange,
   onRunCommand,
   onTreeChange,
@@ -146,6 +153,7 @@ export function Workspace({
   project: ProjectRecord;
   theme: "light" | "dark" | "system";
   onGuidePanelChange: (panel: ReactNode | null) => void;
+  onKnowledgePanelChange?: (panel: ReactNode | null) => void;
   onProjectChange: (project: ProjectRecord) => void;
   onRunCommand: (command: string, cwd: string) => void;
   onTreeChange: (
@@ -176,7 +184,8 @@ export function Workspace({
   const [openReferenceIds, setOpenReferenceIds] = useState<string[]>([]);
   const [pinnedReferenceIds, setPinnedReferenceIds] = useState<string[]>([]);
   const [openConceptIds, setOpenConceptIds] = useState<string[]>([]);
-  const [savedConceptIds, setSavedConceptIds] = useState<string[]>(() => readSavedConceptIds());
+  const [savedConceptIds, setSavedConceptIds] = useState<string[]>(() => initialSavedConceptIds(project, project.program.concepts ?? []));
+  const [selectedKnowledgeConceptId, setSelectedKnowledgeConceptId] = useState<string | null>(null);
   const [gitMilestoneStates, setGitMilestoneStates] = useState<Record<string, StoredGitMilestoneState>>(() =>
     readGitMilestoneStates(project.id)
   );
@@ -196,7 +205,6 @@ export function Workspace({
   const references = project.program.references ?? [];
   const concepts = project.program.concepts ?? [];
   const gitMilestones = project.program.gitMilestones ?? [];
-  const authoringWarnings = project.program.warnings ?? [];
   const targets = project.program.targets ?? [];
   const block = currentBlock(project);
   const activeEdit = block?.kind === "edit" ? block : null;
@@ -474,6 +482,8 @@ export function Workspace({
   }
 
   function openConceptCard(conceptId: string) {
+    const concept = concepts.find((candidate) => candidate.id === conceptId);
+    if (concept) recordKnowledgeOpen(project, concept, block?.kind === "recall");
     setOpenConceptIds((current) => (
       current.includes(conceptId) ? current : [...current, conceptId]
     ));
@@ -484,9 +494,12 @@ export function Workspace({
   }
 
   function setConceptSaved(conceptId: string, saved: boolean) {
+    const concept = concepts.find((candidate) => candidate.id === conceptId);
+    if (!concept) return;
     setSavedConceptIds((current) => {
       const next = saved ? uniqueStrings([...current, conceptId]) : current.filter((id) => id !== conceptId);
-      writeSavedConceptIds(next);
+      if (saved) saveKnowledgeConcept(project, concept, block?.kind === "recall");
+      else removeKnowledgeConcept(project.id, conceptId);
       return next;
     });
   }
@@ -665,19 +678,30 @@ export function Workspace({
 
     const sequence = fileLoadSequenceRef.current + 1;
     fileLoadSequenceRef.current = sequence;
-    setLocalActiveFilePath(nextPath);
-    setOpenTabs((current) => uniqueStrings([...current.map(normalizeWorkspacePath).filter(Boolean), nextPath]));
-    if (fileContentsRef.current[nextPath] != null) {
-      setActiveFileContent(fileContentsRef.current[nextPath]);
+    let file = fileContentsRef.current[nextPath];
+    if (file == null) {
+      try {
+        file = (await readFile({ projectId: project.id, path: nextPath })).content;
+      } catch (error) {
+        logStore.addLog(
+          "main",
+          `Could not open ${nextPath}: ${error instanceof Error ? error.message : String(error)}`,
+          "error"
+        );
+        return;
+      }
     }
-
-    const file = await readMaybeFile(nextPath);
     if (fileLoadSequenceRef.current !== sequence) {
       return;
     }
 
-    setActiveFileContent(file);
+    // Load the file before mounting its Monaco model. Sending an empty didOpen for
+    // declaration files makes tsserver temporarily replace their on-disk exports.
     setFileContents((current) => ({ ...current, [nextPath]: file }));
+    fileContentsRef.current = { ...fileContentsRef.current, [nextPath]: file };
+    setActiveFileContent(file);
+    setLocalActiveFilePath(nextPath);
+    setOpenTabs((current) => uniqueStrings([...current.map(normalizeWorkspacePath).filter(Boolean), nextPath]));
     if (options.persist !== false && project.activeFilePath !== nextPath) {
       await persistProject({ activeFilePath: nextPath });
     }
@@ -1074,93 +1098,76 @@ export function Workspace({
     </div>
   ), [isStepsCollapsed, project, furthestUnlockedStepIndex]);
 
-  const knowledgeTabContent = useMemo(() => {
+  const sidebarKnowledgeContent = useMemo(() => {
     const currentConceptIds = block?.kind === "recall" || block?.kind === "explain" ? block.concepts : [];
-    const currentConcepts = currentConceptIds
-      .map((conceptId) => concepts.find((concept) => concept.id === conceptId))
-      .filter((concept): concept is ConceptCard => Boolean(concept));
-    const savedConcepts = savedConceptIds
-      .map((conceptId) => concepts.find((concept) => concept.id === conceptId))
-      .filter((concept): concept is ConceptCard => Boolean(concept));
-    const recentlyOpenedConcepts = openConceptIds
-      .map((conceptId) => concepts.find((concept) => concept.id === conceptId))
-      .filter((concept): concept is ConceptCard => Boolean(concept));
-
-    const renderConceptItem = (concept: ConceptCard, badge?: string) => (
-      <div className="knowledge-panel__item" key={`${badge ?? "concept"}:${concept.id}`}>
-        <button type="button" onClick={() => openConceptCard(concept.id)}>
-          <span>
-            <strong>{concept.title}</strong>
-            <small>{concept.summary || concept.kind}</small>
-          </span>
-        </button>
-        <div className="knowledge-panel__item-actions">
-          {badge ? <span className="knowledge-panel__badge">{badge}</span> : null}
-          <button
-            type="button"
-            className="knowledge-panel__save"
-            data-saved={savedConceptIds.includes(concept.id)}
-            onClick={() => setConceptSaved(concept.id, !savedConceptIds.includes(concept.id))}
-          >
-            <BookmarkSimple size={12} weight={savedConceptIds.includes(concept.id) ? "fill" : "regular"} />
-            {savedConceptIds.includes(concept.id) ? "Saved" : "Save"}
-          </button>
-        </div>
-      </div>
+    const introducedConceptIds = conceptIdsIntroducedThrough(
+      project,
+      furthestUnlockedStepIndex,
+      furthestUnlockedBlockIndex
     );
+    const introducedConcepts = introducedConceptIds
+      .map((conceptId) => concepts.find((concept) => concept.id === conceptId))
+      .filter((concept): concept is ConceptCard => Boolean(concept));
+    const savedConcepts = introducedConcepts.filter((concept) => savedConceptIds.includes(concept.id));
+    const availableConcepts = introducedConcepts.filter((concept) => !savedConceptIds.includes(concept.id));
+
+    if (introducedConcepts.length === 0) {
+      return null;
+    }
 
     return (
-      <div className="knowledge-panel">
-        <div className="knowledge-panel__hero">
-          <BookOpen size={17} weight="duotone" />
-          <div>
-            <strong>{savedConceptIds.length} saved</strong>
-            <span>{concepts.length} concept card{concepts.length === 1 ? "" : "s"} in this tape</span>
-          </div>
-        </div>
-
-        <section className="knowledge-panel__section">
-          <p className="knowledge-panel__label">Current Block</p>
-          {currentConcepts.length > 0
-            ? currentConcepts.map((concept) => renderConceptItem(concept, "Now"))
-            : <p className="knowledge-panel__empty">No concept cards are linked to this block.</p>}
-        </section>
-
-        {recentlyOpenedConcepts.length > 0 ? (
-          <section className="knowledge-panel__section">
-            <p className="knowledge-panel__label">Recently Opened</p>
-            {recentlyOpenedConcepts.map((concept) => renderConceptItem(concept, "Open"))}
-          </section>
-        ) : null}
-
-        <section className="knowledge-panel__section">
-          <p className="knowledge-panel__label">Saved Knowledge</p>
-          {savedConcepts.length > 0
-            ? savedConcepts.map((concept) => renderConceptItem(concept))
-            : <p className="knowledge-panel__empty">Saved concepts will stay available here during recall and verification.</p>}
-        </section>
-
-        {authoringWarnings.length > 0 ? (
-          <section className="knowledge-panel__section knowledge-panel__warnings">
-            <p className="knowledge-panel__label">Authoring Warnings</p>
-            {authoringWarnings.map((warning) => (
-              <div className="knowledge-panel__warning" data-severity={warning.severity} key={warning.id}>
-                <WarningCircle size={13} weight="duotone" />
-                <span>{warning.message}</span>
+      <SidebarBottomSlot
+        className="construct-sidebar-knowledge-slot"
+        defaultHeight={Math.min(320, Math.max(150, 58 + introducedConcepts.length * 34))}
+        minHeight={118}
+        maxHeight={520}
+        header={<div className="construct-sidebar-knowledge__header">
+          <BookOpen size={14} weight="duotone" />
+          <span>Knowledge</span>
+          <small>{savedConcepts.length}/{introducedConcepts.length}</small>
+        </div>}
+      >
+        <section className="construct-sidebar-knowledge" aria-label="Project knowledge">
+          {availableConcepts.length > 0 ? (
+            <div className="construct-sidebar-knowledge__list">
+              {availableConcepts.map((concept) => renderSidebarConceptRow(concept, false, currentConceptIds.includes(concept.id)))}
+            </div>
+          ) : null}
+          {savedConcepts.length > 0 ? (
+            <div className="construct-sidebar-knowledge__saved">
+              <span className="construct-sidebar-knowledge__group-label">Saved</span>
+              <div className="construct-sidebar-knowledge__list">
+                {savedConcepts.map((concept) => renderSidebarConceptRow(concept, true, currentConceptIds.includes(concept.id)))}
               </div>
-            ))}
-          </section>
-        ) : null}
-
-        <section className="knowledge-panel__section">
-          <p className="knowledge-panel__label">All Concepts</p>
-          {concepts.length > 0
-            ? concepts.map((concept) => renderConceptItem(concept))
-            : <p className="knowledge-panel__empty">This project has not introduced tape-0.3 concepts yet.</p>}
+            </div>
+          ) : null}
         </section>
-      </div>
+      </SidebarBottomSlot>
     );
-  }, [authoringWarnings, block, concepts, openConceptIds, savedConceptIds]);
+
+    function renderSidebarConceptRow(concept: ConceptCard, isSaved: boolean, isCurrent: boolean) {
+      return (
+        <HoverPreview
+          key={concept.id}
+          content={<div className="construct-knowledge-preview"><span>{concept.kind}</span><strong>{concept.title}</strong><p>{concept.summary}</p>{concept.tags.length ? <small>{concept.tags.join(" · ")}</small> : null}</div>}
+        >
+          <button
+            className="construct-sidebar-knowledge__row"
+            data-current={isCurrent ? "true" : "false"}
+            onClick={() => {
+              recordKnowledgeOpen(project, concept, block?.kind === "recall");
+              setSelectedKnowledgeConceptId(concept.id);
+            }}
+            type="button"
+          >
+            <BookOpen size={13} weight="regular" />
+            <span>{concept.title}</span>
+            {isSaved ? <BookmarkSimple size={12} weight="fill" /> : null}
+          </button>
+        </HoverPreview>
+      );
+    }
+  }, [block, concepts, furthestUnlockedBlockIndex, furthestUnlockedStepIndex, project, savedConceptIds]);
 
   const gitTabContent = useMemo(() => (
     <div className="git-panel">
@@ -1176,21 +1183,22 @@ export function Workspace({
         </div>
       </div>
 
-      <div className="git-panel__timeline">
-        {gitMilestones.length > 0 ? gitMilestones.map((milestone) => {
+      {gitMilestones.length > 0 ? <Timeline className="git-panel__timeline" items={gitMilestones.map((milestone) => {
           const stored = gitMilestoneStates[milestone.id];
           const status = resolveMilestoneStatus(milestone, stored, project);
           const isBusy = gitBusyId === milestone.id;
           const message = gitMilestoneMessages[milestone.id] ?? milestone.message;
           const canCommit = gitProjectStatus?.isRepo === true && status !== "pending" && status !== "committed" && status !== "pushed" && !isBusy;
 
-          return (
-            <div className="git-panel__milestone" data-status={status} key={milestone.id}>
-              <span className="git-panel__dot" />
-              <div className="git-panel__milestone-body">
+          return {
+            id: milestone.id,
+            title: milestoneStatusLabel(status),
+            meta: milestone.after,
+            status: status === "suggested" ? "warning" : status === "committed" ? "active" : status === "pushed" ? "pushed" : status === "failed" ? "error" : "pending",
+            icon: status === "committed" || status === "pushed" ? <CheckCircle weight="bold" /> : <GitBranch weight="bold" />,
+            content: <div className="git-panel__milestone-body">
                 <div className="git-panel__milestone-head">
-                  <span>{milestoneStatusLabel(status)}</span>
-                  <small>{milestone.after}</small>
+                  <span>{milestone.description || "Suggested commit for this learning milestone."}</span>
                 </div>
                 <input
                   value={message}
@@ -1200,7 +1208,6 @@ export function Workspace({
                   }))}
                   aria-label={`Commit message for ${milestone.id}`}
                 />
-                <p>{milestone.description || "Suggested commit for this learning milestone."}</p>
                 <div className="git-panel__files">
                   {milestone.includePaths.length > 0
                     ? milestone.includePaths.map((includePath) => <code key={includePath}>{includePath}</code>)
@@ -1225,59 +1232,49 @@ export function Workspace({
                   </button>
                 </div>
               </div>
-            </div>
-          );
-        }) : (
+          };
+        })} /> : (
           <p className="git-panel__empty">No git milestones are declared in this tape yet.</p>
         )}
-      </div>
     </div>
   ), [gitBusyId, gitMilestoneMessages, gitMilestoneStates, gitMilestones, gitProjectStatus, project]);
 
   useEffect(() => {
+    const normalizedRightSlotId = activeRightSlotId === "knowledge" ? "guide" : activeRightSlotId;
+    if (normalizedRightSlotId !== activeRightSlotId) {
+      onRightSlotChange(normalizedRightSlotId);
+      return;
+    }
+
     const panelTabs: SlotTab[] = [
       {
         id: "guide",
         title: "Guide",
         icon: <FileCode size={13} weight="duotone" />,
-        active: activeRightSlotId === "guide",
+        active: normalizedRightSlotId === "guide",
         content: guideTabContent
       },
       {
         id: "steps",
         title: "Steps",
         icon: <File size={13} weight="duotone" />,
-        active: activeRightSlotId === "steps",
+        active: normalizedRightSlotId === "steps",
         content: stepsTabContent
-      },
-      {
-        id: "knowledge",
-        title: "Knowledge",
-        icon: <BookOpen size={13} weight="duotone" />,
-        active: activeRightSlotId === "knowledge",
-        content: knowledgeTabContent
       },
       {
         id: "git",
         title: "Git",
         icon: <GitBranch size={13} weight="duotone" />,
-        active: activeRightSlotId === "git",
+        active: normalizedRightSlotId === "git",
         content: gitTabContent
       }
     ];
 
     onGuidePanelChange(
       <SlotPanel
-        activeTabId={activeRightSlotId}
+        activeTabId={normalizedRightSlotId}
         tabs={panelTabs}
         syncTabs
-        launcherItems={panelTabs.map((tab) => ({
-          type: tab.id,
-          title: tab.title,
-          description: rightPanelLauncherDescription(tab.id),
-          icon: tab.icon ?? <File size={13} weight="duotone" />,
-          createTab: () => tab
-        }))}
         className="construct-guide-slot-panel"
         ariaLabel="Guide and steps tabs"
         onActiveTabChange={(tabId) => onRightSlotChange(tabId ?? "guide")}
@@ -1285,7 +1282,12 @@ export function Workspace({
     );
 
     return () => onGuidePanelChange(null);
-  }, [activeRightSlotId, gitTabContent, guideTabContent, knowledgeTabContent, onGuidePanelChange, onRightSlotChange, stepsTabContent]);
+  }, [activeRightSlotId, gitTabContent, guideTabContent, onGuidePanelChange, onRightSlotChange, stepsTabContent]);
+
+  useEffect(() => {
+    onKnowledgePanelChange?.(sidebarKnowledgeContent);
+    return () => onKnowledgePanelChange?.(null);
+  }, [onKnowledgePanelChange, sidebarKnowledgeContent]);
 
   // Build SlotPanel tabs from openTabs state
   const editorSlotTabs: SlotTab[] = useMemo(() => {
@@ -1412,6 +1414,14 @@ export function Workspace({
             ))}
         </div>
       ) : null}
+      <KnowledgeDialog
+        concept={concepts.find((concept) => concept.id === selectedKnowledgeConceptId) ?? null}
+        open={selectedKnowledgeConceptId != null}
+        saved={selectedKnowledgeConceptId != null && savedConceptIds.includes(selectedKnowledgeConceptId)}
+        theme={theme}
+        onOpenChange={(open) => { if (!open) setSelectedKnowledgeConceptId(null); }}
+        onSaveChange={(saved) => { if (selectedKnowledgeConceptId) setConceptSaved(selectedKnowledgeConceptId, saved); }}
+      />
     </div>
   );
 }
@@ -1437,7 +1447,63 @@ function uniqueStrings(values: string[]): string[] {
   return [...new Set(values)];
 }
 
-const savedConceptStorageKey = "construct.knowledge.savedConceptIds";
+function uniqueConcepts(values: ConceptCard[]): ConceptCard[] {
+  const seen = new Set<string>();
+  return values.filter((concept) => {
+    if (seen.has(concept.id)) {
+      return false;
+    }
+
+    seen.add(concept.id);
+    return true;
+  });
+}
+
+function conceptIdsIntroducedThrough(project: ProjectRecord, stepIndex: number, blockIndex: number): string[] {
+  const ids: string[] = [];
+  const known = new Set(project.program.concepts.map((concept) => concept.id));
+
+  for (let currentStepIndex = 0; currentStepIndex <= stepIndex; currentStepIndex += 1) {
+    const step = project.program.steps[currentStepIndex];
+    if (!step) continue;
+    const finalBlockIndex = currentStepIndex === stepIndex ? Math.min(blockIndex, step.blocks.length - 1) : step.blocks.length - 1;
+    for (let currentBlockIndex = 0; currentBlockIndex <= finalBlockIndex; currentBlockIndex += 1) {
+      const current = step.blocks[currentBlockIndex];
+      if (!current) continue;
+      const declared = current.kind === "explain" || current.kind === "recall" ? current.concepts : [];
+      const inlineText = current.kind === "explain"
+        ? current.content
+        : current.kind === "recall"
+          ? `${current.task}\n${current.support}`
+          : "";
+      const inline = [...inlineText.matchAll(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g)].map((match) => match[1]);
+      for (const id of [...declared, ...inline]) {
+        if (known.has(id) && !ids.includes(id)) ids.push(id);
+      }
+    }
+  }
+
+  return ids;
+}
+
+function initialSavedConceptIds(project: ProjectRecord, concepts: ConceptCard[]): string[] {
+  const existing = readKnowledgeRecords().filter((record) => record.sourceProjectId === project.id).map((record) => record.id);
+  try {
+    const legacy = JSON.parse(window.localStorage.getItem("construct.knowledge.savedConceptIds") ?? "[]");
+    if (Array.isArray(legacy)) {
+      for (const conceptId of legacy) {
+        const concept = concepts.find((candidate) => candidate.id === conceptId);
+        if (concept && !existing.includes(concept.id)) {
+          saveKnowledgeConcept(project, concept);
+          existing.push(concept.id);
+        }
+      }
+    }
+  } catch {
+    // Ignore malformed legacy storage and keep valid records.
+  }
+  return uniqueStrings(existing);
+}
 
 type StoredGitMilestoneState = {
   status?: GitMilestoneStatus;
@@ -1446,19 +1512,6 @@ type StoredGitMilestoneState = {
   commitHash?: string;
   updatedAt?: string;
 };
-
-function readSavedConceptIds(): string[] {
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(savedConceptStorageKey) ?? "[]");
-    return Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === "string") : [];
-  } catch {
-    return [];
-  }
-}
-
-function writeSavedConceptIds(ids: string[]): void {
-  window.localStorage.setItem(savedConceptStorageKey, JSON.stringify(uniqueStrings(ids)));
-}
 
 function gitMilestoneStorageKey(projectId: string): string {
   return `construct.git.milestones.${projectId}`;
@@ -1524,21 +1577,6 @@ function milestoneStatusLabel(status: GitMilestoneStatus): string {
     case "pending":
     default:
       return "Waiting";
-  }
-}
-
-function rightPanelLauncherDescription(tabId: string): string {
-  switch (tabId) {
-    case "guide":
-      return "Current block explainer";
-    case "steps":
-      return "Project step timeline";
-    case "knowledge":
-      return "Saved concepts and warnings";
-    case "git":
-      return "Suggested git milestones";
-    default:
-      return "Construct panel";
   }
 }
 

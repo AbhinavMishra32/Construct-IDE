@@ -39,6 +39,7 @@ import { NewProjectDialog } from "./components/NewProjectDialog";
 import { TerminalPanel, type TerminalPanelHandle } from "./components/TerminalPanel";
 import { Workspace } from "./components/Workspace";
 import { LogsPanel } from "./components/LogsPanel";
+import { KnowledgeBaseSurface } from "./components/KnowledgeBaseSurface";
 import {
   bootstrapProjects,
   openSavedProject
@@ -55,7 +56,7 @@ import { currentBlock, currentBlockNumber, totalBlocks, nextPosition } from "./l
 
 type ThemeMode = "light" | "dark" | "system";
 type ConstructHistoryEntry = ShellHistoryEntry<
-  "bottom-tab" | "dashboard" | "file" | "project" | "project-settings" | "right-slot" | "settings",
+  "bottom-tab" | "dashboard" | "file" | "knowledge-base" | "project" | "project-settings" | "right-slot" | "settings",
   {
     filePath?: string;
     projectId?: string;
@@ -111,6 +112,8 @@ export default function ConstructApp() {
   const [activeProject, setActiveProject] = useState<ProjectRecord | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [rightPanel, setRightPanel] = useState<ReactNode | null>(null);
+  const [sidebarKnowledgePanel, setSidebarKnowledgePanel] = useState<ReactNode | null>(null);
+  const [knowledgeBaseOpen, setKnowledgeBaseOpen] = useState(false);
   const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
   const [settingsSurface, setSettingsSurface] = useState<SettingsSurfaceState | null>(null);
   const [settingsQuery, setSettingsQuery] = useState("");
@@ -311,6 +314,7 @@ export default function ConstructApp() {
 
   const handleBack = useCallback(() => {
     setSettingsSurface(null);
+    setKnowledgeBaseOpen(false);
     setRightPanel(null);
     setActiveProject(null);
     setTreeData({ tree: [], activePath: null, relevantPath: null, openFile: null, createFile: null, deleteFile: null, renameFile: null, createFolder: null, duplicateFile: null });
@@ -319,6 +323,7 @@ export default function ConstructApp() {
   }, [pushHistory]);
 
   const openSettingsSurface = useCallback((itemId: string, projectId?: string) => {
+    setKnowledgeBaseOpen(false);
     setSettingsSurface({ itemId, projectId });
     setSettingsQuery("");
     pushHistory({
@@ -327,6 +332,13 @@ export default function ConstructApp() {
       title: projectId ? "Project settings" : "Settings",
       type: projectId ? "project-settings" : "settings"
     });
+  }, [pushHistory]);
+
+  const openKnowledgeBase = useCallback(() => {
+    setSettingsSurface(null);
+    setActiveProject(null);
+    setKnowledgeBaseOpen(true);
+    pushHistory({ id: "knowledge-base", title: "Knowledge Base", type: "knowledge-base" });
   }, [pushHistory]);
 
   const handleRightSlotChange = useCallback((slotId: string) => {
@@ -385,6 +397,55 @@ export default function ConstructApp() {
     }
     return () => {
       lspClient.dispose();
+    };
+  }, [activeProject?.id, activeProject?.workspacePath]);
+
+  useEffect(() => {
+    if (!activeProject) {
+      return;
+    }
+
+    let refreshTimer: number | null = null;
+    let lastRefreshAt = 0;
+
+    const refreshLsp = () => {
+      const enabled = localStorage.getItem("construct.lsp.enabled") !== "false";
+      if (!enabled || document.visibilityState !== "visible") {
+        return;
+      }
+
+      const now = Date.now();
+      if (now - lastRefreshAt < 10_000) {
+        return;
+      }
+      lastRefreshAt = now;
+
+      if (refreshTimer !== null) {
+        window.clearTimeout(refreshTimer);
+      }
+
+      refreshTimer = window.setTimeout(() => {
+        logStore.addLog("lsp-server", "Refreshing language server after app focus.", "info");
+        void restartProjectLsp(activeProject.id).then((result) => {
+          if (result.languages.length > 0) {
+            void lspClient.initialize(activeProject.workspacePath, {
+              force: true,
+              languages: result.languages
+            });
+          }
+        });
+      }, 250);
+    };
+
+    window.addEventListener("focus", refreshLsp);
+    document.addEventListener("visibilitychange", refreshLsp);
+
+    return () => {
+      if (refreshTimer !== null) {
+        window.clearTimeout(refreshTimer);
+      }
+      window.removeEventListener("focus", refreshLsp);
+      document.removeEventListener("visibilitychange", refreshLsp);
     };
   }, [activeProject?.id, activeProject?.workspacePath]);
 
@@ -558,9 +619,18 @@ export default function ConstructApp() {
 
     if (entry.type === "dashboard") {
       setSettingsSurface(null);
+      setKnowledgeBaseOpen(false);
       setRightPanel(null);
       setActiveProject(null);
       setTreeData({ tree: [], activePath: null, relevantPath: null, openFile: null, createFile: null, deleteFile: null, renameFile: null, createFolder: null, duplicateFile: null });
+      finish();
+      return;
+    }
+
+    if (entry.type === "knowledge-base") {
+      setSettingsSurface(null);
+      setActiveProject(null);
+      setKnowledgeBaseOpen(true);
       finish();
       return;
     }
@@ -607,11 +677,17 @@ export default function ConstructApp() {
       onProjectsChange={setProjects}
       onActiveProjectChange={setActiveProject}
     />
+  ) : knowledgeBaseOpen ? (
+    <KnowledgeBaseSurface onOpenProject={(projectId) => {
+      setKnowledgeBaseOpen(false);
+      void openProject(projectId);
+    }} />
   ) : activeProject ? (
       <Workspace
         project={activeProject}
         theme={theme}
         onGuidePanelChange={setRightPanel}
+        onKnowledgePanelChange={setSidebarKnowledgePanel}
         onProjectChange={setActiveProject}
         onRunCommand={runCommand}
         activeRightSlotId={activeRightSlotId}
@@ -891,6 +967,9 @@ export default function ConstructApp() {
                       />
                     ) : null}
                   </div>
+                  {sidebarKnowledgePanel ? (
+                    sidebarKnowledgePanel
+                  ) : null}
                 </div>
               </Sidebar>
             ) : (
@@ -902,6 +981,12 @@ export default function ConstructApp() {
                     icon: <Plus size={18} weight="bold" />,
                     label: "New project",
                     onClick: () => setIsNewProjectOpen(true)
+                  },
+                  {
+                    id: "knowledge-base",
+                    icon: <Notebook size={18} weight="duotone" />,
+                    label: "Knowledge Base",
+                    onClick: openKnowledgeBase
                   }
                 ]}
                 footer={<SidebarSettingsButton onClick={() => openSettingsSurface("workspace")} />}
@@ -1212,10 +1297,10 @@ function ConstructSettingsSurface({
           const status = await window.constructProjects.lspGetStatus(projectId);
           setLspStatus(status);
           if (aggregateLspStatus(status) !== "not-installed") {
-            const startResult = await window.constructProjects.lspStart(projectId);
+            const startResult = await restartProjectLsp(projectId);
             setLspStatus(await window.constructProjects.lspGetStatus(projectId));
             if (startResult.languages.length > 0) {
-              void lspClient.initialize(project?.workspacePath || "", { languages: startResult.languages });
+              void lspClient.initialize(project?.workspacePath || "", { force: true, languages: startResult.languages });
             }
           }
         }
@@ -1243,10 +1328,10 @@ function ConstructSettingsSurface({
     try {
       const success = await window.constructProjects.lspInstall(projectId);
       if (success) {
-        const startResult = await window.constructProjects.lspStart(projectId);
+        const startResult = await restartProjectLsp(projectId);
         setLspStatus(await window.constructProjects.lspGetStatus(projectId));
         if (startResult.languages.length > 0) {
-          void lspClient.initialize(project?.workspacePath || "", { languages: startResult.languages });
+          void lspClient.initialize(project?.workspacePath || "", { force: true, languages: startResult.languages });
         }
       } else {
         setLspStatus(await window.constructProjects.lspGetStatus(projectId));
@@ -1262,10 +1347,10 @@ function ConstructSettingsSurface({
   async function handleStartLsp() {
     if (!projectId) return;
     try {
-      const startResult = await window.constructProjects.lspStart(projectId);
+      const startResult = await restartProjectLsp(projectId);
       setLspStatus(await window.constructProjects.lspGetStatus(projectId));
       if (startResult.languages.length > 0) {
-        void lspClient.initialize(project?.workspacePath || "", { languages: startResult.languages });
+        void lspClient.initialize(project?.workspacePath || "", { force: true, languages: startResult.languages });
       }
     } catch {}
   }
@@ -1283,9 +1368,7 @@ function ConstructSettingsSurface({
   async function handleRestartLsp() {
     if (!projectId) return;
     try {
-      await window.constructProjects.lspStop();
-      lspClient.dispose();
-      const startResult = await window.constructProjects.lspStart(projectId);
+      const startResult = await restartProjectLsp(projectId);
       setLspStatus(await window.constructProjects.lspGetStatus(projectId));
       if (startResult.languages.length > 0) {
         void lspClient.initialize(project?.workspacePath || "", { force: true, languages: startResult.languages });
@@ -1634,6 +1717,12 @@ function settingsTitle(itemId: string, projectId: string | undefined, projects: 
     return projects.find((project) => project.id === projectId)?.title ?? "Project settings";
   }
   return "Settings";
+}
+
+async function restartProjectLsp(projectId: string) {
+  await window.constructProjects.lspStop();
+  lspClient.dispose();
+  return window.constructProjects.lspStart(projectId);
 }
 
 function SidebarSettingsButton({ onClick }: { onClick: () => void }) {

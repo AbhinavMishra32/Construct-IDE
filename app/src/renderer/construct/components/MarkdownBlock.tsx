@@ -84,13 +84,17 @@ export function MarkdownBlock({
     },
     a({ className, ...props }) {
       const href = typeof props.href === "string" ? props.href : "";
-      if (href.startsWith("construct-concept:")) {
-        const conceptId = decodeURIComponent(href.slice("construct-concept:".length));
+      if (href.startsWith("#construct-concept=")) {
+        const conceptId = decodeURIComponent(href.slice("#construct-concept=".length));
         return (
           <button
             className="construct-concept-chip"
             type="button"
-            onClick={() => onOpenConcept?.(conceptId)}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onOpenConcept?.(conceptId);
+            }}
           >
             {props.children}
           </button>
@@ -153,6 +157,6 @@ export function MarkdownBlock({
 
 function renderConceptLinks(content: string): string {
   return content.replace(/\[\[([a-zA-Z0-9_.:-]+)\|([^\]]+)\]\]/g, (_match, id, label) => {
-    return `[${label}](construct-concept:${encodeURIComponent(id)})`;
+    return `[${label}](#construct-concept=${encodeURIComponent(id)})`;
   });
 }

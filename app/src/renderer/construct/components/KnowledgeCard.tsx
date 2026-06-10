@@ -129,6 +129,12 @@ export function KnowledgeCard({
               <MarkdownBlock content={concept.why} theme={theme} onOpenConcept={onOpenConcept} />
             </section>
           ) : null}
+          {concept.commonMistake ? (
+            <section>
+              <p className="guide-panel__label">Common mistake</p>
+              <MarkdownBlock content={concept.commonMistake} theme={theme} onOpenConcept={onOpenConcept} />
+            </section>
+          ) : null}
           {concept.example ? (
             <section className="knowledge-card__section">
               <p className="guide-panel__label">Example</p>

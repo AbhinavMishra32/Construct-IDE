@@ -11,9 +11,9 @@ import {
   WandSparklesIcon,
   XCircleIcon
 } from "lucide-react";
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useMemo } from "react";
 
-import { Button } from "@opaline/ui";
+import { Button, Timeline } from "@opaline/ui";
 
 import { MarkdownBlock } from "./MarkdownBlock";
 import { assistanceLabel, blockLabel, currentBlockNumber, totalBlocks } from "../lib/runtime";
@@ -445,14 +445,6 @@ function VerificationPanel({
 }
 
 function VerificationLogList({ logs }: { logs: VerificationLogEntry[] }) {
-  const containerRef = useRef<HTMLOListElement | null>(null);
-
-  useEffect(() => {
-    if (containerRef.current) {
-      containerRef.current.scrollTop = containerRef.current.scrollHeight;
-    }
-  }, [logs.length]);
-
   if (logs.length === 0) {
     return null;
   }
@@ -477,22 +469,17 @@ function VerificationLogList({ logs }: { logs: VerificationLogEntry[] }) {
     return <small>{detail}</small>;
   }
 
-  return (
-    <ol ref={containerRef} className="verification-log-list" aria-label="Verification activity">
-      {logs.map((log, index) => (
-        <li key={`${log.at}:${index}`} data-status={log.status} className="verification-log-item">
-          <div className="verification-log-timeline">
-            <span className="verification-log-dot" aria-hidden="true" />
-            {index < logs.length - 1 ? <span className="verification-log-line" aria-hidden="true" /> : null}
-          </div>
-          <div className="verification-log-content">
-            <p>{log.message}</p>
-            {log.detail ? renderDetail(log.detail) : null}
-          </div>
-        </li>
-      ))}
-    </ol>
-  );
+  return <Timeline
+    aria-label="Verification activity"
+    className="verification-log-list"
+    density="compact"
+    items={logs.map((log, index) => ({
+      id: `${log.at}:${index}`,
+      title: log.message,
+      status: log.status === "failed" ? "error" : log.status === "warning" ? "warning" : log.status === "running" ? "active" : "completed",
+      content: log.detail ? renderDetail(log.detail) : undefined
+    }))}
+  />;
 }
 
 function ghostProgressForBlock(block: EditBlock, progress: number): GhostProgress {
