@@ -8,12 +8,14 @@ import type {
   ConstructTarget,
   ConstructNote,
   GitMilestone,
+  GuideBlock,
   ReferenceCard,
   ReferenceLink,
   SupportSection,
   VerificationBlock,
   VerificationEvidence
 } from "../types";
+import { collectInlineRefs } from "./inlineRefs";
 
 type Cursor = {
   lines: string[];
@@ -27,6 +29,7 @@ export function parseConstructSource(source: string): ConstructProgram {
   };
   const metadata: Record<string, string> = {};
   const files: ConstructFile[] = [];
+  const guides: GuideBlock[] = [];
   const concepts: ConceptCard[] = [];
   const gitMilestones: GitMilestone[] = [];
   const references: ReferenceCard[] = [];
@@ -51,6 +54,11 @@ export function parseConstructSource(source: string): ConstructProgram {
     if (line.startsWith("::files")) {
       cursor.index += 1;
       files.push(...parseFiles(cursor));
+      continue;
+    }
+
+    if (line.startsWith("::guide.")) {
+      guides.push(parseGuideBlock(cursor, "project", guides.length));
       continue;
     }
 
@@ -82,22 +90,36 @@ export function parseConstructSource(source: string): ConstructProgram {
     throw new Error(`Unexpected .construct line ${cursor.index + 1}: ${line}`);
   }
 
+  const id = required(metadata, "id");
+  const learningSteps: ConstructStep[] = guides.length > 0
+    ? [{
+        id: `${id}:project-guide`,
+        title: guides[0].title || "System picture",
+        kind: "orientation",
+        teaches: [],
+        requires: [],
+        blocks: guides
+      }, ...steps]
+    : steps;
   const program: ConstructProgram = {
     spec: normalizeSpec(metadata.construct || "tape-0.1"),
     version: normalizeSpec(metadata.construct || "tape-0.1"),
-    id: required(metadata, "id"),
+    id,
     title: required(metadata, "title"),
     description: required(metadata, "description"),
     root: metadata.root || ".",
     requires: splitList(metadata.requires),
+    audience: metadata.audience,
+    teaching: splitList(metadata.teaching),
     source,
     files,
+    guides,
     concepts,
     gitMilestones,
     warnings: [],
     references,
     targets,
-    steps
+    steps: learningSteps
   };
   program.warnings = lintProgram(program);
   return program;
@@ -170,6 +192,9 @@ function parseStep(cursor: Cursor): ConstructStep {
       return {
         id: required(attrs, "id"),
         title: required(attrs, "title"),
+        kind: attrs.kind,
+        teaches: splitList(attrs.teaches),
+        requires: splitList(attrs.requires),
         blocks
       };
     }
@@ -188,6 +213,11 @@ function parseStep(cursor: Cursor): ConstructStep {
         concepts: splitList(blockAttrs.concepts),
         content: parsePlainBody(cursor, "::explain")
       });
+      continue;
+    }
+
+    if (line.startsWith("::guide.")) {
+      blocks.push(parseGuideBlock(cursor, required(attrs, "id"), blocks.length));
       continue;
     }
 
@@ -226,6 +256,7 @@ function parseEdit(cursor: Cursor): ConstructBlock {
   const attrs = parseAttributes(peek(cursor).replace(/^::edit\s*/, ""));
   cursor.index += 1;
   const notes: ConstructNote[] = [];
+  const guides: GuideBlock[] = [];
 
   while (!done(cursor)) {
     const line = peek(cursor).trim();
@@ -246,6 +277,11 @@ function parseEdit(cursor: Cursor): ConstructBlock {
       continue;
     }
 
+    if (line.startsWith("::guide.")) {
+      guides.push(parseGuideBlock(cursor, required(attrs, "id"), guides.length));
+      continue;
+    }
+
     break;
   }
 
@@ -260,6 +296,7 @@ function parseEdit(cursor: Cursor): ConstructBlock {
     typing: "ghost",
     anchor: attrs.anchor,
     notes,
+    guides,
     language: fenced.language,
     content: fenced.content
   };
@@ -419,6 +456,7 @@ function parseConcept(cursor: Cursor): ConceptCard {
   let commonMistake = "";
   let example = "";
   const docs: ConceptCard["docs"] = [];
+  const guides: GuideBlock[] = [];
 
   while (!done(cursor)) {
     const line = peek(cursor).trim();
@@ -434,7 +472,8 @@ function parseConcept(cursor: Cursor): ConceptCard {
         why,
         commonMistake,
         example,
-        docs
+        docs,
+        guides
       };
     }
 
@@ -468,10 +507,50 @@ function parseConcept(cursor: Cursor): ConceptCard {
       continue;
     }
 
+    if (line.startsWith("::guide.")) {
+      guides.push(parseGuideBlock(cursor, required(attrs, "id"), guides.length));
+      continue;
+    }
+
     throw new Error(`Unexpected concept block line ${cursor.index + 1}: ${line}`);
   }
 
   throw new Error(`Unclosed ::concept ${attrs.id || ""}.`);
+}
+
+const guideContainers = new Set(["guide.orientation", "guide.trace", "guide.preflight"]);
+
+function parseGuideBlock(cursor: Cursor, parentId: string, ordinal: number): GuideBlock {
+  const opener = peek(cursor).trim();
+  const match = opener.match(/^::([a-zA-Z0-9_.-]+)\b(.*)$/);
+  if (!match) throw new Error(`Invalid guide block at line ${cursor.index + 1}.`);
+  const guideKind = match[1];
+  const attrs = parseAttributes(match[2]);
+  const id = attrs.id || `${parentId}:${guideKind}:${ordinal + 1}`;
+  if (!guideContainers.has(guideKind)) {
+    return { kind: "guide", id, guideKind, title: attrs.title, content: parsePlainBody(cursor, `::${guideKind}`), sections: [] };
+  }
+
+  cursor.index += 1;
+  const sections: GuideBlock["sections"] = [];
+  while (!done(cursor)) {
+    const line = peek(cursor).trim();
+    if (line === "::end") {
+      cursor.index += 1;
+      return { kind: "guide", id, guideKind, title: attrs.title, content: "", sections };
+    }
+    if (!line) {
+      cursor.index += 1;
+      continue;
+    }
+    if (line.startsWith("::guide.")) {
+      const nestedKind = line.match(/^::([a-zA-Z0-9_.-]+)/)?.[1] ?? "guide.section";
+      sections.push({ kind: nestedKind, content: parsePlainBody(cursor, `::${nestedKind}`) });
+      continue;
+    }
+    throw new Error(`Unexpected ${guideKind} line ${cursor.index + 1}: ${line}`);
+  }
+  throw new Error(`Unclosed ::${guideKind}.`);
 }
 
 function parseDocsLink(cursor: Cursor): ConceptCard["docs"][number] {
@@ -845,8 +924,77 @@ function lintProgram(program: ConstructProgram): ConstructLintWarning[] {
   const warnings: ConstructLintWarning[] = [];
   const conceptIds = new Set(program.concepts.map((concept) => concept.id));
   const completableIds = new Set<string>();
+  const introducedConceptIds = new Set<string>();
+  const knownFiles = new Set(program.files.map((file) => file.path));
+  const knownAnchorsByPath = new Map<string, Set<string>>();
+
+  for (const target of program.targets) {
+    knownFiles.add(target.path);
+    const anchors = knownAnchorsByPath.get(target.path) ?? new Set<string>();
+    if (target.anchor) anchors.add(target.anchor);
+    anchors.add(target.id);
+    knownAnchorsByPath.set(target.path, anchors);
+  }
+  for (const step of program.steps) {
+    for (const block of step.blocks) {
+      if (block.kind !== "edit") continue;
+      knownFiles.add(block.path);
+      if (!block.anchor) continue;
+      const anchors = knownAnchorsByPath.get(block.path) ?? new Set<string>();
+      anchors.add(block.anchor);
+      knownAnchorsByPath.set(block.path, anchors);
+    }
+  }
+
+  if (program.audience === "zero-prerequisite") {
+    const hasOrientation = program.guides.some((guide) => guide.guideKind === "guide.orientation")
+      || program.steps[0]?.blocks.some((block) => block.kind === "guide" && ["guide.trace", "guide.mental-model", "guide.orientation"].includes(block.guideKind));
+    if (!hasOrientation) {
+      warnings.push({
+        id: "orientation-missing",
+        severity: "warning",
+        message: "Zero-prerequisite tapes should begin with a system picture, trace, or mental model."
+      });
+    }
+  }
 
   for (const step of program.steps) {
+    for (const conceptId of step.requires) {
+      if (!conceptIds.has(conceptId)) {
+        warnings.push({
+          id: `step-requires-missing:${step.id}:${conceptId}`,
+          severity: "warning",
+          target: step.id,
+          message: `Step "${step.title}" requires concept "${conceptId}" but no ::concept card exists.`
+        });
+      } else if (!introducedConceptIds.has(conceptId)) {
+        warnings.push({
+          id: `step-requires-not-yet-introduced:${step.id}:${conceptId}`,
+          severity: "warning",
+          target: step.id,
+          message: `Step "${step.title}" requires concept "${conceptId}" before an earlier step teaches it.`
+        });
+      }
+    }
+    for (const conceptId of step.teaches) {
+      if (!conceptIds.has(conceptId)) {
+        warnings.push({
+          id: `step-teaches-missing-concept:${step.id}:${conceptId}`,
+          severity: "warning",
+          target: step.id,
+          message: `Step "${step.title}" teaches concept "${conceptId}" but no ::concept card exists.`
+        });
+      }
+    }
+    if (/\b(Reveal why|Picture before plumbing|Problem before tool|Mental model before code|Teach the|Introduce concept)\b/i.test(step.title)) {
+      warnings.push({
+        id: `title-pedagogy-leak:${step.id}`,
+        severity: "warning",
+        target: step.id,
+        message: `Step title "${step.title}" exposes an authoring rule. Use a natural engineering milestone title.`
+      });
+    }
+
     for (const block of step.blocks) {
       completableIds.add(block.id);
 
@@ -892,10 +1040,18 @@ function lintProgram(program: ConstructProgram): ConstructLintWarning[] {
           message: "Ghost edit block is large. Consider splitting it into smaller guided edits."
         });
       }
+
+      for (const text of learnerTextForBlock(block)) {
+        lintInlineFileRefs(text, block.id, knownFiles, knownAnchorsByPath, warnings);
+      }
     }
+    step.teaches.forEach((conceptId) => introducedConceptIds.add(conceptId));
   }
 
   for (const concept of program.concepts) {
+    for (const text of [concept.summary, concept.why, concept.commonMistake ?? "", concept.example, ...concept.guides.flatMap(guideText)]) {
+      lintInlineFileRefs(text, concept.id, knownFiles, knownAnchorsByPath, warnings);
+    }
     if (concept.kind.includes("library") && concept.docs.length === 0) {
       warnings.push({
         id: `concept-docs:${concept.id}`,
@@ -918,6 +1074,54 @@ function lintProgram(program: ConstructProgram): ConstructLintWarning[] {
   }
 
   return warnings;
+}
+
+function learnerTextForBlock(block: ConstructBlock): string[] {
+  switch (block.kind) {
+    case "guide":
+      return guideText(block);
+    case "edit":
+      return [...block.notes.map((note) => note.content), ...block.guides.flatMap(guideText)];
+    case "recall":
+      return [block.task, block.support, ...block.supportSections.map((section) => section.content)];
+    case "run":
+      return [];
+    default:
+      return [block.content];
+  }
+}
+
+function guideText(guide: GuideBlock): string[] {
+  return [guide.content, ...guide.sections.map((section) => section.content)];
+}
+
+function lintInlineFileRefs(
+  content: string,
+  target: string,
+  knownFiles: Set<string>,
+  knownAnchorsByPath: Map<string, Set<string>>,
+  warnings: ConstructLintWarning[]
+) {
+  for (const reference of collectInlineRefs(content)) {
+    if (reference.kind !== "file") continue;
+    if (!knownFiles.has(reference.path)) {
+      warnings.push({
+        id: `file-ref-missing:${target}:${reference.path}`,
+        severity: "warning",
+        target,
+        message: `${reference.raw} points to a file that is not created by ::files or ::edit.`
+      });
+      continue;
+    }
+    if (reference.anchor && !knownAnchorsByPath.get(reference.path)?.has(reference.anchor)) {
+      warnings.push({
+        id: `file-ref-anchor-missing:${target}:${reference.path}:${reference.anchor}`,
+        severity: "warning",
+        target,
+        message: `${reference.raw} points to an unknown anchor in "${reference.path}".`
+      });
+    }
+  }
 }
 
 function skipBlankLines(cursor: Cursor): void {

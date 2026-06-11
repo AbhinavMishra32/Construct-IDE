@@ -1504,6 +1504,53 @@ function installConstructProjectIpcHandlers(): void {
     return pushProjectGit(project);
   });
 
+  ipcMain.handle("construct:project:delete", async (_event, input: { projectId: string; force?: boolean }) => {
+    const projects = await readProjects();
+    const index = projects.findIndex((p) => p.id === input.projectId);
+    if (index < 0) {
+      throw new Error(`Unknown Construct project: ${input.projectId}`);
+    }
+    const project = projects[index];
+
+    const gitDir = path.join(project.workspacePath, ".git");
+    const hasGit = existsSync(gitDir);
+    let branch: string | null = null;
+    let hasRemote = false;
+    let hasUncommittedChanges = false;
+    let unpushedCommits = 0;
+
+    if (hasGit) {
+      try {
+        const { stdout: branchOut } = await execFileAsync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: project.workspacePath });
+        branch = branchOut.trim() || null;
+      } catch { /* not a repo */ }
+      try {
+        const { stdout: statusOut } = await execFileAsync("git", ["status", "--porcelain"], { cwd: project.workspacePath });
+        hasUncommittedChanges = statusOut.trim().length > 0;
+      } catch { /* ignore */ }
+      try {
+        await execFileAsync("git", ["remote", "get-url", "origin"], { cwd: project.workspacePath });
+        hasRemote = true;
+        await execFileAsync("git", ["fetch", "origin"], { cwd: project.workspacePath }).catch(() => {});
+        const { stdout: ahead } = await execFileAsync("git", ["rev-list", "--count", "@{u}..HEAD"], { cwd: project.workspacePath }).catch(() => ({ stdout: "0" }));
+        unpushedCommits = parseInt(ahead.trim(), 10) || 0;
+      } catch { /* no remote */ }
+    }
+
+    if (!input.force) {
+      return { hasGit, branch, hasRemote, hasUncommittedChanges, unpushedCommits };
+    }
+
+    if (existsSync(project.workspacePath)) {
+      await rm(project.workspacePath, { recursive: true, force: true });
+    }
+
+    projects.splice(index, 1);
+    await writeProjects(projects);
+
+    return { deleted: true as const };
+  });
+
   ipcMain.handle("construct:project:verify-recall", async (_event, input) => {
     const project = findProject(await readProjects(), input.projectId);
     const recall = input.recall;

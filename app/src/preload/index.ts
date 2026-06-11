@@ -42,6 +42,8 @@ contextBridge.exposeInMainWorld("constructProjects", {
     ipcRenderer.invoke("construct:project:review-authoring", input),
   explainSelection: (input: unknown) =>
     ipcRenderer.invoke("construct:project:explain-selection", input),
+  deleteProject: (input: unknown) =>
+    ipcRenderer.invoke("construct:project:delete", input),
   gitStatus: (projectId: string) =>
     ipcRenderer.invoke("construct:project:git-status", projectId),
   gitCommit: (input: unknown) =>

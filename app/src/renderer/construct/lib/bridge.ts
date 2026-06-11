@@ -150,6 +150,10 @@ export function onSelectionExplanationLog(callback: Parameters<ConstructProjects
   return api().onSelectionExplanationLog(callback);
 }
 
+export function deleteProject(input: { projectId: string; force?: boolean }): Promise<import("../types").DeleteProjectCheck | { deleted: true }> {
+  return api().deleteProject(input);
+}
+
 export function gitStatus(projectId: string): ReturnType<ConstructProjectsApi["gitStatus"]> {
   return api().gitStatus(projectId);
 }

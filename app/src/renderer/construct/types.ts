@@ -6,8 +6,11 @@ export type ConstructProgram = {
   description: string;
   root: string;
   requires: string[];
+  audience?: string;
+  teaching: string[];
   source: string;
   files: ConstructFile[];
+  guides: GuideBlock[];
   concepts: ConceptCard[];
   gitMilestones: GitMilestone[];
   warnings: ConstructLintWarning[];
@@ -25,11 +28,15 @@ export type ConstructFile = {
 export type ConstructStep = {
   id: string;
   title: string;
+  kind?: string;
+  teaches: string[];
+  requires: string[];
   blocks: ConstructBlock[];
 };
 
 export type ConstructBlock =
   | ExplainBlock
+  | GuideBlock
   | EditBlock
   | RecallBlock
   | RunBlock
@@ -44,6 +51,17 @@ export type ExplainBlock = {
   concepts: string[];
 };
 
+export type GuideSection = { kind: string; content: string };
+
+export type GuideBlock = {
+  kind: "guide";
+  id: string;
+  guideKind: string;
+  title?: string;
+  content: string;
+  sections: GuideSection[];
+};
+
 export type EditBlock = {
   kind: "edit";
   id: string;
@@ -52,6 +70,7 @@ export type EditBlock = {
   typing: "ghost";
   anchor?: string;
   notes: ConstructNote[];
+  guides: GuideBlock[];
   language: string;
   content: string;
 };
@@ -92,6 +111,7 @@ export type ConceptCard = {
   commonMistake?: string;
   example: string;
   docs: ConceptDocsLink[];
+  guides: GuideBlock[];
 };
 
 export type SupportSection = {
@@ -291,6 +311,14 @@ export type ProjectSettings = {
   workspaceRoot: string;
 };
 
+export type DeleteProjectCheck = {
+  hasGit: boolean;
+  branch: string | null;
+  hasRemote: boolean;
+  hasUncommittedChanges: boolean;
+  unpushedCommits: number;
+};
+
 export type WorkspaceFile = {
   path: string;
   content: string;
@@ -393,6 +421,7 @@ export type ConstructProjectsApi = {
     learningContext?: unknown;
   }): Promise<SelectionExplanationResult>;
   onSelectionExplanationLog(callback: (event: { requestId: string; entry: SelectionExplanationLogEntry }) => void): () => void;
+  deleteProject(input: { projectId: string; force?: boolean }): Promise<DeleteProjectCheck | { deleted: true }>;
   gitStatus(projectId: string): Promise<GitStatus>;
   gitCommit(input: { projectId: string; message: string; paths: string[] }): Promise<GitActionResult>;
   gitPush(projectId: string): Promise<GitActionResult>;

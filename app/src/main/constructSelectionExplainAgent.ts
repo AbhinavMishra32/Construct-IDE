@@ -119,6 +119,7 @@ async function collectCodebaseContext(input: SelectionExplanationInput, onProgre
         "!node_modules/**",
         "--glob",
         "!dist/**",
+        "--",
         needle,
         "."
       ], { cwd: input.workspacePath, maxBuffer: 512 * 1024 });
@@ -284,7 +285,7 @@ type OpenAiResponse = {
   }>;
 };
 
-function extractOpenAiExplanation(payload: OpenAiResponse): { text: string; citations: UrlCitation[] } {
+export function extractOpenAiExplanation(payload: OpenAiResponse): { text: string; citations: UrlCitation[] } {
   const texts: string[] = [];
   const citations: UrlCitation[] = [];
   for (const output of payload.output ?? []) {
@@ -306,7 +307,7 @@ function extractOpenAiExplanation(payload: OpenAiResponse): { text: string; cita
   return { text: texts.join("\n\n"), citations };
 }
 
-function addInlineCitationLinks(text: string, citations: UrlCitation[]): string {
+export function addInlineCitationLinks(text: string, citations: UrlCitation[]): string {
   const unique = new Map<string, number>();
   for (const citation of citations) if (!unique.has(citation.url)) unique.set(citation.url, unique.size + 1);
   const insertions = citations
@@ -323,7 +324,7 @@ function addInlineCitationLinks(text: string, citations: UrlCitation[]): string 
   return result;
 }
 
-function searchNeedles(selection: string): string[] {
+export function searchNeedles(selection: string): string[] {
   const words = selection.match(/[A-Za-z_$][\w$.-]{2,}/g) ?? [];
   const candidates = [selection.trim(), ...words.sort((a, b) => b.length - a.length)];
   return [...new Set(candidates.filter((value) => value.length >= 3 && value.length <= 80))].slice(0, 3);

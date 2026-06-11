@@ -63,6 +63,8 @@ export function blockLabel(block: ConstructBlock): string {
   switch (block.kind) {
     case "explain":
       return "Explain";
+    case "guide":
+      return guideBlockLabel(block.guideKind);
     case "edit":
     return "Code Step";
     case "recall":
@@ -74,6 +76,11 @@ export function blockLabel(block: ConstructBlock): string {
     case "checkpoint":
       return "Checkpoint";
   }
+}
+
+function guideBlockLabel(kind: string): string {
+  const label = kind.replace(/^guide\./, "").replace(/-/g, " ");
+  return label.replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 export function emptyBlockAssistance(): BlockAssistance {

@@ -140,4 +140,89 @@ describe(".construct parser", () => {
     assert.equal(recall?.supportSections[0]?.kind, "intent");
     assert.equal(recall?.verify?.id, "verify-add-tool");
   });
+
+  it("parses namespaced guide blocks, teaching metadata, and step ordering", () => {
+    const source = `@construct spec="tape-0.3"
+@id "guide-fixture"
+@title "Guide fixture"
+@description "Exercises the guide layer."
+@root "."
+@audience "zero-prerequisite"
+@teaching "mental-model-first vertical-slice-first"
+
+::files
+::file path="src/a.ts"
+\`\`\`ts
+export const value = 1;
+\`\`\`
+::end
+::end
+
+::concept id="system.value" title="System value" kind="core-concept"
+::summary
+The value used by this fixture.
+::end
+::guide.misconception
+The value is not generated remotely.
+::end
+::end
+
+::guide.orientation id="system-picture" title="System picture"
+::guide.problem
+Understand where [[file:src/a.ts|the value]] lives.
+::end
+::guide.flow
+source -> runtime
+::end
+::end
+
+::step id="change-value" title="Change the runtime value" kind="concept-to-code" teaches="system.value"
+::guide.why-now
+The source exists, so the next edit changes real behavior.
+::end
+::edit id="write-value" path="src/a.ts" mode="replace" typing="ghost" anchor="system.value"
+::guide.why-now
+This is the smallest useful boundary.
+::end
+\`\`\`ts
+export const value = 2;
+\`\`\`
+::end
+::end`;
+
+    const program = parseConstructSource(source);
+
+    assert.equal(program.audience, "zero-prerequisite");
+    assert.deepEqual(program.teaching, ["mental-model-first", "vertical-slice-first"]);
+    assert.equal(program.guides[0]?.guideKind, "guide.orientation");
+    assert.equal(program.steps[0]?.kind, "orientation");
+    assert.equal(program.steps[0]?.blocks[0]?.kind, "guide");
+    assert.equal(program.steps[1]?.kind, "concept-to-code");
+    assert.deepEqual(program.steps[1]?.teaches, ["system.value"]);
+    const edit = program.steps[1]?.blocks.find((block) => block.kind === "edit");
+    assert.equal(edit?.kind, "edit");
+    assert.equal(edit?.guides[0]?.guideKind, "guide.why-now");
+    assert.equal(program.concepts[0]?.guides[0]?.guideKind, "guide.misconception");
+    assert.equal(program.warnings.length, 0);
+  });
+
+  it("warns about missing file refs and pedagogy-leaking step titles", () => {
+    const source = `@construct spec="tape-0.3"
+@id "lint-fixture"
+@title "Lint fixture"
+@description "Exercises authoring warnings."
+@root "."
+
+::step id="leaky" title="Reveal why this works" requires="missing.concept"
+::explain
+Open [[file:src/missing.ts|the implementation]].
+::end
+::end`;
+
+    const program = parseConstructSource(source);
+    const warningIds = program.warnings.map((warning) => warning.id);
+    assert.ok(warningIds.some((id) => id.startsWith("file-ref-missing:")));
+    assert.ok(warningIds.some((id) => id.startsWith("step-requires-missing:")));
+    assert.ok(warningIds.some((id) => id.startsWith("title-pedagogy-leak:")));
+  });
 });
