@@ -9,7 +9,8 @@ import {
   GearSix,
   Plus,
   TerminalWindow,
-  Notebook
+  Notebook,
+  Trash
 } from "@phosphor-icons/react";
 import { logStore, type LogChannel, type LogEntry } from "./lib/logStore";
 
@@ -29,6 +30,11 @@ import {
   SettingsSelect,
   SettingsSidebar,
   SettingsToggle,
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
   useShellHistory
 } from "@opaline/ui";
 import type { SettingsNavItem, SettingsNavSection, ShellHistoryEntry } from "@opaline/ui";
@@ -40,18 +46,20 @@ import { TerminalPanel, type TerminalPanelHandle } from "./components/TerminalPa
 import { Workspace } from "./components/Workspace";
 import { LogsPanel } from "./components/LogsPanel";
 import { KnowledgeBaseSurface } from "./components/KnowledgeBaseSurface";
+import { SelectionExplanationController } from "./components/SelectionExplanationController";
 import {
   bootstrapProjects,
   openSavedProject
 } from "./lib/projectStore";
 import {
+  deleteProject,
   getSettings,
   selectWorkspaceDirectory,
   setThemeSource,
   setWorkspaceRoot,
   updateProject
 } from "./lib/bridge";
-import type { ProjectRecord, ProjectSummary, WorkspaceTreeNode } from "./types";
+import type { DeleteProjectCheck, ProjectRecord, ProjectSummary, WorkspaceTreeNode } from "./types";
 import { currentBlock, currentBlockNumber, totalBlocks, nextPosition } from "./lib/runtime";
 
 type ThemeMode = "light" | "dark" | "system";
@@ -1038,11 +1046,12 @@ export default function ConstructApp() {
           }
           main={main}
           rightPanel={activeProject && !settingsSurface ? rightPanel : null}
-          bottomPanel={
-            activeProject && !settingsSurface ? (
+          bottomPanel={activeProject && !settingsSurface ? (shellState) => (
               <BottomPanel
                 activeTabId={activeBottomTabId}
                 syncTabs
+                keepMounted
+                onClose={() => shellState.setBottomPanelOpen(false)}
                 onActiveTabChange={(tabId) => {
                   if (tabId) {
                     setActiveBottomTabId(tabId);
@@ -1111,9 +1120,15 @@ export default function ConstructApp() {
                   }
                 ]}
               />
-            ) : null
-          }
+            ) : null}
         />
+        {activeProject && !settingsSurface ? (
+          <SelectionExplanationController
+            project={activeProject}
+            theme={theme}
+            onOpenFile={treeData.openFile ?? undefined}
+          />
+        ) : null}
       </div>
       <NewProjectDialog
         open={isNewProjectOpen}
@@ -1242,6 +1257,10 @@ function ConstructSettingsSurface({
   const [projectDescription, setProjectDescription] = useState(project?.description ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleteCheck, setDeleteCheck] = useState<DeleteProjectCheck | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const [lspEnabled, setLspEnabled] = useState(() => {
     return window.localStorage.getItem("construct.lsp.enabled") !== "false";
@@ -1417,6 +1436,35 @@ function ConstructSettingsSurface({
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function handleDeleteClick() {
+    if (!projectId) return;
+    setDeleteError(null);
+    try {
+      const result = await deleteProject({ projectId });
+      if ("deleted" in result) return;
+      setDeleteCheck(result);
+      setDeleteConfirmOpen(true);
+    } catch (caught) {
+      setDeleteError(caught instanceof Error ? caught.message : String(caught));
+    }
+  }
+
+  async function handleConfirmDelete() {
+    if (!projectId) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteProject({ projectId, force: true });
+      setDeleteConfirmOpen(false);
+      onActiveProjectChange(null);
+      onProjectsChange(projects.filter((p) => p.id !== projectId));
+    } catch (caught) {
+      setDeleteError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -1606,6 +1654,23 @@ function ConstructSettingsSurface({
           </SettingsSection>
         ) : null}
 
+        {activeItemId === "project-overview" ? (
+          <SettingsSection title="Danger Zone">
+            <SettingsCard>
+              <SettingsRow
+                title="Delete project"
+                description="Permanently removes the project and its workspace folder. This action cannot be undone."
+                control={
+                  <Button variant="danger" size="small" onClick={() => void handleDeleteClick()}>
+                    <Trash size={14} weight="duotone" style={{ marginRight: 4 }} />
+                    Delete
+                  </Button>
+                }
+              />
+            </SettingsCard>
+          </SettingsSection>
+        ) : null}
+
         {activeItemId === "project-runtime" ? (
           <SettingsSection title="Runtime">
             <SettingsCard>
@@ -1634,6 +1699,60 @@ function ConstructSettingsSurface({
         ) : null}
 
         {error ? <div className="construct-dialog-error">{error}</div> : null}
+        {deleteError ? <div className="construct-dialog-error">{deleteError}</div> : null}
+
+        <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+          <DialogContent size="narrow">
+            <DialogHeader
+              icon={<Trash size={20} weight="duotone" />}
+              title="Delete project"
+              subtitle={project?.workspacePath ?? ""}
+            />
+            <DialogBody>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <p style={{ margin: 0, fontWeight: 500 }}>Are you sure you want to delete this project?</p>
+                <p style={{ margin: 0, fontSize: 13, color: "var(--text-muted, #888)" }}>This will permanently delete the workspace folder and all its contents. This action cannot be undone.</p>
+              </div>
+
+              {deleteCheck?.hasGit ? (
+                <div className="construct-settings-warning-box" style={{ marginTop: 16, padding: "12px 16px", background: "var(--danger-bg, rgba(220,38,38,0.08))", borderRadius: 8, border: "1px solid var(--danger-border, rgba(220,38,38,0.2))" }}>
+                  <p style={{ margin: 0, fontWeight: 500, fontSize: 14 }}>Git repository detected</p>
+                  <ul style={{ margin: "8px 0 0", paddingLeft: 20, fontSize: 13, lineHeight: 1.6 }}>
+                    <li>Branch: <strong>{deleteCheck.branch}</strong></li>
+                    {deleteCheck.hasUncommittedChanges ? (
+                      <li>You have <strong>uncommitted changes</strong> that will be lost.</li>
+                    ) : null}
+                    {deleteCheck.unpushedCommits > 0 ? (
+                      <li>You have <strong>{deleteCheck.unpushedCommits} unpushed commit{deleteCheck.unpushedCommits === 1 ? "" : "s"}</strong> that will be lost.</li>
+                    ) : null}
+                    {!deleteCheck.hasUncommittedChanges && deleteCheck.unpushedCommits === 0 ? (
+                      <li>All changes are committed and pushed. No data loss expected.</li>
+                    ) : null}
+                  </ul>
+                  {deleteCheck.hasUncommittedChanges || deleteCheck.unpushedCommits > 0 ? (
+                    <p style={{ margin: "12px 0 0", fontSize: 13, color: "var(--danger-fg, #dc2626)" }}>
+                      Push your commits to a remote repository before deleting to avoid losing work.
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {!deleteCheck?.hasGit && deleteCheck ? (
+                <div className="construct-settings-warning-box" style={{ marginTop: 16, padding: "12px 16px", background: "var(--warning-bg, rgba(234,179,8,0.08))", borderRadius: 8, border: "1px solid var(--warning-border, rgba(234,179,8,0.2))" }}>
+                  <p style={{ margin: 0, fontSize: 13 }}>No git repository found. The workspace will be permanently deleted.</p>
+                </div>
+              ) : null}
+            </DialogBody>
+            <DialogFooter>
+              <Button variant="secondary" size="small" onClick={() => setDeleteConfirmOpen(false)} disabled={deleting}>
+                Cancel
+              </Button>
+              <Button variant="danger" size="small" onClick={() => void handleConfirmDelete()} disabled={deleting}>
+                {deleting ? "Deleting..." : "Delete project"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </SettingsPanel>
     );
   }
