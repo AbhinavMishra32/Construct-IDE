@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { MarkdownBlock } from "./MarkdownBlock";
 import type { ConceptCard } from "../types";
+import type { InlineFileRef } from "../lib/inlineRefs";
 
 export function KnowledgeCard({
   concept,
@@ -11,6 +12,7 @@ export function KnowledgeCard({
   theme,
   onClose,
   onOpenConcept,
+  onOpenFile,
   onSaveChange
 }: {
   concept: ConceptCard;
@@ -18,6 +20,7 @@ export function KnowledgeCard({
   theme: "light" | "dark" | "system";
   onClose: () => void;
   onOpenConcept: (conceptId: string) => void;
+  onOpenFile: (reference: InlineFileRef) => void;
   onSaveChange: (saved: boolean) => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
@@ -48,17 +51,17 @@ export function KnowledgeCard({
         </button>
       )}
     >
-      {concept.summary ? <MarkdownBlock content={concept.summary} theme={theme} onOpenConcept={onOpenConcept} /> : null}
+      {concept.summary ? <MarkdownBlock content={concept.summary} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} /> : null}
       {concept.why ? (
         <section className="knowledge-card__section">
           <p className="guide-panel__label">Why it matters</p>
-          <MarkdownBlock content={concept.why} theme={theme} onOpenConcept={onOpenConcept} />
+          <MarkdownBlock content={concept.why} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
         </section>
       ) : null}
       {concept.commonMistake ? (
         <section className="knowledge-card__section">
           <p className="guide-panel__label">Common mistake</p>
-          <MarkdownBlock content={concept.commonMistake} theme={theme} onOpenConcept={onOpenConcept} />
+          <MarkdownBlock content={concept.commonMistake} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
         </section>
       ) : null}
       {concept.example ? (

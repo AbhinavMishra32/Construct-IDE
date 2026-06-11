@@ -6,15 +6,18 @@ import {
   oneDark,
   oneLight
 } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { decodeInlineRefHref, renderInlineRefsAsMarkdown, type InlineFileRef } from "../lib/inlineRefs";
 
 export function MarkdownBlock({
   content,
   theme,
-  onOpenConcept
+  onOpenConcept,
+  onOpenFile
 }: {
   content: string;
   theme: "light" | "dark" | "system";
   onOpenConcept?: (conceptId: string) => void;
+  onOpenFile?: (reference: InlineFileRef) => void;
 }) {
   const [isDark, setIsDark] = useState(() => {
     if (theme === "system") {
@@ -84,8 +87,8 @@ export function MarkdownBlock({
     },
     a({ className, ...props }) {
       const href = typeof props.href === "string" ? props.href : "";
-      if (href.startsWith("#construct-concept=")) {
-        const conceptId = decodeURIComponent(href.slice("#construct-concept=".length));
+      const reference = decodeInlineRefHref(href);
+      if (reference?.kind === "concept") {
         return (
           <button
             className="construct-concept-chip"
@@ -93,14 +96,30 @@ export function MarkdownBlock({
             onClick={(event) => {
               event.preventDefault();
               event.stopPropagation();
-              onOpenConcept?.(conceptId);
+              onOpenConcept?.(reference.id);
             }}
           >
             {props.children}
           </button>
         );
       }
-      return <a className={`construct-markdown-link ${className ?? ""}`.trim()} {...props} />;
+      if (reference?.kind === "file") {
+        return (
+          <button
+            className="construct-file-ref"
+            type="button"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onOpenFile?.(reference);
+            }}
+          >
+            {props.children}
+          </button>
+        );
+      }
+      const external = /^https?:\/\//.test(href);
+      return <a {...props} className={`construct-markdown-link ${className ?? ""}`.trim()} rel={external ? "noreferrer" : props.rel} target={external ? "_blank" : props.target} />;
     },
     ul({ className, ...props }) {
       return (
@@ -149,14 +168,8 @@ export function MarkdownBlock({
   return (
     <div className="construct-markdown">
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-        {renderConceptLinks(content)}
+        {renderInlineRefsAsMarkdown(content)}
       </ReactMarkdown>
     </div>
   );
-}
-
-function renderConceptLinks(content: string): string {
-  return content.replace(/\[\[([a-zA-Z0-9_.:-]+)\|([^\]]+)\]\]/g, (_match, id, label) => {
-    return `[${label}](#construct-concept=${encodeURIComponent(id)})`;
-  });
 }

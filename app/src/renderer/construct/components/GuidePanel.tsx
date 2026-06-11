@@ -17,6 +17,7 @@ import { Button, Timeline } from "@opaline/ui";
 
 import { MarkdownBlock } from "./MarkdownBlock";
 import { assistanceLabel, blockLabel, currentBlockNumber, totalBlocks } from "../lib/runtime";
+import type { InlineFileRef } from "../lib/inlineRefs";
 import type {
   ConstructBlock,
   EditBlock,
@@ -43,6 +44,7 @@ export function GuidePanel({
   onRunCommand,
   onOpenReference,
   onOpenConcept,
+  onOpenFile,
   onCreateFile,
   onVerifyRecall,
   verifyingId,
@@ -57,6 +59,7 @@ export function GuidePanel({
   onRunCommand: (command: string, cwd: string) => void;
   onOpenReference: (referenceId: string) => void;
   onOpenConcept: (conceptId: string) => void;
+  onOpenFile: (reference: InlineFileRef) => void;
   onCreateFile: (path: string) => Promise<void> | void;
   onVerifyRecall: () => void;
   verifyingId: string | null;
@@ -91,8 +94,8 @@ export function GuidePanel({
     (block.kind !== "edit" || editComplete) &&
     (block.kind !== "recall" || !block.verify || verification?.passed === true);
   const assistance = block ? (project.assistance ?? {})[block.id] : undefined;
-  const ghostProgress =
-    block && block.kind === "edit" ? ghostProgressForBlock(block, (project.typingProgress ?? {})[block.id] ?? 0) : null;
+  const codeProgress =
+    block && block.kind === "edit" ? codeProgressForBlock(block, (project.typingProgress ?? {})[block.id] ?? 0) : null;
 
   return (
     <aside className="guide-panel" data-construct-explainable="guide" data-construct-explainable-label="Guide">
@@ -114,7 +117,7 @@ export function GuidePanel({
             block={block}
             theme={theme}
             editComplete={editComplete}
-            ghostProgress={ghostProgress}
+            codeProgress={codeProgress}
             references={project.program.references ?? []}
             verification={verification}
             verificationLogs={verification?.logs ?? verificationLogs}
@@ -122,6 +125,7 @@ export function GuidePanel({
             verifyingId={verifyingId}
             onOpenReference={onOpenReference}
             onOpenConcept={onOpenConcept}
+            onOpenFile={onOpenFile}
             onCreateFile={onCreateFile}
           />
           <p className="guide-panel__assist">{assistanceLabel(assistance)}</p>
@@ -165,7 +169,7 @@ function GuideBlock({
   block,
   theme,
   editComplete,
-  ghostProgress,
+  codeProgress,
   references,
   verification,
   verificationLogs,
@@ -173,12 +177,13 @@ function GuideBlock({
   verifyingId,
   onOpenReference,
   onOpenConcept,
+  onOpenFile,
   onCreateFile
 }: {
   block: ConstructBlock;
   theme: "light" | "dark" | "system";
   editComplete: boolean;
-  ghostProgress: GhostProgress | null;
+  codeProgress: GhostProgress | null;
   references: ReferenceCard[];
   verification?: VerificationResult;
   verificationLogs: VerificationLogEntry[];
@@ -186,6 +191,7 @@ function GuideBlock({
   verifyingId: string | null;
   onOpenReference: (referenceId: string) => void;
   onOpenConcept: (conceptId: string) => void;
+  onOpenFile: (reference: InlineFileRef) => void;
   onCreateFile: (path: string) => Promise<void> | void;
 }) {
   if (block.kind === "run") {
@@ -200,18 +206,51 @@ function GuideBlock({
     );
   }
 
+  if (block.kind === "guide") {
+    return (
+      <div className="guide-block guide-layer-block" data-guide-kind={block.guideKind}>
+        {block.title ? <h3>{block.title}</h3> : null}
+        {block.content ? <MarkdownBlock content={block.content} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} /> : null}
+        {block.sections.map((section) => (
+          <section key={section.kind} className="guide-layer-block__section">
+            <p className="guide-panel__label">{supportSectionLabel(section.kind.replace(/^guide\./, ""))}</p>
+            <MarkdownBlock content={section.content} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
+          </section>
+        ))}
+      </div>
+    );
+  }
+
   if (block.kind === "edit") {
     const note = block.notes.find((candidate) => candidate.when === (editComplete ? "done" : "start"));
 
     return (
       <div className="guide-block">
+        {block.guides.map((guide) => (
+          <GuideBlock
+            key={guide.id}
+            block={guide}
+            theme={theme}
+            editComplete={editComplete}
+            codeProgress={null}
+            references={references}
+            verification={verification}
+            verificationLogs={verificationLogs}
+            recallMissingFiles={recallMissingFiles}
+            verifyingId={verifyingId}
+            onOpenReference={onOpenReference}
+            onOpenConcept={onOpenConcept}
+            onOpenFile={onOpenFile}
+            onCreateFile={onCreateFile}
+          />
+        ))}
         <p className="guide-panel__copy">
-          Type the ghost text in <code>{block.path}</code>.
+          Complete the highlighted implementation in <code>{block.path}</code>.
         </p>
-        {ghostProgress ? <GhostProgressMeter progress={ghostProgress} /> : null}
+        {codeProgress ? <CodeProgressMeter progress={codeProgress} /> : null}
         {note ? (
           <div className="guide-panel__note">
-            <MarkdownBlock content={note.content} theme={theme} onOpenConcept={onOpenConcept} />
+            <MarkdownBlock content={note.content} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
           </div>
         ) : null}
       </div>
@@ -227,7 +266,7 @@ function GuideBlock({
       <div className="guide-block recall-task">
         <div className="recall-task__section recall-task__task">
           <p className="guide-panel__label">Task</p>
-          <MarkdownBlock content={block.task} theme={theme} onOpenConcept={onOpenConcept} />
+          <MarkdownBlock content={block.task} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
         </div>
         {recallMissingFiles.length > 0 ? (
           <MissingFilesPanel files={recallMissingFiles} onCreateFile={onCreateFile} />
@@ -238,13 +277,13 @@ function GuideBlock({
               <LightbulbIcon size={13} className="support-icon" />
               <p className="guide-panel__label">Support</p>
             </div>
-            {block.support ? <MarkdownBlock content={block.support} theme={theme} onOpenConcept={onOpenConcept} /> : null}
+            {block.support ? <MarkdownBlock content={block.support} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} /> : null}
             {block.supportSections.length > 0 ? (
               <div className="recall-task__support-sections">
                 {block.supportSections.map((section) => (
                   <section key={section.kind} className="recall-task__support-subsection">
                     <p>{supportSectionLabel(section.kind)}</p>
-                    <MarkdownBlock content={section.content} theme={theme} onOpenConcept={onOpenConcept} />
+                    <MarkdownBlock content={section.content} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
                   </section>
                 ))}
               </div>
@@ -281,7 +320,7 @@ function GuideBlock({
 
   return (
     <div className="guide-block">
-      <MarkdownBlock content={block.content} theme={theme} onOpenConcept={onOpenConcept} />
+      <MarkdownBlock content={block.content} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
     </div>
   );
 }
@@ -303,11 +342,11 @@ function supportSectionLabel(kind: string): string {
   }
 }
 
-function GhostProgressMeter({ progress }: { progress: GhostProgress }) {
+function CodeProgressMeter({ progress }: { progress: GhostProgress }) {
   return (
-    <div className="ghost-progress" aria-label="Guided write progress">
+    <div className="ghost-progress" aria-label="Code step progress">
       <div className="ghost-progress__row">
-        <span>Guided write progress</span>
+        <span>Code step progress</span>
         <strong>
           {progress.typedLines} / {progress.totalLines} lines · {progress.percent}%
         </strong>
@@ -482,7 +521,7 @@ function VerificationLogList({ logs }: { logs: VerificationLogEntry[] }) {
   />;
 }
 
-function ghostProgressForBlock(block: EditBlock, progress: number): GhostProgress {
+function codeProgressForBlock(block: EditBlock, progress: number): GhostProgress {
   const totalChars = block.content.length;
   const typedChars = clampNumber(progress, 0, totalChars);
   const totalLines = countGhostLines(block.content);

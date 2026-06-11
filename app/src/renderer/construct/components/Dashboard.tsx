@@ -135,7 +135,7 @@ export function Dashboard({
               <h2>Runtime lanes</h2>
             </div>
             <FeedItem title="File materializer" meta="ready" />
-            <FeedItem title="Guided editor" meta="ghost typing active" />
+            <FeedItem title="Code workspace" meta="active implementation step" />
             <FeedItem title="Terminal PTY" meta="persistent tabs" />
           </section>
         </aside>

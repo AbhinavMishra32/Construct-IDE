@@ -48,6 +48,7 @@ import {
   createDocumentSession,
   revealDocument,
 } from "../lib/documentSession";
+import type { InlineFileRef } from "../lib/inlineRefs";
 import {
   readKnowledgeRecords,
   recordKnowledgeOpen,
@@ -588,6 +589,21 @@ export function Workspace({
     }
   }
 
+  async function openInlineFile(reference: InlineFileRef) {
+    if (reference.anchor) {
+      await focusAnchor(reference.anchor);
+      return;
+    }
+    await navigateToFile(reference.path, { persist: true });
+    setDocumentSession((session) => revealDocument(session, {
+      kind: reference.endLine ? "focus" : "jump",
+      path: reference.path,
+      line: reference.line ?? 1,
+      endLine: reference.endLine,
+      column: 1,
+    }));
+  }
+
   async function focusTarget(targetId: string) {
     const target = targets.find((candidate) => candidate.id === targetId);
     if (!target) {
@@ -626,6 +642,46 @@ export function Workspace({
   }
 
   async function focusAnchor(anchor: string) {
+    const target = targets.find((candidate) => candidate.anchor === anchor || candidate.id === anchor);
+    if (target) {
+      await navigateToFile(target.path, { persist: true });
+
+      if (target.line) {
+        setDocumentSession((session) => revealDocument(session, {
+          kind: "focus",
+          path: target.path,
+          line: target.line!,
+          column: 1,
+        }));
+        return;
+      }
+
+      if (target.find) {
+        const content = await readMaybeFile(target.path);
+        const offset = content.indexOf(target.find);
+        if (offset >= 0) {
+          const line = lineNumberForOffset(content, offset);
+          const endLine = line + target.find.split("\n").length - 1;
+          setDocumentSession((session) => revealDocument(session, {
+            kind: "focus",
+            path: target.path,
+            line,
+            endLine,
+            column: 1,
+          }));
+          return;
+        }
+      }
+
+      setDocumentSession((session) => revealDocument(session, {
+        kind: "jump",
+        path: target.path,
+        line: 1,
+        column: 1,
+      }));
+      return;
+    }
+
     const edit = findEditByAnchor(anchor);
     if (!edit) {
       return;
@@ -635,8 +691,18 @@ export function Workspace({
     const content = await readMaybeFile(edit.path);
     const needle = edit.content.trim();
     const offset = needle ? content.indexOf(needle) : -1;
-    const line = offset >= 0 ? lineNumberForOffset(content, offset) : 1;
-    const lineCount = edit.content.split("\n").length;
+    if (offset < 0) {
+      setDocumentSession((session) => revealDocument(session, {
+        kind: "jump",
+        path: edit.path,
+        line: 1,
+        column: 1,
+      }));
+      return;
+    }
+
+    const line = lineNumberForOffset(content, offset);
+    const lineCount = needle.split("\n").length;
 
     setDocumentSession((session) => revealDocument(session, {
       kind: "focus",
@@ -988,13 +1054,22 @@ export function Workspace({
     }
 
     const position = nextPosition(project);
-    await persistProject({
-      ...position,
+    const nextProject = await updateProject({
+      id: project.id,
+      patch: {
+        ...position,
         completedBlocks: {
-        ...(project.completedBlocks ?? {}),
-        [block.id]: true
+          ...(project.completedBlocks ?? {}),
+          [block.id]: true
+        }
       }
     });
+    onProjectChange(nextProject);
+
+    const nextBlock = currentBlock(nextProject);
+    if (nextBlock?.kind === "edit") {
+      await navigateToFile(nextBlock.path, { persist: false });
+    }
   }
 
   async function handleSelectStep(stepIndex: number) {
@@ -1076,6 +1151,7 @@ export function Workspace({
       onRunCommand={onRunCommand}
       onOpenReference={openReferenceCard}
       onOpenConcept={openConceptCard}
+      onOpenFile={(reference) => void openInlineFile(reference)}
       onCreateFile={(path) => createWorkspaceFile(path)}
       onVerifyRecall={() => void handleVerifyRecall()}
       verifyingId={verifyingId}
@@ -1378,6 +1454,7 @@ export function Workspace({
             onClose={() => closeReferenceCard(reference.id)}
             onPinChange={(pinned) => setReferencePinned(reference.id, pinned)}
             onOpenLink={(link) => void focusReferenceLink(link)}
+            onOpenFile={(reference) => void openInlineFile(reference)}
           />
         ))}
       {openConceptIds
@@ -1391,6 +1468,7 @@ export function Workspace({
             theme={theme}
             onClose={() => closeConceptCard(concept.id)}
             onOpenConcept={openConceptCard}
+            onOpenFile={(reference) => void openInlineFile(reference)}
             onSaveChange={(saved) => setConceptSaved(concept.id, saved)}
           />
         ))}

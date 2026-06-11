@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { MarkdownBlock } from "./MarkdownBlock";
 import type { ReferenceCard as ReferenceCardModel } from "../types";
+import type { InlineFileRef } from "../lib/inlineRefs";
 
 export function ReferenceCard({
   card,
@@ -11,7 +12,8 @@ export function ReferenceCard({
   theme,
   onClose,
   onPinChange,
-  onOpenLink
+  onOpenLink,
+  onOpenFile
 }: {
   card: ReferenceCardModel;
   pinned: boolean;
@@ -19,6 +21,7 @@ export function ReferenceCard({
   onClose: () => void;
   onPinChange: (pinned: boolean) => void;
   onOpenLink: (link: ReferenceCardModel["links"][number]) => void;
+  onOpenFile: (reference: InlineFileRef) => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
 
@@ -42,7 +45,7 @@ export function ReferenceCard({
       unpinLabel="Unpin reference card"
     >
       <div className="reference-card__reveal">{card.reveal}</div>
-      <MarkdownBlock content={card.body} theme={theme} />
+      <MarkdownBlock content={card.body} theme={theme} onOpenFile={onOpenFile} />
       {card.links.length > 0 ? (
         <div className="reference-card__links">
           {card.links.map((link, index) => (
