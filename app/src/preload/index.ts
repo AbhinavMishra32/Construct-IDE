@@ -42,6 +42,14 @@ contextBridge.exposeInMainWorld("constructProjects", {
     ipcRenderer.invoke("construct:project:review-authoring", input),
   explainSelection: (input: unknown) =>
     ipcRenderer.invoke("construct:project:explain-selection", input),
+  startCodeGhostStream: (input: unknown) => {
+    ipcRenderer.send("construct:project:code-ghost:explain", input);
+  },
+  onCodeGhostToken: (callback: (payload: unknown) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
+    ipcRenderer.on("construct:project:code-ghost:token", listener);
+    return () => { ipcRenderer.off("construct:project:code-ghost:token", listener); };
+  },
   deleteProject: (input: unknown) =>
     ipcRenderer.invoke("construct:project:delete", input),
   gitStatus: (projectId: string) =>

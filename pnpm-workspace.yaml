@@ -1,6 +1,4 @@
 packages:
   - app
-  - runner
-  - pkg/*
-  - blueprints/*
+  - website
   - opaline/packages/*

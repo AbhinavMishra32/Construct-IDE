@@ -132,8 +132,8 @@ export function applySafeCompilerFixes(source: string, maxPasses = 20): { source
 
 function metadataFixes(document: ConstructDocument): ConstructFix[] {
   const token = document.tokens.find((item) => item.kind === "metadata" && item.text.trim().startsWith("@construct"));
-  if (!token || !/\bversion="0\.[123]"/.test(token.text)) return [];
-  const replacement = token.text.replace(/\bversion="(0\.[123])"/, 'spec="tape-$1"');
+  if (!token || !/\bversion="(0\.(?:1|2|3)(?:\.\d+)?)"/.test(token.text)) return [];
+  const replacement = token.text.replace(/\bversion="(0\.(?:1|2|3)(?:\.\d+)?)"/, 'spec="tape-$1"');
   return [{
     id: `normalize-spec:${token.line}`,
     title: "Normalize tape metadata",

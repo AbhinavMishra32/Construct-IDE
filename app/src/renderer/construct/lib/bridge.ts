@@ -150,6 +150,23 @@ export function onSelectionExplanationLog(callback: Parameters<ConstructProjects
   return api().onSelectionExplanationLog(callback);
 }
 
+export function startCodeGhostStream(input: {
+  requestId: string;
+  lineNumber: number;
+  lineContent: string;
+  language: string;
+  linesBefore: string[];
+  linesAfter: string[];
+}): void {
+  return api().startCodeGhostStream(input);
+}
+
+export function onCodeGhostToken(
+  callback: (payload: { requestId: string; lineNumber: number; token: string; done: boolean; error?: string }) => void
+): () => void {
+  return api().onCodeGhostToken(callback);
+}
+
 export function deleteProject(input: { projectId: string; force?: boolean }): Promise<import("../types").DeleteProjectCheck | { deleted: true }> {
   return api().deleteProject(input);
 }

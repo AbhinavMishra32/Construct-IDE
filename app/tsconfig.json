@@ -10,12 +10,6 @@
       ],
       "@opaline/ui/styles.css": [
         "opaline/packages/ui/src/styles.css"
-      ],
-      "@construct/shared": [
-        "pkg/shared/src/index.ts"
-      ],
-      "@construct/shared/*": [
-        "pkg/shared/src/*"
       ]
     },
     "types": [

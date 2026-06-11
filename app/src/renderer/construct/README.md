@@ -25,10 +25,13 @@ tape-0.2:
 tape-0.1 + focus anchors + reference cards + supported recall + agent verification + assistance tracking
 
 tape-0.3:
-tape-0.2 + concepts + guide.* pedagogy + inline navigation + rich support + knowledge links + git milestones + authoring lint
+tape-0.2 + concepts + legacy guide blocks + inline navigation + rich support + knowledge links + git milestones + authoring lint
+
+tape-0.3.1:
+tape-0.3 + canonical guide.* namespace + explicit file/docs/concept inline references
 ```
 
-Tape 0.3 keeps each concern in a distinct language layer:
+Tape 0.3.1 keeps each concern in a distinct language layer:
 
 ```text
 Core execution:
@@ -54,6 +57,11 @@ Navigation:
   [[concept:id|label]]
   [[docs:https://example.com|label]]
 ```
+
+For backwards compatibility, `tape-0.3` projects may still use legacy guide
+block names such as `::orientation`, `::problem`, `::mental-model`, and
+`::why-now`, and obvious legacy file refs such as `[[src/a.ts|open file]]`.
+The compiler accepts those forms and the runtime normalizes them internally.
 
 `guide.*` blocks are learner-facing understanding blocks. Verifier contracts stay
 nested under recall and are not rendered as ordinary Guide steps. `expect` is a

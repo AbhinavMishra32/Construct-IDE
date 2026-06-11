@@ -5,6 +5,7 @@ import type { editor as MonacoEditor } from "monaco-editor";
 import { monaco } from "../../monaco";
 import { lspClient } from "../lib/lspClient";
 import { emitConstructSelectionContext, excerptLines, normalizeSelectionText } from "../lib/selectionContext";
+import { initializeCodeGhost, disposeCodeGhost } from "../lib/codeGhostManager";
 import {
   CONSTRUCT_DARK,
   CONSTRUCT_LIGHT,
@@ -368,6 +369,7 @@ export function EditorPane({
       restoreCodeEditorServiceRef.current = null;
       ghostDecorationsRef.current?.clear();
       focusDecorationsRef.current?.clear();
+      disposeCodeGhost();
     };
   }, []);
 
@@ -470,6 +472,7 @@ export function EditorPane({
           editorRef.current = editor;
           ghostDecorationsRef.current = editor.createDecorationsCollection();
           focusDecorationsRef.current = editor.createDecorationsCollection();
+          initializeCodeGhost(editor);
 
           editor.updateOptions({
             readOnly: isGuided || isOutsideWorkspace,

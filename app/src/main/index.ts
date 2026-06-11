@@ -27,6 +27,7 @@ import {
   runConstructSelectionExplainAgent,
   type SelectionExplanationLogEntry
 } from "./constructSelectionExplainAgent";
+import { sendCodeGhostStreamToRenderer } from "./constructCodeGhostAgent";
 
 if (typeof process.loadEnvFile === "function") {
   const envPath = path.resolve(__dirname, "../../.env");
@@ -1775,6 +1776,34 @@ function installConstructProjectIpcHandlers(): void {
       progress({ status: "failed", message: "Explanation failed", detail: error instanceof Error ? error.message : String(error), tool: "agent" });
       throw error;
     }
+  });
+
+  ipcMain.on("construct:project:code-ghost:explain", (event, input) => {
+    const requestId = String(input?.requestId ?? "");
+    const lineNumber = Number(input?.lineNumber ?? 0);
+
+    if (!requestId || !lineNumber) {
+      event.sender.send("construct:project:code-ghost:token", {
+        requestId, lineNumber, token: "", done: true, error: "Invalid request"
+      });
+      return;
+    }
+
+    sendCodeGhostStreamToRenderer(
+      event.sender,
+      {
+        lineContent: String(input?.lineContent ?? ""),
+        language: String(input?.language ?? "unknown"),
+        linesBefore: Array.isArray(input?.linesBefore) ? input.linesBefore.map(String) : [],
+        linesAfter: Array.isArray(input?.linesAfter) ? input.linesAfter.map(String) : []
+      },
+      "construct:project:code-ghost:token",
+      requestId,
+      lineNumber
+    ).catch((err) => {
+      console.error("[code ghost] fatal:", err);
+      try { event.sender.send("construct:project:code-ghost:token", { requestId, lineNumber, token: "", done: true, error: String(err) }); } catch {}
+    });
   });
 
   ipcMain.handle("construct:project:terminal-create", async (_event, input) => {

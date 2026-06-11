@@ -9,8 +9,8 @@ export function parseInlineRef(rawTarget: string, rawLabel?: string, raw = `[[${
   const target = rawTarget.trim();
   const requestedLabel = rawLabel?.trim();
 
-  if (target.startsWith("file:")) {
-    let locator = target.slice(5);
+  if (target.startsWith("file:") || looksLikeLegacyFileTarget(target)) {
+    let locator = target.startsWith("file:") ? target.slice(5) : target;
     let anchor: string | undefined;
     let line: number | undefined;
     let endLine: number | undefined;
@@ -36,6 +36,11 @@ export function parseInlineRef(rawTarget: string, rawLabel?: string, raw = `[[${
 
   const id = target.startsWith("concept:") ? target.slice(8) : target;
   return { kind: "concept", id, label: requestedLabel || id, raw };
+}
+
+function looksLikeLegacyFileTarget(target: string): boolean {
+  if (target.startsWith("docs:") || target.startsWith("concept:")) return false;
+  return /(?:^|\/)[^/]+\.[a-zA-Z0-9]{1,8}(?::\d+(?:-\d+)?|#[a-zA-Z0-9_.-]+)?$/.test(target);
 }
 
 export function renderInlineRefsAsMarkdown(content: string): string {

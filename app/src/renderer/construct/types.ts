@@ -421,6 +421,21 @@ export type ConstructProjectsApi = {
     learningContext?: unknown;
   }): Promise<SelectionExplanationResult>;
   onSelectionExplanationLog(callback: (event: { requestId: string; entry: SelectionExplanationLogEntry }) => void): () => void;
+  startCodeGhostStream(input: {
+    requestId: string;
+    lineNumber: number;
+    lineContent: string;
+    language: string;
+    linesBefore: string[];
+    linesAfter: string[];
+  }): void;
+  onCodeGhostToken(callback: (payload: {
+    requestId: string;
+    lineNumber: number;
+    token: string;
+    done: boolean;
+    error?: string;
+  }) => void): () => void;
   deleteProject(input: { projectId: string; force?: boolean }): Promise<DeleteProjectCheck | { deleted: true }>;
   gitStatus(projectId: string): Promise<GitStatus>;
   gitCommit(input: { projectId: string; message: string; paths: string[] }): Promise<GitActionResult>;

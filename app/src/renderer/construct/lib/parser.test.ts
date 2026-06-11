@@ -206,6 +206,39 @@ export const value = 2;
     assert.equal(program.warnings.length, 0);
   });
 
+  it("parses tape-0.3.1 and legacy tape-0.3 guide names", () => {
+    const modern = parseConstructSource(`@construct spec="tape-0.3.1"
+@id "guide-modern"
+@title "Guide modern"
+@description "Modern guide namespace"
+::step id="s" title="S"
+::guide.why-now
+The namespaced guide block belongs to tape 0.3.1.
+::end
+::explain
+Done.
+::end
+::end`);
+    assert.equal(modern.spec, "tape-0.3.1");
+    assert.equal(modern.steps[0]?.blocks[0]?.kind, "guide");
+
+    const legacy = parseConstructSource(`@construct spec="tape-0.3"
+@id "guide-legacy"
+@title "Guide legacy"
+@description "Legacy guide namespace"
+::step id="s" title="S"
+::mental-model
+Older tapes can keep their pre-namespace guide block.
+::end
+::explain
+Done.
+::end
+::end`);
+    const firstBlock = legacy.steps[0]?.blocks[0];
+    assert.equal(firstBlock?.kind, "guide");
+    assert.equal(firstBlock?.kind === "guide" ? firstBlock.guideKind : "", "guide.mental-model");
+  });
+
   it("warns about missing file refs and pedagogy-leaking step titles", () => {
     const source = `@construct spec="tape-0.3"
 @id "lint-fixture"

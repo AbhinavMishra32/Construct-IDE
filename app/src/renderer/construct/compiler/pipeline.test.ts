@@ -32,6 +32,30 @@ Done.
     assert.equal(result.valid, true);
   });
 
+  it("accepts tape-0.3.1 metadata and old tape-0.3 guide blocks", () => {
+    const modern = validateConstructSource(`${header.replace('spec="tape-0.3"', 'spec="tape-0.3.1"')}
+::step id="s" title="S"
+::guide.why-now
+This changed in tape 0.3.1.
+::end
+::explain
+Done.
+::end
+::end`);
+    assert.equal(modern.valid, true);
+
+    const legacy = validateConstructSource(`${header}
+::step id="s" title="S"
+::mental-model
+Older tape-0.3 projects used guide names without the guide namespace.
+::end
+::explain
+Done.
+::end
+::end`);
+    assert.equal(legacy.valid, true);
+  });
+
   it("generates stable ids for runtime blocks that omit them", () => {
     const result = validateConstructSource(`${header}
 ::step id="run-app" title="Run the app"

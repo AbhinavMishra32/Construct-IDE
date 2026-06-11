@@ -57,7 +57,7 @@ export function parseConstructSource(source: string): ConstructProgram {
       continue;
     }
 
-    if (line.startsWith("::guide.")) {
+    if (isGuideLine(line)) {
       guides.push(parseGuideBlock(cursor, "project", guides.length));
       continue;
     }
@@ -216,7 +216,7 @@ function parseStep(cursor: Cursor): ConstructStep {
       continue;
     }
 
-    if (line.startsWith("::guide.")) {
+    if (isGuideLine(line)) {
       blocks.push(parseGuideBlock(cursor, required(attrs, "id"), blocks.length));
       continue;
     }
@@ -277,7 +277,7 @@ function parseEdit(cursor: Cursor): ConstructBlock {
       continue;
     }
 
-    if (line.startsWith("::guide.")) {
+    if (isGuideLine(line)) {
       guides.push(parseGuideBlock(cursor, required(attrs, "id"), guides.length));
       continue;
     }
@@ -507,7 +507,7 @@ function parseConcept(cursor: Cursor): ConceptCard {
       continue;
     }
 
-    if (line.startsWith("::guide.")) {
+    if (isGuideLine(line)) {
       guides.push(parseGuideBlock(cursor, required(attrs, "id"), guides.length));
       continue;
     }
@@ -518,13 +518,36 @@ function parseConcept(cursor: Cursor): ConceptCard {
   throw new Error(`Unclosed ::concept ${attrs.id || ""}.`);
 }
 
+const legacyGuideAliases: Record<string, string> = {
+  orientation: "guide.orientation",
+  problem: "guide.problem",
+  flow: "guide.flow",
+  promise: "guide.promise",
+  misconception: "guide.misconception",
+  trace: "guide.trace",
+  trusted: "guide.trusted",
+  untrusted: "guide.untrusted",
+  preflight: "guide.preflight",
+  knows: "guide.knows",
+  "can-explain": "guide.can-explain",
+  "why-now": "guide.why-now",
+  "mental-model": "guide.mental-model",
+  analogy: "guide.analogy"
+};
+
+const legacyGuideNames = new Set(Object.keys(legacyGuideAliases));
 const guideContainers = new Set(["guide.orientation", "guide.trace", "guide.preflight"]);
+
+function isGuideLine(line: string): boolean {
+  const name = line.match(/^::([a-zA-Z0-9_.-]+)\b/)?.[1];
+  return Boolean(name && (name.startsWith("guide.") || legacyGuideNames.has(name)));
+}
 
 function parseGuideBlock(cursor: Cursor, parentId: string, ordinal: number): GuideBlock {
   const opener = peek(cursor).trim();
   const match = opener.match(/^::([a-zA-Z0-9_.-]+)\b(.*)$/);
   if (!match) throw new Error(`Invalid guide block at line ${cursor.index + 1}.`);
-  const guideKind = match[1];
+  const guideKind = legacyGuideAliases[match[1]] ?? match[1];
   const attrs = parseAttributes(match[2]);
   const id = attrs.id || `${parentId}:${guideKind}:${ordinal + 1}`;
   if (!guideContainers.has(guideKind)) {
@@ -543,9 +566,10 @@ function parseGuideBlock(cursor: Cursor, parentId: string, ordinal: number): Gui
       cursor.index += 1;
       continue;
     }
-    if (line.startsWith("::guide.")) {
-      const nestedKind = line.match(/^::([a-zA-Z0-9_.-]+)/)?.[1] ?? "guide.section";
-      sections.push({ kind: nestedKind, content: parsePlainBody(cursor, `::${nestedKind}`) });
+    if (isGuideLine(line)) {
+      const nestedName = line.match(/^::([a-zA-Z0-9_.-]+)/)?.[1] ?? "guide.section";
+      const nestedKind = legacyGuideAliases[nestedName] ?? nestedName;
+      sections.push({ kind: nestedKind, content: parsePlainBody(cursor, `::${nestedName}`) });
       continue;
     }
     throw new Error(`Unexpected ${guideKind} line ${cursor.index + 1}: ${line}`);
@@ -887,17 +911,12 @@ function parseEditMode(value: string | undefined): "create" | "append" | "replac
 }
 
 function normalizeSpec(value: string): string {
-  if (value === "0.1") {
-    return "tape-0.1";
-  }
-  if (value === "0.2") {
-    return "tape-0.2";
-  }
-  if (value === "0.3") {
-    return "tape-0.3";
+  const trimmed = value.trim();
+  if (/^0\.(?:1|2|3)(?:\.\d+)?$/.test(trimmed)) {
+    return `tape-${trimmed}`;
   }
 
-  return value;
+  return trimmed;
 }
 
 function splitList(value: string | undefined): string[] {

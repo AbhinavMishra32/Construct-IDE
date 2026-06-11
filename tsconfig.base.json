@@ -15,15 +15,6 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "jsx": "react-jsx",
-    "baseUrl": ".",
-    "paths": {
-      "@construct/shared": [
-        "pkg/shared/src/index.ts"
-      ],
-      "@construct/shared/*": [
-        "pkg/shared/src/*"
-      ]
-    }
+    "baseUrl": "."
   }
 }
-

@@ -68,5 +68,6 @@ export function readDeclaredSpec(source: string): string {
 }
 
 export function normalizeSpec(value: string): string {
-  return /^0\.[123]$/.test(value) ? `tape-${value}` : value;
+  const trimmed = value.trim();
+  return /^0\.(?:1|2|3)(?:\.\d+)?$/.test(trimmed) ? `tape-${trimmed}` : trimmed;
 }

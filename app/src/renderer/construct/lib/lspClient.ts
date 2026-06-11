@@ -333,6 +333,8 @@ class LspClientClass {
         })
       );
 
+
+
       // 2. Definition
       this.disposables.push(
         monaco.languages.registerDefinitionProvider(lang, {
