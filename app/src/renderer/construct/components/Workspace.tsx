@@ -15,7 +15,7 @@ import {
 } from "@phosphor-icons/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
-import { HoverPreview, SidebarBottomSlot, SlotPanel, Timeline } from "@opaline/ui";
+import { AdaptiveSidecarLayout, HoverPreview, SidebarBottomSlot, SlotPanel, Timeline } from "@opaline/ui";
 import { logStore } from "../lib/logStore";
 import { lspClient } from "../lib/lspClient";
 import type { SlotTab } from "@opaline/ui";
@@ -1362,8 +1362,48 @@ export function Workspace({
     void closeTab(tabId);
   }, [openTabs, activeFilePath]);
 
+  const hasOpenContextCards = openReferenceIds.length > 0 || openConceptIds.length > 0;
+  const hasPinnedContextCard = openReferenceIds.some((referenceId) => pinnedReferenceIds.includes(referenceId));
+  const contextCards = hasOpenContextCards ? (
+    <div className="construct-context-card-stack" aria-label="Open reference and knowledge cards">
+      {openReferenceIds
+        .map((referenceId) => references.find((reference) => reference.id === referenceId))
+        .filter((reference): reference is (typeof references)[number] => Boolean(reference))
+        .map((reference) => (
+          <ReferenceCard
+            key={reference.id}
+            card={reference}
+            pinned={pinnedReferenceIds.includes(reference.id)}
+            theme={theme}
+            onClose={() => closeReferenceCard(reference.id)}
+            onPinChange={(pinned) => setReferencePinned(reference.id, pinned)}
+            onOpenLink={(link) => void focusReferenceLink(link)}
+          />
+        ))}
+      {openConceptIds
+        .map((conceptId) => project.program.concepts.find((concept) => concept.id === conceptId))
+        .filter((concept): concept is (typeof project.program.concepts)[number] => Boolean(concept))
+        .map((concept) => (
+          <KnowledgeCard
+            key={concept.id}
+            concept={concept}
+            saved={savedConceptIds.includes(concept.id)}
+            theme={theme}
+            onClose={() => closeConceptCard(concept.id)}
+            onOpenConcept={openConceptCard}
+            onSaveChange={(saved) => setConceptSaved(concept.id, saved)}
+          />
+        ))}
+    </div>
+  ) : null;
+
   return (
-    <div className="workspace workspace--editor-only">
+    <AdaptiveSidecarLayout
+      className="workspace workspace--editor-only construct-workspace-sidecar"
+      open={hasOpenContextCards}
+      pinned={hasPinnedContextCard}
+      sidecar={contextCards}
+    >
       <SlotPanel
         activeTabId={activeFilePath ?? undefined}
         tabs={editorSlotTabs}
@@ -1374,38 +1414,6 @@ export function Workspace({
         onTabChange={handleTabChange}
         onTabClose={handleTabClose}
       />
-      {openReferenceIds.length > 0 || openConceptIds.length > 0 ? (
-        <div className="construct-floating-card-layer" aria-label="Open reference and knowledge cards">
-          {openReferenceIds
-            .map((referenceId) => references.find((reference) => reference.id === referenceId))
-            .filter((reference): reference is (typeof references)[number] => Boolean(reference))
-            .map((reference) => (
-              <ReferenceCard
-                key={reference.id}
-                card={reference}
-                pinned={pinnedReferenceIds.includes(reference.id)}
-                theme={theme}
-                onClose={() => closeReferenceCard(reference.id)}
-                onPinChange={(pinned) => setReferencePinned(reference.id, pinned)}
-                onOpenLink={(link) => void focusReferenceLink(link)}
-              />
-            ))}
-          {openConceptIds
-            .map((conceptId) => project.program.concepts.find((concept) => concept.id === conceptId))
-            .filter((concept): concept is (typeof project.program.concepts)[number] => Boolean(concept))
-            .map((concept) => (
-              <KnowledgeCard
-                key={concept.id}
-                concept={concept}
-                saved={savedConceptIds.includes(concept.id)}
-                theme={theme}
-                onClose={() => closeConceptCard(concept.id)}
-                onOpenConcept={openConceptCard}
-                onSaveChange={(saved) => setConceptSaved(concept.id, saved)}
-              />
-            ))}
-        </div>
-      ) : null}
       <KnowledgeDialog
         concept={concepts.find((concept) => concept.id === selectedKnowledgeConceptId) ?? null}
         open={selectedKnowledgeConceptId != null}
@@ -1414,7 +1422,7 @@ export function Workspace({
         onOpenChange={(open) => { if (!open) setSelectedKnowledgeConceptId(null); }}
         onSaveChange={(saved) => { if (selectedKnowledgeConceptId) setConceptSaved(selectedKnowledgeConceptId, saved); }}
       />
-    </div>
+    </AdaptiveSidecarLayout>
   );
 }
 

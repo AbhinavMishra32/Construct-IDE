@@ -2992,33 +2992,23 @@
   height: 100%;
 }
 
-.construct-floating-card-layer {
-  position: absolute;
-  top: 48px;
-  right: 18px;
-  z-index: 30;
+.construct-workspace-sidecar,
+.construct-workspace-sidecar > .opaline-adaptive-sidecar-main {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.construct-context-card-stack {
   display: grid;
-  width: min(360px, calc(100% - 36px));
-  max-height: calc(100% - 72px);
+  max-height: 100%;
   gap: 10px;
   overflow: auto;
-  pointer-events: none;
+  padding: 0 0 4px;
 }
 
 .reference-card {
-  pointer-events: auto;
-  border: 1px solid var(--opaline-border-subtle);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--opaline-bg-elevated) 94%, transparent);
-  box-shadow: var(--opaline-shadow-popover, 0 18px 50px rgba(0, 0, 0, 0.2));
   color: var(--opaline-text-secondary);
-  overflow: hidden;
-  transition: box-shadow 160ms ease, border-color 160ms ease;
-  will-change: transform;
-}
-
-.reference-card[data-dragging="true"] {
-  box-shadow: var(--opaline-shadow-popover, 0 22px 60px rgba(0, 0, 0, 0.28));
 }
 
 .reference-card[data-pinned="true"] {
@@ -3030,66 +3020,7 @@
 }
 
 .knowledge-card[data-saved="true"] {
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--opaline-accent) 18%, transparent),
-    var(--opaline-shadow-popover, 0 18px 50px rgba(0, 0, 0, 0.2));
-}
-
-.reference-card__header {
-  display: flex;
-  align-items: start;
-  justify-content: space-between;
-  gap: 12px;
-  border-bottom: 1px solid var(--opaline-border-subtle);
-  padding: 10px 10px 9px 12px;
-  cursor: ns-resize;
-  touch-action: none;
-  user-select: none;
-}
-
-.reference-card__header h3 {
-  margin: 0;
-  color: var(--opaline-text-primary);
-  font-size: 13.5px;
-  font-weight: 650;
-}
-
-.reference-card__actions {
-  display: inline-flex;
-  gap: 5px;
-  cursor: default;
-}
-
-.reference-card__actions button {
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
-  padding: 0;
-}
-
-.reference-card__body-shell {
-  display: grid;
-  grid-template-rows: 1fr;
-  opacity: 1;
-  overflow: hidden;
-  transform: scaleY(1);
-  transform-origin: top;
-  transition:
-    grid-template-rows 250ms cubic-bezier(0.2, 0, 0, 1),
-    transform 250ms cubic-bezier(0.2, 0, 0, 1),
-    opacity 200ms ease;
-}
-
-.reference-card__body-shell[data-collapsed="true"] {
-  grid-template-rows: 0fr;
-  opacity: 0;
-  transform: scaleY(0);
-}
-
-.reference-card__body {
-  min-height: 0;
-  overflow: hidden;
+  border-color: color-mix(in srgb, var(--opaline-accent) 34%, var(--opaline-border-subtle));
 }
 
 .reference-card__reveal {
@@ -3104,7 +3035,7 @@
 }
 
 .reference-card .construct-markdown {
-  padding: 10px 12px 12px;
+  padding: 8px 0;
   color: var(--opaline-text-secondary);
   font-size: 12.5px;
   line-height: 1.55;
@@ -3141,7 +3072,7 @@
   flex-wrap: wrap;
   gap: 6px;
   border-top: 1px solid var(--opaline-border-subtle);
-  padding: 9px 12px 12px;
+  padding: 10px 0 0;
 }
 
 .reference-card__links button,
@@ -3158,6 +3089,29 @@
   gap: 6px;
   margin-top: 12px;
 }
+
+.construct-selection-explanation__menu { display: grid; gap: 1px; }
+.construct-selection-explanation__content { display: grid; gap: 12px; padding: 3px; }
+.construct-selection-explanation__result { min-width: 0; border-top: 1px solid var(--opaline-border-subtle); padding-top: 10px; }
+.construct-selection-explanation__result .construct-markdown { color: var(--opaline-text-secondary); font-size: 12.5px; line-height: 1.58; }
+.construct-selection-explanation__result .construct-markdown > :first-child { margin-top: 0; }
+.construct-selection-explanation__result .construct-markdown > :last-child { margin-bottom: 0; }
+.construct-selection-explanation__result .construct-markdown h1,
+.construct-selection-explanation__result .construct-markdown h2,
+.construct-selection-explanation__result .construct-markdown h3 { margin: 14px 0 6px; color: var(--opaline-text-primary); font-size: 13px; letter-spacing: 0; }
+.construct-selection-explanation__result .construct-markdown p,
+.construct-selection-explanation__result .construct-markdown li { color: var(--opaline-text-secondary); font-size: 12.5px; line-height: 1.58; }
+.construct-selection-explanation__result .construct-markdown-link { color: var(--opaline-text-primary); text-decoration-color: var(--opaline-border-strong); text-underline-offset: 2px; }
+.construct-selection-explanation__code-sources { display: grid; gap: 7px; border-top: 1px solid var(--opaline-border-subtle); margin-top: 10px; padding-top: 10px; }
+.construct-selection-explanation__code-sources > small { color: var(--opaline-text-tertiary); font-size: 10px; font-weight: 610; }
+.construct-selection-explanation__code-sources > div { display: flex; flex-wrap: wrap; gap: 5px; }
+.construct-selection-explanation__code-sources button { display: inline-flex; min-width: 0; min-height: 27px; align-items: center; gap: 5px; border: 1px solid var(--opaline-border-subtle); border-radius: 999px; padding: 0 8px; color: var(--opaline-text-secondary); background: var(--opaline-bg-tertiary); font: inherit; font-size: 10.5px; }
+.construct-selection-explanation__code-sources button:hover { border-color: var(--opaline-border-strong); color: var(--opaline-text-primary); }
+.construct-selection-explanation__code-sources button span { overflow: hidden; max-width: 210px; text-overflow: ellipsis; white-space: nowrap; }
+.construct-selection-explanation__error { display: grid; gap: 6px; border-top: 1px solid var(--opaline-border-subtle); padding-top: 11px; }
+.construct-selection-explanation__error strong { color: var(--opaline-text-primary); font-size: 12.5px; }
+.construct-selection-explanation__error p { margin: 0; color: var(--opaline-text-tertiary); font-size: 11px; line-height: 1.45; }
+.construct-selection-explanation__error button { width: fit-content; min-height: 27px; border: 0; border-radius: 7px; padding: 0 9px; color: var(--opaline-text-primary); background: var(--opaline-bg-tertiary); font: inherit; font-size: 11px; }
 
 .knowledge-panel,
 .git-panel {
@@ -5008,13 +4962,14 @@
 .monaco-editor .monaco-hover,
 .monaco-editor .suggest-widget,
 .monaco-editor .parameter-hints-widget {
-  background: color-mix(in srgb, var(--color-token-dropdown-background, var(--opaline-bg-elevated, #f3f3f3)) 92%, transparent) !important;
-  backdrop-filter: blur(14px) !important;
-  -webkit-backdrop-filter: blur(14px) !important;
-  border: 1px solid color-mix(in srgb, var(--color-token-border, var(--opaline-border-subtle, rgba(0, 0, 0, 0.12))) 65%, transparent) !important;
-  border-radius: 11px !important;
-  box-shadow: var(--shadow-xl-spread, 0 10px 30px -5px rgba(0,0,0,0.15), 0 10px 10px -5px rgba(0,0,0,0.1)) !important;
-  padding: 6px 10px !important;
+  background: color-mix(in srgb, var(--opaline-bg-elevated, #f5f5f7) 76%, transparent) !important;
+  background-color: color-mix(in srgb, var(--opaline-bg-elevated, #f5f5f7) 76%, transparent) !important;
+  backdrop-filter: blur(28px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(28px) saturate(180%) !important;
+  border: 1px solid color-mix(in srgb, var(--opaline-border-subtle, rgba(0, 0, 0, 0.1)) 35%, transparent) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 16px 48px -12px rgba(0,0,0,0.2), 0 0 0 0.5px color-mix(in srgb, var(--opaline-border-subtle, rgba(0,0,0,0.06)) 30%, transparent) !important;
+  padding: 10px 14px !important;
 }
 
 /* Autocomplete suggestion rows */
@@ -5050,13 +5005,14 @@
 /* Targets the main visible wrappers: .zone-widget-container and .peekview-container */
 .monaco-editor .zone-widget-container,
 .monaco-editor .peekview-widget .peekview-container {
-  background: color-mix(in srgb, var(--color-token-dropdown-background, var(--opaline-bg-elevated, #f3f3f3)) 92%, transparent) !important;
-  backdrop-filter: blur(14px) !important;
-  -webkit-backdrop-filter: blur(14px) !important;
-  border: 1px solid color-mix(in srgb, var(--color-token-border, var(--opaline-border-subtle, rgba(0, 0, 0, 0.12))) 65%, transparent) !important;
+  background: color-mix(in srgb, var(--opaline-bg-elevated, #f5f5f7) 82%, transparent) !important;
+  background-color: color-mix(in srgb, var(--opaline-bg-elevated, #f5f5f7) 82%, transparent) !important;
+  backdrop-filter: blur(28px) saturate(170%) !important;
+  -webkit-backdrop-filter: blur(28px) saturate(170%) !important;
+  border: 1px solid color-mix(in srgb, var(--opaline-border-subtle, rgba(0, 0, 0, 0.1)) 35%, transparent) !important;
   border-radius: 12px !important;
   overflow: hidden !important;
-  box-shadow: var(--shadow-xl-spread, 0 10px 30px -5px rgba(0,0,0,0.15), 0 10px 10px -5px rgba(0,0,0,0.1)) !important;
+  box-shadow: 0 16px 48px -12px rgba(0,0,0,0.2), 0 0 0 0.5px color-mix(in srgb, var(--opaline-border-subtle, rgba(0,0,0,0.06)) 30%, transparent) !important;
 }
 
 /* Ensure the parent absolute-positioned wrappers do not have borders, backgrounds, shadows, or clip overflow */
@@ -5076,10 +5032,11 @@
 .monaco-editor .zone-widget-container .head,
 .monaco-editor .peekview-widget .head,
 .monaco-editor .peekview-widget .peekview-title {
-  background: color-mix(in srgb, var(--color-token-dropdown-background, var(--opaline-bg-elevated, #f3f3f3)) 95%, transparent) !important;
-  backdrop-filter: blur(14px) !important;
-  -webkit-backdrop-filter: blur(14px) !important;
-  border-bottom: 1px solid color-mix(in srgb, var(--color-token-border, var(--opaline-border-subtle, rgba(0, 0, 0, 0.12))) 50%, transparent) !important;
+  background: color-mix(in srgb, var(--opaline-bg-elevated, #f5f5f7) 82%, transparent) !important;
+  background-color: color-mix(in srgb, var(--opaline-bg-elevated, #f5f5f7) 82%, transparent) !important;
+  backdrop-filter: blur(28px) saturate(170%) !important;
+  -webkit-backdrop-filter: blur(28px) saturate(170%) !important;
+  border-bottom: 1px solid color-mix(in srgb, var(--opaline-border-subtle, rgba(0, 0, 0, 0.1)) 30%, transparent) !important;
   font-family: var(--opaline-font-sans, system-ui, sans-serif) !important;
   color: var(--opaline-text-primary) !important;
 }
@@ -5103,8 +5060,8 @@
 
 .monaco-editor .peekview-widget .body .list-container,
 .monaco-editor .peekview-widget .peekview-list {
-  background: color-mix(in srgb, var(--color-token-dropdown-background, var(--opaline-bg-elevated, #f3f3f3)) 80%, transparent) !important;
-  border-left: 1px solid color-mix(in srgb, var(--color-token-border, var(--opaline-border-subtle, rgba(0, 0, 0, 0.12))) 40%, transparent) !important;
+  background: transparent !important;
+  border-left: 1px solid color-mix(in srgb, var(--color-token-border, var(--opaline-border-subtle, rgba(0, 0, 0, 0.12))) 35%, transparent) !important;
 }
 
 .monaco-editor .peekview-widget .head .peekview-title,
