@@ -28,6 +28,7 @@ export function KnowledgeCard({
       data-construct-explainable="knowledge-card"
       data-construct-explainable-label={concept.title}
       data-saved={saved ? "true" : "false"}
+      draggable
       eyebrow={concept.kind}
       title={concept.title}
       collapsed={collapsed}

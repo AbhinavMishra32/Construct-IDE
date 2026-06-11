@@ -27,6 +27,7 @@ export function ReferenceCard({
       className="reference-card"
       data-construct-explainable="knowledge-card"
       data-construct-explainable-label={card.title}
+      draggable
       eyebrow={card.kind}
       title={card.title}
       collapsed={collapsed}
