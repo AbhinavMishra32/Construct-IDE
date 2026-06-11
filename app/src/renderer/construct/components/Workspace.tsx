@@ -18,7 +18,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { HoverPreview, SidebarBottomSlot, SlotPanel, Timeline } from "@opaline/ui";
 import { logStore } from "../lib/logStore";
 import { lspClient } from "../lib/lspClient";
-import type { SlotPanelHandle, SlotTab, SlotLauncherItem } from "@opaline/ui";
+import type { SlotTab } from "@opaline/ui";
 import { EditorPane } from "./EditorPane";
 import { GuidePanel } from "./GuidePanel";
 import { ReferenceCard } from "./ReferenceCard";
@@ -41,6 +41,13 @@ import {
   writeFile
 } from "../lib/bridge";
 import { currentBlock, emptyBlockAssistance, nextPosition } from "../lib/runtime";
+import {
+  activateDocument,
+  closeDocument,
+  consumeDocumentReveal,
+  createDocumentSession,
+  revealDocument,
+} from "../lib/documentSession";
 import {
   readKnowledgeRecords,
   recordKnowledgeOpen,
@@ -176,11 +183,15 @@ export function Workspace({
   const [activeFileContent, setActiveFileContent] = useState("");
   const [fileContents, setFileContents] = useState<Record<string, string>>({});
   const fileContentsRef = useRef<Record<string, string>>({});
-  const [localActiveFilePath, setLocalActiveFilePath] = useState<string | null | undefined>(undefined);
-  const [openTabs, setOpenTabs] = useState<string[]>([]);
+  const [documentSession, setDocumentSession] = useState(() => {
+    const initialBlock = currentBlock(project);
+    const initialPath = project.activeFilePath
+      ?? (initialBlock?.kind === "edit" ? initialBlock.path : null)
+      ?? project.program.files[0]?.path
+      ?? null;
+    return createDocumentSession(normalizeOptionalWorkspacePath(initialPath, project.workspacePath));
+  });
   const [isStepsCollapsed, setIsStepsCollapsed] = useState(false);
-  const [pendingJump, setPendingJump] = useState<{ line: number; column: number } | null>(null);
-  const [focusRange, setFocusRange] = useState<{ line: number; endLine?: number; column?: number } | null>(null);
   const [openReferenceIds, setOpenReferenceIds] = useState<string[]>([]);
   const [pinnedReferenceIds, setPinnedReferenceIds] = useState<string[]>([]);
   const [openConceptIds, setOpenConceptIds] = useState<string[]>([]);
@@ -194,7 +205,6 @@ export function Workspace({
   const [gitBusyId, setGitBusyId] = useState<string | null>(null);
   const [verifyingId, setVerifyingId] = useState<string | null>(null);
   const [verificationLogs, setVerificationLogs] = useState<Record<string, VerificationLogEntry[]>>({});
-  const editorPanelRef = useRef<SlotPanelHandle>(null);
   const autoOpenedRecallRef = useRef<string | null>(null);
   const fileLoadSequenceRef = useRef(0);
 
@@ -209,12 +219,10 @@ export function Workspace({
   const block = currentBlock(project);
   const activeEdit = block?.kind === "edit" ? block : null;
   const relevantPath = activeEdit?.path ?? null;
-  const activeFilePath = normalizeOptionalWorkspacePath(
-    localActiveFilePath !== undefined
-      ? localActiveFilePath
-      : project.activeFilePath ?? relevantPath ?? project.program.files[0]?.path ?? null,
-    project.workspacePath
-  );
+  const activeFilePath = documentSession.activePath;
+  const openTabs = documentSession.tabs;
+  const pendingJump = documentSession.reveal?.kind === "jump" ? documentSession.reveal : null;
+  const focusRange = documentSession.reveal?.kind === "focus" ? documentSession.reveal : null;
   const editProgress = activeEdit ? typingProgress[activeEdit.id] ?? 0 : 0;
   const editComplete = activeEdit ? editProgress >= activeEdit.content.length : false;
   const editAnchor = activeEdit ? editAnchors[activeEdit.id] ?? "" : "";
@@ -264,17 +272,15 @@ export function Workspace({
   }, [fileList]);
 
   useEffect(() => {
-    setLocalActiveFilePath(normalizeOptionalWorkspacePath(project.activeFilePath ?? relevantPath ?? project.program.files[0]?.path ?? null, project.workspacePath));
+    setDocumentSession(createDocumentSession(
+      normalizeOptionalWorkspacePath(project.activeFilePath ?? relevantPath ?? project.program.files[0]?.path ?? null, project.workspacePath),
+    ));
   }, [project.id]);
 
   // Reset tabs when project changes
   useEffect(() => {
-    setOpenTabs(activeFilePath ? [activeFilePath] : []);
-    setLocalActiveFilePath(activeFilePath);
     setFileContents({});
     setActiveFileContent("");
-    setPendingJump(null);
-    setFocusRange(null);
     setOpenReferenceIds([]);
     setPinnedReferenceIds([]);
     setVerifyingId(null);
@@ -312,13 +318,6 @@ export function Workspace({
     };
   }, [project.id, project.completedBlocks, project.verificationResults]);
 
-  // Sync open tabs with active file
-  useEffect(() => {
-    if (activeFilePath) {
-      setOpenTabs((prev) => uniqueStrings([...prev.map(normalizeWorkspacePath).filter(Boolean), activeFilePath]));
-    }
-  }, [activeFilePath]);
-
   // Handle closing a tab
   async function closeTab(rawTabPath: string) {
     const tabPath = normalizeOptionalWorkspacePath(rawTabPath, project.workspacePath);
@@ -326,10 +325,8 @@ export function Workspace({
       return;
     }
 
-    const nextTabs = openTabs
-      .map(normalizeWorkspacePath)
-      .filter((path) => path && path !== tabPath);
-    setOpenTabs(nextTabs);
+    const nextSession = closeDocument(documentSession, tabPath);
+    setDocumentSession(nextSession);
     setFileContents((current) => {
       const next = { ...current };
       delete next[tabPath];
@@ -337,11 +334,10 @@ export function Workspace({
     });
 
     if (activeFilePath === tabPath) {
-      if (nextTabs.length > 0) {
-        const nextActive = nextTabs[nextTabs.length - 1];
+      if (nextSession.activePath) {
+        const nextActive = nextSession.activePath;
         await navigateToFile(nextActive, { persist: true });
       } else {
-        setLocalActiveFilePath(null);
         setActiveFileContent("");
         await persistProject({ activeFilePath: null });
       }
@@ -525,7 +521,7 @@ export function Workspace({
   }
 
   async function prepareRecall(recall: RecallBlock) {
-    setFocusRange(null);
+    setDocumentSession((session) => ({ ...session, reveal: null }));
     const targetPath = await resolveRecallPath(recall);
 
     if (targetPath) {
@@ -583,7 +579,12 @@ export function Workspace({
 
     if (link.file) {
       await navigateToFile(link.file, { persist: true });
-      setFocusRange({ line: 1, column: 1 });
+      setDocumentSession((session) => revealDocument(session, {
+        kind: "focus",
+        path: link.file!,
+        line: 1,
+        column: 1,
+      }));
     }
   }
 
@@ -601,7 +602,12 @@ export function Workspace({
     }
 
     if (target.line) {
-      setFocusRange({ line: target.line, column: 1 });
+      setDocumentSession((session) => revealDocument(session, {
+        kind: "focus",
+        path: target.path,
+        line: target.line!,
+        column: 1,
+      }));
       return;
     }
 
@@ -609,10 +615,12 @@ export function Workspace({
       const content = await readMaybeFile(target.path);
       const offset = content.indexOf(target.find);
       if (offset >= 0) {
-        setFocusRange({
+        setDocumentSession((session) => revealDocument(session, {
+          kind: "focus",
+          path: target.path,
           line: lineNumberForOffset(content, offset),
-          column: 1
-        });
+          column: 1,
+        }));
       }
     }
   }
@@ -630,11 +638,13 @@ export function Workspace({
     const line = offset >= 0 ? lineNumberForOffset(content, offset) : 1;
     const lineCount = edit.content.split("\n").length;
 
-    setFocusRange({
+    setDocumentSession((session) => revealDocument(session, {
+      kind: "focus",
+      path: edit.path,
       line,
       endLine: Math.max(line, line + lineCount - 1),
-      column: 1
-    });
+      column: 1,
+    }));
   }
 
   function findEditByAnchor(anchor: string): EditBlock | null {
@@ -700,8 +710,7 @@ export function Workspace({
     setFileContents((current) => ({ ...current, [nextPath]: file }));
     fileContentsRef.current = { ...fileContentsRef.current, [nextPath]: file };
     setActiveFileContent(file);
-    setLocalActiveFilePath(nextPath);
-    setOpenTabs((current) => uniqueStrings([...current.map(normalizeWorkspacePath).filter(Boolean), nextPath]));
+    setDocumentSession((session) => activateDocument(session, nextPath));
     if (options.persist !== false && project.activeFilePath !== nextPath) {
       await persistProject({ activeFilePath: nextPath });
     }
@@ -1127,7 +1136,7 @@ export function Workspace({
           <small>{savedConcepts.length}/{introducedConcepts.length}</small>
         </div>}
       >
-        <section className="construct-sidebar-knowledge" aria-label="Project knowledge">
+        <section className="construct-sidebar-knowledge" aria-label="Project knowledge" data-construct-explainable="knowledge-card" data-construct-explainable-label="Project knowledge">
           {availableConcepts.length > 0 ? (
             <div className="construct-sidebar-knowledge__list">
               {availableConcepts.map((concept) => renderSidebarConceptRow(concept, false, currentConceptIds.includes(concept.id)))}
@@ -1289,75 +1298,59 @@ export function Workspace({
     return () => onKnowledgePanelChange?.(null);
   }, [onKnowledgePanelChange, sidebarKnowledgeContent]);
 
-  // Build SlotPanel tabs from openTabs state
+  // The tab strip owns document identity while one persistent Monaco instance
+  // switches models beneath it. This avoids disposing editor services on every
+  // tab close or navigation event.
   const editorSlotTabs: SlotTab[] = useMemo(() => {
     return uniqueStrings(openTabs.map(normalizeWorkspacePath).filter(Boolean)).map((tabPath) => {
       const filename = tabPath.split("/").pop() || "";
       const isActiveTab = tabPath === activeFilePath;
-      const tabContent = fileContents[tabPath] ?? (isActiveTab ? activeFileContent : "");
-      const tabActiveEdit =
-        isActiveTab && isActiveEditReady ? activeEdit : null;
       return {
         id: tabPath,
         title: filename,
         icon: iconForFile(filename),
         closable: true,
         active: isActiveTab,
-        content: (
-          <EditorPane
-            path={tabPath}
-            workspacePath={project.workspacePath}
-            content={tabContent}
-            activeEdit={tabActiveEdit}
-            editAnchor={isActiveTab ? editAnchor : ""}
-            editProgress={isActiveTab ? editProgress : 0}
-            onFreeEdit={(content) => void handleFreeEditForPath(tabPath, content)}
-            onGuidedProgress={(progress) => void handleGuidedProgress(progress)}
-            onRevealLine={() => void handleRevealLineAssistance()}
-            onSave={() => void handleManualSaveForPath(tabPath)}
-            theme={theme}
-            pendingJump={isActiveTab ? pendingJump : null}
-            focusRange={isActiveTab ? focusRange : null}
-            onJumpComplete={() => setPendingJump(null)}
-            onOpenFileAndJump={async (path, line, col) => {
-              await openFileAndRecord(path);
-              setPendingJump({ line, column: col });
-            }}
-          />
-        ),
+        content: null,
       };
     });
-  }, [openTabs, activeFilePath, activeFileContent, fileContents, activeEdit, isActiveEditReady, editAnchor, editProgress, pendingJump, focusRange, theme]);
+  }, [openTabs, activeFilePath]);
 
-  // Launcher items for the editor + button
-  const editorLauncherItems: SlotLauncherItem[] = useMemo(() => [
-    {
-      type: "open-file",
-      title: "Open file",
-      description: "Browse and open a project file",
-      icon: <File size={16} weight="duotone" />,
-      shortcut: "⌘P",
-      createTab: () => ({
-        id: `__file-chooser-${Date.now()}`,
-        title: "Open file",
-        icon: <MagnifyingGlass size={12} weight="bold" />,
-        closable: true,
-        content: (
-          <FileChooserContent
-            files={fileList}
-            onSelectFile={(path) => {
-              void openFileAndRecord(path);
-            }}
-          />
-        ),
-      }),
-    },
-  ], [fileList]);
+  const editorOutlet = (
+    <EditorPane
+      path={activeFilePath}
+      workspacePath={project.workspacePath}
+      content={activeFilePath ? fileContents[activeFilePath] ?? activeFileContent : ""}
+      activeEdit={isActiveEditReady ? activeEdit : null}
+      editAnchor={editAnchor}
+      editProgress={editProgress}
+      onFreeEdit={(content) => activeFilePath && void handleFreeEditForPath(activeFilePath, content)}
+      onGuidedProgress={(progress) => void handleGuidedProgress(progress)}
+      onRevealLine={() => void handleRevealLineAssistance()}
+      onSave={() => activeFilePath && void handleManualSaveForPath(activeFilePath)}
+      theme={theme}
+      pendingJump={pendingJump ? { line: pendingJump.line, column: pendingJump.column ?? 1 } : null}
+      focusRange={focusRange}
+      onJumpComplete={() => {
+        if (documentSession.reveal) {
+          setDocumentSession((session) => consumeDocumentReveal(session, documentSession.reveal!.id));
+        }
+      }}
+      onOpenFileAndJump={async (path, line, col) => {
+        await navigateToFile(path, { persist: true });
+        setDocumentSession((session) => revealDocument(session, {
+          kind: "jump",
+          path,
+          line,
+          column: col,
+        }));
+        onFileOpened?.(path);
+      }}
+    />
+  );
 
   // When the user switches tabs in the SlotPanel, load that file's content
   const handleTabChange = useCallback((tabId: string) => {
-    // Don't switch to file-chooser tabs
-    if (tabId.startsWith("__file-chooser-")) return;
     const nextPath = normalizeOptionalWorkspacePath(tabId, project.workspacePath);
     if (nextPath && nextPath !== activeFilePath) {
       void openFileAndRecord(nextPath);
@@ -1372,11 +1365,10 @@ export function Workspace({
   return (
     <div className="workspace workspace--editor-only">
       <SlotPanel
-        ref={editorPanelRef}
         activeTabId={activeFilePath ?? undefined}
         tabs={editorSlotTabs}
         syncTabs
-        launcherItems={editorLauncherItems}
+        outlet={editorOutlet}
         className="construct-editor-slot-panel"
         ariaLabel="Editor file tabs"
         onTabChange={handleTabChange}

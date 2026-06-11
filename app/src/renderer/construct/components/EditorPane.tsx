@@ -100,6 +100,11 @@ export function EditorPane({
   const editorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
   const ghostDecorationsRef = useRef<MonacoEditor.IEditorDecorationsCollection | null>(null);
   const focusDecorationsRef = useRef<MonacoEditor.IEditorDecorationsCollection | null>(null);
+  const editorDisposablesRef = useRef<Array<{ dispose: () => void }>>([]);
+  const restoreCodeEditorServiceRef = useRef<(() => void) | null>(null);
+  const pathRef = useRef(path);
+  const saveRef = useRef(onSave);
+  const openFileAndJumpRef = useRef(onOpenFileAndJump);
   const guidedStateRef = useRef<GuidedState>({
     activeEdit,
     editProgress,
@@ -111,6 +116,10 @@ export function EditorPane({
   const [buttonTop, setButtonTop] = useState<number | null>(null);
   const [showSkipButton, setShowSkipButton] = useState(false);
   const editorTheme = useEditorTheme(theme);
+
+  pathRef.current = path;
+  saveRef.current = onSave;
+  openFileAndJumpRef.current = onOpenFileAndJump;
 
 
 
@@ -287,11 +296,11 @@ export function EditorPane({
     };
   }, [activeEdit, editProgress, onFreeEdit, onGuidedProgress, onRevealLine]);
 
-  // Clean up stale editor refs when files/edits change
+  // A single editor instance switches Monaco models as documents change.
+  // Reset document-local state without disposing the editor service container.
   useEffect(() => {
-    editorRef.current = null;
-    ghostDecorationsRef.current = null;
-    focusDecorationsRef.current = null;
+    ghostDecorationsRef.current?.clear();
+    focusDecorationsRef.current?.clear();
     localProgressRef.current = editProgress;
     lastSentProgressRef.current = editProgress;
   }, [path, activeEdit?.id]);
@@ -335,7 +344,7 @@ export function EditorPane({
     editor.updateOptions({
       readOnly: isGuided || isOutsideWorkspace,
       readOnlyMessage: isGuided
-        ? { value: "Type the highlighted ghost text manually to advance." }
+        ? { value: "Type the highlighted implementation to advance." }
         : { value: "This file is outside the workspace and is read-only." }
     });
 
@@ -352,6 +361,13 @@ export function EditorPane({
       if (debounceTimeoutRef.current) {
         clearTimeout(debounceTimeoutRef.current);
       }
+      for (const disposable of editorDisposablesRef.current.splice(0)) {
+        disposable.dispose();
+      }
+      restoreCodeEditorServiceRef.current?.();
+      restoreCodeEditorServiceRef.current = null;
+      ghostDecorationsRef.current?.clear();
+      focusDecorationsRef.current?.clear();
     };
   }, []);
 
@@ -370,6 +386,7 @@ export function EditorPane({
   useEffect(() => {
     const editor = editorRef.current;
     if (!editor || !focusRange) {
+      focusDecorationsRef.current?.clear();
       return;
     }
 
@@ -415,7 +432,6 @@ export function EditorPane({
       <ContextMenuTrigger asChild>
         <section className="editor-pane" data-guided={isGuided ? "true" : "false"} data-wrong={wrongInput ? "true" : "false"}>
           <Editor
-            key={absolutePath}
             path={absolutePath}
             className="editor-pane__monaco"
             height="100%"
@@ -458,7 +474,7 @@ export function EditorPane({
           editor.updateOptions({
             readOnly: isGuided || isOutsideWorkspace,
             readOnlyMessage: isGuided
-              ? { value: "Type the highlighted ghost text manually to advance." }
+              ? { value: "Type the highlighted implementation to advance." }
               : { value: "This file is outside the workspace and is read-only." }
           });
 
@@ -466,7 +482,7 @@ export function EditorPane({
           const codeEditorService = (editor as any)._codeEditorService;
           if (codeEditorService) {
             const originalOpenCodeEditor = codeEditorService.openCodeEditor.bind(codeEditorService);
-            codeEditorService.openCodeEditor = async (input: any, source: any, sideBySide: any) => {
+            const openCodeEditor = async (input: any, source: any, sideBySide: any) => {
               const targetUri = input.resource;
               if (targetUri && targetUri.scheme === "file") {
                 const targetPath = targetUri.fsPath || targetUri.path;
@@ -474,19 +490,25 @@ export function EditorPane({
                 const line = selection ? selection.startLineNumber : 1;
                 const column = selection ? selection.startColumn : 1;
 
-                if (onOpenFileAndJump) {
+                if (openFileAndJumpRef.current) {
                   const relPath = lspClient.getRelativePath(targetPath);
-                  onOpenFileAndJump(relPath, line, column);
+                  openFileAndJumpRef.current(relPath, line, column);
                   return editor;
                 }
               }
               return originalOpenCodeEditor(input, source, sideBySide);
             };
+            codeEditorService.openCodeEditor = openCodeEditor;
+            restoreCodeEditorServiceRef.current = () => {
+              if (codeEditorService.openCodeEditor === openCodeEditor) {
+                codeEditorService.openCodeEditor = originalOpenCodeEditor;
+              }
+            };
           }
 
-          editor.onKeyDown((event) => {
+          editorDisposablesRef.current.push(editor.onKeyDown((event) => {
             const current = guidedStateRef.current;
-            if (!current.activeEdit || current.activeEdit.path !== path) {
+            if (!current.activeEdit) {
               // Even outside active edit, support Meta+S save logic
               if ((event.metaKey || event.ctrlKey) && event.keyCode === monaco.KeyCode.KeyS) {
                 event.preventDefault();
@@ -495,7 +517,7 @@ export function EditorPane({
                 if (model) {
                   lspClient.notifySaveModel(model);
                 }
-                onSave?.();
+                saveRef.current?.();
               }
               return;
             }
@@ -526,7 +548,7 @@ export function EditorPane({
               if (model) {
                 lspClient.notifySaveModel(model);
               }
-              onSave?.();
+              saveRef.current?.();
               return;
             }
 
@@ -560,17 +582,17 @@ export function EditorPane({
 
             setWrongInput(true);
             window.setTimeout(() => setWrongInput(false), 170);
-          });
+          }));
 
-          editor.onDidScrollChange(() => {
+          editorDisposablesRef.current.push(editor.onDidScrollChange(() => {
             updateSkipButtonPosition();
-          });
+          }));
 
-          editor.onDidChangeCursorPosition(() => {
+          editorDisposablesRef.current.push(editor.onDidChangeCursorPosition(() => {
             updateSkipButtonPosition();
-          });
+          }));
 
-          editor.onMouseUp(() => {
+          editorDisposablesRef.current.push(editor.onMouseUp(() => {
             const model = editor.getModel();
             const selection = editor.getSelection();
             if (!model || !selection || selection.isEmpty()) return;
@@ -583,24 +605,23 @@ export function EditorPane({
             emitConstructSelectionContext({
               text,
               source: "editor",
-              sourceLabel: path,
+              sourceLabel: pathRef.current ?? "Editor",
               contextText: excerptLines(model.getValue(), selection.startLineNumber, selection.endLineNumber),
               anchor: {
                 x: editorBounds.left + visiblePosition.left,
                 y: editorBounds.top + visiblePosition.top + visiblePosition.height
               },
-              filePath: path,
+              filePath: pathRef.current ?? undefined,
               language,
               lineStart: selection.startLineNumber,
               lineEnd: selection.endLineNumber
             });
-          });
+          }));
 
           localProgressRef.current = editProgress;
           lastRevealedLineRef.current = null;
           updateEditorState();
 
-          editor.focus();
         }}
       />
       {buttonTop !== null && (
@@ -635,7 +656,7 @@ export function EditorPane({
       {isGuided && activeEdit && (
         <div className="construct-editor-ghost-badge">
           <div className="construct-editor-ghost-badge__copy">
-          <span>Guided write</span>
+          <span>Code step</span>
             <strong>{Math.min(totalLines, typedLines)} / {totalLines} lines</strong>
           </div>
           <div className="construct-editor-ghost-badge__meter" aria-hidden="true">
