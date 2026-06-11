@@ -6,7 +6,7 @@ import type { ConstructDiagnostic } from "./types";
 export type AuthoringSuggestion = {
   id: string;
   severity: "info" | "warning" | "error";
-  category: "teaching-order" | "missing-concept" | "bookish-support" | "recall-too-hard" | "ghost-too-large" | "missing-reference" | "missing-doc-link" | "git-milestone" | "other";
+  category: "teaching-order" | "missing-concept" | "bookish-support" | "recall-too-hard" | "code-step-too-large" | "missing-reference" | "missing-doc-link" | "git-milestone" | "other";
   title: string;
   reason: string;
   affectedLines?: number[];

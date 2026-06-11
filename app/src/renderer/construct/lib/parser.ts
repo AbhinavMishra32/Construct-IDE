@@ -1037,7 +1037,7 @@ function lintProgram(program: ConstructProgram): ConstructLintWarning[] {
           id: `large-ghost-edit:${block.id}`,
           severity: "warning",
           target: block.id,
-          message: "Ghost edit block is large. Consider splitting it into smaller guided edits."
+          message: "Code step is large. Consider splitting it into smaller implementation steps."
         });
       }
 

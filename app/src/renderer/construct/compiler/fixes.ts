@@ -189,7 +189,7 @@ function attributeFixes(document: ConstructDocument): ConstructFix[] {
     return [{
       id: `typing-ghost:${token.line}`,
       title: "Normalize guided typing mode",
-      description: "Renamed the legacy guided typing value to the current ghost typing mode.",
+      description: "Normalized the legacy guided typing value to the current code-entry protocol mode.",
       safety: "safe-auto" as const,
       kind: "rename-block" as const,
       line: token.line,

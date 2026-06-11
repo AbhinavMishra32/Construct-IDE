@@ -1,4 +1,5 @@
-import type { ConstructProgram, RecallBlock } from "../types";
+import type { ConstructBlock, ConstructProgram, GuideBlock, RecallBlock } from "../types";
+import { collectInlineRefs } from "../lib/inlineRefs";
 import type { ConstructDiagnostic, ConstructDocument, ConstructFix, ConstructNode } from "./types";
 
 export function lintConstructProgram(program: ConstructProgram, document: ConstructDocument): { diagnostics: ConstructDiagnostic[]; suggestions: ConstructFix[] } {
@@ -8,6 +9,36 @@ export function lintConstructProgram(program: ConstructProgram, document: Constr
   const referenceIds = new Set(program.references.map((reference) => reference.id));
   const completionIds = new Set<string>();
   const proposedConcepts = new Set<string>();
+  const introducedConceptIds = new Set<string>();
+  const knownFiles = new Set(program.files.map((file) => file.path));
+  const knownAnchorsByPath = new Map<string, Set<string>>();
+
+  for (const target of program.targets) {
+    knownFiles.add(target.path);
+    const anchors = knownAnchorsByPath.get(target.path) ?? new Set<string>();
+    anchors.add(target.id);
+    if (target.anchor) anchors.add(target.anchor);
+    knownAnchorsByPath.set(target.path, anchors);
+  }
+  for (const step of program.steps) {
+    for (const block of step.blocks) {
+      if (block.kind !== "edit") continue;
+      knownFiles.add(block.path);
+      if (!block.anchor) continue;
+      const anchors = knownAnchorsByPath.get(block.path) ?? new Set<string>();
+      anchors.add(block.anchor);
+      knownAnchorsByPath.set(block.path, anchors);
+    }
+  }
+
+  if (program.audience === "zero-prerequisite" && !hasOpeningOrientation(program)) {
+    diagnostics.push(lintDiagnostic(
+      program.spec,
+      "W_ORIENTATION_MISSING",
+      "Zero-prerequisite tapes should begin with a system picture, trace, or mental model.",
+      program.id
+    ));
+  }
 
   for (const concept of program.concepts) {
     if (!concept.summary.trim()) diagnostics.push(lintDiagnostic(program.spec, "W_CONCEPT_SUMMARY", `Concept "${concept.title}" has no summary.`, concept.id));
@@ -15,13 +46,28 @@ export function lintConstructProgram(program: ConstructProgram, document: Constr
   }
 
   for (const step of program.steps) {
+    for (const conceptId of step.requires) {
+      if (!conceptIds.has(conceptId)) {
+        diagnostics.push(lintDiagnostic(program.spec, "W_STEP_REQUIRES_MISSING", `Step "${step.title}" requires concept "${conceptId}" but no ::concept card exists.`, step.id));
+      } else if (!introducedConceptIds.has(conceptId)) {
+        diagnostics.push(lintDiagnostic(program.spec, "W_STEP_REQUIRES_ORDER", `Step "${step.title}" requires concept "${conceptId}" before an earlier step teaches it.`, step.id));
+      }
+    }
+    for (const conceptId of step.teaches) {
+      if (!conceptIds.has(conceptId)) diagnostics.push(lintDiagnostic(program.spec, "W_STEP_TEACHES_MISSING", `Step "${step.title}" teaches concept "${conceptId}" but no ::concept card exists.`, step.id));
+    }
+    if (/\b(Reveal why|Picture before plumbing|Problem before tool|Mental model before code|Teach the|Introduce concept)\b/i.test(step.title)) {
+      diagnostics.push(lintDiagnostic(program.spec, "W_GUIDE_TITLE_PEDAGOGY_LEAK", `Step title "${step.title}" exposes an authoring rule. Use a natural engineering milestone title.`, step.id));
+    }
+
     for (const block of step.blocks) {
       completionIds.add(block.id);
       if (block.kind === "edit") {
         const lines = block.content.split("\n").length;
-        if (lines > 120) diagnostics.push(lintDiagnostic(program.spec, "W_GHOST_TOO_LARGE", `Ghost edit "${block.id}" is ${lines} lines. Split it into smaller guided edits.`, block.id));
-        if (/\.(md|mdx|txt|rst)$/i.test(block.path)) diagnostics.push(lintDiagnostic(program.spec, "W_DOCS_GHOST_TYPED", `Documentation file "${block.path}" is ghost-typed. Prefer an initial ::file.`, block.id));
+        if (lines > 120) diagnostics.push(lintDiagnostic(program.spec, "W_GHOST_TOO_LARGE", `Code step "${block.id}" is ${lines} lines. Split it into smaller implementation steps.`, block.id));
+        if (/\.(md|mdx|txt|rst)$/i.test(block.path)) diagnostics.push(lintDiagnostic(program.spec, "W_DOCS_GHOST_TYPED", `Documentation file "${block.path}" uses guided code entry. Prefer an initial ::file.`, block.id));
       }
+      lintBlockReferences(program, block, knownFiles, knownAnchorsByPath, diagnostics);
       if (block.kind !== "recall") continue;
       const recallNode = findNodeById(document.root, "recall", block.id);
       if (!block.support.trim() && block.supportSections.length === 0) {
@@ -46,13 +92,64 @@ export function lintConstructProgram(program: ConstructProgram, document: Constr
         if (missing.length > 0) diagnostics.push(lintDiagnostic(program.spec, "W_INCOMPLETE_VERIFY", `Verifier "${block.verify.id}" is missing ${missing.join(", ")}.`, block.verify.id));
       }
     }
+    step.teaches.forEach((conceptId) => introducedConceptIds.add(conceptId));
   }
+
+  for (const guide of program.guides) lintTextReferences(program, guideText(guide), guide.id, knownFiles, knownAnchorsByPath, diagnostics);
+  for (const concept of program.concepts) {
+    lintTextReferences(program, [concept.summary, concept.why, concept.commonMistake ?? "", concept.example, ...concept.guides.flatMap(guideText)], concept.id, knownFiles, knownAnchorsByPath, diagnostics);
+  }
+  for (const reference of program.references) lintTextReferences(program, [reference.body], reference.id, knownFiles, knownAnchorsByPath, diagnostics);
 
   for (const git of program.gitMilestones) {
     if (!completionIds.has(git.after)) diagnostics.push(lintDiagnostic(program.spec, "W_UNKNOWN_GIT_TARGET", `Git milestone "${git.id}" references unknown target "${git.after}".`, git.id));
   }
 
   return { diagnostics, suggestions };
+}
+
+function hasOpeningOrientation(program: ConstructProgram): boolean {
+  return program.guides.some((guide) => guide.guideKind === "guide.orientation")
+    || program.steps[0]?.blocks.some((block) => block.kind === "guide" && ["guide.orientation", "guide.trace", "guide.mental-model"].includes(block.guideKind)) === true;
+}
+
+function lintBlockReferences(
+  program: ConstructProgram,
+  block: ConstructBlock,
+  knownFiles: Set<string>,
+  knownAnchorsByPath: Map<string, Set<string>>,
+  diagnostics: ConstructDiagnostic[]
+) {
+  let texts: string[] = [];
+  if (block.kind === "guide") texts = guideText(block);
+  else if (block.kind === "edit") texts = [...block.notes.map((note) => note.content), ...block.guides.flatMap(guideText)];
+  else if (block.kind === "recall") texts = [block.task, block.support, ...block.supportSections.map((section) => section.content)];
+  else if (block.kind !== "run") texts = [block.content];
+  lintTextReferences(program, texts, block.id, knownFiles, knownAnchorsByPath, diagnostics);
+}
+
+function guideText(guide: GuideBlock): string[] {
+  return [guide.content, ...guide.sections.map((section) => section.content)];
+}
+
+function lintTextReferences(
+  program: ConstructProgram,
+  texts: string[],
+  blockId: string,
+  knownFiles: Set<string>,
+  knownAnchorsByPath: Map<string, Set<string>>,
+  diagnostics: ConstructDiagnostic[]
+) {
+  for (const reference of texts.flatMap(collectInlineRefs)) {
+    if (reference.kind !== "file") continue;
+    if (!knownFiles.has(reference.path)) {
+      diagnostics.push(lintDiagnostic(program.spec, "W_FILE_REF_MISSING", `${reference.raw} points to a file that is not created by ::files or ::edit.`, blockId));
+      continue;
+    }
+    if (reference.anchor && !knownAnchorsByPath.get(reference.path)?.has(reference.anchor)) {
+      diagnostics.push(lintDiagnostic(program.spec, "W_FILE_REF_ANCHOR_MISSING", `${reference.raw} points to an unknown anchor in "${reference.path}".`, blockId));
+    }
+  }
 }
 
 function addSupportFix(recall: RecallBlock, node: ConstructNode): ConstructFix {

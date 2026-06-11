@@ -118,4 +118,27 @@ Define a schema.
     assert.ok(result.suggestions.some((fix) => fix.kind === "add-missing-support"));
     assert.ok(result.suggestions.some((fix) => fix.kind === "add-concept-card"));
   });
+
+  it("reports file navigation and teaching-order warnings before project creation", () => {
+    const result = validateConstructSource(`${header}
+@audience "zero-prerequisite"
+::concept id="known.concept" title="Known concept"
+::summary
+Known.
+::end
+::end
+::step id="s" title="Reveal why the boundary works" requires="known.concept missing.concept"
+::explain
+Open [[file:src/missing.ts|the boundary]].
+::end
+::end`);
+
+    const codes = result.diagnostics.map((diagnostic) => diagnostic.code);
+    assert.ok(codes.includes("tape-0.3/W_ORIENTATION_MISSING"));
+    assert.ok(codes.includes("tape-0.3/W_STEP_REQUIRES_MISSING"));
+    assert.ok(codes.includes("tape-0.3/W_STEP_REQUIRES_ORDER"));
+    assert.ok(codes.includes("tape-0.3/W_GUIDE_TITLE_PEDAGOGY_LEAK"));
+    assert.ok(codes.includes("tape-0.3/W_FILE_REF_MISSING"));
+    assert.equal(result.valid, true);
+  });
 });
