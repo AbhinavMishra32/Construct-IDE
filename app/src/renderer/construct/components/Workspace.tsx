@@ -1498,6 +1498,8 @@ export function Workspace({
         saved={selectedKnowledgeConceptId != null && savedConceptIds.includes(selectedKnowledgeConceptId)}
         theme={theme}
         onOpenChange={(open) => { if (!open) setSelectedKnowledgeConceptId(null); }}
+        onOpenConcept={openConceptCard}
+        onOpenFile={(reference) => void openInlineFile(reference)}
         onSaveChange={(saved) => { if (selectedKnowledgeConceptId) setConceptSaved(selectedKnowledgeConceptId, saved); }}
       />
     </AdaptiveSidecarLayout>

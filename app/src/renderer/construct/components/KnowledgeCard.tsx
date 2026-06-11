@@ -64,6 +64,15 @@ export function KnowledgeCard({
           <MarkdownBlock content={concept.commonMistake} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
         </section>
       ) : null}
+      {concept.guides.map((guide) => (
+        <section key={guide.id} className="knowledge-card__section">
+          <p className="guide-panel__label">{guideLabel(guide.guideKind)}</p>
+          {guide.content ? <MarkdownBlock content={guide.content} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} /> : null}
+          {guide.sections.map((section) => (
+            <MarkdownBlock key={section.kind} content={section.content} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
+          ))}
+        </section>
+      ))}
       {concept.example ? (
         <section className="knowledge-card__section">
           <p className="guide-panel__label">Example</p>
@@ -82,4 +91,8 @@ export function KnowledgeCard({
       ) : null}
     </AdaptiveSidecarSurface>
   );
+}
+
+function guideLabel(kind: string): string {
+  return kind.replace(/^guide\./, "").replace(/-/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
