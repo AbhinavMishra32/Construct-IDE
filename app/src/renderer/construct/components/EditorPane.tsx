@@ -442,6 +442,8 @@ export function EditorPane({
               automaticLayout: true,
               contextmenu: false,
               cursorBlinking: "smooth",
+              cursorStyle: "line",
+              cursorWidth: 2,
               cursorSmoothCaretAnimation: "on",
               fontFamily:
                 '"Geist Mono Variable", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
@@ -850,6 +852,7 @@ function languageForPath(path: string | null) {
 
     // Scripting / Shell / DB
     py: "python",
+    pyi: "python",
     pyw: "python",
     rb: "ruby",
     php: "php",
@@ -858,6 +861,8 @@ function languageForPath(path: string | null) {
     zsh: "shell",
     ps1: "powershell",
     sql: "sql",
+    vue: "html",
+    svelte: "html",
     pl: "perl",
     pm: "perl",
     lua: "lua",

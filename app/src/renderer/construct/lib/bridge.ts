@@ -207,6 +207,10 @@ export function onTerminalExit(callback: (event: TerminalExitEvent) => void): ()
   return api().onTerminalExit(callback);
 }
 
+export function debugProcesses(): ReturnType<ConstructProjectsApi["debugProcesses"]> {
+  return api().debugProcesses();
+}
+
 export function onVerifyLog(callback: (event: any) => void): () => void {
   return api().onVerifyLog(callback);
 }

@@ -62,9 +62,15 @@ export const TerminalPanel = forwardRef<
       terminal = new XTerm({
         allowTransparency: true,
         cursorBlink: true,
+        cursorStyle: "bar",
         convertEol: true,
         fontFamily: '"Geist Mono Variable", "SF Mono", Menlo, monospace',
-        fontSize: 12,
+        fontSize: 12.5,
+        letterSpacing: 0,
+        lineHeight: 1.32,
+        macOptionIsMeta: true,
+        scrollback: 20_000,
+        smoothScrollDuration: 85,
         theme: terminalTheme(isDark)
       });
       fitAddon = new FitAddon();
@@ -213,9 +219,26 @@ function resolveTerminalDark(theme: "light" | "dark" | "system"): boolean {
 function terminalTheme(isDark: boolean) {
   return {
     background: "#00000000",
-    foreground: isDark ? "#f4f4f2" : "#1d1d1f",
-    cursor: isDark ? "#f4f4f2" : "#1d1d1f",
-    selectionBackground: isDark ? "#4f8cff44" : "#0a84ff33"
+    foreground: isDark ? "#e7e8df" : "#1d1d1f",
+    cursor: isDark ? "#f7e46b" : "#1d1d1f",
+    cursorAccent: isDark ? "#171714" : "#ffffff",
+    selectionBackground: isDark ? "#f7e46b33" : "#0a84ff33",
+    black: "#161616",
+    red: "#ff6b6b",
+    green: "#7bd88f",
+    yellow: "#f7d75c",
+    blue: "#6ab7ff",
+    magenta: "#d6a3ff",
+    cyan: "#5fd7d1",
+    white: "#e7e8df",
+    brightBlack: "#696969",
+    brightRed: "#ff8585",
+    brightGreen: "#9af5ad",
+    brightYellow: "#ffe58f",
+    brightBlue: "#8ac8ff",
+    brightMagenta: "#e4baff",
+    brightCyan: "#86f0ea",
+    brightWhite: "#ffffff"
   };
 }
 

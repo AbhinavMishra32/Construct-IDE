@@ -341,6 +341,19 @@ export type TerminalExitEvent = {
   exitCode: number | null;
 };
 
+export type DebugProcessSnapshot = {
+  id: string;
+  kind: "terminal" | "lsp" | "installer";
+  label: string;
+  pid: number | null;
+  status: "running" | "stopped";
+  workspacePath?: string | null;
+  command?: string;
+  cpuPercent?: number | null;
+  memoryMb?: number | null;
+  elapsed?: string | null;
+};
+
 export type ConstructProjectsApi = {
   setThemeSource(theme: "light" | "dark" | "system"): Promise<void>;
   ensureProject(input: {
@@ -446,6 +459,7 @@ export type ConstructProjectsApi = {
   terminalKill(input: { sessionId: string }): Promise<void>;
   onTerminalData(callback: (event: TerminalEvent) => void): () => void;
   onTerminalExit(callback: (event: TerminalExitEvent) => void): () => void;
+  debugProcesses(): Promise<DebugProcessSnapshot[]>;
   onVerifyLog(callback: (event: { entry: VerificationLogEntry }) => void): () => void;
   lspRequest(payload: unknown): Promise<unknown>;
   onLspNotification(callback: (payload: any) => void): () => void;

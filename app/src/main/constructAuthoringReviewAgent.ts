@@ -1,7 +1,5 @@
-import { Agent } from "@mastra/core/agent";
-import { Mastra } from "@mastra/core/mastra";
 import { z } from "zod";
-import { resolveConstructAgentModel } from "./constructAgentModels";
+import { createConstructAgentRuntime } from "./constructAgentRuntime";
 
 export const CONSTRUCT_AUTHORING_REVIEW_AGENT_ID = "construct-authoring-review-agent";
 
@@ -30,9 +28,11 @@ export type AuthoringReviewInput = {
 };
 
 export async function runConstructAuthoringReviewAgent(input: AuthoringReviewInput): Promise<AuthoringSuggestion[]> {
-  const agent = new Agent({
+  const runtime = createConstructAgentRuntime();
+  const output = await runtime.generateStructured({
     id: CONSTRUCT_AUTHORING_REVIEW_AGENT_ID,
     name: "Construct Authoring Review Agent",
+    purpose: "authoring review",
     instructions: [
       "You review the teaching quality of .construct project tapes after compiler validation succeeds.",
       "Do not repair grammar, nesting, missing ::end markers, or protocol aliases; the compiler owns those.",
@@ -43,13 +43,12 @@ export async function runConstructAuthoringReviewAgent(input: AuthoringReviewInp
       "Do not invent line numbers. Omit affectedLines unless a supplied snippet or diagnostic makes them explicit.",
       "Every suggestion requires user approval. Return no more than twelve high-signal suggestions."
     ].join("\n"),
-    model: resolveConstructAgentModel("authoring review"),
+    prompt: buildPrompt(input),
+    schema: AuthoringReviewSchema,
     maxRetries: 1
   });
 
-  new Mastra({ agents: { [CONSTRUCT_AUTHORING_REVIEW_AGENT_ID]: agent }, logger: false });
-  const output = await agent.generate(buildPrompt(input), { structuredOutput: { schema: AuthoringReviewSchema } });
-  return AuthoringReviewSchema.parse(output.object).suggestions;
+  return output.suggestions;
 }
 
 function buildPrompt(input: AuthoringReviewInput): string {

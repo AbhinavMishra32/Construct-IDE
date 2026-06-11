@@ -1,7 +1,5 @@
-import { Agent } from "@mastra/core/agent";
-import { Mastra } from "@mastra/core/mastra";
 import { z } from "zod";
-import { resolveConstructAgentModel } from "./constructAgentModels";
+import { createConstructAgentRuntime } from "./constructAgentRuntime";
 
 export const CONSTRUCT_VERIFIER_AGENT_ID = "construct-verifier-agent";
 export const CONSTRUCT_VERIFIER_AGENT_NAME = "Construct Verifier Agent";
@@ -64,10 +62,11 @@ export type VerifierInput = {
 };
 
 export async function runConstructVerifierAgent(input: VerifierInput): Promise<VerificationResult> {
-  const model = resolveConstructAgentModel("agent verification");
-  const agent = new Agent({
+  const runtime = createConstructAgentRuntime();
+  return runtime.generateStructured({
     id: CONSTRUCT_VERIFIER_AGENT_ID,
     name: CONSTRUCT_VERIFIER_AGENT_NAME,
+    purpose: "agent verification",
     instructions: [
       "You are the Construct runtime verifier.",
       "You judge whether a learner achieved the engineering outcome described by the .construct verification contract.",
@@ -81,24 +80,10 @@ export async function runConstructVerifierAgent(input: VerifierInput): Promise<V
       "Keep passed=true only when status=pass.",
       "Give one concrete next suggestion on failure or almost."
     ].join("\n"),
-    model,
+    prompt: buildVerifierPrompt(input),
+    schema: VerificationResultSchema,
     maxRetries: 1
   });
-
-  new Mastra({
-    agents: {
-      [CONSTRUCT_VERIFIER_AGENT_ID]: agent
-    },
-    logger: false
-  });
-
-  const output = await agent.generate(buildVerifierPrompt(input), {
-    structuredOutput: {
-      schema: VerificationResultSchema
-    }
-  });
-
-  return VerificationResultSchema.parse(output.object);
 }
 
 function buildVerifierPrompt(input: VerifierInput): string {

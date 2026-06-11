@@ -3,6 +3,8 @@ node_modules
 dist
 coverage
 .vite
+.next
+**/.next
 .env
 .env.local
 *.log

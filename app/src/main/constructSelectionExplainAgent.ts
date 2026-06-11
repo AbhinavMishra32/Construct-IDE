@@ -2,10 +2,9 @@ import { execFile } from "node:child_process";
 import path from "node:path";
 import { promisify } from "node:util";
 
-import { Agent } from "@mastra/core/agent";
-import { Mastra } from "@mastra/core/mastra";
 import { z } from "zod";
-import { resolveConstructAgentModel, resolveConstructOpenAiResponsesConfig } from "./constructAgentModels";
+import { resolveConstructOpenAiResponsesConfig } from "./constructAgentModels";
+import { createConstructAgentRuntime } from "./constructAgentRuntime";
 
 const execFileAsync = promisify(execFile);
 
@@ -215,9 +214,11 @@ async function runCodebaseOnlyExplanation(
   input: SelectionExplanationInput,
   codebase: Awaited<ReturnType<typeof collectCodebaseContext>>
 ): Promise<SelectionExplanationResult> {
-  const agent = new Agent({
+  const runtime = createConstructAgentRuntime();
+  const result = await runtime.generateStructured({
     id: CONSTRUCT_SELECTION_EXPLAIN_AGENT_ID,
     name: "Construct Selection Explanation Agent",
+    purpose: "selection explanations",
     instructions: [
       "Explain selected code or learning text in the context of the current Construct project.",
       "Use only the supplied selection, nearby context, learning context, and workspace matches.",
@@ -225,14 +226,11 @@ async function runCodebaseOnlyExplanation(
       "Do not invent web sources or claim that web research occurred.",
       "Return concise Markdown suitable for a small floating explanation card."
     ].join("\n"),
-    model: resolveConstructAgentModel("selection explanations"),
+    prompt: buildExplanationPrompt(input, codebase.matches),
+    schema: FallbackExplanationSchema,
     maxRetries: 1
   });
-  new Mastra({ agents: { [CONSTRUCT_SELECTION_EXPLAIN_AGENT_ID]: agent }, logger: false });
-  const output = await agent.generate(buildExplanationPrompt(input, codebase.matches), {
-    structuredOutput: { schema: FallbackExplanationSchema }
-  });
-  const result = FallbackExplanationSchema.parse(output.object);
+
   return {
     title: explanationTitle(input.selection.text),
     summary: result.summary,

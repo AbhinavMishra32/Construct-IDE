@@ -2735,6 +2735,133 @@
   padding: 4px 14px 12px;
 }
 
+.construct-debug-processes {
+  display: grid;
+  gap: 12px;
+  color: var(--opaline-text-primary);
+}
+
+.construct-debug-processes__header {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, max-content));
+  gap: 10px;
+  align-items: center;
+}
+
+.construct-debug-processes__header > div {
+  min-width: 150px;
+  border: 1px solid color-mix(in srgb, #78ff9a 28%, transparent);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, #78ff9a 9%, transparent), transparent),
+    color-mix(in srgb, var(--opaline-bg-primary) 82%, transparent);
+  box-shadow: inset 0 0 18px color-mix(in srgb, #78ff9a 8%, transparent);
+}
+
+.construct-debug-processes__header span,
+.construct-debug-process__topline span,
+.construct-debug-process dt {
+  display: block;
+  color: color-mix(in srgb, #78ff9a 70%, var(--opaline-text-tertiary));
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.construct-debug-processes__header strong {
+  display: block;
+  margin-top: 3px;
+  color: #f4e56f;
+  font-size: 15px;
+}
+
+.construct-debug-processes__empty {
+  padding: 18px;
+  border: 1px dashed color-mix(in srgb, var(--opaline-text-primary) 18%, transparent);
+  border-radius: 8px;
+  color: var(--opaline-text-tertiary);
+}
+
+.construct-debug-processes__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+}
+
+.construct-debug-process {
+  min-width: 0;
+  border: 1px solid color-mix(in srgb, var(--opaline-text-primary) 12%, transparent);
+  border-radius: 8px;
+  padding: 10px;
+  background:
+    radial-gradient(circle at top right, color-mix(in srgb, #f4e56f 11%, transparent), transparent 42%),
+    color-mix(in srgb, var(--opaline-bg-primary) 88%, transparent);
+}
+
+.construct-debug-process.is-running {
+  border-color: color-mix(in srgb, #78ff9a 35%, transparent);
+}
+
+.construct-debug-process__topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.construct-debug-process__topline b {
+  color: #78ff9a;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.construct-debug-process.is-stopped .construct-debug-process__topline b {
+  color: var(--opaline-text-tertiary);
+}
+
+.construct-debug-process > strong {
+  display: block;
+  margin-top: 7px;
+  font-size: 13px;
+}
+
+.construct-debug-process dl {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin: 10px 0;
+}
+
+.construct-debug-process dd {
+  margin: 2px 0 0;
+  color: var(--opaline-text-primary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.construct-debug-process code,
+.construct-debug-process small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.construct-debug-process code {
+  color: #f4e56f;
+  font-size: 11px;
+}
+
+.construct-debug-process small {
+  margin-top: 4px;
+  color: var(--opaline-text-tertiary);
+  font-size: 11px;
+}
+
 .construct-lsp-server-meta {
   display: grid;
   gap: 5px;

@@ -66,6 +66,8 @@ contextBridge.exposeInMainWorld("constructProjects", {
     ipcRenderer.invoke("construct:project:terminal-resize", input),
   terminalKill: (input: unknown) =>
     ipcRenderer.invoke("construct:project:terminal-kill", input),
+  debugProcesses: () =>
+    ipcRenderer.invoke("construct:debug:processes"),
   onTerminalData: (callback: (event: unknown) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
       callback(payload);

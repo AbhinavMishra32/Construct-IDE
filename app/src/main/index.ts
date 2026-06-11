@@ -170,7 +170,15 @@ type StoredSettings = {
   workspaceRoot: string;
 };
 
+type TerminalSessionMeta = {
+  projectId: string;
+  workspacePath: string;
+  shellPath: string;
+  startedAt: number;
+};
+
 const terminalSessions = new Map<string, pty.IPty>();
+const terminalSessionMeta = new Map<string, TerminalSessionMeta>();
 const latestTerminalOutputByProject = new Map<string, string>();
 
 function sendToRenderers(channel: string, payload: unknown): void {
@@ -751,6 +759,7 @@ const lspServers: Record<LspLanguage, LspServerState> = {
 };
 let activeWebContents: Electron.WebContents | null = null;
 let isInstallingLsp = false;
+let lspInstallProcess: ChildProcess | null = null;
 
 function findNodeModuleScript(workspacePath: string, relativeScriptPath: string[]): string | null {
   const candidates = [
@@ -984,6 +993,114 @@ function getLspStatus(projectId?: string): LspStatusReport {
   return report;
 }
 
+type DebugProcessSnapshot = {
+  id: string;
+  kind: "terminal" | "lsp" | "installer";
+  label: string;
+  pid: number | null;
+  status: "running" | "stopped";
+  workspacePath?: string | null;
+  command?: string;
+  cpuPercent?: number | null;
+  memoryMb?: number | null;
+  elapsed?: string | null;
+};
+
+async function collectDebugProcessSnapshots(): Promise<DebugProcessSnapshot[]> {
+  const snapshots: DebugProcessSnapshot[] = [];
+
+  for (const [sessionId, session] of terminalSessions) {
+    const meta = terminalSessionMeta.get(sessionId);
+    snapshots.push({
+      id: sessionId,
+      kind: "terminal",
+      label: `Terminal ${sessionId.slice(0, 8)}`,
+      pid: typeof session.pid === "number" ? session.pid : null,
+      status: "running",
+      workspacePath: meta?.workspacePath ?? null,
+      command: meta?.shellPath
+    });
+  }
+
+  for (const language of Object.keys(lspServers) as LspLanguage[]) {
+    const server = lspServers[language];
+    snapshots.push({
+      id: `lsp:${language}`,
+      kind: "lsp",
+      label: lspConfigs[language].label,
+      pid: server.process?.pid ?? null,
+      status: server.process ? "running" : "stopped",
+      workspacePath: server.workspacePath,
+      command: lspConfigs[language].command
+    });
+  }
+
+  if (lspInstallProcess) {
+    snapshots.push({
+      id: "installer:lsp",
+      kind: "installer",
+      label: "LSP dependency installer",
+      pid: lspInstallProcess.pid ?? null,
+      status: "running",
+      command: "npm install language servers"
+    });
+  }
+
+  await hydrateProcessResources(snapshots);
+  return snapshots;
+}
+
+async function hydrateProcessResources(snapshots: DebugProcessSnapshot[]): Promise<void> {
+  const pids = snapshots
+    .map((snapshot) => snapshot.pid)
+    .filter((pid): pid is number => typeof pid === "number" && pid > 0);
+
+  if (pids.length === 0) {
+    return;
+  }
+
+  try {
+    const { stdout } = await execFileAsync("ps", [
+      "-o",
+      "pid=,%cpu=,rss=,etime=,command=",
+      "-p",
+      pids.join(",")
+    ]);
+    const byPid = new Map<number, { cpuPercent: number | null; memoryMb: number | null; elapsed: string | null; command: string | null }>();
+
+    for (const line of stdout.split(/\r?\n/)) {
+      const match = line.match(/^\s*(\d+)\s+([\d.]+)\s+(\d+)\s+(\S+)\s*(.*)$/);
+      if (!match) {
+        continue;
+      }
+
+      const pid = Number(match[1]);
+      byPid.set(pid, {
+        cpuPercent: Number(match[2]),
+        memoryMb: Math.round((Number(match[3]) / 1024) * 10) / 10,
+        elapsed: match[4] || null,
+        command: match[5] || null
+      });
+    }
+
+    for (const snapshot of snapshots) {
+      if (!snapshot.pid) {
+        continue;
+      }
+      const resource = byPid.get(snapshot.pid);
+      if (!resource) {
+        continue;
+      }
+      snapshot.cpuPercent = resource.cpuPercent;
+      snapshot.memoryMb = resource.memoryMb;
+      snapshot.elapsed = resource.elapsed;
+      snapshot.command = snapshot.command ?? resource.command ?? undefined;
+    }
+  } catch (error) {
+    console.warn("[debug] Unable to collect process resources:", error);
+  }
+}
+
 async function installLsp(workspacePath: string): Promise<boolean> {
   if (isInstallingLsp) {
     return false;
@@ -1001,6 +1118,7 @@ async function installLsp(workspacePath: string): Promise<boolean> {
         ...process.env
       }
     });
+    lspInstallProcess = npmProcess;
 
     npmProcess.stdout?.on("data", (data: Buffer) => {
       const text = data.toString("utf8");
@@ -1020,12 +1138,14 @@ async function installLsp(workspacePath: string): Promise<boolean> {
 
     npmProcess.on("close", (code) => {
       isInstallingLsp = false;
+      lspInstallProcess = null;
       console.log(`[LSP Installer] Process finished with exit code: ${code}`);
       resolve(code === 0);
     });
 
     npmProcess.on("error", (err) => {
       isInstallingLsp = false;
+      lspInstallProcess = null;
       console.error("[LSP Installer] Process spawn error:", err);
       resolve(false);
     });
@@ -1177,6 +1297,10 @@ function installConstructProjectIpcHandlers(): void {
         resolve(null);
       }
     });
+  });
+
+  ipcMain.handle("construct:debug:processes", async () => {
+    return collectDebugProcessSnapshots();
   });
 
   ipcMain.handle("construct:dialog:open-construct-file", async () => {
@@ -1824,6 +1948,12 @@ function installConstructProjectIpcHandlers(): void {
     });
 
     terminalSessions.set(sessionId, child);
+    terminalSessionMeta.set(sessionId, {
+      projectId: project.id,
+      workspacePath: project.workspacePath,
+      shellPath,
+      startedAt: Date.now()
+    });
     child.onData((data) => {
       appendTerminalOutput(project.id, data);
       sendToRenderers("construct:project:terminal-data", {
@@ -1833,6 +1963,7 @@ function installConstructProjectIpcHandlers(): void {
     });
     child.onExit(({ exitCode }) => {
       terminalSessions.delete(sessionId);
+      terminalSessionMeta.delete(sessionId);
       sendToRenderers("construct:project:terminal-exit", {
         sessionId,
         exitCode
@@ -1860,6 +1991,7 @@ function installConstructProjectIpcHandlers(): void {
   ipcMain.handle("construct:project:terminal-kill", async (_event, input) => {
     terminalSessions.get(input.sessionId)?.kill();
     terminalSessions.delete(input.sessionId);
+    terminalSessionMeta.delete(input.sessionId);
   });
 }
 
