@@ -5,7 +5,20 @@ import type { AppliedConstructFix, ConstructDiagnostic, ConstructDocument, Const
 
 const blockAliases: Record<string, string> = {
   common_mistake: "common-mistake",
-  mental_model: "mental-model"
+  mental_model: "mental-model",
+  orientation: "guide.orientation",
+  problem: "guide.problem",
+  flow: "guide.flow",
+  promise: "guide.promise",
+  misconception: "guide.misconception",
+  trace: "guide.trace",
+  trusted: "guide.trusted",
+  untrusted: "guide.untrusted",
+  preflight: "guide.preflight",
+  knows: "guide.knows",
+  "can-explain": "guide.can-explain",
+  "why-now": "guide.why-now",
+  analogy: "guide.analogy"
 };
 
 const blocksRequiringId = new Set([
@@ -138,6 +151,7 @@ function aliasFixes(document: ConstructDocument): ConstructFix[] {
   return document.tokens.flatMap((token) => {
     if (token.kind !== "block" || !token.name || !blockAliases[token.name]) return [];
     const replacement = blockAliases[token.name];
+    if (replacement.startsWith("guide.") && !guideAliasFitsParent(token.name, parentKindAtLine(document, token.line))) return [];
     const line = token.text.replace(`::${token.name}`, `::${replacement}`);
     return [{
       id: `alias:${token.name}:${token.line}`,
@@ -151,6 +165,21 @@ function aliasFixes(document: ConstructDocument): ConstructFix[] {
       patch: { edits: [{ start: token.start, end: token.end, text: `${line}${token.end > token.start + token.text.length ? "\n" : ""}` }] }
     }];
   });
+}
+
+function parentKindAtLine(document: ConstructDocument, line: number): string | null {
+  const node = findNode(document.root, line, document.tokens.find((token) => token.line === line)?.name ?? "");
+  return node?.parent?.kind ?? null;
+}
+
+function guideAliasFitsParent(alias: string, parent: string | null): boolean {
+  if (!parent) return false;
+  if (alias === "orientation") return parent === "root";
+  if (["problem", "flow", "promise"].includes(alias)) return parent === "orientation" || parent === "guide.orientation" || parent === "trace" || parent === "guide.trace";
+  if (["trusted", "untrusted"].includes(alias)) return parent === "trace" || parent === "guide.trace";
+  if (["knows", "can-explain"].includes(alias)) return parent === "preflight" || parent === "guide.preflight";
+  if (alias === "preflight" || alias === "why-now" || alias === "analogy" || alias === "misconception") return ["step", "edit", "concept"].includes(parent);
+  return false;
 }
 
 function attributeFixes(document: ConstructDocument): ConstructFix[] {

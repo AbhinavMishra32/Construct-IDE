@@ -26,10 +26,15 @@ const tape02 = {
 
 const tape03 = {
   ...tape02,
-  root: ["files", "concept", "reference", "target", "step", "git"],
-  concept: ["summary", "why", "example", "docs", "common-mistake"],
+  root: ["files", "concept", "reference", "target", "guide.orientation", "guide.trace", "step", "git"],
+  step: ["guide.preflight", "guide.trace", "guide.why-now", "guide.mental-model", "guide.misconception", "guide.analogy", "explain", "edit", "recall", "run", "expect", "checkpoint"],
+  edit: ["note", "guide.why-now"],
+  concept: ["summary", "why", "example", "docs", "common-mistake", "guide.misconception", "guide.analogy"],
   support: ["intent", "concepts", "api", "mental-model", "common-mistake"],
-  git: ["suggest", "include"]
+  git: ["suggest", "include"],
+  "guide.orientation": ["guide.problem", "guide.flow", "guide.promise", "guide.misconception"],
+  "guide.trace": ["guide.flow", "guide.trusted", "guide.untrusted"],
+  "guide.preflight": ["guide.knows", "guide.can-explain"]
 } as const;
 
 const grammars: Record<string, Record<string, readonly string[]>> = {

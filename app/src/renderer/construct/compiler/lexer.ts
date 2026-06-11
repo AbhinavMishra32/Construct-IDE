@@ -25,7 +25,7 @@ export function lexConstruct(source: string): ConstructToken[] {
     } else if (trimmed === "::end") {
       tokens.push({ kind: "end", text, line: index + 1, column, start, end });
     } else {
-      const block = trimmed.match(/^::([a-zA-Z0-9_-]+)\b(.*)$/);
+      const block = trimmed.match(/^::([a-zA-Z0-9_.-]+)\b(.*)$/);
       if (block) {
         tokens.push({
           kind: "block",
