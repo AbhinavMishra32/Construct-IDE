@@ -159,12 +159,16 @@ DATABASE_URL=...
 DIRECT_URL=...
 OPENAI_API_KEY=...
 OPENROUTER_API_KEY=...
+CONSTRUCT_AGENT_PROVIDER=openai
+CONSTRUCT_OPENAI_MODEL=gpt-5-mini
 TAVILY_API_KEY=...
 ```
 
 OpenRouter works through the same OpenAI-compatible chat surface the runner already uses. If you switch
 `CONSTRUCT_AGENT_PROVIDER=openrouter`, point `CONSTRUCT_OPENROUTER_BASE_URL` at
-`https://openrouter.ai/api/v1` and use an OpenRouter model id such as `openrouter/owl-alpha`.
+`https://openrouter.ai/api/v1` and set `CONSTRUCT_OPENROUTER_MODEL` to an OpenRouter model id.
+Construct resolves verifier, authoring-review, and contextual-explanation agents through this one
+provider/model configuration. The OpenAI Responses web-search path additionally requires `OPENAI_API_KEY`.
 Streaming is supported by OpenRouter as well; the runner will request streaming-compatible responses when the model path supports them.
 
 If you want to initialize the database:

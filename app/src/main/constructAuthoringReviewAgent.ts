@@ -1,13 +1,14 @@
 import { Agent } from "@mastra/core/agent";
 import { Mastra } from "@mastra/core/mastra";
 import { z } from "zod";
+import { resolveConstructAgentModel } from "./constructAgentModels";
 
 export const CONSTRUCT_AUTHORING_REVIEW_AGENT_ID = "construct-authoring-review-agent";
 
 const AuthoringSuggestionSchema = z.object({
   id: z.string().min(1),
   severity: z.enum(["info", "warning", "error"]),
-  category: z.enum(["teaching-order", "missing-concept", "bookish-support", "recall-too-hard", "ghost-too-large", "missing-reference", "missing-doc-link", "git-milestone", "other"]),
+  category: z.enum(["teaching-order", "missing-concept", "bookish-support", "recall-too-hard", "code-step-too-large", "missing-reference", "missing-doc-link", "git-milestone", "other"]),
   title: z.string().min(1),
   reason: z.string().min(1),
   affectedLines: z.array(z.number().int().positive()).optional(),
@@ -37,26 +38,18 @@ export async function runConstructAuthoringReviewAgent(input: AuthoringReviewInp
       "Do not repair grammar, nesting, missing ::end markers, or protocol aliases; the compiler owns those.",
       "Use only the compact project view, diagnostics, and focused snippets supplied.",
       "Never request or rewrite the entire tape.",
-      "Propose small, precise improvements for teaching order, concepts, support, recall difficulty, ghost edit size, references, docs links, and git milestones.",
+      "Propose small, precise improvements for teaching order, concepts, support, recall difficulty, code-step size, references, docs links, and git milestones.",
+      "Respect the tape-0.3 layer model: guide.* is learner-facing, verify internals stay nested under recall, and file navigation uses [[file:...]] references.",
       "Do not invent line numbers. Omit affectedLines unless a supplied snippet or diagnostic makes them explicit.",
       "Every suggestion requires user approval. Return no more than twelve high-signal suggestions."
     ].join("\n"),
-    model: resolveAuthoringModel(),
+    model: resolveConstructAgentModel("authoring review"),
     maxRetries: 1
   });
 
   new Mastra({ agents: { [CONSTRUCT_AUTHORING_REVIEW_AGENT_ID]: agent }, logger: false });
   const output = await agent.generate(buildPrompt(input), { structuredOutput: { schema: AuthoringReviewSchema } });
   return AuthoringReviewSchema.parse(output.object).suggestions;
-}
-
-function resolveAuthoringModel() {
-  const provider = (process.env.CONSTRUCT_AGENT_PROVIDER ?? "openai").trim().toLowerCase();
-  const apiKey = (provider === "openrouter" ? process.env.CONSTRUCT_OPENROUTER_API_KEY ?? process.env.OPENROUTER_API_KEY : process.env.OPENAI_API_KEY)?.trim();
-  if (!apiKey) throw new Error(provider === "openrouter" ? "OPENROUTER_API_KEY is required for authoring review." : "OPENAI_API_KEY is required for authoring review.");
-  return provider === "openrouter"
-    ? { providerId: "openrouter", modelId: process.env.CONSTRUCT_OPENROUTER_FAST_MODEL?.trim() || "openai/gpt-5-nano", url: process.env.CONSTRUCT_OPENROUTER_BASE_URL?.trim() || "https://openrouter.ai/api/v1", apiKey }
-    : { providerId: "openai", modelId: process.env.CONSTRUCT_OPENAI_FAST_MODEL?.trim() || "gpt-5-nano", url: process.env.CONSTRUCT_OPENAI_BASE_URL?.trim(), apiKey };
 }
 
 function buildPrompt(input: AuthoringReviewInput): string {

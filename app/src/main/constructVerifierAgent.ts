@@ -1,6 +1,7 @@
 import { Agent } from "@mastra/core/agent";
 import { Mastra } from "@mastra/core/mastra";
 import { z } from "zod";
+import { resolveConstructAgentModel } from "./constructAgentModels";
 
 export const CONSTRUCT_VERIFIER_AGENT_ID = "construct-verifier-agent";
 export const CONSTRUCT_VERIFIER_AGENT_NAME = "Construct Verifier Agent";
@@ -63,7 +64,7 @@ export type VerifierInput = {
 };
 
 export async function runConstructVerifierAgent(input: VerifierInput): Promise<VerificationResult> {
-  const model = resolveVerifierModel();
+  const model = resolveConstructAgentModel("agent verification");
   const agent = new Agent({
     id: CONSTRUCT_VERIFIER_AGENT_ID,
     name: CONSTRUCT_VERIFIER_AGENT_NAME,
@@ -98,47 +99,6 @@ export async function runConstructVerifierAgent(input: VerifierInput): Promise<V
   });
 
   return VerificationResultSchema.parse(output.object);
-}
-
-function resolveVerifierModel() {
-  const provider = (process.env.CONSTRUCT_AGENT_PROVIDER ?? "openai").trim().toLowerCase();
-  const modelId =
-    provider === "openrouter"
-      ? process.env.CONSTRUCT_OPENROUTER_FAST_MODEL?.trim() ||
-        process.env.CONSTRUCT_OPENROUTER_MODEL?.trim() ||
-        "openai/gpt-5-nano"
-      : process.env.CONSTRUCT_OPENAI_FAST_MODEL?.trim() ||
-        process.env.CONSTRUCT_OPENAI_MODEL?.trim() ||
-        "gpt-5-nano";
-  const apiKey = (
-    provider === "openrouter"
-      ? process.env.CONSTRUCT_OPENROUTER_API_KEY ?? process.env.OPENROUTER_API_KEY
-      : process.env.OPENAI_API_KEY
-  )?.trim();
-
-  if (!apiKey) {
-    throw new Error(
-      provider === "openrouter"
-        ? "OPENROUTER_API_KEY or CONSTRUCT_OPENROUTER_API_KEY is required for agent verification."
-        : "OPENAI_API_KEY is required for agent verification."
-    );
-  }
-
-  if (provider === "openrouter") {
-    return {
-      providerId: "openrouter",
-      modelId,
-      url: process.env.CONSTRUCT_OPENROUTER_BASE_URL?.trim() || "https://openrouter.ai/api/v1",
-      apiKey
-    };
-  }
-
-  return {
-    providerId: "openai",
-    modelId,
-    url: process.env.CONSTRUCT_OPENAI_BASE_URL?.trim(),
-    apiKey
-  };
 }
 
 function buildVerifierPrompt(input: VerifierInput): string {

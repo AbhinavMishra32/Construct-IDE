@@ -5,6 +5,7 @@ import { promisify } from "node:util";
 import { Agent } from "@mastra/core/agent";
 import { Mastra } from "@mastra/core/mastra";
 import { z } from "zod";
+import { resolveConstructAgentModel, resolveConstructOpenAiResponsesConfig } from "./constructAgentModels";
 
 const execFileAsync = promisify(execFile);
 
@@ -68,11 +69,11 @@ export async function runConstructSelectionExplainAgent(
   const codebase = await collectCodebaseContext(input, onProgress);
   onProgress({ status: "done", message: "Selection context is ready", detail: `${input.selection.text.length} selected characters`, tool: "agent" });
 
-  const openAiKey = process.env.OPENAI_API_KEY?.trim();
-  if (openAiKey) {
+  const responsesConfig = resolveConstructOpenAiResponsesConfig();
+  if (responsesConfig) {
     try {
       onProgress({ status: "running", message: "Researching relevant sources", detail: "Using hosted web search when outside context is useful", tool: "web" });
-      const researched = await runOpenAiWebExplanation(input, codebase, openAiKey);
+      const researched = await runOpenAiWebExplanation(input, codebase, responsesConfig);
       onProgress({
         status: "done",
         message: researched.sources.some((source) => source.kind === "web") ? "Web research complete" : "No outside sources were needed",
@@ -166,15 +167,13 @@ async function collectCodebaseContext(input: SelectionExplanationInput, onProgre
 async function runOpenAiWebExplanation(
   input: SelectionExplanationInput,
   codebase: Awaited<ReturnType<typeof collectCodebaseContext>>,
-  apiKey: string
+  config: NonNullable<ReturnType<typeof resolveConstructOpenAiResponsesConfig>>
 ): Promise<SelectionExplanationResult> {
-  const baseUrl = (process.env.CONSTRUCT_OPENAI_BASE_URL?.trim() || "https://api.openai.com/v1").replace(/\/$/, "");
-  const model = process.env.CONSTRUCT_OPENAI_RESEARCH_MODEL?.trim() || process.env.CONSTRUCT_OPENAI_FAST_MODEL?.trim() || "gpt-5-mini";
-  const response = await fetch(`${baseUrl}/responses`, {
+  const response = await fetch(`${config.baseUrl}/responses`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    headers: { Authorization: `Bearer ${config.apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      model,
+      model: config.model,
       tools: [{ type: "web_search" }],
       tool_choice: "auto",
       include: ["web_search_call.action.sources"],
@@ -226,7 +225,7 @@ async function runCodebaseOnlyExplanation(
       "Do not invent web sources or claim that web research occurred.",
       "Return concise Markdown suitable for a small floating explanation card."
     ].join("\n"),
-    model: resolveFallbackModel(),
+    model: resolveConstructAgentModel("selection explanations"),
     maxRetries: 1
   });
   new Mastra({ agents: { [CONSTRUCT_SELECTION_EXPLAIN_AGENT_ID]: agent }, logger: false });
@@ -241,15 +240,6 @@ async function runCodebaseOnlyExplanation(
     sources: codebase.sources,
     researchMode: "codebase-only"
   };
-}
-
-function resolveFallbackModel() {
-  const provider = (process.env.CONSTRUCT_AGENT_PROVIDER ?? "openai").trim().toLowerCase();
-  const apiKey = (provider === "openrouter" ? process.env.CONSTRUCT_OPENROUTER_API_KEY ?? process.env.OPENROUTER_API_KEY : process.env.OPENAI_API_KEY)?.trim();
-  if (!apiKey) throw new Error(provider === "openrouter" ? "OPENROUTER_API_KEY is required for selection explanations." : "OPENAI_API_KEY is required for selection explanations.");
-  return provider === "openrouter"
-    ? { providerId: "openrouter", modelId: process.env.CONSTRUCT_OPENROUTER_FAST_MODEL?.trim() || "openai/gpt-5-nano", url: process.env.CONSTRUCT_OPENROUTER_BASE_URL?.trim() || "https://openrouter.ai/api/v1", apiKey }
-    : { providerId: "openai", modelId: process.env.CONSTRUCT_OPENAI_FAST_MODEL?.trim() || "gpt-5-nano", url: process.env.CONSTRUCT_OPENAI_BASE_URL?.trim(), apiKey };
 }
 
 function buildExplanationPrompt(input: SelectionExplanationInput, matches: string): string {
