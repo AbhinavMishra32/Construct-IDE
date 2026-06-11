@@ -1,3 +1,5 @@
+import Image from "next/image";
+
 const files = [
   ["folder open", "src"],
   ["indent folder open", "scratchnn"],
@@ -31,7 +33,14 @@ export default function Page() {
     <div className="site-shell">
       <header className="nav">
         <a className="brand" href="#top" aria-label="Construct home">
-          <span className="brand-mark" aria-hidden="true" />
+          <Image
+            src="/construct-icon.png"
+            alt=""
+            width={28}
+            height={28}
+            className="brand-icon"
+            aria-hidden="true"
+          />
           <span>Construct</span>
         </a>
         <nav className="nav-links" aria-label="Primary navigation">

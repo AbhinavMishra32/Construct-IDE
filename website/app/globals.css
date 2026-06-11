@@ -41,13 +41,11 @@ a { color: inherit; text-decoration: none; }
   backdrop-filter: blur(20px);
 }
 .brand { display: inline-flex; align-items: center; gap: 14px; font-size: 23px; font-weight: 730; }
-.brand-mark {
+.brand-icon {
   width: 28px;
   height: 28px;
-  border-radius: 6px 18px 18px;
-  background: radial-gradient(circle at 72% 24%, #fffbd0 0 9%, transparent 10%), conic-gradient(from 225deg, #fff9ad, #f7d84a, #0a0a0a 68%);
-  transform: rotate(9deg) skewX(-8deg);
-  box-shadow: 0 0 34px rgba(255, 243, 111, 0.35);
+  border-radius: 7px;
+  box-shadow: 0 0 34px rgba(255, 243, 111, 0.22);
 }
 .nav-links { justify-self: center; display: flex; gap: clamp(20px, 3vw, 46px); color: #e5e2d8; font-size: 14px; }
 .nav-links a:hover { color: var(--gold); }

@@ -8,6 +8,11 @@ coverage
 .env
 .env.local
 *.log
+*.tsbuildinfo
+.pnpm-store
+app/release
+app/.electron-builder
+app/build/icons/.tmp
 .construct
 **/.construct
 .vercel

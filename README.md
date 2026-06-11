@@ -1,48 +1,74 @@
-# Construct
+<p align="center">
+  <img src="app/assets/icon.png" alt="Construct app icon" width="140">
+</p>
 
-Construct is a project-based learning IDE. It turns real software projects into executable learning tapes: the app creates a workspace, guides each implementation step, checks recall, runs terminal tasks, and verifies what you built.
+<h1 align="center">Construct</h1>
 
-Website: [tryconstruct.cc](https://tryconstruct.cc)
+<p align="center">
+  Build real software. Learn with intent.
+</p>
 
-Construct is early, but the repository now has one primary architecture: `.construct` tape files compiled into an Electron learning workspace.
+<p align="center">
+  <img alt="Release" src="https://img.shields.io/badge/version-0.0.3-111111?style=flat-square">
+  <img alt="Platforms" src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-111111?style=flat-square">
+  <img alt="Tape Spec" src="https://img.shields.io/badge/tape-0.3.1-cb9b2d?style=flat-square">
+  <img alt="Desktop" src="https://img.shields.io/badge/desktop-Electron-47848f?style=flat-square&logo=electron&logoColor=white">
+  <img alt="Stars" src="https://img.shields.io/github/stars/AbhinavMishra32/Construct-IDE?style=flat-square">
+</p>
 
-## Why
+<p align="center">
+  <a href="https://tryconstruct.cc">Website</a> ·
+  <a href="https://github.com/AbhinavMishra32/Construct-IDE/releases">Downloads</a> ·
+  <a href="docs/releasing.md">Release Docs</a>
+</p>
 
-Most learning tools stop at explanations. Most coding agents skip straight to answers.
+Construct is a desktop IDE for executable learning tapes. Instead of watching a tutorial or handing the whole task to an agent, you work inside a real project while Construct sets up the workspace, guides each step, checks recall, runs terminal work, and verifies what you actually built.
 
-Construct is built around the middle path: you build the project yourself, while the IDE keeps the learning path executable, contextual, and verifiable.
+## Why Construct
 
-## What It Does
+Most tools split in the wrong direction.
 
-- Opens `.construct` files as project programs.
-- Materializes the files described by a tape into a real workspace.
-- Walks through explain, edit, recall, run, expect, checkpoint, and verify blocks.
-- Provides Monaco editing, file navigation, terminal execution, and progress tracking.
-- Stores project state locally through the Electron bridge.
-- Uses agent-powered help for verification, authoring review, code ghosting, and selection explanations.
+- Tutorials explain but do not stay with you while you build.
+- Coding agents move fast but often collapse the learning loop.
+- Editors give you raw power but no teaching structure.
 
-## Tape Specs
+Construct combines those layers into one runtime. A tape becomes a project you can execute, edit, verify, and remember.
 
-Construct keeps older tapes working as the format evolves.
+## Why people use it
 
-- `tape-0.1`: files, linear steps, explain/edit/run/expect/checkpoint.
-- `tape-0.2`: adds focus anchors, reference cards, supported recall, agent verification, and assistance tracking.
-- `tape-0.3`: adds concept cards, rich support, git milestones, authoring lint, and legacy guide blocks.
-- `tape-0.3.1`: canonicalizes the `guide.*` namespace and explicit inline refs such as `[[file:src/a.ts|open file]]`, `[[concept:id|label]]`, and `[[docs:https://example.com|docs]]`.
+- **Learn by shipping**: every lesson lives inside a real codebase, terminal, and file tree.
+- **Stay in the work**: guided edits, references, recall, and verification happen in the same app.
+- **Keep your old tapes alive**: the parser and compiler stay backwards-compatible as the spec evolves.
+- **Use agents where they help**: verification, authoring review, code ghosting, and selection explanations are assistive, not a substitute for the tape runtime.
 
-Backwards compatibility is part of the contract. `tape-0.3` projects can still use legacy guide names such as `::orientation`, `::problem`, `::mental-model`, and `::why-now`. Obvious legacy file refs such as `[[src/a.ts|open file]]` are also accepted.
+## What Construct does
 
-## Repository
+- Opens `.construct` programs and materializes them into real local workspaces.
+- Walks explain, edit, recall, run, expect, checkpoint, and verify blocks in order.
+- Gives you Monaco editing, terminal execution, file navigation, and project progress in one shell.
+- Preserves `tape-0.1`, `tape-0.2`, `tape-0.3`, and canonical `tape-0.3.1` support.
+- Accepts older guide aliases and obvious legacy inline file references so past projects do not break.
 
-```text
-app/                         Electron app and Construct IDE
-app/src/renderer/construct/  Tape runtime, compiler, parser, and UI
-opaline/packages/ui/         Local reusable UI package consumed by the app
-website/                     Static marketing site for tryconstruct.cc
-docs/                        Current engineering notes
-```
+## Downloads
 
-The old runner, generated-blueprint sample project, Prisma persistence layer, and shared blueprint schema package have been removed. The active app is tape-based.
+Construct `0.0.3` is prepared for desktop packaging on all three major platforms.
+
+- macOS: `.dmg`, `.zip`
+- Windows: `nsis`, `portable`, `.zip`
+- Linux: `AppImage`, `.deb`, `.tar.gz`
+
+Release publishing is command-based and uses the `gh` CLI instead of GitHub Actions. The release workflow is documented in `docs/releasing.md`.
+
+## Tape Compatibility
+
+Backwards compatibility is part of the contract.
+
+- `tape-0.1`: files, linear steps, explain/edit/run/expect/checkpoint
+- `tape-0.2`: focus anchors, reference cards, supported recall, agent verification
+- `tape-0.3`: concept cards, richer support, git milestones, authoring lint, legacy guide blocks
+- `tape-0.3.1`: canonical `guide.*` namespace and explicit inline refs such as `[[file:src/a.ts|open file]]`
+
+Legacy guide names like `::orientation`, `::problem`, `::mental-model`, and `::why-now` still work. Obvious older file refs like `[[src/a.ts|open file]]` still resolve.
 
 ## Local Development
 
@@ -51,7 +77,7 @@ Requirements:
 - Node.js 25+
 - pnpm 10+
 
-Install dependencies:
+Install everything:
 
 ```bash
 pnpm install
@@ -63,44 +89,54 @@ Run the desktop app:
 pnpm --filter @construct/app dev
 ```
 
-Run the static website locally:
+Run the website:
 
 ```bash
-python3 -m http.server 4174 --directory website
+pnpm --filter @construct/website dev
 ```
 
-Useful checks:
+Check the repo:
 
 ```bash
 pnpm typecheck
 pnpm test
-pnpm build
 pnpm verify
 ```
 
-## App Architecture
+## Release Commands
 
-The runtime lives in `app/src/renderer/construct`.
+Refresh the packaged icons from the source app icon:
 
-- `compiler/` lexes, validates, repairs, and previews `.construct` source.
-- `lib/parser.ts` parses strict runtime tapes after compiler repair.
-- `lib/projectStore.ts` persists local project records.
-- `components/Workspace.tsx` coordinates files, tape progress, guidance, and terminal state.
-- `components/EditorPane.tsx` owns guided code-entry behavior.
-- `components/TerminalPanel.tsx` integrates xterm.js.
-- `App.tsx` mounts the Opaline-based shell.
+```bash
+pnpm brand:icons
+```
 
-Agents live in `app/src/main/construct*Agent.ts` and are reached through the Electron bridge. They enhance the local tape workflow; they do not replace the tape runtime.
+Build release artifacts on the matching OS:
 
-## Contributing
+```bash
+pnpm release:mac
+pnpm release:win
+pnpm release:linux
+```
 
-Keep changes tape-first and backwards-compatible:
+Publish built artifacts to GitHub Releases with `gh`:
 
-- Add new spec behavior under a new patch version when syntax changes.
-- Keep older tape versions parseable unless a migration is intentionally documented.
-- Prefer deterministic compiler repairs for aliases and small authoring mistakes.
-- Keep UI work inside the current Construct app or reusable Opaline package.
-- Remove obsolete architecture instead of carrying parallel systems.
+```bash
+pnpm release:publish
+```
+
+## Repository
+
+```text
+app/                         Electron desktop app
+app/src/renderer/construct/  Tape runtime, compiler, parser, and UI
+opaline/packages/ui/         Shared UI package used by the app
+website/                     Marketing site for tryconstruct.cc
+docs/                        Release notes and engineering documentation
+scripts/release/             Icon generation and GitHub release scripts
+```
+
+The old pre-tape runner architecture is gone. The active product is the tape-based Construct IDE.
 
 ## License
 

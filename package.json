@@ -1,7 +1,7 @@
 {
   "name": "construct",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.0.3",
   "packageManager": "pnpm@10.23.0",
   "pnpm": {
     "onlyBuiltDependencies": [
@@ -14,7 +14,13 @@
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "verify": "pnpm typecheck && pnpm test && pnpm build"
+    "verify": "pnpm typecheck && pnpm test && pnpm build",
+    "brand:icons": "node scripts/release/generate-icons.mjs",
+    "release:mac": "pnpm --filter @construct/app package:mac",
+    "release:linux": "pnpm --filter @construct/app package:linux",
+    "release:win": "pnpm --filter @construct/app package:win",
+    "release:dir": "pnpm --filter @construct/app package:dir",
+    "release:publish": "node scripts/release/publish-gh.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

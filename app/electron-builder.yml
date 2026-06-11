@@ -1,0 +1,38 @@
+appId: cc.tryconstruct.desktop
+productName: Construct
+artifactName: Construct-${version}-${os}-${arch}.${ext}
+asar: true
+directories:
+  output: release/${version}
+  buildResources: build
+files:
+  - dist/**
+  - assets/**
+  - package.json
+extraMetadata:
+  main: dist/main.cjs
+mac:
+  category: public.app-category.developer-tools
+  icon: build/icons/icon.icns
+  darkModeSupport: true
+  target:
+    - dmg
+    - zip
+win:
+  icon: build/icons/icon.ico
+  target:
+    - nsis
+    - portable
+    - zip
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
+linux:
+  category: Development
+  icon: build/icons/png
+  target:
+    - AppImage
+    - deb
+    - tar.gz
+publish: never

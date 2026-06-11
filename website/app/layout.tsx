@@ -9,12 +9,25 @@ export const metadata: Metadata = {
   alternates: {
     canonical: "/"
   },
+  icons: {
+    icon: "/construct-icon.png",
+    apple: "/construct-icon.png",
+    shortcut: "/construct-icon.png"
+  },
   openGraph: {
     title: "Construct",
     description: "Build real software, learn with intent.",
     url: "https://tryconstruct.cc",
     siteName: "Construct",
-    type: "website"
+    type: "website",
+    images: [
+      {
+        url: "/construct-icon.png",
+        width: 1254,
+        height: 1254,
+        alt: "Construct app icon"
+      }
+    ]
   }
 };
 
