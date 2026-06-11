@@ -70,6 +70,9 @@ export function registerConstructThemes() {
       "scrollbarSlider.background": "#00000010",
       "scrollbarSlider.hoverBackground": "#00000020",
       "scrollbarSlider.activeBackground": "#00000030",
+      "editorHoverWidget.background": "#ffffff00",
+      "editorHoverWidget.foreground": "#383a42",
+      "editorHoverWidget.border": "#d0d0ca66",
     },
   });
 
@@ -126,6 +129,9 @@ export function registerConstructThemes() {
       "scrollbarSlider.background": "#ffffff10",
       "scrollbarSlider.hoverBackground": "#ffffff20",
       "scrollbarSlider.activeBackground": "#ffffff30",
+      "editorHoverWidget.background": "#18181800",
+      "editorHoverWidget.foreground": "#abb2bf",
+      "editorHoverWidget.border": "#32343a66",
     },
   });
 }
