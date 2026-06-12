@@ -61,16 +61,19 @@ export const TerminalPanel = forwardRef<
     try {
       terminal = new XTerm({
         allowTransparency: true,
+        customGlyphs: false,
         cursorBlink: true,
         cursorStyle: "bar",
+        cursorWidth: 1.4,
         convertEol: true,
-        fontFamily: '"Geist Mono Variable", "SF Mono", Menlo, Monaco, Consolas, monospace',
-        fontSize: 13,
+        drawBoldTextInBrightColors: false,
+        fontFamily: '"SF Mono", SFMono-Regular, ui-monospace, Menlo, Monaco, Consolas, monospace',
+        fontSize: 12.75,
         letterSpacing: 0,
-        lineHeight: 1.34,
+        lineHeight: 1.18,
         macOptionIsMeta: true,
         scrollback: 50_000,
-        smoothScrollDuration: 70,
+        smoothScrollDuration: 45,
         theme: terminalTheme(isDark)
       });
       fitAddon = new FitAddon();
@@ -219,7 +222,7 @@ function resolveTerminalDark(theme: "light" | "dark" | "system"): boolean {
 function terminalTheme(isDark: boolean) {
   return {
     background: "#00000000",
-    foreground: isDark ? "#d6d6d2" : "#1f1f1f",
+    foreground: isDark ? "#d3d3cf" : "#202020",
     cursor: isDark ? "#10a37f" : "#0f7f64",
     cursorAccent: isDark ? "#0f1110" : "#ffffff",
     selectionBackground: isDark ? "#10a37f33" : "#0f7f6426",

@@ -446,7 +446,7 @@ export function EditorPane({
               cursorWidth: 2,
               cursorSmoothCaretAnimation: "on",
               fontFamily:
-                '"Geist Mono Variable", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
+                'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
               fontLigatures: true,
               fontSize: 13.5,
               fixedOverflowWidgets: false,

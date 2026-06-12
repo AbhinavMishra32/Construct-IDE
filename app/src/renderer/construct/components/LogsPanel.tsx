@@ -1,8 +1,16 @@
 import React, { useEffect, useRef, useState } from "react";
+import { Check, ChevronDown } from "lucide-react";
 import { logStore, type LogChannel, type LogEntry } from "../lib/logStore";
 import { debugProcesses } from "../lib/bridge";
 import type { DebugProcessSnapshot } from "../types";
-import { TerminalSurface, SettingsSelect, Button } from "@opaline/ui";
+import {
+  Button,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  TerminalSurface
+} from "@opaline/ui";
 
 type OutputChannel = LogChannel | "debug-processes";
 
@@ -12,6 +20,15 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
   const [processes, setProcesses] = useState<DebugProcessSnapshot[]>([]);
   const [autoScroll, setAutoScroll] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
+  const outputChannels: Array<{ id: OutputChannel; label: string }> = [
+    { id: "debug-processes", label: "Debug processes" },
+    { id: "lsp-server", label: "Language servers" },
+    { id: "lsp-protocol", label: "LSP protocol" },
+    { id: "main", label: "Electron main" },
+    { id: "renderer", label: "Renderer console" },
+    { id: "terminal", label: "Terminal" },
+    { id: "verifier", label: "Verifier" }
+  ];
 
   // Sync logs when active channel changes
   useEffect(() => {
@@ -122,62 +139,51 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
   };
 
   return (
-    <TerminalSurface cwd={`Output Logs · ${activeChannel}`}>
-      <div className="flex flex-col h-full bg-transparent text-[var(--opaline-text-primary)] font-[var(--opaline-font-sans)] overflow-hidden select-text">
-        {/* Top Controls Toolbar */}
-        <div className="flex items-center justify-between px-4 py-2 border-b border-[var(--opaline-border-subtle)] bg-transparent">
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-[var(--opaline-text-secondary)] font-medium select-none">Show output from:</span>
-            <SettingsSelect
-              value={activeChannel}
-              onChange={(e) => setActiveChannel(e.target.value as OutputChannel)}
-              className="text-xs h-[30px] min-w-[200px]"
-            >
-              <option value="debug-processes" className="bg-[var(--opaline-bg-primary)] text-[var(--opaline-text-primary)] font-sans">Debug · Processes</option>
-              <option value="lsp-server" className="bg-[var(--opaline-bg-primary)] text-[var(--opaline-text-primary)] font-sans">Language Servers</option>
-              <option value="lsp-protocol" className="bg-[var(--opaline-bg-primary)] text-[var(--opaline-text-primary)] font-sans">LSP Protocol</option>
-              <option value="main" className="bg-[var(--opaline-bg-primary)] text-[var(--opaline-text-primary)] font-sans">Electron Main Process</option>
-              <option value="renderer" className="bg-[var(--opaline-bg-primary)] text-[var(--opaline-text-primary)] font-sans">Renderer Console</option>
-              <option value="terminal" className="bg-[var(--opaline-bg-primary)] text-[var(--opaline-text-primary)] font-sans">Terminal</option>
-              <option value="verifier" className="bg-[var(--opaline-bg-primary)] text-[var(--opaline-text-primary)] font-sans">Verifier Agent</option>
-            </SettingsSelect>
-          </div>
+    <TerminalSurface cwd={`Output · ${activeChannel}`}>
+      <div className="flex h-full flex-col overflow-hidden bg-transparent text-[var(--opaline-text-primary)] select-text">
+        <div className="flex items-center justify-between px-2 py-1.5">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="inline-flex h-[26px] items-center gap-1.5 rounded-[8px] px-2.5 text-[12.5px] font-medium text-[var(--opaline-text-primary)] hover:bg-[color-mix(in_srgb,var(--opaline-text-primary)_6%,transparent)]"
+              >
+                {outputChannels.find((channel) => channel.id === activeChannel)?.label ?? activeChannel}
+                <ChevronDown size={14} />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="min-w-[190px]">
+              {outputChannels.map((channel) => (
+                <DropdownMenuItem key={channel.id} onSelect={() => setActiveChannel(channel.id)}>
+                  <span className="inline-flex w-4 items-center justify-center">
+                    {channel.id === activeChannel ? <Check size={13} /> : null}
+                  </span>
+                  {channel.label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
 
-          <div className="flex items-center gap-3">
-            <label className="flex items-center gap-1.5 text-xs text-[var(--opaline-text-secondary)] select-none cursor-pointer font-medium">
-              <input
-                type="checkbox"
-                checked={autoScroll}
-                onChange={(e) => setAutoScroll(e.target.checked)}
-                className="accent-[var(--opaline-accent)]"
-              />
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setAutoScroll((value) => !value)}
+              className={`inline-flex h-[24px] items-center rounded-[7px] px-2 text-[12px] ${autoScroll ? "text-[var(--opaline-text-primary)]" : "text-[var(--opaline-text-tertiary)]"} hover:bg-[color-mix(in_srgb,var(--opaline-text-primary)_6%,transparent)]`}
+            >
               Auto-scroll
-            </label>
-
-            <Button
-              onClick={handleCopyAll}
-              variant="secondary"
-              size="small"
-              className="h-[30px] rounded-[8px] font-medium"
-            >
-              Copy All
+            </button>
+            <Button onClick={handleCopyAll} variant="secondary" size="small" className="h-[24px] rounded-[7px] px-2.5 text-[12px]">
+              Copy
             </Button>
-
-            <Button
-              onClick={handleClear}
-              variant="danger"
-              size="small"
-              className="h-[30px] rounded-[8px] font-medium"
-            >
+            <Button onClick={handleClear} variant="secondary" size="small" className="h-[24px] rounded-[7px] px-2.5 text-[12px]">
               Clear
             </Button>
           </div>
         </div>
 
-        {/* Logs container */}
         <div
           ref={containerRef}
-          className="flex-1 overflow-auto p-4 text-[13px] leading-relaxed select-text space-y-1 scrollbar-thin bg-transparent"
+          className="flex-1 overflow-auto px-3 py-2 text-[12.5px] leading-[1.45] select-text space-y-0.5 scrollbar-thin bg-transparent"
           style={{ fontFamily: "var(--opaline-font-mono)" }}
         >
           {activeChannel === "debug-processes" ? (

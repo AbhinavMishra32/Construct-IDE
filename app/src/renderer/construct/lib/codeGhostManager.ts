@@ -53,6 +53,11 @@ class GhostWidget implements monaco.editor.IContentWidget {
     this.show();
   }
 
+  renderError(text: string) {
+    this.domNode.dataset.state = "error";
+    this.render(text);
+  }
+
   setLine(line: number) {
     this.lineNumber = line;
     activeEditor?.layoutContentWidget(this);
@@ -73,23 +78,28 @@ export function initializeCodeGhost(editor: monaco.editor.IStandaloneCodeEditor)
     style.id = "code-ghost-styles";
     style.textContent = `
       .code-ghost-widget {
-        background: var(--opaline-bg-primary, #1e1e1e);
-        border: 1px solid var(--opaline-border-subtle, #454545);
-        border-radius: 6px;
-        padding: 6px 10px;
-        font-size: 12px;
-        line-height: 1.5;
-        color: var(--opaline-text-primary, #ddd);
-        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-        max-width: 440px;
+        background: color-mix(in srgb, var(--opaline-bg-elevated, #ffffff) 94%, transparent);
+        border: 1px solid var(--opaline-border-subtle, #d0d0d0);
+        border-radius: 999px;
+        padding: 4px 10px;
+        font-size: 11px;
+        line-height: 1.45;
+        color: var(--opaline-text-secondary, #3d3d3d);
+        box-shadow: 0 10px 24px rgba(15, 23, 42, 0.10);
+        max-width: 360px;
         width: max-content;
-        margin-left: 32px;
+        margin-left: 18px;
         pointer-events: none;
         user-select: none;
         white-space: normal;
-        word-wrap: break-word;
+        word-break: break-word;
         overflow: hidden;
         z-index: 100;
+        backdrop-filter: blur(14px);
+      }
+
+      .code-ghost-widget[data-state="error"] {
+        color: var(--opaline-text-tertiary, #757575);
       }
     `;
     document.head.appendChild(style);
@@ -98,18 +108,30 @@ export function initializeCodeGhost(editor: monaco.editor.IStandaloneCodeEditor)
   disposeTokenListener = onCodeGhostToken((payload) => {
     const { requestId, token, done, error } = payload;
     if (requestId !== currentRequestId) return;
-    if (error) { console.warn("[code ghost] err:", error); return; }
+    if (error) {
+      console.warn("[code ghost] err:", error);
+      if (widget) {
+        widget.renderError("Inline help unavailable. Check AI settings.");
+      }
+      return;
+    }
 
     if (token) {
       accumulatedText += token;
-      if (widget) widget.render(accumulatedText);
+      const nextText = accumulatedText.trim();
+      if (widget && nextText.length > 0) {
+        widget.domNode.dataset.state = "ready";
+        widget.render(nextText);
+      }
     }
 
     if (done) {
-      if (widget && accumulatedText) {
-        widget.render(accumulatedText);
-      } else if (!accumulatedText) {
-        hideWidget();
+      const finalText = accumulatedText.trim();
+      if (widget && finalText.length > 0) {
+        widget.domNode.dataset.state = "ready";
+        widget.render(finalText);
+      } else if (widget) {
+        widget.renderError("Inline help unavailable. Check AI settings.");
       }
     }
   });
@@ -162,9 +184,11 @@ function fetchExplanation(lineNumber: number) {
 
   if (!widget) {
     widget = new GhostWidget(lineNumber);
+    widget.domNode.dataset.state = "loading";
     editor.addContentWidget(widget);
   } else {
     widget.setLine(lineNumber);
+    widget.domNode.dataset.state = "loading";
     widget.hide();
   }
 

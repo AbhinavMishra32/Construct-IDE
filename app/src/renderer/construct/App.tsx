@@ -26,8 +26,8 @@ import { logStore, type LogChannel, type LogEntry } from "./lib/logStore";
 import {
   AppShell,
   AppShellChromeButton,
-  AppShellCollapsedSidebarTrigger,
   AppShellHeaderToolButton,
+  AppShellNavigationControls,
   BottomPanel,
   Button,
   Sidebar,
@@ -814,81 +814,13 @@ export default function ConstructApp() {
               <span>{tab.title}</span>
             </button>
           )}
+          onNavigateHome={handleBack}
           collapsedSidebarTrigger={(state) => (
             <div className="construct-collapsed-toolbar">
-              <AppShellCollapsedSidebarTrigger onClick={state.toggleSidebar} aria-label="Open sidebar">
-                <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20, overflow: "visible" }}>
-                  <rect x="3.5" y="4.5" width="13" height="11" rx="2" />
-                  <path d="M7.5 4.5v11" />
-                  <circle cx="16.5" cy="4.5" r="2.5" fill="#007aff" stroke="var(--opaline-bg-primary)" strokeWidth="1.5" />
-                </svg>
-              </AppShellCollapsedSidebarTrigger>
-              <AppShellCollapsedSidebarTrigger onClick={handleBack} aria-label="Home">
-                <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20 }}>
-                  <path d="M3 9.5 L10 3.5 L17 9.5" />
-                  <path d="M4.25 9.5 v5.25a1 1 0 0 0 1 1 h9.5 a1 1 0 0 0 1-1 v-5.25" />
-                  <path d="M8.5 15.75 v-3.75 h3 v3.75" />
-                </svg>
-              </AppShellCollapsedSidebarTrigger>
-              <AppShellCollapsedSidebarTrigger onClick={state.navigateBack} disabled={!state.canNavigateBack} aria-label="Back">
-                <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20 }}>
-                  <line x1="19" y1="12" x2="5" y2="12" />
-                  <polyline points="12 19 5 12 12 5" />
-                </svg>
-              </AppShellCollapsedSidebarTrigger>
-              <AppShellCollapsedSidebarTrigger onClick={state.navigateForward} disabled={!state.canNavigateForward} aria-label="Forward">
-                <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20 }}>
-                  <line x1="5" y1="12" x2="19" y2="12" />
-                  <polyline points="12 5 19 12 12 19" />
-                </svg>
-              </AppShellCollapsedSidebarTrigger>
+              <AppShellNavigationControls state={state} onHome={handleBack} variant="collapsed" />
             </div>
           )}
-          sidebarChrome={
-            (state) => (
-                  <>
-                    <AppShellChromeButton
-                      aria-label={state.isSidebarOpen ? "Close sidebar" : "Open sidebar"}
-                      onClick={state.toggleSidebar}
-                    >
-                      <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20 }}>
-                        <rect x="3.5" y="4.5" width="13" height="11" rx="2" />
-                        <path d="M7.5 4.5v11" />
-                      </svg>
-                    </AppShellChromeButton>
-                    <AppShellChromeButton
-                      aria-label="Home"
-                      onClick={handleBack}
-                    >
-                      <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20 }}>
-                        <path d="M3 9.5 L10 3.5 L17 9.5" />
-                        <path d="M4.25 9.5 v5.25a1 1 0 0 0 1 1 h9.5 a1 1 0 0 0 1-1 v-5.25" />
-                        <path d="M8.5 15.75 v-3.75 h3 v3.75" />
-                      </svg>
-                    </AppShellChromeButton>
-                    <AppShellChromeButton
-                      aria-label="Back"
-                      disabled={!state.canNavigateBack}
-                      onClick={state.navigateBack}
-                    >
-                      <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20 }}>
-                        <line x1="19" y1="12" x2="5" y2="12" />
-                        <polyline points="12 19 5 12 12 5" />
-                      </svg>
-                    </AppShellChromeButton>
-                    <AppShellChromeButton
-                      aria-label="Forward"
-                      disabled={!state.canNavigateForward}
-                      onClick={state.navigateForward}
-                    >
-                      <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20 }}>
-                        <line x1="5" y1="12" x2="19" y2="12" />
-                        <polyline points="12 5 19 12 12 19" />
-                      </svg>
-                    </AppShellChromeButton>
-                  </>
-                )
-          }
+          sidebarChrome={(state) => <AppShellNavigationControls state={state} onHome={handleBack} />}
           headerActions={
             activeProject && !settingsSurface
               ? (state) => {

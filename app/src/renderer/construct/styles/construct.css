@@ -2732,21 +2732,26 @@
 }
 
 .opaline-terminal-surface {
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--opaline-text-primary) 2.5%, transparent), transparent 70%),
-    color-mix(in srgb, var(--opaline-bg-primary) 88%, #000 12%) !important;
+  background: color-mix(in srgb, var(--opaline-bg-primary) 98%, var(--opaline-bg-secondary)) !important;
 }
 
 .terminal-panel__screen {
-  padding: 6px 14px 12px;
+  padding: 0 10px 10px;
 }
 
 .terminal-panel__screen .xterm-screen {
   letter-spacing: 0;
+  font-kerning: none;
+  text-rendering: optimizeSpeed;
+  -webkit-font-smoothing: antialiased;
 }
 
 .terminal-panel__screen .xterm-cursor-layer {
   mix-blend-mode: normal;
+}
+
+.terminal-panel__screen .xterm-rows {
+  transform: translateY(-1px);
 }
 
 .construct-debug-processes {

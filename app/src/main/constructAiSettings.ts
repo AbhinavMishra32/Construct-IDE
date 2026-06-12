@@ -75,22 +75,23 @@ function getElectronApp(): { getPath(name: "userData"): string } | null {
 }
 
 export function resolveConstructAiSettings(): StoredAiSettings {
+  const stored = readStoredAiSettings();
   if (process.env.VITE_DEV_SERVER_URL) {
     return {
-      provider: (process.env.CONSTRUCT_AGENT_PROVIDER ?? "openai").trim().toLowerCase() === "openrouter"
+      provider: (process.env.CONSTRUCT_AGENT_PROVIDER ?? stored.provider).trim().toLowerCase() === "openrouter"
         ? "openrouter"
         : "openai",
-      openAiApiKey: process.env.OPENAI_API_KEY?.trim() || "",
+      openAiApiKey: process.env.OPENAI_API_KEY?.trim() || stored.openAiApiKey,
       openAiModel: process.env.CONSTRUCT_OPENAI_MODEL?.trim()
         || process.env.CONSTRUCT_OPENAI_FAST_MODEL?.trim()
-        || "gpt-5-mini",
-      openRouterApiKey: (process.env.CONSTRUCT_OPENROUTER_API_KEY ?? process.env.OPENROUTER_API_KEY)?.trim() || "",
+        || stored.openAiModel,
+      openRouterApiKey: (process.env.CONSTRUCT_OPENROUTER_API_KEY ?? process.env.OPENROUTER_API_KEY)?.trim() || stored.openRouterApiKey,
       openRouterModel: process.env.CONSTRUCT_OPENROUTER_MODEL?.trim()
         || process.env.CONSTRUCT_OPENROUTER_FAST_MODEL?.trim()
-        || "openai/gpt-5-mini",
-      featureModels: {}
+        || stored.openRouterModel,
+      featureModels: stored.featureModels
     };
   }
 
-  return readStoredAiSettings();
+  return stored;
 }
