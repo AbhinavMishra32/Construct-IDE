@@ -8,6 +8,7 @@ const version = packageJson.version;
 const tag = `v${version}`;
 const releaseDir = path.join(root, "app", "release", version);
 const notesFile = path.join(root, "docs", "releases", `${version}.md`);
+const title = `Construct ${version}`;
 
 ensureGhAuth();
 
@@ -15,22 +16,21 @@ if (!existsSync(releaseDir)) {
   throw new Error(`No release artifacts found in ${releaseDir}. Build a platform package first.`);
 }
 
-const artifacts = walk(releaseDir).filter((file) => {
-  const base = path.basename(file);
-  return !base.endsWith(".blockmap");
-});
+const artifacts = walk(releaseDir).filter(isReleaseArtifact);
 
 if (artifacts.length === 0) {
-  throw new Error(`No artifacts were found in ${releaseDir}.`);
+  throw new Error(
+    `No real release artifacts were found in ${releaseDir}. Build macOS, Windows, or Linux packages before publishing.`
+  );
 }
 
 const view = spawnSync("gh", ["release", "view", tag], { cwd: root, stdio: "ignore" });
 if (view.status !== 0) {
-  const args = ["release", "create", tag, "--title", `Construct ${version}`];
+  const args = ["release", "create", tag, "--title", title, "--latest"];
   if (existsSync(notesFile)) {
     args.push("--notes-file", notesFile);
   } else {
-    args.push("--notes", `Construct ${version}`);
+    args.push("--notes", title);
   }
   run("gh", args);
 }
@@ -60,6 +60,27 @@ function walk(dir) {
     }
   }
   return files;
+}
+
+function isReleaseArtifact(file) {
+  const base = path.basename(file);
+  if (base.endsWith(".blockmap")) return false;
+  if (base.startsWith("builder-")) return false;
+  const allowed = [
+    ".dmg",
+    ".zip",
+    ".exe",
+    ".msi",
+    ".AppImage",
+    ".deb",
+    ".rpm",
+    ".gz",
+    ".snap",
+    ".pkg",
+    ".tar",
+    ".yml"
+  ];
+  return allowed.some((ext) => base.endsWith(ext));
 }
 
 function run(command, args) {
