@@ -31,6 +31,7 @@ export async function runConstructAuthoringReviewAgent(input: AuthoringReviewInp
   const runtime = createConstructAgentRuntime();
   const output = await runtime.generateStructured({
     id: CONSTRUCT_AUTHORING_REVIEW_AGENT_ID,
+    featureId: "authoring-review",
     name: "Construct Authoring Review Agent",
     purpose: "authoring review",
     instructions: [

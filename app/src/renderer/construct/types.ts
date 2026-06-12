@@ -307,8 +307,38 @@ export type AuthoringFixRecord = {
   appliedAt: string;
 };
 
+export type AiProvider = "openai" | "openrouter";
+
+export type AiSettings = {
+  provider: AiProvider;
+  openAiApiKey: string;
+  openAiModel: string;
+  openRouterApiKey: string;
+  openRouterModel: string;
+  featureModels: Record<string, string>;
+};
+
+export type AiFeatureSettings = {
+  id: string;
+  title: string;
+  description: string;
+  defaultOpenAiModel: string;
+  defaultOpenRouterModel: string;
+  model: string;
+};
+
+export type ModelCatalogEntry = {
+  id: string;
+  name: string;
+  description?: string | null;
+  contextLength?: number | null;
+  pricing?: string | null;
+};
+
 export type ProjectSettings = {
   workspaceRoot: string;
+  ai: AiSettings;
+  releaseVersion: string;
 };
 
 export type DeleteProjectCheck = {
@@ -381,6 +411,14 @@ export type ConstructProjectsApi = {
     settings: ProjectSettings;
     projects: ProjectSummary[];
   }>;
+  updateAiSettings(input: {
+    ai: Partial<AiSettings>;
+  }): Promise<ProjectSettings>;
+  listAiFeatures(): Promise<AiFeatureSettings[]>;
+  listModels(input: {
+    provider: AiProvider;
+    apiKey: string;
+  }): Promise<ModelCatalogEntry[]>;
   listProjects(): Promise<ProjectSummary[]>;
   openProject(id: string): Promise<ProjectRecord>;
   updateProject(input: {

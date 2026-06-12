@@ -65,6 +65,7 @@ export async function runConstructVerifierAgent(input: VerifierInput): Promise<V
   const runtime = createConstructAgentRuntime();
   return runtime.generateStructured({
     id: CONSTRUCT_VERIFIER_AGENT_ID,
+    featureId: "verification",
     name: CONSTRUCT_VERIFIER_AGENT_NAME,
     purpose: "agent verification",
     instructions: [

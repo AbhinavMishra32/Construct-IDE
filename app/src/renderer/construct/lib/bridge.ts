@@ -62,6 +62,18 @@ export function setWorkspaceRoot(input: Parameters<ConstructProjectsApi["setWork
   return api().setWorkspaceRoot(input);
 }
 
+export function updateAiSettings(input: Parameters<ConstructProjectsApi["updateAiSettings"]>[0]) {
+  return api().updateAiSettings(input);
+}
+
+export function listAiFeatures() {
+  return api().listAiFeatures();
+}
+
+export function listModels(input: Parameters<ConstructProjectsApi["listModels"]>[0]) {
+  return api().listModels(input);
+}
+
 export function listProjects(): Promise<ProjectSummary[]> {
   return api().listProjects();
 }

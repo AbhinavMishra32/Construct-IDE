@@ -24,10 +24,10 @@ import {
   Sidebar,
   SidebarSection,
   SettingsCard,
+  SettingsChoice,
   SettingsPanel,
   SettingsRow,
   SettingsSection,
-  SettingsSelect,
   SettingsSidebar,
   SettingsToggle,
   Dialog,
@@ -54,12 +54,15 @@ import {
 import {
   deleteProject,
   getSettings,
+  listAiFeatures,
+  listModels,
   selectWorkspaceDirectory,
   setThemeSource,
   setWorkspaceRoot,
+  updateAiSettings,
   updateProject
 } from "./lib/bridge";
-import type { DeleteProjectCheck, ProjectRecord, ProjectSummary, WorkspaceTreeNode } from "./types";
+import type { AiFeatureSettings, AiSettings, DeleteProjectCheck, ModelCatalogEntry, ProjectRecord, ProjectSummary, WorkspaceTreeNode } from "./types";
 import { currentBlock, currentBlockNumber, totalBlocks, nextPosition } from "./lib/runtime";
 
 type ThemeMode = "light" | "dark" | "system";
@@ -77,6 +80,15 @@ type ConstructHistoryEntry = ShellHistoryEntry<
 type SettingsSurfaceState = {
   itemId: string;
   projectId?: string;
+};
+
+const defaultAiSettings: AiSettings = {
+  provider: "openai",
+  openAiApiKey: "",
+  openAiModel: "gpt-5-mini",
+  openRouterApiKey: "",
+  openRouterModel: "openai/gpt-5-mini",
+  featureModels: {}
 };
 
 function getInitialTheme(): ThemeMode {
@@ -1253,6 +1265,12 @@ function ConstructSettingsSurface({
 }) {
   const project = projectId ? projects.find((item) => item.id === projectId) : null;
   const [workspaceRoot, setWorkspaceRootValue] = useState("");
+  const [aiSettings, setAiSettings] = useState<AiSettings>(defaultAiSettings);
+  const [aiFeatures, setAiFeatures] = useState<AiFeatureSettings[]>([]);
+  const [modelOptions, setModelOptions] = useState<ModelCatalogEntry[]>([]);
+  const [modelsBusy, setModelsBusy] = useState(false);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [modelsError, setModelsError] = useState<string | null>(null);
   const [projectTitle, setProjectTitle] = useState(project?.title ?? "");
   const [projectDescription, setProjectDescription] = useState(project?.description ?? "");
   const [busy, setBusy] = useState(false);
@@ -1398,8 +1416,29 @@ function ConstructSettingsSurface({
 
   useEffect(() => {
     void getSettings()
-      .then((settings) => setWorkspaceRootValue(settings.workspaceRoot))
+      .then((settings) => {
+        setWorkspaceRootValue(settings.workspaceRoot);
+        setAiSettings({
+          ...defaultAiSettings,
+          ...(settings.ai ?? {})
+        });
+        return listAiFeatures();
+      })
+      .then((features) => setAiFeatures(features))
       .catch((caught) => setError(caught instanceof Error ? caught.message : String(caught)));
+  }, []);
+
+  useEffect(() => {
+    const apiKey = aiSettings.provider === "openrouter"
+      ? aiSettings.openRouterApiKey.trim()
+      : aiSettings.openAiApiKey.trim();
+
+    if (!apiKey) {
+      setModelOptions([]);
+      return;
+    }
+
+    void refreshModels(aiSettings.provider, apiKey);
   }, []);
 
   useEffect(() => {
@@ -1437,6 +1476,70 @@ function ConstructSettingsSurface({
     } finally {
       setBusy(false);
     }
+  }
+
+  async function refreshModels(provider = aiSettings.provider, apiKey?: string) {
+    const resolvedKey = (apiKey ?? (provider === "openrouter" ? aiSettings.openRouterApiKey : aiSettings.openAiApiKey)).trim();
+    if (!resolvedKey) {
+      setModelsError(`Enter your ${provider === "openrouter" ? "OpenRouter" : "OpenAI"} API key first.`);
+      setModelOptions([]);
+      return;
+    }
+
+    try {
+      setModelsBusy(true);
+      setModelsError(null);
+      const models = await listModels({ provider, apiKey: resolvedKey });
+      setModelOptions(models);
+      setAiSettings((current) => {
+        if (provider === "openrouter") {
+          const nextModel = current.openRouterModel && models.some((model) => model.id === current.openRouterModel)
+            ? current.openRouterModel
+            : (models[0]?.id ?? current.openRouterModel);
+          return { ...current, openRouterModel: nextModel };
+        }
+
+        const nextModel = current.openAiModel && models.some((model) => model.id === current.openAiModel)
+          ? current.openAiModel
+          : (models[0]?.id ?? current.openAiModel);
+        return { ...current, openAiModel: nextModel };
+      });
+    } catch (caught) {
+      setModelsError(caught instanceof Error ? caught.message : String(caught));
+      setModelOptions([]);
+    } finally {
+      setModelsBusy(false);
+    }
+  }
+
+  async function saveAiConfiguration() {
+    try {
+      setAiBusy(true);
+      setModelsError(null);
+      const settings = await updateAiSettings({ ai: aiSettings });
+      setAiSettings({
+        ...defaultAiSettings,
+        ...(settings.ai ?? {})
+      });
+      setAiFeatures(await listAiFeatures());
+    } catch (caught) {
+      setModelsError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setAiBusy(false);
+    }
+  }
+
+  function updateFeatureModel(featureId: string, model: string) {
+    setAiSettings((current) => ({
+      ...current,
+      featureModels: {
+        ...current.featureModels,
+        [featureId]: model
+      }
+    }));
+    setAiFeatures((current) => current.map((feature) => (
+      feature.id === featureId ? { ...feature, model } : feature
+    )));
   }
 
   async function handleDeleteClick() {
@@ -1511,11 +1614,15 @@ function ConstructSettingsSurface({
               title="Color theme"
               description="Match the system appearance or keep Construct fixed to one mode."
               control={
-                <SettingsSelect value={theme} onChange={(event) => onThemeChange(event.currentTarget.value as ThemeMode)}>
-                  <option value="system">System</option>
-                  <option value="light">Light</option>
-                  <option value="dark">Dark</option>
-                </SettingsSelect>
+                <SettingsChoice
+                  value={theme}
+                  onValueChange={(value) => onThemeChange(value as ThemeMode)}
+                  options={[
+                    { value: "system", label: "System" },
+                    { value: "light", label: "Light" },
+                    { value: "dark", label: "Dark" }
+                  ]}
+                />
               }
             />
           </SettingsCard>
@@ -1776,6 +1883,103 @@ function ConstructSettingsSurface({
               </Button>
             </div>
           </SettingsRow>
+        </SettingsCard>
+      </SettingsSection>
+      <SettingsSection title="AI">
+        <SettingsCard>
+          <SettingsRow title="AI Provider" description="Choose the account Construct uses for AI-assisted features.">
+            <SettingsChoice
+              value={aiSettings.provider}
+              onValueChange={(value) => {
+                const provider = value === "openrouter" ? "openrouter" : "openai";
+                setAiSettings((current) => ({ ...current, provider }));
+                setModelOptions([]);
+                setModelsError(null);
+              }}
+              options={[
+                { value: "openai", label: "OpenAI" },
+                { value: "openrouter", label: "OpenRouter" }
+              ]}
+            />
+          </SettingsRow>
+
+          {aiSettings.provider === "openai" ? (
+            <SettingsRow title="OpenAI API Key" description="Stored locally by Construct and used by packaged releases.">
+              <input
+                className="construct-settings-input"
+                type="password"
+                value={aiSettings.openAiApiKey}
+                placeholder="sk-..."
+                onChange={(event) => setAiSettings((current) => ({ ...current, openAiApiKey: event.currentTarget.value }))}
+              />
+            </SettingsRow>
+          ) : (
+            <SettingsRow title="OpenRouter API Key" description="Stored locally by Construct and used by packaged releases.">
+              <input
+                className="construct-settings-input"
+                type="password"
+                value={aiSettings.openRouterApiKey}
+                placeholder="sk-or-..."
+                onChange={(event) => setAiSettings((current) => ({ ...current, openRouterApiKey: event.currentTarget.value }))}
+              />
+            </SettingsRow>
+          )}
+
+          <SettingsRow
+            title="Available models"
+            description={modelOptions.length > 0 ? `${modelOptions.length} models loaded` : "Load models from the selected provider before assigning feature models."}
+            control={
+              <Button
+                variant="secondary"
+                size="small"
+                disabled={modelsBusy}
+                onClick={() => void refreshModels(aiSettings.provider)}
+              >
+                {modelsBusy ? "Loading..." : "Refresh"}
+              </Button>
+            }
+          />
+
+          {aiFeatures.map((feature) => (
+            <SettingsRow
+              key={feature.id}
+              title={feature.title}
+              description={feature.description}
+              control={
+                <SettingsChoice
+                  value={feature.model}
+                  disabled={modelsBusy}
+                  placeholder={feature.model || "Select model"}
+                  onValueChange={(model) => updateFeatureModel(feature.id, model)}
+                  options={
+                    modelOptions.length > 0
+                      ? modelOptions.map((model) => ({
+                          value: model.id,
+                          label: model.name,
+                          description: model.id
+                        }))
+                      : [{ value: feature.model, label: feature.model || "No models loaded yet" }]
+                  }
+                />
+              }
+            />
+          ))}
+
+          <SettingsRow
+            title="Save AI settings"
+            description={modelsError ?? "Feature model choices are saved locally and used by packaged builds."}
+            control={
+              <Button size="small" disabled={aiBusy} onClick={() => void saveAiConfiguration()}>
+                {aiBusy ? "Saving..." : "Save"}
+              </Button>
+            }
+          />
+        </SettingsCard>
+      </SettingsSection>
+
+      <SettingsSection title="About">
+        <SettingsCard>
+          <SettingsRow title="Tape Spec" description="Current Construct tape format supported by the editor." control={<code>0.3.1</code>} />
         </SettingsCard>
       </SettingsSection>
       {error ? <div className="construct-dialog-error">{error}</div> : null}

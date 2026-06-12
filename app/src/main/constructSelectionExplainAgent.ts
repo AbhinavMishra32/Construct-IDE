@@ -68,7 +68,7 @@ export async function runConstructSelectionExplainAgent(
   const codebase = await collectCodebaseContext(input, onProgress);
   onProgress({ status: "done", message: "Selection context is ready", detail: `${input.selection.text.length} selected characters`, tool: "agent" });
 
-  const responsesConfig = resolveConstructOpenAiResponsesConfig();
+  const responsesConfig = resolveConstructOpenAiResponsesConfig("selection-explain");
   if (responsesConfig) {
     try {
       onProgress({ status: "running", message: "Researching relevant sources", detail: "Using hosted web search when outside context is useful", tool: "web" });
@@ -89,7 +89,7 @@ export async function runConstructSelectionExplainAgent(
       });
     }
   } else {
-    onProgress({ status: "warning", message: "Web research is not configured", detail: "OPENAI_API_KEY is not available; continuing with project context.", tool: "web" });
+    onProgress({ status: "warning", message: "Web research is not configured", detail: "Add an OpenAI key in Settings to enable hosted research.", tool: "web" });
   }
 
   onProgress({ status: "running", message: "Connecting it to this project", detail: "Synthesizing from selected text and workspace matches", tool: "agent" });

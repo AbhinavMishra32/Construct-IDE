@@ -1,4 +1,6 @@
 import { BrowserWindow } from "electron";
+import { resolveConstructAiSettings } from "./constructAiSettings";
+import { modelForAiFeature } from "./constructAiFeatures";
 
 export type CodeGhostStreamInput = {
   lineContent: string;
@@ -8,19 +10,23 @@ export type CodeGhostStreamInput = {
 };
 
 function buildModelConfig() {
-  const apiKey = (
-    process.env.CONSTRUCT_OPENROUTER_API_KEY ?? process.env.OPENROUTER_API_KEY
-  )?.trim();
+  const settings = resolveConstructAiSettings();
+  const apiKey = settings.provider === "openrouter"
+    ? settings.openRouterApiKey
+    : settings.openAiApiKey;
 
   if (!apiKey) {
-    throw new Error("OPENROUTER_API_KEY or CONSTRUCT_OPENROUTER_API_KEY is required");
+    throw new Error(`${settings.provider === "openrouter" ? "OpenRouter" : "OpenAI"} API key is required`);
   }
 
   return {
-    modelId: process.env.CONSTRUCT_OPENROUTER_GHOST_MODEL?.trim()
-      || "nvidia/nemotron-nano-9b-v2:free",
+    modelId: settings.provider === "openrouter"
+      ? modelForAiFeature(settings, "code-explain")
+      : modelForAiFeature(settings, "code-explain"),
     apiKey,
-    baseUrl: process.env.CONSTRUCT_OPENROUTER_BASE_URL?.trim() || "https://openrouter.ai/api/v1"
+    baseUrl: settings.provider === "openrouter"
+      ? (process.env.CONSTRUCT_OPENROUTER_BASE_URL?.trim() || "https://openrouter.ai/api/v1")
+      : ((process.env.CONSTRUCT_OPENAI_BASE_URL?.trim() || "https://api.openai.com/v1").replace(/\/$/, ""))
   };
 }
 

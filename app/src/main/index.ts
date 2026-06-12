@@ -13,6 +13,7 @@ import {
 } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { promisify } from "node:util";
+import { homedir } from "node:os";
 
 import { app, BrowserWindow, dialog, ipcMain, shell, nativeImage, nativeTheme } from "electron";
 import * as pty from "@homebridge/node-pty-prebuilt-multiarch";
@@ -28,6 +29,7 @@ import {
   type SelectionExplanationLogEntry
 } from "./constructSelectionExplainAgent";
 import { sendCodeGhostStreamToRenderer } from "./constructCodeGhostAgent";
+import { featureSettingsView } from "./constructAiFeatures";
 
 if (typeof process.loadEnvFile === "function") {
   const envPath = path.resolve(__dirname, "../../.env");
@@ -168,6 +170,15 @@ type StoredBlockAssistance = {
 
 type StoredSettings = {
   workspaceRoot: string;
+  releaseVersion: string;
+  ai: {
+    provider: "openai" | "openrouter";
+    openAiApiKey: string;
+    openAiModel: string;
+    openRouterApiKey: string;
+    openRouterModel: string;
+    featureModels: Record<string, string>;
+  };
 };
 
 type TerminalSessionMeta = {
@@ -184,6 +195,45 @@ const latestTerminalOutputByProject = new Map<string, string>();
 function sendToRenderers(channel: string, payload: unknown): void {
   for (const window of BrowserWindow.getAllWindows()) {
     window.webContents.send(channel, payload);
+  }
+}
+
+function legacyConstructProjectsRoot(): string | null {
+  if (process.platform === "darwin") {
+    const candidate = path.join(homedir(), "Library", "Application Support", "@construct", "app", "construct-projects");
+    if (existsSync(path.join(candidate, "projects.json"))) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+async function migrateLegacyUserData(): Promise<void> {
+  if (existsSync(path.join(constructProjectsRoot(), "projects.json"))) {
+    return;
+  }
+
+  const legacy = legacyConstructProjectsRoot();
+  if (!legacy) {
+    return;
+  }
+
+  console.log("[construct] migrating project data from legacy location", { from: legacy, to: constructProjectsRoot() });
+  await mkdir(constructProjectsRoot(), { recursive: true });
+  try {
+    const entries = await readdir(legacy, { withFileTypes: true });
+    for (const entry of entries) {
+      const src = path.join(legacy, entry.name);
+      const dst = path.join(constructProjectsRoot(), entry.name);
+      if (entry.isDirectory()) {
+        await cp(src, dst, { recursive: true, force: false });
+      } else {
+        await cp(src, dst, { force: false });
+      }
+    }
+    console.log("[construct] migration complete");
+  } catch (error) {
+    console.error("[construct] migration failed", error);
   }
 }
 
@@ -300,22 +350,116 @@ async function readSettings(): Promise<StoredSettings> {
   await mkdir(constructProjectsRoot(), { recursive: true });
 
   if (!existsSync(settingsPath())) {
-    return { workspaceRoot: defaultWorkspaceParent() };
+    return defaultSettings();
   }
 
   try {
     const parsed = JSON.parse(await readFile(settingsPath(), "utf8")) as Partial<StoredSettings>;
-    return {
-      workspaceRoot: parsed.workspaceRoot || defaultWorkspaceParent()
-    };
+    return normalizeSettings(parsed);
   } catch {
-    return { workspaceRoot: defaultWorkspaceParent() };
+    return defaultSettings();
   }
 }
 
 async function writeSettings(settings: StoredSettings): Promise<void> {
   await mkdir(constructProjectsRoot(), { recursive: true });
   await writeFile(settingsPath(), `${JSON.stringify(settings, null, 2)}\n`, "utf8");
+}
+
+function defaultSettings(): StoredSettings {
+  return {
+    workspaceRoot: defaultWorkspaceParent(),
+    releaseVersion: process.env.npm_package_version?.trim() || "0.0.3",
+    ai: {
+      provider: "openai",
+      openAiApiKey: "",
+      openAiModel: "gpt-5-mini",
+      openRouterApiKey: "",
+      openRouterModel: "openai/gpt-5-mini",
+      featureModels: {}
+    }
+  };
+}
+
+function normalizeSettings(input: Partial<StoredSettings> | null | undefined): StoredSettings {
+  const defaults = defaultSettings();
+  return {
+    workspaceRoot: input?.workspaceRoot || defaults.workspaceRoot,
+    releaseVersion: input?.releaseVersion || defaults.releaseVersion,
+    ai: {
+      provider: input?.ai?.provider === "openrouter" ? "openrouter" : "openai",
+      openAiApiKey: input?.ai?.openAiApiKey?.trim?.() || "",
+      openAiModel: input?.ai?.openAiModel?.trim?.() || defaults.ai.openAiModel,
+      openRouterApiKey: input?.ai?.openRouterApiKey?.trim?.() || "",
+      openRouterModel: input?.ai?.openRouterModel?.trim?.() || defaults.ai.openRouterModel,
+      featureModels: input?.ai?.featureModels && typeof input.ai.featureModels === "object"
+        ? Object.fromEntries(
+            Object.entries(input.ai.featureModels)
+              .filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].trim().length > 0)
+          )
+        : {}
+    }
+  };
+}
+
+async function fetchOpenAiModels(apiKey: string) {
+  const response = await fetch("https://api.openai.com/v1/models", {
+    headers: {
+      Authorization: `Bearer ${apiKey}`
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`OpenAI model lookup failed (${response.status}).`);
+  }
+
+  const payload = await response.json() as {
+    data?: Array<{ id: string }>;
+  };
+
+  return (payload.data ?? [])
+    .map((model) => ({
+      id: model.id,
+      name: model.id
+    }))
+    .sort((left, right) => left.id.localeCompare(right.id));
+}
+
+async function fetchOpenRouterModels(apiKey: string) {
+  const response = await fetch("https://openrouter.ai/api/v1/models", {
+    headers: {
+      Authorization: `Bearer ${apiKey}`
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`OpenRouter model lookup failed (${response.status}).`);
+  }
+
+  const payload = await response.json() as {
+    data?: Array<{
+      id: string;
+      name?: string;
+      description?: string;
+      context_length?: number;
+      pricing?: {
+        prompt?: string;
+        completion?: string;
+      };
+    }>;
+  };
+
+  return (payload.data ?? [])
+    .map((model) => ({
+      id: model.id,
+      name: model.name?.trim() || model.id,
+      description: model.description ?? null,
+      contextLength: model.context_length ?? null,
+      pricing: model.pricing
+        ? `Prompt ${model.pricing.prompt ?? "?"} • Completion ${model.pricing.completion ?? "?"}`
+        : null
+    }))
+    .sort((left, right) => left.name.localeCompare(right.name));
 }
 
 function calculateProgress(project: StoredProject): number {
@@ -1346,6 +1490,7 @@ function installConstructProjectIpcHandlers(): void {
     const workspaceRoot = path.resolve(String(input.workspaceRoot || defaultWorkspaceParent()));
     await mkdir(workspaceRoot, { recursive: true });
     const projects = await readProjects();
+    const currentSettings = await readSettings();
 
     for (const project of projects) {
       const currentWorkspace = path.resolve(project.workspacePath);
@@ -1361,7 +1506,10 @@ function installConstructProjectIpcHandlers(): void {
       project.workspacePath = nextWorkspace;
     }
 
-    const settings = { workspaceRoot };
+    const settings = {
+      ...currentSettings,
+      workspaceRoot
+    };
     await writeSettings(settings);
     await writeProjects(projects);
 
@@ -1369,6 +1517,36 @@ function installConstructProjectIpcHandlers(): void {
       settings,
       projects: projects.map(summarizeProject)
     };
+  });
+
+  ipcMain.handle("construct:settings:update-ai", async (_event, input) => {
+    const current = await readSettings();
+    const next = normalizeSettings({
+      ...current,
+      ai: {
+        ...current.ai,
+        ...(typeof input?.ai === "object" && input.ai ? input.ai : {})
+      }
+    });
+    await writeSettings(next);
+    return next;
+  });
+
+  ipcMain.handle("construct:settings:list-ai-features", async () => {
+    return featureSettingsView((await readSettings()).ai);
+  });
+
+  ipcMain.handle("construct:settings:list-models", async (_event, input) => {
+    const provider = input?.provider === "openrouter" ? "openrouter" : "openai";
+    const apiKey = String(input?.apiKey ?? "").trim();
+
+    if (!apiKey) {
+      throw new Error(`Enter a ${provider === "openrouter" ? "OpenRouter" : "OpenAI"} API key first.`);
+    }
+
+    return provider === "openrouter"
+      ? fetchOpenRouterModels(apiKey)
+      : fetchOpenAiModels(apiKey);
   });
 
   ipcMain.handle("construct:project:import", async (_event, input) => {
@@ -2072,7 +2250,8 @@ function createWindow(): void {
   void window.loadFile(path.join(__dirname, "renderer", "index.html"));
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  await migrateLegacyUserData();
   installConstructProjectIpcHandlers();
   createWindow();
 

@@ -3,9 +3,11 @@ import { Mastra } from "@mastra/core/mastra";
 import type { z } from "zod";
 
 import { resolveConstructAgentModel } from "./constructAgentModels";
+import type { ConstructAiFeatureId } from "./constructAiFeatures";
 
 export type ConstructAgentRuntimeRequest<T> = {
   id: string;
+  featureId?: ConstructAiFeatureId;
   name: string;
   purpose: string;
   instructions: string;
@@ -35,7 +37,7 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
       id: request.id,
       name: request.name,
       instructions: request.instructions,
-      model: resolveConstructAgentModel(request.purpose),
+      model: resolveConstructAgentModel(request.purpose, request.featureId),
       maxRetries: request.maxRetries ?? 1
     });
 
