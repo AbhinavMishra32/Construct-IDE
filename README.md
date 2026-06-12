@@ -18,8 +18,7 @@
 
 <p align="center">
   <a href="https://tryconstruct.cc">Website</a> ·
-  <a href="https://github.com/AbhinavMishra32/Construct-IDE/releases">Downloads</a> ·
-  <a href="docs/releasing.md">Release Docs</a>
+  <a href="https://github.com/AbhinavMishra32/Construct-IDE/releases">Downloads</a>
 </p>
 
 Construct is a desktop IDE for executable learning tapes. Instead of watching a tutorial or handing the whole task to an agent, you work inside a real project while Construct sets up the workspace, guides each step, checks recall, runs terminal work, and verifies what you actually built.
@@ -51,13 +50,11 @@ Construct combines those layers into one runtime. A tape becomes a project you c
 
 ## Downloads
 
-Construct `0.0.3` is prepared for desktop packaging on all three major platforms.
+Construct `0.0.3` ships through GitHub Releases.
 
 - macOS: `.dmg`, `.zip`
 - Windows: `nsis`, `portable`, `.zip`
 - Linux: `AppImage`, `.deb`, `.tar.gz`
-
-Release publishing is command-based and uses the `gh` CLI instead of GitHub Actions. The release workflow is documented in `docs/releasing.md`.
 
 ## Tape Compatibility
 
@@ -103,28 +100,6 @@ pnpm test
 pnpm verify
 ```
 
-## Release Commands
-
-Refresh the packaged icons from the source app icon:
-
-```bash
-pnpm brand:icons
-```
-
-Build release artifacts on the matching OS:
-
-```bash
-pnpm release:mac
-pnpm release:win
-pnpm release:linux
-```
-
-Publish built artifacts to GitHub Releases with `gh`:
-
-```bash
-pnpm release:publish
-```
-
 ## Repository
 
 ```text
@@ -133,7 +108,7 @@ app/src/renderer/construct/  Tape runtime, compiler, parser, and UI
 opaline/packages/ui/         Shared UI package used by the app
 website/                     Marketing site for tryconstruct.cc
 docs/                        Release notes and engineering documentation
-scripts/release/             Icon generation and GitHub release scripts
+scripts/release/             Internal release tooling used by coding agents
 ```
 
 The old pre-tape runner architecture is gone. The active product is the tape-based Construct IDE.

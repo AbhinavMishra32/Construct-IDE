@@ -14,13 +14,7 @@
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "verify": "pnpm typecheck && pnpm test && pnpm build",
-    "brand:icons": "node scripts/release/generate-icons.mjs",
-    "release:mac": "pnpm --filter @construct/app package:mac",
-    "release:linux": "pnpm --filter @construct/app package:linux",
-    "release:win": "pnpm --filter @construct/app package:win",
-    "release:dir": "pnpm --filter @construct/app package:dir",
-    "release:publish": "node scripts/release/publish-gh.mjs"
+    "verify": "pnpm typecheck && pnpm test && pnpm build"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

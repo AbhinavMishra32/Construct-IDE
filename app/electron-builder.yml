@@ -1,5 +1,6 @@
 appId: cc.tryconstruct.desktop
 productName: Construct
+executableName: construct
 artifactName: Construct-${version}-${os}-${arch}.${ext}
 asar: true
 directories:
@@ -30,9 +31,10 @@ nsis:
   perMachine: false
 linux:
   category: Development
+  desktopName: Construct
+  synopsis: Construct desktop IDE
   icon: build/icons/png
   target:
     - AppImage
     - deb
     - tar.gz
-publish: never

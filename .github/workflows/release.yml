@@ -1,0 +1,115 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag, for example v0.0.3
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: Package ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos
+            os: macos-latest
+            target: --mac dmg zip
+          - platform: windows
+            os: windows-latest
+            target: --win nsis portable zip
+          - platform: linux
+            os: ubuntu-latest
+            target: --linux AppImage deb tar.gz
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 25
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify app
+        run: pnpm --filter @construct/app typecheck && pnpm --filter @construct/app test
+
+      - name: Generate icons
+        run: node scripts/release/generate-icons.mjs
+
+      - name: Package desktop
+        working-directory: app
+        run: pnpm build && pnpm dlx electron-builder@latest --projectDir . --config electron-builder.yml ${{ matrix.target }}
+
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: construct-${{ matrix.platform }}
+          path: |
+            app/release/**/*.dmg
+            app/release/**/*.zip
+            app/release/**/*.exe
+            app/release/**/*.msi
+            app/release/**/*.AppImage
+            app/release/**/*.deb
+            app/release/**/*.rpm
+            app/release/**/*.snap
+            app/release/**/*.pkg
+            app/release/**/*.tar.gz
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub release
+    needs: package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download package artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: Resolve tag
+        id: release
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+        shell: bash
+        run: |
+          VERSION="${TAG#v}"
+          NOTES="docs/releases/${VERSION}.md"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" release-artifacts/* --clobber
+          elif [ -f "$NOTES" ]; then
+            gh release create "$TAG" release-artifacts/* --title "Construct ${VERSION}" --notes-file "$NOTES" --latest
+          else
+            gh release create "$TAG" release-artifacts/* --title "Construct ${VERSION}" --notes "Construct ${VERSION}" --latest
+          fi

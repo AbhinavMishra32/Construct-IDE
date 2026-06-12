@@ -66,6 +66,7 @@ function isReleaseArtifact(file) {
   const base = path.basename(file);
   if (base.endsWith(".blockmap")) return false;
   if (base.startsWith("builder-")) return false;
+  if (!base.startsWith("Construct-")) return false;
   const allowed = [
     ".dmg",
     ".zip",
@@ -74,11 +75,9 @@ function isReleaseArtifact(file) {
     ".AppImage",
     ".deb",
     ".rpm",
-    ".gz",
     ".snap",
     ".pkg",
-    ".tar",
-    ".yml"
+    ".tar.gz"
   ];
   return allowed.some((ext) => base.endsWith(ext));
 }
