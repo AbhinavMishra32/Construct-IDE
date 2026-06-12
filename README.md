@@ -9,9 +9,9 @@
 </p>
 
 <p align="center">
-  <img alt="Release" src="https://img.shields.io/badge/version-0.0.3-111111?style=flat-square">
+  <img alt="Release" src="https://img.shields.io/badge/version-0.1.0-111111?style=flat-square">
   <img alt="Platforms" src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-111111?style=flat-square">
-  <img alt="Tape Spec" src="https://img.shields.io/badge/tape-0.3.1-cb9b2d?style=flat-square">
+  <img alt="Construct Protocols" src="https://img.shields.io/badge/protocols-tape--0.1_%7C_0.2_%7C_0.3_%7C_0.3.1-cb9b2d?style=flat-square">
   <img alt="Desktop" src="https://img.shields.io/badge/desktop-Electron-47848f?style=flat-square&logo=electron&logoColor=white">
   <img alt="Stars" src="https://img.shields.io/github/stars/AbhinavMishra32/Construct-IDE?style=flat-square">
 </p>
@@ -45,12 +45,12 @@ Construct combines those layers into one runtime. A tape becomes a project you c
 - Opens `.construct` programs and materializes them into real local workspaces.
 - Walks explain, edit, recall, run, expect, checkpoint, and verify blocks in order.
 - Gives you Monaco editing, terminal execution, file navigation, and project progress in one shell.
-- Preserves `tape-0.1`, `tape-0.2`, `tape-0.3`, and canonical `tape-0.3.1` support.
+- Supports Construct protocols `tape-0.1`, `tape-0.2`, `tape-0.3`, and canonical `tape-0.3.1`.
 - Accepts older guide aliases and obvious legacy inline file references so past projects do not break.
 
 ## Downloads
 
-Construct `0.0.3` ships through GitHub Releases.
+Construct `0.1.0` ships through GitHub Releases.
 
 - macOS: `.dmg`, `.zip`
 - Windows: `nsis`, `portable`, `.zip`
