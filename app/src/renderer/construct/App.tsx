@@ -26,8 +26,8 @@ import { logStore, type LogChannel, type LogEntry } from "./lib/logStore";
 import {
   AppShell,
   AppShellChromeButton,
+  AppShellCollapsedSidebarTrigger,
   AppShellHeaderToolButton,
-  AppShellNavigationControls,
   BottomPanel,
   Button,
   Sidebar,
@@ -814,13 +814,30 @@ export default function ConstructApp() {
               <span>{tab.title}</span>
             </button>
           )}
-          onNavigateHome={handleBack}
           collapsedSidebarTrigger={(state) => (
             <div className="construct-collapsed-toolbar">
-              <AppShellNavigationControls state={state} onHome={handleBack} variant="collapsed" />
+              <ConstructShellNavigationControls
+                canNavigateBack={state.canNavigateBack}
+                canNavigateForward={state.canNavigateForward}
+                navigateBack={state.navigateBack}
+                navigateForward={state.navigateForward}
+                onToggleSidebar={state.toggleSidebar}
+                onHome={handleBack}
+                variant="collapsed"
+              />
             </div>
           )}
-          sidebarChrome={(state) => <AppShellNavigationControls state={state} onHome={handleBack} />}
+          sidebarChrome={(state) => (
+            <ConstructShellNavigationControls
+              canNavigateBack={state.canNavigateBack}
+              canNavigateForward={state.canNavigateForward}
+              navigateBack={state.navigateBack}
+              navigateForward={state.navigateForward}
+              onToggleSidebar={state.toggleSidebar}
+              onHome={handleBack}
+              variant="sidebar"
+            />
+          )}
           headerActions={
             activeProject && !settingsSurface
               ? (state) => {
@@ -1989,6 +2006,57 @@ async function restartProjectLsp(projectId: string) {
   await window.constructProjects.lspStop();
   lspClient.dispose();
   return window.constructProjects.lspStart(projectId);
+}
+
+function ConstructShellNavigationControls({
+  canNavigateBack,
+  canNavigateForward,
+  navigateBack,
+  navigateForward,
+  onToggleSidebar,
+  onHome,
+  variant
+}: {
+  canNavigateBack: boolean;
+  canNavigateForward: boolean;
+  navigateBack: () => void;
+  navigateForward: () => void;
+  onToggleSidebar: () => void;
+  onHome: () => void;
+  variant: "collapsed" | "sidebar";
+}) {
+  const ButtonComponent = variant === "collapsed" ? AppShellCollapsedSidebarTrigger : AppShellChromeButton;
+
+  return (
+    <>
+      <ButtonComponent onClick={onToggleSidebar} aria-label={variant === "collapsed" ? "Open sidebar" : "Close sidebar"}>
+        <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20, overflow: "visible" }}>
+          <rect x="3.5" y="4.5" width="13" height="11" rx="2" />
+          <path d="M7.5 4.5v11" />
+          {variant === "collapsed" ? <circle cx="16.5" cy="4.5" r="2.5" fill="#007aff" stroke="var(--opaline-bg-primary)" strokeWidth="1.5" /> : null}
+        </svg>
+      </ButtonComponent>
+      <ButtonComponent onClick={onHome} aria-label="Home">
+        <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20 }}>
+          <path d="M3 9.5 L10 3.5 L17 9.5" />
+          <path d="M4.25 9.5 v5.25a1 1 0 0 0 1 1 h9.5 a1 1 0 0 0 1-1 v-5.25" />
+          <path d="M8.5 15.75 v-3.75 h3 v3.75" />
+        </svg>
+      </ButtonComponent>
+      <ButtonComponent onClick={navigateBack} disabled={!canNavigateBack} aria-label="Back">
+        <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20 }}>
+          <line x1="19" y1="12" x2="5" y2="12" />
+          <polyline points="12 19 5 12 12 5" />
+        </svg>
+      </ButtonComponent>
+      <ButtonComponent onClick={navigateForward} disabled={!canNavigateForward} aria-label="Forward">
+        <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 20, height: 20 }}>
+          <line x1="5" y1="12" x2="19" y2="12" />
+          <polyline points="12 5 19 12 12 19" />
+        </svg>
+      </ButtonComponent>
+    </>
+  );
 }
 
 function SidebarSettingsButton({ onClick }: { onClick: () => void }) {

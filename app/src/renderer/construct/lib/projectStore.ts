@@ -4,7 +4,7 @@ import type { ProjectRecord, ProjectSummary } from "../types";
 import type { AppliedConstructFix } from "../compiler/types";
 
 export async function bootstrapProjects(): Promise<ProjectSummary[]> {
-  return (await listProjects()).filter((project) => project.sourcePath);
+  return listProjects();
 }
 
 export async function openSavedProject(id: string): Promise<ProjectRecord> {
