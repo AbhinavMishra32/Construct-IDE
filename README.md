@@ -23,6 +23,10 @@
 
 Construct is a desktop IDE for executable learning tapes. Instead of watching a tutorial or handing the whole task to an agent, you work inside a real project while Construct sets up the workspace, guides each step, checks recall, runs terminal work, and verifies what you actually built.
 
+<p align="center">
+  <img src="app/assets/construct-app.png" alt="Construct IDE showing Agent Runtime Tool Contracts tape" width="100%">
+</p>
+
 ## Why Construct
 
 Most tools split in the wrong direction.
