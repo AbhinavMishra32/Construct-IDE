@@ -55,6 +55,7 @@ export type VerifierInput = {
   }>;
   terminalCommand?: string;
   terminalOutput?: string;
+  answer?: string;
   messages: {
     success: string;
     failure: string;
@@ -135,6 +136,9 @@ function buildVerifierPrompt(input: VerifierInput): string {
     "",
     "Terminal output:",
     input.terminalOutput || "(none)",
+    "",
+    "Learner text answer:",
+    input.answer || "(none)",
     "",
     "Return a structured result. Evidence entries should name the concrete file/output facts you used.",
     "Set status to pass, fail, or almost. Set passed=true only for pass."

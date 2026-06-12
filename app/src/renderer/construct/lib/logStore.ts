@@ -4,7 +4,19 @@ export type LogEntry = {
   level: "info" | "warn" | "error" | "debug";
 };
 
-export type LogChannel = "lsp-server" | "lsp-protocol" | "main" | "renderer" | "terminal" | "verifier";
+export type SystemLogChannel = "lsp-server" | "lsp-protocol" | "main" | "renderer" | "terminal";
+
+export type AgentLogChannel = "verifier" | "authoring-review" | "selection-explain" | "interact" | "code-ghost";
+
+export type LogChannel = SystemLogChannel | AgentLogChannel;
+
+export const AGENT_CHANNELS: Array<{ id: AgentLogChannel; label: string; description: string }> = [
+  { id: "verifier", label: "Verifier", description: "Recall block verification" },
+  { id: "authoring-review", label: "Authoring Review", description: "Tape authoring review" },
+  { id: "selection-explain", label: "Selection Explain", description: "Text selection explanation" },
+  { id: "interact", label: "Interact", description: "Interactive Q&A" },
+  { id: "code-ghost", label: "Code Ghost", description: "Code ghost completions" }
+];
 
 type LogListener = (channel: LogChannel, entry: LogEntry) => void;
 
@@ -15,7 +27,11 @@ class LogStoreClass {
     main: [],
     renderer: [],
     terminal: [],
-    verifier: []
+    verifier: [],
+    "authoring-review": [],
+    "selection-explain": [],
+    interact: [],
+    "code-ghost": []
   };
 
   private listeners = new Set<LogListener>();

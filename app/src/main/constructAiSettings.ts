@@ -17,7 +17,7 @@ function defaultAiSettings(): StoredAiSettings {
     openAiApiKey: "",
     openAiModel: "gpt-5-mini",
     openRouterApiKey: "",
-    openRouterModel: "openai/gpt-5-mini",
+    openRouterModel: "nvidia/nemotron-3-ultra-550b-a55b:free",
     featureModels: {}
   };
 }
@@ -42,16 +42,23 @@ function readStoredAiSettings(): StoredAiSettings {
       ai?: Partial<StoredAiSettings>;
     };
     const defaults = defaultAiSettings();
+    const migrateModel = (model: string): string => {
+      if (model === "openai/gpt-5-mini" || model === "gpt-5-mini") {
+        return defaults.openRouterModel;
+      }
+      return model;
+    };
     return {
       provider: parsed.ai?.provider === "openrouter" ? "openrouter" : "openai",
       openAiApiKey: parsed.ai?.openAiApiKey?.trim?.() || defaults.openAiApiKey,
       openAiModel: parsed.ai?.openAiModel?.trim?.() || defaults.openAiModel,
       openRouterApiKey: parsed.ai?.openRouterApiKey?.trim?.() || defaults.openRouterApiKey,
-      openRouterModel: parsed.ai?.openRouterModel?.trim?.() || defaults.openRouterModel,
+      openRouterModel: migrateModel(parsed.ai?.openRouterModel?.trim?.() || defaults.openRouterModel),
       featureModels: parsed.ai?.featureModels && typeof parsed.ai.featureModels === "object"
         ? Object.fromEntries(
             Object.entries(parsed.ai.featureModels)
               .filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].trim().length > 0)
+              .map(([key, value]) => [key, migrateModel(value)])
           )
         : {}
     };

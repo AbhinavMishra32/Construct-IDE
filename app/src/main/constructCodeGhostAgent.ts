@@ -81,7 +81,7 @@ export async function fetchCodeGhostExplanation(
     body: JSON.stringify({
       model: config.modelId,
       messages: buildMessages(input),
-      stream: false,
+      stream: true,
       max_tokens: 120,
       temperature: 0.3
     }),
@@ -94,11 +94,44 @@ export async function fetchCodeGhostExplanation(
     throw new Error(`API error (${response.status})`);
   }
 
-  const data = await response.json() as {
-    choices?: Array<{ message?: { content?: string } }>;
-  };
+  const reader = response.body?.getReader();
+  if (!reader) {
+    throw new Error("Failed to get response stream reader");
+  }
 
-  const text = data.choices?.[0]?.message?.content ?? "";
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let text = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || !trimmed.startsWith("data: ")) continue;
+
+      const data = trimmed.slice(6);
+      if (data === "[DONE]") continue;
+
+      try {
+        const parsed = JSON.parse(data) as {
+          choices?: Array<{ delta?: { content?: string } }>;
+        };
+        const content = parsed.choices?.[0]?.delta?.content;
+        if (content) {
+          text += content;
+        }
+      } catch {
+        // Skip malformed JSON lines
+      }
+    }
+  }
+
   console.log("[code ghost] got response length:", text.length);
   return text.trim();
 }

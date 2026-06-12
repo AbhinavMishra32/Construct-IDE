@@ -272,6 +272,7 @@ function blockText(block: ReturnType<typeof currentBlock>): string {
   if (!block) return "";
   if (block.kind === "explain" || block.kind === "checkpoint" || block.kind === "expect") return block.content.slice(0, 4_000);
   if (block.kind === "recall") return `${block.task}\n\n${block.support}`.slice(0, 4_000);
+  if (block.kind === "interact") return `${block.prompt}\n\n${block.resources.concepts.join(" ")}`.slice(0, 4_000);
   if (block.kind === "edit") return `${block.path}\n${block.notes.map((note) => note.content).join("\n")}`.slice(0, 4_000);
   if (block.kind === "guide") return `${block.content}\n${block.sections.map((section) => section.content).join("\n")}`.slice(0, 4_000);
   return block.kind === "run" ? `${block.cwd}\n${block.command}`.slice(0, 4_000) : "";

@@ -36,6 +36,7 @@ import {
   onVerifyLog,
   readFile,
   renameFile,
+  runConstructInteract,
   updateProject,
   verifyRecall,
   writeFile
@@ -67,6 +68,7 @@ import type {
   RecallBlock,
   ReferenceLink,
   VerificationLogEntry,
+  ConstructInteractClientResult,
   WorkspaceTreeNode
 } from "../types";
 
@@ -206,6 +208,10 @@ export function Workspace({
   const [gitBusyId, setGitBusyId] = useState<string | null>(null);
   const [verifyingId, setVerifyingId] = useState<string | null>(null);
   const [verificationLogs, setVerificationLogs] = useState<Record<string, VerificationLogEntry[]>>({});
+  const [recallAnswers, setRecallAnswers] = useState<Record<string, string>>({});
+  const [interactAnswers, setInteractAnswers] = useState<Record<string, string>>({});
+  const [interactResults, setInteractResults] = useState<Record<string, ConstructInteractClientResult>>({});
+  const [interactingId, setInteractingId] = useState<string | null>(null);
   const autoOpenedRecallRef = useRef<string | null>(null);
   const fileLoadSequenceRef = useRef(0);
 
@@ -252,7 +258,8 @@ export function Workspace({
   const canContinue =
     block &&
     (block.kind !== "edit" || editComplete) &&
-    (block.kind !== "recall" || !block.verify || verification?.passed === true);
+    (block.kind !== "recall" || !block.verify || verification?.passed === true) &&
+    (block.kind !== "interact" || interactResults[block.id]?.shouldAdvance === true);
 
   const fileList = useMemo(() => flattenTree(tree), [tree]);
   const fileSet = useMemo(() => new Set(fileList), [fileList]);
@@ -1024,7 +1031,8 @@ export function Workspace({
           .filter((concept): concept is ConceptCard => Boolean(concept)),
         savedKnowledge: savedConceptIds
           .map((conceptId) => concepts.find((concept) => concept.id === conceptId))
-          .filter((concept): concept is ConceptCard => Boolean(concept))
+          .filter((concept): concept is ConceptCard => Boolean(concept)),
+        answer: block.mode === "reply" ? recallAnswers[block.id] ?? "" : undefined
       });
       setVerificationLogs((current) => ({
         ...current,
@@ -1045,6 +1053,43 @@ export function Workspace({
       }
     } finally {
       setVerifyingId(null);
+    }
+  }
+
+  async function handleConstructInteract() {
+    if (!block || block.kind !== "interact") {
+      return;
+    }
+
+    setInteractingId(block.id);
+    try {
+      const result = await runConstructInteract({
+        projectId: project.id,
+        blockId: block.id,
+        prompt: block.prompt,
+        answer: interactAnswers[block.id] ?? "",
+        basis: block.basis,
+        understanding: block.understanding,
+        assessment: block.assessment,
+        resources: block.resources,
+        projectContext: {
+          title: project.title,
+          currentStep: project.program.steps[project.currentStepIndex]?.title,
+          currentBlock: block.id,
+          concepts: block.resources.concepts
+            .map((conceptId) => concepts.find((concept) => concept.id === conceptId))
+            .filter(Boolean)
+        }
+      });
+      setInteractResults((current) => ({
+        ...current,
+        [block.id]: result
+      }));
+      if (result.shouldAdvance) {
+        await handleNext();
+      }
+    } finally {
+      setInteractingId(null);
     }
   }
 
@@ -1154,13 +1199,28 @@ export function Workspace({
       onOpenFile={(reference) => void openInlineFile(reference)}
       onCreateFile={(path) => createWorkspaceFile(path)}
       onVerifyRecall={() => void handleVerifyRecall()}
+      recallAnswer={block?.kind === "recall" ? recallAnswers[block.id] ?? "" : ""}
+      onRecallAnswerChange={(answer) => {
+        if (block?.kind === "recall") {
+          setRecallAnswers((current) => ({ ...current, [block.id]: answer }));
+        }
+      }}
+      interactAnswer={block?.kind === "interact" ? interactAnswers[block.id] ?? "" : ""}
+      onInteractAnswerChange={(answer) => {
+        if (block?.kind === "interact") {
+          setInteractAnswers((current) => ({ ...current, [block.id]: answer }));
+        }
+      }}
+      interactResult={block?.kind === "interact" ? interactResults[block.id] : undefined}
+      onSubmitInteract={() => void handleConstructInteract()}
+      interactingId={interactingId}
       verifyingId={verifyingId}
       verificationLogs={block?.kind === "recall" && block.verify
         ? verificationLogs[block.verify.id] ?? []
         : []}
       recallMissingFiles={recallMissingFiles}
     />
-  ), [block, editComplete, onRunCommand, project, recallMissingFiles, theme, verificationLogs, verifyingId, furthestUnlockedStepIndex, furthestUnlockedBlockIndex]);
+  ), [block, editComplete, interactAnswers, interactResults, interactingId, onRunCommand, project, recallAnswers, recallMissingFiles, theme, verificationLogs, verifyingId, furthestUnlockedStepIndex, furthestUnlockedBlockIndex]);
 
   const stepsTabContent = useMemo(() => (
     <div className={`workspace-right-panel-steps ${isStepsCollapsed ? "is-collapsed" : ""}`}>

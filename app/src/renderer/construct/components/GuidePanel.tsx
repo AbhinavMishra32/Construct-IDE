@@ -20,6 +20,7 @@ import { assistanceLabel, blockLabel, currentBlockNumber, totalBlocks } from "..
 import type { InlineFileRef } from "../lib/inlineRefs";
 import type {
   ConstructBlock,
+  ConstructInteractClientResult,
   EditBlock,
   ProjectRecord,
   ReferenceCard,
@@ -47,6 +48,13 @@ export function GuidePanel({
   onOpenFile,
   onCreateFile,
   onVerifyRecall,
+  recallAnswer,
+  onRecallAnswerChange,
+  interactAnswer,
+  onInteractAnswerChange,
+  interactResult,
+  onSubmitInteract,
+  interactingId,
   verifyingId,
   verificationLogs,
   recallMissingFiles
@@ -62,6 +70,13 @@ export function GuidePanel({
   onOpenFile: (reference: InlineFileRef) => void;
   onCreateFile: (path: string) => Promise<void> | void;
   onVerifyRecall: () => void;
+  recallAnswer: string;
+  onRecallAnswerChange: (answer: string) => void;
+  interactAnswer: string;
+  onInteractAnswerChange: (answer: string) => void;
+  interactResult?: ConstructInteractClientResult;
+  onSubmitInteract: () => void;
+  interactingId: string | null;
   verifyingId: string | null;
   verificationLogs: VerificationLogEntry[];
   recallMissingFiles: string[];
@@ -92,7 +107,8 @@ export function GuidePanel({
   const canContinue =
     block &&
     (block.kind !== "edit" || editComplete) &&
-    (block.kind !== "recall" || !block.verify || verification?.passed === true);
+    (block.kind !== "recall" || !block.verify || verification?.passed === true) &&
+    (block.kind !== "interact" || interactResult?.shouldAdvance === true);
   const assistance = block ? (project.assistance ?? {})[block.id] : undefined;
   const codeProgress =
     block && block.kind === "edit" ? codeProgressForBlock(block, (project.typingProgress ?? {})[block.id] ?? 0) : null;
@@ -127,6 +143,13 @@ export function GuidePanel({
             onOpenConcept={onOpenConcept}
             onOpenFile={onOpenFile}
             onCreateFile={onCreateFile}
+            recallAnswer={recallAnswer}
+            onRecallAnswerChange={onRecallAnswerChange}
+            interactAnswer={interactAnswer}
+            onInteractAnswerChange={onInteractAnswerChange}
+            interactResult={interactResult}
+            onSubmitInteract={onSubmitInteract}
+            interactingId={interactingId}
           />
           <p className="guide-panel__assist">{assistanceLabel(assistance)}</p>
           {block.kind === "run" || (block.kind === "recall" && block.verify) || canContinue ? (
@@ -141,10 +164,20 @@ export function GuidePanel({
                 <Button
                   variant="secondary"
                   onClick={onVerifyRecall}
-                  disabled={verifyingId === block.verify.id}
+                  disabled={verifyingId === block.verify.id || (block.mode === "reply" && !recallAnswer.trim())}
                 >
                   <WandSparklesIcon size={15} />
                   {verifyingId === block.verify.id ? "Checking" : "Verify"}
+                </Button>
+              ) : null}
+              {block.kind === "interact" ? (
+                <Button
+                  variant="secondary"
+                  onClick={onSubmitInteract}
+                  disabled={interactingId === block.id || !interactAnswer.trim()}
+                >
+                  <WandSparklesIcon size={15} />
+                  {interactingId === block.id ? "Thinking" : "Send answer"}
                 </Button>
               ) : null}
               {canContinue ? (
@@ -175,6 +208,13 @@ function GuideBlock({
   verificationLogs,
   recallMissingFiles,
   verifyingId,
+  recallAnswer,
+  onRecallAnswerChange,
+  interactAnswer,
+  onInteractAnswerChange,
+  interactResult,
+  onSubmitInteract,
+  interactingId,
   onOpenReference,
   onOpenConcept,
   onOpenFile,
@@ -189,6 +229,13 @@ function GuideBlock({
   verificationLogs: VerificationLogEntry[];
   recallMissingFiles: string[];
   verifyingId: string | null;
+  recallAnswer: string;
+  onRecallAnswerChange: (answer: string) => void;
+  interactAnswer: string;
+  onInteractAnswerChange: (answer: string) => void;
+  interactResult?: ConstructInteractClientResult;
+  onSubmitInteract: () => void;
+  interactingId: string | null;
   onOpenReference: (referenceId: string) => void;
   onOpenConcept: (conceptId: string) => void;
   onOpenFile: (reference: InlineFileRef) => void;
@@ -242,6 +289,13 @@ function GuideBlock({
             onOpenConcept={onOpenConcept}
             onOpenFile={onOpenFile}
             onCreateFile={onCreateFile}
+            recallAnswer={recallAnswer}
+            onRecallAnswerChange={onRecallAnswerChange}
+            interactAnswer={interactAnswer}
+            onInteractAnswerChange={onInteractAnswerChange}
+            interactResult={interactResult}
+            onSubmitInteract={onSubmitInteract}
+            interactingId={interactingId}
           />
         ))}
         <p className="guide-panel__copy">
@@ -257,6 +311,42 @@ function GuideBlock({
     );
   }
 
+  if (block.kind === "interact") {
+    return (
+      <div className="guide-block construct-interact">
+        <div className="construct-interact__header">
+          <SparklesIcon size={14} />
+          <span>Construct Interact</span>
+        </div>
+        <MarkdownBlock content={block.prompt} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
+        <textarea
+          className="construct-interact__answer"
+          value={interactAnswer}
+          onChange={(event) => onInteractAnswerChange(event.target.value)}
+          placeholder="Answer in your own words..."
+          spellCheck
+        />
+        {interactResult ? (
+          <div className={`construct-interact__reply is-${interactResult.status}`}>
+            <p className="guide-panel__label">{interactStatusLabel(interactResult.status)}</p>
+            <MarkdownBlock content={interactResult.reply} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
+          </div>
+        ) : null}
+        {interactingId === block.id ? (
+          <p className="guide-panel__copy">Construct Interact is reading your answer...</p>
+        ) : null}
+        <button
+          className="construct-interact__inline-submit"
+          type="button"
+          onClick={onSubmitInteract}
+          disabled={interactingId === block.id || !interactAnswer.trim()}
+        >
+          {interactingId === block.id ? "Thinking" : "Send answer"}
+        </button>
+      </div>
+    );
+  }
+
   if (block.kind === "recall") {
     const linkedReferences = block.references
       .map((referenceId) => references.find((reference) => reference.id === referenceId))
@@ -268,6 +358,18 @@ function GuideBlock({
           <p className="guide-panel__label">Task</p>
           <MarkdownBlock content={block.task} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
         </div>
+        {block.mode === "reply" ? (
+          <div className="recall-task__section recall-task__reply">
+            <p className="guide-panel__label">Your answer</p>
+            <textarea
+              className="construct-interact__answer"
+              value={recallAnswer}
+              onChange={(event) => onRecallAnswerChange(event.target.value)}
+              placeholder="Explain it in your own words..."
+              spellCheck
+            />
+          </div>
+        ) : null}
         {recallMissingFiles.length > 0 ? (
           <MissingFilesPanel files={recallMissingFiles} onCreateFile={onCreateFile} />
         ) : null}
@@ -310,8 +412,8 @@ function GuideBlock({
             result={verification}
             logs={verificationLogs}
             verifying={verifyingId === block.verify.id}
-            successMessage={block.verify.messages.success}
-            failureMessage={block.verify.messages.failure}
+            successMessage={block.verify.messages?.success ?? "Construct verified this recall."}
+            failureMessage={block.verify.messages?.failure ?? "Construct needs a stronger answer before continuing."}
           />
         ) : null}
       </div>
@@ -339,6 +441,19 @@ function supportSectionLabel(kind: string): string {
       return "Common mistake";
     default:
       return kind.replace(/-/g, " ");
+  }
+}
+
+function interactStatusLabel(status: ConstructInteractClientResult["status"]): string {
+  switch (status) {
+    case "pass":
+      return "Ready to continue";
+    case "almost":
+      return "Almost there";
+    case "skip":
+      return "Continuing with support";
+    default:
+      return "Follow-up";
   }
 }
 

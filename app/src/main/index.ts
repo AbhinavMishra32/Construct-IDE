@@ -30,6 +30,14 @@ import {
 } from "./constructSelectionExplainAgent";
 import { sendCodeGhostStreamToRenderer } from "./constructCodeGhostAgent";
 import { featureSettingsView } from "./constructAiFeatures";
+import { ConstructLearningStore } from "./constructLearningStore";
+import { runConstructInteract } from "./constructInteractAgent";
+import type {
+  ConstructInteractRuntimeInput,
+  ConstructInteractSession,
+  KnowledgeBaseRecord,
+  LearningStatePatch
+} from "../shared/constructLearning";
 
 if (typeof process.loadEnvFile === "function") {
   const envPath = path.resolve(__dirname, "../../.env");
@@ -210,6 +218,12 @@ function sendToRenderers(channel: string, payload: unknown): void {
   }
 }
 
+type AgentLogChannel = "verifier" | "authoring-review" | "selection-explain" | "interact" | "code-ghost";
+
+function sendAgentLog(agent: AgentLogChannel, message: string, level: "info" | "warn" | "error" | "debug" = "info"): void {
+  sendToRenderers("construct:project:agent-log", { agent, message, level });
+}
+
 function legacyConstructProjectsRoot(): string | null {
   if (process.platform === "darwin") {
     const candidate = path.join(homedir(), "Library", "Application Support", "@construct", "app", "construct-projects");
@@ -259,6 +273,14 @@ function projectsManifestPath(): string {
 
 function settingsPath(): string {
   return path.join(constructProjectsRoot(), "settings.json");
+}
+
+function learningStatePath(): string {
+  return path.join(constructProjectsRoot(), "learning-state.json");
+}
+
+function learningStore(): ConstructLearningStore {
+  return new ConstructLearningStore(learningStatePath());
 }
 
 function workspacePathForProject(projectId: string): string {
@@ -387,7 +409,7 @@ function defaultSettings(): StoredSettings {
       openAiApiKey: "",
       openAiModel: "gpt-5-mini",
       openRouterApiKey: "",
-      openRouterModel: "openai/gpt-5-mini",
+      openRouterModel: "nvidia/nemotron-3-ultra-550b-a55b:free",
       featureModels: {}
     }
   };
@@ -395,6 +417,14 @@ function defaultSettings(): StoredSettings {
 
 function normalizeSettings(input: Partial<StoredSettings> | null | undefined): StoredSettings {
   const defaults = defaultSettings();
+
+  const migrateModel = (model: string): string => {
+    if (model === "openai/gpt-5-mini" || model === "gpt-5-mini") {
+      return defaults.ai.openRouterModel;
+    }
+    return model;
+  };
+
   return {
     workspaceRoot: input?.workspaceRoot || defaults.workspaceRoot,
     releaseVersion: input?.releaseVersion || defaults.releaseVersion,
@@ -403,11 +433,12 @@ function normalizeSettings(input: Partial<StoredSettings> | null | undefined): S
       openAiApiKey: input?.ai?.openAiApiKey?.trim?.() || "",
       openAiModel: input?.ai?.openAiModel?.trim?.() || defaults.ai.openAiModel,
       openRouterApiKey: input?.ai?.openRouterApiKey?.trim?.() || "",
-      openRouterModel: input?.ai?.openRouterModel?.trim?.() || defaults.ai.openRouterModel,
+      openRouterModel: migrateModel(input?.ai?.openRouterModel?.trim?.() || defaults.ai.openRouterModel),
       featureModels: input?.ai?.featureModels && typeof input.ai.featureModels === "object"
         ? Object.fromEntries(
             Object.entries(input.ai.featureModels)
               .filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].trim().length > 0)
+              .map(([key, value]) => [key, migrateModel(value)])
           )
         : {}
     }
@@ -1583,6 +1614,72 @@ function installConstructProjectIpcHandlers(): void {
       : fetchOpenAiModels(apiKey);
   });
 
+  ipcMain.handle("construct:learning:get-state", async () => {
+    return learningStore().getState();
+  });
+
+  ipcMain.handle("construct:learning:get-project", async (_event, projectId: string) => {
+    return learningStore().getProjectLearnerState(projectId);
+  });
+
+  ipcMain.handle("construct:learning:apply-patch", async (_event, patch: LearningStatePatch) => {
+    return learningStore().applyPatch(patch);
+  });
+
+  ipcMain.handle("construct:learning:weak-concepts", async (_event, input?: { projectId?: string }) => {
+    return learningStore().getWeakConcepts(input?.projectId);
+  });
+
+  ipcMain.handle("construct:learning:knowledge-save", async (_event, record: KnowledgeBaseRecord) => {
+    return learningStore().saveKnowledgeConcept(record);
+  });
+
+  ipcMain.handle("construct:learning:knowledge-open", async (_event, record: KnowledgeBaseRecord) => {
+    return learningStore().openKnowledgeConcept(record);
+  });
+
+  ipcMain.handle("construct:learning:knowledge-remove", async (_event, input: { projectId: string; conceptId: string }) => {
+    return learningStore().removeKnowledgeConcept(input.projectId, input.conceptId);
+  });
+
+  ipcMain.handle("construct:project:interact", async (_event, input: Omit<ConstructInteractRuntimeInput, "learningState">) => {
+    const store = learningStore();
+    const learningState = await store.getState();
+    sendAgentLog("interact", `Evaluating interaction for block ${input.blockId}`);
+    console.log("[Construct Interact] evaluating", input.projectId, input.blockId);
+    const result = await runConstructInteract({
+      ...input,
+      learningState
+    });
+    sendAgentLog("interact", `Interaction result: ${result.status} (confidence=${result.confidence}, reply=${result.reply?.slice(0, 80) ?? "none"}...)`);
+    const now = new Date().toISOString();
+    const session: ConstructInteractSession = {
+      id: randomUUID(),
+      projectId: input.projectId,
+      blockId: input.blockId,
+      prompt: input.prompt,
+      answer: input.answer,
+      status: result.status,
+      confidence: result.confidence,
+      reply: result.reply,
+      coveredConceptIds: result.coveredConceptIds,
+      missingConceptIds: result.missingConceptIds,
+      assistanceLevel: result.assistanceLevel,
+      createdAt: now
+    };
+
+    if (result.statePatch) {
+      await store.applyPatch(result.statePatch);
+    }
+    const state = await store.recordConstructInteractAttempt(session);
+    console.log("[Construct Interact] result", result.status, result.confidence, result.shouldAdvance ? "advance" : "stay");
+    return {
+      ...result,
+      session,
+      learningState: state
+    };
+  });
+
   ipcMain.handle("construct:project:import", async (_event, input) => {
     const projects = await readProjects();
     const settings = await readSettings();
@@ -1893,9 +1990,11 @@ function installConstructProjectIpcHandlers(): void {
     const recall = input.recall;
     const verify = recall?.verify;
     const logs: VerificationLogEntry[] = [];
+    sendAgentLog("verifier", `Verification started for recall block ${verify?.id ?? "unknown"}`);
 
     if (!verify || verify.kind !== "agent") {
       addVerificationLog(logs, "failed", "Verification contract is not supported", "Expected ::verify kind=\"agent\".");
+      sendAgentLog("verifier", "Verification contract is not supported (expected kind=\"agent\")", "error");
       return withVerificationLogs({
         passed: false,
         confidence: "low",
@@ -1974,6 +2073,10 @@ function installConstructProjectIpcHandlers(): void {
       typeof verify.evidence?.terminalCommand === "string"
         ? verify.evidence.terminalCommand
         : undefined;
+    const latestAnswer =
+      verify.evidence?.answer === "latest" || recall.mode === "reply"
+        ? String(input.answer ?? "")
+        : undefined;
     let terminalOutput = latestTerminalOutputByProject.get(project.id) ?? "";
 
     if (terminalCommand) {
@@ -2033,10 +2136,23 @@ function installConstructProjectIpcHandlers(): void {
         files,
         terminalCommand,
         terminalOutput,
+        answer: latestAnswer,
         messages: {
           success: String(verify.messages?.success ?? ""),
           failure: String(verify.messages?.failure ?? "")
         }
+      });
+      await learningStore().recordRecallAttempt({
+        id: randomUUID(),
+        projectId: project.id,
+        recallId: String(recall.id ?? verify.id),
+        mode: recall.mode === "reply" ? "reply" : "code",
+        answer: latestAnswer,
+        passed: result.passed,
+        status: result.status,
+        confidence: result.confidence,
+        conceptIds: Array.isArray(recall.concepts) ? recall.concepts.map(String) : [],
+        createdAt: new Date().toISOString()
       });
       addVerificationLog(
         logs,
@@ -2044,10 +2160,12 @@ function installConstructProjectIpcHandlers(): void {
         result.passed ? "Verifier passed the recall task" : result.status === "almost" ? "Verifier found the solution is close" : "Verifier did not pass the recall task",
         result.reason
       );
+      sendAgentLog("verifier", `Verification ${result.passed ? "passed" : "failed"} (confidence=${result.confidence}): ${result.reason?.slice(0, 120) ?? "no reason"}`);
       return withVerificationLogs(result, logs);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       addVerificationLog(logs, "failed", "Verifier agent failed to return a result", message);
+      sendAgentLog("verifier", `Verification failed: ${message}`, "error");
       return withVerificationLogs({
         passed: false,
         confidence: "low",
@@ -2062,22 +2180,33 @@ function installConstructProjectIpcHandlers(): void {
   });
 
   ipcMain.handle("construct:project:review-authoring", async (_event, input) => {
+    const diagnosticCount = Array.isArray(input?.diagnostics) ? input.diagnostics.length : 0;
+    const snippetCount = Array.isArray(input?.snippets) ? input.snippets.length : 0;
+    sendAgentLog("authoring-review", `Reviewing tape (spec=${input?.spec ?? "tape-0.3"}, ${diagnosticCount} diagnostics, ${snippetCount} snippets)`);
     console.log("[construct authoring] reviewing compact project view", {
       spec: input?.spec,
-      diagnosticCount: Array.isArray(input?.diagnostics) ? input.diagnostics.length : 0,
-      snippetCount: Array.isArray(input?.snippets) ? input.snippets.length : 0
+      diagnosticCount,
+      snippetCount
     });
-    return runConstructAuthoringReviewAgent({
-      spec: String(input?.spec ?? "tape-0.3"),
-      projectView: input?.projectView ?? {},
-      diagnostics: Array.isArray(input?.diagnostics) ? input.diagnostics : [],
-      snippets: Array.isArray(input?.snippets) ? input.snippets : []
-    });
+    try {
+      const result = await runConstructAuthoringReviewAgent({
+        spec: String(input?.spec ?? "tape-0.3"),
+        projectView: input?.projectView ?? {},
+        diagnostics: Array.isArray(input?.diagnostics) ? input.diagnostics : [],
+        snippets: Array.isArray(input?.snippets) ? input.snippets : []
+      });
+      sendAgentLog("authoring-review", `Review complete: ${Array.isArray(result) ? result.length : 0} suggestions`);
+      return result;
+    } catch (error) {
+      sendAgentLog("authoring-review", `Review failed: ${error instanceof Error ? error.message : String(error)}`, "error");
+      throw error;
+    }
   });
 
   ipcMain.handle("construct:project:explain-selection", async (_event, input) => {
     const project = findProject(await readProjects(), String(input?.projectId ?? ""));
     const requestId = String(input?.requestId ?? randomUUID());
+    sendAgentLog("selection-explain", `Explaining selection from ${input?.selection?.source ?? "workspace"} (${input?.selection?.sourceLabel ?? "unknown"})`);
     console.log("[selection explain] request started", {
       requestId,
       projectId: project.id,
@@ -2088,6 +2217,8 @@ function installConstructProjectIpcHandlers(): void {
     const progress = (entry: Omit<SelectionExplanationLogEntry, "at">) => {
       const payload = { requestId, entry: { ...entry, at: new Date().toISOString() } };
       sendToRenderers("construct:project:explain-selection-log", payload);
+      const level = entry.status === "failed" ? "error" : entry.status === "running" ? "info" : "debug";
+      sendAgentLog("selection-explain", `[${entry.status}] ${entry.message}${entry.detail ? ` - ${entry.detail}` : ""}`, level);
       console.log("[selection explain]", entry.status, entry.message, entry.detail ?? "");
     };
 
@@ -2125,6 +2256,7 @@ function installConstructProjectIpcHandlers(): void {
       return;
     }
 
+    sendAgentLog("code-ghost", `Ghost completion requested at line ${lineNumber} (${input?.language ?? "unknown"})`);
     sendCodeGhostStreamToRenderer(
       event.sender,
       {
@@ -2137,6 +2269,7 @@ function installConstructProjectIpcHandlers(): void {
       requestId,
       lineNumber
     ).catch((err) => {
+      sendAgentLog("code-ghost", `Ghost completion failed: ${err instanceof Error ? err.message : String(err)}`, "error");
       console.error("[code ghost] fatal:", err);
       try { event.sender.send("construct:project:code-ghost:token", { requestId, lineNumber, token: "", done: true, error: String(err) }); } catch {}
     });

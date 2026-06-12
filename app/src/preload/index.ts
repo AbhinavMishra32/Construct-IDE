@@ -30,6 +30,20 @@ contextBridge.exposeInMainWorld("constructProjects", {
     ipcRenderer.invoke("construct:settings:list-ai-features"),
   listModels: (input: unknown) =>
     ipcRenderer.invoke("construct:settings:list-models", input),
+  getLearningState: () =>
+    ipcRenderer.invoke("construct:learning:get-state"),
+  getProjectLearningState: (projectId: string) =>
+    ipcRenderer.invoke("construct:learning:get-project", projectId),
+  applyLearningPatch: (input: unknown) =>
+    ipcRenderer.invoke("construct:learning:apply-patch", input),
+  getWeakConcepts: (input: unknown) =>
+    ipcRenderer.invoke("construct:learning:weak-concepts", input),
+  saveKnowledgeConcept: (input: unknown) =>
+    ipcRenderer.invoke("construct:learning:knowledge-save", input),
+  openKnowledgeConcept: (input: unknown) =>
+    ipcRenderer.invoke("construct:learning:knowledge-open", input),
+  removeKnowledgeConcept: (input: unknown) =>
+    ipcRenderer.invoke("construct:learning:knowledge-remove", input),
   listProjects: () => ipcRenderer.invoke("construct:project:list"),
   openProject: (id: string) => ipcRenderer.invoke("construct:project:open", id),
   updateProject: (input: unknown) =>
@@ -44,6 +58,8 @@ contextBridge.exposeInMainWorld("constructProjects", {
   duplicateFile: (input: unknown) => ipcRenderer.invoke("construct:project:duplicate-file", input),
   verifyRecall: (input: unknown) =>
     ipcRenderer.invoke("construct:project:verify-recall", input),
+  runConstructInteract: (input: unknown) =>
+    ipcRenderer.invoke("construct:project:interact", input),
   reviewConstructAuthoring: (input: unknown) =>
     ipcRenderer.invoke("construct:project:review-authoring", input),
   explainSelection: (input: unknown) =>
@@ -99,6 +115,11 @@ contextBridge.exposeInMainWorld("constructProjects", {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
     ipcRenderer.on("construct:project:explain-selection-log", listener);
     return () => ipcRenderer.off("construct:project:explain-selection-log", listener);
+  },
+  onAgentLog: (callback: (event: unknown) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
+    ipcRenderer.on("construct:project:agent-log", listener);
+    return () => ipcRenderer.off("construct:project:agent-log", listener);
   },
   lspRequest: (payload: unknown) =>
     ipcRenderer.invoke("construct:lsp:request", payload),

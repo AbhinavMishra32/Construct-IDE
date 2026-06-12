@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Check, ChevronDown } from "lucide-react";
-import { logStore, type LogChannel, type LogEntry } from "../lib/logStore";
+import { Bot, Check, ChevronDown } from "lucide-react";
+import { logStore, AGENT_CHANNELS, type AgentLogChannel, type LogChannel, type LogEntry } from "../lib/logStore";
 import { debugProcesses } from "../lib/bridge";
 import type { DebugProcessSnapshot } from "../types";
 import {
@@ -8,11 +8,31 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
   TerminalSurface
 } from "@opaline/ui";
 
 type OutputChannel = LogChannel | "debug-processes";
+
+const SYSTEM_CHANNELS: Array<{ id: OutputChannel; label: string }> = [
+  { id: "debug-processes", label: "Debug processes" },
+  { id: "lsp-server", label: "Language servers" },
+  { id: "lsp-protocol", label: "LSP protocol" },
+  { id: "main", label: "Electron main" },
+  { id: "renderer", label: "Renderer console" },
+  { id: "terminal", label: "Terminal" }
+];
+
+function getChannelLabel(channel: OutputChannel): string {
+  if (channel === "debug-processes") return "Debug processes";
+  const system = SYSTEM_CHANNELS.find((c) => c.id === channel);
+  if (system) return system.label;
+  const agent = AGENT_CHANNELS.find((c) => c.id === channel);
+  if (agent) return agent.label;
+  return channel;
+}
 
 export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ theme }) => {
   const [activeChannel, setActiveChannel] = useState<OutputChannel>("lsp-server");
@@ -20,15 +40,6 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
   const [processes, setProcesses] = useState<DebugProcessSnapshot[]>([]);
   const [autoScroll, setAutoScroll] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
-  const outputChannels: Array<{ id: OutputChannel; label: string }> = [
-    { id: "debug-processes", label: "Debug processes" },
-    { id: "lsp-server", label: "Language servers" },
-    { id: "lsp-protocol", label: "LSP protocol" },
-    { id: "main", label: "Electron main" },
-    { id: "renderer", label: "Renderer console" },
-    { id: "terminal", label: "Terminal" },
-    { id: "verifier", label: "Verifier" }
-  ];
 
   // Sync logs when active channel changes
   useEffect(() => {
@@ -139,7 +150,7 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
   };
 
   return (
-    <TerminalSurface cwd={`Output · ${activeChannel}`}>
+    <TerminalSurface cwd={`Output · ${getChannelLabel(activeChannel)}`}>
       <div className="flex h-full flex-col overflow-hidden bg-transparent text-[var(--opaline-text-primary)] select-text">
         <div className="flex items-center justify-between px-2 py-1.5">
           <DropdownMenu>
@@ -148,17 +159,40 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
                 type="button"
                 className="inline-flex h-[26px] items-center gap-1.5 rounded-[8px] px-2.5 text-[12.5px] font-medium text-[var(--opaline-text-primary)] hover:bg-[color-mix(in_srgb,var(--opaline-text-primary)_6%,transparent)]"
               >
-                {outputChannels.find((channel) => channel.id === activeChannel)?.label ?? activeChannel}
+                {AGENT_CHANNELS.some((c) => c.id === activeChannel) ? (
+                  <span className="inline-flex items-center gap-1">
+                    <Bot size={13} className="text-[var(--opaline-accent)]" />
+                    {getChannelLabel(activeChannel)}
+                  </span>
+                ) : (
+                  getChannelLabel(activeChannel)
+                )}
                 <ChevronDown size={14} />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="min-w-[190px]">
-              {outputChannels.map((channel) => (
+            <DropdownMenuContent align="start" className="min-w-[220px]">
+              {SYSTEM_CHANNELS.map((channel) => (
                 <DropdownMenuItem key={channel.id} onSelect={() => setActiveChannel(channel.id)}>
                   <span className="inline-flex w-4 items-center justify-center">
                     {channel.id === activeChannel ? <Check size={13} /> : null}
                   </span>
                   {channel.label}
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-[var(--opaline-text-tertiary)]">
+                <Bot size={12} />
+                Agents
+              </DropdownMenuLabel>
+              {AGENT_CHANNELS.map((agent) => (
+                <DropdownMenuItem key={agent.id} onSelect={() => setActiveChannel(agent.id)}>
+                  <span className="inline-flex w-4 items-center justify-center">
+                    {agent.id === activeChannel ? <Check size={13} /> : null}
+                  </span>
+                  <span className="flex flex-col">
+                    <span>{agent.label}</span>
+                    <span className="text-[10.5px] text-[var(--opaline-text-tertiary)] font-normal">{agent.description}</span>
+                  </span>
                 </DropdownMenuItem>
               ))}
             </DropdownMenuContent>

@@ -9,6 +9,7 @@ import type {
   ConceptCard,
   ReferenceCard,
   VerificationResult,
+  ConstructInteractClientResult,
   WorkspaceFile,
   WorkspaceTreeNode
 } from "../types";
@@ -72,6 +73,34 @@ export function listAiFeatures() {
 
 export function listModels(input: Parameters<ConstructProjectsApi["listModels"]>[0]) {
   return api().listModels(input);
+}
+
+export function getLearningState() {
+  return api().getLearningState();
+}
+
+export function getProjectLearningState(projectId: string) {
+  return api().getProjectLearningState(projectId);
+}
+
+export function applyLearningPatch(input: Parameters<ConstructProjectsApi["applyLearningPatch"]>[0]) {
+  return api().applyLearningPatch(input);
+}
+
+export function getWeakConcepts(input?: Parameters<ConstructProjectsApi["getWeakConcepts"]>[0]) {
+  return api().getWeakConcepts(input);
+}
+
+export function saveKnowledgeConcept(input: Parameters<ConstructProjectsApi["saveKnowledgeConcept"]>[0]) {
+  return api().saveKnowledgeConcept(input);
+}
+
+export function openKnowledgeConcept(input: Parameters<ConstructProjectsApi["openKnowledgeConcept"]>[0]) {
+  return api().openKnowledgeConcept(input);
+}
+
+export function removeKnowledgeConceptFromStore(input: Parameters<ConstructProjectsApi["removeKnowledgeConcept"]>[0]) {
+  return api().removeKnowledgeConcept(input);
 }
 
 export function listProjects(): Promise<ProjectSummary[]> {
@@ -141,8 +170,13 @@ export function verifyRecall(input: {
   references: ReferenceCard[];
   concepts?: ConceptCard[];
   savedKnowledge?: ConceptCard[];
+  answer?: string;
 }): Promise<VerificationResult> {
   return api().verifyRecall(input);
+}
+
+export function runConstructInteract(input: Parameters<ConstructProjectsApi["runConstructInteract"]>[0]): Promise<ConstructInteractClientResult> {
+  return api().runConstructInteract(input);
 }
 
 export function reviewConstructAuthoring(input: Parameters<ConstructProjectsApi["reviewConstructAuthoring"]>[0]): ReturnType<ConstructProjectsApi["reviewConstructAuthoring"]> {
@@ -160,6 +194,10 @@ export function explainSelection(input: {
 
 export function onSelectionExplanationLog(callback: Parameters<ConstructProjectsApi["onSelectionExplanationLog"]>[0]): () => void {
   return api().onSelectionExplanationLog(callback);
+}
+
+export function onAgentLog(callback: (event: { agent: string; message: string; level: string }) => void): () => void {
+  return api().onAgentLog(callback);
 }
 
 export function startCodeGhostStream(input: {

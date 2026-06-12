@@ -203,7 +203,7 @@ export const value = 2;
     assert.equal(edit?.kind, "edit");
     assert.equal(edit?.guides[0]?.guideKind, "guide.why-now");
     assert.equal(program.concepts[0]?.guides[0]?.guideKind, "guide.misconception");
-    assert.equal(program.warnings.length, 0);
+    assert.equal(program.warnings.filter((warning) => warning.id.startsWith("deprecated-guide:")).length, 2);
   });
 
   it("parses tape-0.3.1 and legacy tape-0.3 guide names", () => {
@@ -237,6 +237,102 @@ Done.
     const firstBlock = legacy.steps[0]?.blocks[0];
     assert.equal(firstBlock?.kind, "guide");
     assert.equal(firstBlock?.kind === "guide" ? firstBlock.guideKind : "", "guide.mental-model");
+  });
+
+  it("parses tape-0.4 Construct Interact and reply recall", () => {
+    const source = `@construct spec="tape-0.4"
+@id "interact-fixture"
+@title "Interact fixture"
+@description "Exercises Construct Interact."
+@root "."
+
+::concept id="sandbox.runtime" title="Sandbox runtime" kind="concept"
+::summary
+A resumable execution workspace.
+::end
+::why
+It keeps runtime design honest.
+::end
+::end
+
+::step id="model" title="Model the sandbox"
+::interact id="sandbox-model-check" uses="sandbox.runtime" kind="guided-contribution"
+::prompt
+What does a sandbox need to remember?
+::end
+::basis
+The learner has seen local and cloud workspaces.
+::end
+::understanding
+Identity, lifecycle, provider, and workspace state.
+::end
+::assessment
+Pass if the answer can support the next edit.
+::end
+::resources
+concepts="sandbox.runtime"
+files="src/sandbox/types.ts"
+::end
+::end
+
+::recall id="explain-boundary" mode="reply" uses="sandbox.runtime"
+::task
+Explain the provider boundary.
+::end
+::verify id="verify-boundary" kind="agent"
+::goal
+Verify the learner can explain it.
+::end
+::evidence
+answer="latest"
+interaction="sandbox-model-check"
+::end
+::rubric
+Pass for a clear boundary explanation.
+::end
+::end
+::end
+::end`;
+
+    const program = parseConstructSource(source);
+    assert.equal(program.spec, "tape-0.4");
+    const interact = program.steps[0]?.blocks[0];
+    assert.equal(interact?.kind, "interact");
+    assert.equal(interact?.kind === "interact" ? interact.prompt.trim() : "", "What does a sandbox need to remember?");
+    assert.deepEqual(interact?.kind === "interact" ? interact.resources.concepts : [], ["sandbox.runtime"]);
+    assert.deepEqual(interact?.kind === "interact" ? interact.resources.files : [], ["src/sandbox/types.ts"]);
+
+    const recall = program.steps[0]?.blocks[1];
+    assert.equal(recall?.kind, "recall");
+    assert.equal(recall?.kind === "recall" ? recall.mode : "", "reply");
+    assert.equal(recall?.kind === "recall" ? recall.verify?.evidence.answer : "", "latest");
+    assert.equal(recall?.kind === "recall" ? recall.verify?.evidence.interaction : "", "sandbox-model-check");
+    assert.equal(recall?.kind === "recall" ? recall.verify?.messages : undefined, undefined);
+  });
+
+  it("defaults recall mode to code and deprecates guide blocks in tape-0.4", () => {
+    const program = parseConstructSource(`@construct spec="tape-0.4"
+@id "compat-fixture"
+@title "Compat fixture"
+@description "Exercises compatibility."
+@root "."
+
+::step id="s" title="Step"
+::guide.why-now
+Legacy authoring note.
+::end
+::recall id="r"
+::task
+Edit the file.
+::end
+::end
+::end`);
+
+    const guide = program.steps[0]?.blocks[0];
+    const recall = program.steps[0]?.blocks[1];
+    assert.equal(guide?.kind, "guide");
+    assert.equal(recall?.kind === "recall" ? recall.mode : "", "code");
+    assert.ok(program.warnings.some((warning) => warning.id.startsWith("deprecated-guide:")));
   });
 
   it("warns about missing file refs and pedagogy-leaking step titles", () => {

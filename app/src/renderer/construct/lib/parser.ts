@@ -13,7 +13,8 @@ import type {
   ReferenceLink,
   SupportSection,
   VerificationBlock,
-  VerificationEvidence
+  VerificationEvidence,
+  VerificationMessages
 } from "../types";
 import { collectInlineRefs } from "./inlineRefs";
 
@@ -226,6 +227,11 @@ function parseStep(cursor: Cursor): ConstructStep {
       continue;
     }
 
+    if (line.startsWith("::interact")) {
+      blocks.push(parseInteract(cursor));
+      continue;
+    }
+
     if (line.startsWith("::recall")) {
       blocks.push(parseRecall(cursor));
       continue;
@@ -302,6 +308,73 @@ function parseEdit(cursor: Cursor): ConstructBlock {
   };
 }
 
+function parseInteract(cursor: Cursor): ConstructBlock {
+  const attrs = parseAttributes(peek(cursor).replace(/^::interact\s*/, ""));
+  cursor.index += 1;
+  let prompt = "";
+  let basis = "";
+  let understanding = "";
+  let assessment = "";
+  let resources: { concepts: string[]; files: string[] } = { concepts: [], files: [] };
+
+  while (!done(cursor)) {
+    const line = peek(cursor).trim();
+
+    if (line === "::end") {
+      cursor.index += 1;
+      return {
+        kind: "interact",
+        id: required(attrs, "id"),
+        interactKind: attrs.kind || "guided-contribution",
+        uses: splitList(attrs.uses),
+        prompt,
+        basis,
+        understanding,
+        assessment,
+        resources
+      };
+    }
+
+    if (!line) {
+      cursor.index += 1;
+      continue;
+    }
+
+    if (line.startsWith("::prompt")) {
+      prompt = parsePlainBody(cursor, "::prompt");
+      continue;
+    }
+
+    if (line.startsWith("::basis")) {
+      basis = parsePlainBody(cursor, "::basis");
+      continue;
+    }
+
+    if (line.startsWith("::understanding")) {
+      understanding = parsePlainBody(cursor, "::understanding");
+      continue;
+    }
+
+    if (line.startsWith("::assessment")) {
+      assessment = parsePlainBody(cursor, "::assessment");
+      continue;
+    }
+
+    if (line.startsWith("::resources")) {
+      const resourceAttrs = parseBlockAttributes(cursor, "::resources");
+      resources = {
+        concepts: splitList(resourceAttrs.concepts),
+        files: splitList(resourceAttrs.files)
+      };
+      continue;
+    }
+
+    throw new Error(`Unexpected interact block line ${cursor.index + 1}: ${line}`);
+  }
+
+  throw new Error(`Unclosed ::interact ${attrs.id || ""}.`);
+}
+
 function parseRecall(cursor: Cursor): ConstructBlock {
   const attrs = parseAttributes(peek(cursor).replace(/^::recall\s*/, ""));
   cursor.index += 1;
@@ -318,6 +391,7 @@ function parseRecall(cursor: Cursor): ConstructBlock {
       return {
         kind: "recall",
         id: required(attrs, "id"),
+        mode: parseRecallMode(attrs.mode),
         path: attrs.path,
         target: attrs.target,
         references: splitList(attrs.references),
@@ -366,10 +440,7 @@ function parseVerify(cursor: Cursor): VerificationBlock {
   let evidence: VerificationEvidence = {
     files: []
   };
-  let messages = {
-    success: "",
-    failure: ""
-  };
+  let messages: VerificationMessages | undefined;
 
   while (!done(cursor)) {
     const line = peek(cursor).trim();
@@ -427,7 +498,9 @@ function parseEvidence(cursor: Cursor) {
   };
 
   return {
+    answer: merged.answer,
     files: splitList(merged.files),
+    interaction: merged.interaction,
     terminalCommand: merged.terminal_command || merged.terminalCommand,
     terminalOutput: merged.terminal_output || merged.terminalOutput
   };
@@ -910,9 +983,13 @@ function parseEditMode(value: string | undefined): "create" | "append" | "replac
   return "create";
 }
 
+function parseRecallMode(value: string | undefined): "code" | "reply" {
+  return value === "reply" ? "reply" : "code";
+}
+
 function normalizeSpec(value: string): string {
   const trimmed = value.trim();
-  if (/^0\.(?:1|2|3)(?:\.\d+)?$/.test(trimmed)) {
+  if (/^0\.(?:1|2|3|4)(?:\.\d+)?$/.test(trimmed)) {
     return `tape-${trimmed}`;
   }
 
@@ -1017,7 +1094,36 @@ function lintProgram(program: ConstructProgram): ConstructLintWarning[] {
     for (const block of step.blocks) {
       completableIds.add(block.id);
 
+      if (block.kind === "guide" && block.guideKind.startsWith("guide.")) {
+        warnings.push({
+          id: `deprecated-guide:${block.id}`,
+          severity: "warning",
+          target: block.id,
+          message: `${block.guideKind} is deprecated. Prefer ::explain, ::interact, or ::recall mode="reply" for new tape-0.4 content.`
+        });
+      }
+
+      if (block.kind === "interact") {
+        if (!block.basis.trim() || !block.understanding.trim()) {
+          warnings.push({
+            id: `interact-context-missing:${block.id}`,
+            severity: "warning",
+            target: block.id,
+            message: "Construct Interact should include ::basis and ::understanding so the agent can evaluate grounded answers."
+          });
+        }
+      }
+
       if (block.kind === "recall") {
+        if (block.mode === "reply" && !block.verify) {
+          warnings.push({
+            id: `reply-recall-missing-verifier:${block.id}`,
+            severity: "warning",
+            target: block.id,
+            message: `Reply recall "${block.id}" should include an agent ::verify block.`
+          });
+        }
+
         for (const conceptId of block.concepts) {
           if (!conceptIds.has(conceptId)) {
             warnings.push({
@@ -1040,12 +1146,16 @@ function lintProgram(program: ConstructProgram): ConstructLintWarning[] {
 
         if (block.verify) {
           completableIds.add(block.verify.id);
-          if (!block.verify.goal || !block.verify.rubric || block.verify.evidence.files.length === 0 || (!block.verify.messages.success && !block.verify.messages.failure)) {
+          const hasEvidence = block.verify.evidence.files.length > 0 || Boolean(block.verify.evidence.answer || block.verify.evidence.interaction || block.verify.evidence.terminalCommand || block.verify.evidence.terminalOutput);
+          const needsLegacyMessages = program.spec !== "tape-0.4" && !block.verify.messages?.success && !block.verify.messages?.failure;
+          if (!block.verify.goal || !block.verify.rubric || !hasEvidence || needsLegacyMessages) {
             warnings.push({
               id: `incomplete-verify:${block.verify.id}`,
               severity: "warning",
               target: block.verify.id,
-              message: "::verify kind=\"agent\" should include goal, evidence files, rubric, and messages."
+              message: program.spec === "tape-0.4"
+                ? "::verify kind=\"agent\" should include goal, evidence, and rubric."
+                : "::verify kind=\"agent\" should include goal, evidence files, rubric, and messages."
             });
           }
         }
@@ -1103,6 +1213,8 @@ function learnerTextForBlock(block: ConstructBlock): string[] {
       return [...block.notes.map((note) => note.content), ...block.guides.flatMap(guideText)];
     case "recall":
       return [block.task, block.support, ...block.supportSections.map((section) => section.content)];
+    case "interact":
+      return [block.prompt];
     case "run":
       return [];
     default:

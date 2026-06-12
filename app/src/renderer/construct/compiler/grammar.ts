@@ -48,11 +48,19 @@ const tape031 = {
   concept: ["summary", "why", "example", "docs", "common-mistake", "guide.misconception", "guide.analogy"]
 } as const;
 
+const tape04 = {
+  ...tape031,
+  step: ["explain", "interact", "edit", "recall", "run", "expect", "checkpoint", "guide.preflight", "guide.trace", "guide.why-now", "guide.mental-model", "guide.misconception", "guide.analogy"],
+  interact: ["prompt", "basis", "understanding", "assessment", "resources"],
+  verify: ["goal", "evidence", "rubric", "messages"]
+} as const;
+
 const grammars: Record<string, Record<string, readonly string[]>> = {
   "tape-0.1": tape01,
   "tape-0.2": tape02,
   "tape-0.3": tape03,
-  "tape-0.3.1": tape031
+  "tape-0.3.1": tape031,
+  "tape-0.4": tape04
 };
 
 export function getConstructGrammar(spec: ConstructSpec): ConstructGrammar {
@@ -67,7 +75,7 @@ export function getConstructGrammar(spec: ConstructSpec): ConstructGrammar {
     spec,
     allowedChildren,
     knownBlocks,
-    topLevelResources: grammarKey === "tape-0.3" || grammarKey === "tape-0.3.1" ? ["concept", "reference"] : ["reference"]
+    topLevelResources: grammarKey === "tape-0.3" || grammarKey === "tape-0.3.1" || grammarKey === "tape-0.4" ? ["concept", "reference"] : ["reference"]
   };
 }
 
@@ -75,8 +83,8 @@ export function canContain(grammar: ConstructGrammar, parentKind: string, childK
   return grammar.allowedChildren[parentKind]?.includes(childKind) ?? false;
 }
 
-export function resolveGrammarKey(spec: ConstructSpec): "tape-0.1" | "tape-0.2" | "tape-0.3" | "tape-0.3.1" | string {
-  if (spec === "tape-0.1" || spec === "tape-0.2" || spec === "tape-0.3" || spec === "tape-0.3.1") {
+export function resolveGrammarKey(spec: ConstructSpec): "tape-0.1" | "tape-0.2" | "tape-0.3" | "tape-0.3.1" | "tape-0.4" | string {
+  if (spec === "tape-0.1" || spec === "tape-0.2" || spec === "tape-0.3" || spec === "tape-0.3.1" || spec === "tape-0.4") {
     return spec;
   }
   if (/^tape-0\.3\.\d+$/.test(spec)) return "tape-0.3.1";

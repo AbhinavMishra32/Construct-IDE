@@ -65,8 +65,10 @@ export function blockLabel(block: ConstructBlock): string {
       return "Explain";
     case "guide":
       return guideBlockLabel(block.guideKind);
+    case "interact":
+      return "Construct Interact";
     case "edit":
-    return "Code Step";
+      return "Code Step";
     case "recall":
       return "Recall Check";
     case "run":

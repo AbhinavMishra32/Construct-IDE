@@ -22,7 +22,7 @@ export function resolveConstructAgentModel(purpose: string, featureId?: Construc
   if (openRouter) {
     return {
       providerId: "openrouter",
-      modelId: featureId ? modelForAiFeature(settings, featureId) : (settings.openRouterModel || "openai/gpt-5-mini"),
+      modelId: featureId ? modelForAiFeature(settings, featureId) : (settings.openRouterModel || "nvidia/nemotron-3-ultra-550b-a55b:free"),
       url: process.env.CONSTRUCT_OPENROUTER_BASE_URL?.trim() || "https://openrouter.ai/api/v1",
       apiKey
     };

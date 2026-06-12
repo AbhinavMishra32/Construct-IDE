@@ -45,6 +45,42 @@ Understand the boundary.
     assert.equal(canonical.spec, "tape-0.3.1");
   });
 
+  it("defines tape-0.4 Construct Interact grammar and rejects root interact", () => {
+    const grammar = getConstructGrammar("tape-0.4");
+    assert.ok(grammar.allowedChildren.step.includes("interact"));
+    assert.deepEqual(grammar.allowedChildren.interact, ["prompt", "basis", "understanding", "assessment", "resources"]);
+
+    const valid = parseConstructDocument(`@construct spec="tape-0.4"
+::step id="s" title="S"
+::interact id="i"
+::prompt
+Question?
+::end
+::basis
+Basis.
+::end
+::understanding
+Understanding.
+::end
+::assessment
+Assessment.
+::end
+::resources
+concepts="x"
+::end
+::end
+::end`);
+    assert.equal(valid.diagnostics.length, 0);
+
+    const invalid = parseConstructDocument(`@construct spec="tape-0.4"
+::interact id="i"
+::prompt
+Question?
+::end
+::end`);
+    assert.ok(invalid.diagnostics.some((item) => item.code.endsWith("E_UNEXPECTED_CHILD") && item.childKind === "interact"));
+  });
+
   it("parses dotted guide block names and validates their parents", () => {
     const valid = parseConstructDocument(`@construct spec="tape-0.3"
 ::guide.orientation id="map" title="System picture"

@@ -30,7 +30,7 @@ export function createConstructProjectView(program: ConstructProgram, diagnostic
         kind: block.kind,
         path: block.kind === "edit" || block.kind === "recall" ? block.path : undefined,
         teaches: block.kind === "explain" ? block.concepts : undefined,
-        uses: block.kind === "recall" ? block.concepts : undefined,
+        uses: block.kind === "recall" ? block.concepts : block.kind === "interact" ? block.uses : undefined,
         references: block.kind === "recall" ? block.references : undefined,
         approxLines: block.kind === "edit" ? block.content.split("\n").length : undefined
       }))

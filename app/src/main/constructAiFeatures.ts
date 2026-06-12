@@ -2,6 +2,7 @@ import type { StoredAiSettings } from "./constructAiSettings";
 
 export type ConstructAiFeatureId =
   | "verification"
+  | "construct-interact"
   | "authoring-review"
   | "selection-explain"
   | "code-explain";
@@ -16,32 +17,39 @@ export type ConstructAiFeature = {
 
 export const constructAiFeatures: ConstructAiFeature[] = [
   {
+    id: "construct-interact",
+    title: "Construct Interact",
+    description: "Evaluates text answers, asks grounded follow-ups, and updates learner memory.",
+    defaultOpenAiModel: "gpt-5-mini",
+    defaultOpenRouterModel: "nvidia/nemotron-3-ultra-550b-a55b:free"
+  },
+  {
     id: "verification",
     title: "Verify work",
     description: "Checks learner code against the tape rubric and evidence.",
     defaultOpenAiModel: "gpt-5-mini",
-    defaultOpenRouterModel: "openai/gpt-5-mini"
+    defaultOpenRouterModel: "nvidia/nemotron-3-ultra-550b-a55b:free"
   },
   {
     id: "authoring-review",
     title: "Review tapes",
     description: "Suggests focused improvements for tape structure and teaching quality.",
     defaultOpenAiModel: "gpt-5-mini",
-    defaultOpenRouterModel: "openai/gpt-5-mini"
+    defaultOpenRouterModel: "nvidia/nemotron-3-ultra-550b-a55b:free"
   },
   {
     id: "selection-explain",
     title: "Explain selection",
     description: "Connects highlighted code to the current project and optional web context.",
     defaultOpenAiModel: "gpt-5-mini",
-    defaultOpenRouterModel: "openai/gpt-5-mini"
+    defaultOpenRouterModel: "nvidia/nemotron-3-ultra-550b-a55b:free"
   },
   {
     id: "code-explain",
     title: "Inline code help",
     description: "Explains the active code line in-place while you read or edit.",
     defaultOpenAiModel: "gpt-5-mini",
-    defaultOpenRouterModel: "openai/gpt-5-mini"
+    defaultOpenRouterModel: "nvidia/nemotron-3-ultra-550b-a55b:free"
   }
 ];
 

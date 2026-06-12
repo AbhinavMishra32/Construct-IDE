@@ -62,9 +62,11 @@ import {
 } from "./lib/projectStore";
 import {
   deleteProject,
+  getLearningState,
   getSettings,
   listAiFeatures,
   listModels,
+  onAgentLog,
   selectWorkspaceDirectory,
   setThemeSource,
   setWorkspaceRoot,
@@ -72,11 +74,12 @@ import {
   updateProject
 } from "./lib/bridge";
 import type { AiFeatureSettings, AiSettings, DeleteProjectCheck, ModelCatalogEntry, ProjectRecord, ProjectSummary, WorkspaceTreeNode } from "./types";
+import type { ConstructLearningState } from "../../shared/constructLearning";
 import { currentBlock, currentBlockNumber, totalBlocks, nextPosition } from "./lib/runtime";
 
 type ThemeMode = "light" | "dark" | "system";
 type ConstructHistoryEntry = ShellHistoryEntry<
-  "bottom-tab" | "dashboard" | "file" | "knowledge-base" | "project" | "project-settings" | "right-slot" | "settings",
+  "bottom-tab" | "dashboard" | "file" | "knowledge-base" | "learner-context" | "project" | "project-settings" | "right-slot" | "settings",
   {
     filePath?: string;
     projectId?: string;
@@ -96,7 +99,7 @@ const defaultAiSettings: AiSettings = {
   openAiApiKey: "",
   openAiModel: "gpt-5-mini",
   openRouterApiKey: "",
-  openRouterModel: "openai/gpt-5-mini",
+  openRouterModel: "nvidia/nemotron-3-ultra-550b-a55b:free",
   featureModels: {}
 };
 
@@ -143,6 +146,7 @@ export default function ConstructApp() {
   const [rightPanel, setRightPanel] = useState<ReactNode | null>(null);
   const [sidebarKnowledgePanel, setSidebarKnowledgePanel] = useState<ReactNode | null>(null);
   const [knowledgeBaseOpen, setKnowledgeBaseOpen] = useState(false);
+  const [learningContextOpen, setLearningContextOpen] = useState(false);
   const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
   const [settingsSurface, setSettingsSurface] = useState<SettingsSurfaceState | null>(null);
   const [settingsQuery, setSettingsQuery] = useState("");
@@ -193,9 +197,18 @@ export default function ConstructApp() {
       logStore.addLog("main", payload.message, level);
     });
 
+    const unsubscribeAgent = onAgentLog((payload) => {
+      const channel = payload.agent as LogChannel;
+      const level = payload.level === "error" || payload.level === "warn" || payload.level === "debug"
+        ? payload.level
+        : "info";
+      logStore.addLog(channel, payload.message, level);
+    });
+
     return () => {
       unsubscribeLsp();
       unsubscribeMain();
+      unsubscribeAgent();
     };
   }, []);
 
@@ -344,6 +357,7 @@ export default function ConstructApp() {
   const handleBack = useCallback(() => {
     setSettingsSurface(null);
     setKnowledgeBaseOpen(false);
+    setLearningContextOpen(false);
     setRightPanel(null);
     setActiveProject(null);
     setTreeData({ tree: [], activePath: null, relevantPath: null, openFile: null, createFile: null, deleteFile: null, renameFile: null, createFolder: null, duplicateFile: null });
@@ -353,6 +367,7 @@ export default function ConstructApp() {
 
   const openSettingsSurface = useCallback((itemId: string, projectId?: string) => {
     setKnowledgeBaseOpen(false);
+    setLearningContextOpen(false);
     setSettingsSurface({ itemId, projectId });
     setSettingsQuery("");
     pushHistory({
@@ -366,8 +381,17 @@ export default function ConstructApp() {
   const openKnowledgeBase = useCallback(() => {
     setSettingsSurface(null);
     setActiveProject(null);
+    setLearningContextOpen(false);
     setKnowledgeBaseOpen(true);
     pushHistory({ id: "knowledge-base", title: "Knowledge Base", type: "knowledge-base" });
+  }, [pushHistory]);
+
+  const openLearningContext = useCallback(() => {
+    setSettingsSurface(null);
+    setActiveProject(null);
+    setKnowledgeBaseOpen(false);
+    setLearningContextOpen(true);
+    pushHistory({ id: "learner-context", title: "Learner Context", type: "learner-context" });
   }, [pushHistory]);
 
   const handleRightSlotChange = useCallback((slotId: string) => {
@@ -649,6 +673,7 @@ export default function ConstructApp() {
     if (entry.type === "dashboard") {
       setSettingsSurface(null);
       setKnowledgeBaseOpen(false);
+      setLearningContextOpen(false);
       setRightPanel(null);
       setActiveProject(null);
       setTreeData({ tree: [], activePath: null, relevantPath: null, openFile: null, createFile: null, deleteFile: null, renameFile: null, createFolder: null, duplicateFile: null });
@@ -659,7 +684,17 @@ export default function ConstructApp() {
     if (entry.type === "knowledge-base") {
       setSettingsSurface(null);
       setActiveProject(null);
+      setLearningContextOpen(false);
       setKnowledgeBaseOpen(true);
+      finish();
+      return;
+    }
+
+    if (entry.type === "learner-context") {
+      setSettingsSurface(null);
+      setActiveProject(null);
+      setKnowledgeBaseOpen(false);
+      setLearningContextOpen(true);
       finish();
       return;
     }
@@ -706,6 +741,8 @@ export default function ConstructApp() {
       onProjectsChange={setProjects}
       onActiveProjectChange={setActiveProject}
     />
+  ) : learningContextOpen ? (
+    <LearningContextSurface />
   ) : knowledgeBaseOpen ? (
     <KnowledgeBaseSurface onOpenProject={(projectId) => {
       setKnowledgeBaseOpen(false);
@@ -926,7 +963,16 @@ export default function ConstructApp() {
                 sections={settingsSections}
               />
             ) : activeProject ? (
-              <Sidebar projects={[]} items={[]} footer={<SidebarSettingsButton onClick={() => openSettingsSurface("workspace")} />}>
+              <Sidebar
+                projects={[]}
+                items={[]}
+                footer={
+                  <>
+                    <SidebarLearningButton onClick={openLearningContext} />
+                    <SidebarSettingsButton onClick={() => openSettingsSurface("workspace")} />
+                  </>
+                }
+              >
                 <div className="construct-sidebar-active">
                   <div className="construct-sidebar-tree-container">
                     {treeData.openFile ? (
@@ -963,6 +1009,12 @@ export default function ConstructApp() {
                     icon: <BookOpen size={18} />,
                     label: "Knowledge Base",
                     onClick: openKnowledgeBase
+                  },
+                  {
+                    id: "learner-context",
+                    icon: <Notebook size={18} weight="duotone" />,
+                    label: "Learner Context",
+                    onClick: openLearningContext
                   }
                 ]}
                 footer={<SidebarSettingsButton onClick={() => openSettingsSurface("workspace")} />}
@@ -1814,6 +1866,14 @@ function ConstructSettingsSurface({
                 setAiSettings((current) => ({ ...current, provider }));
                 setModelOptions([]);
                 setModelsError(null);
+                setAiFeatures((features) => features.map((feature) => {
+                  const saved = aiSettings.featureModels[feature.id]?.trim();
+                  if (saved) return feature;
+                  const model = provider === "openrouter"
+                    ? feature.defaultOpenRouterModel
+                    : feature.defaultOpenAiModel;
+                  return { ...feature, model };
+                }));
               }}
               options={[
                 { value: "openai", label: "OpenAI" },
@@ -1872,11 +1932,20 @@ function ConstructSettingsSurface({
                   onValueChange={(model) => updateFeatureModel(feature.id, model)}
                   options={
                     modelOptions.length > 0
-                      ? modelOptions.map((model) => ({
-                          value: model.id,
-                          label: model.name,
-                          description: model.id
-                        }))
+                      ? modelOptions.some((m) => m.id === feature.model)
+                        ? modelOptions.map((model) => ({
+                            value: model.id,
+                            label: model.name,
+                            description: model.id
+                          }))
+                        : [
+                            { value: feature.model, label: feature.model, description: feature.model },
+                            ...modelOptions.map((model) => ({
+                              value: model.id,
+                              label: model.name,
+                              description: model.id
+                            }))
+                          ]
                       : [{ value: feature.model, label: feature.model || "No models loaded yet" }]
                   }
                 />
@@ -2154,6 +2223,126 @@ async function restartProjectLsp(projectId: string) {
   return window.constructProjects.lspStart(projectId);
 }
 
+function LearningContextSurface() {
+  const [state, setState] = useState<ConstructLearningState | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getLearningState()
+      .then((next) => {
+        if (!cancelled) setState(next);
+      })
+      .catch((caught) => {
+        if (!cancelled) setError(caught instanceof Error ? caught.message : String(caught));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (error) {
+    return <div className="construct-learning-context"><div className="dashboard__error">{error}</div></div>;
+  }
+
+  if (!state) {
+    return <div className="construct-learning-context"><div className="construct-dashboard__empty">Loading learner context...</div></div>;
+  }
+
+  const projects = Object.values(state.projects);
+  const globalConcepts = Object.values(state.learner.globalConceptUnderstanding);
+  const knowledge = Object.values(state.knowledgeBase.concepts);
+  const sessions = projects.flatMap((project) => project.constructInteractSessions);
+  const recalls = projects.flatMap((project) => project.recallAttempts);
+  const assistance = state.learner.assistanceEvents;
+  const weakConcepts = globalConcepts.filter((concept) => concept.confidence === "weak" || concept.confidence === "unknown");
+
+  return (
+    <div className="construct-learning-context">
+      <header className="construct-learning-context__header">
+        <div>
+          <span>Local-first learner memory</span>
+          <h1>Learner Context</h1>
+          <p>Inspect the state Construct Interact, recall, Knowledge Base, and future sync will use.</p>
+        </div>
+        <code>{state.sync.mode} · {state.sync.deviceId.slice(0, 8)}</code>
+      </header>
+
+      <section className="construct-learning-context__stats">
+        <LearningStat label="Concepts" value={globalConcepts.length} />
+        <LearningStat label="Weak" value={weakConcepts.length} />
+        <LearningStat label="Knowledge" value={knowledge.length} />
+        <LearningStat label="Interact" value={sessions.length} />
+        <LearningStat label="Recall" value={recalls.length} />
+      </section>
+
+      <main className="construct-learning-context__grid">
+        <LearningPanel title="Weak concepts" meta={`${weakConcepts.length} global`}>
+          {weakConcepts.slice(0, 8).map((concept) => (
+            <LearningRow key={concept.conceptId} title={concept.conceptId} meta={`${concept.confidence} · ${concept.projectIds.length} project`} />
+          ))}
+          {weakConcepts.length === 0 ? <p>No weak concepts recorded yet.</p> : null}
+        </LearningPanel>
+
+        <LearningPanel title="Projects" meta={`${projects.length} tracked`}>
+          {projects.slice(0, 8).map((project) => (
+            <LearningRow
+              key={project.projectId}
+              title={project.projectId}
+              meta={`${Object.keys(project.conceptUnderstanding).length} concepts · ${project.recallAttempts.length} recalls · ${project.constructInteractSessions.length} interact`}
+            />
+          ))}
+        </LearningPanel>
+
+        <LearningPanel title="Knowledge Base" meta={`${knowledge.length} saved`}>
+          {knowledge.slice(0, 8).map((record) => (
+            <LearningRow key={`${record.sourceProjectId}:${record.id}`} title={record.title} meta={`${record.sourceProjectTitle} · opened ${record.openCount} times`} />
+          ))}
+          {knowledge.length === 0 ? <p>No saved concepts yet.</p> : null}
+        </LearningPanel>
+
+        <LearningPanel title="Construct Interact" meta={`${sessions.length} sessions`}>
+          {sessions.slice(-8).reverse().map((session) => (
+            <LearningRow key={session.id} title={session.prompt} meta={`${session.status} · ${session.confidence} · ${session.assistanceLevel}`} />
+          ))}
+          {sessions.length === 0 ? <p>No Construct Interact sessions yet.</p> : null}
+        </LearningPanel>
+
+        <LearningPanel title="Recall attempts" meta={`${recalls.length} attempts`}>
+          {recalls.slice(-8).reverse().map((attempt) => (
+            <LearningRow key={attempt.id} title={attempt.recallId} meta={`${attempt.mode} · ${attempt.status ?? "pending"} · ${attempt.confidence}`} />
+          ))}
+          {recalls.length === 0 ? <p>No recall attempts recorded yet.</p> : null}
+        </LearningPanel>
+
+        <LearningPanel title="Sync metadata" meta={state.sync.updatedAt}>
+          <LearningRow title="Mode" meta={state.sync.mode} />
+          <LearningRow title="Pending operations" meta={String(state.sync.pendingOperations.length)} />
+          <LearningRow title="Adaptive overlays" meta={state.learner.preferences.adaptiveOverlaysEnabled ? "enabled" : "off by default"} />
+          <LearningRow title="Assistance events" meta={String(assistance.length)} />
+        </LearningPanel>
+      </main>
+    </div>
+  );
+}
+
+function LearningStat({ label, value }: { label: string; value: number }) {
+  return <div><span>{label}</span><strong>{value}</strong></div>;
+}
+
+function LearningPanel({ children, meta, title }: { children: ReactNode; meta: string; title: string }) {
+  return (
+    <section className="construct-learning-panel">
+      <header><h2>{title}</h2><span>{meta}</span></header>
+      <div>{children}</div>
+    </section>
+  );
+}
+
+function LearningRow({ meta, title }: { meta: string; title: string }) {
+  return <div className="construct-learning-row"><strong>{title}</strong><small>{meta}</small></div>;
+}
+
 function ConstructShellNavigationControls({
   canNavigateBack,
   canNavigateForward,
@@ -2202,6 +2391,15 @@ function ConstructShellNavigationControls({
         </svg>
       </ButtonComponent>
     </>
+  );
+}
+
+function SidebarLearningButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button className="construct-sidebar-settings" onClick={onClick} type="button">
+      <Notebook size={19} weight="duotone" />
+      <span>Learner Context</span>
+    </button>
   );
 }
 

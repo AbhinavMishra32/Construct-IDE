@@ -88,7 +88,11 @@ export function lintConstructProgram(program: ConstructProgram, document: Constr
       });
       if (block.verify) {
         completionIds.add(block.verify.id);
-        const missing = [!block.verify.goal && "goal", block.verify.evidence.files.length === 0 && "evidence", !block.verify.rubric && "rubric", (!block.verify.messages.success || !block.verify.messages.failure) && "messages"].filter(Boolean);
+        const hasEvidence =
+          block.verify.evidence.files.length > 0 ||
+          Boolean(block.verify.evidence.answer || block.verify.evidence.interaction || block.verify.evidence.terminalCommand || block.verify.evidence.terminalOutput);
+        const needsMessages = program.spec !== "tape-0.4" && (!block.verify.messages?.success || !block.verify.messages?.failure);
+        const missing = [!block.verify.goal && "goal", !hasEvidence && "evidence", !block.verify.rubric && "rubric", needsMessages && "messages"].filter(Boolean);
         if (missing.length > 0) diagnostics.push(lintDiagnostic(program.spec, "W_INCOMPLETE_VERIFY", `Verifier "${block.verify.id}" is missing ${missing.join(", ")}.`, block.verify.id));
       }
     }
@@ -124,6 +128,7 @@ function lintBlockReferences(
   if (block.kind === "guide") texts = guideText(block);
   else if (block.kind === "edit") texts = [...block.notes.map((note) => note.content), ...block.guides.flatMap(guideText)];
   else if (block.kind === "recall") texts = [block.task, block.support, ...block.supportSections.map((section) => section.content)];
+  else if (block.kind === "interact") texts = [block.prompt];
   else if (block.kind !== "run") texts = [block.content];
   lintTextReferences(program, texts, block.id, knownFiles, knownAnchorsByPath, diagnostics);
 }

@@ -1,3 +1,14 @@
+import type {
+  ConceptUnderstanding,
+  ConstructInteractResult,
+  ConstructInteractRuntimeInput,
+  ConstructInteractSession,
+  ConstructLearningState,
+  KnowledgeBaseRecord,
+  LearningStatePatch,
+  ProjectLearningState
+} from "../../shared/constructLearning";
+
 export type ConstructProgram = {
   spec: string;
   version: string;
@@ -36,6 +47,7 @@ export type ConstructStep = {
 
 export type ConstructBlock =
   | ExplainBlock
+  | InteractBlock
   | GuideBlock
   | EditBlock
   | RecallBlock
@@ -60,6 +72,21 @@ export type GuideBlock = {
   title?: string;
   content: string;
   sections: GuideSection[];
+};
+
+export type InteractBlock = {
+  kind: "interact";
+  id: string;
+  interactKind: string;
+  uses: string[];
+  prompt: string;
+  basis: string;
+  understanding: string;
+  assessment: string;
+  resources: {
+    concepts: string[];
+    files: string[];
+  };
 };
 
 export type EditBlock = {
@@ -167,6 +194,7 @@ export type ConstructTarget = {
 export type RecallBlock = {
   kind: "recall";
   id: string;
+  mode: "code" | "reply";
   path?: string;
   target?: string;
   references: string[];
@@ -184,11 +212,13 @@ export type VerificationBlock = {
   goal: string;
   evidence: VerificationEvidence;
   rubric: string;
-  messages: VerificationMessages;
+  messages?: VerificationMessages;
 };
 
 export type VerificationEvidence = {
+  answer?: "latest" | string;
   files: string[];
+  interaction?: string;
   terminalCommand?: string;
   terminalOutput?: "latest" | string;
 };
@@ -207,6 +237,11 @@ export type VerificationResult = {
   suggestion?: string;
   relatedConceptIds?: string[];
   logs?: VerificationLogEntry[];
+};
+
+export type ConstructInteractClientResult = ConstructInteractResult & {
+  session: ConstructInteractSession;
+  learningState: ConstructLearningState;
 };
 
 export type SelectionExplanationLogEntry = {
@@ -435,6 +470,13 @@ export type ConstructProjectsApi = {
     provider: AiProvider;
     apiKey: string;
   }): Promise<ModelCatalogEntry[]>;
+  getLearningState(): Promise<ConstructLearningState>;
+  getProjectLearningState(projectId: string): Promise<ProjectLearningState>;
+  applyLearningPatch(input: LearningStatePatch): Promise<ConstructLearningState>;
+  getWeakConcepts(input?: { projectId?: string }): Promise<ConceptUnderstanding[]>;
+  saveKnowledgeConcept(input: KnowledgeBaseRecord): Promise<ConstructLearningState>;
+  openKnowledgeConcept(input: KnowledgeBaseRecord): Promise<ConstructLearningState>;
+  removeKnowledgeConcept(input: { projectId: string; conceptId: string }): Promise<ConstructLearningState>;
   listProjects(): Promise<ProjectSummary[]>;
   openProject(id: string): Promise<ProjectRecord>;
   updateProject(input: {
@@ -474,7 +516,9 @@ export type ConstructProjectsApi = {
     references: ReferenceCard[];
     concepts?: ConceptCard[];
     savedKnowledge?: ConceptCard[];
+    answer?: string;
   }): Promise<VerificationResult>;
+  runConstructInteract(input: Omit<ConstructInteractRuntimeInput, "learningState">): Promise<ConstructInteractClientResult>;
   reviewConstructAuthoring(input: {
     spec: string;
     projectView: unknown;
@@ -488,6 +532,7 @@ export type ConstructProjectsApi = {
     learningContext?: unknown;
   }): Promise<SelectionExplanationResult>;
   onSelectionExplanationLog(callback: (event: { requestId: string; entry: SelectionExplanationLogEntry }) => void): () => void;
+  onAgentLog(callback: (event: { agent: string; message: string; level: string }) => void): () => void;
   startCodeGhostStream(input: {
     requestId: string;
     lineNumber: number;

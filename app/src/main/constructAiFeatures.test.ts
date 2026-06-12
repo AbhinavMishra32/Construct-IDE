@@ -13,7 +13,7 @@ const baseSettings: StoredAiSettings = {
   openAiApiKey: "",
   openAiModel: "gpt-5-mini",
   openRouterApiKey: "",
-  openRouterModel: "openai/gpt-5-mini",
+  openRouterModel: "nvidia/nemotron-3-ultra-550b-a55b:free",
   featureModels: {}
 };
 
@@ -21,7 +21,7 @@ test("registered AI features expose user-facing metadata", () => {
   assert.ok(constructAiFeatures.length >= 4);
   assert.deepEqual(
     constructAiFeatures.map((feature) => feature.id),
-    ["verification", "authoring-review", "selection-explain", "code-explain"]
+    ["construct-interact", "verification", "authoring-review", "selection-explain", "code-explain"]
   );
   assert.ok(constructAiFeatures.every((feature) => feature.title && feature.description));
 });
@@ -31,7 +31,7 @@ test("feature models use provider defaults and saved per-feature overrides", () 
 
   assert.equal(
     modelForAiFeature({ ...baseSettings, provider: "openrouter" }, "verification"),
-    "openai/gpt-5-mini"
+    "nvidia/nemotron-3-ultra-550b-a55b:free"
   );
 
   assert.equal(

@@ -1,7 +1,7 @@
 {
   "name": "@construct/app",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "main": "dist/main.cjs",
   "description": "Construct desktop IDE for executable learning tapes.",
@@ -16,7 +16,7 @@
     "build:main": "tsup",
     "build:renderer": "vite build",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test src/main/constructAiFeatures.test.ts src/main/constructSelectionExplainAgent.test.ts src/renderer/construct/lib/documentSession.test.ts src/renderer/construct/lib/inlineRefs.test.ts src/renderer/construct/lib/parser.test.ts src/renderer/construct/lib/selectionContext.test.ts src/renderer/construct/compiler/parser.test.ts src/renderer/construct/compiler/pipeline.test.ts"
+    "test": "node --import tsx --test src/main/constructAiFeatures.test.ts src/main/constructInteractAgent.test.ts src/main/constructLearningStore.test.ts src/main/constructSelectionExplainAgent.test.ts src/renderer/construct/lib/documentSession.test.ts src/renderer/construct/lib/inlineRefs.test.ts src/renderer/construct/lib/parser.test.ts src/renderer/construct/lib/selectionContext.test.ts src/renderer/construct/compiler/parser.test.ts src/renderer/construct/compiler/pipeline.test.ts"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.8",
