@@ -3,11 +3,20 @@ import "./styles/construct.css";
 import { lspClient } from "./lib/lspClient";
 
 import { Component, useCallback, useEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from "react";
-import { ArrowLeft, ArrowRight, PanelLeft, PanelRight, PanelBottom, FileTerminalIcon, FileTextIcon } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  BookOpen,
+  FileTerminalIcon,
+  FileTextIcon,
+  PanelBottom,
+  PanelLeft,
+  PanelRight,
+  Plus as PlusIcon
+} from "lucide-react";
 import {
   Folder,
   GearSix,
-  Plus,
   TerminalWindow,
   Notebook,
   Trash
@@ -836,8 +845,7 @@ export default function ConstructApp() {
             </div>
           )}
           sidebarChrome={
-            activeProject && !settingsSurface
-              ? (state) => (
+            (state) => (
                   <>
                     <AppShellChromeButton
                       aria-label={state.isSidebarOpen ? "Close sidebar" : "Open sidebar"}
@@ -880,7 +888,6 @@ export default function ConstructApp() {
                     </AppShellChromeButton>
                   </>
                 )
-              : undefined
           }
           headerActions={
             activeProject && !settingsSurface
@@ -998,13 +1005,13 @@ export default function ConstructApp() {
                 primaryItems={[
                   {
                     id: "new-project",
-                    icon: <Plus size={18} weight="bold" />,
+                    icon: <PlusIcon size={18} />,
                     label: "New project",
                     onClick: () => setIsNewProjectOpen(true)
                   },
                   {
                     id: "knowledge-base",
-                    icon: <Notebook size={18} weight="duotone" />,
+                    icon: <BookOpen size={18} />,
                     label: "Knowledge Base",
                     onClick: openKnowledgeBase
                   }
@@ -1979,7 +1986,11 @@ function ConstructSettingsSurface({
 
       <SettingsSection title="About">
         <SettingsCard>
-          <SettingsRow title="Tape Spec" description="Current Construct tape format supported by the editor." control={<code>0.3.1</code>} />
+          <SettingsRow
+            title="Supported protocols"
+            description="Construct keeps older tape projects working while the protocol evolves."
+            control={<code>tape-0.1 · tape-0.2 · tape-0.3 · tape-0.3.1</code>}
+          />
         </SettingsCard>
       </SettingsSection>
       {error ? <div className="construct-dialog-error">{error}</div> : null}

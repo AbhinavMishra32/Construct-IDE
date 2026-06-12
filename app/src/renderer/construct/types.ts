@@ -278,6 +278,22 @@ export type ProjectSummary = {
   lastOpenedAt: string | null;
   sourcePath: string | null;
   workspacePath: string;
+  currentStepIndex?: number;
+  currentBlockIndex?: number;
+  currentStepTitle?: string | null;
+  currentBlockKind?: string | null;
+  currentBlockLabel?: string | null;
+  activeFilePath?: string | null;
+  stepCount?: number;
+  blockCount?: number;
+  completedBlockCount?: number;
+  fileCount?: number;
+  conceptCount?: number;
+  referenceCount?: number;
+  verificationPassCount?: number;
+  verificationFailCount?: number;
+  authoringFixCount?: number;
+  completedAt?: string | null;
 };
 
 export type ProjectRecord = ProjectSummary & {

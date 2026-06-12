@@ -138,13 +138,25 @@ type StoredProject = {
     title: string;
     description: string;
     files: Array<{ path: string; content: string }>;
+    concepts?: unknown[];
     references?: Array<{
       id: string;
       title: string;
       body: string;
     }>;
     targets?: unknown[];
-    steps: Array<{ blocks: Array<{ id: string }> }>;
+    steps: Array<{
+      id?: string;
+      title?: string;
+      blocks: Array<{
+        id: string;
+        kind?: string;
+        path?: string;
+        title?: string;
+        task?: string;
+        content?: string;
+      }>;
+    }>;
   };
   currentStepIndex: number;
   currentBlockIndex: number;
@@ -770,6 +782,12 @@ async function pushProjectGit(project: StoredProject): Promise<{ success: boolea
 }
 
 function summarizeProject(project: StoredProject) {
+  const currentStep = project.program.steps[project.currentStepIndex] ?? null;
+  const currentBlock = currentStep?.blocks[project.currentBlockIndex] ?? null;
+  const blockCount = project.program.steps.reduce((total, step) => total + step.blocks.length, 0);
+  const completedBlockCount = Object.values(project.completedBlocks ?? {}).filter(Boolean).length;
+  const verificationResults = Object.values(project.verificationResults ?? {});
+
   return {
     id: project.id,
     title: project.title,
@@ -777,7 +795,23 @@ function summarizeProject(project: StoredProject) {
     progress: project.progress,
     lastOpenedAt: project.lastOpenedAt,
     workspacePath: project.workspacePath,
-    sourcePath: project.sourcePath ?? null
+    sourcePath: project.sourcePath ?? null,
+    currentStepIndex: project.currentStepIndex,
+    currentBlockIndex: project.currentBlockIndex,
+    currentStepTitle: currentStep?.title ?? null,
+    currentBlockKind: currentBlock?.kind ?? null,
+    currentBlockLabel: currentBlock?.path ?? currentBlock?.title ?? currentBlock?.task ?? currentBlock?.content?.slice(0, 80) ?? null,
+    activeFilePath: project.activeFilePath ?? null,
+    stepCount: project.program.steps.length,
+    blockCount,
+    completedBlockCount,
+    fileCount: project.program.files.length,
+    conceptCount: project.program.concepts?.length ?? 0,
+    referenceCount: project.program.references?.length ?? 0,
+    verificationPassCount: verificationResults.filter((result) => result.passed).length,
+    verificationFailCount: verificationResults.filter((result) => !result.passed).length,
+    authoringFixCount: project.authoringFixes?.length ?? 0,
+    completedAt: project.completedAt ?? null
   };
 }
 
