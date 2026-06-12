@@ -967,48 +967,11 @@ export default function ConstructApp() {
                 ]}
                 footer={<SidebarSettingsButton onClick={() => openSettingsSurface("workspace")} />}
               >
-                <SidebarSection heading="Projects">
-                  <div className="construct-sidebar-project-list">
-                    {projects.map((project) => (
-                      <button
-                        className="construct-sidebar-project-row"
-                        key={project.id}
-                        onClick={() => void openProject(project.id)}
-                        type="button"
-                      >
-                        <span className="construct-sidebar-project-row__icon">
-                          <Folder size={16} weight="duotone" />
-                        </span>
-                        <span className="construct-sidebar-project-row__title">{project.title}</span>
-                        <span
-                          className="construct-sidebar-project-row__settings"
-                          role="button"
-                          tabIndex={0}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            openSettingsSurface("project-overview", project.id);
-                          }}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter" || event.key === " ") {
-                              event.preventDefault();
-                              event.stopPropagation();
-                              openSettingsSurface("project-overview", project.id);
-                            }
-                          }}
-                          aria-label={`Open settings for ${project.title}`}
-                        >
-                          <GearSix size={15} weight="duotone" />
-                        </span>
-                        <span className="construct-sidebar-project-row__meta">{project.progress}%</span>
-                      </button>
-                    ))}
-                    {projects.length === 0 ? (
-                      <div className="construct-sidebar-empty">
-                        Open a .construct file to start.
-                      </div>
-                    ) : null}
-                  </div>
-                </SidebarSection>
+                <DashboardSidebar
+                  projects={projects}
+                  onOpenProject={(projectId) => void openProject(projectId)}
+                  onOpenProjectSettings={(projectId) => openSettingsSurface("project-overview", projectId)}
+                />
               </Sidebar>
             )
           }
@@ -2000,6 +1963,189 @@ function settingsTitle(itemId: string, projectId: string | undefined, projects: 
     return projects.find((project) => project.id === projectId)?.title ?? "Project settings";
   }
   return "Settings";
+}
+
+function DashboardSidebar({
+  projects,
+  onOpenProject,
+  onOpenProjectSettings
+}: {
+  projects: ProjectSummary[];
+  onOpenProject: (projectId: string) => void;
+  onOpenProjectSettings: (projectId: string) => void;
+}) {
+  const sortedByRecent = [...projects].sort((a, b) => {
+    const left = a.lastOpenedAt ? Date.parse(a.lastOpenedAt) : 0;
+    const right = b.lastOpenedAt ? Date.parse(b.lastOpenedAt) : 0;
+    return right - left;
+  });
+
+  const continueProjects = sortedByRecent
+    .filter((project) => project.progress < 100)
+    .slice(0, 4);
+  const attentionProjects = sortedByRecent
+    .filter((project) => (project.verificationFailCount ?? 0) > 0 || (project.authoringFixCount ?? 0) > 0)
+    .slice(0, 3);
+  const completedProjects = sortedByRecent
+    .filter((project) => project.progress >= 100 || project.completedAt)
+    .slice(0, 3);
+
+  return (
+    <>
+      <SidebarSection heading="Continue now">
+        <div className="construct-dashboard-sidebar-list">
+          {continueProjects.map((project) => (
+            <DashboardSidebarProjectRow
+              key={project.id}
+              icon={<Folder size={16} weight="duotone" />}
+              meta={`${project.progress}%`}
+              onClick={() => onOpenProject(project.id)}
+              onOpenSettings={() => onOpenProjectSettings(project.id)}
+              subtitle={project.currentStepTitle || project.currentBlockLabel || formatDashboardSidebarTime(project.lastOpenedAt)}
+              title={project.title}
+            />
+          ))}
+          {continueProjects.length === 0 ? (
+            <div className="construct-dashboard-sidebar-empty">No active project yet. Open a tape to start building.</div>
+          ) : null}
+        </div>
+      </SidebarSection>
+
+      <SidebarSection heading="Needs attention">
+        <div className="construct-dashboard-sidebar-list">
+          {attentionProjects.map((project) => (
+            <DashboardSidebarProjectRow
+              key={project.id}
+              icon={<Trash size={15} weight="duotone" />}
+              meta={formatAttentionMeta(project)}
+              onClick={() => onOpenProject(project.id)}
+              onOpenSettings={() => onOpenProjectSettings(project.id)}
+              subtitle={project.currentStepTitle || "Review the current tape state"}
+              title={project.title}
+              tone="warning"
+            />
+          ))}
+          {attentionProjects.length === 0 ? (
+            <div className="construct-dashboard-sidebar-empty">No failed verification or repair work waiting.</div>
+          ) : null}
+        </div>
+      </SidebarSection>
+
+      <SidebarSection heading="Completed recently">
+        <div className="construct-dashboard-sidebar-list">
+          {completedProjects.map((project) => (
+            <DashboardSidebarProjectRow
+              key={project.id}
+              icon={<Notebook size={15} weight="duotone" />}
+              meta={`${project.verificationPassCount ?? 0} pass`}
+              onClick={() => onOpenProject(project.id)}
+              onOpenSettings={() => onOpenProjectSettings(project.id)}
+              subtitle={formatDashboardSidebarTime(project.completedAt ?? project.lastOpenedAt)}
+              title={project.title}
+              tone="success"
+            />
+          ))}
+          {completedProjects.length === 0 ? (
+            <div className="construct-dashboard-sidebar-empty">Completed tapes will show up here once you finish one.</div>
+          ) : null}
+        </div>
+      </SidebarSection>
+    </>
+  );
+}
+
+function DashboardSidebarProjectRow({
+  icon,
+  meta,
+  onClick,
+  onOpenSettings,
+  subtitle,
+  title,
+  tone = "default"
+}: {
+  icon: ReactNode;
+  meta: string;
+  onClick: () => void;
+  onOpenSettings: () => void;
+  subtitle: string;
+  title: string;
+  tone?: "default" | "success" | "warning";
+}) {
+  return (
+    <button
+      className="construct-dashboard-sidebar-row"
+      data-tone={tone}
+      onClick={onClick}
+      type="button"
+    >
+      <span className="construct-dashboard-sidebar-row__icon">{icon}</span>
+      <span className="construct-dashboard-sidebar-row__copy">
+        <strong>{title}</strong>
+        <small>{subtitle}</small>
+      </span>
+      <span
+        className="construct-dashboard-sidebar-row__settings"
+        role="button"
+        tabIndex={0}
+        onClick={(event) => {
+          event.stopPropagation();
+          onOpenSettings();
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            event.stopPropagation();
+            onOpenSettings();
+          }
+        }}
+        aria-label={`Open settings for ${title}`}
+      >
+        <GearSix size={15} weight="duotone" />
+      </span>
+      <span className="construct-dashboard-sidebar-row__meta">{meta}</span>
+    </button>
+  );
+}
+
+function formatDashboardSidebarTime(value: string | null | undefined) {
+  if (!value) {
+    return "Recently opened";
+  }
+
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) {
+    return "Recently opened";
+  }
+
+  const diffMs = Date.now() - timestamp;
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+  if (diffHours < 1) {
+    return "Opened less than an hour ago";
+  }
+  if (diffHours < 24) {
+    return `Opened ${diffHours}h ago`;
+  }
+
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 7) {
+    return `Opened ${diffDays}d ago`;
+  }
+
+  return new Date(timestamp).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric"
+  });
+}
+
+function formatAttentionMeta(project: ProjectSummary) {
+  const parts: string[] = [];
+  if ((project.verificationFailCount ?? 0) > 0) {
+    parts.push(`${project.verificationFailCount} fail`);
+  }
+  if ((project.authoringFixCount ?? 0) > 0) {
+    parts.push(`${project.authoringFixCount} fix`);
+  }
+  return parts.join(" · ") || `${project.progress}%`;
 }
 
 async function restartProjectLsp(projectId: string) {

@@ -1680,6 +1680,113 @@
   font-size: 13px;
 }
 
+.construct-dashboard-sidebar-list {
+  display: grid;
+  gap: 4px;
+  padding: 0 0 8px;
+}
+
+.construct-dashboard-sidebar-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 24px auto;
+  align-items: center;
+  gap: 7px;
+  min-height: 44px;
+  border: 0;
+  border-radius: 10px;
+  padding: 7px 10px;
+  background: transparent;
+  color: var(--opaline-text-primary);
+  cursor: default;
+  font: inherit;
+  text-align: left;
+}
+
+.construct-dashboard-sidebar-row:hover {
+  background: var(--color-token-list-hover-background);
+}
+
+.construct-dashboard-sidebar-row__icon {
+  display: inline-grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  color: var(--opaline-text-secondary);
+}
+
+.construct-dashboard-sidebar-row[data-tone="warning"] .construct-dashboard-sidebar-row__icon {
+  color: var(--opaline-warning);
+}
+
+.construct-dashboard-sidebar-row[data-tone="success"] .construct-dashboard-sidebar-row__icon {
+  color: var(--opaline-accent);
+}
+
+.construct-dashboard-sidebar-row__copy {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.construct-dashboard-sidebar-row__copy strong,
+.construct-dashboard-sidebar-row__copy small,
+.construct-dashboard-sidebar-row__meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.construct-dashboard-sidebar-row__copy strong {
+  font-size: 13.5px;
+  font-weight: 580;
+  color: var(--opaline-text-primary);
+}
+
+.construct-dashboard-sidebar-row__copy small {
+  font-size: 11.5px;
+  color: var(--opaline-text-tertiary);
+}
+
+.construct-dashboard-sidebar-row__meta {
+  color: var(--opaline-text-tertiary);
+  font-size: 11.5px;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.construct-dashboard-sidebar-row__settings {
+  display: inline-grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 7px;
+  color: var(--opaline-text-tertiary);
+  opacity: 0;
+}
+
+.construct-dashboard-sidebar-row:hover .construct-dashboard-sidebar-row__settings,
+.construct-dashboard-sidebar-row__settings:focus-visible {
+  opacity: 1;
+}
+
+.construct-dashboard-sidebar-row:hover .construct-dashboard-sidebar-row__meta,
+.construct-dashboard-sidebar-row:focus-visible .construct-dashboard-sidebar-row__meta {
+  opacity: 1;
+}
+
+.construct-dashboard-sidebar-row__settings:hover {
+  background: color-mix(in srgb, var(--opaline-text-primary) 8%, transparent);
+  color: var(--opaline-text-primary);
+}
+
+.construct-dashboard-sidebar-empty {
+  padding: 8px 10px;
+  color: var(--opaline-text-tertiary);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
 .construct-sidebar-settings {
   display: inline-flex;
   width: 100%;
