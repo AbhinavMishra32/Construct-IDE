@@ -1,7 +1,6 @@
 import path from "node:path";
 import { existsSync, readFileSync } from "node:fs";
-
-import { app } from "electron";
+import { createRequire } from "node:module";
 
 export type StoredAiSettings = {
   provider: "openai" | "openrouter";
@@ -24,16 +23,22 @@ function defaultAiSettings(): StoredAiSettings {
 }
 
 function settingsFilePath(): string {
-  return path.join(app.getPath("userData"), "construct-projects", "settings.json");
+  const electronApp = getElectronApp();
+  if (!electronApp) {
+    return "";
+  }
+
+  return path.join(electronApp.getPath("userData"), "construct-projects", "settings.json");
 }
 
 function readStoredAiSettings(): StoredAiSettings {
-  if (!existsSync(settingsFilePath())) {
+  const settingsPath = settingsFilePath();
+  if (!settingsPath || !existsSync(settingsPath)) {
     return defaultAiSettings();
   }
 
   try {
-    const parsed = JSON.parse(readFileSync(settingsFilePath(), "utf8")) as {
+    const parsed = JSON.parse(readFileSync(settingsPath, "utf8")) as {
       ai?: Partial<StoredAiSettings>;
     };
     const defaults = defaultAiSettings();
@@ -52,6 +57,20 @@ function readStoredAiSettings(): StoredAiSettings {
     };
   } catch {
     return defaultAiSettings();
+  }
+}
+
+function getElectronApp(): { getPath(name: "userData"): string } | null {
+  if (!process.versions.electron) {
+    return null;
+  }
+
+  try {
+    const require = createRequire(import.meta.url);
+    const electron = require("electron") as { app?: { getPath(name: "userData"): string } };
+    return electron.app ?? null;
+  } catch {
+    return null;
   }
 }
 
