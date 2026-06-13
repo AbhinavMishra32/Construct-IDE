@@ -224,6 +224,35 @@ function sendAgentLog(agent: AgentLogChannel, message: string, level: "info" | "
   sendToRenderers("construct:project:agent-log", { agent, message, level });
 }
 
+function sendAgentStructuredLog(
+  agent: AgentLogChannel,
+  title: string,
+  payload: unknown,
+  level: "info" | "warn" | "error" | "debug" = "debug"
+): void {
+  sendAgentLog(agent, `${title}\n${formatAgentPayload(payload)}`, level);
+}
+
+function formatAgentPayload(payload: unknown): string {
+  try {
+    return JSON.stringify(payload, (_key, value) => {
+      if (value instanceof Error) {
+        return {
+          name: value.name,
+          message: value.message,
+          stack: value.stack
+        };
+      }
+      if (typeof value === "string" && value.length > 60_000) {
+        return `${value.slice(0, 60_000)}\n... [truncated]`;
+      }
+      return value;
+    }, 2);
+  } catch {
+    return String(payload);
+  }
+}
+
 function legacyConstructProjectsRoot(): string | null {
   if (process.platform === "darwin") {
     const candidate = path.join(homedir(), "Library", "Application Support", "@construct", "app", "construct-projects");
@@ -1646,12 +1675,19 @@ function installConstructProjectIpcHandlers(): void {
     const store = learningStore();
     const learningState = await store.getState();
     sendAgentLog("interact", `Evaluating interaction for block ${input.blockId}`);
+    sendAgentStructuredLog("interact", "Interaction request", {
+      ...input,
+      learningState
+    });
     console.log("[Construct Interact] evaluating", input.projectId, input.blockId);
     const result = await runConstructInteract({
       ...input,
       learningState
+    }, (entry) => {
+      sendAgentLog("interact", `${entry.title}\n${entry.detail}`, entry.level ?? "debug");
     });
     sendAgentLog("interact", `Interaction result: ${result.status} (confidence=${result.confidence}, reply=${result.reply?.slice(0, 80) ?? "none"}...)`);
+    sendAgentStructuredLog("interact", "Interaction result payload", result);
     const now = new Date().toISOString();
     const session: ConstructInteractSession = {
       id: randomUUID(),
@@ -2103,7 +2139,7 @@ function installConstructProjectIpcHandlers(): void {
     try {
       addVerificationLog(logs, "running", "Evaluating rubric", String(verify.rubric ?? "No rubric supplied."));
       addVerificationLog(logs, "running", "Asking Construct Verifier Agent", "Comparing goal, rubric, files, terminal output, task, support, and reference cards.");
-      const result = await runConstructVerifierAgent({
+      const verifierInput = {
         goal: String(verify.goal ?? ""),
         rubric: String(verify.rubric ?? ""),
         task: String(recall.task ?? ""),
@@ -2141,6 +2177,10 @@ function installConstructProjectIpcHandlers(): void {
           success: String(verify.messages?.success ?? ""),
           failure: String(verify.messages?.failure ?? "")
         }
+      };
+      sendAgentStructuredLog("verifier", "Verifier request", verifierInput);
+      const result = await runConstructVerifierAgent(verifierInput, (entry) => {
+        sendAgentLog("verifier", `${entry.title}\n${entry.detail}`, entry.level ?? "debug");
       });
       await learningStore().recordRecallAttempt({
         id: randomUUID(),
@@ -2161,6 +2201,7 @@ function installConstructProjectIpcHandlers(): void {
         result.reason
       );
       sendAgentLog("verifier", `Verification ${result.passed ? "passed" : "failed"} (confidence=${result.confidence}): ${result.reason?.slice(0, 120) ?? "no reason"}`);
+      sendAgentStructuredLog("verifier", "Verifier result payload", result);
       return withVerificationLogs(result, logs);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -2183,6 +2224,12 @@ function installConstructProjectIpcHandlers(): void {
     const diagnosticCount = Array.isArray(input?.diagnostics) ? input.diagnostics.length : 0;
     const snippetCount = Array.isArray(input?.snippets) ? input.snippets.length : 0;
     sendAgentLog("authoring-review", `Reviewing tape (spec=${input?.spec ?? "tape-0.3"}, ${diagnosticCount} diagnostics, ${snippetCount} snippets)`);
+    sendAgentStructuredLog("authoring-review", "Authoring review request", {
+      spec: String(input?.spec ?? "tape-0.3"),
+      projectView: input?.projectView ?? {},
+      diagnostics: Array.isArray(input?.diagnostics) ? input.diagnostics : [],
+      snippets: Array.isArray(input?.snippets) ? input.snippets : []
+    });
     console.log("[construct authoring] reviewing compact project view", {
       spec: input?.spec,
       diagnosticCount,
@@ -2194,8 +2241,11 @@ function installConstructProjectIpcHandlers(): void {
         projectView: input?.projectView ?? {},
         diagnostics: Array.isArray(input?.diagnostics) ? input.diagnostics : [],
         snippets: Array.isArray(input?.snippets) ? input.snippets : []
+      }, (entry) => {
+        sendAgentLog("authoring-review", `${entry.title}\n${entry.detail}`, entry.level ?? "debug");
       });
       sendAgentLog("authoring-review", `Review complete: ${Array.isArray(result) ? result.length : 0} suggestions`);
+      sendAgentStructuredLog("authoring-review", "Authoring review result payload", result);
       return result;
     } catch (error) {
       sendAgentLog("authoring-review", `Review failed: ${error instanceof Error ? error.message : String(error)}`, "error");
@@ -2207,6 +2257,13 @@ function installConstructProjectIpcHandlers(): void {
     const project = findProject(await readProjects(), String(input?.projectId ?? ""));
     const requestId = String(input?.requestId ?? randomUUID());
     sendAgentLog("selection-explain", `Explaining selection from ${input?.selection?.source ?? "workspace"} (${input?.selection?.sourceLabel ?? "unknown"})`);
+    sendAgentStructuredLog("selection-explain", "Selection explanation request", {
+      requestId,
+      projectId: project.id,
+      workspacePath: project.workspacePath,
+      selection: input?.selection ?? {},
+      learningContext: input?.learningContext ?? {}
+    });
     console.log("[selection explain] request started", {
       requestId,
       projectId: project.id,
@@ -2237,7 +2294,10 @@ function installConstructProjectIpcHandlers(): void {
           lineEnd: Number.isInteger(input?.selection?.lineEnd) ? input.selection.lineEnd : undefined
         },
         learningContext: input?.learningContext ?? {}
-      }, progress);
+      }, progress, (entry) => {
+        sendAgentLog("selection-explain", `${entry.title}\n${entry.detail}`, entry.level ?? "debug");
+      });
+      sendAgentStructuredLog("selection-explain", "Selection explanation result payload", result);
       return result;
     } catch (error) {
       progress({ status: "failed", message: "Explanation failed", detail: error instanceof Error ? error.message : String(error), tool: "agent" });
@@ -2257,6 +2317,14 @@ function installConstructProjectIpcHandlers(): void {
     }
 
     sendAgentLog("code-ghost", `Ghost completion requested at line ${lineNumber} (${input?.language ?? "unknown"})`);
+    sendAgentStructuredLog("code-ghost", "Code ghost request", {
+      requestId,
+      lineNumber,
+      lineContent: String(input?.lineContent ?? ""),
+      language: String(input?.language ?? "unknown"),
+      linesBefore: Array.isArray(input?.linesBefore) ? input.linesBefore.map(String) : [],
+      linesAfter: Array.isArray(input?.linesAfter) ? input.linesAfter.map(String) : []
+    });
     sendCodeGhostStreamToRenderer(
       event.sender,
       {
@@ -2267,7 +2335,10 @@ function installConstructProjectIpcHandlers(): void {
       },
       "construct:project:code-ghost:token",
       requestId,
-      lineNumber
+      lineNumber,
+      (entry) => {
+        sendAgentLog("code-ghost", `${entry.title}\n${entry.detail}`, entry.level ?? "debug");
+      }
     ).catch((err) => {
       sendAgentLog("code-ghost", `Ghost completion failed: ${err instanceof Error ? err.message : String(err)}`, "error");
       console.error("[code ghost] fatal:", err);
