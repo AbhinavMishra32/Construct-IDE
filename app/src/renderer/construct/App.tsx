@@ -354,6 +354,30 @@ export default function ConstructApp() {
     terminalRef.current?.runCommand(command, cwd);
   }, []);
 
+  const handleWorkspaceTreeChange = useCallback((
+    tree: WorkspaceTreeNode[],
+    activePath: string | null,
+    relevantPath: string | null,
+    openFile: (path: string) => void,
+    createFile: (path: string) => void,
+    deleteFileFn: (path: string) => Promise<void>,
+    renameFileFn: (oldPath: string, newPath: string) => Promise<void>,
+    createFolderFn: (path: string) => Promise<void>,
+    duplicateFileFn: (path: string, destPath: string) => Promise<void>
+  ) => {
+    setTreeData({
+      tree,
+      activePath,
+      relevantPath,
+      openFile,
+      createFile,
+      deleteFile: deleteFileFn,
+      renameFile: renameFileFn,
+      createFolder: createFolderFn,
+      duplicateFile: duplicateFileFn
+    });
+  }, []);
+
   const handleBack = useCallback(() => {
     setSettingsSurface(null);
     setKnowledgeBaseOpen(false);
@@ -759,9 +783,7 @@ export default function ConstructApp() {
         activeRightSlotId={activeRightSlotId}
         onRightSlotChange={handleRightSlotChange}
         onFileOpened={handleFileOpened}
-        onTreeChange={(tree, activePath, relevantPath, openFile, createFile, deleteFileFn, renameFileFn, createFolderFn, duplicateFileFn) => {
-          setTreeData({ tree, activePath, relevantPath, openFile, createFile, deleteFile: deleteFileFn, renameFile: renameFileFn, createFolder: createFolderFn, duplicateFile: duplicateFileFn });
-        }}
+        onTreeChange={handleWorkspaceTreeChange}
         onSavingChange={setIsSaving}
     />
   ) : (

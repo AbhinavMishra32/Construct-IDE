@@ -63,6 +63,7 @@ import {
 import type {
   BlockAssistance,
   ConceptCard,
+  ConstructTarget,
   EditBlock,
   GitActionResult,
   GitMilestone,
@@ -70,12 +71,19 @@ import type {
   GitStatus,
   ProjectRecord,
   RecallBlock,
+  ReferenceCard as ReferenceCardData,
   ReferenceLink,
   VerificationLogEntry,
   ConstructInteractClientResult,
   WorkspaceTreeNode
 } from "../types";
 import type { GeneratedLiveStep, ProjectLearningState } from "../../../shared/constructLearning";
+
+const EMPTY_CONCEPTS: ConceptCard[] = [];
+const EMPTY_GENERATED_LIVE_STEPS: GeneratedLiveStep[] = [];
+const EMPTY_GIT_MILESTONES: GitMilestone[] = [];
+const EMPTY_REFERENCE_CARDS: ReferenceCardData[] = [];
+const EMPTY_TARGETS: ConstructTarget[] = [];
 
 function iconForFile(filename: string) {
   const props = { size: 12, weight: "duotone" as const };
@@ -279,7 +287,7 @@ export function Workspace({
   const [openReferenceIds, setOpenReferenceIds] = useState<string[]>([]);
   const [pinnedReferenceIds, setPinnedReferenceIds] = useState<string[]>([]);
   const [openConceptIds, setOpenConceptIds] = useState<string[]>([]);
-  const [savedConceptIds, setSavedConceptIds] = useState<string[]>(() => initialSavedConceptIds(project, project.program.concepts ?? []));
+  const [savedConceptIds, setSavedConceptIds] = useState<string[]>(() => initialSavedConceptIds(project, project.program.concepts ?? EMPTY_CONCEPTS));
   const [selectedKnowledgeConceptId, setSelectedKnowledgeConceptId] = useState<string | null>(null);
   const [gitMilestoneStates, setGitMilestoneStates] = useState<Record<string, StoredGitMilestoneState>>(() =>
     readGitMilestoneStates(project.id)
@@ -302,10 +310,10 @@ export function Workspace({
   const editAnchors = project.editAnchors ?? {};
   const assistance = project.assistance ?? {};
   const verificationResults = project.verificationResults ?? {};
-  const references = project.program.references ?? [];
-  const concepts = project.program.concepts ?? [];
-  const gitMilestones = project.program.gitMilestones ?? [];
-  const targets = project.program.targets ?? [];
+  const references = project.program.references ?? EMPTY_REFERENCE_CARDS;
+  const concepts = project.program.concepts ?? EMPTY_CONCEPTS;
+  const gitMilestones = project.program.gitMilestones ?? EMPTY_GIT_MILESTONES;
+  const targets = project.program.targets ?? EMPTY_TARGETS;
   const block = currentBlock(project);
   const activeEdit = block?.kind === "edit" ? block : null;
   const relevantPath = activeEdit?.path ?? null;
@@ -317,7 +325,7 @@ export function Workspace({
   const editComplete = activeEdit ? editProgress >= activeEdit.content.length : false;
   const editAnchor = activeEdit ? editAnchors[activeEdit.id] ?? "" : "";
   const isActiveEditReady = activeEdit ? isGuidedEditReady(activeEdit, editAnchors) : false;
-  const generatedLiveSteps = projectLearningState?.generatedLiveSteps ?? [];
+  const generatedLiveSteps = projectLearningState?.generatedLiveSteps ?? EMPTY_GENERATED_LIVE_STEPS;
   const activeLiveStep = activeLiveStepId
     ? generatedLiveSteps.find((step) => step.id === activeLiveStepId && step.status !== "dismissed") ?? null
     : null;
@@ -544,7 +552,7 @@ export function Workspace({
         await duplicateWorkspaceFile(path, destPath);
       }
     );
-  }, [tree, activeFilePath, relevantPath]);
+  }, [tree, activeFilePath, relevantPath, onTreeChange]);
 
   async function refreshTree() {
     setTree(await listFiles(project.id));
@@ -1388,7 +1396,7 @@ export function Workspace({
         : []}
       recallMissingFiles={recallMissingFiles}
     />
-  ), [activeLiveStep, block, editComplete, interactAnswers, interactResults, interactingId, onRunCommand, project, recallAnswers, recallMissingFiles, theme, verificationLogs, verifyingId, furthestUnlockedStepIndex, furthestUnlockedBlockIndex, generatedLiveSteps]);
+  ), [activeLiveStep, block, editComplete, interactAnswers, interactResults, interactingId, onRunCommand, project, recallAnswers, recallMissingFiles, theme, verificationLogs, verifyingId]);
 
   const stepsTabContent = useMemo(() => (
     <div className={`workspace-right-panel-steps ${isStepsCollapsed ? "is-collapsed" : ""}`}>
