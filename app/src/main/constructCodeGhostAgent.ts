@@ -9,6 +9,12 @@ export type CodeGhostStreamInput = {
   linesAfter: string[];
 };
 
+export type CodeGhostTraceEntry = {
+  title: string;
+  detail: string;
+  level?: "info" | "warn" | "error" | "debug";
+};
+
 function buildModelConfig() {
   const settings = resolveConstructAiSettings();
   const apiKey = settings.provider === "openrouter"
@@ -141,14 +147,29 @@ export async function sendCodeGhostStreamToRenderer(
   input: CodeGhostStreamInput,
   channel: string,
   requestId: string,
-  lineNumber: number
+  lineNumber: number,
+  onTrace?: (entry: CodeGhostTraceEntry) => void
 ): Promise<void> {
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
+    onTrace?.({
+      title: "Code ghost request",
+      level: "debug",
+      detail: JSON.stringify({
+        requestId,
+        lineNumber,
+        input
+      }, null, 2)
+    });
 
     const text = await fetchCodeGhostExplanation(input, controller.signal);
     clearTimeout(timeout);
+    onTrace?.({
+      title: "Code ghost response",
+      level: "debug",
+      detail: JSON.stringify({ requestId, lineNumber, text }, null, 2)
+    });
 
     if (text) {
       // Send word by word for live feel
@@ -165,6 +186,11 @@ export async function sendCodeGhostStreamToRenderer(
     }
   } catch (error) {
     console.error("[code ghost] request failed:", error);
+    onTrace?.({
+      title: "Code ghost error",
+      level: "error",
+      detail: error instanceof Error ? error.stack || error.message : String(error)
+    });
     if (!sender.isDestroyed()) {
       sender.send(channel, {
         requestId, lineNumber, token: "", done: true,

@@ -4,7 +4,7 @@ import { promisify } from "node:util";
 
 import { z } from "zod";
 import { resolveConstructOpenAiResponsesConfig } from "./constructAgentModels";
-import { createConstructAgentRuntime } from "./constructAgentRuntime";
+import { createConstructAgentRuntime, type ConstructAgentTraceEntry } from "./constructAgentRuntime";
 
 const execFileAsync = promisify(execFile);
 
@@ -62,10 +62,19 @@ type Progress = (entry: Omit<SelectionExplanationLogEntry, "at">) => void;
 
 export async function runConstructSelectionExplainAgent(
   input: SelectionExplanationInput,
-  onProgress: Progress
+  onProgress: Progress,
+  onTrace?: (entry: ConstructAgentTraceEntry) => void
 ): Promise<SelectionExplanationResult> {
+  onTrace?.({
+    title: "Selection explanation request",
+    level: "debug",
+    detail: JSON.stringify({
+      selection: input.selection,
+      learningContext: input.learningContext ?? {}
+    }, null, 2)
+  });
   onProgress({ status: "running", message: "Inspecting the selected text", detail: input.selection.sourceLabel, tool: "agent" });
-  const codebase = await collectCodebaseContext(input, onProgress);
+  const codebase = await collectCodebaseContext(input, onProgress, onTrace);
   onProgress({ status: "done", message: "Selection context is ready", detail: `${input.selection.text.length} selected characters`, tool: "agent" });
 
   const responsesConfig = resolveConstructOpenAiResponsesConfig("selection-explain");
@@ -73,6 +82,11 @@ export async function runConstructSelectionExplainAgent(
     try {
       onProgress({ status: "running", message: "Researching relevant sources", detail: "Using hosted web search when outside context is useful", tool: "web" });
       const researched = await runOpenAiWebExplanation(input, codebase, responsesConfig);
+      onTrace?.({
+        title: "Selection explanation result",
+        level: "debug",
+        detail: JSON.stringify(researched, null, 2)
+      });
       onProgress({
         status: "done",
         message: researched.sources.some((source) => source.kind === "web") ? "Web research complete" : "No outside sources were needed",
@@ -93,14 +107,28 @@ export async function runConstructSelectionExplainAgent(
   }
 
   onProgress({ status: "running", message: "Connecting it to this project", detail: "Synthesizing from selected text and workspace matches", tool: "agent" });
-  const fallback = await runCodebaseOnlyExplanation(input, codebase);
+  const fallback = await runCodebaseOnlyExplanation(input, codebase, onTrace);
+  onTrace?.({
+    title: "Selection explanation result",
+    level: "debug",
+    detail: JSON.stringify(fallback, null, 2)
+  });
   onProgress({ status: "done", message: "Explanation ready", detail: "Grounded in the current project", tool: "agent" });
   return fallback;
 }
 
-async function collectCodebaseContext(input: SelectionExplanationInput, onProgress: Progress) {
+async function collectCodebaseContext(
+  input: SelectionExplanationInput,
+  onProgress: Progress,
+  onTrace?: (entry: ConstructAgentTraceEntry) => void
+) {
   onProgress({ status: "running", message: "Searching the project", detail: "Looking for related symbols and usage", tool: "codebase" });
   const needles = searchNeedles(input.selection.text);
+  onTrace?.({
+    title: "Codebase search needles",
+    level: "debug",
+    detail: JSON.stringify(needles, null, 2)
+  });
   const chunks: string[] = [];
   const sources: SelectionExplanationSource[] = [];
 
@@ -160,7 +188,14 @@ async function collectCodebaseContext(input: SelectionExplanationInput, onProgre
     detail: chunks.length > 0 ? `${chunks.length} related location${chunks.length === 1 ? "" : "s"} found` : "The nearby selection context is the strongest local signal",
     tool: "codebase"
   });
-  return { matches: chunks.join("\n").slice(0, 12_000), sources: sources.slice(0, 12) };
+  const matches = chunks.join("\n").slice(0, 12_000);
+  const selectedSources = sources.slice(0, 12);
+  onTrace?.({
+    title: "Codebase search matches",
+    level: "debug",
+    detail: JSON.stringify({ matches, sources: selectedSources }, null, 2)
+  });
+  return { matches, sources: selectedSources };
 }
 
 async function runOpenAiWebExplanation(
@@ -212,7 +247,8 @@ const FallbackExplanationSchema = z.object({
 
 async function runCodebaseOnlyExplanation(
   input: SelectionExplanationInput,
-  codebase: Awaited<ReturnType<typeof collectCodebaseContext>>
+  codebase: Awaited<ReturnType<typeof collectCodebaseContext>>,
+  onTrace?: (entry: ConstructAgentTraceEntry) => void
 ): Promise<SelectionExplanationResult> {
   const runtime = createConstructAgentRuntime();
   const result = await runtime.generateStructured({
@@ -228,7 +264,8 @@ async function runCodebaseOnlyExplanation(
     ].join("\n"),
     prompt: buildExplanationPrompt(input, codebase.matches),
     schema: FallbackExplanationSchema,
-    maxRetries: 1
+    maxRetries: 1,
+    onTrace
   });
 
   return {

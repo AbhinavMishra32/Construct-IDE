@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { createConstructAgentRuntime } from "./constructAgentRuntime";
+import { createConstructAgentRuntime, type ConstructAgentTraceEntry } from "./constructAgentRuntime";
 
 export const CONSTRUCT_VERIFIER_AGENT_ID = "construct-verifier-agent";
 export const CONSTRUCT_VERIFIER_AGENT_NAME = "Construct Verifier Agent";
@@ -62,7 +62,10 @@ export type VerifierInput = {
   };
 };
 
-export async function runConstructVerifierAgent(input: VerifierInput): Promise<VerificationResult> {
+export async function runConstructVerifierAgent(
+  input: VerifierInput,
+  onTrace?: (entry: ConstructAgentTraceEntry) => void
+): Promise<VerificationResult> {
   const runtime = createConstructAgentRuntime();
   return runtime.generateStructured({
     id: CONSTRUCT_VERIFIER_AGENT_ID,
@@ -84,7 +87,8 @@ export async function runConstructVerifierAgent(input: VerifierInput): Promise<V
     ].join("\n"),
     prompt: buildVerifierPrompt(input),
     schema: VerificationResultSchema,
-    maxRetries: 1
+    maxRetries: 1,
+    onTrace
   });
 }
 

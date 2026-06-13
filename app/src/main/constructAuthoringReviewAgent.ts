@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { createConstructAgentRuntime } from "./constructAgentRuntime";
+import { createConstructAgentRuntime, type ConstructAgentTraceEntry } from "./constructAgentRuntime";
 
 export const CONSTRUCT_AUTHORING_REVIEW_AGENT_ID = "construct-authoring-review-agent";
 
@@ -27,7 +27,10 @@ export type AuthoringReviewInput = {
   spec: string;
 };
 
-export async function runConstructAuthoringReviewAgent(input: AuthoringReviewInput): Promise<AuthoringSuggestion[]> {
+export async function runConstructAuthoringReviewAgent(
+  input: AuthoringReviewInput,
+  onTrace?: (entry: ConstructAgentTraceEntry) => void
+): Promise<AuthoringSuggestion[]> {
   const runtime = createConstructAgentRuntime();
   const output = await runtime.generateStructured({
     id: CONSTRUCT_AUTHORING_REVIEW_AGENT_ID,
@@ -46,7 +49,8 @@ export async function runConstructAuthoringReviewAgent(input: AuthoringReviewInp
     ].join("\n"),
     prompt: buildPrompt(input),
     schema: AuthoringReviewSchema,
-    maxRetries: 1
+    maxRetries: 1,
+    onTrace
   });
 
   return output.suggestions;

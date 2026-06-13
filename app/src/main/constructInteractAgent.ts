@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { createConstructAgentRuntime } from "./constructAgentRuntime";
+import { createConstructAgentRuntime, type ConstructAgentTraceEntry } from "./constructAgentRuntime";
 import type {
   ConstructInteractResult,
   ConstructInteractRuntimeInput,
@@ -40,7 +40,10 @@ const ConstructInteractResultSchema = z.object({
   statePatch: LearningStatePatchSchema.optional()
 });
 
-export async function runConstructInteract(input: ConstructInteractRuntimeInput): Promise<ConstructInteractResult> {
+export async function runConstructInteract(
+  input: ConstructInteractRuntimeInput,
+  onTrace?: (entry: ConstructAgentTraceEntry) => void
+): Promise<ConstructInteractResult> {
   const runtime = createConstructAgentRuntime();
   const result = await runtime.generateStructured({
     id: CONSTRUCT_INTERACT_AGENT_ID,
@@ -58,7 +61,8 @@ export async function runConstructInteract(input: ConstructInteractRuntimeInput)
     ].join("\n"),
     prompt: buildConstructInteractPrompt(input),
     schema: ConstructInteractResultSchema,
-    maxRetries: 1
+    maxRetries: 1,
+    onTrace
   });
   return {
     ...result,
