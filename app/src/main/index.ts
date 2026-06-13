@@ -224,8 +224,33 @@ function sendToRenderers(channel: string, payload: unknown): void {
 
 type AgentLogChannel = "verifier" | "authoring-review" | "selection-explain" | "interact" | "code-ghost";
 
+type AgentStructuredLogPayload = {
+  kind: "structured";
+  title: string;
+  preview: string;
+  raw: string;
+  payload: unknown;
+};
+
+type AgentTextLogPayload = {
+  kind: "text";
+};
+
+type AgentLogEnvelope = {
+  agent: AgentLogChannel;
+  message: string;
+  level: "info" | "warn" | "error" | "debug";
+  structured?: AgentStructuredLogPayload | AgentTextLogPayload;
+};
+
 function sendAgentLog(agent: AgentLogChannel, message: string, level: "info" | "warn" | "error" | "debug" = "info"): void {
-  sendToRenderers("construct:project:agent-log", { agent, message, level });
+  const payload: AgentLogEnvelope = {
+    agent,
+    message,
+    level,
+    structured: { kind: "text" }
+  };
+  sendToRenderers("construct:project:agent-log", payload);
 }
 
 function sendAgentStructuredLog(
@@ -234,7 +259,20 @@ function sendAgentStructuredLog(
   payload: unknown,
   level: "info" | "warn" | "error" | "debug" = "debug"
 ): void {
-  sendAgentLog(agent, `${title}\n${formatAgentPayload(payload)}`, level);
+  const raw = formatAgentPayload(payload);
+  const event: AgentLogEnvelope = {
+    agent,
+    message: `${title}\n${raw}`,
+    level,
+    structured: {
+      kind: "structured",
+      title,
+      preview: summarizeStructuredPayload(payload),
+      raw,
+      payload
+    }
+  };
+  sendToRenderers("construct:project:agent-log", event);
 }
 
 function formatAgentPayload(payload: unknown): string {
@@ -255,6 +293,36 @@ function formatAgentPayload(payload: unknown): string {
   } catch {
     return String(payload);
   }
+}
+
+function summarizeStructuredPayload(payload: unknown): string {
+  if (payload == null) {
+    return "No payload";
+  }
+
+  if (typeof payload === "string") {
+    return payload.length > 180 ? `${payload.slice(0, 180)}…` : payload;
+  }
+
+  if (Array.isArray(payload)) {
+    return `${payload.length} item${payload.length === 1 ? "" : "s"}`;
+  }
+
+  if (typeof payload === "object") {
+    const entries = Object.entries(payload as Record<string, unknown>);
+    const scalars = entries
+      .filter(([, value]) => value == null || typeof value === "string" || typeof value === "number" || typeof value === "boolean")
+      .slice(0, 3)
+      .map(([key, value]) => `${key}=${truncateInline(String(value), 48)}`);
+
+    return scalars.length > 0 ? scalars.join(" • ") : `${entries.length} field${entries.length === 1 ? "" : "s"}`;
+  }
+
+  return String(payload);
+}
+
+function truncateInline(value: string, maxLength: number): string {
+  return value.length > maxLength ? `${value.slice(0, maxLength)}…` : value;
 }
 
 function normalizeInteractActions(
@@ -1736,6 +1804,10 @@ function installConstructProjectIpcHandlers(): void {
       },
       learningState
     }, (entry) => {
+      if (entry.payload !== undefined) {
+        sendAgentStructuredLog("interact", entry.title, entry.payload, entry.level ?? "debug");
+        return;
+      }
       sendAgentLog("interact", `${entry.title}\n${entry.detail}`, entry.level ?? "debug");
     });
     const validationContext = {
@@ -2274,6 +2346,10 @@ function installConstructProjectIpcHandlers(): void {
       };
       sendAgentStructuredLog("verifier", "Verifier request", verifierInput);
       const result = await runConstructVerifierAgent(verifierInput, (entry) => {
+        if (entry.payload !== undefined) {
+          sendAgentStructuredLog("verifier", entry.title, entry.payload, entry.level ?? "debug");
+          return;
+        }
         sendAgentLog("verifier", `${entry.title}\n${entry.detail}`, entry.level ?? "debug");
       });
       await learningStore().recordRecallAttempt({
@@ -2336,6 +2412,10 @@ function installConstructProjectIpcHandlers(): void {
         diagnostics: Array.isArray(input?.diagnostics) ? input.diagnostics : [],
         snippets: Array.isArray(input?.snippets) ? input.snippets : []
       }, (entry) => {
+        if (entry.payload !== undefined) {
+          sendAgentStructuredLog("authoring-review", entry.title, entry.payload, entry.level ?? "debug");
+          return;
+        }
         sendAgentLog("authoring-review", `${entry.title}\n${entry.detail}`, entry.level ?? "debug");
       });
       sendAgentLog("authoring-review", `Review complete: ${Array.isArray(result) ? result.length : 0} suggestions`);
@@ -2389,6 +2469,10 @@ function installConstructProjectIpcHandlers(): void {
         },
         learningContext: input?.learningContext ?? {}
       }, progress, (entry) => {
+        if (entry.payload !== undefined) {
+          sendAgentStructuredLog("selection-explain", entry.title, entry.payload, entry.level ?? "debug");
+          return;
+        }
         sendAgentLog("selection-explain", `${entry.title}\n${entry.detail}`, entry.level ?? "debug");
       });
       sendAgentStructuredLog("selection-explain", "Selection explanation result payload", result);
@@ -2431,6 +2515,10 @@ function installConstructProjectIpcHandlers(): void {
       requestId,
       lineNumber,
       (entry) => {
+        if (entry.payload !== undefined) {
+          sendAgentStructuredLog("code-ghost", entry.title, entry.payload, entry.level ?? "debug");
+          return;
+        }
         sendAgentLog("code-ghost", `${entry.title}\n${entry.detail}`, entry.level ?? "debug");
       }
     ).catch((err) => {

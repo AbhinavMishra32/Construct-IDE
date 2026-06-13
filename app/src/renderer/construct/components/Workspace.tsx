@@ -1390,6 +1390,7 @@ export function Workspace({
       onSubmitInteract={() => void handleConstructInteract()}
       onInteractAction={(action) => void handleInteractAction(action)}
       interactingId={interactingId}
+      projectLearningState={projectLearningState}
       verifyingId={verifyingId}
       verificationLogs={block?.kind === "recall" && block.verify
         ? verificationLogs[block.verify.id] ?? []

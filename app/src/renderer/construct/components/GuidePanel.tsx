@@ -13,7 +13,16 @@ import {
 } from "lucide-react";
 import { useState, useMemo } from "react";
 
-import { Button, Timeline } from "@opaline/ui";
+import type { ReactNode } from "react";
+import {
+  AgentSessionComposer,
+  AgentSessionSurface,
+  Button,
+  Timeline,
+  type AgentSessionMessage,
+  type AgentSessionMessagePart,
+  type AgentSessionToolEntry
+} from "@opaline/ui";
 
 import { MarkdownBlock } from "./MarkdownBlock";
 import { assistanceLabel, blockLabel, currentBlockNumber, totalBlocks } from "../lib/runtime";
@@ -27,6 +36,7 @@ import type {
   VerificationLogEntry,
   VerificationResult
 } from "../types";
+import type { ProjectLearningState } from "../../../shared/constructLearning";
 
 type GhostProgress = {
   typedChars: number;
@@ -56,6 +66,7 @@ export function GuidePanel({
   onSubmitInteract,
   onInteractAction,
   interactingId,
+  projectLearningState,
   verifyingId,
   verificationLogs,
   recallMissingFiles
@@ -79,6 +90,7 @@ export function GuidePanel({
   onSubmitInteract: () => void;
   onInteractAction?: (action: NonNullable<ConstructInteractClientResult["actions"]>[number]) => void;
   interactingId: string | null;
+  projectLearningState: ProjectLearningState | null;
   verifyingId: string | null;
   verificationLogs: VerificationLogEntry[];
   recallMissingFiles: string[];
@@ -153,6 +165,7 @@ export function GuidePanel({
             onSubmitInteract={onSubmitInteract}
             onInteractAction={onInteractAction}
             interactingId={interactingId}
+            projectLearningState={projectLearningState}
           />
           <p className="guide-panel__assist">{assistanceLabel(assistance)}</p>
           {block.kind === "run" || (block.kind === "recall" && block.verify) || canContinue ? (
@@ -171,16 +184,6 @@ export function GuidePanel({
                 >
                   <WandSparklesIcon size={15} />
                   {verifyingId === block.verify.id ? "Checking" : "Verify"}
-                </Button>
-              ) : null}
-              {block.kind === "interact" ? (
-                <Button
-                  variant="secondary"
-                  onClick={onSubmitInteract}
-                  disabled={interactingId === block.id || !interactAnswer.trim()}
-                >
-                  <WandSparklesIcon size={15} />
-                  {interactingId === block.id ? "Thinking" : "Send answer"}
                 </Button>
               ) : null}
               {canContinue ? (
@@ -219,6 +222,7 @@ function GuideBlock({
   onSubmitInteract,
   onInteractAction,
   interactingId,
+  projectLearningState,
   onOpenReference,
   onOpenConcept,
   onOpenFile,
@@ -241,6 +245,7 @@ function GuideBlock({
   onSubmitInteract: () => void;
   onInteractAction?: (action: NonNullable<ConstructInteractClientResult["actions"]>[number]) => void;
   interactingId: string | null;
+  projectLearningState: ProjectLearningState | null;
   onOpenReference: (referenceId: string) => void;
   onOpenConcept: (conceptId: string) => void;
   onOpenFile: (reference: InlineFileRef) => void;
@@ -302,6 +307,7 @@ function GuideBlock({
             onSubmitInteract={onSubmitInteract}
             onInteractAction={onInteractAction}
             interactingId={interactingId}
+            projectLearningState={projectLearningState}
           />
         ))}
         <p className="guide-panel__copy">
@@ -318,47 +324,44 @@ function GuideBlock({
   }
 
   if (block.kind === "interact") {
+    const sessions = (projectLearningState?.constructInteractSessions ?? []).filter((session) => session.blockId === block.id);
+    const messages = buildInteractMessages({
+      blockId: block.id,
+      sessions,
+      result: interactResult,
+      answerDraft: interactAnswer,
+      isPending: interactingId === block.id,
+      theme,
+      onInteractAction,
+      onOpenConcept,
+      onOpenFile
+    });
+
     return (
-      <div className="guide-block construct-interact">
-        <div className="construct-interact__header">
-          <SparklesIcon size={14} />
-          <span>Construct Interact</span>
-        </div>
-        <MarkdownBlock content={block.prompt} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
-        <textarea
-          className="construct-interact__answer"
-          value={interactAnswer}
-          onChange={(event) => onInteractAnswerChange(event.target.value)}
-          placeholder="Answer in your own words..."
-          spellCheck
+      <div className="guide-block construct-interact construct-interact--agent">
+        <AgentSessionSurface
+          eyebrow="Construct Interact"
+          lead={
+            <MarkdownBlock
+              content={block.prompt}
+              theme={theme}
+              onOpenConcept={onOpenConcept}
+              onOpenFile={onOpenFile}
+            />
+          }
+          messages={messages}
+          emptyState="Answer in your own words and Construct Interact will respond here."
+          composer={
+            <AgentSessionComposer
+              value={interactAnswer}
+              onValueChange={onInteractAnswerChange}
+              onSubmit={onSubmitInteract}
+              pending={interactingId === block.id}
+              submitLabel="Send answer"
+              placeholder="Answer in your own words..."
+            />
+          }
         />
-        {interactResult ? (
-          <div className={`construct-interact__reply is-${interactResult.status}`}>
-            <p className="guide-panel__label">{interactStatusLabel(interactResult.status)}</p>
-            <MarkdownBlock content={interactResult.reply} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
-            {interactResult.actions?.length ? (
-              <div className="construct-interact__actions">
-                {interactResult.actions.map((action, index) => (
-                  <button key={`${action.type}-${index}`} type="button" onClick={() => onInteractAction?.(action)}>
-                    <SparklesIcon size={13} />
-                    <span>{action.label}</span>
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-        {interactingId === block.id ? (
-          <p className="guide-panel__copy">Construct Interact is reading your answer...</p>
-        ) : null}
-        <button
-          className="construct-interact__inline-submit"
-          type="button"
-          onClick={onSubmitInteract}
-          disabled={interactingId === block.id || !interactAnswer.trim()}
-        >
-          {interactingId === block.id ? "Thinking" : "Send answer"}
-        </button>
       </div>
     );
   }
@@ -458,6 +461,234 @@ function supportSectionLabel(kind: string): string {
     default:
       return kind.replace(/-/g, " ");
   }
+}
+
+function buildInteractMessages({
+  blockId,
+  sessions,
+  result,
+  answerDraft,
+  isPending,
+  theme,
+  onInteractAction,
+  onOpenConcept,
+  onOpenFile
+}: {
+  blockId: string;
+  sessions: ProjectLearningState["constructInteractSessions"];
+  result?: ConstructInteractClientResult;
+  answerDraft: string;
+  isPending: boolean;
+  theme: "light" | "dark" | "system";
+  onInteractAction?: (action: NonNullable<ConstructInteractClientResult["actions"]>[number]) => void;
+  onOpenConcept: (conceptId: string) => void;
+  onOpenFile: (reference: InlineFileRef) => void;
+}): AgentSessionMessage[] {
+  const recentSessions = sessions.slice(-6);
+  const latestSessionId = recentSessions.at(-1)?.id;
+  const messages = recentSessions.flatMap((session): AgentSessionMessage[] => {
+    const assistantParts: AgentSessionMessagePart[] = [
+      {
+        type: "text",
+        id: `${session.id}:reply`,
+        content: <MarkdownBlock content={session.reply} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />,
+        meta: `${interactStatusLabel(session.status)} · ${session.confidence} confidence · ${session.assistanceLevel}`
+      }
+    ];
+
+    if (result && session.id === latestSessionId) {
+      const enrichedParts = buildInteractResultParts(result, {
+        sessionId: session.id,
+        onInteractAction
+      });
+      assistantParts.unshift(...enrichedParts.prelude);
+      assistantParts.push(...enrichedParts.trailing);
+    }
+
+    return [
+      {
+        id: `${session.id}:user`,
+        role: "user",
+        content: session.answer,
+        meta: "Your answer"
+      },
+      {
+        id: `${session.id}:assistant`,
+        role: "assistant",
+        parts: assistantParts
+      }
+    ];
+  });
+
+  if (isPending && answerDraft.trim()) {
+    messages.push(
+      {
+        id: `${blockId}:pending-user`,
+        role: "user",
+        content: answerDraft,
+        meta: "Your answer"
+      },
+      {
+        id: `${blockId}:pending-assistant`,
+        role: "assistant",
+        parts: [
+          {
+            type: "reasoning",
+            id: `${blockId}:thinking`,
+            label: "Construct Interact is thinking",
+            active: true,
+            defaultOpen: true,
+            content: "Reviewing your explanation and deciding whether you can continue or need a targeted follow-up."
+          }
+        ]
+      }
+    );
+  }
+
+  return messages;
+}
+
+function buildInteractResultParts(
+  result: ConstructInteractClientResult,
+  {
+    sessionId,
+    onInteractAction
+  }: {
+    sessionId: string;
+    onInteractAction?: (action: NonNullable<ConstructInteractClientResult["actions"]>[number]) => void;
+  }
+): {
+  prelude: AgentSessionMessagePart[];
+  trailing: AgentSessionMessagePart[];
+} {
+  const prelude: AgentSessionMessagePart[] = [];
+  const trailing: AgentSessionMessagePart[] = [];
+  const toolEntries = buildInteractToolEntries(result.toolCalls ?? []);
+
+  if (toolEntries.length > 0) {
+    prelude.push({
+      type: "context",
+      id: `${sessionId}:context`,
+      doneLabel: "Gathered context",
+      summary: summarizeContextEntries(toolEntries),
+      entries: toolEntries,
+      defaultOpen: false
+    });
+  }
+
+  if (result.actions?.length) {
+    trailing.push({
+      type: "actions",
+      id: `${sessionId}:actions`,
+      content: (
+        <div className="construct-interact__actions">
+          {result.actions.map((action, index) => (
+            <button key={`${action.type}-${index}`} type="button" onClick={() => onInteractAction?.(action)}>
+              <SparklesIcon size={13} />
+              <span>{action.label}</span>
+            </button>
+          ))}
+        </div>
+      )
+    });
+  }
+
+  if (result.generatedLiveSteps?.length) {
+    trailing.push({
+      type: "tool",
+      id: `${sessionId}:live-steps`,
+      tool: {
+        id: `${sessionId}:live-steps-tool`,
+        title: "Generated live steps",
+        subtitle: `${result.generatedLiveSteps.length} step${result.generatedLiveSteps.length === 1 ? "" : "s"}`,
+        status: "completed",
+        content: (
+          <div className="construct-interact__generated">
+            {result.generatedLiveSteps.map((step) => (
+              <div key={step.id ?? step.title} className="construct-interact__generated-step">
+                <strong>{step.title}</strong>
+                <p>{step.reason}</p>
+              </div>
+            ))}
+          </div>
+        )
+      }
+    });
+  }
+
+  if (result.liveStepValidation?.length) {
+    trailing.push({
+      type: "tool",
+      id: `${sessionId}:validation`,
+      tool: {
+        id: `${sessionId}:validation-tool`,
+        title: "Live step validation",
+        subtitle: `${result.liveStepValidation.length} check${result.liveStepValidation.length === 1 ? "" : "s"}`,
+        status: result.liveStepValidation.some((entry) => entry.status === "rejected") ? "error" : "completed",
+        content: (
+          <div className="construct-interact__generated">
+            {result.liveStepValidation.map((entry, index) => (
+              <div key={`${entry.stepId ?? entry.draftTitle ?? index}`} className="construct-interact__generated-step">
+                <strong>{entry.stepId ?? entry.draftTitle ?? "Generated step"}</strong>
+                <p>{entry.reason}</p>
+              </div>
+            ))}
+          </div>
+        )
+      }
+    });
+  }
+
+  return { prelude, trailing };
+}
+
+function buildInteractToolEntries(toolCalls: NonNullable<ConstructInteractClientResult["toolCalls"]>): AgentSessionToolEntry[] {
+  return toolCalls.map((toolCall, index) => {
+    const classification = classifyInteractTool(toolCall.name);
+    return {
+      id: toolCall.id ?? `${toolCall.name}-${index}`,
+      title: classification.title,
+      subtitle: toolCall.reason,
+      args: classification.args,
+      status: "completed",
+      content: toolCall.outputPreview ? <pre className="construct-interact__tool-output">{toolCall.outputPreview}</pre> : undefined
+    };
+  });
+}
+
+function classifyInteractTool(name: string): { title: string; args?: ReactNode[] } {
+  const normalized = name.toLowerCase();
+  if (normalized.includes("read")) return { title: "Read" };
+  if (normalized.includes("list")) return { title: "List" };
+  if (normalized.includes("glob")) return { title: "Glob" };
+  if (normalized.includes("grep") || normalized.includes("search")) return { title: "Search" };
+  if (normalized.includes("web")) return { title: "Web" };
+  if (normalized.includes("shell") || normalized.includes("bash")) return { title: "Shell" };
+  return { title: name };
+}
+
+function summarizeContextEntries(entries: AgentSessionToolEntry[]) {
+  const counts = {
+    read: 0,
+    search: 0,
+    list: 0,
+    other: 0
+  };
+
+  for (const entry of entries) {
+    const title = typeof entry.title === "string" ? entry.title.toLowerCase() : "";
+    if (title === "read") counts.read += 1;
+    else if (title === "search" || title === "glob") counts.search += 1;
+    else if (title === "list") counts.list += 1;
+    else counts.other += 1;
+  }
+
+  return [
+    counts.read ? `${counts.read} read${counts.read === 1 ? "" : "s"}` : null,
+    counts.search ? `${counts.search} search${counts.search === 1 ? "" : "es"}` : null,
+    counts.list ? `${counts.list} list${counts.list === 1 ? "" : "s"}` : null,
+    counts.other ? `${counts.other} tool${counts.other === 1 ? "" : "s"}` : null
+  ].filter(Boolean).join(", ");
 }
 
 function interactStatusLabel(status: ConstructInteractClientResult["status"]): string {

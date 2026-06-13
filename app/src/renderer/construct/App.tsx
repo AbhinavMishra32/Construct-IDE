@@ -9,8 +9,6 @@ import {
   BookOpen,
   FileTerminalIcon,
   FileTextIcon,
-  PanelBottom,
-  PanelLeft,
   PanelRight,
   Plus as PlusIcon
 } from "lucide-react";
@@ -202,7 +200,7 @@ export default function ConstructApp() {
       const level = payload.level === "error" || payload.level === "warn" || payload.level === "debug"
         ? payload.level
         : "info";
-      logStore.addLog(channel, payload.message, level);
+      logStore.addLog(channel, payload.message, level, payload.structured);
     });
 
     return () => {
@@ -955,12 +953,24 @@ export default function ConstructApp() {
                       </div>
 
                       <SavingIndicator isSaving={isSaving} />
-                      <AppShellHeaderToolButton onClick={state.toggleRightPanel} aria-label="Toggle guide panel">
-                        <PanelRight size={20} />
-                      </AppShellHeaderToolButton>
-                      <AppShellHeaderToolButton onClick={state.toggleBottomPanel} aria-label="Toggle terminal">
-                        <PanelBottom size={20} />
-                      </AppShellHeaderToolButton>
+                      <div className="construct-header-action-cluster" aria-label="Workspace panels">
+                        <AppShellHeaderToolButton
+                          className="construct-header-panel-toggle"
+                          data-active={state.isRightPanelOpen ? "true" : "false"}
+                          onClick={state.toggleRightPanel}
+                          aria-label="Toggle guide panel"
+                        >
+                          <HeaderGuidePanelIcon open={state.isRightPanelOpen} />
+                        </AppShellHeaderToolButton>
+                        <AppShellHeaderToolButton
+                          className="construct-header-panel-toggle"
+                          data-active={state.isBottomPanelOpen ? "true" : "false"}
+                          onClick={state.toggleBottomPanel}
+                          aria-label="Toggle terminal"
+                        >
+                          <HeaderBottomPanelIcon open={state.isBottomPanelOpen} />
+                        </AppShellHeaderToolButton>
+                      </div>
                     </>
                   );
                 }
@@ -2413,6 +2423,46 @@ function ConstructShellNavigationControls({
         </svg>
       </ButtonComponent>
     </>
+  );
+}
+
+function HeaderGuidePanelIcon({ open }: { open: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 20 20"
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.45"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="3.25" y="4" width="13.5" height="12" rx="2.75" />
+      <path d="M10 4v12" />
+      {open ? (
+        <path d="M7.5 8 5.75 10l1.75 2" />
+      ) : null}
+    </svg>
+  );
+}
+
+function HeaderBottomPanelIcon({ open }: { open: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 20 20"
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.45"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="3.25" y="4" width="13.5" height="12" rx="2.75" />
+      <path d="M3.25 10.75h13.5" />
+      {open ? (
+        <path d="m8 8.2 2-2 2 2" />
+      ) : null}
+    </svg>
   );
 }
 

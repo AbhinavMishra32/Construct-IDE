@@ -275,6 +275,25 @@ export type VerificationLogEntry = {
   detail?: string;
 };
 
+export type AgentStructuredLogMeta =
+  | {
+      kind: "text";
+    }
+  | {
+      kind: "structured";
+      title: string;
+      preview: string;
+      raw: string;
+      payload: unknown;
+    };
+
+export type AgentLogEvent = {
+  agent: string;
+  message: string;
+  level: string;
+  structured?: AgentStructuredLogMeta;
+};
+
 export type BlockAssistance = {
   revealLineCount: number;
   revealBlockCount: number;
@@ -532,7 +551,7 @@ export type ConstructProjectsApi = {
     learningContext?: unknown;
   }): Promise<SelectionExplanationResult>;
   onSelectionExplanationLog(callback: (event: { requestId: string; entry: SelectionExplanationLogEntry }) => void): () => void;
-  onAgentLog(callback: (event: { agent: string; message: string; level: string }) => void): () => void;
+  onAgentLog(callback: (event: AgentLogEvent) => void): () => void;
   startCodeGhostStream(input: {
     requestId: string;
     lineNumber: number;

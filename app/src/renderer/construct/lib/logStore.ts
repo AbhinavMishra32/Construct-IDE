@@ -1,7 +1,10 @@
+import type { AgentStructuredLogMeta } from "../types";
+
 export type LogEntry = {
   timestamp: string;
   message: string;
   level: "info" | "warn" | "error" | "debug";
+  structured?: AgentStructuredLogMeta;
 };
 
 export type SystemLogChannel = "lsp-server" | "lsp-protocol" | "main" | "renderer" | "terminal";
@@ -36,11 +39,12 @@ class LogStoreClass {
 
   private listeners = new Set<LogListener>();
 
-  addLog(channel: LogChannel, message: string, level: LogEntry["level"] = "info") {
+  addLog(channel: LogChannel, message: string, level: LogEntry["level"] = "info", structured?: AgentStructuredLogMeta) {
     const entry: LogEntry = {
       timestamp: new Date().toISOString(),
       message,
-      level
+      level,
+      structured
     };
 
     const channelLogs = this.logs[channel] ?? (this.logs[channel] = []);

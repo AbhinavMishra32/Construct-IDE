@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Bot, Check, ChevronDown } from "lucide-react";
+import { Bot, Braces, Check, ChevronDown } from "lucide-react";
 import { logStore, AGENT_CHANNELS, type AgentLogChannel, type LogChannel, type LogEntry } from "../lib/logStore";
 import { debugProcesses } from "../lib/bridge";
 import type { DebugProcessSnapshot } from "../types";
@@ -9,9 +9,8 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
-  TerminalSurface
+  TerminalSurface,
 } from "@opaline/ui";
 
 type OutputChannel = Exclude<LogChannel, AgentLogChannel> | "debug-processes" | "agents";
@@ -40,6 +39,7 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [processes, setProcesses] = useState<DebugProcessSnapshot[]>([]);
   const [autoScroll, setAutoScroll] = useState(true);
+  const [jsonOnly, setJsonOnly] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const effectiveLogChannel: LogChannel | null = activeChannel === "agents"
     ? activeAgentChannel
@@ -234,6 +234,19 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
           </div>
 
           <div className="flex items-center gap-1">
+            {activeChannel === "agents" ? (
+              <button
+                type="button"
+                onClick={() => setJsonOnly((value) => !value)}
+                className={`inline-flex h-[24px] items-center gap-1 rounded-[7px] px-2 text-[12px] ${
+                  jsonOnly ? "text-[var(--opaline-text-primary)]" : "text-[var(--opaline-text-tertiary)]"
+                } hover:bg-[color-mix(in_srgb,var(--opaline-text-primary)_6%,transparent)]`}
+                title="Toggle raw JSON view for structured agent payloads"
+              >
+                <Braces size={12} />
+                JSON only
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={() => setAutoScroll((value) => !value)}
@@ -268,7 +281,7 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
                   [{formatTimestamp(log.timestamp)}]
                 </span>
                 <span className={`whitespace-pre-wrap break-all ${getLevelColor(log.level)}`} style={{ fontFamily: "var(--opaline-font-mono)" }}>
-                  {log.message}
+                  {formatLogMessage(log, activeChannel === "agents" && jsonOnly)}
                 </span>
               </div>
             ))
@@ -278,6 +291,18 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
     </TerminalSurface>
   );
 };
+
+function formatLogMessage(log: LogEntry, jsonOnly: boolean) {
+  if (jsonOnly && log.structured?.kind === "structured") {
+    return `${log.structured.title}\n${log.structured.raw}`;
+  }
+
+  if (!jsonOnly && log.structured?.kind === "structured") {
+    return log.structured.preview || log.structured.title;
+  }
+
+  return log.message;
+}
 
 function DebugProcesses({ processes }: { processes: DebugProcessSnapshot[] }) {
   const running = processes.filter((process) => process.status === "running").length;

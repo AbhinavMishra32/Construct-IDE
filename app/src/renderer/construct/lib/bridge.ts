@@ -196,7 +196,7 @@ export function onSelectionExplanationLog(callback: Parameters<ConstructProjects
   return api().onSelectionExplanationLog(callback);
 }
 
-export function onAgentLog(callback: (event: { agent: string; message: string; level: string }) => void): () => void {
+export function onAgentLog(callback: Parameters<ConstructProjectsApi["onAgentLog"]>[0]): () => void {
   return api().onAgentLog(callback);
 }
 

@@ -13,6 +13,7 @@ export type CodeGhostTraceEntry = {
   title: string;
   detail: string;
   level?: "info" | "warn" | "error" | "debug";
+  payload?: unknown;
 };
 
 function buildModelConfig() {
@@ -160,7 +161,12 @@ export async function sendCodeGhostStreamToRenderer(
         requestId,
         lineNumber,
         input
-      }, null, 2)
+      }, null, 2),
+      payload: {
+        requestId,
+        lineNumber,
+        input
+      }
     });
 
     const text = await fetchCodeGhostExplanation(input, controller.signal);
@@ -168,7 +174,8 @@ export async function sendCodeGhostStreamToRenderer(
     onTrace?.({
       title: "Code ghost response",
       level: "debug",
-      detail: JSON.stringify({ requestId, lineNumber, text }, null, 2)
+      detail: JSON.stringify({ requestId, lineNumber, text }, null, 2),
+      payload: { requestId, lineNumber, text }
     });
 
     if (text) {
@@ -189,7 +196,14 @@ export async function sendCodeGhostStreamToRenderer(
     onTrace?.({
       title: "Code ghost error",
       level: "error",
-      detail: error instanceof Error ? error.stack || error.message : String(error)
+      detail: error instanceof Error ? error.stack || error.message : String(error),
+      payload: error instanceof Error
+        ? {
+            name: error.name,
+            message: error.message,
+            stack: error.stack
+          }
+        : { error: String(error) }
     });
     if (!sender.isDestroyed()) {
       sender.send(channel, {

@@ -801,6 +801,53 @@
   opacity: 0.45;
 }
 
+.construct-interact--agent {
+  gap: 14px;
+  border-color: var(--opaline-border-subtle);
+}
+
+.construct-interact--agent .opaline-agent-session-lead {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.construct-interact--agent .opaline-agent-session-title {
+  font-size: 18px;
+}
+
+.construct-interact__generated {
+  display: grid;
+  gap: 10px;
+}
+
+.construct-interact__generated-step {
+  display: grid;
+  gap: 4px;
+}
+
+.construct-interact__generated-step strong {
+  color: var(--opaline-text-primary);
+  font-size: 12.5px;
+}
+
+.construct-interact__generated-step p {
+  margin: 0;
+  color: var(--opaline-text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.construct-interact__tool-output {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--opaline-text-secondary);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .verification-panel {
   display: grid;
   gap: 12px;
@@ -3221,8 +3268,9 @@
 .terminal-panel__screen .xterm-screen {
   letter-spacing: 0;
   font-kerning: none;
-  text-rendering: optimizeSpeed;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 .terminal-panel__screen .xterm-cursor-layer {
@@ -5515,6 +5563,59 @@
     gap 240ms var(--cubic-enter, cubic-bezier(0.16, 1, 0.3, 1)),
     box-shadow 240ms var(--cubic-enter, cubic-bezier(0.16, 1, 0.3, 1));
   margin-right: 12px;
+}
+
+.construct-header-action-cluster {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 0;
+}
+
+.construct-header-panel-toggle {
+  width: 30px !important;
+  height: 30px !important;
+  flex: 0 0 30px;
+  min-width: 30px;
+  min-height: 30px;
+  border-radius: 10px !important;
+  padding: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: color-mix(in srgb, var(--opaline-text-secondary, #a3a3a3) 88%, transparent) !important;
+  transition:
+    background-color var(--transition-duration-basic, 120ms) var(--cubic-enter, cubic-bezier(0.16, 1, 0.3, 1)),
+    box-shadow var(--transition-duration-basic, 120ms) var(--cubic-enter, cubic-bezier(0.16, 1, 0.3, 1)),
+    color var(--transition-duration-basic, 120ms) var(--cubic-enter, cubic-bezier(0.16, 1, 0.3, 1)),
+    transform var(--transition-duration-basic, 120ms) var(--cubic-enter, cubic-bezier(0.16, 1, 0.3, 1)) !important;
+  clip-path: polygon(8% 0%, 92% 0%, 96% 1%, 99% 4%, 100% 8%, 100% 92%, 99% 96%, 96% 99%, 92% 100%, 8% 100%, 4% 99%, 1% 96%, 0% 92%, 0% 8%, 1% 4%, 4% 1%);
+}
+
+.construct-header-panel-toggle svg {
+  width: 20px !important;
+  height: 20px !important;
+  stroke-width: 1.5;
+  overflow: visible;
+}
+
+.construct-header-panel-toggle:hover {
+  background: color-mix(in srgb, var(--opaline-text-primary, #ffffff) 8%, transparent) !important;
+  color: var(--opaline-text-primary, #ffffff) !important;
+}
+
+.construct-header-panel-toggle[data-active="true"] {
+  background: color-mix(in srgb, var(--opaline-text-primary, #ffffff) 8%, transparent) !important;
+  box-shadow: none !important;
+  color: var(--opaline-text-primary, #ffffff) !important;
+}
+
+.construct-header-panel-toggle[data-active="true"]:hover {
+  background: color-mix(in srgb, var(--opaline-text-primary, #ffffff) 8%, transparent) !important;
+}
+
+.construct-header-panel-toggle:active {
+  transform: scale(0.9);
+  background: color-mix(in srgb, var(--opaline-text-primary, #ffffff) 12%, transparent) !important;
 }
 
 /* Invisible hover bridge extending from the pill downwards to cover the gap */

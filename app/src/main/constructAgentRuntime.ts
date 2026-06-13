@@ -25,6 +25,7 @@ export type ConstructAgentTraceEntry = {
   title: string;
   detail: string;
   level?: "info" | "warn" | "error" | "debug";
+  payload?: unknown;
 };
 
 export function createConstructAgentRuntime(): ConstructAgentRuntime {
@@ -49,22 +50,32 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
         `purpose: ${request.purpose}`,
         request.featureId ? `featureId: ${request.featureId}` : null,
         `maxRetries: ${request.maxRetries ?? 1}`
-      ].filter(Boolean).join("\n")
+      ].filter(Boolean).join("\n"),
+      payload: {
+        id: request.id,
+        name: request.name,
+        purpose: request.purpose,
+        featureId: request.featureId,
+        maxRetries: request.maxRetries ?? 1
+      }
     });
     request.onTrace?.({
       title: "Agent instructions",
       level: "debug",
-      detail: request.instructions
+      detail: request.instructions,
+      payload: { instructions: request.instructions }
     });
     request.onTrace?.({
       title: "Agent prompt",
       level: "debug",
-      detail: request.prompt
+      detail: request.prompt,
+      payload: { prompt: request.prompt }
     });
     request.onTrace?.({
       title: "Structured schema",
       level: "debug",
-      detail: stringifyForTrace(describeSchema(request.schema))
+      detail: stringifyForTrace(describeSchema(request.schema)),
+      payload: describeSchema(request.schema)
     });
 
     const agent = new Agent({
@@ -84,21 +95,30 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
       request.onTrace?.({
         title: "Raw structured output",
         level: "debug",
-        detail: stringifyForTrace(output.object)
+        detail: stringifyForTrace(output.object),
+        payload: output.object
       });
 
       const parsed = request.schema.parse(output.object);
       request.onTrace?.({
         title: "Validated structured result",
         level: "debug",
-        detail: stringifyForTrace(parsed)
+        detail: stringifyForTrace(parsed),
+        payload: parsed
       });
       return parsed;
     } catch (error) {
       request.onTrace?.({
         title: "Agent runtime error",
         level: "error",
-        detail: error instanceof Error ? error.stack || error.message : String(error)
+        detail: error instanceof Error ? error.stack || error.message : String(error),
+        payload: error instanceof Error
+          ? {
+              name: error.name,
+              message: error.message,
+              stack: error.stack
+            }
+          : { error: String(error) }
       });
       throw error;
     }
