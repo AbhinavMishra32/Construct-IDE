@@ -54,6 +54,7 @@ export function GuidePanel({
   onInteractAnswerChange,
   interactResult,
   onSubmitInteract,
+  onInteractAction,
   interactingId,
   verifyingId,
   verificationLogs,
@@ -76,6 +77,7 @@ export function GuidePanel({
   onInteractAnswerChange: (answer: string) => void;
   interactResult?: ConstructInteractClientResult;
   onSubmitInteract: () => void;
+  onInteractAction?: (action: NonNullable<ConstructInteractClientResult["actions"]>[number]) => void;
   interactingId: string | null;
   verifyingId: string | null;
   verificationLogs: VerificationLogEntry[];
@@ -149,6 +151,7 @@ export function GuidePanel({
             onInteractAnswerChange={onInteractAnswerChange}
             interactResult={interactResult}
             onSubmitInteract={onSubmitInteract}
+            onInteractAction={onInteractAction}
             interactingId={interactingId}
           />
           <p className="guide-panel__assist">{assistanceLabel(assistance)}</p>
@@ -214,6 +217,7 @@ function GuideBlock({
   onInteractAnswerChange,
   interactResult,
   onSubmitInteract,
+  onInteractAction,
   interactingId,
   onOpenReference,
   onOpenConcept,
@@ -235,6 +239,7 @@ function GuideBlock({
   onInteractAnswerChange: (answer: string) => void;
   interactResult?: ConstructInteractClientResult;
   onSubmitInteract: () => void;
+  onInteractAction?: (action: NonNullable<ConstructInteractClientResult["actions"]>[number]) => void;
   interactingId: string | null;
   onOpenReference: (referenceId: string) => void;
   onOpenConcept: (conceptId: string) => void;
@@ -295,6 +300,7 @@ function GuideBlock({
             onInteractAnswerChange={onInteractAnswerChange}
             interactResult={interactResult}
             onSubmitInteract={onSubmitInteract}
+            onInteractAction={onInteractAction}
             interactingId={interactingId}
           />
         ))}
@@ -330,6 +336,16 @@ function GuideBlock({
           <div className={`construct-interact__reply is-${interactResult.status}`}>
             <p className="guide-panel__label">{interactStatusLabel(interactResult.status)}</p>
             <MarkdownBlock content={interactResult.reply} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
+            {interactResult.actions?.length ? (
+              <div className="construct-interact__actions">
+                {interactResult.actions.map((action, index) => (
+                  <button key={`${action.type}-${index}`} type="button" onClick={() => onInteractAction?.(action)}>
+                    <SparklesIcon size={13} />
+                    <span>{action.label}</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </div>
         ) : null}
         {interactingId === block.id ? (

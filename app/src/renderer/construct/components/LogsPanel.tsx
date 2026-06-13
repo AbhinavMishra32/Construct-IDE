@@ -165,35 +165,73 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
   return (
     <TerminalSurface cwd={`Output · ${activeChannel === "agents" ? `Agents · ${activeAgentMeta?.label ?? activeAgentChannel}` : getChannelLabel(activeChannel)}`}>
       <div className="flex h-full flex-col overflow-hidden bg-transparent text-[var(--opaline-text-primary)] select-text">
-        <div className="flex items-center justify-between px-2 py-1.5">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                className="inline-flex h-[26px] items-center gap-1.5 rounded-[8px] px-2.5 text-[12.5px] font-medium text-[var(--opaline-text-primary)] hover:bg-[color-mix(in_srgb,var(--opaline-text-primary)_6%,transparent)]"
-              >
-                {activeChannel === "agents" ? (
-                  <span className="inline-flex items-center gap-1">
-                    <Bot size={13} className="text-[var(--opaline-accent)]" />
-                    Agents
-                  </span>
-                ) : (
-                  getChannelLabel(activeChannel)
-                )}
-                <ChevronDown size={14} />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="min-w-[220px]">
-              {SYSTEM_CHANNELS.map((channel) => (
-                <DropdownMenuItem key={channel.id} onSelect={() => setActiveChannel(channel.id)}>
-                  <span className="inline-flex w-4 items-center justify-center">
-                    {channel.id === activeChannel ? <Check size={13} /> : null}
-                  </span>
-                  {channel.label}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
+        <div className="flex items-center justify-between gap-2 px-2 py-1.5">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="inline-flex h-[26px] items-center gap-1.5 rounded-[8px] px-2.5 text-[12.5px] font-medium text-[var(--opaline-text-primary)] hover:bg-[color-mix(in_srgb,var(--opaline-text-primary)_6%,transparent)]"
+                >
+                  {activeChannel === "agents" ? (
+                    <span className="inline-flex items-center gap-1">
+                      <Bot size={13} className="text-[var(--opaline-accent)]" />
+                      Agents
+                    </span>
+                  ) : (
+                    getChannelLabel(activeChannel)
+                  )}
+                  <ChevronDown size={14} />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="min-w-[220px]">
+                {SYSTEM_CHANNELS.map((channel) => (
+                  <DropdownMenuItem key={channel.id} onSelect={() => setActiveChannel(channel.id)}>
+                    <span className="inline-flex w-4 items-center justify-center">
+                      {channel.id === activeChannel ? <Check size={13} /> : null}
+                    </span>
+                    {channel.label}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {activeChannel === "agents" ? (
+              <>
+                <span className="text-[var(--opaline-text-tertiary)]">/</span>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className="inline-flex h-[26px] max-w-[220px] items-center gap-1.5 rounded-[8px] px-2.5 text-[12.5px] font-medium text-[var(--opaline-text-primary)] hover:bg-[color-mix(in_srgb,var(--opaline-text-primary)_6%,transparent)]"
+                    >
+                      <Bot size={13} className="shrink-0 text-[var(--opaline-accent)]" />
+                      <span className="truncate">{activeAgentMeta?.label ?? activeAgentChannel}</span>
+                      <ChevronDown size={14} className="shrink-0" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="min-w-[240px]">
+                    <DropdownMenuLabel className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-[var(--opaline-text-tertiary)]">
+                      <Bot size={12} />
+                      Agent channel
+                    </DropdownMenuLabel>
+                    {AGENT_CHANNELS.map((agent) => (
+                      <DropdownMenuItem key={agent.id} onSelect={() => setActiveAgentChannel(agent.id)}>
+                        <span className="inline-flex w-4 items-center justify-center">
+                          {agent.id === activeAgentChannel ? <Check size={13} /> : null}
+                        </span>
+                        <span className="flex flex-col">
+                          <span>{agent.label}</span>
+                          <span className="text-[10.5px] text-[var(--opaline-text-tertiary)] font-normal">{agent.description}</span>
+                        </span>
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <span className="truncate text-[11px] text-[var(--opaline-text-tertiary)]">{activeAgentMeta?.description}</span>
+              </>
+            ) : null}
+          </div>
 
           <div className="flex items-center gap-1">
             <button
@@ -211,43 +249,6 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
             </Button>
           </div>
         </div>
-
-        {activeChannel === "agents" ? (
-          <div className="flex items-center justify-between border-b border-[color-mix(in_srgb,var(--opaline-text-primary)_8%,transparent)] px-2 py-1.5">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className="inline-flex h-[26px] items-center gap-1.5 rounded-[8px] px-2.5 text-[12.5px] font-medium text-[var(--opaline-text-primary)] hover:bg-[color-mix(in_srgb,var(--opaline-text-primary)_6%,transparent)]"
-                >
-                  <Bot size={13} className="text-[var(--opaline-accent)]" />
-                  {activeAgentMeta?.label ?? activeAgentChannel}
-                  <ChevronDown size={14} />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="min-w-[240px]">
-                <DropdownMenuLabel className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-[var(--opaline-text-tertiary)]">
-                  <Bot size={12} />
-                  Agent channel
-                </DropdownMenuLabel>
-                {AGENT_CHANNELS.map((agent) => (
-                  <DropdownMenuItem key={agent.id} onSelect={() => setActiveAgentChannel(agent.id)}>
-                    <span className="inline-flex w-4 items-center justify-center">
-                      {agent.id === activeAgentChannel ? <Check size={13} /> : null}
-                    </span>
-                    <span className="flex flex-col">
-                      <span>{agent.label}</span>
-                      <span className="text-[10.5px] text-[var(--opaline-text-tertiary)] font-normal">{agent.description}</span>
-                    </span>
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <div className="text-[11px] text-[var(--opaline-text-tertiary)]">
-              {activeAgentMeta?.description}
-            </div>
-          </div>
-        ) : null}
 
         <div
           ref={containerRef}

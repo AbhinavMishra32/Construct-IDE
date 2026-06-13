@@ -11,6 +11,7 @@ import {
   FileTs,
   FileTsx,
   GitBranch,
+  Lightning,
   MagnifyingGlass
 } from "@phosphor-icons/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -32,6 +33,8 @@ import {
   gitCommit,
   gitPush,
   gitStatus,
+  applyLearningPatch,
+  getProjectLearningState,
   listFiles,
   onVerifyLog,
   readFile,
@@ -71,6 +74,7 @@ import type {
   ConstructInteractClientResult,
   WorkspaceTreeNode
 } from "../types";
+import type { GeneratedLiveStep, ProjectLearningState } from "../../../shared/constructLearning";
 
 function iconForFile(filename: string) {
   const props = { size: 12, weight: "duotone" as const };
@@ -147,6 +151,82 @@ function FileChooserContent({
   );
 }
 
+function LiveStepPanel({
+  liveStep,
+  theme,
+  onOpenConcept,
+  onOpenFile,
+  onComplete,
+  onDismiss,
+  onBack
+}: {
+  liveStep: GeneratedLiveStep;
+  theme: "light" | "dark" | "system";
+  onOpenConcept: (conceptId: string) => void;
+  onOpenFile: (reference: InlineFileRef) => void;
+  onComplete: () => void;
+  onDismiss: () => void;
+  onBack: () => void;
+}) {
+  return (
+    <aside className="guide-panel generated-live-guide" data-construct-explainable="generated-live-step" data-construct-explainable-label="Generated live step">
+      <div className="generated-live-guide__banner">
+        <Lightning size={15} weight="duotone" />
+        <span>Generated live by Construct Interact</span>
+      </div>
+      <div className="guide-panel__meta">
+        <span>Adaptive live step</span>
+        <span>{liveStep.status}</span>
+      </div>
+      <h2>{liveStep.title}</h2>
+      <p className="generated-live-guide__reason">{liveStep.reason}</p>
+      <div className="generated-live-guide__blocks">
+        {liveStep.blocks.map((block) => {
+          if (block.kind === "explain") {
+            return (
+              <section key={block.id} className="generated-live-guide__block">
+                <p className="guide-panel__label">Explain</p>
+                <MarkdownBlock content={block.content} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
+              </section>
+            );
+          }
+
+          if (block.kind === "interact") {
+            return (
+              <section key={block.id} className="generated-live-guide__block">
+                <p className="guide-panel__label">Construct Interact</p>
+                <MarkdownBlock content={block.prompt} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
+                <div className="generated-live-guide__prompt-note">
+                  <strong>What to check</strong>
+                  <span>{block.understanding}</span>
+                </div>
+              </section>
+            );
+          }
+
+          return (
+            <section key={block.id} className="generated-live-guide__block">
+              <p className="guide-panel__label">Reply Recall</p>
+              <MarkdownBlock content={block.task} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
+              {block.support ? (
+                <div className="generated-live-guide__support">
+                  <p className="guide-panel__label">Support</p>
+                  <MarkdownBlock content={block.support} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
+                </div>
+              ) : null}
+            </section>
+          );
+        })}
+      </div>
+      <div className="guide-panel__actions">
+        <button type="button" className="generated-live-guide__secondary" onClick={onBack}>Back to tape</button>
+        <button type="button" className="generated-live-guide__secondary" onClick={onDismiss}>Dismiss</button>
+        <button type="button" className="generated-live-guide__primary" onClick={onComplete}>Complete live step</button>
+      </div>
+    </aside>
+  );
+}
+
 export function Workspace({
   project,
   theme,
@@ -212,6 +292,8 @@ export function Workspace({
   const [interactAnswers, setInteractAnswers] = useState<Record<string, string>>({});
   const [interactResults, setInteractResults] = useState<Record<string, ConstructInteractClientResult>>({});
   const [interactingId, setInteractingId] = useState<string | null>(null);
+  const [projectLearningState, setProjectLearningState] = useState<ProjectLearningState | null>(null);
+  const [activeLiveStepId, setActiveLiveStepId] = useState<string | null>(null);
   const autoOpenedRecallRef = useRef<string | null>(null);
   const fileLoadSequenceRef = useRef(0);
 
@@ -234,6 +316,10 @@ export function Workspace({
   const editComplete = activeEdit ? editProgress >= activeEdit.content.length : false;
   const editAnchor = activeEdit ? editAnchors[activeEdit.id] ?? "" : "";
   const isActiveEditReady = activeEdit ? isGuidedEditReady(activeEdit, editAnchors) : false;
+  const generatedLiveSteps = projectLearningState?.generatedLiveSteps ?? [];
+  const activeLiveStep = activeLiveStepId
+    ? generatedLiveSteps.find((step) => step.id === activeLiveStepId && step.status !== "dismissed") ?? null
+    : null;
 
   const { furthestUnlockedStepIndex, furthestUnlockedBlockIndex } = useMemo(() => {
     const completedBlocks = project.completedBlocks ?? {};
@@ -293,7 +379,26 @@ export function Workspace({
     setPinnedReferenceIds([]);
     setVerifyingId(null);
     setVerificationLogs({});
+    setActiveLiveStepId(null);
     autoOpenedRecallRef.current = null;
+  }, [project.id]);
+
+  useEffect(() => {
+    let disposed = false;
+    getProjectLearningState(project.id)
+      .then((state) => {
+        if (!disposed) {
+          setProjectLearningState(state);
+        }
+      })
+      .catch(() => {
+        if (!disposed) {
+          setProjectLearningState(null);
+        }
+      });
+    return () => {
+      disposed = true;
+    };
   }, [project.id]);
 
   useEffect(() => {
@@ -1085,6 +1190,11 @@ export function Workspace({
         ...current,
         [block.id]: result
       }));
+      setProjectLearningState(result.learningState.projects[project.id] ?? null);
+      const firstGenerated = result.generatedLiveSteps?.[0];
+      if (firstGenerated?.id) {
+        setActiveLiveStepId(firstGenerated.id);
+      }
       if (result.shouldAdvance) {
         await handleNext();
       }
@@ -1120,6 +1230,7 @@ export function Workspace({
   async function handleSelectStep(stepIndex: number) {
     if (stepIndex >= 0 && stepIndex < project.program.steps.length) {
       if (stepIndex <= furthestUnlockedStepIndex) {
+        setActiveLiveStepId(null);
         await persistProject({
           currentStepIndex: stepIndex,
           currentBlockIndex: 0,
@@ -1129,7 +1240,52 @@ export function Workspace({
     }
   }
 
+  async function updateLiveStepStatus(stepId: string, status: GeneratedLiveStep["status"]) {
+    const state = await applyLearningPatch({
+      generatedLiveStepStatus: {
+        projectId: project.id,
+        stepId,
+        status,
+        updatedAt: new Date().toISOString()
+      }
+    });
+    setProjectLearningState(state.projects[project.id] ?? null);
+    if (status === "completed" || status === "dismissed") {
+      setActiveLiveStepId(null);
+    }
+  }
+
+  async function handleInteractAction(action: NonNullable<ConstructInteractClientResult["actions"]>[number]) {
+    if (action.type === "go-to-step") {
+      const stepIndex = project.program.steps.findIndex((step) => step.id === action.stepId);
+      if (stepIndex >= 0) {
+        await handleSelectStep(stepIndex);
+      }
+      return;
+    }
+
+    if (action.type === "open-concept") {
+      openConceptCard(action.conceptId);
+      return;
+    }
+
+    if (action.type === "open-file") {
+      if (action.anchor) {
+        await focusAnchor(action.anchor);
+      } else {
+        await openFileAndRecord(action.path);
+      }
+      return;
+    }
+
+    const firstStepId = action.stepIds.find((stepId) => generatedLiveSteps.some((step) => step.id === stepId));
+    if (firstStepId) {
+      setActiveLiveStepId(firstStepId);
+    }
+  }
+
   async function handleReturnToActive() {
+    setActiveLiveStepId(null);
     await persistProject({
       currentStepIndex: furthestUnlockedStepIndex,
       currentBlockIndex: furthestUnlockedBlockIndex,
@@ -1186,7 +1342,17 @@ export function Workspace({
   }
 
   // Build SlotPanel tabs from openTabs state
-  const guideTabContent = useMemo(() => (
+  const guideTabContent = useMemo(() => activeLiveStep ? (
+    <LiveStepPanel
+      liveStep={activeLiveStep}
+      theme={theme}
+      onOpenConcept={openConceptCard}
+      onOpenFile={(reference) => void openInlineFile(reference)}
+      onComplete={() => void updateLiveStepStatus(activeLiveStep.id, "completed")}
+      onDismiss={() => void updateLiveStepStatus(activeLiveStep.id, "dismissed")}
+      onBack={() => setActiveLiveStepId(null)}
+    />
+  ) : (
     <GuidePanel
       project={project}
       block={block}
@@ -1213,6 +1379,7 @@ export function Workspace({
       }}
       interactResult={block?.kind === "interact" ? interactResults[block.id] : undefined}
       onSubmitInteract={() => void handleConstructInteract()}
+      onInteractAction={(action) => void handleInteractAction(action)}
       interactingId={interactingId}
       verifyingId={verifyingId}
       verificationLogs={block?.kind === "recall" && block.verify
@@ -1220,7 +1387,7 @@ export function Workspace({
         : []}
       recallMissingFiles={recallMissingFiles}
     />
-  ), [block, editComplete, interactAnswers, interactResults, interactingId, onRunCommand, project, recallAnswers, recallMissingFiles, theme, verificationLogs, verifyingId, furthestUnlockedStepIndex, furthestUnlockedBlockIndex]);
+  ), [activeLiveStep, block, editComplete, interactAnswers, interactResults, interactingId, onRunCommand, project, recallAnswers, recallMissingFiles, theme, verificationLogs, verifyingId, furthestUnlockedStepIndex, furthestUnlockedBlockIndex, generatedLiveSteps]);
 
   const stepsTabContent = useMemo(() => (
     <div className={`workspace-right-panel-steps ${isStepsCollapsed ? "is-collapsed" : ""}`}>
@@ -1237,11 +1404,14 @@ export function Workspace({
         <StepList
           project={project}
           onSelectStep={(idx) => void handleSelectStep(idx)}
+          generatedLiveSteps={generatedLiveSteps}
+          activeLiveStepId={activeLiveStepId}
+          onSelectLiveStep={setActiveLiveStepId}
           furthestUnlockedStepIndex={furthestUnlockedStepIndex}
         />
       </div>
     </div>
-  ), [isStepsCollapsed, project, furthestUnlockedStepIndex]);
+  ), [isStepsCollapsed, project, furthestUnlockedStepIndex, generatedLiveSteps, activeLiveStepId]);
 
   const sidebarKnowledgeContent = useMemo(() => {
     const currentConceptIds = block?.kind === "recall" || block?.kind === "explain" ? block.concepts : [];
