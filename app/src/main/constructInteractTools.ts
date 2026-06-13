@@ -19,8 +19,8 @@ type ToolProject = {
       requires?: string[];
       blocks: Array<Record<string, unknown> & { id: string; kind?: string }>;
     }>;
-    concepts?: Array<Record<string, unknown> & { id: string; title?: string }>;
-    references?: Array<Record<string, unknown> & { id: string; title?: string }>;
+    concepts?: unknown[];
+    references?: unknown[];
   };
   currentStepIndex: number;
   currentBlockIndex: number;
@@ -80,7 +80,7 @@ export async function buildConstructInteractToolContext(input: {
   ]);
   if (requestedConcepts.length > 0) {
     const conceptCards = requestedConcepts
-      .map((conceptId) => input.project.program.concepts?.find((concept) => concept.id === conceptId))
+      .map((conceptId) => conceptObjects(input.project.program.concepts).find((concept) => concept.id === conceptId))
       .filter(Boolean);
     await callTool("getConceptCard", "Inspect relevant concept cards before generating new help.", conceptCards, { conceptIds: requestedConcepts });
     await callTool(
@@ -170,6 +170,14 @@ function extractConceptIds(block: Record<string, unknown> | null): string[] {
       : [])
   ];
   return uniqueStrings(values.filter((value): value is string => typeof value === "string"));
+}
+
+function conceptObjects(concepts: unknown[] | undefined): Array<Record<string, unknown> & { id: string }> {
+  return (concepts ?? []).filter((concept): concept is Record<string, unknown> & { id: string } => (
+    typeof concept === "object" &&
+    concept !== null &&
+    typeof (concept as { id?: unknown }).id === "string"
+  ));
 }
 
 async function readWorkspaceFile(project: ToolProject, relativePath: string): Promise<string> {

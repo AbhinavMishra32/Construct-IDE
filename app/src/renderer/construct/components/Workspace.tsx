@@ -22,6 +22,7 @@ import { lspClient } from "../lib/lspClient";
 import type { SlotTab } from "@opaline/ui";
 import { EditorPane } from "./EditorPane";
 import { GuidePanel } from "./GuidePanel";
+import { MarkdownBlock } from "./MarkdownBlock";
 import { ReferenceCard } from "./ReferenceCard";
 import { KnowledgeCard } from "./KnowledgeCard";
 import { KnowledgeDialog } from "./KnowledgeDialog";

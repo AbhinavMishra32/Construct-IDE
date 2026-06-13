@@ -1744,7 +1744,9 @@ function installConstructProjectIpcHandlers(): void {
       sourceStepId,
       sourceRunId,
       validStepIds: new Set(project.program.steps.map((step, index) => step.id ?? `step-${index + 1}`)),
-      validConceptIds: new Set((project.program.concepts ?? []).map((concept: { id?: unknown }) => String(concept.id ?? "")).filter(Boolean))
+      validConceptIds: new Set((project.program.concepts ?? [])
+        .map((concept) => typeof concept === "object" && concept !== null ? String((concept as { id?: unknown }).id ?? "") : "")
+        .filter(Boolean))
     };
     const liveStepValidation = validateGeneratedLiveStepDrafts(result.generatedLiveSteps, validationContext);
     const acceptedLiveSteps = liveStepValidation.steps;
