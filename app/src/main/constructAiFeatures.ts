@@ -21,7 +21,7 @@ export const constructAiFeatures: ConstructAiFeature[] = [
     title: "Construct Interact",
     description: "Evaluates text answers, asks grounded follow-ups, and updates learner memory.",
     defaultOpenAiModel: "gpt-5-mini",
-    defaultOpenRouterModel: "nvidia/nemotron-3-ultra-550b-a55b:free"
+    defaultOpenRouterModel: "poolside/laguna-m.1:free"
   },
   {
     id: "verification",

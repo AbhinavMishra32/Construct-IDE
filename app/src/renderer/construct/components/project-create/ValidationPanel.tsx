@@ -58,12 +58,16 @@ export function ValidationPanel({
         content={<AgentActivityList entries={entries} />}
       />
 
-      {!activeStage ? <p className="construct-validation-flow__summary">{result.valid ? `${result.document.spec} · ${result.document.root.children.length} top-level blocks${warnings.length > 0 ? ` · ${warnings.length} optional suggestion${warnings.length === 1 ? "" : "s"}` : ""}` : blockingError ? `Line ${blockingError.line}` : null}</p> : null}
+      {!activeStage ? <p className="construct-validation-flow__summary">{result.valid ? `${result.document.spec} · ${result.document.root.children.length} top-level blocks${warnings.length > 0 ? ` · ${warnings.length} optional suggestion${warnings.length === 1 ? "" : "s"}` : ""}` : blockingError ? `Line ${blockingError.line}${blockingError.column ? `:${blockingError.column}` : ""}` : null}</p> : null}
 
       {blockingError ? (
         <div className="construct-validation-flow__blocking">
           <AlertCircle size={15} />
-          <div><strong>{blockingError.message}</strong><small>{blockingError.details}</small></div>
+          <div>
+            <strong>{blockingError.message}</strong>
+            {blockingError.lineText ? <code className="construct-validation-flow__line-source">Line {blockingError.line}{blockingError.column ? `:${blockingError.column}` : ""}: {blockingError.lineText}</code> : null}
+            <small>{blockingError.details}</small>
+          </div>
           <button type="button" onClick={onRawEdit}><FileCode2 size={13} />Edit source</button>
         </div>
       ) : null}

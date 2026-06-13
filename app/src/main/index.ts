@@ -1981,6 +1981,12 @@ function installConstructProjectIpcHandlers(): void {
     };
     projects[index].progress = calculateProgress(projects[index]);
     await writeProjects(projects);
+
+    if (input.patch?.source) {
+      projects[index].originalSource = input.patch.source;
+      await persistAuthoringArtifacts(projects[index]);
+    }
+
     return projects[index];
   });
 

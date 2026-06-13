@@ -4,6 +4,20 @@ import { lintConstructProgram } from "./lint";
 import { parseConstructDocument } from "./parser";
 import type { ConstructValidationResult } from "./types";
 
+function extractLineFromError(message: string): number | undefined {
+  const match = message.match(/(?:line|at line)\s+(\d+)/i);
+  return match ? parseInt(match[1], 10) : undefined;
+}
+
+function extractLineText(source: string, line: number): string | undefined {
+  const lines = source.replace(/\r\n/g, "\n").split("\n");
+  const index = line - 1;
+  if (index >= 0 && index < lines.length) {
+    return lines[index];
+  }
+  return undefined;
+}
+
 export function validateConstructSource(source: string): ConstructValidationResult {
   const repaired = applySafeCompilerFixes(source);
   const document = parseConstructDocument(repaired.source);
@@ -19,12 +33,16 @@ export function validateConstructSource(source: string): ConstructValidationResu
       diagnostics = [...diagnostics, ...lint.diagnostics];
       suggestions = [...suggestions, ...lint.suggestions];
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const extractedLine = extractLineFromError(message);
+      const line = extractedLine ?? 1;
       diagnostics.push({
         id: "strict-parser",
         severity: "error",
         code: `${document.spec}/E_STRICT_PARSE`,
-        message: error instanceof Error ? error.message : String(error),
-        line: 1,
+        message,
+        line,
+        lineText: extractedLine ? extractLineText(repaired.source, extractedLine) : undefined,
         spec: document.spec,
         details: "The tolerant parser recovered a tree, but the runtime parser still rejected the tape."
       });

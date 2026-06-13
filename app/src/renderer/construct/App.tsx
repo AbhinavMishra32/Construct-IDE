@@ -15,6 +15,7 @@ import {
   Plus as PlusIcon
 } from "lucide-react";
 import {
+  Code,
   Folder,
   GearSix,
   TerminalWindow,
@@ -76,6 +77,7 @@ import {
 import type { AiFeatureSettings, AiSettings, DeleteProjectCheck, ModelCatalogEntry, ProjectRecord, ProjectSummary, WorkspaceTreeNode } from "./types";
 import type { ConstructLearningState } from "../../shared/constructLearning";
 import { currentBlock, currentBlockNumber, totalBlocks, nextPosition } from "./lib/runtime";
+import { validateConstructSource } from "./compiler/pipeline";
 
 type ThemeMode = "light" | "dark" | "system";
 type ConstructHistoryEntry = ShellHistoryEntry<
@@ -760,6 +762,7 @@ export default function ConstructApp() {
       activeItemId={settingsSurface.itemId}
       projectId={settingsSurface.projectId}
       projects={projects}
+      activeProject={activeProject}
       theme={theme}
       onThemeChange={setTheme}
       onProjectsChange={setProjects}
@@ -1260,6 +1263,7 @@ function ConstructSettingsSurface({
   activeItemId,
   projectId,
   projects,
+  activeProject: activeProjectRecord,
   theme,
   onThemeChange,
   onProjectsChange,
@@ -1268,6 +1272,7 @@ function ConstructSettingsSurface({
   activeItemId: string;
   projectId?: string;
   projects: ProjectSummary[];
+  activeProject: ProjectRecord | null;
   theme: ThemeMode;
   onThemeChange: (theme: ThemeMode) => void;
   onProjectsChange: (projects: ProjectSummary[]) => void;
@@ -1289,6 +1294,11 @@ function ConstructSettingsSurface({
   const [deleteCheck, setDeleteCheck] = useState<DeleteProjectCheck | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const [tapeSource, setTapeSource] = useState(activeProjectRecord?.source ?? "");
+  const [tapeSaveBusy, setTapeSaveBusy] = useState(false);
+  const [tapeSaveError, setTapeSaveError] = useState<string | null>(null);
+  const [tapeValidation, setTapeValidation] = useState<{ valid: boolean; errorCount: number; warningCount: number } | null>(null);
 
   const [lspEnabled, setLspEnabled] = useState(() => {
     return window.localStorage.getItem("construct.lsp.enabled") !== "false";
@@ -1615,6 +1625,41 @@ function ConstructSettingsSurface({
     }
   }
 
+  async function saveTapeSource() {
+    if (!projectId) return;
+
+    try {
+      setTapeSaveBusy(true);
+      setTapeSaveError(null);
+
+      const validation = validateConstructSource(tapeSource);
+      if (!validation.valid) {
+        const errorDiags = validation.diagnostics.filter((d) => d.severity === "error");
+        setTapeSaveError(
+          errorDiags.length > 0
+            ? `Tape has ${errorDiags.length} error${errorDiags.length === 1 ? "" : "s"}: ${errorDiags[0].message}`
+            : "Tape has validation errors. Please fix them before saving."
+        );
+        return;
+      }
+
+      const updated = await updateProject({
+        id: projectId,
+        patch: { source: tapeSource }
+      });
+      onActiveProjectChange((current) => current && current.id === updated.id ? updated : current);
+      onProjectsChange(projects.map((item) => (
+        item.id === updated.id
+          ? { ...item, title: updated.title, description: updated.description, progress: updated.progress }
+          : item
+      )));
+    } catch (caught) {
+      setTapeSaveError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setTapeSaveBusy(false);
+    }
+  }
+
   if (activeItemId === "appearance") {
     return (
       <SettingsPanel title="Appearance" subtitle="Theme source for Construct and the embedded editor shell.">
@@ -1811,6 +1856,64 @@ function ConstructSettingsSurface({
                 description="Terminal tabs keep their PTY until the tab is closed."
                 control={<SettingsToggle checked disabled />}
               />
+            </SettingsCard>
+          </SettingsSection>
+        ) : null}
+
+        {activeItemId === "project-advanced" ? (
+          <SettingsSection title="Advanced">
+            <SettingsCard>
+              <SettingsRow
+                title="Tape source"
+                description="View and edit the raw .construct tape for this project. Changes are validated and recompiled before saving."
+              />
+              <div style={{ marginTop: 8 }}>
+                <textarea
+                  className="construct-settings-input construct-settings-input--textarea"
+                  style={{
+                    fontFamily: "var(--font-mono, monospace)",
+                    fontSize: 12,
+                    lineHeight: 1.6,
+                    minHeight: 320,
+                    width: "100%",
+                    resize: "vertical",
+                    tabSize: 2
+                  }}
+                  value={tapeSource}
+                  spellCheck={false}
+                  onChange={(event) => {
+                    const value = event.currentTarget.value;
+                    setTapeSource(value);
+                    setTapeSaveError(null);
+                    try {
+                      const result = validateConstructSource(value);
+                      const errorCount = result.diagnostics.filter((d) => d.severity === "error").length;
+                      const warningCount = result.diagnostics.filter((d) => d.severity === "warning").length;
+                      setTapeValidation({ valid: result.valid, errorCount, warningCount });
+                    } catch {
+                      setTapeValidation({ valid: false, errorCount: 1, warningCount: 0 });
+                    }
+                  }}
+                />
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+                <Button
+                  size="small"
+                  disabled={tapeSaveBusy || !tapeSource.trim()}
+                  onClick={() => void saveTapeSource()}
+                >
+                  {tapeSaveBusy ? "Saving..." : "Save tape"}
+                </Button>
+                {tapeValidation ? (
+                  <span style={{ fontSize: 12, color: tapeValidation.valid ? "var(--text-muted, #888)" : "var(--danger-fg, #dc2626)" }}>
+                    {tapeValidation.valid
+                      ? tapeValidation.warningCount > 0
+                        ? `Valid (${tapeValidation.warningCount} warning${tapeValidation.warningCount === 1 ? "" : "s"})`
+                        : "Valid"
+                      : `${tapeValidation.errorCount} error${tapeValidation.errorCount === 1 ? "" : "s"}`}
+                  </span>
+                ) : null}
+              </div>
             </SettingsCard>
           </SettingsSection>
         ) : null}
@@ -2052,6 +2155,11 @@ function buildSettingsSections(projects: ProjectSummary[], projectId?: string): 
           label: "Slots",
           icon: <PanelRight size={18} />,
           badge: `${project.progress}%`
+        },
+        {
+          id: "project-advanced",
+          label: "Advanced",
+          icon: <Code size={18} weight="duotone" />
         }
       ]
     });
@@ -2066,6 +2174,9 @@ function settingsTitle(itemId: string, projectId: string | undefined, projects: 
   }
   if (itemId === "lsp-settings") {
     return "Language Server";
+  }
+  if (itemId === "project-advanced") {
+    return "Advanced";
   }
   if (itemId.startsWith("project-") && projectId) {
     return projects.find((project) => project.id === projectId)?.title ?? "Project settings";
@@ -2453,43 +2564,27 @@ function SidebarSettingsButton({ onClick }: { onClick: () => void }) {
 
 function SavingIndicator({ isSaving }: { isSaving: boolean }) {
   const [isVisible, setIsVisible] = useState(false);
-  const saveStartRef = useRef<number | null>(null);
   const hideTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
-    if (isSaving) {
-      if (hideTimeoutRef.current) {
-        clearTimeout(hideTimeoutRef.current);
-        hideTimeoutRef.current = null;
-      }
-      if (!isVisible) {
-        saveStartRef.current = Date.now();
-        setIsVisible(true);
-      }
-    } else {
-      if (isVisible && saveStartRef.current) {
-        const elapsed = Date.now() - saveStartRef.current;
-        const remainingTime = Math.max(0, 1000 - elapsed);
-
-        if (hideTimeoutRef.current) {
-          clearTimeout(hideTimeoutRef.current);
-        }
-
-        hideTimeoutRef.current = setTimeout(() => {
-          setIsVisible(false);
-          hideTimeoutRef.current = null;
-        }, remainingTime);
-      }
+    if (hideTimeoutRef.current) {
+      clearTimeout(hideTimeoutRef.current);
+      hideTimeoutRef.current = null;
     }
-  }, [isSaving, isVisible]);
-
-  useEffect(() => {
+    if (isSaving) {
+      setIsVisible(true);
+    } else {
+      hideTimeoutRef.current = setTimeout(() => {
+        setIsVisible(false);
+        hideTimeoutRef.current = null;
+      }, 1000);
+    }
     return () => {
       if (hideTimeoutRef.current) {
         clearTimeout(hideTimeoutRef.current);
       }
     };
-  }, []);
+  }, [isSaving]);
 
   return (
     <div className={`construct-saving-indicator ${isVisible ? "is-visible" : ""}`}>

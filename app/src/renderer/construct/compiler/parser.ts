@@ -2,6 +2,15 @@ import { canContain, getConstructGrammar, resolveGrammarKey } from "./grammar";
 import { lexConstruct, readDeclaredSpec } from "./lexer";
 import type { ConstructDiagnostic, ConstructDocument, ConstructNode, ConstructToken } from "./types";
 
+function extractLineText(source: string, line: number): string | undefined {
+  const lines = source.replace(/\r\n/g, "\n").split("\n");
+  const index = line - 1;
+  if (index >= 0 && index < lines.length) {
+    return lines[index];
+  }
+  return undefined;
+}
+
 export function parseConstructDocument(source: string): ConstructDocument {
   const tokens = lexConstruct(source);
   const spec = readDeclaredSpec(source);
@@ -19,19 +28,19 @@ export function parseConstructDocument(source: string): ConstructDocument {
   const diagnostics: ConstructDiagnostic[] = [];
 
   if (!["tape-0.1", "tape-0.2", "tape-0.3", "tape-0.3.1", "tape-0.4"].includes(resolveGrammarKey(spec))) {
-    diagnostics.push({ id: `unknown-spec:${spec}`, severity: "error", code: `${spec}/E_UNKNOWN_SPEC`, message: `Unsupported Construct tape spec "${spec}".`, line: 1, spec, details: "Use tape-0.1, tape-0.2, tape-0.3, tape-0.3.1, or tape-0.4." });
+    diagnostics.push({ id: `unknown-spec:${spec}`, severity: "error", code: `${spec}/E_UNKNOWN_SPEC`, message: `Unsupported Construct tape spec "${spec}".`, line: 1, lineText: extractLineText(source, 1), spec, details: "Use tape-0.1, tape-0.2, tape-0.3, tape-0.3.1, or tape-0.4." });
   }
 
   const fenceTokens = tokens.filter((token) => token.kind === "fence");
   if (fenceTokens.length % 2 !== 0) {
     const fence = fenceTokens[fenceTokens.length - 1];
-    diagnostics.push({ id: `unclosed-fence:${fence.line}`, severity: "error", code: `${spec}/E_UNCLOSED_FENCE`, message: "Code fence is not closed.", line: fence.line, column: fence.column, spec, details: "Close the code fence before the next Construct block marker." });
+    diagnostics.push({ id: `unclosed-fence:${fence.line}`, severity: "error", code: `${spec}/E_UNCLOSED_FENCE`, message: "Code fence is not closed.", line: fence.line, column: fence.column, lineText: extractLineText(source, fence.line), spec, details: "Close the code fence before the next Construct block marker." });
   }
 
   for (const token of tokens) {
     if (token.kind === "end") {
       if (stack.length === 1) {
-        diagnostics.push(diagnostic(spec, "E_STRAY_END", "Unexpected ::end with no open block.", token));
+        diagnostics.push(diagnostic(spec, "E_STRAY_END", "Unexpected ::end with no open block.", token, undefined, undefined, undefined, source));
         continue;
       }
       const node = stack.pop()!;
@@ -54,7 +63,7 @@ export function parseConstructDocument(source: string): ConstructDocument {
     parent.children.push(node);
 
     if (!grammar.knownBlocks.has(node.kind)) {
-      diagnostics.push(diagnostic(spec, "E_UNKNOWN_BLOCK", `Unknown block ::${node.kind} for ${spec}.`, token, node, parent, grammar.allowedChildren[parent.kind]));
+      diagnostics.push(diagnostic(spec, "E_UNKNOWN_BLOCK", `Unknown block ::${node.kind} for ${spec}.`, token, node, parent, grammar.allowedChildren[parent.kind], source));
     } else if (!canContain(grammar, parent.kind, node.kind)) {
       diagnostics.push(diagnostic(
         spec,
@@ -63,7 +72,8 @@ export function parseConstructDocument(source: string): ConstructDocument {
         token,
         node,
         parent,
-        grammar.allowedChildren[parent.kind]
+        grammar.allowedChildren[parent.kind],
+        source
       ));
     }
     stack.push(node);
@@ -77,6 +87,7 @@ export function parseConstructDocument(source: string): ConstructDocument {
       message: `::${node.kind}${node.attributes.id ? ` "${node.attributes.id}"` : ""} is not closed.`,
       line: node.open.line,
       column: node.open.column,
+      lineText: extractLineText(source, node.open.line),
       blockId: node.attributes.id,
       parentKind: node.parent?.kind,
       childKind: node.kind,
@@ -96,7 +107,8 @@ function diagnostic(
   token: ConstructToken,
   node?: ConstructNode,
   parent?: ConstructNode,
-  allowedChildren?: readonly string[]
+  allowedChildren?: readonly string[],
+  source?: string
 ): ConstructDiagnostic {
   return {
     id: `${code}:${token.line}:${node?.kind ?? "end"}`,
@@ -105,6 +117,7 @@ function diagnostic(
     message,
     line: token.line,
     column: token.column,
+    lineText: source ? extractLineText(source, token.line) : undefined,
     blockId: node?.attributes.id,
     parentKind: parent?.kind,
     childKind: node?.kind,

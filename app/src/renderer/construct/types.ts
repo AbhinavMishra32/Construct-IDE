@@ -496,6 +496,7 @@ export type ConstructProjectsApi = {
         | "verificationResults"
         | "completedBlocks"
         | "completedAt"
+        | "source"
       >
     >;
   }): Promise<ProjectRecord>;

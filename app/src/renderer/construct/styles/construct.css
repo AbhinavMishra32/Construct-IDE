@@ -2632,6 +2632,21 @@
   line-height: 1.4;
 }
 
+.construct-validation-flow__line-source {
+  display: block;
+  margin-top: 4px;
+  padding: 4px 6px;
+  background: var(--opaline-surface-raised);
+  border: 1px solid var(--opaline-border-subtle);
+  border-radius: 4px;
+  color: var(--opaline-text-secondary);
+  font-family: var(--opaline-font-mono);
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: pre;
+  overflow-x: auto;
+}
+
 .construct-validation-flow__blocking button,
 .construct-validation-flow__review {
   display: inline-flex;

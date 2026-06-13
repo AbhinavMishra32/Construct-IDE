@@ -1010,7 +1010,9 @@ function splitList(value: string | undefined): string[] {
 function required(values: Record<string, string>, key: string): string {
   const value = values[key]?.trim();
   if (!value) {
-    throw new Error(`Missing required .construct value: ${key}`);
+    const present = Object.keys(values).filter((k) => values[k]?.trim());
+    const hint = present.length > 0 ? ` (found: ${present.join(", ")})` : "";
+    throw new Error(`Missing required .construct value: ${key}${hint}`);
   }
 
   return value;

@@ -30,6 +30,11 @@ test("feature models use provider defaults and saved per-feature overrides", () 
   assert.equal(modelForAiFeature(baseSettings, "verification"), "gpt-5-mini");
 
   assert.equal(
+    modelForAiFeature({ ...baseSettings, provider: "openrouter" }, "construct-interact"),
+    "poolside/laguna-m.1:free"
+  );
+
+  assert.equal(
     modelForAiFeature({ ...baseSettings, provider: "openrouter" }, "verification"),
     "nvidia/nemotron-3-ultra-550b-a55b:free"
   );

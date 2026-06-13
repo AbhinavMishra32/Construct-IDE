@@ -2,7 +2,7 @@ import { Agent } from "@mastra/core/agent";
 import { Mastra } from "@mastra/core/mastra";
 import { z } from "zod";
 
-import { resolveConstructAgentModel } from "./constructAgentModels";
+import { resolveConstructAgentModel, type ConstructAgentModel } from "./constructAgentModels";
 import type { ConstructAiFeatureId } from "./constructAiFeatures";
 
 export type ConstructAgentRuntimeRequest<T> = {
@@ -40,6 +40,7 @@ export function createConstructAgentRuntime(): ConstructAgentRuntime {
 
 class MastraConstructAgentRuntime implements ConstructAgentRuntime {
   async generateStructured<T>(request: ConstructAgentRuntimeRequest<T>): Promise<T> {
+    const model = resolveConstructAgentModel(request.purpose, request.featureId);
     request.onTrace?.({
       title: "Agent request",
       level: "debug",
@@ -48,7 +49,9 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
         `name: ${request.name}`,
         `purpose: ${request.purpose}`,
         request.featureId ? `featureId: ${request.featureId}` : null,
-        `maxRetries: ${request.maxRetries ?? 1}`
+        `maxRetries: ${request.maxRetries ?? 1}`,
+        `provider: ${model.providerId}`,
+        `model: ${model.modelId}`
       ].filter(Boolean).join("\n")
     });
     request.onTrace?.({
@@ -67,11 +70,15 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
       detail: stringifyForTrace(describeSchema(request.schema))
     });
 
+    if (model.providerId === "openrouter") {
+      return this.generateStructuredViaOpenRouterStream(request, model);
+    }
+
     const agent = new Agent({
       id: request.id,
       name: request.name,
       instructions: request.instructions,
-      model: resolveConstructAgentModel(request.purpose, request.featureId),
+      model,
       maxRetries: request.maxRetries ?? 1
     });
 
@@ -102,6 +109,132 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
       });
       throw error;
     }
+  }
+
+  private async generateStructuredViaOpenRouterStream<T>(
+    request: ConstructAgentRuntimeRequest<T>,
+    model: ConstructAgentModel
+  ): Promise<T> {
+    request.onTrace?.({
+      title: "OpenRouter streaming",
+      level: "info",
+      detail: `Streaming enabled for ${model.modelId}`
+    });
+
+    const response = await fetch(`${(model.url || "https://openrouter.ai/api/v1").replace(/\/$/, "")}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${model.apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: model.modelId,
+        stream: true,
+        temperature: 0.2,
+        messages: [
+          {
+            role: "system",
+            content: [
+              request.instructions,
+              "",
+              "Return only valid JSON.",
+              "Do not wrap the JSON in markdown fences.",
+              "Follow this schema shape exactly:",
+              JSON.stringify(describeSchema(request.schema), null, 2)
+            ].join("\n")
+          },
+          {
+            role: "user",
+            content: request.prompt
+          }
+        ]
+      })
+    });
+
+    if (!response.ok) {
+      const detail = (await response.text().catch(() => "")).slice(0, 1200);
+      throw new Error(`OpenRouter streaming request failed (${response.status}): ${detail}`);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error("OpenRouter stream did not provide a readable body.");
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let text = "";
+    let streamedChars = 0;
+    let lastPreviewAt = 0;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith("data: ")) continue;
+
+        const data = trimmed.slice(6);
+        if (data === "[DONE]") continue;
+
+        try {
+          const parsed = JSON.parse(data) as {
+            choices?: Array<{ delta?: { content?: string } }>;
+            usage?: Record<string, unknown>;
+          };
+          const content = parsed.choices?.[0]?.delta?.content;
+          if (content) {
+            text += content;
+            streamedChars += content.length;
+            if (streamedChars - lastPreviewAt >= 160) {
+              lastPreviewAt = streamedChars;
+              request.onTrace?.({
+                title: "Streaming progress",
+                level: "debug",
+                detail: text.slice(-600)
+              });
+            }
+          }
+
+          if (parsed.usage) {
+            request.onTrace?.({
+              title: "Streaming usage",
+              level: "debug",
+              detail: stringifyForTrace(parsed.usage)
+            });
+          }
+        } catch {
+          // Ignore malformed chunks and continue reading the stream.
+        }
+      }
+    }
+
+    request.onTrace?.({
+      title: "Raw streamed output",
+      level: "debug",
+      detail: text
+    });
+
+    const jsonText = extractJsonObject(text);
+    const parsedObject = JSON.parse(jsonText) as unknown;
+    request.onTrace?.({
+      title: "Parsed streamed JSON",
+      level: "debug",
+      detail: stringifyForTrace(parsedObject)
+    });
+
+    const validated = request.schema.parse(parsedObject);
+    request.onTrace?.({
+      title: "Validated structured result",
+      level: "debug",
+      detail: stringifyForTrace(validated)
+    });
+    return validated;
   }
 }
 
@@ -137,4 +270,19 @@ function describeSchema(schema: z.ZodTypeAny): unknown {
     );
   }
   return schema.constructor?.name || "unknown";
+}
+
+function extractJsonObject(text: string): string {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenced?.[1]) {
+    return fenced[1].trim();
+  }
+
+  const firstBrace = text.indexOf("{");
+  const lastBrace = text.lastIndexOf("}");
+  if (firstBrace >= 0 && lastBrace > firstBrace) {
+    return text.slice(firstBrace, lastBrace + 1).trim();
+  }
+
+  throw new Error("Streaming response did not contain a JSON object.");
 }

@@ -43,6 +43,7 @@ export type ConstructDiagnostic = {
   message: string;
   line: number;
   column?: number;
+  lineText?: string;
   blockId?: string;
   parentKind?: string;
   childKind?: string;

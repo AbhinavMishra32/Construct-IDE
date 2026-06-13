@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
@@ -40,7 +40,7 @@ export function MarkdownBlock({
 
   const codeTheme = isDark ? oneDark : oneLight;
 
-  const markdownComponents: Components = {
+  const markdownComponents: Components = useMemo(() => ({
     code({ className, children, ...props }) {
       const languageMatch = /language-([\w-]+)/.exec(className ?? "");
       const rawCode = String(children);
@@ -163,7 +163,7 @@ export function MarkdownBlock({
     hr({ className, ...props }) {
       return <hr className={`construct-markdown-divider ${className ?? ""}`.trim()} {...props} />;
     }
-  };
+  }), [codeTheme, onOpenConcept, onOpenFile]);
 
   return (
     <div className="construct-markdown">

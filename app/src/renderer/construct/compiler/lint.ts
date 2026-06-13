@@ -36,47 +36,49 @@ export function lintConstructProgram(program: ConstructProgram, document: Constr
       program.spec,
       "W_ORIENTATION_MISSING",
       "Zero-prerequisite tapes should begin with a system picture, trace, or mental model.",
-      program.id
+      program.id,
+      document,
+      "warning"
     ));
   }
 
   for (const concept of program.concepts) {
-    if (!concept.summary.trim()) diagnostics.push(lintDiagnostic(program.spec, "W_CONCEPT_SUMMARY", `Concept "${concept.title}" has no summary.`, concept.id));
-    if (concept.kind.includes("library") && concept.docs.length === 0) diagnostics.push(lintDiagnostic(program.spec, "I_MISSING_DOCS", `External concept "${concept.title}" has no official docs link.`, concept.id, "info"));
+    if (!concept.summary.trim()) diagnostics.push(lintDiagnostic(program.spec, "W_CONCEPT_SUMMARY", `Concept "${concept.title}" has no summary.`, concept.id, document));
+    if (concept.kind.includes("library") && concept.docs.length === 0) diagnostics.push(lintDiagnostic(program.spec, "I_MISSING_DOCS", `External concept "${concept.title}" has no official docs link.`, concept.id, document, "info"));
   }
 
   for (const step of program.steps) {
     for (const conceptId of step.requires) {
       if (!conceptIds.has(conceptId)) {
-        diagnostics.push(lintDiagnostic(program.spec, "W_STEP_REQUIRES_MISSING", `Step "${step.title}" requires concept "${conceptId}" but no ::concept card exists.`, step.id));
+        diagnostics.push(lintDiagnostic(program.spec, "W_STEP_REQUIRES_MISSING", `Step "${step.title}" requires concept "${conceptId}" but no ::concept card exists.`, step.id, document));
       } else if (!introducedConceptIds.has(conceptId)) {
-        diagnostics.push(lintDiagnostic(program.spec, "W_STEP_REQUIRES_ORDER", `Step "${step.title}" requires concept "${conceptId}" before an earlier step teaches it.`, step.id));
+        diagnostics.push(lintDiagnostic(program.spec, "W_STEP_REQUIRES_ORDER", `Step "${step.title}" requires concept "${conceptId}" before an earlier step teaches it.`, step.id, document));
       }
     }
     for (const conceptId of step.teaches) {
-      if (!conceptIds.has(conceptId)) diagnostics.push(lintDiagnostic(program.spec, "W_STEP_TEACHES_MISSING", `Step "${step.title}" teaches concept "${conceptId}" but no ::concept card exists.`, step.id));
+      if (!conceptIds.has(conceptId)) diagnostics.push(lintDiagnostic(program.spec, "W_STEP_TEACHES_MISSING", `Step "${step.title}" teaches concept "${conceptId}" but no ::concept card exists.`, step.id, document));
     }
     if (/\b(Reveal why|Picture before plumbing|Problem before tool|Mental model before code|Teach the|Introduce concept)\b/i.test(step.title)) {
-      diagnostics.push(lintDiagnostic(program.spec, "W_GUIDE_TITLE_PEDAGOGY_LEAK", `Step title "${step.title}" exposes an authoring rule. Use a natural engineering milestone title.`, step.id));
+      diagnostics.push(lintDiagnostic(program.spec, "W_GUIDE_TITLE_PEDAGOGY_LEAK", `Step title "${step.title}" exposes an authoring rule. Use a natural engineering milestone title.`, step.id, document));
     }
 
     for (const block of step.blocks) {
       completionIds.add(block.id);
       if (block.kind === "edit") {
         const lines = block.content.split("\n").length;
-        if (lines > 120) diagnostics.push(lintDiagnostic(program.spec, "W_GHOST_TOO_LARGE", `Code step "${block.id}" is ${lines} lines. Split it into smaller implementation steps.`, block.id));
-        if (/\.(md|mdx|txt|rst)$/i.test(block.path)) diagnostics.push(lintDiagnostic(program.spec, "W_DOCS_GHOST_TYPED", `Documentation file "${block.path}" uses guided code entry. Prefer an initial ::file.`, block.id));
+        if (lines > 120) diagnostics.push(lintDiagnostic(program.spec, "W_GHOST_TOO_LARGE", `Code step "${block.id}" is ${lines} lines. Split it into smaller implementation steps.`, block.id, document));
+        if (/\.(md|mdx|txt|rst)$/i.test(block.path)) diagnostics.push(lintDiagnostic(program.spec, "W_DOCS_GHOST_TYPED", `Documentation file "${block.path}" uses guided code entry. Prefer an initial ::file.`, block.id, document));
       }
-      lintBlockReferences(program, block, knownFiles, knownAnchorsByPath, diagnostics);
+      lintBlockReferences(program, block, knownFiles, knownAnchorsByPath, diagnostics, document);
       if (block.kind !== "recall") continue;
       const recallNode = findNodeById(document.root, "recall", block.id);
       if (!block.support.trim() && block.supportSections.length === 0) {
-        diagnostics.push(lintDiagnostic(program.spec, "W_RECALL_NO_SUPPORT", `Recall "${block.id}" has no support block.`, block.id));
+        diagnostics.push(lintDiagnostic(program.spec, "W_RECALL_NO_SUPPORT", `Recall "${block.id}" has no support block.`, block.id, document));
         if (recallNode) suggestions.push(addSupportFix(block, recallNode));
       }
       block.concepts.forEach((id) => {
         if (!conceptIds.has(id)) {
-          diagnostics.push(lintDiagnostic(program.spec, "W_UNKNOWN_CONCEPT", `Recall "${block.id}" uses unknown concept "${id}".`, block.id));
+          diagnostics.push(lintDiagnostic(program.spec, "W_UNKNOWN_CONCEPT", `Recall "${block.id}" uses unknown concept "${id}".`, block.id, document));
           if (!proposedConcepts.has(id)) {
             proposedConcepts.add(id);
             suggestions.push(addConceptFix(document, id, block.id));
@@ -84,7 +86,7 @@ export function lintConstructProgram(program: ConstructProgram, document: Constr
         }
       });
       block.references.forEach((id) => {
-        if (!referenceIds.has(id)) diagnostics.push(lintDiagnostic(program.spec, "W_UNKNOWN_REFERENCE", `Recall "${block.id}" references missing card "${id}".`, block.id));
+        if (!referenceIds.has(id)) diagnostics.push(lintDiagnostic(program.spec, "W_UNKNOWN_REFERENCE", `Recall "${block.id}" references missing card "${id}".`, block.id, document));
       });
       if (block.verify) {
         completionIds.add(block.verify.id);
@@ -93,20 +95,20 @@ export function lintConstructProgram(program: ConstructProgram, document: Constr
           Boolean(block.verify.evidence.answer || block.verify.evidence.interaction || block.verify.evidence.terminalCommand || block.verify.evidence.terminalOutput);
         const needsMessages = program.spec !== "tape-0.4" && (!block.verify.messages?.success || !block.verify.messages?.failure);
         const missing = [!block.verify.goal && "goal", !hasEvidence && "evidence", !block.verify.rubric && "rubric", needsMessages && "messages"].filter(Boolean);
-        if (missing.length > 0) diagnostics.push(lintDiagnostic(program.spec, "W_INCOMPLETE_VERIFY", `Verifier "${block.verify.id}" is missing ${missing.join(", ")}.`, block.verify.id));
+        if (missing.length > 0) diagnostics.push(lintDiagnostic(program.spec, "W_INCOMPLETE_VERIFY", `Verifier "${block.verify.id}" is missing ${missing.join(", ")}.`, block.verify.id, document));
       }
     }
     step.teaches.forEach((conceptId) => introducedConceptIds.add(conceptId));
   }
 
-  for (const guide of program.guides) lintTextReferences(program, guideText(guide), guide.id, knownFiles, knownAnchorsByPath, diagnostics);
+  for (const guide of program.guides) lintTextReferences(program, guideText(guide), guide.id, knownFiles, knownAnchorsByPath, diagnostics, document);
   for (const concept of program.concepts) {
-    lintTextReferences(program, [concept.summary, concept.why, concept.commonMistake ?? "", concept.example, ...concept.guides.flatMap(guideText)], concept.id, knownFiles, knownAnchorsByPath, diagnostics);
+    lintTextReferences(program, [concept.summary, concept.why, concept.commonMistake ?? "", concept.example, ...concept.guides.flatMap(guideText)], concept.id, knownFiles, knownAnchorsByPath, diagnostics, document);
   }
-  for (const reference of program.references) lintTextReferences(program, [reference.body], reference.id, knownFiles, knownAnchorsByPath, diagnostics);
+  for (const reference of program.references) lintTextReferences(program, [reference.body], reference.id, knownFiles, knownAnchorsByPath, diagnostics, document);
 
   for (const git of program.gitMilestones) {
-    if (!completionIds.has(git.after)) diagnostics.push(lintDiagnostic(program.spec, "W_UNKNOWN_GIT_TARGET", `Git milestone "${git.id}" references unknown target "${git.after}".`, git.id));
+    if (!completionIds.has(git.after)) diagnostics.push(lintDiagnostic(program.spec, "W_UNKNOWN_GIT_TARGET", `Git milestone "${git.id}" references unknown target "${git.after}".`, git.id, document));
   }
 
   return { diagnostics, suggestions };
@@ -122,7 +124,8 @@ function lintBlockReferences(
   block: ConstructBlock,
   knownFiles: Set<string>,
   knownAnchorsByPath: Map<string, Set<string>>,
-  diagnostics: ConstructDiagnostic[]
+  diagnostics: ConstructDiagnostic[],
+  document: ConstructDocument
 ) {
   let texts: string[] = [];
   if (block.kind === "guide") texts = guideText(block);
@@ -130,7 +133,7 @@ function lintBlockReferences(
   else if (block.kind === "recall") texts = [block.task, block.support, ...block.supportSections.map((section) => section.content)];
   else if (block.kind === "interact") texts = [block.prompt];
   else if (block.kind !== "run") texts = [block.content];
-  lintTextReferences(program, texts, block.id, knownFiles, knownAnchorsByPath, diagnostics);
+  lintTextReferences(program, texts, block.id, knownFiles, knownAnchorsByPath, diagnostics, document);
 }
 
 function guideText(guide: GuideBlock): string[] {
@@ -143,16 +146,17 @@ function lintTextReferences(
   blockId: string,
   knownFiles: Set<string>,
   knownAnchorsByPath: Map<string, Set<string>>,
-  diagnostics: ConstructDiagnostic[]
+  diagnostics: ConstructDiagnostic[],
+  document: ConstructDocument
 ) {
   for (const reference of texts.flatMap(collectInlineRefs)) {
     if (reference.kind !== "file") continue;
     if (!knownFiles.has(reference.path)) {
-      diagnostics.push(lintDiagnostic(program.spec, "W_FILE_REF_MISSING", `${reference.raw} points to a file that is not created by ::files or ::edit.`, blockId));
+      diagnostics.push(lintDiagnostic(program.spec, "W_FILE_REF_MISSING", `${reference.raw} points to a file that is not created by ::files or ::edit.`, blockId, document));
       continue;
     }
     if (reference.anchor && !knownAnchorsByPath.get(reference.path)?.has(reference.anchor)) {
-      diagnostics.push(lintDiagnostic(program.spec, "W_FILE_REF_ANCHOR_MISSING", `${reference.raw} points to an unknown anchor in "${reference.path}".`, blockId));
+      diagnostics.push(lintDiagnostic(program.spec, "W_FILE_REF_ANCHOR_MISSING", `${reference.raw} points to an unknown anchor in "${reference.path}".`, blockId, document));
     }
   }
 }
@@ -196,15 +200,28 @@ function resourceInsertionOffset(document: ConstructDocument): number {
   return metadata.length > 0 ? metadata[metadata.length - 1].end : 0;
 }
 
-function findNodeById(root: ConstructNode, kind: string, id: string): ConstructNode | null {
+function findNodeById(root: ConstructNode, kind: string | undefined, id: string): ConstructNode | null {
   for (const node of root.children) {
-    if (node.kind === kind && node.attributes.id === id) return node;
+    if ((!kind || node.kind === kind) && node.attributes.id === id) return node;
     const nested = findNodeById(node, kind, id);
     if (nested) return nested;
   }
   return null;
 }
 
-function lintDiagnostic(spec: string, code: string, message: string, blockId: string, severity: "error" | "warning" | "info" = "warning"): ConstructDiagnostic {
-  return { id: `lint:${code}:${blockId}`, severity, code: `${spec}/${code}`, message, line: 1, blockId, spec };
+function lintDiagnostic(spec: string, code: string, message: string, blockId: string, document: ConstructDocument, severity: "error" | "warning" | "info" = "warning"): ConstructDiagnostic {
+  const node = findNodeById(document.root, undefined, blockId);
+  const line = node?.open.line ?? 1;
+  const column = node?.open.column;
+  const lineText = line > 1 || node ? extractLineText(document.source, line) : undefined;
+  return { id: `lint:${code}:${blockId}`, severity, code: `${spec}/${code}`, message, line, column, lineText, blockId, spec };
+}
+
+function extractLineText(source: string, line: number): string | undefined {
+  const lines = source.replace(/\r\n/g, "\n").split("\n");
+  const index = line - 1;
+  if (index >= 0 && index < lines.length) {
+    return lines[index];
+  }
+  return undefined;
 }
