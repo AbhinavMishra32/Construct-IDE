@@ -21,6 +21,101 @@ export type ConstructInteractSession = {
   createdAt: string;
 };
 
+export type ConstructInteractAction =
+  | {
+      type: "go-to-step";
+      stepId: string;
+      label: string;
+      reason: string;
+    }
+  | {
+      type: "open-concept";
+      conceptId: string;
+      label: string;
+      reason: string;
+    }
+  | {
+      type: "open-file";
+      path: string;
+      anchor?: string;
+      label: string;
+      reason: string;
+    }
+  | {
+      type: "create-live-steps";
+      stepIds: string[];
+      label: string;
+      reason: string;
+    };
+
+export type GeneratedLiveStepBlock =
+  | {
+      kind: "explain";
+      id: string;
+      content: string;
+      concepts?: string[];
+    }
+  | {
+      kind: "interact";
+      id: string;
+      prompt: string;
+      basis: string;
+      understanding: string;
+      assessment: string;
+      concepts?: string[];
+    }
+  | {
+      kind: "recall";
+      id: string;
+      mode: "reply";
+      task: string;
+      support?: string;
+      concepts?: string[];
+    };
+
+export type GeneratedLiveStep = {
+  id: string;
+  projectId: string;
+  source: "construct-interact" | "adaptive-planner";
+  sourceBlockId?: string;
+  sourceStepId?: string;
+  sourceRunId?: string;
+  insertAfterStepId?: string;
+  insertBeforeStepId?: string;
+  title: string;
+  reason: string;
+  status: "pending" | "active" | "completed" | "dismissed";
+  blocks: GeneratedLiveStepBlock[];
+  conceptIds?: string[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type GeneratedLiveStepDraft = Omit<
+  GeneratedLiveStep,
+  "id" | "projectId" | "status" | "createdAt" | "updatedAt"
+> & {
+  id?: string;
+  status?: GeneratedLiveStep["status"];
+};
+
+export type ConstructInteractToolCallRecord = {
+  id: string;
+  name: string;
+  reason: string;
+  input?: unknown;
+  outputPreview?: string;
+  createdAt: string;
+};
+
+export type GeneratedLiveStepValidationRecord = {
+  draftTitle?: string;
+  stepId?: string;
+  status: "accepted" | "rejected";
+  reason: string;
+  createdAt: string;
+};
+
 export type ConstructInteractRuntimeInput = {
   projectId: string;
   blockId: string;
@@ -46,6 +141,10 @@ export type ConstructInteractResult = {
   assistanceLevel: "none" | "hint" | "guided" | "answer";
   shouldAdvance: boolean;
   statePatch?: LearningStatePatch;
+  actions?: ConstructInteractAction[];
+  generatedLiveSteps?: GeneratedLiveStepDraft[];
+  toolCalls?: ConstructInteractToolCallRecord[];
+  liveStepValidation?: GeneratedLiveStepValidationRecord[];
 };
 
 export type RecallAttemptRecord = {
@@ -104,6 +203,18 @@ export type ProjectLearningState = {
     reason: string;
     enabled: boolean;
   }>;
+  generatedLiveSteps: GeneratedLiveStep[];
+  generatedLiveStepRuns: Array<{
+    id: string;
+    source: "construct-interact" | "adaptive-planner";
+    sourceBlockId?: string;
+    sourceStepId?: string;
+    generatedStepIds: string[];
+    actions: ConstructInteractAction[];
+    toolCalls: ConstructInteractToolCallRecord[];
+    validation: GeneratedLiveStepValidationRecord[];
+    createdAt: string;
+  }>;
 };
 
 export type ConstructLearningState = {
@@ -151,6 +262,17 @@ export type LearningStatePatch = {
   plannedOverlay?: {
     projectId: string;
     overlay: ProjectLearningState["plannedOverlays"][number];
+  };
+  generatedLiveSteps?: {
+    projectId: string;
+    steps: GeneratedLiveStep[];
+    run?: ProjectLearningState["generatedLiveStepRuns"][number];
+  };
+  generatedLiveStepStatus?: {
+    projectId: string;
+    stepId: string;
+    status: GeneratedLiveStep["status"];
+    updatedAt?: string;
   };
 };
 

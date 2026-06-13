@@ -200,6 +200,30 @@ export function applyLearningPatch(state: ConstructLearningState, patch: Learnin
     ensureProjectState(state, patch.plannedOverlay.projectId).plannedOverlays.push(patch.plannedOverlay.overlay);
   }
 
+  if (patch.generatedLiveSteps) {
+    const project = ensureProjectState(state, patch.generatedLiveSteps.projectId);
+    for (const step of patch.generatedLiveSteps.steps) {
+      const existingIndex = project.generatedLiveSteps.findIndex((candidate) => candidate.id === step.id);
+      if (existingIndex >= 0) {
+        project.generatedLiveSteps[existingIndex] = step;
+      } else {
+        project.generatedLiveSteps.push(step);
+      }
+    }
+    if (patch.generatedLiveSteps.run) {
+      project.generatedLiveStepRuns.push(patch.generatedLiveSteps.run);
+    }
+  }
+
+  if (patch.generatedLiveStepStatus) {
+    const project = ensureProjectState(state, patch.generatedLiveStepStatus.projectId);
+    const step = project.generatedLiveSteps.find((candidate) => candidate.id === patch.generatedLiveStepStatus?.stepId);
+    if (step) {
+      step.status = patch.generatedLiveStepStatus.status;
+      step.updatedAt = patch.generatedLiveStepStatus.updatedAt ?? new Date().toISOString();
+    }
+  }
+
   state.sync.pendingOperations.push({
     id: randomUUID(),
     kind: "learning-state-patch",
@@ -222,7 +246,16 @@ function normalizeLearningState(input: Partial<ConstructLearningState>): Constru
       globalConceptUnderstanding: input.learner?.globalConceptUnderstanding ?? {},
       assistanceEvents: input.learner?.assistanceEvents ?? []
     },
-    projects: input.projects ?? {},
+    projects: Object.fromEntries(
+      Object.entries(input.projects ?? {}).map(([projectId, project]) => [
+        projectId,
+        {
+          ...project,
+          generatedLiveSteps: project.generatedLiveSteps ?? [],
+          generatedLiveStepRuns: project.generatedLiveStepRuns ?? []
+        }
+      ])
+    ),
     knowledgeBase: {
       concepts: input.knowledgeBase?.concepts ?? {}
     },
@@ -241,8 +274,12 @@ function ensureProjectState(state: ConstructLearningState, projectId: string): P
     constructInteractSessions: [],
     recallAttempts: [],
     assistanceEvents: [],
-    plannedOverlays: []
+    plannedOverlays: [],
+    generatedLiveSteps: [],
+    generatedLiveStepRuns: []
   };
+  state.projects[projectId].generatedLiveSteps ??= [];
+  state.projects[projectId].generatedLiveStepRuns ??= [];
   return state.projects[projectId];
 }
 
