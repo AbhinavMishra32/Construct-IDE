@@ -32,9 +32,13 @@ import { sendCodeGhostStreamToRenderer } from "./constructCodeGhostAgent";
 import { featureSettingsView } from "./constructAiFeatures";
 import { ConstructLearningStore } from "./constructLearningStore";
 import { runConstructInteract } from "./constructInteractAgent";
+import { buildConstructInteractToolContext } from "./constructInteractTools";
+import { validateGeneratedLiveStepDrafts } from "./generatedLiveSteps";
 import type {
+  ConstructInteractAction,
   ConstructInteractRuntimeInput,
   ConstructInteractSession,
+  GeneratedLiveStepValidationRecord,
   KnowledgeBaseRecord,
   LearningStatePatch
 } from "../shared/constructLearning";
@@ -251,6 +255,33 @@ function formatAgentPayload(payload: unknown): string {
   } catch {
     return String(payload);
   }
+}
+
+function normalizeInteractActions(
+  actions: ConstructInteractAction[],
+  acceptedLiveStepIds: string[],
+  validation: GeneratedLiveStepValidationRecord[]
+): ConstructInteractAction[] {
+  const normalized = actions.filter((action) => {
+    if (action.type !== "create-live-steps") {
+      return true;
+    }
+    return action.stepIds.some((stepId) => acceptedLiveStepIds.includes(stepId));
+  });
+
+  if (
+    acceptedLiveStepIds.length > 0 &&
+    !normalized.some((action) => action.type === "create-live-steps")
+  ) {
+    normalized.push({
+      type: "create-live-steps",
+      stepIds: acceptedLiveStepIds,
+      label: acceptedLiveStepIds.length === 1 ? "Review generated live step" : "Review generated live steps",
+      reason: validation.find((record) => record.status === "accepted")?.reason ?? "Construct Interact generated focused live practice."
+    });
+  }
+
+  return normalized.slice(0, 4);
 }
 
 function legacyConstructProjectsRoot(): string | null {
@@ -1674,20 +1705,58 @@ function installConstructProjectIpcHandlers(): void {
   ipcMain.handle("construct:project:interact", async (_event, input: Omit<ConstructInteractRuntimeInput, "learningState">) => {
     const store = learningStore();
     const learningState = await store.getState();
+    const project = findProject(await readProjects(), input.projectId);
+    const sourceStep = project.program.steps.find((step) => step.blocks.some((block) => block.id === input.blockId));
+    const sourceStepId = sourceStep?.id;
+    const sourceRunId = randomUUID();
+    const { toolContext, toolCalls } = await buildConstructInteractToolContext({
+      project,
+      request: input,
+      learningState,
+      latestTerminalOutput: latestTerminalOutputByProject.get(input.projectId)
+    });
     sendAgentLog("interact", `Evaluating interaction for block ${input.blockId}`);
+    for (const toolCall of toolCalls) {
+      sendAgentLog("interact", `Tool call: ${toolCall.name}\n${toolCall.reason}\n${toolCall.outputPreview ?? ""}`, "debug");
+    }
     sendAgentStructuredLog("interact", "Interaction request", {
       ...input,
+      projectContext: {
+        ...(typeof input.projectContext === "object" && input.projectContext ? input.projectContext : {}),
+        toolContext
+      },
       learningState
     });
     console.log("[Construct Interact] evaluating", input.projectId, input.blockId);
     const result = await runConstructInteract({
       ...input,
+      projectContext: {
+        ...(typeof input.projectContext === "object" && input.projectContext ? input.projectContext : {}),
+        toolContext
+      },
       learningState
     }, (entry) => {
       sendAgentLog("interact", `${entry.title}\n${entry.detail}`, entry.level ?? "debug");
     });
+    const validationContext = {
+      projectId: input.projectId,
+      sourceBlockId: input.blockId,
+      sourceStepId,
+      sourceRunId,
+      validStepIds: new Set(project.program.steps.map((step, index) => step.id ?? `step-${index + 1}`)),
+      validConceptIds: new Set((project.program.concepts ?? []).map((concept: { id?: unknown }) => String(concept.id ?? "")).filter(Boolean))
+    };
+    const liveStepValidation = validateGeneratedLiveStepDrafts(result.generatedLiveSteps, validationContext);
+    const acceptedLiveSteps = liveStepValidation.steps;
+    const actions = normalizeInteractActions(result.actions ?? [], acceptedLiveSteps.map((step) => step.id), liveStepValidation.validation);
     sendAgentLog("interact", `Interaction result: ${result.status} (confidence=${result.confidence}, reply=${result.reply?.slice(0, 80) ?? "none"}...)`);
-    sendAgentStructuredLog("interact", "Interaction result payload", result);
+    sendAgentStructuredLog("interact", "Interaction result payload", {
+      ...result,
+      actions,
+      toolCalls,
+      generatedLiveSteps: acceptedLiveSteps,
+      liveStepValidation: liveStepValidation.validation
+    });
     const now = new Date().toISOString();
     const session: ConstructInteractSession = {
       id: randomUUID(),
@@ -1707,10 +1776,33 @@ function installConstructProjectIpcHandlers(): void {
     if (result.statePatch) {
       await store.applyPatch(result.statePatch);
     }
-    const state = await store.recordConstructInteractAttempt(session);
+    let state = await store.recordConstructInteractAttempt(session);
+    if (acceptedLiveSteps.length > 0 || actions.length > 0 || toolCalls.length > 0 || liveStepValidation.validation.length > 0) {
+      state = await store.applyPatch({
+        generatedLiveSteps: {
+          projectId: input.projectId,
+          steps: acceptedLiveSteps,
+          run: {
+            id: sourceRunId,
+            source: "construct-interact",
+            sourceBlockId: input.blockId,
+            sourceStepId,
+            generatedStepIds: acceptedLiveSteps.map((step) => step.id),
+            actions,
+            toolCalls,
+            validation: liveStepValidation.validation,
+            createdAt: new Date().toISOString()
+          }
+        }
+      });
+    }
     console.log("[Construct Interact] result", result.status, result.confidence, result.shouldAdvance ? "advance" : "stay");
     return {
       ...result,
+      actions,
+      toolCalls,
+      generatedLiveSteps: acceptedLiveSteps,
+      liveStepValidation: liveStepValidation.validation,
       session,
       learningState: state
     };
