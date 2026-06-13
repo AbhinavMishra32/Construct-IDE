@@ -22,6 +22,7 @@ import {
   ContextMenuSubTrigger,
   ContextMenuSubContent
 } from "@opaline/ui";
+import { Kbd, KbdGroup } from "@opaline/ui/shadcn";
 import {
   ArrowSquareOut,
   Eye,
@@ -645,15 +646,15 @@ export function EditorPane({
           <span>Skip Line</span>
           <div className="construct-editor-skip-shortcut">
             {os === "mac" ? (
-              <>
-                <kbd>⌥</kbd>
-                <kbd>⏎</kbd>
-              </>
+              <KbdGroup>
+                <Kbd>⌥</Kbd>
+                <Kbd>⏎</Kbd>
+              </KbdGroup>
             ) : (
-              <>
-                <kbd>Alt</kbd>
-                <kbd>Enter</kbd>
-              </>
+              <KbdGroup>
+                <Kbd>Alt</Kbd>
+                <Kbd>Enter</Kbd>
+              </KbdGroup>
             )}
           </div>
         </button>
@@ -686,7 +687,7 @@ export function EditorPane({
             >
               <ArrowSquareOut size={14} weight="duotone" />
               <span>Go to Definition</span>
-              <kbd style={{ marginLeft: "auto", fontSize: "11px", color: "var(--opaline-text-tertiary)", fontFamily: "inherit" }}>F12</kbd>
+              <Kbd className="ml-auto">F12</Kbd>
             </ContextMenuItem>
             
             <ContextMenuItem
@@ -695,7 +696,7 @@ export function EditorPane({
             >
               <Eye size={14} weight="duotone" />
               <span>Peek Definition</span>
-              <kbd style={{ marginLeft: "auto", fontSize: "11px", color: "var(--opaline-text-tertiary)", fontFamily: "inherit" }}>⌥F12</kbd>
+              <Kbd className="ml-auto">⌥F12</Kbd>
             </ContextMenuItem>
             
             <ContextMenuItem
@@ -704,7 +705,7 @@ export function EditorPane({
             >
               <MagnifyingGlass size={14} weight="duotone" />
               <span>Find All References</span>
-              <kbd style={{ marginLeft: "auto", fontSize: "11px", color: "var(--opaline-text-tertiary)", fontFamily: "inherit" }}>⇧F12</kbd>
+              <Kbd className="ml-auto">⇧F12</Kbd>
             </ContextMenuItem>
           </ContextMenuSubContent>
         </ContextMenuSub>
@@ -718,7 +719,7 @@ export function EditorPane({
         >
           <PencilSimpleLine size={14} weight="duotone" />
           <span>Rename Symbol</span>
-          <kbd style={{ marginLeft: "auto", fontSize: "11px", color: "var(--opaline-text-tertiary)", fontFamily: "inherit" }}>F2</kbd>
+          <Kbd className="ml-auto">F2</Kbd>
         </ContextMenuItem>
 
         <ContextMenuItem
@@ -728,7 +729,7 @@ export function EditorPane({
         >
           <Stack size={14} weight="duotone" />
           <span>Change All Occurrences</span>
-          <kbd style={{ marginLeft: "auto", fontSize: "11px", color: "var(--opaline-text-tertiary)", fontFamily: "inherit" }}>⌘F2</kbd>
+          <Kbd className="ml-auto">⌘F2</Kbd>
         </ContextMenuItem>
 
         <ContextMenuSeparator />
@@ -740,7 +741,7 @@ export function EditorPane({
         >
           <TextAlignLeft size={14} weight="duotone" />
           <span>Format Document</span>
-          <kbd style={{ marginLeft: "auto", fontSize: "11px", color: "var(--opaline-text-tertiary)", fontFamily: "inherit" }}>⌥⇧F</kbd>
+          <Kbd className="ml-auto">⌥⇧F</Kbd>
         </ContextMenuItem>
 
         <ContextMenuSeparator />
@@ -751,7 +752,7 @@ export function EditorPane({
         >
           <Terminal size={14} weight="duotone" />
           <span>Command Palette</span>
-          <kbd style={{ marginLeft: "auto", fontSize: "11px", color: "var(--opaline-text-tertiary)", fontFamily: "inherit" }}>F1</kbd>
+          <Kbd className="ml-auto">F1</Kbd>
         </ContextMenuItem>
       </ContextMenuContent>
 
