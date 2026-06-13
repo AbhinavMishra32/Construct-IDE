@@ -3,7 +3,7 @@ import ReactDOM from "react-dom/client";
 
 import "./index.css";
 import ConstructApp from "./construct/App";
-import { TooltipProvider } from "./components/ui/tooltip";
+import { TooltipProvider } from "@opaline/ui/shadcn";
 import { logStore } from "./construct/lib/logStore";
 
 // 1. Capture Renderer process console logs

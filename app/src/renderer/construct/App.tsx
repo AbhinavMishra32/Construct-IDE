@@ -27,7 +27,6 @@ import {
   AppShell,
   AppShellChromeButton,
   AppShellCollapsedSidebarTrigger,
-  AppShellHeaderToolButton,
   BottomPanel,
   Button,
   Sidebar,
@@ -46,6 +45,7 @@ import {
   DialogHeader,
   useShellHistory
 } from "@opaline/ui";
+import { ToggleGroup, ToggleGroupItem } from "@opaline/ui/shadcn";
 import type { SettingsNavItem, SettingsNavSection, ShellHistoryEntry } from "@opaline/ui";
 
 import { Dashboard } from "./components/Dashboard";
@@ -955,12 +955,29 @@ export default function ConstructApp() {
                       </div>
 
                       <SavingIndicator isSaving={isSaving} />
-                      <AppShellHeaderToolButton onClick={state.toggleRightPanel} aria-label="Toggle guide panel">
-                        <PanelRight size={20} />
-                      </AppShellHeaderToolButton>
-                      <AppShellHeaderToolButton onClick={state.toggleBottomPanel} aria-label="Toggle terminal">
-                        <PanelBottom size={20} />
-                      </AppShellHeaderToolButton>
+                      <ToggleGroup
+                        aria-label="Panel visibility"
+                        className="construct-header-panel-toggle-group"
+                        spacing={1}
+                        size="sm"
+                      >
+                        <ToggleGroupItem
+                          aria-label="Toggle guide panel"
+                          className="construct-header-panel-toggle"
+                          onClick={state.toggleRightPanel}
+                          pressed={state.isRightPanelOpen}
+                        >
+                          <PanelRight size={20} />
+                        </ToggleGroupItem>
+                        <ToggleGroupItem
+                          aria-label="Toggle terminal"
+                          className="construct-header-panel-toggle"
+                          onClick={state.toggleBottomPanel}
+                          pressed={state.isBottomPanelOpen}
+                        >
+                          <PanelBottom size={20} />
+                        </ToggleGroupItem>
+                      </ToggleGroup>
                     </>
                   );
                 }

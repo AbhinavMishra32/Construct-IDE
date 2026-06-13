@@ -1309,6 +1309,34 @@
   height: 20px;
 }
 
+.construct-header-panel-toggle-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.construct-header-panel-toggle {
+  width: 34px !important;
+  height: 34px !important;
+  min-width: 34px;
+  border: 0 !important;
+  border-radius: 11px !important;
+  background: transparent !important;
+  color: color-mix(in srgb, var(--opaline-text-secondary) 78%, transparent) !important;
+  box-shadow: none !important;
+}
+
+.construct-header-panel-toggle:hover,
+.construct-header-panel-toggle[data-pressed] {
+  background: color-mix(in srgb, var(--opaline-text-primary) 7%, transparent) !important;
+  color: var(--opaline-text-primary) !important;
+}
+
+.construct-header-panel-toggle svg {
+  width: 20px;
+  height: 20px;
+}
+
 /* Do not truncate the main project tab in the header */
 .opaline-app-tab-strip .opaline-app-tab {
   max-width: none !important;
