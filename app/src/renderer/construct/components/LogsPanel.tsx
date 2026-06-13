@@ -14,10 +14,11 @@ import {
   TerminalSurface
 } from "@opaline/ui";
 
-type OutputChannel = LogChannel | "debug-processes";
+type OutputChannel = Exclude<LogChannel, AgentLogChannel> | "debug-processes" | "agents";
 
 const SYSTEM_CHANNELS: Array<{ id: OutputChannel; label: string }> = [
   { id: "debug-processes", label: "Debug processes" },
+  { id: "agents", label: "Agents" },
   { id: "lsp-server", label: "Language servers" },
   { id: "lsp-protocol", label: "LSP protocol" },
   { id: "main", label: "Electron main" },
@@ -27,34 +28,40 @@ const SYSTEM_CHANNELS: Array<{ id: OutputChannel; label: string }> = [
 
 function getChannelLabel(channel: OutputChannel): string {
   if (channel === "debug-processes") return "Debug processes";
+  if (channel === "agents") return "Agents";
   const system = SYSTEM_CHANNELS.find((c) => c.id === channel);
   if (system) return system.label;
-  const agent = AGENT_CHANNELS.find((c) => c.id === channel);
-  if (agent) return agent.label;
   return channel;
 }
 
 export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ theme }) => {
   const [activeChannel, setActiveChannel] = useState<OutputChannel>("lsp-server");
+  const [activeAgentChannel, setActiveAgentChannel] = useState<AgentLogChannel>("interact");
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [processes, setProcesses] = useState<DebugProcessSnapshot[]>([]);
   const [autoScroll, setAutoScroll] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
+  const effectiveLogChannel: LogChannel | null = activeChannel === "agents"
+    ? activeAgentChannel
+    : activeChannel === "debug-processes"
+      ? null
+      : activeChannel;
+  const activeAgentMeta = AGENT_CHANNELS.find((agent) => agent.id === activeAgentChannel);
 
   // Sync logs when active channel changes
   useEffect(() => {
-    if (activeChannel !== "debug-processes") {
-      setLogs([...logStore.getLogs(activeChannel)]);
+    if (effectiveLogChannel) {
+      setLogs([...logStore.getLogs(effectiveLogChannel)]);
     }
-  }, [activeChannel]);
+  }, [effectiveLogChannel]);
 
   // Subscribe to logStore updates
   useEffect(() => {
     const unsubscribe = logStore.subscribe((channel, entry) => {
-      if (activeChannel === "debug-processes") {
+      if (!effectiveLogChannel) {
         return;
       }
-      if (channel === activeChannel) {
+      if (channel === effectiveLogChannel) {
         if (entry.message === "--- Log cleared ---") {
           setLogs([]);
         } else {
@@ -63,7 +70,7 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
       }
     });
     return unsubscribe;
-  }, [activeChannel]);
+  }, [effectiveLogChannel]);
 
   useEffect(() => {
     if (activeChannel !== "debug-processes") {
@@ -106,6 +113,10 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
       return;
     }
 
+    if (!effectiveLogChannel) {
+      return;
+    }
+
     const text = logs
       .map((l) => `[${l.timestamp}] [${l.level.toUpperCase()}] ${l.message}`)
       .join("\n");
@@ -118,7 +129,9 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
       return;
     }
 
-    logStore.clearLogs(activeChannel);
+    if (effectiveLogChannel) {
+      logStore.clearLogs(effectiveLogChannel);
+    }
   };
 
   const formatTimestamp = (isoString: string) => {
@@ -150,7 +163,7 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
   };
 
   return (
-    <TerminalSurface cwd={`Output · ${getChannelLabel(activeChannel)}`}>
+    <TerminalSurface cwd={`Output · ${activeChannel === "agents" ? `Agents · ${activeAgentMeta?.label ?? activeAgentChannel}` : getChannelLabel(activeChannel)}`}>
       <div className="flex h-full flex-col overflow-hidden bg-transparent text-[var(--opaline-text-primary)] select-text">
         <div className="flex items-center justify-between px-2 py-1.5">
           <DropdownMenu>
@@ -159,10 +172,10 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
                 type="button"
                 className="inline-flex h-[26px] items-center gap-1.5 rounded-[8px] px-2.5 text-[12.5px] font-medium text-[var(--opaline-text-primary)] hover:bg-[color-mix(in_srgb,var(--opaline-text-primary)_6%,transparent)]"
               >
-                {AGENT_CHANNELS.some((c) => c.id === activeChannel) ? (
+                {activeChannel === "agents" ? (
                   <span className="inline-flex items-center gap-1">
                     <Bot size={13} className="text-[var(--opaline-accent)]" />
-                    {getChannelLabel(activeChannel)}
+                    Agents
                   </span>
                 ) : (
                   getChannelLabel(activeChannel)
@@ -177,22 +190,6 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
                     {channel.id === activeChannel ? <Check size={13} /> : null}
                   </span>
                   {channel.label}
-                </DropdownMenuItem>
-              ))}
-              <DropdownMenuSeparator />
-              <DropdownMenuLabel className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-[var(--opaline-text-tertiary)]">
-                <Bot size={12} />
-                Agents
-              </DropdownMenuLabel>
-              {AGENT_CHANNELS.map((agent) => (
-                <DropdownMenuItem key={agent.id} onSelect={() => setActiveChannel(agent.id)}>
-                  <span className="inline-flex w-4 items-center justify-center">
-                    {agent.id === activeChannel ? <Check size={13} /> : null}
-                  </span>
-                  <span className="flex flex-col">
-                    <span>{agent.label}</span>
-                    <span className="text-[10.5px] text-[var(--opaline-text-tertiary)] font-normal">{agent.description}</span>
-                  </span>
                 </DropdownMenuItem>
               ))}
             </DropdownMenuContent>
@@ -214,6 +211,43 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
             </Button>
           </div>
         </div>
+
+        {activeChannel === "agents" ? (
+          <div className="flex items-center justify-between border-b border-[color-mix(in_srgb,var(--opaline-text-primary)_8%,transparent)] px-2 py-1.5">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="inline-flex h-[26px] items-center gap-1.5 rounded-[8px] px-2.5 text-[12.5px] font-medium text-[var(--opaline-text-primary)] hover:bg-[color-mix(in_srgb,var(--opaline-text-primary)_6%,transparent)]"
+                >
+                  <Bot size={13} className="text-[var(--opaline-accent)]" />
+                  {activeAgentMeta?.label ?? activeAgentChannel}
+                  <ChevronDown size={14} />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="min-w-[240px]">
+                <DropdownMenuLabel className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-[var(--opaline-text-tertiary)]">
+                  <Bot size={12} />
+                  Agent channel
+                </DropdownMenuLabel>
+                {AGENT_CHANNELS.map((agent) => (
+                  <DropdownMenuItem key={agent.id} onSelect={() => setActiveAgentChannel(agent.id)}>
+                    <span className="inline-flex w-4 items-center justify-center">
+                      {agent.id === activeAgentChannel ? <Check size={13} /> : null}
+                    </span>
+                    <span className="flex flex-col">
+                      <span>{agent.label}</span>
+                      <span className="text-[10.5px] text-[var(--opaline-text-tertiary)] font-normal">{agent.description}</span>
+                    </span>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <div className="text-[11px] text-[var(--opaline-text-tertiary)]">
+              {activeAgentMeta?.description}
+            </div>
+          </div>
+        ) : null}
 
         <div
           ref={containerRef}
