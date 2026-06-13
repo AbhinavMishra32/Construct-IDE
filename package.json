@@ -7,7 +7,11 @@
     "onlyBuiltDependencies": [
       "electron",
       "esbuild"
-    ]
+    ],
+    "overrides": {
+      "@types/react": "19.2.17",
+      "@types/react-dom": "19.2.3"
+    }
   },
   "scripts": {
     "dev": "turbo run dev --parallel",

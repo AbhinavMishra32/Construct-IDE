@@ -7,7 +7,12 @@ export default defineConfig({
   resolve: {
     alias: {
       "@opaline/ui/styles.css": path.resolve(__dirname, "../opaline/packages/ui/src/styles.css"),
+      "@opaline/ui/shadcn": path.resolve(__dirname, "../opaline/packages/ui/src/shadcn/index.ts"),
       "@opaline/ui": path.resolve(__dirname, "../opaline/packages/ui/src/index.ts"),
+      "react/jsx-runtime": path.resolve(__dirname, "node_modules/react/jsx-runtime.js"),
+      "react/jsx-dev-runtime": path.resolve(__dirname, "node_modules/react/jsx-dev-runtime.js"),
+      "react-dom": path.resolve(__dirname, "node_modules/react-dom"),
+      "react": path.resolve(__dirname, "node_modules/react"),
       "@": path.resolve(__dirname, "src/renderer")
     }
   },

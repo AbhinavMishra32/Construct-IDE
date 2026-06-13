@@ -68,6 +68,31 @@
   --control-height-sm: 30px;
   --control-height-md: 34px;
   --control-height-lg: 38px;
+  --background: var(--panel-bg);
+  --foreground: var(--text);
+  --card: var(--card-bg);
+  --card-foreground: var(--text);
+  --popover: var(--glass-strong);
+  --popover-foreground: var(--text);
+  --primary: var(--accent);
+  --primary-foreground: var(--accent-contrast);
+  --secondary: var(--panel-soft);
+  --secondary-foreground: var(--text);
+  --muted: var(--panel-muted);
+  --muted-foreground: var(--text-muted);
+  --accent-foreground: var(--accent-contrast);
+  --destructive: var(--error);
+  --input: var(--border);
+  --ring: var(--border-strong);
+  --radius: 10px;
+  --sidebar: var(--panel-bg);
+  --sidebar-foreground: var(--text);
+  --sidebar-primary: var(--accent);
+  --sidebar-primary-foreground: var(--accent-contrast);
+  --sidebar-accent: var(--panel-soft);
+  --sidebar-accent-foreground: var(--text);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
 }
 
 :root[data-construct-theme="dark"] {
