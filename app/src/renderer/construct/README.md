@@ -88,10 +88,11 @@ uses the tolerant compiler first, applies deterministic repairs, then invokes th
 strict runtime parser as the final gate. Optional authoring review receives a
 compact `ProjectView` and focused snippets; it does not rewrite entire tapes.
 
-All runtime agents resolve provider, model, endpoint, and credentials through
-`src/main/constructAgentModels.ts`. Set `CONSTRUCT_AGENT_PROVIDER` and the matching
-`CONSTRUCT_OPENAI_MODEL` or `CONSTRUCT_OPENROUTER_MODEL` once; verifier, authoring,
-and contextual explanation agents then share the same model policy.
+All runtime agents resolve provider, model, endpoint, runtime, and credentials
+through the OS-backed Construct config service in `src/main/config/constructConfig.ts`.
+The Settings surface reads and writes that live config; verifier, authoring,
+Construct Interact, code help, and contextual explanation agents then share the
+same model policy through `src/main/constructAgentModels.ts`.
 
 The file tree, editor, and terminal all point at the same materialized project
 workspace through the Electron project bridge.
