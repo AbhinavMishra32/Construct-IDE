@@ -5,14 +5,7 @@ import {
   CheckCircle,
   File,
   FileCode,
-  FileCss,
-  FileJs,
-  FileMd,
-  FileTs,
-  FileTsx,
-  GitBranch,
-  Lightning,
-  MagnifyingGlass
+  GitBranch
 } from "@phosphor-icons/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
@@ -22,11 +15,39 @@ import { lspClient } from "../lib/lspClient";
 import type { SlotTab } from "@opaline/ui";
 import { EditorPane } from "./EditorPane";
 import { GuidePanel } from "./GuidePanel";
-import { MarkdownBlock } from "./MarkdownBlock";
 import { ReferenceCard } from "./ReferenceCard";
 import { KnowledgeCard } from "./KnowledgeCard";
 import { KnowledgeDialog } from "./KnowledgeDialog";
 import { StepList } from "./StepList";
+import { FileChooserContent, iconForFile } from "./workspace/FileChooserContent";
+import { LiveStepPanel } from "./workspace/LiveStepPanel";
+import {
+  deriveEditAnchor,
+  isGuidedEditReady,
+  lineNumberForOffset
+} from "./workspace/editGuidance";
+import {
+  gitResultToMilestoneState,
+  milestoneStatusLabel,
+  readGitMilestoneStates,
+  resolveMilestoneStatus,
+  writeGitMilestoneStates,
+  type StoredGitMilestoneState
+} from "./workspace/gitMilestoneState";
+import { useInteractProgressLogBuffer } from "./workspace/useInteractProgressLogBuffer";
+import { buildVerificationStartLogs } from "./workspace/verificationLogSeed";
+import {
+  conceptIdsIntroducedThrough,
+  initialSavedConceptIds,
+  uniqueConcepts,
+  uniqueStrings
+} from "./workspace/workspaceKnowledge";
+import {
+  generateCopyPath,
+  normalizeOptionalWorkspacePath,
+  normalizeWorkspacePath
+} from "./workspace/workspacePaths";
+import { flattenTree } from "./workspace/workspaceTree";
 import {
   createFolder,
   deleteFile,
@@ -55,7 +76,6 @@ import {
 } from "../lib/documentSession";
 import type { InlineFileRef } from "../lib/inlineRefs";
 import {
-  readKnowledgeRecords,
   recordKnowledgeOpen,
   removeKnowledgeConcept,
   saveKnowledgeConcept
@@ -65,9 +85,7 @@ import type {
   ConceptCard,
   ConstructTarget,
   EditBlock,
-  GitActionResult,
   GitMilestone,
-  GitMilestoneStatus,
   GitStatus,
   ProjectRecord,
   RecallBlock,
@@ -84,157 +102,6 @@ const EMPTY_GENERATED_LIVE_STEPS: GeneratedLiveStep[] = [];
 const EMPTY_GIT_MILESTONES: GitMilestone[] = [];
 const EMPTY_REFERENCE_CARDS: ReferenceCardData[] = [];
 const EMPTY_TARGETS: ConstructTarget[] = [];
-
-function iconForFile(filename: string) {
-  const props = { size: 12, weight: "duotone" as const };
-
-  if (/\.(tsx)$/.test(filename)) return <FileTsx {...props} />;
-  if (/\.(ts|mts|cts)$/.test(filename)) return <FileTs {...props} />;
-  if (/\.(js|jsx|mjs|cjs)$/.test(filename)) return <FileJs {...props} />;
-  if (/\.css$/.test(filename)) return <FileCss {...props} />;
-  if (/\.json$/.test(filename)) return <FileCode {...props} />;
-  if (/\.mdx?$/.test(filename)) return <FileMd {...props} />;
-
-  return <File {...props} />;
-}
-
-/* ------------------------------------------------------------------ */
-/*  File Chooser (shown when user clicks + → Open file)               */
-/* ------------------------------------------------------------------ */
-function FileChooserContent({
-  files,
-  onSelectFile
-}: {
-  files: string[];
-  onSelectFile: (path: string) => void;
-}) {
-  const [search, setSearch] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
-
-  const filtered = useMemo(() => {
-    if (!search) return files;
-    const q = search.toLowerCase();
-    return files.filter((f) => f.toLowerCase().includes(q));
-  }, [files, search]);
-
-  return (
-    <div className="flex max-h-80 min-w-80 flex-col overflow-hidden rounded-lg border bg-popover shadow-md">
-      <div className="flex h-9 shrink-0 items-center gap-2 border-b px-3 text-muted-foreground">
-        <MagnifyingGlass size={14} weight="bold" />
-        <input
-          ref={inputRef}
-          className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
-          type="text"
-          placeholder="Search files…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          spellCheck={false}
-          autoComplete="off"
-        />
-      </div>
-      <div className="min-h-0 overflow-y-auto p-1">
-        {filtered.map((filePath) => {
-          const filename = filePath.split("/").pop() || "";
-          return (
-            <button
-              key={filePath}
-              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted"
-              type="button"
-              onClick={() => onSelectFile(filePath)}
-            >
-              <span className="flex size-4 shrink-0 items-center justify-center">{iconForFile(filename)}</span>
-              <span className="shrink-0 font-medium">{filename}</span>
-              <span className="min-w-0 flex-1 truncate text-muted-foreground">{filePath}</span>
-            </button>
-          );
-        })}
-        {filtered.length === 0 && (
-          <div className="p-6 text-center text-sm text-muted-foreground">No matching files</div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function LiveStepPanel({
-  liveStep,
-  theme,
-  onOpenConcept,
-  onOpenFile,
-  onComplete,
-  onDismiss,
-  onBack
-}: {
-  liveStep: GeneratedLiveStep;
-  theme: "light" | "dark" | "system";
-  onOpenConcept: (conceptId: string) => void;
-  onOpenFile: (reference: InlineFileRef) => void;
-  onComplete: () => void;
-  onDismiss: () => void;
-  onBack: () => void;
-}) {
-  return (
-    <aside className="flex h-full min-h-0 flex-col overflow-y-auto bg-background p-4" data-construct-explainable="generated-live-step" data-construct-explainable-label="Generated live step">
-      <div className="mb-3 flex items-center gap-2 rounded-md border bg-primary/5 px-3 py-2 text-xs font-medium text-primary">
-        <Lightning size={15} weight="duotone" />
-        <span>Generated live by Construct Interact</span>
-      </div>
-      <div className="flex items-center justify-between text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-        <span>Adaptive live step</span>
-        <span>{liveStep.status}</span>
-      </div>
-      <h2 className="mt-2 text-lg font-semibold">{liveStep.title}</h2>
-      <p className="mt-1 text-sm text-muted-foreground">{liveStep.reason}</p>
-      <div className="mt-4 space-y-4">
-        {liveStep.blocks.map((block) => {
-          if (block.kind === "explain") {
-            return (
-              <section key={block.id} className="border-t pt-4">
-                <p className="mb-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Explain</p>
-                <MarkdownBlock content={block.content} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
-              </section>
-            );
-          }
-
-          if (block.kind === "interact") {
-            return (
-              <section key={block.id} className="border-t pt-4">
-                <p className="mb-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Construct Interact</p>
-                <MarkdownBlock content={block.prompt} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
-                <div className="mt-3 rounded-md border bg-muted/30 p-3 text-xs">
-                  <strong className="font-medium">What to check</strong>
-                  <span>{block.understanding}</span>
-                </div>
-              </section>
-            );
-          }
-
-          return (
-            <section key={block.id} className="border-t pt-4">
-              <p className="mb-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Reply Recall</p>
-              <MarkdownBlock content={block.task} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
-              {block.support ? (
-                <div className="mt-3 rounded-md border bg-muted/30 p-3">
-                  <p className="mb-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Support</p>
-                  <MarkdownBlock content={block.support} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
-                </div>
-              ) : null}
-            </section>
-          );
-        })}
-      </div>
-      <div className="mt-4 flex flex-wrap justify-end gap-2 border-t pt-4">
-        <Button type="button" variant="secondary" onClick={onBack}>Back to tape</Button>
-        <Button type="button" variant="secondary" onClick={onDismiss}>Dismiss</Button>
-        <Button type="button" onClick={onComplete}>Complete live step</Button>
-      </div>
-    </aside>
-  );
-}
 
 export function Workspace({
   project,
@@ -300,7 +167,13 @@ export function Workspace({
   const [recallAnswers, setRecallAnswers] = useState<Record<string, string>>({});
   const [interactAnswers, setInteractAnswers] = useState<Record<string, string>>({});
   const [interactResults, setInteractResults] = useState<Record<string, ConstructInteractClientResult>>({});
-  const [interactingId, setInteractingId] = useState<string | null>(null);
+  const {
+    interactProgressLogs,
+    setInteractProgressLogs,
+    interactingId,
+    setInteractingId,
+    resetInteractProgress
+  } = useInteractProgressLogBuffer();
   const [projectLearningState, setProjectLearningState] = useState<ProjectLearningState | null>(null);
   const [activeLiveStepId, setActiveLiveStepId] = useState<string | null>(null);
   const autoOpenedRecallRef = useRef<string | null>(null);
@@ -388,9 +261,10 @@ export function Workspace({
     setPinnedReferenceIds([]);
     setVerifyingId(null);
     setVerificationLogs({});
+    resetInteractProgress();
     setActiveLiveStepId(null);
     autoOpenedRecallRef.current = null;
-  }, [project.id]);
+  }, [project.id, resetInteractProgress]);
 
   useEffect(() => {
     let disposed = false;
@@ -1176,10 +1050,20 @@ export function Workspace({
     }
 
     setInteractingId(block.id);
+    const queuedAt = new Date().toISOString();
+    setInteractProgressLogs((current) => ({
+      ...current,
+      [block.id]: [{
+        timestamp: queuedAt,
+        level: "info",
+        message: `Queued answer for ${block.id}`
+      }]
+    }));
     try {
       const result = await runConstructInteract({
         projectId: project.id,
         blockId: block.id,
+        tapeSpec: project.program.spec,
         prompt: block.prompt,
         answer: interactAnswers[block.id] ?? "",
         basis: block.basis,
@@ -1387,6 +1271,7 @@ export function Workspace({
         }
       }}
       interactResult={block?.kind === "interact" ? interactResults[block.id] : undefined}
+      interactProgressLogs={block?.kind === "interact" ? interactProgressLogs[block.id] ?? [] : []}
       onSubmitInteract={() => void handleConstructInteract()}
       onInteractAction={(action) => void handleInteractAction(action)}
       interactingId={interactingId}
@@ -1397,7 +1282,7 @@ export function Workspace({
         : []}
       recallMissingFiles={recallMissingFiles}
     />
-  ), [activeLiveStep, block, editComplete, interactAnswers, interactResults, interactingId, onRunCommand, project, recallAnswers, recallMissingFiles, theme, verificationLogs, verifyingId]);
+  ), [activeLiveStep, block, editComplete, interactAnswers, interactProgressLogs, interactResults, interactingId, onRunCommand, project, recallAnswers, recallMissingFiles, theme, verificationLogs, verifyingId]);
 
   const stepsTabContent = useMemo(() => (
     <div className="flex h-full min-h-0 flex-col">
@@ -1744,298 +1629,4 @@ export function Workspace({
       />
     </AdaptiveSidecarLayout>
   );
-}
-
-function flattenTree(nodes: WorkspaceTreeNode[]): string[] {
-  const result: string[] = [];
-  function visit(node: WorkspaceTreeNode) {
-    if (node.type === "file") {
-      result.push(node.path);
-    } else if (node.children) {
-      node.children.forEach(visit);
-    }
-  }
-  nodes.forEach(visit);
-  return result;
-}
-
-function lineNumberForOffset(content: string, offset: number): number {
-  return content.slice(0, offset).split("\n").length;
-}
-
-function uniqueStrings(values: string[]): string[] {
-  return [...new Set(values)];
-}
-
-function uniqueConcepts(values: ConceptCard[]): ConceptCard[] {
-  const seen = new Set<string>();
-  return values.filter((concept) => {
-    if (seen.has(concept.id)) {
-      return false;
-    }
-
-    seen.add(concept.id);
-    return true;
-  });
-}
-
-function conceptIdsIntroducedThrough(project: ProjectRecord, stepIndex: number, blockIndex: number): string[] {
-  const ids: string[] = [];
-  const known = new Set(project.program.concepts.map((concept) => concept.id));
-
-  for (let currentStepIndex = 0; currentStepIndex <= stepIndex; currentStepIndex += 1) {
-    const step = project.program.steps[currentStepIndex];
-    if (!step) continue;
-    const finalBlockIndex = currentStepIndex === stepIndex ? Math.min(blockIndex, step.blocks.length - 1) : step.blocks.length - 1;
-    for (let currentBlockIndex = 0; currentBlockIndex <= finalBlockIndex; currentBlockIndex += 1) {
-      const current = step.blocks[currentBlockIndex];
-      if (!current) continue;
-      const declared = current.kind === "explain" || current.kind === "recall" ? current.concepts : [];
-      const inlineText = current.kind === "explain"
-        ? current.content
-        : current.kind === "recall"
-          ? `${current.task}\n${current.support}`
-          : "";
-      const inline = [...inlineText.matchAll(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g)].map((match) => match[1]);
-      for (const id of [...declared, ...inline]) {
-        if (known.has(id) && !ids.includes(id)) ids.push(id);
-      }
-    }
-  }
-
-  return ids;
-}
-
-function initialSavedConceptIds(project: ProjectRecord, concepts: ConceptCard[]): string[] {
-  const existing = readKnowledgeRecords().filter((record) => record.sourceProjectId === project.id).map((record) => record.id);
-  try {
-    const legacy = JSON.parse(window.localStorage.getItem("construct.knowledge.savedConceptIds") ?? "[]");
-    if (Array.isArray(legacy)) {
-      for (const conceptId of legacy) {
-        const concept = concepts.find((candidate) => candidate.id === conceptId);
-        if (concept && !existing.includes(concept.id)) {
-          saveKnowledgeConcept(project, concept);
-          existing.push(concept.id);
-        }
-      }
-    }
-  } catch {
-    // Ignore malformed legacy storage and keep valid records.
-  }
-  return uniqueStrings(existing);
-}
-
-type StoredGitMilestoneState = {
-  status?: GitMilestoneStatus;
-  message?: string;
-  output?: string;
-  commitHash?: string;
-  updatedAt?: string;
-};
-
-function gitMilestoneStorageKey(projectId: string): string {
-  return `construct.git.milestones.${projectId}`;
-}
-
-function readGitMilestoneStates(projectId: string): Record<string, StoredGitMilestoneState> {
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(gitMilestoneStorageKey(projectId)) ?? "{}");
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? parsed as Record<string, StoredGitMilestoneState>
-      : {};
-  } catch {
-    return {};
-  }
-}
-
-function writeGitMilestoneStates(projectId: string, states: Record<string, StoredGitMilestoneState>): void {
-  window.localStorage.setItem(gitMilestoneStorageKey(projectId), JSON.stringify(states));
-}
-
-function gitResultToMilestoneState(
-  result: GitActionResult,
-  successStatus: GitMilestoneStatus,
-  message: string,
-  fallbackCommitHash?: string
-): StoredGitMilestoneState {
-  return {
-    status: result.success ? successStatus : "failed",
-    message,
-    output: result.output || (result.success ? "Done." : "Git command failed."),
-    commitHash: result.commitHash ?? fallbackCommitHash
-  };
-}
-
-function resolveMilestoneStatus(
-  milestone: GitMilestone,
-  stored: StoredGitMilestoneState | undefined,
-  project: ProjectRecord
-): GitMilestoneStatus {
-  if (stored?.status === "committed" || stored?.status === "pushed" || stored?.status === "failed") {
-    return stored.status;
-  }
-
-  const linkedVerificationPassed = project.verificationResults?.[milestone.after]?.passed === true;
-  const linkedBlockCompleted = project.completedBlocks?.[milestone.after] === true;
-  if (linkedVerificationPassed || linkedBlockCompleted) {
-    return "suggested";
-  }
-
-  return "pending";
-}
-
-function milestoneStatusLabel(status: GitMilestoneStatus): string {
-  switch (status) {
-    case "suggested":
-      return "Suggested";
-    case "committed":
-      return "Committed";
-    case "pushed":
-      return "Pushed";
-    case "failed":
-      return "Failed";
-    case "pending":
-    default:
-      return "Waiting";
-  }
-}
-
-function isGuidedEditReady(
-  edit: EditBlock,
-  editAnchors: Record<string, string>
-): boolean {
-  return edit.mode !== "append" || Object.prototype.hasOwnProperty.call(editAnchors, edit.id);
-}
-
-function deriveEditAnchor({
-  edit,
-  existing,
-  progress
-}: {
-  edit: EditBlock;
-  existing: string;
-  progress: number;
-}): string {
-  if (edit.mode !== "append") {
-    return "";
-  }
-
-  const materializedLength = longestMaterializedEditPrefixLength(existing, edit.content, progress);
-  const base = materializedLength > 0 ? existing.slice(0, existing.length - materializedLength) : existing;
-
-  if (!base) {
-    return "";
-  }
-
-  return base.endsWith("\n") ? base : `${base}\n`;
-}
-
-function longestMaterializedEditPrefixLength(
-  existing: string,
-  editContent: string,
-  progress: number
-): number {
-  const max = Math.min(existing.length, editContent.length, progress);
-
-  for (let length = max; length > 0; length -= 1) {
-    if (existing.endsWith(editContent.slice(0, length))) {
-      return length;
-    }
-  }
-
-  return 0;
-}
-
-function buildVerificationStartLogs(recall: RecallBlock): VerificationLogEntry[] {
-  if (!recall.verify) {
-    return [];
-  }
-
-  const now = new Date().toISOString();
-  const files = recall.verify.evidence.files;
-  const command = recall.verify.evidence.terminalCommand;
-
-  return [
-    {
-      at: now,
-      status: "running",
-      message: "Preparing verifier evidence",
-      detail: files.length > 0 ? files.join(", ") : "No files declared."
-    },
-    {
-      at: now,
-      status: command ? "pending" : "done",
-      message: command ? "Terminal command queued" : "No terminal command declared",
-      detail: command ?? "The verifier will judge from files and rubric."
-    },
-    {
-      at: now,
-      status: "pending",
-      message: "Construct Verifier Agent",
-      detail: "Goal, rubric, support, references, files, and terminal evidence will be checked together."
-    }
-  ];
-}
-
-function normalizeWorkspacePath(path: string): string {
-  return path
-    .trim()
-    .replace(/\\/g, "/")
-    .replace(/^\/+/, "")
-    .replace(/\/+/g, "/");
-}
-
-function normalizeOptionalWorkspacePath(path: string | null | undefined, workspacePath?: string): string | null {
-  if (!path) {
-    return null;
-  }
-
-  const withoutFileScheme = path.replace(/^file:\/\//, "");
-  if (isAbsoluteFilesystemPath(withoutFileScheme)) {
-    if (!workspacePath) {
-      return null;
-    }
-
-    const relative = relativeWorkspacePath(workspacePath, withoutFileScheme);
-    if (!relative) {
-      console.warn("[construct] Ignoring absolute path outside workspace", {
-        path,
-        workspacePath
-      });
-      return null;
-    }
-
-    return relative;
-  }
-
-  const normalized = normalizeWorkspacePath(withoutFileScheme);
-  return normalized || null;
-}
-
-function isAbsoluteFilesystemPath(path: string): boolean {
-  return path.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(path);
-}
-
-function relativeWorkspacePath(workspacePath: string, absolutePath: string): string | null {
-  const normalizedWorkspace = workspacePath.replace(/\\/g, "/").replace(/\/+$/, "");
-  const normalizedAbsolute = absolutePath.replace(/\\/g, "/");
-  if (normalizedAbsolute === normalizedWorkspace) {
-    return "";
-  }
-
-  if (!normalizedAbsolute.startsWith(`${normalizedWorkspace}/`)) {
-    return null;
-  }
-
-  return normalizeWorkspacePath(normalizedAbsolute.slice(normalizedWorkspace.length + 1));
-}
-
-function generateCopyPath(srcPath: string): string {
-  const lastDot = srcPath.lastIndexOf(".");
-  const lastSlash = srcPath.lastIndexOf("/");
-  if (lastDot > lastSlash) {
-    // Has extension
-    return `${srcPath.slice(0, lastDot)}_copy${srcPath.slice(lastDot)}`;
-  }
-  return `${srcPath}_copy`;
 }
