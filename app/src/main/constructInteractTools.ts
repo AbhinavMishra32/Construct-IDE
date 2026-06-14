@@ -1,6 +1,10 @@
 import path from "node:path";
 import { readFile } from "node:fs/promises";
 
+import { createTool } from "@mastra/core/tools";
+import type { ToolsInput } from "@mastra/core/agent";
+import { z } from "zod";
+
 import type {
   ConstructInteractRuntimeInput,
   ConstructInteractToolCallRecord,
@@ -26,118 +30,254 @@ type ToolProject = {
   currentBlockIndex: number;
 };
 
-export async function buildConstructInteractToolContext(input: {
+export function createConstructInteractTools(input: {
   project: ToolProject;
   request: Omit<ConstructInteractRuntimeInput, "learningState">;
   learningState: ConstructLearningState;
   latestTerminalOutput?: string;
-}): Promise<{
-  toolContext: Record<string, unknown>;
+  onToolCall?: (record: ConstructInteractToolCallRecord) => void;
+}): {
+  tools: ToolsInput;
   toolCalls: ConstructInteractToolCallRecord[];
-}> {
+} {
   const toolCalls: ConstructInteractToolCallRecord[] = [];
-  const toolContext: Record<string, unknown> = {
-    availableTools: [
-      "getCurrentStep",
-      "getStepById",
-      "getPreviousSteps",
-      "getNextSteps",
-      "getCurrentBlock",
-      "getConceptCard",
-      "findWhereConceptWasIntroduced",
-      "searchTape",
-      "getLearnerState",
-      "getProjectLearnerState",
-      "getKnowledgeBase",
-      "getRecallHistory",
-      "getConstructInteractHistory",
-      "getStepFiles",
-      "readWorkspaceFile",
-      "getLatestTerminalOutput"
-    ]
-  };
-
-  const callTool = async (name: string, reason: string, output: unknown, toolInput?: unknown) => {
-    toolCalls.push({
+  const recordToolCall = (name: string, reason: string, output: unknown, toolInput?: unknown) => {
+    const record: ConstructInteractToolCallRecord = {
       id: `${name}-${toolCalls.length + 1}`,
       name,
       reason,
       input: toolInput,
       outputPreview: preview(output),
       createdAt: new Date().toISOString()
-    });
-    toolContext[name] = output;
+    };
+    toolCalls.push(record);
+    input.onToolCall?.(record);
+    return output;
   };
 
-  const currentStep = summarizeStep(input.project.program.steps[input.project.currentStepIndex], input.project.currentStepIndex);
-  const currentBlock = input.project.program.steps[input.project.currentStepIndex]?.blocks[input.project.currentBlockIndex] ?? null;
-  await callTool("getCurrentStep", "Anchor the learner answer to the active authored tape step.", currentStep);
-  await callTool("getCurrentBlock", "Compare the answer against the active Construct Interact block.", currentBlock);
+  const getCurrentStep = createTool({
+    id: "getCurrentStep",
+    description: "Read the active authored tape step. Use this when you need to anchor the learner answer to the current lesson.",
+    inputSchema: z.object({}).strict(),
+    execute: async () => recordToolCall(
+      "getCurrentStep",
+      "Anchor the learner answer to the active authored tape step.",
+      summarizeStep(input.project.program.steps[input.project.currentStepIndex], input.project.currentStepIndex)
+    )
+  });
 
-  const requestedConcepts = uniqueStrings([
-    ...(input.request.resources?.concepts ?? []),
-    ...extractConceptIds(currentBlock)
-  ]);
-  if (requestedConcepts.length > 0) {
-    const conceptCards = requestedConcepts
-      .map((conceptId) => conceptObjects(input.project.program.concepts).find((concept) => concept.id === conceptId))
-      .filter(Boolean);
-    await callTool("getConceptCard", "Inspect relevant concept cards before generating new help.", conceptCards, { conceptIds: requestedConcepts });
-    await callTool(
+  const getStepById = createTool({
+    id: "getStepById",
+    description: "Read one authored tape step by id.",
+    inputSchema: z.object({ stepId: z.string().min(1) }).strict(),
+    execute: async (toolInput) => recordToolCall(
+      "getStepById",
+      "Inspect a specific authored step requested by the evaluator.",
+      input.project.program.steps
+        .map((step, index) => ({ step, index }))
+        .filter(({ step, index }) => (step.id ?? `step-${index + 1}`) === toolInput.stepId)
+        .map(({ step, index }) => summarizeStep(step, index))[0] ?? null,
+      toolInput
+    )
+  });
+
+  const getPreviousSteps = createTool({
+    id: "getPreviousSteps",
+    description: "Read recent authored steps before the current one. Use only when the learner seems to be missing prerequisite context.",
+    inputSchema: z.object({ limit: z.number().int().min(1).max(6).default(4) }).strict(),
+    execute: async (toolInput) => {
+      const limit = toolInput.limit ?? 4;
+      const start = Math.max(0, input.project.currentStepIndex - limit);
+      return recordToolCall(
+        "getPreviousSteps",
+        "Check whether remediation already exists in completed or previous authored steps.",
+        input.project.program.steps.slice(start, input.project.currentStepIndex).map((step, offset) => summarizeStep(step, start + offset)),
+        toolInput
+      );
+    }
+  });
+
+  const getNextSteps = createTool({
+    id: "getNextSteps",
+    description: "Read upcoming authored steps. Use when deciding whether to advance or send the learner to a later authored explanation.",
+    inputSchema: z.object({ limit: z.number().int().min(1).max(4).default(2) }).strict(),
+    execute: async (toolInput) => recordToolCall(
+      "getNextSteps",
+      "Inspect upcoming authored steps before deciding whether to advance.",
+      input.project.program.steps
+        .slice(input.project.currentStepIndex + 1, input.project.currentStepIndex + 1 + (toolInput.limit ?? 2))
+        .map((step, offset) => summarizeStep(step, input.project.currentStepIndex + 1 + offset)),
+      toolInput
+    )
+  });
+
+  const getCurrentBlock = createTool({
+    id: "getCurrentBlock",
+    description: "Read the active Construct Interact block, including basis, understanding, assessment, and resources.",
+    inputSchema: z.object({}).strict(),
+    execute: async () => recordToolCall(
+      "getCurrentBlock",
+      "Compare the answer against the active Construct Interact block.",
+      input.project.program.steps[input.project.currentStepIndex]?.blocks[input.project.currentBlockIndex] ?? null
+    )
+  });
+
+  const getConceptCard = createTool({
+    id: "getConceptCard",
+    description: "Read concept cards by id. Use this only for concepts relevant to the learner answer or current block.",
+    inputSchema: z.object({ conceptIds: z.array(z.string().min(1)).min(1).max(5) }).strict(),
+    execute: async (toolInput) => recordToolCall(
+      "getConceptCard",
+      "Inspect relevant concept cards before generating new help.",
+      uniqueStrings(toolInput.conceptIds)
+        .map((conceptId) => conceptObjects(input.project.program.concepts).find((concept) => concept.id === conceptId))
+        .filter(Boolean),
+      toolInput
+    )
+  });
+
+  const findWhereConceptWasIntroduced = createTool({
+    id: "findWhereConceptWasIntroduced",
+    description: "Find authored steps where a concept appears or was introduced.",
+    inputSchema: z.object({ conceptIds: z.array(z.string().min(1)).min(1).max(5) }).strict(),
+    execute: async (toolInput) => recordToolCall(
       "findWhereConceptWasIntroduced",
       "Prefer sending the learner back to the authored introduction when it exists.",
-      requestedConcepts.map((conceptId) => ({
+      uniqueStrings(toolInput.conceptIds).map((conceptId) => ({
         conceptId,
         steps: input.project.program.steps
           .map((step, index) => ({ step, index }))
           .filter(({ step }) => step.teaches?.includes(conceptId) || step.blocks.some((block) => extractConceptIds(block).includes(conceptId)))
           .map(({ step, index }) => summarizeStep(step, index))
       })),
-      { conceptIds: requestedConcepts }
-    );
-  }
+      toolInput
+    )
+  });
 
-  if (input.project.currentStepIndex > 0 || missingPrereqSignal(input.request.answer)) {
-    await callTool(
-      "getPreviousSteps",
-      "Check whether the remediation already exists in completed or previous authored steps.",
-      input.project.program.steps
-        .slice(Math.max(0, input.project.currentStepIndex - 4), input.project.currentStepIndex)
-        .map((step, offset) => summarizeStep(step, Math.max(0, input.project.currentStepIndex - 4) + offset))
-    );
-  }
+  const searchTape = createTool({
+    id: "searchTape",
+    description: "Search authored tape steps for a phrase. Use this when you need existing content but do not know the step id.",
+    inputSchema: z.object({ query: z.string().min(2).max(80), limit: z.number().int().min(1).max(8).default(5) }).strict(),
+    execute: async (toolInput) => {
+      const query = toolInput.query.toLowerCase();
+      const results = input.project.program.steps
+        .map((step, index) => ({ step, index }))
+        .filter(({ step }) => JSON.stringify(step).toLowerCase().includes(query))
+        .slice(0, toolInput.limit)
+        .map(({ step, index }) => summarizeStep(step, index));
+      return recordToolCall("searchTape", "Search authored content for an existing explanation.", results, toolInput);
+    }
+  });
 
-  await callTool(
-    "getProjectLearnerState",
-    "Inspect project-specific recall, assistance, generated live steps, and concept weakness.",
-    input.learningState.projects[input.project.id] ?? null,
-    { projectId: input.project.id }
-  );
+  const getLearnerState = createTool({
+    id: "getLearnerState",
+    description: "Read the global learner state snapshot.",
+    inputSchema: z.object({}).strict(),
+    execute: async () => recordToolCall("getLearnerState", "Inspect global learner state.", input.learningState)
+  });
 
-  const projectState = input.learningState.projects[input.project.id];
-  if ((projectState?.recallAttempts.length ?? 0) > 0) {
-    await callTool("getRecallHistory", "Use recent recall outcomes to decide whether this is a weak prerequisite.", projectState?.recallAttempts.slice(-8) ?? []);
-  }
-  if ((projectState?.constructInteractSessions.length ?? 0) > 0) {
-    await callTool("getConstructInteractHistory", "Use recent Construct Interact attempts without relying only on the latest answer.", projectState?.constructInteractSessions.slice(-8) ?? []);
-  }
+  const getProjectLearnerState = createTool({
+    id: "getProjectLearnerState",
+    description: "Read learner state for this project: recall attempts, assistance, generated live steps, and concept weakness.",
+    inputSchema: z.object({}).strict(),
+    execute: async () => recordToolCall(
+      "getProjectLearnerState",
+      "Inspect project-specific recall, assistance, generated live steps, and concept weakness.",
+      input.learningState.projects[input.project.id] ?? null,
+      { projectId: input.project.id }
+    )
+  });
 
-  if (input.request.resources?.files?.length) {
-    await callTool("getStepFiles", "Inspect file references explicitly scoped by the current interact block.", input.request.resources.files);
-    const readableFiles = await Promise.all(
-      input.request.resources.files.slice(0, 3).map(async (filePath) => ({
-        path: filePath,
-        content: await readWorkspaceFile(input.project, filePath)
-      }))
-    );
-    await callTool("readWorkspaceFile", "Read only files referenced by the authored interact block.", readableFiles);
-  }
+  const getKnowledgeBase = createTool({
+    id: "getKnowledgeBase",
+    description: "Read saved knowledge records for this project.",
+    inputSchema: z.object({}).strict(),
+    execute: async () => recordToolCall(
+      "getKnowledgeBase",
+      "Inspect saved knowledge records relevant to this project.",
+      Object.values(input.learningState.knowledgeBase.concepts).filter((record) => record.sourceProjectId === input.project.id)
+    )
+  });
 
-  if (terminalSignal(input.request.answer) || input.latestTerminalOutput) {
-    await callTool("getLatestTerminalOutput", "Use latest terminal output when the learner mentions an error or command result.", (input.latestTerminalOutput ?? "").slice(-4000));
-  }
+  const getRecallHistory = createTool({
+    id: "getRecallHistory",
+    description: "Read recent recall attempts for this project.",
+    inputSchema: z.object({ limit: z.number().int().min(1).max(12).default(8) }).strict(),
+    execute: async (toolInput) => recordToolCall(
+      "getRecallHistory",
+      "Use recent recall outcomes to decide whether this is a weak prerequisite.",
+      (input.learningState.projects[input.project.id]?.recallAttempts ?? []).slice(-(toolInput.limit ?? 8)),
+      toolInput
+    )
+  });
 
-  return { toolContext, toolCalls };
+  const getConstructInteractHistory = createTool({
+    id: "getConstructInteractHistory",
+    description: "Read recent Construct Interact attempts for this project.",
+    inputSchema: z.object({ limit: z.number().int().min(1).max(12).default(8) }).strict(),
+    execute: async (toolInput) => recordToolCall(
+      "getConstructInteractHistory",
+      "Use recent Construct Interact attempts without relying only on the latest answer.",
+      (input.learningState.projects[input.project.id]?.constructInteractSessions ?? []).slice(-(toolInput.limit ?? 8)),
+      toolInput
+    )
+  });
+
+  const getStepFiles = createTool({
+    id: "getStepFiles",
+    description: "List files explicitly scoped by the current interact block.",
+    inputSchema: z.object({}).strict(),
+    execute: async () => recordToolCall(
+      "getStepFiles",
+      "Inspect file references explicitly scoped by the current interact block.",
+      input.request.resources?.files ?? []
+    )
+  });
+
+  const readWorkspaceFileTool = createTool({
+    id: "readWorkspaceFile",
+    description: "Read a project-relative workspace file. Only use files scoped by the current interact block or clearly needed for the answer.",
+    inputSchema: z.object({ path: z.string().min(1) }).strict(),
+    execute: async (toolInput) => recordToolCall(
+      "readWorkspaceFile",
+      "Read a scoped project file.",
+      { path: toolInput.path, content: await readWorkspaceFile(input.project, toolInput.path) },
+      toolInput
+    )
+  });
+
+  const getLatestTerminalOutput = createTool({
+    id: "getLatestTerminalOutput",
+    description: "Read the latest terminal output. Use only when the learner mentions an error, command, or terminal result.",
+    inputSchema: z.object({}).strict(),
+    execute: async () => recordToolCall(
+      "getLatestTerminalOutput",
+      "Use latest terminal output when the learner mentions an error or command result.",
+      (input.latestTerminalOutput ?? "").slice(-4000)
+    )
+  });
+
+  return {
+    toolCalls,
+    tools: {
+      getCurrentStep,
+      getStepById,
+      getPreviousSteps,
+      getNextSteps,
+      getCurrentBlock,
+      getConceptCard,
+      findWhereConceptWasIntroduced,
+      searchTape,
+      getLearnerState,
+      getProjectLearnerState,
+      getKnowledgeBase,
+      getRecallHistory,
+      getConstructInteractHistory,
+      getStepFiles,
+      readWorkspaceFile: readWorkspaceFileTool,
+      getLatestTerminalOutput
+    }
+  };
 }
 
 function summarizeStep(step: ToolProject["program"]["steps"][number] | undefined, index: number) {
@@ -195,14 +335,6 @@ async function readWorkspaceFile(project: ToolProject, relativePath: string): Pr
   } catch (error) {
     return `[unavailable: ${error instanceof Error ? error.message : String(error)}]`;
   }
-}
-
-function terminalSignal(answer: string): boolean {
-  return /\b(error|failed|terminal|command|stack|trace|stderr|stdout|npm|pnpm|test)\b/i.test(answer);
-}
-
-function missingPrereqSignal(answer: string): boolean {
-  return /\b(confused|stuck|don't understand|do not understand|lost|why|how)\b/i.test(answer);
 }
 
 function preview(value: unknown): string {
