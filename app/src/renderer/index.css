@@ -14,7 +14,7 @@ html, body {
 }
 
 #root {
-  border-radius: 12px;
+  border-radius: 1.125rem;
   overflow: hidden;
   box-shadow:
     0 0 0 1px rgba(0, 0, 0, 0.08),
@@ -53,7 +53,7 @@ html, body {
   --color-mist: #e2e8f0;
   --color-signal: #0f766e;
   --color-ember: #f97316;
-  --radius: 0.5rem;
+  --radius: 0.75rem;
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
@@ -134,7 +134,7 @@ html, body {
   body {
     margin: 0;
     min-width: 20rem;
-    background-color: var(--background);
+    background-color: transparent;
     color: var(--foreground);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;

@@ -3,8 +3,8 @@ import { ConstructSettingsSurface, buildSettingsSections, settingsTitle } from "
 import { LearningContextSurface } from "./LearningContextSurface";
 import { HeaderBottomPanelIcon, HeaderGuidePanelIcon, SavingIndicator, SidebarLearningButton, SidebarSettingsButton } from "./ShellControls";
 import { applyDocumentTheme, getInitialTheme, resolveActiveTheme, type ThemeMode } from "./theme";
-import { lspClient } from "./lib/lspClient";
-import { restartProjectLsp } from "./lib/lspRuntime";
+import { useConstructLogBridge } from "./lib/useConstructLogBridge";
+import { useProjectLspLifecycle } from "./lib/useProjectLspLifecycle";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
@@ -14,7 +14,6 @@ import {
   Plus as PlusIcon
 } from "lucide-react";
 import { Notebook } from "@phosphor-icons/react";
-import { logStore, type LogChannel } from "./lib/logStore";
 
 import {
   AppShell,
@@ -43,7 +42,6 @@ import {
   openSavedProject
 } from "./lib/projectStore";
 import {
-  onAgentLog,
   setThemeSource,
   updateProject
 } from "./lib/bridge";
@@ -111,37 +109,8 @@ export default function ConstructApp() {
     duplicateFile: null
   });
 
-  useEffect(() => {
-    logStore.addLog("lsp-server", "Language server log channel attached.", "debug");
-    logStore.addLog("lsp-protocol", "LSP protocol log channel attached.", "debug");
-
-    const unsubscribeLsp = window.constructProjects.onLspStderr((payload) => {
-      const text = typeof payload === "string" ? payload : payload.text;
-      const level = typeof payload === "string" ? "info" : payload.level;
-      logStore.addLog("lsp-server", text, level);
-    });
-
-    const unsubscribeMain = window.constructProjects.onMainLog((payload) => {
-      const level = payload.level === "error" || payload.level === "warn" || payload.level === "debug"
-        ? payload.level
-        : "info";
-      logStore.addLog("main", payload.message, level);
-    });
-
-    const unsubscribeAgent = onAgentLog((payload) => {
-      const channel = payload.agent as LogChannel;
-      const level = payload.level === "error" || payload.level === "warn" || payload.level === "debug"
-        ? payload.level
-        : "info";
-      logStore.addLog(channel, payload.message, level, payload.structured);
-    });
-
-    return () => {
-      unsubscribeLsp();
-      unsubscribeMain();
-      unsubscribeAgent();
-    };
-  }, []);
+  useConstructLogBridge();
+  useProjectLspLifecycle(activeProject);
 
   const { furthestUnlockedStepIndex, furthestUnlockedBlockIndex } = useMemo(() => {
     if (!activeProject) return { furthestUnlockedStepIndex: 0, furthestUnlockedBlockIndex: 0 };
@@ -382,80 +351,6 @@ export default function ConstructApp() {
     localStorage.setItem("construct.theme", theme);
     void setThemeSource(theme);
   }, [theme]);
-
-  useEffect(() => {
-    if (activeProject) {
-      const enabled = localStorage.getItem("construct.lsp.enabled") !== "false";
-      if (enabled) {
-        console.log("[LSP Client] Workspace path changed, initializing LSP for:", activeProject.workspacePath);
-        void window.constructProjects.lspStart(activeProject.id).then((result) => {
-          if (result.languages.length > 0) {
-            void lspClient.initialize(activeProject.workspacePath, { languages: result.languages });
-          } else {
-            console.log("[LSP Client] No supported language servers were started for this project.");
-          }
-        });
-      } else {
-        console.log("[LSP Client] LSP disabled in settings, stopping server process.");
-        void window.constructProjects.lspStop();
-      }
-    } else {
-      console.log("[LSP Client] No active project, disposing LSP");
-      lspClient.dispose();
-    }
-    return () => {
-      lspClient.dispose();
-    };
-  }, [activeProject?.id, activeProject?.workspacePath]);
-
-  useEffect(() => {
-    if (!activeProject) {
-      return;
-    }
-
-    let refreshTimer: number | null = null;
-    let lastRefreshAt = 0;
-
-    const refreshLsp = () => {
-      const enabled = localStorage.getItem("construct.lsp.enabled") !== "false";
-      if (!enabled || document.visibilityState !== "visible") {
-        return;
-      }
-
-      const now = Date.now();
-      if (now - lastRefreshAt < 10_000) {
-        return;
-      }
-      lastRefreshAt = now;
-
-      if (refreshTimer !== null) {
-        window.clearTimeout(refreshTimer);
-      }
-
-      refreshTimer = window.setTimeout(() => {
-        logStore.addLog("lsp-server", "Refreshing language server after app focus.", "info");
-        void restartProjectLsp(activeProject.id).then((result) => {
-          if (result.languages.length > 0) {
-            void lspClient.initialize(activeProject.workspacePath, {
-              force: true,
-              languages: result.languages
-            });
-          }
-        });
-      }, 250);
-    };
-
-    window.addEventListener("focus", refreshLsp);
-    document.addEventListener("visibilitychange", refreshLsp);
-
-    return () => {
-      if (refreshTimer !== null) {
-        window.clearTimeout(refreshTimer);
-      }
-      window.removeEventListener("focus", refreshLsp);
-      document.removeEventListener("visibilitychange", refreshLsp);
-    };
-  }, [activeProject?.id, activeProject?.workspacePath]);
 
   useEffect(() => {
     const mql = window.matchMedia("(prefers-color-scheme: dark)");

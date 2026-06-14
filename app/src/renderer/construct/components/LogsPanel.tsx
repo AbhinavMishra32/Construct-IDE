@@ -1,15 +1,15 @@
-import React, { useEffect, useRef, useState } from "react";
-import { Bot, Braces, Check, ChevronDown } from "lucide-react";
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Braces } from "lucide-react";
 import { logStore, AGENT_CHANNELS, type AgentLogChannel, type LogChannel, type LogEntry } from "../lib/logStore";
 import { debugProcesses } from "../lib/bridge";
 import type { DebugProcessSnapshot } from "../types";
 import {
   Button,
-  ShadcnDropdownMenu as DropdownMenu,
-  ShadcnDropdownMenuContent as DropdownMenuContent,
-  ShadcnDropdownMenuItem as DropdownMenuItem,
-  ShadcnDropdownMenuLabel as DropdownMenuLabel,
-  ShadcnDropdownMenuTrigger as DropdownMenuTrigger,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   TerminalSurface,
 } from "@opaline/ui";
 
@@ -41,12 +41,18 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
   const [autoScroll, setAutoScroll] = useState(true);
   const [jsonOnly, setJsonOnly] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
   const effectiveLogChannel: LogChannel | null = activeChannel === "agents"
     ? activeAgentChannel
     : activeChannel === "debug-processes"
       ? null
       : activeChannel;
   const activeAgentMeta = AGENT_CHANNELS.find((agent) => agent.id === activeAgentChannel);
+  const scrollToBottom = useCallback(() => {
+    window.requestAnimationFrame(() => {
+      bottomRef.current?.scrollIntoView({ block: "end" });
+    });
+  }, []);
 
   // Sync logs when active channel changes
   useEffect(() => {
@@ -99,12 +105,11 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
     };
   }, [activeChannel]);
 
-  // Auto scroll to bottom
-  useEffect(() => {
-    if (autoScroll && containerRef.current) {
-      containerRef.current.scrollTop = containerRef.current.scrollHeight;
+  useLayoutEffect(() => {
+    if (autoScroll) {
+      scrollToBottom();
     }
-  }, [logs, autoScroll]);
+  }, [logs, processes, autoScroll, scrollToBottom]);
 
   const handleCopyAll = () => {
     if (activeChannel === "debug-processes") {
@@ -163,67 +168,50 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
   };
 
   return (
-    <TerminalSurface cwd={`Output · ${activeChannel === "agents" ? `Agents · ${activeAgentMeta?.label ?? activeAgentChannel}` : getChannelLabel(activeChannel)}`}>
-      <div className="flex h-full flex-col overflow-hidden bg-transparent text-foreground select-text">
-        <div className="flex items-center justify-between gap-2 px-2 py-1.5">
+    <TerminalSurface
+      className="flex h-full min-h-0 flex-col"
+      cwd={`Output · ${activeChannel === "agents" ? `Agents · ${activeAgentMeta?.label ?? activeAgentChannel}` : getChannelLabel(activeChannel)}`}
+    >
+      <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-transparent text-foreground select-text">
+        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border/60 px-2 py-1.5">
           <div className="flex min-w-0 items-center gap-1.5">
-            <DropdownMenu>
-              <DropdownMenuTrigger render={<button
-                  type="button"
-                  className="inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium text-foreground hover:bg-muted"
-                />}>
-                  {activeChannel === "agents" ? (
-                    <span className="inline-flex items-center gap-1">
-                      <Bot size={13} className="text-primary" />
-                      Agents
-                    </span>
-                  ) : (
-                    getChannelLabel(activeChannel)
-                  )}
-                  <ChevronDown size={14} />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="min-w-[220px]">
+            <Select
+              value={activeChannel}
+              onValueChange={(value) => setActiveChannel(value as OutputChannel)}
+            >
+              <SelectTrigger className="h-7 max-w-[220px] border-transparent bg-transparent text-xs font-medium hover:bg-muted">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent align="start" className="min-w-[220px]">
                 {SYSTEM_CHANNELS.map((channel) => (
-                  <DropdownMenuItem key={channel.id} onSelect={() => setActiveChannel(channel.id)}>
-                    <span className="inline-flex w-4 items-center justify-center">
-                      {channel.id === activeChannel ? <Check size={13} /> : null}
-                    </span>
+                  <SelectItem key={channel.id} value={channel.id}>
                     {channel.label}
-                  </DropdownMenuItem>
+                  </SelectItem>
                 ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+              </SelectContent>
+            </Select>
 
             {activeChannel === "agents" ? (
               <>
                 <span className="text-muted-foreground">/</span>
-                <DropdownMenu>
-                  <DropdownMenuTrigger render={<button
-                      type="button"
-                      className="inline-flex h-7 max-w-[220px] items-center gap-1.5 rounded-md px-2.5 text-xs font-medium text-foreground hover:bg-muted"
-                    />}>
-                      <Bot size={13} className="shrink-0 text-primary" />
-                      <span className="truncate">{activeAgentMeta?.label ?? activeAgentChannel}</span>
-                      <ChevronDown size={14} className="shrink-0" />
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="min-w-[240px]">
-                    <DropdownMenuLabel className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      <Bot size={12} />
-                      Agent channel
-                    </DropdownMenuLabel>
+                <Select
+                  value={activeAgentChannel}
+                  onValueChange={(value) => setActiveAgentChannel(value as AgentLogChannel)}
+                >
+                  <SelectTrigger className="h-7 max-w-[220px] border-transparent bg-transparent text-xs font-medium hover:bg-muted" title={activeAgentMeta?.description}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent align="start" className="min-w-[240px]">
                     {AGENT_CHANNELS.map((agent) => (
-                      <DropdownMenuItem key={agent.id} onSelect={() => setActiveAgentChannel(agent.id)}>
-                        <span className="inline-flex w-4 items-center justify-center">
-                          {agent.id === activeAgentChannel ? <Check size={13} /> : null}
-                        </span>
+                      <SelectItem key={agent.id} value={agent.id}>
                         <span className="flex flex-col">
                           <span>{agent.label}</span>
                           <span className="text-[10.5px] text-muted-foreground font-normal">{agent.description}</span>
                         </span>
-                      </DropdownMenuItem>
+                      </SelectItem>
                     ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                  </SelectContent>
+                </Select>
                 <span className="truncate text-[11px] text-muted-foreground">{activeAgentMeta?.description}</span>
               </>
             ) : null}
@@ -245,7 +233,15 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
             ) : null}
             <button
               type="button"
-              onClick={() => setAutoScroll((value) => !value)}
+              onClick={() => {
+                setAutoScroll((value) => {
+                  const next = !value;
+                  if (next) {
+                    scrollToBottom();
+                  }
+                  return next;
+                });
+              }}
               className={`inline-flex h-6 items-center rounded-md px-2 text-xs ${autoScroll ? "text-foreground" : "text-muted-foreground"} hover:bg-muted`}
             >
               Auto-scroll
@@ -261,7 +257,7 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
 
         <div
           ref={containerRef}
-          className="flex-1 space-y-0.5 overflow-auto bg-transparent px-3 py-2 font-mono text-xs leading-relaxed select-text"
+          className="h-0 min-h-0 flex-1 space-y-0.5 overflow-y-auto overflow-x-hidden bg-transparent px-3 py-2 font-mono text-xs leading-relaxed select-text"
         >
           {activeChannel === "debug-processes" ? (
             <DebugProcesses processes={processes} />
@@ -281,6 +277,7 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
               </div>
             ))
           )}
+          <div ref={bottomRef} aria-hidden="true" />
         </div>
       </div>
     </TerminalSurface>

@@ -1,4 +1,3 @@
-import type { ReactNode } from "react";
 import { Folder, GearSix } from "@phosphor-icons/react";
 
 import {
@@ -33,13 +32,10 @@ export function DashboardSidebar({
         {visibleProjects.map((project) => (
           <DashboardSidebarProjectRow
             key={project.id}
-            icon={<Folder size={16} weight="duotone" />}
             meta={formatDashboardProjectMeta(project)}
             onClick={() => onOpenProject(project.id)}
             onOpenSettings={() => onOpenProjectSettings(project.id)}
-            subtitle={project.currentStepTitle || project.currentBlockLabel || formatDashboardSidebarTime(project.lastOpenedAt)}
             title={project.title}
-            tone={project.progress >= 100 || project.completedAt ? "success" : "default"}
           />
         ))}
         {visibleProjects.length === 0 ? (
@@ -51,37 +47,29 @@ export function DashboardSidebar({
 }
 
 function DashboardSidebarProjectRow({
-  icon,
   meta,
   onClick,
   onOpenSettings,
-  subtitle,
-  title,
-  tone = "default"
+  title
 }: {
-  icon: ReactNode;
-  meta: string;
+  meta: string | null;
   onClick: () => void;
   onOpenSettings: () => void;
-  subtitle: string;
   title: string;
-  tone?: "default" | "success";
 }) {
-  const iconClassName = tone === "success" ? "text-foreground" : "text-muted-foreground";
-
   return (
-    <div className="group relative flex min-h-11 items-center rounded-lg transition-colors hover:bg-foreground/8 focus-within:bg-foreground/8">
-      <button className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2 text-left" onClick={onClick} type="button">
-        <span className={iconClassName}>{icon}</span>
-        <span className="min-w-0 flex-1">
-          <strong className="block truncate text-sm font-medium text-foreground">{title}</strong>
-          <small className="block truncate text-xs text-muted-foreground">{subtitle}</small>
-        </span>
-        <span className="mr-7 shrink-0 text-xs text-muted-foreground">{meta}</span>
+    <div className="group relative min-h-9 rounded-lg hover:bg-foreground/8 focus-within:bg-foreground/8">
+      <button className="flex h-9 w-full min-w-0 items-center rounded-lg px-2 py-1.5 text-left" onClick={onClick} type="button">
+        <span className="block min-w-0 flex-1 truncate pr-14 text-sm font-medium text-foreground">{title}</span>
       </button>
+      {meta ? (
+        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground group-hover:opacity-0 group-focus-within:opacity-0">
+          {meta}
+        </span>
+      ) : null}
       <ShadcnDropdownMenu>
         <ShadcnDropdownMenuTrigger
-          className="absolute right-1 grid size-8 place-items-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-foreground/8 hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
+          className="absolute right-1 grid size-8 place-items-center rounded-md text-muted-foreground opacity-0 hover:bg-foreground/8 hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
           aria-label={`Project actions for ${title}`}
         >
           <span aria-hidden="true">•••</span>
@@ -108,35 +96,5 @@ function formatDashboardProjectMeta(project: ProjectSummary) {
   if (project.progress > 0) {
     return `${project.progress}%`;
   }
-  return formatDashboardSidebarTime(project.lastOpenedAt);
-}
-
-function formatDashboardSidebarTime(value: string | null | undefined) {
-  if (!value) {
-    return "Recently opened";
-  }
-
-  const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) {
-    return "Recently opened";
-  }
-
-  const diffMs = Date.now() - timestamp;
-  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-  if (diffHours < 1) {
-    return "Opened less than an hour ago";
-  }
-  if (diffHours < 24) {
-    return `Opened ${diffHours}h ago`;
-  }
-
-  const diffDays = Math.floor(diffHours / 24);
-  if (diffDays < 7) {
-    return `Opened ${diffDays}d ago`;
-  }
-
-  return new Date(timestamp).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric"
-  });
+  return null;
 }

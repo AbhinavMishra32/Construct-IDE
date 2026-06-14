@@ -505,7 +505,7 @@ export function FileTree({
             {getIconForExtension(getExtension(draftPath))}
             <input className="min-w-0 flex-1 bg-transparent text-xs outline-none"
               value={draftPath}
-              onChange={(event) => setDraftPath(event.currentTarget.value)}
+              onChange={(event) => setDraftPath(event.target.value)}
               autoFocus
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
