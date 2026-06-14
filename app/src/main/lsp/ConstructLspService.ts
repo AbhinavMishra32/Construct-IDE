@@ -1,0 +1,487 @@
+import path from "node:path";
+import { spawn, type ChildProcess } from "node:child_process";
+import { existsSync } from "node:fs";
+
+import type { WebContents } from "electron";
+
+import type { StoredProject } from "../projects/ConstructProjectTypes";
+import type { DebugProcessSnapshot } from "../terminal/ConstructTerminalService";
+
+export type LspLanguage = "typescript" | "python";
+export type LspStatus = "not-installed" | "running" | "stopped" | "installing";
+export type LspStartResult = {
+  languages: LspLanguage[];
+  workspacePath: string;
+};
+export type LspStatusReport = Record<LspLanguage, {
+  command: string;
+  installCommand: string;
+  installed: boolean;
+  label: string;
+  resolvedPath: string | null;
+  status: LspStatus;
+}>;
+
+type LspServerState = {
+  buffer: string;
+  pendingRequests: Map<number, { resolve: (value: unknown) => void; reject: (reason?: unknown) => void }>;
+  process: ChildProcess | null;
+  workspacePath: string | null;
+};
+
+const lspConfigs: Record<LspLanguage, {
+  command: string;
+  installPackages: string[];
+  label: string;
+  scriptPath: string[];
+}> = {
+  typescript: {
+    command: "typescript-language-server --stdio",
+    installPackages: ["typescript-language-server", "typescript"],
+    label: "TypeScript / JavaScript",
+    scriptPath: ["typescript-language-server", "lib", "cli.mjs"]
+  },
+  python: {
+    command: "pyright-langserver --stdio",
+    installPackages: ["pyright"],
+    label: "Python",
+    scriptPath: ["pyright", "langserver.index.js"]
+  }
+};
+
+export class ConstructLspService {
+  private readonly servers: Record<LspLanguage, LspServerState> = {
+    typescript: { buffer: "", pendingRequests: new Map(), process: null, workspacePath: null },
+    python: { buffer: "", pendingRequests: new Map(), process: null, workspacePath: null }
+  };
+  private activeWebContents: WebContents | null = null;
+  private isInstalling = false;
+  private installProcess: ChildProcess | null = null;
+
+  constructor(private readonly options: {
+    appPath: string;
+    bundleDir: string;
+    cwd: string;
+    workspacePathForProject: (projectId: string) => string;
+  }) {}
+
+  setActiveWebContents(webContents: WebContents): void {
+    this.activeWebContents = webContents;
+  }
+
+  getStatus(projectId?: string): LspStatusReport {
+    const wsPath = projectId ? this.options.workspacePathForProject(projectId) : this.options.cwd;
+    const report = {} as LspStatusReport;
+
+    for (const language of Object.keys(lspConfigs) as LspLanguage[]) {
+      const server = this.servers[language];
+      const resolvedPath = this.findNodeModuleScript(wsPath, lspConfigs[language].scriptPath);
+      const installed = resolvedPath != null;
+      const status: LspStatus = server.process
+        ? "running"
+        : this.isInstalling
+          ? "installing"
+          : installed
+            ? "stopped"
+            : "not-installed";
+
+      report[language] = {
+        command: lspConfigs[language].command,
+        installCommand: `npm install --save-dev ${lspConfigs[language].installPackages.join(" ")}`,
+        installed,
+        label: lspConfigs[language].label,
+        resolvedPath,
+        status
+      };
+    }
+
+    return report;
+  }
+
+  startForProject(project: StoredProject): LspStartResult {
+    const languages = this.languagesForProject(project);
+    const startedLanguages: LspLanguage[] = [];
+
+    if (languages.length === 0) {
+      console.log("[LSP] No supported language files found for project", { id: project.id });
+    }
+
+    for (const language of languages) {
+      if (this.findNodeModuleScript(project.workspacePath, lspConfigs[language].scriptPath)) {
+        if (this.startServer(project.workspacePath, language)) {
+          startedLanguages.push(language);
+        }
+      } else {
+        this.emitLog(language, "warn", `Skipping ${lspConfigs[language].label}; server is not installed.`);
+      }
+    }
+
+    for (const language of Object.keys(lspConfigs) as LspLanguage[]) {
+      if (!languages.includes(language)) {
+        this.stop(language);
+      }
+    }
+
+    return {
+      languages: startedLanguages,
+      workspacePath: project.workspacePath
+    };
+  }
+
+  stop(language?: LspLanguage): void {
+    const languages = language ? [language] : (Object.keys(this.servers) as LspLanguage[]);
+
+    for (const currentLanguage of languages) {
+      const server = this.servers[currentLanguage];
+      if (server.process) {
+        console.log(`[LSP] Stopping ${lspConfigs[currentLanguage].command}`);
+        this.emitLog(currentLanguage, "info", `Stopping ${lspConfigs[currentLanguage].command}`);
+        try {
+          server.process.kill();
+        } catch (err) {
+          console.error("[LSP] Error killing process:", err);
+        }
+        server.process = null;
+      }
+      server.buffer = "";
+      server.workspacePath = null;
+      for (const pending of server.pendingRequests.values()) {
+        pending.reject(new Error("LSP server stopped"));
+      }
+      server.pendingRequests.clear();
+    }
+  }
+
+  async install(workspacePath: string): Promise<boolean> {
+    if (this.isInstalling) {
+      return false;
+    }
+    this.isInstalling = true;
+    console.log("[LSP Installer] Starting npm install in workspace:", workspacePath);
+
+    const packages = Array.from(new Set(Object.values(lspConfigs).flatMap((config) => config.installPackages)));
+
+    return new Promise((resolve) => {
+      const shell = process.env.SHELL || "/bin/zsh";
+      const npmProcess = spawn(shell, ["-c", `npm install --save-dev ${packages.join(" ")}`], {
+        cwd: workspacePath,
+        env: {
+          ...process.env
+        }
+      });
+      this.installProcess = npmProcess;
+
+      npmProcess.stdout?.on("data", (data: Buffer) => {
+        const text = data.toString("utf8");
+        console.log("[LSP Installer stdout]:", text);
+        this.activeWebContents?.send("construct:lsp:install-progress", { language: "all", type: "stdout", text });
+      });
+
+      npmProcess.stderr?.on("data", (data: Buffer) => {
+        const text = data.toString("utf8");
+        console.warn("[LSP Installer stderr]:", text);
+        this.activeWebContents?.send("construct:lsp:install-progress", { language: "all", type: "stderr", text });
+      });
+
+      npmProcess.on("close", (code) => {
+        this.isInstalling = false;
+        this.installProcess = null;
+        console.log(`[LSP Installer] Process finished with exit code: ${code}`);
+        resolve(code === 0);
+      });
+
+      npmProcess.on("error", (err) => {
+        this.isInstalling = false;
+        this.installProcess = null;
+        console.error("[LSP Installer] Process spawn error:", err);
+        resolve(false);
+      });
+    });
+  }
+
+  request(webContents: WebContents, payload: any): Promise<unknown> {
+    return new Promise((resolve, reject) => {
+      const language = this.inferLanguage(payload);
+      const server = this.servers[language];
+      if (!server.process || !server.process.stdin) {
+        reject(new Error(`${lspConfigs[language].label} LSP process not running`));
+        return;
+      }
+
+      this.activeWebContents = webContents;
+
+      if (payload.id !== undefined) {
+        server.pendingRequests.set(payload.id, { resolve, reject });
+      }
+
+      const { languageId: _languageId, ...message } = payload;
+      const jsonStr = JSON.stringify(message);
+      const formatted = `Content-Length: ${Buffer.byteLength(jsonStr, "utf8")}\r\n\r\n${jsonStr}`;
+
+      server.process.stdin.write(formatted, "utf8");
+
+      if (payload.id === undefined) {
+        resolve(null);
+      }
+    });
+  }
+
+  snapshots(): DebugProcessSnapshot[] {
+    const snapshots: DebugProcessSnapshot[] = [];
+
+    for (const language of Object.keys(this.servers) as LspLanguage[]) {
+      const server = this.servers[language];
+      snapshots.push({
+        id: `lsp:${language}`,
+        kind: "lsp",
+        label: lspConfigs[language].label,
+        pid: server.process?.pid ?? null,
+        status: server.process ? "running" : "stopped",
+        workspacePath: server.workspacePath,
+        command: lspConfigs[language].command
+      });
+    }
+
+    if (this.installProcess) {
+      snapshots.push({
+        id: "installer:lsp",
+        kind: "installer",
+        label: "LSP dependency installer",
+        pid: this.installProcess.pid ?? null,
+        status: "running",
+        command: "npm install language servers"
+      });
+    }
+
+    return snapshots;
+  }
+
+  private findNodeModuleScript(workspacePath: string, relativeScriptPath: string[]): string | null {
+    const candidates = [
+      path.join(workspacePath, "node_modules", ...relativeScriptPath),
+      path.join(this.options.bundleDir, "..", "node_modules", ...relativeScriptPath),
+      path.join(this.options.appPath, "node_modules", ...relativeScriptPath),
+      path.join(this.options.cwd, "node_modules", ...relativeScriptPath),
+      path.join(this.options.cwd, "app", "node_modules", ...relativeScriptPath)
+    ];
+
+    for (const candidate of candidates) {
+      if (existsSync(candidate)) {
+        return candidate;
+      }
+    }
+
+    console.warn(`[LSP] Could not resolve ${relativeScriptPath.join("/")} from candidates:\n${candidates.join("\n")}`);
+    return null;
+  }
+
+  private languageForPath(filePath: string): LspLanguage | null {
+    const lower = filePath.toLowerCase().split("?")[0] ?? filePath.toLowerCase();
+    if (lower.endsWith(".py") || lower.endsWith(".pyi")) {
+      return "python";
+    }
+
+    if (
+      lower.endsWith(".ts") ||
+      lower.endsWith(".tsx") ||
+      lower.endsWith(".mts") ||
+      lower.endsWith(".cts") ||
+      lower.endsWith(".js") ||
+      lower.endsWith(".jsx") ||
+      lower.endsWith(".mjs") ||
+      lower.endsWith(".cjs") ||
+      lower.endsWith(".json")
+    ) {
+      return "typescript";
+    }
+
+    return null;
+  }
+
+  private languagesForProject(project: StoredProject): LspLanguage[] {
+    const languages = new Set<LspLanguage>();
+
+    for (const file of project.program.files ?? []) {
+      const language = this.languageForPath(file.path);
+      if (language) {
+        languages.add(language);
+      }
+    }
+
+    if (project.activeFilePath) {
+      const language = this.languageForPath(project.activeFilePath);
+      if (language) {
+        languages.add(language);
+      }
+    }
+
+    return [...languages];
+  }
+
+  private emitLog(language: LspLanguage, level: "info" | "warn" | "error", text: string): void {
+    const line = `[${lspConfigs[language].label}] ${text}`;
+    if (this.activeWebContents && !this.activeWebContents.isDestroyed()) {
+      this.activeWebContents.send("construct:lsp:stderr", { language, level, text: line });
+    }
+  }
+
+  private startServer(workspacePath: string, language: LspLanguage): boolean {
+    const server = this.servers[language];
+    if (server.process && server.workspacePath === workspacePath) {
+      return true;
+    }
+
+    this.stop(language);
+
+    console.log(`[LSP] Starting ${lspConfigs[language].command} in:`, workspacePath);
+    this.emitLog(language, "info", `Starting ${lspConfigs[language].command} in ${workspacePath}`);
+
+    const lspScript = this.findNodeModuleScript(workspacePath, lspConfigs[language].scriptPath);
+
+    if (!lspScript) {
+      const message = `${lspConfigs[language].label} server is not installed. Expected ${lspConfigs[language].scriptPath.join("/")}`;
+      console.error("[LSP] " + message);
+      this.emitLog(language, "error", message);
+      return false;
+    }
+
+    console.log(`[LSP] Using ${language} server script path: ${lspScript}`);
+    this.emitLog(language, "info", `Using server script ${lspScript}`);
+
+    server.process = spawn(process.execPath, [lspScript, "--stdio"], {
+      cwd: workspacePath,
+      env: {
+        ...process.env,
+        ELECTRON_RUN_AS_NODE: "1"
+      }
+    });
+    server.workspacePath = workspacePath;
+
+    server.process.stdout?.on("data", (chunk: Buffer) => {
+      this.handleData(language, chunk);
+    });
+
+    server.process.stderr?.on("data", (data: Buffer) => {
+      const text = data.toString("utf8");
+      console.warn(`[LSP ${language} stderr]:`, text);
+      this.emitLog(language, "warn", text);
+    });
+
+    server.process.on("close", (code, signal) => {
+      const detail = `Process exited with code ${code ?? "null"}${signal ? ` signal ${signal}` : ""}`;
+      console.log(`[LSP] ${language} ${detail}`);
+      this.emitLog(language, code === 0 ? "info" : "warn", detail);
+      server.process = null;
+      server.buffer = "";
+      server.workspacePath = null;
+      for (const pending of server.pendingRequests.values()) {
+        pending.reject(new Error("LSP server stopped"));
+      }
+      server.pendingRequests.clear();
+    });
+
+    server.process.on("error", (err) => {
+      console.error(`[LSP] ${language} process error:`, err);
+      this.emitLog(language, "error", err instanceof Error ? err.message : String(err));
+      this.stop(language);
+    });
+
+    return true;
+  }
+
+  private inferLanguage(payload: any): LspLanguage {
+    if (payload?.languageId === "python" || payload?.languageId === "typescript") {
+      return payload.languageId;
+    }
+
+    const uri = payload?.params?.textDocument?.uri;
+    if (typeof uri === "string") {
+      const clean = uri.split("?")[0]?.toLowerCase() ?? "";
+      if (clean.endsWith(".py") || clean.endsWith(".pyi")) {
+        return "python";
+      }
+    }
+
+    return "typescript";
+  }
+
+  private handleData(language: LspLanguage, chunk: Buffer): void {
+    const server = this.servers[language];
+    server.buffer += chunk.toString("utf8");
+    while (true) {
+      const contentLengthIndex = server.buffer.indexOf("Content-Length:");
+      if (contentLengthIndex === -1) {
+        break;
+      }
+
+      const headerEndIndex = server.buffer.indexOf("\r\n\r\n", contentLengthIndex);
+      if (headerEndIndex === -1) {
+        break;
+      }
+
+      const contentLengthStr = server.buffer.slice(contentLengthIndex + 15, headerEndIndex).trim();
+      const contentLength = parseInt(contentLengthStr, 10);
+      if (isNaN(contentLength)) {
+        server.buffer = "";
+        break;
+      }
+
+      const bodyStartIndex = headerEndIndex + 4;
+      if (server.buffer.length < bodyStartIndex + contentLength) {
+        break;
+      }
+
+      const body = server.buffer.slice(bodyStartIndex, bodyStartIndex + contentLength);
+      server.buffer = server.buffer.slice(bodyStartIndex + contentLength);
+
+      try {
+        const message = JSON.parse(body);
+        this.handleMessage(language, message);
+      } catch (err) {
+        console.error("[LSP] Failed to parse JSON body:", err);
+        this.emitLog(language, "error", `Failed to parse server JSON: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+  }
+
+  private handleMessage(language: LspLanguage, message: any): void {
+    const server = this.servers[language];
+    if (message.id !== undefined && message.method !== undefined) {
+      const result = this.clientRequestResult(message.method, message.params);
+      if (server.process?.stdin) {
+        const response = JSON.stringify({ jsonrpc: "2.0", id: message.id, result });
+        server.process.stdin.write(`Content-Length: ${Buffer.byteLength(response, "utf8")}\r\n\r\n${response}`);
+        this.emitLog(language, "info", `Responded to server request ${message.method} (${message.id})`);
+      }
+    } else if (message.id !== undefined) {
+      const pending = server.pendingRequests.get(message.id);
+      if (pending) {
+        server.pendingRequests.delete(message.id);
+        pending.resolve(message);
+      }
+    } else if (message.method !== undefined) {
+      if (this.activeWebContents && !this.activeWebContents.isDestroyed()) {
+        this.activeWebContents.send("construct:lsp:notification", { ...message, languageId: language });
+      }
+    }
+  }
+
+  private clientRequestResult(method: string, params: any): unknown {
+    switch (method) {
+      case "workspace/configuration":
+        return Array.isArray(params?.items)
+          ? params.items.map((item: { section?: string }) => item.section === "formattingOptions"
+            ? { tabSize: 2, insertSpaces: true, trimTrailingWhitespace: true, insertFinalNewline: true }
+            : null)
+          : [];
+      case "client/registerCapability":
+      case "client/unregisterCapability":
+      case "window/workDoneProgress/create":
+        return null;
+      case "workspace/applyEdit":
+        return { applied: false, failureReason: "Construct does not apply language-server workspace edits automatically." };
+      default:
+        return null;
+    }
+  }
+}
