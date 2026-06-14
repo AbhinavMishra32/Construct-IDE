@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { createConstructAgentRuntime, type ConstructAgentTraceEntry } from "./constructAgentRuntime";
+import { createConstructAgentRuntime, type ConstructAgentTools, type ConstructAgentTraceEntry } from "./constructAgentRuntime";
 import type {
   ConstructInteractAction,
   ConstructInteractResult,
@@ -8,6 +8,7 @@ import type {
   GeneratedLiveStepDraft,
   LearningStatePatch
 } from "../shared/constructLearning";
+import { supportsGeneratedLiveSteps } from "../shared/tapeFeatures";
 
 export const CONSTRUCT_INTERACT_AGENT_ID = "construct-interact-agent";
 export const CONSTRUCT_INTERACT_AGENT_NAME = "Construct Interact";
@@ -113,9 +114,11 @@ const ConstructInteractResultSchema = z.object({
 
 export async function runConstructInteract(
   input: ConstructInteractRuntimeInput,
-  onTrace?: (entry: ConstructAgentTraceEntry) => void
+  onTrace?: (entry: ConstructAgentTraceEntry) => void,
+  tools?: ConstructAgentTools
 ): Promise<ConstructInteractResult> {
   const runtime = createConstructAgentRuntime();
+  const canGenerateLiveSteps = supportsGeneratedLiveSteps(input.tapeSpec ?? "");
   const result = await runtime.generateStructured({
     id: CONSTRUCT_INTERACT_AGENT_ID,
     featureId: "construct-interact",
@@ -125,12 +128,22 @@ export async function runConstructInteract(
       "You are Construct Interact, an active learning evaluator inside Construct IDE.",
       "Evaluate the learner answer against the prompt, basis, expected understanding, assessment guidance, concept context, project context, and learning state.",
       "Do not reveal the full answer immediately when the learner is close. Ask one smaller grounded follow-up instead.",
-      "You can inspect scoped context through the tool outputs in the prompt. Use the smallest relevant set; do not require every tool every time.",
-      "Prefer existing tape content before generating new content: open a concept card, go to the exact step where a concept was introduced, show an existing reference, then generate a small live step only if existing content is not enough.",
-      "You may return structured actions for stronger CTAs: go-to-step, open-concept, open-file, or create-live-steps. Labels and reasons must be dynamic and learner-specific.",
-      "You may return generatedLiveSteps only when the learner is stuck, weak on a prerequisite, used heavy assistance, failed or almost failed recall, says they do not understand, or the answer reveals a missing concept.",
-      "Generated live steps must be learning-focused only: explain, Construct Interact, or reply recall. No file edits and no code ghost edits.",
-      "Generate usually one live step. Never generate more than three. Keep titles short, reasons explicit, and content small.",
+      "You have read-only scoped tools for the authored tape, concepts, learner state, scoped files, and terminal context. Call only the tools you need. Do not require every tool every time.",
+      canGenerateLiveSteps
+        ? "Prefer existing tape content before generating new content: open a concept card, go to the exact step where a concept was introduced, show an existing reference, then generate a small live step only if existing content is not enough."
+        : "Prefer existing tape content: open a concept card, go to the exact step where a concept was introduced, or show an existing reference. Do not generate live steps for this tape spec.",
+      canGenerateLiveSteps
+        ? "You may return structured actions for stronger CTAs: go-to-step, open-concept, open-file, or create-live-steps. Labels and reasons must be dynamic and learner-specific."
+        : "You may return structured actions for stronger CTAs: go-to-step, open-concept, or open-file. Labels and reasons must be dynamic and learner-specific.",
+      canGenerateLiveSteps
+        ? "You may return generatedLiveSteps only when the learner is stuck, weak on a prerequisite, used heavy assistance, failed or almost failed recall, says they do not understand, or the answer reveals a missing concept."
+        : "Return generatedLiveSteps as an empty array for this tape spec.",
+      canGenerateLiveSteps
+        ? "Generated live steps must be learning-focused only: explain, Construct Interact, or reply recall. No file edits and no code ghost edits."
+        : "Do not return create-live-steps actions for this tape spec.",
+      canGenerateLiveSteps
+        ? "Generate usually one live step. Never generate more than three. Keep titles short, reasons explicit, and content small."
+        : "Use go-to-step, open-concept, or open-file actions when an existing resource can help.",
       "Use status=pass only when the learner has enough ownership to continue.",
       "Use status=almost for a focused follow-up. Set shouldAdvance=true only if the missing detail is minor.",
       "Use status=skip when the learner cannot answer and needs to continue with assistance recorded.",
@@ -138,7 +151,8 @@ export async function runConstructInteract(
     ].join("\n"),
     prompt: buildConstructInteractPrompt(input),
     schema: ConstructInteractResultSchema,
-    maxRetries: 1,
+    tools,
+    maxRetries: 2,
     onTrace
   });
   return {
@@ -173,11 +187,16 @@ function buildConstructInteractPrompt(input: ConstructInteractRuntimeInput): str
     "Project context:",
     JSON.stringify(input.projectContext ?? {}, null, 2),
     "",
+    "Tape feature gates:",
+    JSON.stringify({
+      tapeSpec: input.tapeSpec ?? "unknown",
+      generatedLiveSteps: supportsGeneratedLiveSteps(input.tapeSpec ?? "")
+    }, null, 2),
+    "",
     "Scoped Construct Interact tool guidance:",
     [
-      "The app may provide read-only tool outputs under projectContext.toolContext.",
-      "Treat those outputs as the result of safe scoped tools such as getCurrentStep, getPreviousSteps, getConceptCard, findWhereConceptWasIntroduced, searchTape, getLearnerState, getProjectLearnerState, getKnowledgeBase, getRecallHistory, getConstructInteractHistory, getStepFiles, readWorkspaceFile, and getLatestTerminalOutput.",
-      "If a needed tool output is absent, make a conservative decision from available context and explain the limitation in your reason.",
+      "Use the read-only tools when you need more context. Available tools include getCurrentStep, getStepById, getPreviousSteps, getNextSteps, getCurrentBlock, getConceptCard, findWhereConceptWasIntroduced, searchTape, getLearnerState, getProjectLearnerState, getKnowledgeBase, getRecallHistory, getConstructInteractHistory, getStepFiles, readWorkspaceFile, and getLatestTerminalOutput.",
+      "Use the smallest relevant set. If no tool is needed, answer directly from the prompt and rubric.",
       "When existing content directly addresses the gap, return an action instead of generatedLiveSteps."
     ].join("\n"),
     "",

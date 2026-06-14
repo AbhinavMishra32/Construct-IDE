@@ -32,8 +32,8 @@ function buildModelConfig() {
       : modelForAiFeature(settings, "code-explain"),
     apiKey,
     baseUrl: settings.provider === "openrouter"
-      ? (process.env.CONSTRUCT_OPENROUTER_BASE_URL?.trim() || "https://openrouter.ai/api/v1")
-      : ((process.env.CONSTRUCT_OPENAI_BASE_URL?.trim() || "https://api.openai.com/v1").replace(/\/$/, ""))
+      ? settings.openRouterBaseUrl
+      : settings.openAiBaseUrl
   };
 }
 
