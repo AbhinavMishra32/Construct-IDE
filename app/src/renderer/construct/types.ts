@@ -86,6 +86,8 @@ export type InteractBlock = {
   resources: {
     concepts: string[];
     files: string[];
+    references: string[];
+    steps: string[];
   };
 };
 
@@ -508,6 +510,12 @@ export type ConstructProjectsApi = {
   getWeakConcepts(input?: { projectId?: string }): Promise<ConceptUnderstanding[]>;
   saveKnowledgeConcept(input: KnowledgeBaseRecord): Promise<ConstructLearningState>;
   openKnowledgeConcept(input: KnowledgeBaseRecord): Promise<ConstructLearningState>;
+  recordConceptOpen(input: {
+    projectId: string;
+    conceptId: string;
+    title: string;
+    savedRecord?: KnowledgeBaseRecord;
+  }): Promise<ConstructLearningState>;
   removeKnowledgeConcept(input: { projectId: string; conceptId: string }): Promise<ConstructLearningState>;
   listProjects(): Promise<ProjectSummary[]>;
   openProject(id: string): Promise<ProjectRecord>;

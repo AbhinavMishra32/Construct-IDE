@@ -5,6 +5,7 @@ import { promisify } from "node:util";
 import { z } from "zod";
 import { resolveConstructOpenAiResponsesConfig } from "./constructAgentModels";
 import { createConstructAgentRuntime, type ConstructAgentTraceEntry } from "./constructAgentRuntime";
+import { resolveConstructAiSettings } from "./constructAiSettings";
 
 const execFileAsync = promisify(execFile);
 
@@ -103,7 +104,15 @@ export async function runConstructSelectionExplainAgent(
       });
     }
   } else {
-    onProgress({ status: "warning", message: "Web research is not configured", detail: "Add an OpenAI key in Settings to enable hosted research.", tool: "web" });
+    const provider = resolveConstructAiSettings().provider;
+    onProgress({
+      status: "warning",
+      message: "Hosted web research is unavailable",
+      detail: provider === "openrouter"
+        ? "Continuing with the selected OpenRouter model and project context."
+        : "Add an OpenAI key in Settings to enable hosted research.",
+      tool: "web"
+    });
   }
 
   onProgress({ status: "running", message: "Connecting it to this project", detail: "Synthesizing from selected text and workspace matches", tool: "agent" });
@@ -253,6 +262,7 @@ async function runCodebaseOnlyExplanation(
   const runtime = createConstructAgentRuntime();
   const result = await runtime.generateStructured({
     id: CONSTRUCT_SELECTION_EXPLAIN_AGENT_ID,
+    featureId: "selection-explain",
     name: "Construct Selection Explanation Agent",
     purpose: "selection explanations",
     instructions: [

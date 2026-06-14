@@ -99,6 +99,10 @@ export function openKnowledgeConcept(input: Parameters<ConstructProjectsApi["ope
   return api().openKnowledgeConcept(input);
 }
 
+export function recordConceptOpen(input: Parameters<ConstructProjectsApi["recordConceptOpen"]>[0]) {
+  return api().recordConceptOpen(input);
+}
+
 export function removeKnowledgeConceptFromStore(input: Parameters<ConstructProjectsApi["removeKnowledgeConcept"]>[0]) {
   return api().removeKnowledgeConcept(input);
 }

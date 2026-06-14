@@ -7,15 +7,18 @@ import {
   oneLight
 } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { decodeInlineRefHref, renderInlineRefsAsMarkdown, type InlineFileRef } from "../lib/inlineRefs";
+import { cn } from "../../lib/utils";
 
 export function MarkdownBlock({
   content,
   theme,
+  className,
   onOpenConcept,
   onOpenFile
 }: {
   content: string;
   theme: "light" | "dark" | "system";
+  className?: string;
   onOpenConcept?: (conceptId: string) => void;
   onOpenFile?: (reference: InlineFileRef) => void;
 }) {
@@ -166,7 +169,7 @@ export function MarkdownBlock({
   };
 
   return (
-    <div className="space-y-3 text-sm leading-relaxed text-foreground [&_h1]:text-xl [&_h1]:font-semibold [&_h2]:text-lg [&_h2]:font-semibold [&_h3]:text-base [&_h3]:font-semibold [&_p]:leading-relaxed [&_strong]:font-semibold">
+    <div className={cn("space-y-3 text-sm leading-relaxed text-foreground [&_h1]:text-xl [&_h1]:font-semibold [&_h2]:text-lg [&_h2]:font-semibold [&_h3]:text-base [&_h3]:font-semibold [&_p]:leading-relaxed [&_strong]:font-semibold", className)}>
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
         {renderInlineRefsAsMarkdown(content)}
       </ReactMarkdown>

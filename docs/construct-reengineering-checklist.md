@@ -1,6 +1,6 @@
 # Construct Reengineering Checklist
 
-Date: 2026-06-14
+Date: 2026-06-15
 
 ## Goal
 
@@ -35,9 +35,9 @@ Turn Construct from a large prototype-shaped Electron app into a maintainable sy
 - `app/src/renderer/construct/components/settings/ConstructAiSettingsSection.tsx`: owns the live config UI for runtime, provider, API keys, provider base URLs, model catalog refresh, per-feature models, and save action.
 - `app/src/renderer/construct/components/settings/ConstructLspSettingsPanel.tsx` and `lspSettingsModel.ts`: own language-server status modeling and settings UI, while lifecycle effects still live in the settings surface.
 - `app/src/renderer/construct/components/EditorPane.tsx` and `app/src/renderer/construct/lib/lspClient.ts`: roughly 880 lines each; editor rendering, inline assistance, and LSP transport need clearer boundaries.
-- `app/src/main/constructAgentRuntime.ts`: has a useful runtime interface and now resolves runtime choice from Construct config; the next step is turning the runtime adapters into a fuller class hierarchy with retry/error/telemetry policy.
+- `app/src/main/constructAgentRuntime.ts`: owns the runtime interface, configured runtime choice, Mastra multi-step structured generation, completion feedback, and observable iteration events; FXPNT remains the next runtime adapter.
 - `app/src/main/config/constructConfig.ts`: now owns OS-backed `construct.config.json` reads/writes and migration from legacy `construct-projects/settings.json`; the next step is extracting project persistence and IPC registration away from `index.ts`.
-- Tape compiler/parser now recognizes `tape-0.4.1`; generated live-step behavior is gated on `0.4.1` while existing `0.4` Construct Interact remains valid.
+- Tape compiler/parser now recognizes `tape-0.4.2`; generated live steps remain gated on `0.4.1+`, while formal agent-chosen resource discovery is gated on `0.4.2` and older `0.4.x` projects remain valid.
 
 ## Target Boundaries
 
@@ -62,17 +62,18 @@ Turn Construct from a large prototype-shaped Electron app into a maintainable sy
 5. Move AI into a real module with typed providers, model selection, runtime registry, retries, structured errors, and tracing hooks.
 6. Re-home Construct Interact on the AI module and preserve existing output/action semantics.
 7. Add `tape-0.4.1` support and move generated dynamic steps/routing to that capability gate while keeping `tape-0.4` Interact valid.
-8. Create the public `fxpnt` repo with a small low-level runtime API and wire Construct settings to expose `Mastra` and `FXPNT`.
-9. Study opencode agent UI patterns, build reusable Opaline agent chat/tool/thinking components, and wire Construct to them. A first reusable Opaline primitive split is in place; the deeper opencode-specific port is deferred to the next pass per user direction on 2026-06-14.
-10. Split renderer dump files after the main-process seam exists: `Workspace.tsx`, `ConstructApplication.tsx`, `GuidePanel.tsx`, settings, editor, and LSP client.
-11. Verify with focused tests during refactors, then full `pnpm verify` before packaging PRs.
+8. Add `tape-0.4.2` source provenance, concept engagement, and agent-chosen tool discovery without imposing a runtime tool sequence.
+9. Create the public `fxpnt` repo with a small low-level runtime API and wire Construct settings to expose `Mastra` and `FXPNT`.
+10. Study opencode agent UI patterns, build reusable Opaline agent chat/tool/thinking components, and wire Construct to them. A first reusable Opaline primitive split is in place; the deeper opencode-specific port is deferred to the next pass per user direction on 2026-06-14.
+11. Split renderer dump files after the main-process seam exists: `Workspace.tsx`, `ConstructApplication.tsx`, `GuidePanel.tsx`, settings, editor, and LSP client.
+12. Verify with focused tests during refactors, then full `pnpm verify` before packaging PRs.
 
 ## Decisions Logged
 
 - Main bootstrap now follows a controller/service composition shape: `index.ts` wires app, logging, windows, config, projects, terminal, LSP, learning, settings, and agent IPC.
 - Stateful infrastructure is class-based: `ConstructLspService`, `ConstructTerminalService`, `ProcessInspector`, `ConstructWindowManager`, `MainProcessLogBridge`, `LegacyProjectDataMigrator`.
 - Project domain is no longer defined in the Electron entrypoint; project shape lives in `ConstructProjectTypes`, persistence in `ConstructProjectRepository`, workspace operations in `ConstructProjectWorkspaceService`, and git operations in `ConstructProjectGitService`.
-- Construct Interact moved into `ConstructInteractService`, which owns timeout/recovery, tool wiring, tape `0.4.1` live-step gating, live-step validation, learning-state writes, and structured agent logging.
+- Construct Interact moved into `ConstructInteractService`, which owns timeout/recovery, agent-selected tool wiring, tape `0.4.1` live-step gating, `0.4.2` provenance/resource behavior, live-step validation, concept engagement, learning-state writes, and structured agent logging.
 - Agent IPC no longer owns agent behavior. It delegates to dedicated AI services, and those services inherit from `ConstructLoggedAgentService` so OpenTelemetry/OpenInference hooks can land at the service/runtime layer instead of being sprinkled across handlers.
 - Construct-side observability is centralized in `ConstructObservabilityService`, which uses `@arizeai/phoenix-otel` when enabled in Construct config. Phoenix/OpenInference setup stays in Construct; `fxpnt` remains a low-level runtime without tracing complexity.
 - IPC registration is split by subsystem: LSP, terminal, system/dialogs, settings, learning, project/workspace, and agent commands.
@@ -80,6 +81,10 @@ Turn Construct from a large prototype-shaped Electron app into a maintainable sy
 - Workspace pure logic is no longer buried below the component: `workspacePaths`, `workspaceTree`, `workspaceKnowledge`, `gitMilestoneState`, `editGuidance`, and `verificationLogSeed` own focused helper domains.
 - Guide panel splitting started: Construct Interact chat rendering moved into `ConstructInteractSession`, leaving the guide shell to route blocks and verification UI.
 - Opaline agent-session primitives are now split into public type, timeline, and primitive modules. Construct can use reusable thinking rows, tool cards, tool groups, action rows, and dock surfaces without owning generic chat rendering.
+- Construct Interact activity rows now represent only recorded Mastra tool calls; deterministic request/wait/validation lifecycle events are not presented as agent-chosen steps.
+- Construct Interact now uses Mastra's native bounded multi-step loop with the configured model supplied to structured output, allowing tool use and typed final output in one run.
+- Agent iteration summaries and exact tool-call records are persisted per turn and rendered through the reusable Opaline `AgentRunTrace`; private chain-of-thought is not exposed.
+- Concept engagement persists introduced/opened/saved state independently, including unsaved card opens and first/last-open timestamps.
 - Settings splitting started: AI runtime/provider/model UI moved into `ConstructAiSettingsSection`, and language-server settings moved into `ConstructLspSettingsPanel` plus `lspSettingsModel`. Persistence remains in the surface until the settings controller hook is extracted.
 - Verification after renderer/settings extractions: `pnpm --filter @construct/app typecheck` passes, and `pnpm --filter @construct/app test` passes with 52/52 tests.
 - Verification after Workspace helper extraction: `pnpm --filter @construct/app typecheck` passes.
@@ -87,24 +92,16 @@ Turn Construct from a large prototype-shaped Electron app into a maintainable sy
 - Verification after ConstructApplication hook extraction: `pnpm --filter @construct/app typecheck` passes, and `pnpm --filter @construct/app test` passes with 52/52 tests.
 - Verification after the extraction: `pnpm --filter @construct/app typecheck` passes, and `pnpm --filter @construct/app test` passes with 52/52 tests.
 - Verification after observability and Opaline agent-session primitive split: `npm run typecheck -w @opaline/ui`, `npm run build -w @opaline/ui`, `pnpm --filter @construct/app typecheck`, and `pnpm --filter @construct/app test` pass with 52/52 tests.
+- Verification after tape 0.4.2 provenance, engagement, and Interact UI work: app typecheck, Opaline UI typecheck/build, and 64/64 focused app tests pass.
+- Verification after the full agent loop and durable activity trace: the live OpenRouter ABI scenario completed six Mastra steps, used authored-step/resource/learner/concept tools, preserved source provenance, and returned an unopened-concept action. App tests pass 67/67.
 
 ## Commit Shape
 
-Updated release packaging target: finalize Construct `0.2.0` on this branch, then prepare a PR to `main`. Package the completed work into 12-16 meaningful commits with roughly 30-minute commit-date spacing between commits.
+Construct `0.2.0` packaging uses dependency-first release commits:
 
-1. Architecture notes and low-risk main-process boundary scaffolding.
-2. Config/settings service and UI source-of-truth wiring.
-3. Project/workspace/git/LSP/terminal service extraction.
-4. Agent IPC thinning and dedicated verifier/review/selection/code-ghost services.
-5. AI provider/model/runtime registry and base agent abstractions.
-6. Construct Interact migration onto the AI module.
-7. Tape `0.4.1` feature gates and generated live-step routing fix.
-8. Renderer Workspace split around file chooser, live steps, progress logs, and routing.
-9. ConstructApplication/GuidePanel/settings split into smaller product modules.
-10. Observability hooks with OpenTelemetry/OpenInference/Phoenix on Construct agents.
-11. Opaline agent chat/tool/thinking components and Construct UI wiring.
-12. FXPNT runtime readiness and settings/runtime option polish.
-13. Full verification cleanup, release notes, PR docs, and submodule pointer packaging.
+1. Commit and push the reusable Opaline agent-session primitives.
+2. Commit and push the Construct runtime, tape, provider, UI, tests, documentation, and exact Opaline pointer.
+3. Tag the verified Construct commit and let the GitHub release matrix package macOS, Windows, and Linux assets.
 
 ## Open Checks
 

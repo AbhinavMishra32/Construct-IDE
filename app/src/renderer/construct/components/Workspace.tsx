@@ -473,11 +473,28 @@ export function Workspace({
     setPinnedReferenceIds((current) => current.filter((id) => id !== referenceId));
   }
 
+  function resolveConceptId(conceptId: string): string {
+    if (concepts.some((candidate) => candidate.id === conceptId)) return conceptId;
+    const lower = conceptId.toLowerCase();
+    const byLower = concepts.find((candidate) => candidate.id.toLowerCase() === lower);
+    if (byLower) return byLower.id;
+    const byTitle = concepts.find((candidate) => candidate.title.toLowerCase() === lower);
+    if (byTitle) return byTitle.id;
+    const byTitleContains = concepts.find((candidate) => candidate.title.toLowerCase().includes(lower));
+    if (byTitleContains) return byTitleContains.id;
+    return conceptId;
+  }
+
   function openConceptCard(conceptId: string) {
-    const concept = concepts.find((candidate) => candidate.id === conceptId);
-    if (concept) recordKnowledgeOpen(project, concept, block?.kind === "recall");
+    const resolvedId = resolveConceptId(conceptId);
+    const concept = concepts.find((candidate) => candidate.id === resolvedId);
+    if (concept) {
+      void recordKnowledgeOpen(project, concept, block?.kind === "recall")
+        .then((state) => setProjectLearningState(state.projects[project.id] ?? null))
+        .catch(console.error);
+    }
     setOpenConceptIds((current) => (
-      current.includes(conceptId) ? current : [...current, conceptId]
+      current.includes(resolvedId) ? current : [...current, resolvedId]
     ));
   }
 
@@ -1049,7 +1066,13 @@ export function Workspace({
       return;
     }
 
+    const submittedAnswer = interactAnswers[block.id]?.trim() ?? "";
+    if (!submittedAnswer) {
+      return;
+    }
+
     setInteractingId(block.id);
+    setInteractAnswers((current) => ({ ...current, [block.id]: "" }));
     const queuedAt = new Date().toISOString();
     setInteractProgressLogs((current) => ({
       ...current,
@@ -1065,7 +1088,7 @@ export function Workspace({
         blockId: block.id,
         tapeSpec: project.program.spec,
         prompt: block.prompt,
-        answer: interactAnswers[block.id] ?? "",
+        answer: submittedAnswer,
         basis: block.basis,
         understanding: block.understanding,
         assessment: block.assessment,
@@ -1310,7 +1333,11 @@ export function Workspace({
   ), [isStepsCollapsed, project, furthestUnlockedStepIndex, generatedLiveSteps, activeLiveStepId]);
 
   const sidebarKnowledgeContent = useMemo(() => {
-    const currentConceptIds = block?.kind === "recall" || block?.kind === "explain" ? block.concepts : [];
+    const currentConceptIds = block?.kind === "recall" || block?.kind === "explain"
+      ? block.concepts
+      : block?.kind === "interact"
+        ? block.resources.concepts
+        : [];
     const introducedConceptIds = conceptIdsIntroducedThrough(
       project,
       furthestUnlockedStepIndex,
@@ -1321,6 +1348,8 @@ export function Workspace({
       .filter((concept): concept is ConceptCard => Boolean(concept));
     const savedConcepts = introducedConcepts.filter((concept) => savedConceptIds.includes(concept.id));
     const availableConcepts = introducedConcepts.filter((concept) => !savedConceptIds.includes(concept.id));
+    const openedConceptIds = new Set(Object.keys(projectLearningState?.conceptEngagement ?? {}));
+    const openedConceptCount = introducedConcepts.filter((concept) => openedConceptIds.has(concept.id)).length;
 
     if (introducedConcepts.length === 0) {
       return null;
@@ -1334,21 +1363,22 @@ export function Workspace({
         maxHeight={520}
         header={<div className="flex items-center gap-2 text-xs font-medium">
           <BookOpen size={14} weight="duotone" />
-          <span>Knowledge</span>
-          <small>{savedConcepts.length}/{introducedConcepts.length}</small>
+          <span>Concepts</span>
+          <small>{introducedConcepts.length} introduced · {openedConceptCount} opened · {savedConcepts.length} saved</small>
         </div>}
       >
         <section className="space-y-3 p-2" aria-label="Project knowledge" data-construct-explainable="knowledge-card" data-construct-explainable-label="Project knowledge">
           {availableConcepts.length > 0 ? (
             <div className="space-y-1">
-              {availableConcepts.map((concept) => renderSidebarConceptRow(concept, false, currentConceptIds.includes(concept.id)))}
+              <span className="px-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Introduced</span>
+              {availableConcepts.map((concept) => renderSidebarConceptRow(concept, false, openedConceptIds.has(concept.id), currentConceptIds.includes(concept.id)))}
             </div>
           ) : null}
           {savedConcepts.length > 0 ? (
             <div className="border-t pt-3">
               <span className="px-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Saved</span>
               <div className="mt-1 space-y-1">
-                {savedConcepts.map((concept) => renderSidebarConceptRow(concept, true, currentConceptIds.includes(concept.id)))}
+                {savedConcepts.map((concept) => renderSidebarConceptRow(concept, true, openedConceptIds.has(concept.id), currentConceptIds.includes(concept.id)))}
               </div>
             </div>
           ) : null}
@@ -1356,7 +1386,7 @@ export function Workspace({
       </SidebarBottomSlot>
     );
 
-    function renderSidebarConceptRow(concept: ConceptCard, isSaved: boolean, isCurrent: boolean) {
+    function renderSidebarConceptRow(concept: ConceptCard, isSaved: boolean, isOpened: boolean, isCurrent: boolean) {
       return (
         <HoverPreview
           key={concept.id}
@@ -1366,19 +1396,22 @@ export function Workspace({
             className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-muted hover:text-foreground data-[current=true]:bg-muted data-[current=true]:font-medium data-[current=true]:text-foreground"
             data-current={isCurrent ? "true" : "false"}
             onClick={() => {
-              recordKnowledgeOpen(project, concept, block?.kind === "recall");
+              void recordKnowledgeOpen(project, concept, block?.kind === "recall")
+                .then((state) => setProjectLearningState(state.projects[project.id] ?? null))
+                .catch(console.error);
               setSelectedKnowledgeConceptId(concept.id);
             }}
             type="button"
           >
             <BookOpen size={13} weight="regular" />
-            <span>{concept.title}</span>
+            <span className="min-w-0 flex-1 truncate">{concept.title}</span>
+            {isOpened ? <CheckCircle size={12} weight="fill" aria-label="Opened" /> : null}
             {isSaved ? <BookmarkSimple size={12} weight="fill" /> : null}
           </button>
         </HoverPreview>
       );
     }
-  }, [block, concepts, furthestUnlockedBlockIndex, furthestUnlockedStepIndex, project, savedConceptIds]);
+  }, [block, concepts, furthestUnlockedBlockIndex, furthestUnlockedStepIndex, project, projectLearningState?.conceptEngagement, savedConceptIds]);
 
   const gitTabContent = useMemo(() => (
     <div className="space-y-4 p-3">

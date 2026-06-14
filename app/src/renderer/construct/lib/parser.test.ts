@@ -341,6 +341,47 @@ concepts="runtime.validation"
     assert.equal(program.steps[0]?.blocks[0]?.kind, "interact");
   });
 
+  it("parses tape-0.4.2 agentic Interact resource discovery hints", () => {
+    const program = parseConstructSource(`@construct spec="tape-0.4.2"
+@id "interact-042-fixture"
+@title "Interact 0.4.2 fixture"
+@description "Exercises agentic resource discovery."
+@root "."
+
+::step id="model" title="Model the byte contract"
+::interact id="byte-contract-check" uses="disk.sector" kind="understanding-check"
+::prompt
+Why do byte offsets matter?
+::end
+::basis
+The learner saw a fixed-size sector.
+::end
+::understanding
+External readers interpret fixed positions.
+::end
+::assessment
+Pass when the learner identifies the external contract.
+::end
+::resources
+concepts="disk.sector mbr.layout"
+references="mbr-byte-map"
+steps="understand-sector-zero"
+files="src/mbr.cpp tests/test_mbr.cpp"
+::end
+::end
+::end`);
+
+    const interact = program.steps[0]?.blocks[0];
+    assert.equal(program.spec, "tape-0.4.2");
+    assert.equal(interact?.kind, "interact");
+    assert.deepEqual(interact?.kind === "interact" ? interact.resources : null, {
+      concepts: ["disk.sector", "mbr.layout"],
+      files: ["src/mbr.cpp", "tests/test_mbr.cpp"],
+      references: ["mbr-byte-map"],
+      steps: ["understand-sector-zero"]
+    });
+  });
+
   it("defaults recall mode to code and deprecates guide blocks in tape-0.4", () => {
     const program = parseConstructSource(`@construct spec="tape-0.4"
 @id "compat-fixture"

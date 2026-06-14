@@ -1,6 +1,5 @@
 import { BrowserWindow } from "electron";
-import { resolveConstructAiSettings } from "./constructAiSettings";
-import { modelForAiFeature } from "./constructAiFeatures";
+import { resolveConstructAgentModel } from "./constructAgentModels";
 
 export type CodeGhostStreamInput = {
   lineContent: string;
@@ -17,23 +16,16 @@ export type CodeGhostTraceEntry = {
 };
 
 function buildModelConfig() {
-  const settings = resolveConstructAiSettings();
-  const apiKey = settings.provider === "openrouter"
-    ? settings.openRouterApiKey
-    : settings.openAiApiKey;
-
-  if (!apiKey) {
-    throw new Error(`${settings.provider === "openrouter" ? "OpenRouter" : "OpenAI"} API key is required`);
+  const model = resolveConstructAgentModel("Code Ghost explanation", "code-explain");
+  if (!model.url) {
+    throw new Error(`No base URL is configured for ${model.providerId}.`);
   }
 
   return {
-    modelId: settings.provider === "openrouter"
-      ? modelForAiFeature(settings, "code-explain")
-      : modelForAiFeature(settings, "code-explain"),
-    apiKey,
-    baseUrl: settings.provider === "openrouter"
-      ? settings.openRouterBaseUrl
-      : settings.openAiBaseUrl
+    providerId: model.providerId,
+    modelId: model.modelId,
+    apiKey: model.apiKey,
+    baseUrl: model.url
   };
 }
 
@@ -74,9 +66,20 @@ function buildMessages(input: CodeGhostStreamInput) {
 
 export async function fetchCodeGhostExplanation(
   input: CodeGhostStreamInput,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  onTrace?: (entry: CodeGhostTraceEntry) => void
 ): Promise<string> {
   const config = buildModelConfig();
+  onTrace?.({
+    title: "Resolved agent model",
+    level: "debug",
+    detail: `${config.providerId} | ${config.modelId} | ${config.baseUrl}`,
+    payload: {
+      provider: config.providerId,
+      model: config.modelId,
+      baseUrl: config.baseUrl
+    }
+  });
   console.log("[code ghost] fetching from", config.baseUrl, "model:", config.modelId);
 
   const response = await fetch(`${config.baseUrl}/chat/completions`, {
@@ -169,7 +172,7 @@ export async function sendCodeGhostStreamToRenderer(
       }
     });
 
-    const text = await fetchCodeGhostExplanation(input, controller.signal);
+    const text = await fetchCodeGhostExplanation(input, controller.signal, onTrace);
     clearTimeout(timeout);
     onTrace?.({
       title: "Code ghost response",

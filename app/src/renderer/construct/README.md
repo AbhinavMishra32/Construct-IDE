@@ -29,7 +29,20 @@ tape-0.2 + concepts + legacy guide blocks + inline navigation + rich support + k
 
 tape-0.3.1:
 tape-0.3 + canonical guide.* namespace + explicit file/docs/concept inline references
+
+tape-0.4:
+tape-0.3.1 + Construct Interact + reply recall + local-first learner memory + Knowledge Base storage
+
+tape-0.4.1:
+tape-0.4 + validated generated live learning steps and run provenance
+
+tape-0.4.2:
+tape-0.4.1 + agent-chosen scoped tools + source-labelled resources + concept engagement
 ```
+
+The canonical 0.4 revision history lives in `docs/tape-changelog.md`. Current
+Construct keeps `tape-0.4` and `tape-0.4.1` projects compatible while applying
+the source-aware Interact runtime to them.
 
 Tape 0.3.1 keeps each concern in a distinct language layer:
 

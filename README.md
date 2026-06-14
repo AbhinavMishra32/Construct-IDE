@@ -11,122 +11,112 @@
 <p align="center">
   <img alt="Release" src="https://img.shields.io/badge/version-0.2.0-111111?style=flat-square">
   <img alt="Platforms" src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-111111?style=flat-square">
-  <img alt="Construct Protocols" src="https://img.shields.io/badge/protocols-tape--0.1_%7C_0.2_%7C_0.3_%7C_0.3.1_%7C_0.4-cb9b2d?style=flat-square">
+  <img alt="Tape" src="https://img.shields.io/badge/tape-0.1%20through%200.4.2-cb9b2d?style=flat-square">
   <img alt="Desktop" src="https://img.shields.io/badge/desktop-Electron-47848f?style=flat-square&logo=electron&logoColor=white">
   <img alt="Stars" src="https://img.shields.io/github/stars/AbhinavMishra32/Construct-IDE?style=flat-square">
 </p>
 
 <p align="center">
   <a href="https://tryconstruct.cc">Website</a> ·
-  <a href="https://github.com/AbhinavMishra32/Construct-IDE/releases">Downloads</a>
+  <a href="https://github.com/AbhinavMishra32/Construct-IDE/releases/latest">Download Construct 0.2.0</a> ·
+  <a href="docs/tape-changelog.md">Tape changelog</a>
 </p>
 
-Construct is a desktop IDE for executable learning tapes. Instead of watching a tutorial or handing the whole task to an agent, you work inside a real project while Construct sets up the workspace, guides each step, checks recall, runs terminal work, and verifies what you actually built.
+Construct is a desktop IDE for learning by building. A Construct tape opens as a real local project with files, an editor, a terminal, guided steps, recall checks, and agents that can inspect the work without taking ownership away from you.
 
 <p align="center">
-  <img src="app/assets/construct-app.png" alt="Construct IDE showing Agent Runtime Tool Contracts tape" width="100%">
+  <img src="app/assets/construct-app.png" alt="Construct IDE running a software-building tape" width="100%">
 </p>
 
-## Why Construct
+## The experience
 
-Most tools split in the wrong direction.
+You do not leave the project to watch a lesson, search for the next instruction, or paste your work into a separate chatbot. Construct keeps the learning loop beside the code:
 
-- Tutorials explain but do not stay with you while you build.
-- Coding agents move fast but often collapse the learning loop.
-- Editors give you raw power but no teaching structure.
+- **Understand the system** through focused explanations and inspectable concept cards.
+- **Build it locally** with Monaco, a real workspace, and an integrated terminal.
+- **Explain your thinking** through Construct Interact and recall prompts.
+- **Verify the result** against authored goals, tests, terminal evidence, and project state.
+- **Keep what you learned** in a local Knowledge Base with concept and assistance history.
 
-Construct combines those layers into one runtime. A tape becomes a project you can execute, edit, verify, and remember.
+## Construct Interact
 
-## Why people use it
+Construct Interact is the conversational layer inside a tape. It can inspect the current question, authored steps, concept and reference cards, learner history, scoped project files, and terminal output when those sources are relevant.
 
-- **Learn by shipping**: every lesson lives inside a real codebase, terminal, and file tree.
-- **Stay in the work**: guided edits, references, recall, and verification happen in the same app.
-- **Keep your old tapes alive**: the parser and compiler stay backwards-compatible as the spec evolves.
-- **Use agents where they help**: Construct Interact, verification, authoring review, inline help, and selection explanations are assistive, not a substitute for the tape runtime.
-- **Remember what matters**: saved concepts, recall attempts, assistance, and learner state live in one local-first learning store.
+The agent chooses its tools for each message. Its activity remains visible as a compact, expandable trace, and its response preserves source provenance: wording from a concept card is identified as concept-card wording instead of being presented as part of the lesson step.
 
-## What Construct does
+When a linked concept has not been opened, Interact can send you to the card. When it has been opened, it can use that engagement history to give a smaller, more focused follow-up.
 
-- Opens `.construct` programs and materializes them into real local workspaces.
-- Walks explain, Construct Interact, edit, recall, run, expect, checkpoint, and verify blocks in order.
-- Gives you Monaco editing, terminal execution, file navigation, and project progress in one shell.
-- Supports Construct protocols `tape-0.1`, `tape-0.2`, `tape-0.3`, `tape-0.3.1`, and `tape-0.4`.
-- Accepts older guide aliases and obvious legacy inline file references so past projects do not break.
-- Stores Knowledge Base cards, Construct Interact sessions, recall attempts, assistance events, and sync metadata in a single local learning state.
+## What a tape can contain
 
-## Downloads
+- Explanations grounded in the project you are editing
+- Construct Interact understanding checks
+- Guided edits and file navigation
+- Commands, expected output, and checkpoints
+- Reply or code recall
+- Agent verification
+- Concept and reference cards
+- Generated live learning steps when existing material is not enough
+- Git milestones and project progress
 
-Construct `0.2.0` is the next desktop release target. Public downloads ship through GitHub Releases when a release is cut.
+Tapes are plain-text `.construct` programs. They describe the workspace and learning sequence while the learner's code, terminal state, and progress remain real local data.
 
-- macOS: `.dmg`, `.zip`
-- Windows: `nsis`, `portable`, `.zip`
-- Linux: `AppImage`, `.deb`, `.tar.gz`
+## Tape compatibility
 
-## Tape Compatibility
+Construct `0.2.0` supports every tape revision from `tape-0.1` through `tape-0.4.2`.
 
-Backwards compatibility is part of the contract.
+| Revision | Adds |
+| --- | --- |
+| `tape-0.1` | Files, linear steps, explain, edit, run, expect, checkpoint |
+| `tape-0.2` | Focus anchors, references, supported recall, agent verification |
+| `tape-0.3` | Concept cards, richer support, git milestones, authoring lint |
+| `tape-0.3.1` | Canonical `guide.*` names and explicit inline references |
+| `tape-0.4` | Construct Interact, reply recall, learner memory, Knowledge Base |
+| `tape-0.4.1` | Validated generated live steps, actions, and run provenance |
+| `tape-0.4.2` | Agent-chosen tools, source-labelled resources, concept engagement, durable agent traces |
 
-- `tape-0.1`: files, linear steps, explain/edit/run/expect/checkpoint
-- `tape-0.2`: focus anchors, reference cards, supported recall, agent verification
-- `tape-0.3`: concept cards, richer support, git milestones, authoring lint, legacy guide blocks
-- `tape-0.3.1`: canonical `guide.*` namespace and explicit inline refs such as `[[file:src/a.ts|open file]]`
-- `tape-0.4`: Construct Interact, reply recall, global learning memory, Knowledge Base storage, and adaptive overlay infrastructure
+Older `tape-0.4` and `tape-0.4.1` projects receive the current source-aware Interact behavior without requiring a tape rewrite. See the [canonical tape changelog](docs/tape-changelog.md) for the compatibility policy.
 
-Legacy guide names like `::orientation`, `::problem`, `::mental-model`, and `::why-now` still work. Obvious older file refs like `[[src/a.ts|open file]]` still resolve.
+## AI providers
 
-`guide.*` blocks are deprecated for new authoring in `tape-0.4`. Construct still parses them for compatibility, but new tapes should use `::explain`, `::interact`, or `::recall mode="reply"` depending on the learning moment.
+Construct supports OpenRouter and OpenAI-compatible model configuration from Settings. Provider, key, base URL, and per-feature model choices are shared consistently by Construct Interact, Code Ghost, verification, selection explanation, and other agent features.
 
-## Roadmap
+Agent credentials and learning state are stored locally by the desktop app.
 
-- `0.2.0`: tape-0.4 support, Construct Interact, reply recall, local-first learner memory, Knowledge Base in the learning store, and a developer learner-context inspector.
-- `0.3.x`: richer adaptive overlays, stronger authoring lint, more protocol migration helpers, and release automation hardening.
-- Later: optional cloud sync for learning state, team authoring workflows, and expanded protocol examples.
+## Download
 
-## Local Development
+Download the latest installers from [GitHub Releases](https://github.com/AbhinavMishra32/Construct-IDE/releases/latest).
+
+- macOS: `.dmg` and `.zip`
+- Windows: installer, portable executable, and `.zip`
+- Linux: `AppImage`, `.deb`, and `.tar.gz`
+
+## Build from source
 
 Requirements:
 
 - Node.js 25+
 - pnpm 10+
 
-Install everything:
-
 ```bash
 pnpm install
-```
-
-Run the desktop app:
-
-```bash
 pnpm --filter @construct/app dev
 ```
 
-Run the website:
+Run the repository checks with:
 
 ```bash
-pnpm --filter @construct/website dev
-```
-
-Check the repo:
-
-```bash
-pnpm typecheck
-pnpm test
 pnpm verify
 ```
 
-## Repository
+## Repository map
 
 ```text
-app/                         Electron desktop app
-app/src/renderer/construct/  Tape runtime, compiler, parser, and UI
-opaline/packages/ui/         Shared UI package used by the app
-website/                     Marketing site for tryconstruct.cc
-docs/                        Release notes and engineering documentation
-scripts/release/             Internal release tooling used by coding agents
+app/                         Construct desktop app
+app/src/renderer/construct/  Tape runtime, compiler, and product UI
+opaline/packages/ui/         Shared desktop UI components
+website/                     tryconstruct.cc
+docs/                        Tape and release documentation
 ```
-
-The old pre-tape runner architecture is gone. The active product is the tape-based Construct IDE.
 
 ## License
 

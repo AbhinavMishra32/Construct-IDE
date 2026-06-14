@@ -1,8 +1,8 @@
-import type { KnowledgeBaseRecord } from "../../../shared/constructLearning";
+import type { ConstructLearningState, KnowledgeBaseRecord } from "../../../shared/constructLearning";
 import type { ConceptCard, ProjectRecord } from "../types";
 import {
   getLearningState,
-  openKnowledgeConcept as openKnowledgeConceptInStore,
+  recordConceptOpen as recordConceptOpenInStore,
   removeKnowledgeConceptFromStore,
   saveKnowledgeConcept as saveKnowledgeConceptInStore
 } from "./bridge";
@@ -53,19 +53,28 @@ export function removeKnowledgeConcept(projectId: string, conceptId: string): Sa
   return cache;
 }
 
-export function recordKnowledgeOpen(project: ProjectRecord, concept: ConceptCard, usedInRecall = false): void {
+export function recordKnowledgeOpen(project: ProjectRecord, concept: ConceptCard, usedInRecall = false): Promise<ConstructLearningState> {
   const existing = cache.find((record) => record.id === concept.id && record.sourceProjectId === project.id);
-  if (!existing) return;
-  const next = {
+  const next = existing ? {
     ...existing,
     openedAt: new Date().toISOString(),
     lastOpenedAt: new Date().toISOString(),
     openCount: existing.openCount + 1,
     usedInRecall: existing.usedInRecall || usedInRecall
-  };
-  cache = [next, ...cache.filter((record) => record !== existing)];
-  notify();
-  void openKnowledgeConceptInStore(next).then(() => hydrateKnowledgeRecords()).catch(console.error);
+  } : undefined;
+  if (next) {
+    cache = [next, ...cache.filter((record) => record !== existing)];
+    notify();
+  }
+  return recordConceptOpenInStore({
+    projectId: project.id,
+    conceptId: concept.id,
+    title: concept.title,
+    savedRecord: next
+  }).then(async (state) => {
+    await hydrateKnowledgeRecords();
+    return state;
+  });
 }
 
 export function subscribeKnowledgeRecords(listener: () => void): () => void {

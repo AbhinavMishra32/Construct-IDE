@@ -19,6 +19,22 @@ export type ConstructInteractSession = {
   missingConceptIds: string[];
   assistanceLevel: "none" | "hint" | "guided" | "answer";
   createdAt: string;
+  toolCalls?: ConstructInteractToolCallRecord[];
+  agentEvents?: ConstructAgentRunEvent[];
+  durationMs?: number;
+};
+
+export type ConstructAgentRunEvent = {
+  id: string;
+  type: "iteration" | "tool";
+  status: "running" | "completed" | "error";
+  title: string;
+  detail?: string;
+  iteration?: number;
+  toolName?: string;
+  input?: unknown;
+  outputPreview?: string;
+  createdAt: string;
 };
 
 export type ConstructInteractAction =
@@ -128,6 +144,8 @@ export type ConstructInteractRuntimeInput = {
   resources: {
     concepts: string[];
     files: string[];
+    references: string[];
+    steps: string[];
   };
   projectContext?: unknown;
   learningState: ConstructLearningState;
@@ -145,6 +163,8 @@ export type ConstructInteractResult = {
   actions?: ConstructInteractAction[];
   generatedLiveSteps?: GeneratedLiveStepDraft[];
   toolCalls?: ConstructInteractToolCallRecord[];
+  agentEvents?: ConstructAgentRunEvent[];
+  durationMs?: number;
   liveStepValidation?: GeneratedLiveStepValidationRecord[];
 };
 
@@ -187,12 +207,20 @@ export type KnowledgeBaseRecord = {
   usedInRecall: boolean;
 };
 
+export type ConceptEngagement = {
+  conceptId: string;
+  firstOpenedAt: string;
+  lastOpenedAt: string;
+  openCount: number;
+};
+
 export type ProjectLearningState = {
   projectId: string;
   conceptUnderstanding: Record<string, ConceptUnderstanding>;
   constructInteractSessions: ConstructInteractSession[];
   recallAttempts: RecallAttemptRecord[];
   assistanceEvents: AssistanceEventRecord[];
+  conceptEngagement: Record<string, ConceptEngagement>;
   currentPosition?: {
     stepIndex: number;
     blockIndex: number;
@@ -249,6 +277,11 @@ export type LearningStatePatch = {
   constructInteractSession?: ConstructInteractSession;
   recallAttempt?: RecallAttemptRecord;
   assistanceEvent?: AssistanceEventRecord;
+  conceptOpen?: {
+    projectId: string;
+    conceptId: string;
+    openedAt: string;
+  };
   knowledgeConcept?: KnowledgeBaseRecord;
   removeKnowledgeConcept?: {
     projectId: string;

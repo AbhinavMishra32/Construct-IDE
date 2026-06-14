@@ -81,24 +81,51 @@ export class ConstructLearningStore {
   }
 
   async openKnowledgeConcept(record: KnowledgeBaseRecord): Promise<ConstructLearningState> {
+    return this.recordConceptOpen({
+      projectId: record.sourceProjectId,
+      conceptId: record.id,
+      title: record.title,
+      savedRecord: record
+    });
+  }
+
+  async recordConceptOpen(input: {
+    projectId: string;
+    conceptId: string;
+    title: string;
+    savedRecord?: KnowledgeBaseRecord;
+  }): Promise<ConstructLearningState> {
     const now = new Date().toISOString();
     const state = await this.read();
-    const current = state.knowledgeBase.concepts[knowledgeKey(record.sourceProjectId, record.id)];
-    return this.applyPatch({
-      knowledgeConcept: {
-        ...record,
-        openedAt: now,
-        openCount: (current?.openCount ?? record.openCount ?? 0) + 1
+    const currentSaved = state.knowledgeBase.concepts[knowledgeKey(input.projectId, input.conceptId)];
+    const savedRecord = currentSaved ?? input.savedRecord;
+    const patch: LearningStatePatch = {
+      conceptOpen: {
+        projectId: input.projectId,
+        conceptId: input.conceptId,
+        openedAt: now
       },
       assistanceEvent: {
         id: randomUUID(),
-        projectId: record.sourceProjectId,
+        projectId: input.projectId,
         kind: "concept-open",
-        conceptIds: [record.id],
-        detail: record.title,
+        conceptIds: [input.conceptId],
+        detail: input.title,
         createdAt: now
       }
-    });
+    };
+
+    if (savedRecord) {
+      patch.knowledgeConcept = {
+        ...savedRecord,
+        openedAt: now,
+        openCount: (currentSaved?.openCount ?? savedRecord.openCount ?? 0) + 1
+      };
+    }
+
+    applyLearningPatch(state, patch);
+    await this.write(state);
+    return state;
   }
 
   async removeKnowledgeConcept(projectId: string, conceptId: string): Promise<ConstructLearningState> {
@@ -180,6 +207,17 @@ export function applyLearningPatch(state: ConstructLearningState, patch: Learnin
     }
   }
 
+  if (patch.conceptOpen) {
+    const project = ensureProjectState(state, patch.conceptOpen.projectId);
+    const current = project.conceptEngagement[patch.conceptOpen.conceptId];
+    project.conceptEngagement[patch.conceptOpen.conceptId] = {
+      conceptId: patch.conceptOpen.conceptId,
+      firstOpenedAt: current?.firstOpenedAt ?? patch.conceptOpen.openedAt,
+      lastOpenedAt: patch.conceptOpen.openedAt,
+      openCount: (current?.openCount ?? 0) + 1
+    };
+  }
+
   if (patch.knowledgeConcept) {
     state.knowledgeBase.concepts[knowledgeKey(patch.knowledgeConcept.sourceProjectId, patch.knowledgeConcept.id)] = patch.knowledgeConcept;
   }
@@ -251,6 +289,7 @@ function normalizeLearningState(input: Partial<ConstructLearningState>): Constru
         projectId,
         {
           ...project,
+          conceptEngagement: project.conceptEngagement ?? {},
           generatedLiveSteps: project.generatedLiveSteps ?? [],
           generatedLiveStepRuns: project.generatedLiveStepRuns ?? []
         }
@@ -274,12 +313,14 @@ function ensureProjectState(state: ConstructLearningState, projectId: string): P
     constructInteractSessions: [],
     recallAttempts: [],
     assistanceEvents: [],
+    conceptEngagement: {},
     plannedOverlays: [],
     generatedLiveSteps: [],
     generatedLiveStepRuns: []
   };
   state.projects[projectId].generatedLiveSteps ??= [];
   state.projects[projectId].generatedLiveStepRuns ??= [];
+  state.projects[projectId].conceptEngagement ??= {};
   return state.projects[projectId];
 }
 

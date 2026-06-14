@@ -20,7 +20,7 @@ export function parseConstructDocument(source: string): ConstructDocument {
   const diagnostics: ConstructDiagnostic[] = [];
 
   if (!isSupportedTapeSpec(spec)) {
-    diagnostics.push({ id: `unknown-spec:${spec}`, severity: "error", code: `${spec}/E_UNKNOWN_SPEC`, message: `Unsupported Construct tape spec "${spec}".`, line: 1, spec, details: "Use tape-0.1, tape-0.2, tape-0.3, tape-0.3.1, tape-0.4, or tape-0.4.1." });
+    diagnostics.push({ id: `unknown-spec:${spec}`, severity: "error", code: `${spec}/E_UNKNOWN_SPEC`, message: `Unsupported Construct tape spec "${spec}".`, line: 1, spec, details: "Use tape-0.1, tape-0.2, tape-0.3, tape-0.3.1, tape-0.4, tape-0.4.1, or tape-0.4.2." });
   }
 
   const fenceTokens = tokens.filter((token) => token.kind === "fence");

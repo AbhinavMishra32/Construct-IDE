@@ -64,6 +64,51 @@ describe("ConstructLearningStore", () => {
     assert.equal((await store.getState()).knowledgeBase.concepts["project-a:sandbox.runtime"], undefined);
   });
 
+  it("persists the full agent trace with each Construct Interact turn", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "construct-learning-interact-trace-"));
+    const store = new ConstructLearningStore(path.join(dir, "learning-state.json"));
+
+    await store.recordConstructInteractAttempt({
+      id: "session-1",
+      projectId: "project-a",
+      blockId: "interact-1",
+      prompt: "Explain the boundary.",
+      answer: "I am not sure.",
+      status: "almost",
+      confidence: "medium",
+      reply: "Let's inspect the exact source.",
+      coveredConceptIds: [],
+      missingConceptIds: ["disk.sector"],
+      assistanceLevel: "guided",
+      createdAt: "2026-06-15T00:00:00.000Z",
+      durationMs: 1_250,
+      toolCalls: [{
+        id: "getCurrentStep-1",
+        name: "getCurrentStep",
+        reason: "Read the authored step.",
+        input: {},
+        outputPreview: "Step text",
+        createdAt: "2026-06-15T00:00:00.100Z"
+      }],
+      agentEvents: [{
+        id: "event-1",
+        type: "tool",
+        status: "completed",
+        title: "getCurrentStep",
+        detail: "Read the authored step.",
+        toolName: "getCurrentStep",
+        input: {},
+        outputPreview: "Step text",
+        createdAt: "2026-06-15T00:00:00.100Z"
+      }]
+    });
+
+    const session = (await store.getState()).projects["project-a"]?.constructInteractSessions[0];
+    assert.equal(session?.durationMs, 1_250);
+    assert.equal(session?.agentEvents?.[0]?.toolName, "getCurrentStep");
+    assert.equal(session?.agentEvents?.[0]?.outputPreview, "Step text");
+  });
+
   it("persists generated live steps and status changes without mutating authored tape source", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "construct-learning-live-"));
     const store = new ConstructLearningStore(path.join(dir, "learning-state.json"));
@@ -157,5 +202,29 @@ describe("ConstructLearningStore", () => {
     });
     assert.equal(state.projects["project-a"]?.generatedLiveSteps[0]?.status, "dismissed");
     assert.equal(authoredSource, `@construct spec="tape-0.4"\n# Static tape stays clean\n`);
+  });
+
+  it("tracks opens for unsaved concepts independently from the knowledge base", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "construct-learning-concept-open-"));
+    const store = new ConstructLearningStore(path.join(dir, "learning-state.json"));
+
+    await store.recordConceptOpen({
+      projectId: "project-a",
+      conceptId: "disk.sector",
+      title: "Sector 0 is a byte-level contract"
+    });
+    await store.recordConceptOpen({
+      projectId: "project-a",
+      conceptId: "disk.sector",
+      title: "Sector 0 is a byte-level contract"
+    });
+
+    const state = await store.getState();
+    const engagement = state.projects["project-a"]?.conceptEngagement["disk.sector"];
+    assert.equal(engagement?.openCount, 2);
+    assert.ok(engagement?.firstOpenedAt);
+    assert.ok(engagement?.lastOpenedAt);
+    assert.equal(state.knowledgeBase.concepts["project-a:disk.sector"], undefined);
+    assert.equal(state.projects["project-a"]?.assistanceEvents.filter((event) => event.kind === "concept-open").length, 2);
   });
 });

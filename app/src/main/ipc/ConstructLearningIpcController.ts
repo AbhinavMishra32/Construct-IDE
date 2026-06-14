@@ -36,6 +36,15 @@ export class ConstructLearningIpcController {
       return this.options.learningStore().openKnowledgeConcept(record);
     });
 
+    ipcMain.handle("construct:learning:concept-open", async (_event, input: {
+      projectId: string;
+      conceptId: string;
+      title: string;
+      savedRecord?: KnowledgeBaseRecord;
+    }) => {
+      return this.options.learningStore().recordConceptOpen(input);
+    });
+
     ipcMain.handle("construct:learning:knowledge-remove", async (_event, input: { projectId: string; conceptId: string }) => {
       return this.options.learningStore().removeKnowledgeConcept(input.projectId, input.conceptId);
     });

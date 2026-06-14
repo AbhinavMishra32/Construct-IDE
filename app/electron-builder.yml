@@ -31,7 +31,7 @@ nsis:
   perMachine: false
 linux:
   category: Development
-  desktopName: Construct
+  syncDesktopName: true
   synopsis: Construct desktop IDE
   icon: build/icons/png
   target:

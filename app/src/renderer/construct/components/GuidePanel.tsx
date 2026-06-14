@@ -11,6 +11,7 @@ import {
   WandSparklesIcon,
   XCircleIcon
 } from "lucide-react";
+import { BookOpenIcon as PhosphorBookOpenIcon } from "@phosphor-icons/react";
 import { useState, useMemo } from "react";
 
 import { Button, Timeline } from "@opaline/ui";
@@ -23,6 +24,7 @@ import type { InlineFileRef } from "../lib/inlineRefs";
 import type {
   ConstructBlock,
   ConstructInteractClientResult,
+  ConceptCard,
   EditBlock,
   ProjectRecord,
   ReferenceCard,
@@ -144,6 +146,7 @@ export function GuidePanel({
             editComplete={editComplete}
             codeProgress={codeProgress}
             references={project.program.references ?? []}
+            concepts={project.program.concepts}
             verification={verification}
             verificationLogs={verification?.logs ?? verificationLogs}
             recallMissingFiles={recallMissingFiles}
@@ -163,9 +166,9 @@ export function GuidePanel({
             interactingId={interactingId}
             projectLearningState={projectLearningState}
           />
-          <p className="mt-4 text-xs text-muted-foreground">{assistanceLabel(assistance)}</p>
+          {block.kind !== "interact" ? <p className="mt-4 text-xs text-muted-foreground">{assistanceLabel(assistance)}</p> : null}
           {block.kind === "run" || (block.kind === "recall" && block.verify) || canContinue ? (
-            <div className="mt-4 flex flex-wrap justify-end gap-2 border-t pt-4">
+            <div className={block.kind === "interact" ? "mt-2 flex flex-wrap justify-end gap-2" : "mt-4 flex flex-wrap justify-end gap-2 border-t pt-4"}>
               {block.kind === "run" ? (
                 <Button variant="secondary" onClick={() => onRunCommand(block.command, block.cwd)}>
                   <PlayIcon size={15} />
@@ -206,6 +209,7 @@ function GuideBlock({
   editComplete,
   codeProgress,
   references,
+  concepts,
   verification,
   verificationLogs,
   recallMissingFiles,
@@ -230,6 +234,7 @@ function GuideBlock({
   editComplete: boolean;
   codeProgress: GhostProgress | null;
   references: ReferenceCard[];
+  concepts: ConceptCard[];
   verification?: VerificationResult;
   verificationLogs: VerificationLogEntry[];
   recallMissingFiles: string[];
@@ -289,6 +294,7 @@ function GuideBlock({
             editComplete={editComplete}
             codeProgress={null}
             references={references}
+            concepts={concepts}
             verification={verification}
             verificationLogs={verificationLogs}
             recallMissingFiles={recallMissingFiles}
@@ -340,6 +346,31 @@ function GuideBlock({
         onOpenConcept={onOpenConcept}
         onOpenFile={onOpenFile}
       />
+    );
+  }
+
+  if (block.kind === "explain") {
+    const linkedConcepts = block.concepts
+      .map((conceptId) => concepts.find((concept) => concept.id === conceptId))
+      .filter((concept): concept is ConceptCard => Boolean(concept));
+
+    return (
+      <div className="flex flex-col gap-4">
+        <MarkdownBlock content={block.content} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
+        {linkedConcepts.length > 0 ? (
+          <section className="flex flex-col gap-2 border-t pt-3" aria-label="Concepts introduced in this explanation">
+            <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Concepts introduced here</p>
+            <div className="flex flex-wrap gap-2">
+              {linkedConcepts.map((concept) => (
+                <Button key={concept.id} size="small" variant="secondary" onClick={() => onOpenConcept(concept.id)}>
+                  <PhosphorBookOpenIcon data-icon="inline-start" />
+                  {concept.title}
+                </Button>
+              ))}
+            </div>
+          </section>
+        ) : null}
+      </div>
     );
   }
 

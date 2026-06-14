@@ -1,15 +1,15 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, Code2, Copy, Globe2, Sparkles } from "lucide-react";
+import { Check, Code2, Copy, Globe2, Lightbulb, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AgentActivityList,
-  AgentContextAction,
   AgentContextSources,
-  AgentContextSurface,
   AgentThinking
 } from "@opaline/ui";
-import type { AgentActivityEntry, AgentContextMode } from "@opaline/ui";
+import type { AgentActivityEntry } from "@opaline/ui";
 
+import { SelectionDropdown, SelectionDropdownItem } from "@/components/ui/selection-dropdown";
+import type { SelectionDropdownMode } from "@/components/ui/selection-dropdown";
 import { explainSelection, onSelectionExplanationLog } from "../lib/bridge";
 import { currentBlock } from "../lib/runtime";
 import {
@@ -32,7 +32,7 @@ export function SelectionExplanationController({
 }) {
   const [selection, setSelection] = useState<ConstructSelectionContext | null>(null);
   const [stage, setStage] = useState<"prompt" | "working" | "result" | "error">("prompt");
-  const [mode, setMode] = useState<AgentContextMode>("anchored");
+  const [mode, setMode] = useState<SelectionDropdownMode>("anchored");
   const [logs, setLogs] = useState<SelectionExplanationLogEntry[]>([]);
   const [result, setResult] = useState<SelectionExplanationResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -64,7 +64,7 @@ export function SelectionExplanationController({
   useEffect(() => {
     const onMouseUp = (event: MouseEvent) => {
       const target = event.target instanceof Element ? event.target : null;
-      if (!target || target.closest(".opaline-agent-context-surface, input, textarea, [contenteditable=true], .monaco-editor")) return;
+      if (!target || target.closest("[data-slot=selection-dropdown], input, textarea, [contenteditable=true], .monaco-editor")) return;
 
       window.setTimeout(() => {
         const browserSelection = window.getSelection();
@@ -165,25 +165,24 @@ export function SelectionExplanationController({
   const codeSources = result?.sources.filter((source) => source.kind === "code" && source.path) ?? [];
 
   return (
-    <AgentContextSurface
+    <SelectionDropdown
       open={selection != null}
       anchor={selection?.anchor}
       mode={mode}
-      stage={stage}
+      expanded={stage !== "prompt"}
       eyebrow={stage === "prompt" ? undefined : selection?.sourceLabel}
       title={stage === "prompt" ? undefined : result?.title ?? selection?.text}
       onDismiss={dismiss}
       onModeChange={setMode}
     >
       {selection && stage === "prompt" ? (
-        <div className="space-y-1">
-          <AgentContextAction
-            icon={<Sparkles size={14} />}
-            label="Explain this in context"
-            description="Connect the lesson, codebase, and trusted web sources"
+        <div className="flex min-w-full flex-col gap-0.5">
+          <SelectionDropdownItem
+            icon={<Lightbulb size={14} />}
+            label="Explain"
             onClick={() => void startExplanation()}
           />
-          <AgentContextAction
+          <SelectionDropdownItem
             icon={copied ? <Check size={14} /> : <Copy size={14} />}
             label={copied ? "Copied" : "Copy selection"}
             onClick={() => void copySelection()}
@@ -231,7 +230,7 @@ export function SelectionExplanationController({
             ) : null}
             {stage === "error" ? (
               <motion.div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive" key="error" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                <strong className="font-medium">Couldn’t explain this yet</strong>
+                <strong className="font-medium">Couldn't explain this yet</strong>
                 <p className="mt-1 text-xs opacity-80">{error}</p>
                 <button className="mt-2 rounded-md border border-destructive/30 px-2 py-1 text-xs hover:bg-destructive/10" type="button" onClick={() => void startExplanation()}>Try again</button>
               </motion.div>
@@ -239,7 +238,7 @@ export function SelectionExplanationController({
           </AnimatePresence>
         </div>
       ) : null}
-    </AgentContextSurface>
+    </SelectionDropdown>
   );
 }
 

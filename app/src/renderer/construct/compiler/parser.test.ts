@@ -110,6 +110,37 @@ concepts="x"
     assert.equal(document.diagnostics.length, 0);
   });
 
+  it("accepts tape-0.4.2 for agentic Construct Interact", () => {
+    const grammar = getConstructGrammar("tape-0.4.2");
+    assert.ok(grammar.allowedChildren.step.includes("interact"));
+
+    const document = parseConstructDocument(`@construct spec="tape-0.4.2"
+::step id="s" title="S"
+::interact id="i"
+::prompt
+Question?
+::end
+::basis
+Basis.
+::end
+::understanding
+Understanding.
+::end
+::assessment
+Assessment.
+::end
+::resources
+concepts="x"
+references="r"
+steps="s"
+::end
+::end
+::end`);
+
+    assert.equal(document.spec, "tape-0.4.2");
+    assert.equal(document.diagnostics.length, 0);
+  });
+
   it("parses dotted guide block names and validates their parents", () => {
     const valid = parseConstructDocument(`@construct spec="tape-0.3"
 ::guide.orientation id="map" title="System picture"

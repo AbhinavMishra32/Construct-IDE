@@ -2,7 +2,6 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { createRequire } from "node:module";
 
 export type AiProvider = "openai" | "openrouter";
 export type ConstructAgentRuntimeId = "mastra" | "fxpnt";
@@ -46,6 +45,7 @@ export type ConstructDataPaths = {
 
 const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
 const DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
+let configuredDataPaths: ConstructDataPaths | null = null;
 
 export function createConstructDataPaths(userDataRoot: string): ConstructDataPaths {
   const projectsRoot = path.join(userDataRoot, "construct-projects");
@@ -58,6 +58,10 @@ export function createConstructDataPaths(userDataRoot: string): ConstructDataPat
     learningStatePath: path.join(projectsRoot, "learning-state.json"),
     workspacesRoot: path.join(projectsRoot, "workspaces")
   };
+}
+
+export function configureConstructDataPaths(paths: ConstructDataPaths | null): void {
+  configuredDataPaths = paths;
 }
 
 export function readConstructAiSettingsSync(): StoredAiSettings {
@@ -164,8 +168,7 @@ function defaultObservabilitySettings(): StoredObservabilitySettings {
 }
 
 function getElectronDataPaths(): ConstructDataPaths | null {
-  const app = getElectronApp();
-  return app ? createConstructDataPaths(app.getPath("userData")) : null;
+  return configuredDataPaths;
 }
 
 function requireElectronDataPaths(): ConstructDataPaths {
@@ -174,20 +177,6 @@ function requireElectronDataPaths(): ConstructDataPaths {
     throw new Error("Construct settings require Electron app userData.");
   }
   return paths;
-}
-
-function getElectronApp(): { getPath(name: "userData"): string } | null {
-  if (!process.versions.electron) {
-    return null;
-  }
-
-  try {
-    const require = createRequire(import.meta.url);
-    const electron = require("electron") as { app?: { getPath(name: "userData"): string } };
-    return electron.app ?? null;
-  } catch {
-    return null;
-  }
 }
 
 async function readJsonFile<T>(filePath: string): Promise<T | null> {

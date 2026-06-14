@@ -24,7 +24,7 @@ export function isSupportedTapeSpec(spec: string): boolean {
   }
 
   if (parsed.minor === 4) {
-    return parsed.patch === 0 || parsed.patch === 1;
+    return parsed.patch === 0 || parsed.patch === 1 || parsed.patch === 2;
   }
 
   return false;
@@ -38,6 +38,11 @@ export function supportsConstructInteract(spec: string): boolean {
 export function supportsGeneratedLiveSteps(spec: string): boolean {
   const parsed = parseTapeSpec(spec);
   return Boolean(parsed && parsed.major === 0 && parsed.minor === 4 && parsed.patch >= 1);
+}
+
+export function supportsToolDrivenInteract(spec: string): boolean {
+  const parsed = parseTapeSpec(spec);
+  return Boolean(parsed && parsed.major === 0 && parsed.minor === 4 && parsed.patch >= 2);
 }
 
 export function parseTapeSpec(spec: string): ParsedTapeSpec | null {

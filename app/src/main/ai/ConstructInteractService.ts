@@ -8,6 +8,7 @@ import { ConstructObservabilityService } from "../observability/ConstructObserva
 import type { StoredProject } from "../projects/ConstructProjectTypes";
 import { supportsGeneratedLiveSteps } from "../../shared/tapeFeatures";
 import type {
+  ConstructAgentRunEvent,
   ConstructInteractAction,
   ConstructInteractResult,
   ConstructInteractRuntimeInput,
@@ -16,7 +17,7 @@ import type {
 } from "../../shared/constructLearning";
 import { AgentLogService } from "./AgentLogService";
 
-const CONSTRUCT_INTERACT_TIMEOUT_MS = 60_000;
+const CONSTRUCT_INTERACT_TIMEOUT_MS = 180_000;
 
 class ConstructInteractTimeoutError extends Error {
   constructor(timeoutMs: number) {
@@ -66,6 +67,8 @@ export class ConstructInteractService {
     const sourceStep = project.program.steps.find((step) => step.blocks.some((block) => block.id === input.blockId));
     const sourceStepId = sourceStep?.id;
     const sourceRunId = randomUUID();
+    const runStartedAt = Date.now();
+    const agentEvents: ConstructAgentRunEvent[] = [];
     const tapeSpec = project.program.spec ?? input.tapeSpec ?? "tape-0.1";
     const canGenerateLiveSteps = supportsGeneratedLiveSteps(tapeSpec);
     const { tools, toolCalls } = createConstructInteractTools({
@@ -74,7 +77,19 @@ export class ConstructInteractService {
       learningState,
       latestTerminalOutput: this.options.latestTerminalOutput(input.projectId),
       onToolCall: (toolCall) => {
-        this.logText(`Tool call: ${toolCall.name}\n${toolCall.reason}\n${toolCall.outputPreview ?? ""}`, "debug");
+        const event: ConstructAgentRunEvent = {
+          id: toolCall.id,
+          type: "tool",
+          status: "completed",
+          title: toolCall.name,
+          detail: toolCall.reason,
+          toolName: toolCall.name,
+          input: toolCall.input,
+          outputPreview: toolCall.outputPreview,
+          createdAt: toolCall.createdAt
+        };
+        agentEvents.push(event);
+        this.logStructured("Agent tool call", event, "debug");
       }
     });
 
@@ -96,8 +111,14 @@ export class ConstructInteractService {
         tapeSpec,
         learningState
       }, (entry) => {
+        if (entry.event) {
+          agentEvents.push(entry.event);
+        }
         if (entry.payload !== undefined) {
-          this.logStructured(entry.title, entry.payload, entry.level ?? "debug");
+          this.logStructured(entry.title, entry.event ? {
+            event: entry.event,
+            payload: entry.payload
+          } : entry.payload, entry.level ?? "debug");
           return;
         }
         this.logText(`${entry.title}\n${entry.detail}`, entry.level ?? "debug");
@@ -159,7 +180,10 @@ export class ConstructInteractService {
       coveredConceptIds: result.coveredConceptIds,
       missingConceptIds: result.missingConceptIds,
       assistanceLevel: result.assistanceLevel,
-      createdAt: now
+      createdAt: now,
+      toolCalls,
+      agentEvents,
+      durationMs: Date.now() - runStartedAt
     };
 
     if (result.statePatch) {
@@ -190,6 +214,8 @@ export class ConstructInteractService {
       ...result,
       actions,
       toolCalls,
+      agentEvents,
+      durationMs: Date.now() - runStartedAt,
       generatedLiveSteps: acceptedLiveSteps,
       liveStepValidation: liveStepValidation.validation,
       session,

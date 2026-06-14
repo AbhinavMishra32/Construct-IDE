@@ -1,4 +1,4 @@
-import { resolveConstructAiSettings } from "./constructAiSettings";
+import { resolveConstructAiSettings, type StoredAiSettings } from "./constructAiSettings";
 import { modelForAiFeature, type ConstructAiFeatureId } from "./constructAiFeatures";
 
 export type ConstructAgentModel = {
@@ -9,7 +9,14 @@ export type ConstructAgentModel = {
 };
 
 export function resolveConstructAgentModel(purpose: string, featureId?: ConstructAiFeatureId): ConstructAgentModel {
-  const settings = resolveConstructAiSettings();
+  return resolveConstructAgentModelFromSettings(resolveConstructAiSettings(), purpose, featureId);
+}
+
+export function resolveConstructAgentModelFromSettings(
+  settings: StoredAiSettings,
+  purpose: string,
+  featureId?: ConstructAiFeatureId
+): ConstructAgentModel {
   const openRouter = settings.provider === "openrouter";
   const apiKey = openRouter ? settings.openRouterApiKey : settings.openAiApiKey;
 
@@ -37,7 +44,14 @@ export function resolveConstructAgentModel(purpose: string, featureId?: Construc
 }
 
 export function resolveConstructOpenAiResponsesConfig(featureId?: ConstructAiFeatureId): { apiKey: string; baseUrl: string; model: string } | null {
-  const settings = resolveConstructAiSettings();
+  return resolveConstructOpenAiResponsesConfigFromSettings(resolveConstructAiSettings(), featureId);
+}
+
+export function resolveConstructOpenAiResponsesConfigFromSettings(
+  settings: StoredAiSettings,
+  featureId?: ConstructAiFeatureId
+): { apiKey: string; baseUrl: string; model: string } | null {
+  if (settings.provider !== "openai") return null;
   const apiKey = settings.openAiApiKey;
   if (!apiKey) return null;
   return {

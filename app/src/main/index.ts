@@ -11,6 +11,7 @@ import { ConstructVerifierService } from "./ai/ConstructVerifierService";
 import { MainProcessLogBridge } from "./app/MainProcessLogBridge";
 import { ConstructWindowManager } from "./app/ConstructWindowManager";
 import {
+  configureConstructDataPaths,
   createConstructDataPaths,
   readConstructSettings,
   writeConstructSettings,
@@ -234,6 +235,7 @@ function installConstructProjectIpcHandlers(): void {
 
 
 app.whenReady().then(async () => {
+  configureConstructDataPaths(constructDataPaths());
   await new LegacyProjectDataMigrator(constructDataPaths()).migrateIfNeeded();
   observabilityService.configure(await readSettings());
   installConstructProjectIpcHandlers();

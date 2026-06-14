@@ -6,6 +6,7 @@ import { z } from "zod";
 import { resolveConstructAgentModel } from "./constructAgentModels";
 import type { ConstructAiFeatureId } from "./constructAiFeatures";
 import { resolveConstructAiSettings } from "./constructAiSettings";
+import type { ConstructAgentRunEvent } from "../shared/constructLearning";
 
 export type ConstructAgentTools = ToolsInput;
 
@@ -19,7 +20,19 @@ export type ConstructAgentRuntimeRequest<T> = {
   schema: z.ZodType<T>;
   tools?: ConstructAgentTools;
   maxRetries?: number;
+  maxSteps?: number;
+  completionGuard?: (iteration: ConstructAgentIteration) => { continue?: boolean; feedback?: string } | void;
   onTrace?: (entry: ConstructAgentTraceEntry) => void;
+};
+
+export type ConstructAgentIteration = {
+  iteration: number;
+  maxIterations?: number;
+  text: string;
+  toolCalls: Array<{ id: string; name: string; args: Record<string, unknown> }>;
+  toolResults: Array<{ id: string; name: string; result: unknown; error?: Error }>;
+  isFinal: boolean;
+  finishReason: string;
 };
 
 export type ConstructAgentRuntime = {
@@ -31,6 +44,7 @@ export type ConstructAgentTraceEntry = {
   detail: string;
   level?: "info" | "warn" | "error" | "debug";
   payload?: unknown;
+  event?: ConstructAgentRunEvent;
 };
 
 export function createConstructAgentRuntime(): ConstructAgentRuntime {
@@ -92,43 +106,115 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
       payload: describeSchema(request.schema)
     });
 
+    const model = resolveConstructAgentModel(request.purpose, request.featureId);
+    request.onTrace?.({
+      title: "Resolved agent model",
+      level: "debug",
+      detail: [
+        `provider: ${model.providerId}`,
+        `model: ${model.modelId}`,
+        model.url ? `baseUrl: ${model.url}` : null
+      ].filter(Boolean).join("\n"),
+      payload: {
+        provider: model.providerId,
+        model: model.modelId,
+        baseUrl: model.url
+      }
+    });
+
     const agent = new Agent({
       id: request.id,
       name: request.name,
       instructions: request.instructions,
-      model: resolveConstructAgentModel(request.purpose, request.featureId),
+      model,
       tools: request.tools,
       maxRetries: request.maxRetries ?? 1
     });
 
     new Mastra({ agents: { [request.id]: agent }, logger: false });
     try {
-      let output;
-      try {
-        output = await agent.generate(request.prompt, {
-          structuredOutput: { schema: request.schema },
-          maxSteps: request.tools ? 8 : undefined,
-          toolChoice: request.tools ? "auto" : undefined
-        });
-      } catch (structuredError) {
-        const rawAttempt = await agent.generate(request.prompt, {
-          maxSteps: request.tools ? 8 : undefined,
-          toolChoice: request.tools ? "auto" : undefined
-        });
-        const rawText = typeof rawAttempt === "string" ? rawAttempt : (rawAttempt as { text?: string })?.text ?? String(rawAttempt);
-        const jsonMatch = rawText.match(/```(?:json)?\s*([\s\S]*?)```/) || rawText.match(/(\{[\s\S]*\})/);
-        if (jsonMatch?.[1]) {
-          output = { object: JSON.parse(jsonMatch[1].trim()) };
-        } else {
-          throw structuredError;
+      const hasTools = request.tools && Object.keys(request.tools).length > 0;
+      const availableToolNames = new Set(Object.keys(request.tools ?? {}));
+      const runStartedAt = Date.now();
+      const output = await agent.generate(request.prompt, {
+        structuredOutput: {
+          schema: request.schema,
+          model
+        },
+        maxSteps: request.maxSteps ?? (hasTools ? 12 : 1),
+        toolChoice: hasTools ? "auto" : undefined,
+        onIterationComplete: (iteration) => {
+          const normalized: ConstructAgentIteration = {
+            iteration: iteration.iteration,
+            maxIterations: iteration.maxIterations,
+            text: iteration.text,
+            toolCalls: iteration.toolCalls,
+            toolResults: iteration.toolResults,
+            isFinal: iteration.isFinal,
+            finishReason: iteration.finishReason
+          };
+          const event: ConstructAgentRunEvent = {
+            id: `${outputEventId(request.id)}:iteration:${iteration.iteration}`,
+            type: "iteration",
+            status: "completed",
+            title: iterationTitle(normalized, availableToolNames),
+            detail: iterationDetail(normalized, availableToolNames),
+            iteration: iteration.iteration,
+            createdAt: new Date().toISOString()
+          };
+          request.onTrace?.({
+            title: "Agent iteration",
+            level: "debug",
+            detail: event.detail ?? event.title,
+            event,
+            payload: {
+              iteration: iteration.iteration,
+              maxIterations: iteration.maxIterations,
+              toolCalls: iteration.toolCalls,
+              toolResults: iteration.toolResults,
+              isFinal: iteration.isFinal,
+              finishReason: iteration.finishReason
+            }
+          });
+
+          const guarded = request.completionGuard?.(normalized);
+          if (guarded) return guarded;
+          if (iteration.isFinal && deferredWorkPromise(iteration.text)) {
+            return {
+              continue: true,
+              feedback: "Your response only promises future inspection or action. Complete that work in this run: call whichever tools are useful, inspect their results, and then return the final structured learner response."
+            };
+          }
         }
-      }
+      });
 
       request.onTrace?.({
         title: "Raw structured output",
         level: "debug",
         detail: stringifyForTrace(output.object),
         payload: output.object
+      });
+
+      const finishEvent: ConstructAgentRunEvent = {
+        id: `${outputEventId(request.id)}:finish`,
+        type: "iteration",
+        status: "completed",
+        title: "Prepared the response",
+        detail: `${output.steps.length} model step${output.steps.length === 1 ? "" : "s"} completed in ${formatDuration(Date.now() - runStartedAt)}.`,
+        iteration: output.steps.length,
+        createdAt: new Date().toISOString()
+      };
+      request.onTrace?.({
+        title: "Agent run completed",
+        level: "debug",
+        detail: finishEvent.detail ?? finishEvent.title,
+        event: finishEvent,
+        payload: {
+          stepCount: output.steps.length,
+          finishReason: output.finishReason,
+          totalUsage: output.totalUsage,
+          durationMs: Date.now() - runStartedAt
+        }
       });
 
       const parsed = request.schema.parse(output.object);
@@ -155,6 +241,43 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
       throw error;
     }
   }
+}
+
+let runEventSequence = 0;
+
+function outputEventId(agentId: string): string {
+  runEventSequence += 1;
+  return `${agentId}-${Date.now()}-${runEventSequence}`;
+}
+
+function deferredWorkPromise(text: string): boolean {
+  return /\b(?:let me|i(?:'|’)ll|i will|before i .*?let me|i need to)\s+(?:check|inspect|look|read|review|find|search|add|create|open|verify)\b/i.test(text);
+}
+
+function iterationTitle(iteration: ConstructAgentIteration, availableToolNames: Set<string>): string {
+  const toolCalls = iteration.toolCalls.filter((call) => availableToolNames.has(call.name));
+  if (toolCalls.length > 0) {
+    return `Used ${toolCalls.length} tool${toolCalls.length === 1 ? "" : "s"}`;
+  }
+  if (iteration.isFinal) return "Formed the final response";
+  if (iteration.toolCalls.length > 0) return "Organized the structured response";
+  return "Reviewed the available context";
+}
+
+function iterationDetail(iteration: ConstructAgentIteration, availableToolNames: Set<string>): string {
+  const toolCalls = iteration.toolCalls.filter((call) => availableToolNames.has(call.name));
+  if (toolCalls.length > 0) {
+    return toolCalls.map((call) => call.name).join(", ");
+  }
+  if (iteration.toolResults.length > 0) {
+    return `Reviewed ${iteration.toolResults.length} tool result${iteration.toolResults.length === 1 ? "" : "s"}.`;
+  }
+  return `Iteration ${iteration.iteration} finished with ${iteration.finishReason}.`;
+}
+
+function formatDuration(durationMs: number): string {
+  if (durationMs < 1_000) return `${durationMs} ms`;
+  return `${(durationMs / 1_000).toFixed(durationMs < 10_000 ? 1 : 0)} s`;
 }
 
 function stringifyForTrace(value: unknown): string {

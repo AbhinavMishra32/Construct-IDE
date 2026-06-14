@@ -42,6 +42,8 @@ contextBridge.exposeInMainWorld("constructProjects", {
     ipcRenderer.invoke("construct:learning:knowledge-save", input),
   openKnowledgeConcept: (input: unknown) =>
     ipcRenderer.invoke("construct:learning:knowledge-open", input),
+  recordConceptOpen: (input: unknown) =>
+    ipcRenderer.invoke("construct:learning:concept-open", input),
   removeKnowledgeConcept: (input: unknown) =>
     ipcRenderer.invoke("construct:learning:knowledge-remove", input),
   listProjects: () => ipcRenderer.invoke("construct:project:list"),

@@ -673,7 +673,7 @@ export function ConstructSettingsSurface({
           <SettingsRow
             title="Supported protocols"
             description="Construct keeps older tape projects working while the protocol evolves."
-            control={<code>tape-0.1 · tape-0.2 · tape-0.3 · tape-0.3.1</code>}
+            control={<code>tape-0.1 · tape-0.2 · tape-0.3 · tape-0.3.1 · tape-0.4 · tape-0.4.1 · tape-0.4.2</code>}
           />
         </SettingsCard>
       </SettingsSection>

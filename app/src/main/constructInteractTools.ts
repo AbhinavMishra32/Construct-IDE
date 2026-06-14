@@ -24,7 +24,7 @@ type ToolProject = {
       blocks: Array<Record<string, unknown> & { id: string; kind?: string }>;
     }>;
     concepts?: unknown[];
-    references?: unknown[];
+    references?: Array<Record<string, unknown> & { id: string }>;
   };
   currentStepIndex: number;
   currentBlockIndex: number;
@@ -118,7 +118,18 @@ export function createConstructInteractTools(input: {
     execute: async () => recordToolCall(
       "getCurrentBlock",
       "Compare the answer against the active Construct Interact block.",
-      input.project.program.steps[input.project.currentStepIndex]?.blocks[input.project.currentBlockIndex] ?? null
+      summarizeBlock(input.project.program.steps[input.project.currentStepIndex]?.blocks[input.project.currentBlockIndex] ?? null)
+    )
+  });
+
+  const getAuthoredResources = createTool({
+    id: "getAuthoredResources",
+    description: "Resolve the current interact block's authored resource ids into provenance-labeled steps, concept cards, reference cards, files, and learner engagement. Use this before recommending remediation or quoting a source.",
+    inputSchema: z.object({}).strict(),
+    execute: async () => recordToolCall(
+      "getAuthoredResources",
+      "Resolve authored remediation hints without mixing step text, concept cards, and reference cards.",
+      buildAuthoredResourceContext(input)
     )
   });
 
@@ -130,7 +141,21 @@ export function createConstructInteractTools(input: {
       "getConceptCard",
       "Inspect relevant concept cards before generating new help.",
       uniqueStrings(toolInput.conceptIds)
-        .map((conceptId) => conceptObjects(input.project.program.concepts).find((concept) => concept.id === conceptId))
+        .map((conceptId) => conceptResource(input, conceptId))
+        .filter(Boolean),
+      toolInput
+    )
+  });
+
+  const getReferenceCard = createTool({
+    id: "getReferenceCard",
+    description: "Read authored reference cards by id. Reference-card wording is not step wording; preserve that provenance when quoting it.",
+    inputSchema: z.object({ referenceIds: z.array(z.string().min(1)).min(1).max(5) }).strict(),
+    execute: async (toolInput) => recordToolCall(
+      "getReferenceCard",
+      "Inspect authored reference cards without attributing their text to the lesson step.",
+      uniqueStrings(toolInput.referenceIds)
+        .map((referenceId) => referenceResource(input.project.program.references, referenceId))
         .filter(Boolean),
       toolInput
     )
@@ -265,7 +290,9 @@ export function createConstructInteractTools(input: {
       getPreviousSteps,
       getNextSteps,
       getCurrentBlock,
+      getAuthoredResources,
       getConceptCard,
+      getReferenceCard,
       findWhereConceptWasIntroduced,
       searchTape,
       getLearnerState,
@@ -288,16 +315,68 @@ function summarizeStep(step: ToolProject["program"]["steps"][number] | undefined
     title: step.title ?? `Step ${index + 1}`,
     teaches: step.teaches ?? [],
     requires: step.requires ?? [],
-    blocks: step.blocks.map((block) => ({
-      id: block.id,
-      kind: block.kind,
-      title: typeof block.title === "string" ? block.title : undefined,
-      prompt: typeof block.prompt === "string" ? block.prompt.slice(0, 700) : undefined,
-      task: typeof block.task === "string" ? block.task.slice(0, 700) : undefined,
-      content: typeof block.content === "string" ? block.content.slice(0, 700) : undefined,
-      concepts: extractConceptIds(block)
-    }))
+    sourceType: "authored-step",
+    blocks: step.blocks.map(summarizeBlock)
   };
+}
+
+function summarizeBlock(block: (Record<string, unknown> & { id: string; kind?: string }) | null) {
+  if (!block) return null;
+  return {
+    sourceType: "authored-step-block",
+    id: block.id,
+    kind: block.kind,
+    title: typeof block.title === "string" ? block.title : undefined,
+    prompt: typeof block.prompt === "string" ? block.prompt.slice(0, 1200) : undefined,
+    basis: typeof block.basis === "string" ? block.basis.slice(0, 1200) : undefined,
+    understanding: typeof block.understanding === "string" ? block.understanding.slice(0, 1200) : undefined,
+    assessment: typeof block.assessment === "string" ? block.assessment.slice(0, 1200) : undefined,
+    task: typeof block.task === "string" ? block.task.slice(0, 1200) : undefined,
+    content: typeof block.content === "string" ? block.content.slice(0, 2400) : undefined,
+    concepts: extractConceptIds(block),
+    resources: block.resources && typeof block.resources === "object" ? block.resources : undefined
+  };
+}
+
+export function buildAuthoredResourceContext(input: Parameters<typeof createConstructInteractTools>[0]) {
+  const resourceIds = input.request.resources;
+  return {
+    sourceType: "authored-resource-map",
+    steps: (resourceIds.steps ?? [])
+      .map((stepId) => input.project.program.steps
+        .map((step, index) => ({ step, index }))
+        .find(({ step, index }) => (step.id ?? `step-${index + 1}`) === stepId))
+      .filter((match): match is { step: ToolProject["program"]["steps"][number]; index: number } => Boolean(match))
+      .map(({ step, index }) => summarizeStep(step, index)),
+    concepts: (resourceIds.concepts ?? []).map((conceptId) => conceptResource(input, conceptId)).filter(Boolean),
+    references: (resourceIds.references ?? []).map((referenceId) => referenceResource(input.project.program.references, referenceId)).filter(Boolean),
+    files: (resourceIds.files ?? []).map((file) => ({ sourceType: "authored-file-reference", path: file }))
+  };
+}
+
+function conceptResource(input: Parameters<typeof createConstructInteractTools>[0], conceptId: string) {
+  const concept = conceptObjects(input.project.program.concepts).find((candidate) => candidate.id === conceptId);
+  if (!concept) return null;
+  const projectState = input.learningState.projects[input.project.id];
+  const engagement = projectState?.conceptEngagement?.[conceptId];
+  const saved = input.learningState.knowledgeBase.concepts[`${input.project.id}:${conceptId}`];
+  return {
+    sourceType: "authored-concept-card",
+    concept,
+    engagement: {
+      opened: Boolean(engagement),
+      openCount: engagement?.openCount ?? 0,
+      firstOpenedAt: engagement?.firstOpenedAt,
+      lastOpenedAt: engagement?.lastOpenedAt,
+      saved: Boolean(saved),
+      savedAt: saved?.savedAt
+    }
+  };
+}
+
+function referenceResource(references: ToolProject["program"]["references"], referenceId: string) {
+  const reference = references?.find((candidate) => candidate.id === referenceId);
+  return reference ? { sourceType: "authored-reference-card", reference } : null;
 }
 
 function extractConceptIds(block: Record<string, unknown> | null): string[] {

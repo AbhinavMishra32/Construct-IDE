@@ -316,7 +316,12 @@ function parseInteract(cursor: Cursor): ConstructBlock {
   let basis = "";
   let understanding = "";
   let assessment = "";
-  let resources: { concepts: string[]; files: string[] } = { concepts: [], files: [] };
+  let resources: { concepts: string[]; files: string[]; references: string[]; steps: string[] } = {
+    concepts: [],
+    files: [],
+    references: [],
+    steps: []
+  };
 
   while (!done(cursor)) {
     const line = peek(cursor).trim();
@@ -365,7 +370,9 @@ function parseInteract(cursor: Cursor): ConstructBlock {
       const resourceAttrs = parseBlockAttributes(cursor, "::resources");
       resources = {
         concepts: splitList(resourceAttrs.concepts),
-        files: splitList(resourceAttrs.files)
+        files: splitList(resourceAttrs.files),
+        references: splitList(resourceAttrs.references),
+        steps: splitList(resourceAttrs.steps)
       };
       continue;
     }
