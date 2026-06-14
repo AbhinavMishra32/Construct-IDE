@@ -2605,6 +2605,7 @@ function createWindow(): void {
     transparent: true,
     vibrancy: process.platform === "darwin" ? "menu" : undefined,
     trafficLightPosition: { x: 16, y: 16 },
+    roundedCorners: ""
     titleBarStyle: "hiddenInset",
     title: "Construct",
     icon: iconPath,

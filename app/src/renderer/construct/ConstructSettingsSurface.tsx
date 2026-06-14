@@ -15,11 +15,15 @@ import {
   ShadcnDialogTitle,
   Input,
   SettingsCard,
-  SettingsChoice,
   SettingsPanel,
   SettingsRow,
   SettingsSection,
   SettingsToggle,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   Spinner,
   Textarea
 } from "@opaline/ui";
@@ -470,15 +474,16 @@ export function ConstructSettingsSurface({
               title="Color theme"
               description="Match the system appearance or keep Construct fixed to one mode."
               control={
-                <SettingsChoice
-                  value={theme}
-                  onValueChange={(value) => onThemeChange(value as ThemeMode)}
-                  options={[
-                    { value: "system", label: "System" },
-                    { value: "light", label: "Light" },
-                    { value: "dark", label: "Dark" }
-                  ]}
-                />
+                <Select value={theme} onValueChange={(value) => onThemeChange(value as ThemeMode)}>
+                  <SelectTrigger className="h-8 w-44 text-xs">
+                    <SelectValue placeholder="Select theme" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="system">System</SelectItem>
+                    <SelectItem value="light">Light</SelectItem>
+                    <SelectItem value="dark">Dark</SelectItem>
+                  </SelectContent>
+                </Select>
               }
             />
           </SettingsCard>
@@ -740,7 +745,7 @@ export function ConstructSettingsSurface({
       <SettingsSection title="AI">
         <SettingsCard>
           <SettingsRow title="AI Provider" description="Choose the account Construct uses for AI-assisted features.">
-            <SettingsChoice
+            <Select
               value={aiSettings.provider}
               onValueChange={(value) => {
                 const provider = value === "openrouter" ? "openrouter" : "openai";
@@ -756,11 +761,15 @@ export function ConstructSettingsSurface({
                   return { ...feature, model };
                 }));
               }}
-              options={[
-                { value: "openai", label: "OpenAI" },
-                { value: "openrouter", label: "OpenRouter" }
-              ]}
-            />
+            >
+              <SelectTrigger className="h-8 w-44 text-xs">
+                <SelectValue placeholder="Select provider" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="openai">OpenAI</SelectItem>
+                <SelectItem value="openrouter">OpenRouter</SelectItem>
+              </SelectContent>
+            </Select>
           </SettingsRow>
 
           {aiSettings.provider === "openai" ? (
@@ -798,39 +807,39 @@ export function ConstructSettingsSurface({
             }
           />
 
-          {aiFeatures.map((feature) => (
-            <SettingsRow
-              key={feature.id}
-              title={feature.title}
-              description={feature.description}
-              control={
-                <SettingsChoice
-                  value={feature.model}
-                  disabled={modelsBusy}
-                  placeholder={feature.model || "Select model"}
-                  onValueChange={(model) => updateFeatureModel(feature.id, model)}
-                  options={
-                    modelOptions.length > 0
-                      ? modelOptions.some((m) => m.id === feature.model)
-                        ? modelOptions.map((model) => ({
-                            value: model.id,
-                            label: model.name,
-                            description: model.id
-                          }))
-                        : [
-                            { value: feature.model, label: feature.model, description: feature.model },
-                            ...modelOptions.map((model) => ({
-                              value: model.id,
-                              label: model.name,
-                              description: model.id
-                            }))
-                          ]
-                      : [{ value: feature.model, label: feature.model || "No models loaded yet" }]
-                  }
-                />
-              }
-            />
-          ))}
+          {aiFeatures.map((feature) => {
+            const modelItems = modelOptions.length > 0
+              ? modelOptions.some((m) => m.id === feature.model)
+                ? modelOptions
+                : [{ id: feature.model ?? "", name: feature.model || "No models loaded yet" }, ...modelOptions]
+              : [{ id: feature.model ?? "", name: feature.model || "No models loaded yet" }];
+
+            return (
+              <SettingsRow
+                key={feature.id}
+                title={feature.title}
+                description={feature.description}
+                control={
+                  <Select
+                    value={feature.model ?? ""}
+                    disabled={modelsBusy}
+                    onValueChange={(model) => model && updateFeatureModel(feature.id, model)}
+                  >
+                    <SelectTrigger className="h-8 w-44 text-xs">
+                      <SelectValue placeholder={feature.model || "Select model"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {modelItems.map((model) => (
+                        <SelectItem key={model.id} value={model.id}>
+                          {model.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                }
+              />
+            );
+          })}
 
           <SettingsRow
             title="Save AI settings"
