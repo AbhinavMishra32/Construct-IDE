@@ -206,7 +206,7 @@ export const TerminalPanel = forwardRef<
 
   return (
     <TerminalSurface cwd={`${cwd} · ${status}`}>
-      <div ref={containerRef} className="terminal-panel__screen" style={{ width: "100%", height: "100%" }} />
+      <div ref={containerRef} className="h-full w-full overflow-hidden" />
     </TerminalSurface>
   );
 });

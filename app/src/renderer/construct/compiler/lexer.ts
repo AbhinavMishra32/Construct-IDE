@@ -1,4 +1,5 @@
 import type { ConstructToken } from "./types";
+import { normalizeTapeSpec } from "../../../shared/tapeFeatures";
 
 const attributePattern = /([a-zA-Z0-9_-]+)="([^"]*)"/g;
 
@@ -68,6 +69,5 @@ export function readDeclaredSpec(source: string): string {
 }
 
 export function normalizeSpec(value: string): string {
-  const trimmed = value.trim();
-  return /^0\.(?:1|2|3)(?:\.\d+)?$/.test(trimmed) ? `tape-${trimmed}` : trimmed;
+  return normalizeTapeSpec(value);
 }

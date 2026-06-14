@@ -119,6 +119,7 @@ export type GeneratedLiveStepValidationRecord = {
 export type ConstructInteractRuntimeInput = {
   projectId: string;
   blockId: string;
+  tapeSpec?: string;
   prompt: string;
   answer: string;
   basis: string;

@@ -5,28 +5,49 @@ import {
   CheckCircle,
   File,
   FileCode,
-  FileCss,
-  FileJs,
-  FileMd,
-  FileTs,
-  FileTsx,
-  GitBranch,
-  Lightning,
-  MagnifyingGlass
+  GitBranch
 } from "@phosphor-icons/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
-import { AdaptiveSidecarLayout, HoverPreview, SidebarBottomSlot, SlotPanel, Timeline } from "@opaline/ui";
+import { AdaptiveSidecarLayout, Button, HoverPreview, SidebarBottomSlot, SlotPanel, Timeline } from "@opaline/ui";
 import { logStore } from "../lib/logStore";
 import { lspClient } from "../lib/lspClient";
 import type { SlotTab } from "@opaline/ui";
 import { EditorPane } from "./EditorPane";
 import { GuidePanel } from "./GuidePanel";
-import { MarkdownBlock } from "./MarkdownBlock";
 import { ReferenceCard } from "./ReferenceCard";
 import { KnowledgeCard } from "./KnowledgeCard";
 import { KnowledgeDialog } from "./KnowledgeDialog";
 import { StepList } from "./StepList";
+import { FileChooserContent, iconForFile } from "./workspace/FileChooserContent";
+import { LiveStepPanel } from "./workspace/LiveStepPanel";
+import {
+  deriveEditAnchor,
+  isGuidedEditReady,
+  lineNumberForOffset
+} from "./workspace/editGuidance";
+import {
+  gitResultToMilestoneState,
+  milestoneStatusLabel,
+  readGitMilestoneStates,
+  resolveMilestoneStatus,
+  writeGitMilestoneStates,
+  type StoredGitMilestoneState
+} from "./workspace/gitMilestoneState";
+import { useInteractProgressLogBuffer } from "./workspace/useInteractProgressLogBuffer";
+import { buildVerificationStartLogs } from "./workspace/verificationLogSeed";
+import {
+  conceptIdsIntroducedThrough,
+  initialSavedConceptIds,
+  uniqueConcepts,
+  uniqueStrings
+} from "./workspace/workspaceKnowledge";
+import {
+  generateCopyPath,
+  normalizeOptionalWorkspacePath,
+  normalizeWorkspacePath
+} from "./workspace/workspacePaths";
+import { flattenTree } from "./workspace/workspaceTree";
 import {
   createFolder,
   deleteFile,
@@ -55,7 +76,6 @@ import {
 } from "../lib/documentSession";
 import type { InlineFileRef } from "../lib/inlineRefs";
 import {
-  readKnowledgeRecords,
   recordKnowledgeOpen,
   removeKnowledgeConcept,
   saveKnowledgeConcept
@@ -65,9 +85,7 @@ import type {
   ConceptCard,
   ConstructTarget,
   EditBlock,
-  GitActionResult,
   GitMilestone,
-  GitMilestoneStatus,
   GitStatus,
   ProjectRecord,
   RecallBlock,
@@ -84,157 +102,6 @@ const EMPTY_GENERATED_LIVE_STEPS: GeneratedLiveStep[] = [];
 const EMPTY_GIT_MILESTONES: GitMilestone[] = [];
 const EMPTY_REFERENCE_CARDS: ReferenceCardData[] = [];
 const EMPTY_TARGETS: ConstructTarget[] = [];
-
-function iconForFile(filename: string) {
-  const props = { size: 12, weight: "duotone" as const };
-
-  if (/\.(tsx)$/.test(filename)) return <FileTsx {...props} />;
-  if (/\.(ts|mts|cts)$/.test(filename)) return <FileTs {...props} />;
-  if (/\.(js|jsx|mjs|cjs)$/.test(filename)) return <FileJs {...props} />;
-  if (/\.css$/.test(filename)) return <FileCss {...props} />;
-  if (/\.json$/.test(filename)) return <FileCode {...props} />;
-  if (/\.mdx?$/.test(filename)) return <FileMd {...props} />;
-
-  return <File {...props} />;
-}
-
-/* ------------------------------------------------------------------ */
-/*  File Chooser (shown when user clicks + → Open file)               */
-/* ------------------------------------------------------------------ */
-function FileChooserContent({
-  files,
-  onSelectFile
-}: {
-  files: string[];
-  onSelectFile: (path: string) => void;
-}) {
-  const [search, setSearch] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
-
-  const filtered = useMemo(() => {
-    if (!search) return files;
-    const q = search.toLowerCase();
-    return files.filter((f) => f.toLowerCase().includes(q));
-  }, [files, search]);
-
-  return (
-    <div className="construct-file-chooser">
-      <div className="construct-file-chooser-search">
-        <MagnifyingGlass size={14} weight="bold" className="construct-file-chooser-search-icon" />
-        <input
-          ref={inputRef}
-          className="construct-file-chooser-input"
-          type="text"
-          placeholder="Search files…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          spellCheck={false}
-          autoComplete="off"
-        />
-      </div>
-      <div className="construct-file-chooser-list">
-        {filtered.map((filePath) => {
-          const filename = filePath.split("/").pop() || "";
-          return (
-            <button
-              key={filePath}
-              className="construct-file-chooser-item"
-              type="button"
-              onClick={() => onSelectFile(filePath)}
-            >
-              <span className="construct-file-chooser-item-icon">{iconForFile(filename)}</span>
-              <span className="construct-file-chooser-item-name">{filename}</span>
-              <span className="construct-file-chooser-item-path">{filePath}</span>
-            </button>
-          );
-        })}
-        {filtered.length === 0 && (
-          <div className="construct-file-chooser-empty">No matching files</div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function LiveStepPanel({
-  liveStep,
-  theme,
-  onOpenConcept,
-  onOpenFile,
-  onComplete,
-  onDismiss,
-  onBack
-}: {
-  liveStep: GeneratedLiveStep;
-  theme: "light" | "dark" | "system";
-  onOpenConcept: (conceptId: string) => void;
-  onOpenFile: (reference: InlineFileRef) => void;
-  onComplete: () => void;
-  onDismiss: () => void;
-  onBack: () => void;
-}) {
-  return (
-    <aside className="guide-panel generated-live-guide" data-construct-explainable="generated-live-step" data-construct-explainable-label="Generated live step">
-      <div className="generated-live-guide__banner">
-        <Lightning size={15} weight="duotone" />
-        <span>Generated live by Construct Interact</span>
-      </div>
-      <div className="guide-panel__meta">
-        <span>Adaptive live step</span>
-        <span>{liveStep.status}</span>
-      </div>
-      <h2>{liveStep.title}</h2>
-      <p className="generated-live-guide__reason">{liveStep.reason}</p>
-      <div className="generated-live-guide__blocks">
-        {liveStep.blocks.map((block) => {
-          if (block.kind === "explain") {
-            return (
-              <section key={block.id} className="generated-live-guide__block">
-                <p className="guide-panel__label">Explain</p>
-                <MarkdownBlock content={block.content} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
-              </section>
-            );
-          }
-
-          if (block.kind === "interact") {
-            return (
-              <section key={block.id} className="generated-live-guide__block">
-                <p className="guide-panel__label">Construct Interact</p>
-                <MarkdownBlock content={block.prompt} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
-                <div className="generated-live-guide__prompt-note">
-                  <strong>What to check</strong>
-                  <span>{block.understanding}</span>
-                </div>
-              </section>
-            );
-          }
-
-          return (
-            <section key={block.id} className="generated-live-guide__block">
-              <p className="guide-panel__label">Reply Recall</p>
-              <MarkdownBlock content={block.task} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
-              {block.support ? (
-                <div className="generated-live-guide__support">
-                  <p className="guide-panel__label">Support</p>
-                  <MarkdownBlock content={block.support} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
-                </div>
-              ) : null}
-            </section>
-          );
-        })}
-      </div>
-      <div className="guide-panel__actions">
-        <button type="button" className="generated-live-guide__secondary" onClick={onBack}>Back to tape</button>
-        <button type="button" className="generated-live-guide__secondary" onClick={onDismiss}>Dismiss</button>
-        <button type="button" className="generated-live-guide__primary" onClick={onComplete}>Complete live step</button>
-      </div>
-    </aside>
-  );
-}
 
 export function Workspace({
   project,
@@ -300,7 +167,13 @@ export function Workspace({
   const [recallAnswers, setRecallAnswers] = useState<Record<string, string>>({});
   const [interactAnswers, setInteractAnswers] = useState<Record<string, string>>({});
   const [interactResults, setInteractResults] = useState<Record<string, ConstructInteractClientResult>>({});
-  const [interactingId, setInteractingId] = useState<string | null>(null);
+  const {
+    interactProgressLogs,
+    setInteractProgressLogs,
+    interactingId,
+    setInteractingId,
+    resetInteractProgress
+  } = useInteractProgressLogBuffer();
   const [projectLearningState, setProjectLearningState] = useState<ProjectLearningState | null>(null);
   const [activeLiveStepId, setActiveLiveStepId] = useState<string | null>(null);
   const autoOpenedRecallRef = useRef<string | null>(null);
@@ -388,9 +261,10 @@ export function Workspace({
     setPinnedReferenceIds([]);
     setVerifyingId(null);
     setVerificationLogs({});
+    resetInteractProgress();
     setActiveLiveStepId(null);
     autoOpenedRecallRef.current = null;
-  }, [project.id]);
+  }, [project.id, resetInteractProgress]);
 
   useEffect(() => {
     let disposed = false;
@@ -1176,10 +1050,20 @@ export function Workspace({
     }
 
     setInteractingId(block.id);
+    const queuedAt = new Date().toISOString();
+    setInteractProgressLogs((current) => ({
+      ...current,
+      [block.id]: [{
+        timestamp: queuedAt,
+        level: "info",
+        message: `Queued answer for ${block.id}`
+      }]
+    }));
     try {
       const result = await runConstructInteract({
         projectId: project.id,
         blockId: block.id,
+        tapeSpec: project.program.spec,
         prompt: block.prompt,
         answer: interactAnswers[block.id] ?? "",
         basis: block.basis,
@@ -1387,6 +1271,7 @@ export function Workspace({
         }
       }}
       interactResult={block?.kind === "interact" ? interactResults[block.id] : undefined}
+      interactProgressLogs={block?.kind === "interact" ? interactProgressLogs[block.id] ?? [] : []}
       onSubmitInteract={() => void handleConstructInteract()}
       onInteractAction={(action) => void handleInteractAction(action)}
       interactingId={interactingId}
@@ -1397,20 +1282,21 @@ export function Workspace({
         : []}
       recallMissingFiles={recallMissingFiles}
     />
-  ), [activeLiveStep, block, editComplete, interactAnswers, interactResults, interactingId, onRunCommand, project, recallAnswers, recallMissingFiles, theme, verificationLogs, verifyingId]);
+  ), [activeLiveStep, block, editComplete, interactAnswers, interactProgressLogs, interactResults, interactingId, onRunCommand, project, recallAnswers, recallMissingFiles, theme, verificationLogs, verifyingId]);
 
   const stepsTabContent = useMemo(() => (
-    <div className={`workspace-right-panel-steps ${isStepsCollapsed ? "is-collapsed" : ""}`}>
-      <button
-        className="workspace-panel__header"
+    <div className="flex h-full min-h-0 flex-col">
+      <Button
+        variant="ghost"
+        className="w-full justify-between"
         onClick={() => setIsStepsCollapsed(prev => !prev)}
         aria-expanded={!isStepsCollapsed}
         aria-label="Toggle steps timeline"
       >
         <span>Steps</span>
-        <CaretDown size={11} weight="bold" className="workspace-panel__header-chevron" />
-      </button>
-      <div className="workspace-right-panel-steps-timeline-container">
+        <CaretDown data-icon="inline-end" weight="bold" />
+      </Button>
+      <div className={isStepsCollapsed ? "hidden" : "min-h-0 flex-1 overflow-hidden"}>
         <StepList
           project={project}
           onSelectStep={(idx) => void handleSelectStep(idx)}
@@ -1442,26 +1328,26 @@ export function Workspace({
 
     return (
       <SidebarBottomSlot
-        className="construct-sidebar-knowledge-slot"
+        className="border-t"
         defaultHeight={Math.min(320, Math.max(150, 58 + introducedConcepts.length * 34))}
         minHeight={118}
         maxHeight={520}
-        header={<div className="construct-sidebar-knowledge__header">
+        header={<div className="flex items-center gap-2 text-xs font-medium">
           <BookOpen size={14} weight="duotone" />
           <span>Knowledge</span>
           <small>{savedConcepts.length}/{introducedConcepts.length}</small>
         </div>}
       >
-        <section className="construct-sidebar-knowledge" aria-label="Project knowledge" data-construct-explainable="knowledge-card" data-construct-explainable-label="Project knowledge">
+        <section className="space-y-3 p-2" aria-label="Project knowledge" data-construct-explainable="knowledge-card" data-construct-explainable-label="Project knowledge">
           {availableConcepts.length > 0 ? (
-            <div className="construct-sidebar-knowledge__list">
+            <div className="space-y-1">
               {availableConcepts.map((concept) => renderSidebarConceptRow(concept, false, currentConceptIds.includes(concept.id)))}
             </div>
           ) : null}
           {savedConcepts.length > 0 ? (
-            <div className="construct-sidebar-knowledge__saved">
-              <span className="construct-sidebar-knowledge__group-label">Saved</span>
-              <div className="construct-sidebar-knowledge__list">
+            <div className="border-t pt-3">
+              <span className="px-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Saved</span>
+              <div className="mt-1 space-y-1">
                 {savedConcepts.map((concept) => renderSidebarConceptRow(concept, true, currentConceptIds.includes(concept.id)))}
               </div>
             </div>
@@ -1474,10 +1360,10 @@ export function Workspace({
       return (
         <HoverPreview
           key={concept.id}
-          content={<div className="construct-knowledge-preview"><span>{concept.kind}</span><strong>{concept.title}</strong><p>{concept.summary}</p>{concept.tags.length ? <small>{concept.tags.join(" · ")}</small> : null}</div>}
+          content={<div className="space-y-1"><span className="text-[10px] uppercase tracking-wide text-muted-foreground">{concept.kind}</span><strong className="block text-sm font-medium">{concept.title}</strong><p className="text-xs text-muted-foreground">{concept.summary}</p>{concept.tags.length ? <small className="block text-[10px] text-muted-foreground">{concept.tags.join(" · ")}</small> : null}</div>}
         >
           <button
-            className="construct-sidebar-knowledge__row"
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-muted hover:text-foreground data-[current=true]:bg-muted data-[current=true]:font-medium data-[current=true]:text-foreground"
             data-current={isCurrent ? "true" : "false"}
             onClick={() => {
               recordKnowledgeOpen(project, concept, block?.kind === "recall");
@@ -1495,8 +1381,8 @@ export function Workspace({
   }, [block, concepts, furthestUnlockedBlockIndex, furthestUnlockedStepIndex, project, savedConceptIds]);
 
   const gitTabContent = useMemo(() => (
-    <div className="git-panel">
-      <div className="git-panel__status">
+    <div className="space-y-4 p-3">
+      <div className="flex items-start gap-3 rounded-md border bg-muted/30 p-3 text-sm">
         <GitBranch size={16} weight="duotone" />
         <div>
           <strong>{gitProjectStatus?.isRepo ? gitProjectStatus.branch ?? "Git repository" : "No repository"}</strong>
@@ -1508,7 +1394,7 @@ export function Workspace({
         </div>
       </div>
 
-      {gitMilestones.length > 0 ? <Timeline className="git-panel__timeline" items={gitMilestones.map((milestone) => {
+      {gitMilestones.length > 0 ? <Timeline items={gitMilestones.map((milestone) => {
           const stored = gitMilestoneStates[milestone.id];
           const status = resolveMilestoneStatus(milestone, stored, project);
           const isBusy = gitBusyId === milestone.id;
@@ -1521,11 +1407,12 @@ export function Workspace({
             meta: milestone.after,
             status: status === "suggested" ? "warning" : status === "committed" ? "active" : status === "pushed" ? "pushed" : status === "failed" ? "error" : "pending",
             icon: status === "committed" || status === "pushed" ? <CheckCircle weight="bold" /> : <GitBranch weight="bold" />,
-            content: <div className="git-panel__milestone-body">
-                <div className="git-panel__milestone-head">
+            content: <div className="space-y-3">
+                <div className="flex items-start justify-between gap-3 text-xs text-muted-foreground">
                   <span>{milestone.description || "Suggested commit for this learning milestone."}</span>
                 </div>
                 <input
+                  className="h-8 w-full rounded-md border bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-ring/30"
                   value={message}
                   onChange={(event) => setGitMilestoneMessages((current) => ({
                     ...current,
@@ -1533,33 +1420,33 @@ export function Workspace({
                   }))}
                   aria-label={`Commit message for ${milestone.id}`}
                 />
-                <div className="git-panel__files">
+                <div className="flex flex-wrap gap-1">
                   {milestone.includePaths.length > 0
-                    ? milestone.includePaths.map((includePath) => <code key={includePath}>{includePath}</code>)
-                    : <code>all changed files</code>}
+                    ? milestone.includePaths.map((includePath) => <code className="rounded border bg-muted px-1.5 py-0.5 font-mono text-[10px]" key={includePath}>{includePath}</code>)
+                    : <code className="rounded border bg-muted px-1.5 py-0.5 font-mono text-[10px]">all changed files</code>}
                 </div>
-                {stored?.output ? <pre>{stored.output}</pre> : null}
-                <div className="git-panel__actions">
-                  <button type="button" disabled={!canCommit} onClick={() => void handleCommitMilestone(milestone, false)}>
+                {stored?.output ? <pre className="overflow-auto rounded-md bg-muted p-2 font-mono text-[10px]">{stored.output}</pre> : null}
+                <div className="flex flex-wrap gap-2">
+                  <Button size="small" variant="secondary" type="button" disabled={!canCommit} onClick={() => void handleCommitMilestone(milestone, false)}>
                     <CheckCircle size={13} weight="duotone" />
                     {isBusy ? "Committing" : "Commit"}
-                  </button>
-                  <button type="button" disabled={!canCommit || gitProjectStatus?.hasRemote !== true} onClick={() => void handleCommitMilestone(milestone, true)}>
+                  </Button>
+                  <Button size="small" variant="secondary" type="button" disabled={!canCommit || gitProjectStatus?.hasRemote !== true} onClick={() => void handleCommitMilestone(milestone, true)}>
                     <GitBranch size={13} weight="duotone" />
                     Commit + Push
-                  </button>
-                  <button
+                  </Button>
+                  <Button size="small" variant="ghost"
                     type="button"
                     disabled={status === "pending" || isBusy}
                     onClick={() => updateGitMilestoneState(milestone.id, { status: "pending", output: "Deferred for later." })}
                   >
                     Later
-                  </button>
+                  </Button>
                 </div>
               </div>
           };
         })} /> : (
-          <p className="git-panel__empty">No git milestones are declared in this tape yet.</p>
+          <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">No git milestones are declared in this tape yet.</p>
         )}
     </div>
   ), [gitBusyId, gitMilestoneMessages, gitMilestoneStates, gitMilestones, gitProjectStatus, project]);
@@ -1600,7 +1487,6 @@ export function Workspace({
         activeTabId={normalizedRightSlotId}
         tabs={panelTabs}
         syncTabs
-        className="construct-guide-slot-panel"
         ariaLabel="Guide and steps tabs"
         onActiveTabChange={(tabId) => onRightSlotChange(tabId ?? "guide")}
       />
@@ -1681,7 +1567,7 @@ export function Workspace({
   const hasOpenContextCards = openReferenceIds.length > 0 || openConceptIds.length > 0;
   const hasPinnedContextCard = openReferenceIds.some((referenceId) => pinnedReferenceIds.includes(referenceId));
   const contextCards = hasOpenContextCards ? (
-    <div className="construct-context-card-stack" aria-label="Open reference and knowledge cards">
+    <div className="flex max-h-full w-full flex-col gap-3 overflow-y-auto" aria-label="Open reference and knowledge cards">
       {openReferenceIds
         .map((referenceId) => references.find((reference) => reference.id === referenceId))
         .filter((reference): reference is (typeof references)[number] => Boolean(reference))
@@ -1717,7 +1603,7 @@ export function Workspace({
 
   return (
     <AdaptiveSidecarLayout
-      className="workspace workspace--editor-only construct-workspace-sidecar"
+      className="h-full min-h-0"
       open={hasOpenContextCards}
       pinned={hasPinnedContextCard}
       sidecar={contextCards}
@@ -1727,7 +1613,6 @@ export function Workspace({
         tabs={editorSlotTabs}
         syncTabs
         outlet={editorOutlet}
-        className="construct-editor-slot-panel"
         ariaLabel="Editor file tabs"
         onTabChange={handleTabChange}
         onTabClose={handleTabClose}
@@ -1744,298 +1629,4 @@ export function Workspace({
       />
     </AdaptiveSidecarLayout>
   );
-}
-
-function flattenTree(nodes: WorkspaceTreeNode[]): string[] {
-  const result: string[] = [];
-  function visit(node: WorkspaceTreeNode) {
-    if (node.type === "file") {
-      result.push(node.path);
-    } else if (node.children) {
-      node.children.forEach(visit);
-    }
-  }
-  nodes.forEach(visit);
-  return result;
-}
-
-function lineNumberForOffset(content: string, offset: number): number {
-  return content.slice(0, offset).split("\n").length;
-}
-
-function uniqueStrings(values: string[]): string[] {
-  return [...new Set(values)];
-}
-
-function uniqueConcepts(values: ConceptCard[]): ConceptCard[] {
-  const seen = new Set<string>();
-  return values.filter((concept) => {
-    if (seen.has(concept.id)) {
-      return false;
-    }
-
-    seen.add(concept.id);
-    return true;
-  });
-}
-
-function conceptIdsIntroducedThrough(project: ProjectRecord, stepIndex: number, blockIndex: number): string[] {
-  const ids: string[] = [];
-  const known = new Set(project.program.concepts.map((concept) => concept.id));
-
-  for (let currentStepIndex = 0; currentStepIndex <= stepIndex; currentStepIndex += 1) {
-    const step = project.program.steps[currentStepIndex];
-    if (!step) continue;
-    const finalBlockIndex = currentStepIndex === stepIndex ? Math.min(blockIndex, step.blocks.length - 1) : step.blocks.length - 1;
-    for (let currentBlockIndex = 0; currentBlockIndex <= finalBlockIndex; currentBlockIndex += 1) {
-      const current = step.blocks[currentBlockIndex];
-      if (!current) continue;
-      const declared = current.kind === "explain" || current.kind === "recall" ? current.concepts : [];
-      const inlineText = current.kind === "explain"
-        ? current.content
-        : current.kind === "recall"
-          ? `${current.task}\n${current.support}`
-          : "";
-      const inline = [...inlineText.matchAll(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g)].map((match) => match[1]);
-      for (const id of [...declared, ...inline]) {
-        if (known.has(id) && !ids.includes(id)) ids.push(id);
-      }
-    }
-  }
-
-  return ids;
-}
-
-function initialSavedConceptIds(project: ProjectRecord, concepts: ConceptCard[]): string[] {
-  const existing = readKnowledgeRecords().filter((record) => record.sourceProjectId === project.id).map((record) => record.id);
-  try {
-    const legacy = JSON.parse(window.localStorage.getItem("construct.knowledge.savedConceptIds") ?? "[]");
-    if (Array.isArray(legacy)) {
-      for (const conceptId of legacy) {
-        const concept = concepts.find((candidate) => candidate.id === conceptId);
-        if (concept && !existing.includes(concept.id)) {
-          saveKnowledgeConcept(project, concept);
-          existing.push(concept.id);
-        }
-      }
-    }
-  } catch {
-    // Ignore malformed legacy storage and keep valid records.
-  }
-  return uniqueStrings(existing);
-}
-
-type StoredGitMilestoneState = {
-  status?: GitMilestoneStatus;
-  message?: string;
-  output?: string;
-  commitHash?: string;
-  updatedAt?: string;
-};
-
-function gitMilestoneStorageKey(projectId: string): string {
-  return `construct.git.milestones.${projectId}`;
-}
-
-function readGitMilestoneStates(projectId: string): Record<string, StoredGitMilestoneState> {
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(gitMilestoneStorageKey(projectId)) ?? "{}");
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? parsed as Record<string, StoredGitMilestoneState>
-      : {};
-  } catch {
-    return {};
-  }
-}
-
-function writeGitMilestoneStates(projectId: string, states: Record<string, StoredGitMilestoneState>): void {
-  window.localStorage.setItem(gitMilestoneStorageKey(projectId), JSON.stringify(states));
-}
-
-function gitResultToMilestoneState(
-  result: GitActionResult,
-  successStatus: GitMilestoneStatus,
-  message: string,
-  fallbackCommitHash?: string
-): StoredGitMilestoneState {
-  return {
-    status: result.success ? successStatus : "failed",
-    message,
-    output: result.output || (result.success ? "Done." : "Git command failed."),
-    commitHash: result.commitHash ?? fallbackCommitHash
-  };
-}
-
-function resolveMilestoneStatus(
-  milestone: GitMilestone,
-  stored: StoredGitMilestoneState | undefined,
-  project: ProjectRecord
-): GitMilestoneStatus {
-  if (stored?.status === "committed" || stored?.status === "pushed" || stored?.status === "failed") {
-    return stored.status;
-  }
-
-  const linkedVerificationPassed = project.verificationResults?.[milestone.after]?.passed === true;
-  const linkedBlockCompleted = project.completedBlocks?.[milestone.after] === true;
-  if (linkedVerificationPassed || linkedBlockCompleted) {
-    return "suggested";
-  }
-
-  return "pending";
-}
-
-function milestoneStatusLabel(status: GitMilestoneStatus): string {
-  switch (status) {
-    case "suggested":
-      return "Suggested";
-    case "committed":
-      return "Committed";
-    case "pushed":
-      return "Pushed";
-    case "failed":
-      return "Failed";
-    case "pending":
-    default:
-      return "Waiting";
-  }
-}
-
-function isGuidedEditReady(
-  edit: EditBlock,
-  editAnchors: Record<string, string>
-): boolean {
-  return edit.mode !== "append" || Object.prototype.hasOwnProperty.call(editAnchors, edit.id);
-}
-
-function deriveEditAnchor({
-  edit,
-  existing,
-  progress
-}: {
-  edit: EditBlock;
-  existing: string;
-  progress: number;
-}): string {
-  if (edit.mode !== "append") {
-    return "";
-  }
-
-  const materializedLength = longestMaterializedEditPrefixLength(existing, edit.content, progress);
-  const base = materializedLength > 0 ? existing.slice(0, existing.length - materializedLength) : existing;
-
-  if (!base) {
-    return "";
-  }
-
-  return base.endsWith("\n") ? base : `${base}\n`;
-}
-
-function longestMaterializedEditPrefixLength(
-  existing: string,
-  editContent: string,
-  progress: number
-): number {
-  const max = Math.min(existing.length, editContent.length, progress);
-
-  for (let length = max; length > 0; length -= 1) {
-    if (existing.endsWith(editContent.slice(0, length))) {
-      return length;
-    }
-  }
-
-  return 0;
-}
-
-function buildVerificationStartLogs(recall: RecallBlock): VerificationLogEntry[] {
-  if (!recall.verify) {
-    return [];
-  }
-
-  const now = new Date().toISOString();
-  const files = recall.verify.evidence.files;
-  const command = recall.verify.evidence.terminalCommand;
-
-  return [
-    {
-      at: now,
-      status: "running",
-      message: "Preparing verifier evidence",
-      detail: files.length > 0 ? files.join(", ") : "No files declared."
-    },
-    {
-      at: now,
-      status: command ? "pending" : "done",
-      message: command ? "Terminal command queued" : "No terminal command declared",
-      detail: command ?? "The verifier will judge from files and rubric."
-    },
-    {
-      at: now,
-      status: "pending",
-      message: "Construct Verifier Agent",
-      detail: "Goal, rubric, support, references, files, and terminal evidence will be checked together."
-    }
-  ];
-}
-
-function normalizeWorkspacePath(path: string): string {
-  return path
-    .trim()
-    .replace(/\\/g, "/")
-    .replace(/^\/+/, "")
-    .replace(/\/+/g, "/");
-}
-
-function normalizeOptionalWorkspacePath(path: string | null | undefined, workspacePath?: string): string | null {
-  if (!path) {
-    return null;
-  }
-
-  const withoutFileScheme = path.replace(/^file:\/\//, "");
-  if (isAbsoluteFilesystemPath(withoutFileScheme)) {
-    if (!workspacePath) {
-      return null;
-    }
-
-    const relative = relativeWorkspacePath(workspacePath, withoutFileScheme);
-    if (!relative) {
-      console.warn("[construct] Ignoring absolute path outside workspace", {
-        path,
-        workspacePath
-      });
-      return null;
-    }
-
-    return relative;
-  }
-
-  const normalized = normalizeWorkspacePath(withoutFileScheme);
-  return normalized || null;
-}
-
-function isAbsoluteFilesystemPath(path: string): boolean {
-  return path.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(path);
-}
-
-function relativeWorkspacePath(workspacePath: string, absolutePath: string): string | null {
-  const normalizedWorkspace = workspacePath.replace(/\\/g, "/").replace(/\/+$/, "");
-  const normalizedAbsolute = absolutePath.replace(/\\/g, "/");
-  if (normalizedAbsolute === normalizedWorkspace) {
-    return "";
-  }
-
-  if (!normalizedAbsolute.startsWith(`${normalizedWorkspace}/`)) {
-    return null;
-  }
-
-  return normalizeWorkspacePath(normalizedAbsolute.slice(normalizedWorkspace.length + 1));
-}
-
-function generateCopyPath(srcPath: string): string {
-  const lastDot = srcPath.lastIndexOf(".");
-  const lastSlash = srcPath.lastIndexOf("/");
-  if (lastDot > lastSlash) {
-    // Has extension
-    return `${srcPath.slice(0, lastDot)}_copy${srcPath.slice(lastDot)}`;
-  }
-  return `${srcPath}_copy`;
 }

@@ -3,12 +3,13 @@ import { FolderOpen, GearSix } from "@phosphor-icons/react";
 
 import {
   Button,
-  Dialog,
-  DialogBody,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogSection
+  Input,
+  ShadcnDialog,
+  ShadcnDialogContent,
+  ShadcnDialogDescription,
+  ShadcnDialogFooter,
+  ShadcnDialogHeader,
+  ShadcnDialogTitle
 } from "@opaline/ui";
 
 import {
@@ -76,55 +77,51 @@ export function SettingsDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="default">
-        <DialogHeader
-          icon={<GearSix size={20} weight="duotone" />}
-          title="Project settings"
-          subtitle="Choose where Construct keeps project workspaces. Existing workspaces are copied into the new root."
-        />
-        <DialogBody className="settings-dialog">
-          <DialogSection>
-            <label className="construct-field">
-              <span>Default workspace location</span>
-              <div className="construct-path-input">
-                <input
+    <ShadcnDialog open={open} onOpenChange={onOpenChange}>
+      <ShadcnDialogContent className="sm:max-w-lg">
+        <ShadcnDialogHeader>
+          <div className="mb-1 flex size-9 items-center justify-center rounded-md bg-muted text-muted-foreground"><GearSix size={20} weight="duotone" /></div>
+          <ShadcnDialogTitle>Project settings</ShadcnDialogTitle>
+          <ShadcnDialogDescription>Choose where Construct keeps project workspaces. Existing workspaces are copied into the new root.</ShadcnDialogDescription>
+        </ShadcnDialogHeader>
+        <div className="space-y-5 py-2">
+          <label className="space-y-2">
+              <span className="text-sm font-medium">Default workspace location</span>
+              <div className="flex gap-2">
+                <Input className="min-w-0 flex-1"
                   value={workspaceRoot}
                   onChange={(event) => setWorkspaceRootValue(event.target.value)}
                   placeholder="Choose a project folder"
                 />
-                <button type="button" onClick={() => void chooseRoot()}>
+                <Button variant="secondary" type="button" onClick={() => void chooseRoot()}>
                   <FolderOpen size={16} weight="duotone" />
                   Browse
-                </button>
+                </Button>
               </div>
-            </label>
-          </DialogSection>
-          <DialogSection>
-            <label className="construct-field">
-              <span>Color theme</span>
+          </label>
+          <label className="space-y-2">
+              <span className="text-sm font-medium">Color theme</span>
               <select
                 value={theme}
                 onChange={(event) => onThemeChange(event.target.value as any)}
-                className="construct-select"
+                className="flex h-8 w-full rounded-md border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
               >
                 <option value="system">System default</option>
                 <option value="dark">Dark theme</option>
                 <option value="light">Light theme</option>
               </select>
-            </label>
-          </DialogSection>
-          {error ? <div className="construct-dialog-error">{error}</div> : null}
-        </DialogBody>
-        <DialogFooter>
+          </label>
+          {error ? <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{error}</div> : null}
+        </div>
+        <ShadcnDialogFooter>
           <Button variant="secondary" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
           <Button disabled={!workspaceRoot.trim() || busy} onClick={() => void save()}>
             Save location
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </ShadcnDialogFooter>
+      </ShadcnDialogContent>
+    </ShadcnDialog>
   );
 }

@@ -13,28 +13,28 @@ export function ProjectCard({
   onOpen: (projectId: string) => void;
 }) {
   return (
-    <article className="project-card">
-      <div className="project-card__icon" aria-hidden="true">
+    <article className="flex items-center gap-4 rounded-lg border bg-card p-4 text-card-foreground shadow-sm">
+      <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground" aria-hidden="true">
         <FolderCodeIcon size={18} />
       </div>
-      <div className="project-card__body">
-        <div className="project-card__title-row">
-          <h2>{project.title}</h2>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <h2 className="truncate text-sm font-semibold">{project.title}</h2>
           <Pill>{project.progress}%</Pill>
         </div>
-        <p>{project.description}</p>
-        <div className="project-card__meta">
-          <span>
+        <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{project.description}</p>
+        <div className="mt-2 flex min-w-0 items-center gap-3 text-[11px] text-muted-foreground">
+          <span className="flex shrink-0 items-center gap-1">
             <Clock3Icon size={13} />
             {formatLastOpened(project.lastOpenedAt)}
           </span>
-          <span>{project.workspacePath}</span>
+          <span className="truncate">{project.workspacePath}</span>
         </div>
-        <div className="project-card__progress" aria-label={`${project.progress}% complete`}>
-          <span style={{ width: `${project.progress}%` }} />
+        <div className="mt-3 h-1 overflow-hidden rounded-full bg-muted" aria-label={`${project.progress}% complete`}>
+          <span className="block h-full rounded-full bg-primary" style={{ width: `${project.progress}%` }} />
         </div>
       </div>
-      <Button className="project-card__open" size="small" variant="secondary" onClick={() => onOpen(project.id)}>
+      <Button className="shrink-0" size="small" variant="secondary" onClick={() => onOpen(project.id)}>
         Open
         <ArrowRightIcon size={15} />
       </Button>

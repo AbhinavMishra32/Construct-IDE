@@ -1,6 +1,7 @@
 import type { ConstructBlock, ConstructProgram, GuideBlock, RecallBlock } from "../types";
 import { collectInlineRefs } from "../lib/inlineRefs";
 import type { ConstructDiagnostic, ConstructDocument, ConstructFix, ConstructNode } from "./types";
+import { supportsConstructInteract } from "../../../shared/tapeFeatures";
 
 export function lintConstructProgram(program: ConstructProgram, document: ConstructDocument): { diagnostics: ConstructDiagnostic[]; suggestions: ConstructFix[] } {
   const diagnostics: ConstructDiagnostic[] = [];
@@ -91,7 +92,7 @@ export function lintConstructProgram(program: ConstructProgram, document: Constr
         const hasEvidence =
           block.verify.evidence.files.length > 0 ||
           Boolean(block.verify.evidence.answer || block.verify.evidence.interaction || block.verify.evidence.terminalCommand || block.verify.evidence.terminalOutput);
-        const needsMessages = program.spec !== "tape-0.4" && (!block.verify.messages?.success || !block.verify.messages?.failure);
+        const needsMessages = !supportsConstructInteract(program.spec) && (!block.verify.messages?.success || !block.verify.messages?.failure);
         const missing = [!block.verify.goal && "goal", !hasEvidence && "evidence", !block.verify.rubric && "rubric", needsMessages && "messages"].filter(Boolean);
         if (missing.length > 0) diagnostics.push(lintDiagnostic(program.spec, "W_INCOMPLETE_VERIFY", `Verifier "${block.verify.id}" is missing ${missing.join(", ")}.`, block.verify.id));
       }

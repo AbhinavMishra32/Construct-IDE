@@ -174,10 +174,9 @@ export function SelectionExplanationController({
       title={stage === "prompt" ? undefined : result?.title ?? selection?.text}
       onDismiss={dismiss}
       onModeChange={setMode}
-      className="construct-selection-explanation"
     >
       {selection && stage === "prompt" ? (
-        <div className="construct-selection-explanation__menu">
+        <div className="space-y-1">
           <AgentContextAction
             icon={<Sparkles size={14} />}
             label="Explain this in context"
@@ -193,7 +192,7 @@ export function SelectionExplanationController({
       ) : null}
 
       {selection && stage !== "prompt" ? (
-        <div className="construct-selection-explanation__content">
+        <div className="space-y-3">
           <AgentThinking
             state={stage === "working" ? "thinking" : "thought"}
             label={stage === "working" ? "Researching this in context" : "Research trail"}
@@ -205,7 +204,7 @@ export function SelectionExplanationController({
           <AnimatePresence mode="wait">
             {stage === "result" && result ? (
               <motion.div
-                className="construct-selection-explanation__result"
+                className="space-y-3"
                 key="result"
                 initial={{ opacity: 0, y: 7 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -216,11 +215,11 @@ export function SelectionExplanationController({
                   sources={webSources.map((source) => ({ id: source.id, title: source.title, url: source.url, domain: source.domain }))}
                 />
                 {codeSources.length > 0 ? (
-                  <section className="construct-selection-explanation__code-sources">
-                    <small>In this project</small>
-                    <div>
+                  <section className="border-t pt-3">
+                    <small className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">In this project</small>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
                       {codeSources.map((source) => (
-                        <button key={source.id} type="button" onClick={() => source.path && onOpenFile?.(source.path)}>
+                        <button className="inline-flex items-center gap-1 rounded-md border bg-background px-2 py-1 text-xs hover:bg-muted" key={source.id} type="button" onClick={() => source.path && onOpenFile?.(source.path)}>
                           <Code2 size={12} />
                           <span>{source.title}</span>
                         </button>
@@ -231,10 +230,10 @@ export function SelectionExplanationController({
               </motion.div>
             ) : null}
             {stage === "error" ? (
-              <motion.div className="construct-selection-explanation__error" key="error" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                <strong>Couldn’t explain this yet</strong>
-                <p>{error}</p>
-                <button type="button" onClick={() => void startExplanation()}>Try again</button>
+              <motion.div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive" key="error" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                <strong className="font-medium">Couldn’t explain this yet</strong>
+                <p className="mt-1 text-xs opacity-80">{error}</p>
+                <button className="mt-2 rounded-md border border-destructive/30 px-2 py-1 text-xs hover:bg-destructive/10" type="button" onClick={() => void startExplanation()}>Try again</button>
               </motion.div>
             ) : null}
           </AnimatePresence>

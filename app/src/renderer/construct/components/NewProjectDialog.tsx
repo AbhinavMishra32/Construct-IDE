@@ -1,6 +1,20 @@
 import { useState } from "react";
 import { FilePlus, FolderOpen, GitBranch, MagicWand, ProjectorScreenChart } from "@phosphor-icons/react";
-import { Button, Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogSection } from "@opaline/ui";
+import {
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  ShadcnDialog,
+  ShadcnDialogContent,
+  ShadcnDialogDescription,
+  ShadcnDialogFooter,
+  ShadcnDialogHeader,
+  ShadcnDialogTitle,
+  Input,
+} from "@opaline/ui";
 
 import { applyConstructPatch } from "../compiler/patches";
 import { validateConstructSource } from "../compiler/pipeline";
@@ -173,29 +187,40 @@ export function NewProjectDialog({ open, onOpenChange, onProjectCreated }: {
   }
 
   return (
-    <Dialog open={open} onOpenChange={(nextOpen) => { onOpenChange(nextOpen); if (!nextOpen) reset(); }}>
-      <DialogContent size={rawEditing ? "wide" : selectedFile ? "default" : "wide"} contentClassName={selectedFile ? "new-project-validation-dialog" : ""}>
-        <DialogHeader icon={<ProjectorScreenChart size={20} weight="duotone" />} title={selectedFile ? "Create project" : "New project"} subtitle={selectedFile ? "Construct checks and safely repairs the tape before opening it." : "Import a .construct file, repair it safely, then materialize a real local workspace."} />
-        <DialogBody className="new-project-dialog">
+    <ShadcnDialog open={open} onOpenChange={(nextOpen) => { onOpenChange(nextOpen); if (!nextOpen) reset(); }}>
+      <ShadcnDialogContent className={`${rawEditing ? "max-w-4xl" : "max-w-2xl"} flex max-h-[88vh] flex-col overflow-hidden`}>
+        <ShadcnDialogHeader className="shrink-0">
+          <span className="mb-1 flex size-9 items-center justify-center rounded-md bg-muted text-muted-foreground"><ProjectorScreenChart size={20} weight="duotone" /></span>
+          <div>
+            <ShadcnDialogTitle>{selectedFile ? "Create project" : "New project"}</ShadcnDialogTitle>
+            <ShadcnDialogDescription>{selectedFile ? "Construct checks and safely repairs the tape before opening it." : "Import a .construct file, repair it safely, then materialize a real local workspace."}</ShadcnDialogDescription>
+          </div>
+        </ShadcnDialogHeader>
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto py-1 pr-1">
           {!selectedFile ? (
-            <DialogSection className="new-project-dialog__choices">
-              <button className="new-project-choice is-disabled" type="button" disabled><span><MagicWand size={20} weight="duotone" /></span><strong>Agent project</strong><small>Generate a tape, then run the same compiler validation flow.</small></button>
-              <button className="new-project-choice" type="button" disabled={busy} onClick={() => void chooseConstructFile()}><span><FilePlus size={20} weight="duotone" /></span><strong>Open .construct file</strong><small>Read, repair, preview patches, and validate before opening.</small></button>
-            </DialogSection>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Card className="opacity-50" size="sm" aria-disabled="true">
+                <CardHeader><span><MagicWand size={18} weight="duotone" /></span><CardTitle>Agent project</CardTitle><CardDescription>Generate a tape, then run the same compiler validation flow.</CardDescription></CardHeader>
+              </Card>
+              <Card className="cursor-pointer transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40" size="sm" role="button" tabIndex={busy ? -1 : 0} onClick={() => { if (!busy) void chooseConstructFile(); }} onKeyDown={(event) => { if (!busy && (event.key === "Enter" || event.key === " ")) void chooseConstructFile(); }}>
+                <CardHeader><span><FilePlus size={18} weight="duotone" /></span><CardTitle>Open .construct file</CardTitle><CardDescription>Read, repair, preview patches, and validate before opening.</CardDescription></CardHeader>
+                <CardContent><span className="text-xs font-medium text-primary">Choose file</span></CardContent>
+              </Card>
+            </div>
           ) : rawEditing ? (
-            <div className="construct-raw-editor"><header><div><strong>Raw tape editor</strong><span>Advanced mode · edits are recompiled before the project can open.</span></div><code>{selectedFile.path}</code></header><textarea spellCheck={false} value={rawSource} onChange={(event) => setRawSource(event.target.value)} /><footer><Button variant="secondary" onClick={() => setRawEditing(false)}>Cancel</Button><Button onClick={applyRawSource}>Revalidate source</Button></footer></div>
+            <div className="flex min-h-[420px] flex-col overflow-hidden rounded-lg border"><header className="flex items-start justify-between gap-4 border-b p-3"><div><strong className="block text-sm font-medium">Raw tape editor</strong><span className="text-xs text-muted-foreground">Advanced mode · edits are recompiled before the project can open.</span></div><code className="max-w-64 truncate rounded bg-muted px-2 py-1 font-mono text-[10px]">{selectedFile.path}</code></header><textarea className="min-h-0 flex-1 resize-none bg-background p-4 font-mono text-xs outline-none" spellCheck={false} value={rawSource} onChange={(event) => setRawSource(event.target.value)} /><footer className="flex justify-end gap-2 border-t p-3"><Button variant="secondary" onClick={() => setRawEditing(false)}>Cancel</Button><Button onClick={applyRawSource}>Revalidate source</Button></footer></div>
           ) : (
             <>
-              <div className="new-project-validation-file"><span><FilePlus size={16} /></span><div><strong>{selectedFile.program?.title ?? fileNameStem(selectedFile.path)}</strong><small>{selectedFile.path}</small></div><code>{selectedFile.validation.document.spec}</code></div>
+              <div className="flex items-center gap-3 rounded-lg border bg-muted/30 p-3"><span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-background"><FilePlus size={16} /></span><div className="min-w-0 flex-1"><strong className="block truncate text-sm font-medium">{selectedFile.program?.title ?? fileNameStem(selectedFile.path)}</strong><small className="block truncate text-xs text-muted-foreground">{selectedFile.path}</small></div><code className="rounded bg-background px-2 py-1 font-mono text-[10px]">{selectedFile.validation.document.spec}</code></div>
               <ValidationPanel result={selectedFile.validation} stages={stages} semanticSuggestions={semanticSuggestions} authoringSuggestions={authoringSuggestions} reviewing={reviewing} onApplyFix={applyFix} onRunSemanticReview={() => void runSemanticReview()} onRawEdit={() => setRawEditing(true)} />
-              {selectedFile.validation.valid ? <DialogSection className="new-project-dialog__settings new-project-dialog__settings--compact"><label className="construct-field"><span>Workspace folder</span><div className="construct-path-input"><input value={workspacePath} onChange={(event) => setWorkspacePath(event.target.value)} placeholder="Choose where project files will be saved" /><button type="button" onClick={() => void chooseWorkspaceDirectory()}><FolderOpen size={16} weight="duotone" />Browse</button></div></label><label className="construct-checkbox"><input type="checkbox" checked={initializeGit} onChange={(event) => setInitializeGit(event.target.checked)} /><span><GitBranch size={16} weight="duotone" />Initialize a Git repository</span></label></DialogSection> : null}
+              {selectedFile.validation.valid ? <Card size="sm"><CardContent className="space-y-4"><label className="space-y-2"><span className="text-sm font-medium">Workspace folder</span><div className="flex gap-2"><Input className="min-w-0 flex-1" value={workspacePath} onChange={(event) => setWorkspacePath(event.target.value)} placeholder="Choose where project files will be saved" /><Button variant="secondary" type="button" onClick={() => void chooseWorkspaceDirectory()}><FolderOpen size={16} weight="duotone" />Browse</Button></div></label><label className="flex items-center gap-2 text-sm"><input className="size-4 rounded border" type="checkbox" checked={initializeGit} onChange={(event) => setInitializeGit(event.target.checked)} /><span className="flex items-center gap-2"><GitBranch size={16} weight="duotone" />Initialize a Git repository</span></label></CardContent></Card> : null}
             </>
           )}
-          {error ? <div className="construct-dialog-error">{error}</div> : null}
-        </DialogBody>
-        <DialogFooter><Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>{selectedFile && !rawEditing ? <Button disabled={!selectedFile.validation.valid || !selectedFile.program || !workspacePath.trim() || busy} onClick={() => void createProject()}>{busy ? "Creating project…" : "Start project"}</Button> : null}</DialogFooter>
-      </DialogContent>
-    </Dialog>
+          {error ? <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{error}</div> : null}
+        </div>
+        <ShadcnDialogFooter className="shrink-0"><Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>{selectedFile && !rawEditing ? <Button disabled={!selectedFile.validation.valid || !selectedFile.program || !workspacePath.trim() || busy} onClick={() => void createProject()}>{busy ? "Creating project…" : "Start project"}</Button> : null}</ShadcnDialogFooter>
+      </ShadcnDialogContent>
+    </ShadcnDialog>
   );
 }
 

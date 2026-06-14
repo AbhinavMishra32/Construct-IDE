@@ -13,18 +13,11 @@ import {
 } from "lucide-react";
 import { useState, useMemo } from "react";
 
-import type { ReactNode } from "react";
-import {
-  AgentSessionComposer,
-  AgentSessionSurface,
-  Button,
-  Timeline,
-  type AgentSessionMessage,
-  type AgentSessionMessagePart,
-  type AgentSessionToolEntry
-} from "@opaline/ui";
+import { Button, Timeline } from "@opaline/ui";
 
+import { ConstructInteractSession } from "./guide/ConstructInteractSession";
 import { MarkdownBlock } from "./MarkdownBlock";
+import type { LogEntry } from "../lib/logStore";
 import { assistanceLabel, blockLabel, currentBlockNumber, totalBlocks } from "../lib/runtime";
 import type { InlineFileRef } from "../lib/inlineRefs";
 import type {
@@ -63,6 +56,7 @@ export function GuidePanel({
   interactAnswer,
   onInteractAnswerChange,
   interactResult,
+  interactProgressLogs,
   onSubmitInteract,
   onInteractAction,
   interactingId,
@@ -87,6 +81,7 @@ export function GuidePanel({
   interactAnswer: string;
   onInteractAnswerChange: (answer: string) => void;
   interactResult?: ConstructInteractClientResult;
+  interactProgressLogs: LogEntry[];
   onSubmitInteract: () => void;
   onInteractAction?: (action: NonNullable<ConstructInteractClientResult["actions"]>[number]) => void;
   interactingId: string | null;
@@ -128,21 +123,21 @@ export function GuidePanel({
     block && block.kind === "edit" ? codeProgressForBlock(block, (project.typingProgress ?? {})[block.id] ?? 0) : null;
 
   return (
-    <aside className="guide-panel" data-construct-explainable="guide" data-construct-explainable-label="Guide">
+    <aside className={`flex h-full min-h-0 flex-col bg-background p-4 text-foreground ${block?.kind === "interact" ? "overflow-hidden" : "overflow-y-auto"}`} data-construct-explainable="guide" data-construct-explainable-label="Guide">
       {!block ? (
-        <div className="guide-panel__completed-state">
-          <p className="eyebrow">Complete</p>
-          <h2>Project finished</h2>
+        <div className="flex min-h-48 flex-col items-center justify-center text-center">
+          <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Complete</p>
+          <h2 className="mt-1 text-lg font-semibold">Project finished</h2>
         </div>
       ) : (
         <>
-          <div className="guide-panel__meta">
+          <div className="mb-2 flex items-center justify-between text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
             <span>{blockLabel(block)}</span>
             <span>
               {currentBlockNumber(project)} / {totalBlocks(project.program)}
             </span>
           </div>
-          <h2>{project.program.steps[project.currentStepIndex]?.title}</h2>
+          <h2 className="mb-4 text-lg font-semibold tracking-tight">{project.program.steps[project.currentStepIndex]?.title}</h2>
           <GuideBlock
             block={block}
             theme={theme}
@@ -162,14 +157,15 @@ export function GuidePanel({
             interactAnswer={interactAnswer}
             onInteractAnswerChange={onInteractAnswerChange}
             interactResult={interactResult}
+            interactProgressLogs={interactProgressLogs}
             onSubmitInteract={onSubmitInteract}
             onInteractAction={onInteractAction}
             interactingId={interactingId}
             projectLearningState={projectLearningState}
           />
-          <p className="guide-panel__assist">{assistanceLabel(assistance)}</p>
+          <p className="mt-4 text-xs text-muted-foreground">{assistanceLabel(assistance)}</p>
           {block.kind === "run" || (block.kind === "recall" && block.verify) || canContinue ? (
-            <div className="guide-panel__actions">
+            <div className="mt-4 flex flex-wrap justify-end gap-2 border-t pt-4">
               {block.kind === "run" ? (
                 <Button variant="secondary" onClick={() => onRunCommand(block.command, block.cwd)}>
                   <PlayIcon size={15} />
@@ -219,6 +215,7 @@ function GuideBlock({
   interactAnswer,
   onInteractAnswerChange,
   interactResult,
+  interactProgressLogs,
   onSubmitInteract,
   onInteractAction,
   interactingId,
@@ -242,6 +239,7 @@ function GuideBlock({
   interactAnswer: string;
   onInteractAnswerChange: (answer: string) => void;
   interactResult?: ConstructInteractClientResult;
+  interactProgressLogs: LogEntry[];
   onSubmitInteract: () => void;
   onInteractAction?: (action: NonNullable<ConstructInteractClientResult["actions"]>[number]) => void;
   interactingId: string | null;
@@ -253,24 +251,24 @@ function GuideBlock({
 }) {
   if (block.kind === "run") {
     return (
-      <div className="guide-block">
-        <div className="run-command">
+      <div className="space-y-3">
+        <div className="flex items-center gap-2 rounded-md border bg-muted/50 px-3 py-2 font-mono text-xs">
           <TerminalIcon size={15} />
           <code>{block.command}</code>
         </div>
-        <p className="guide-panel__copy">cwd: {block.cwd}</p>
+        <p className="text-xs text-muted-foreground">cwd: {block.cwd}</p>
       </div>
     );
   }
 
   if (block.kind === "guide") {
     return (
-      <div className="guide-block guide-layer-block" data-guide-kind={block.guideKind}>
-        {block.title ? <h3>{block.title}</h3> : null}
+      <div className="space-y-4" data-guide-kind={block.guideKind}>
+        {block.title ? <h3 className="text-sm font-semibold">{block.title}</h3> : null}
         {block.content ? <MarkdownBlock content={block.content} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} /> : null}
         {block.sections.map((section) => (
-          <section key={section.kind} className="guide-layer-block__section">
-            <p className="guide-panel__label">{supportSectionLabel(section.kind.replace(/^guide\./, ""))}</p>
+          <section key={section.kind} className="border-t pt-3">
+            <p className="mb-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{supportSectionLabel(section.kind.replace(/^guide\./, ""))}</p>
             <MarkdownBlock content={section.content} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
           </section>
         ))}
@@ -282,7 +280,7 @@ function GuideBlock({
     const note = block.notes.find((candidate) => candidate.when === (editComplete ? "done" : "start"));
 
     return (
-      <div className="guide-block">
+      <div className="space-y-4">
         {block.guides.map((guide) => (
           <GuideBlock
             key={guide.id}
@@ -304,18 +302,19 @@ function GuideBlock({
             interactAnswer={interactAnswer}
             onInteractAnswerChange={onInteractAnswerChange}
             interactResult={interactResult}
+            interactProgressLogs={interactProgressLogs}
             onSubmitInteract={onSubmitInteract}
             onInteractAction={onInteractAction}
             interactingId={interactingId}
             projectLearningState={projectLearningState}
           />
         ))}
-        <p className="guide-panel__copy">
+        <p className="text-sm text-muted-foreground">
           Complete the highlighted implementation in <code>{block.path}</code>.
         </p>
         {codeProgress ? <CodeProgressMeter progress={codeProgress} /> : null}
         {note ? (
-          <div className="guide-panel__note">
+          <div className="rounded-md border bg-muted/30 p-3">
             <MarkdownBlock content={note.content} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
           </div>
         ) : null}
@@ -325,44 +324,22 @@ function GuideBlock({
 
   if (block.kind === "interact") {
     const sessions = (projectLearningState?.constructInteractSessions ?? []).filter((session) => session.blockId === block.id);
-    const messages = buildInteractMessages({
-      blockId: block.id,
-      sessions,
-      result: interactResult,
-      answerDraft: interactAnswer,
-      isPending: interactingId === block.id,
-      theme,
-      onInteractAction,
-      onOpenConcept,
-      onOpenFile
-    });
-
     return (
-      <div className="guide-block construct-interact construct-interact--agent">
-        <AgentSessionSurface
-          eyebrow="Construct Interact"
-          lead={
-            <MarkdownBlock
-              content={block.prompt}
-              theme={theme}
-              onOpenConcept={onOpenConcept}
-              onOpenFile={onOpenFile}
-            />
-          }
-          messages={messages}
-          emptyState="Answer in your own words and Construct Interact will respond here."
-          composer={
-            <AgentSessionComposer
-              value={interactAnswer}
-              onValueChange={onInteractAnswerChange}
-              onSubmit={onSubmitInteract}
-              pending={interactingId === block.id}
-              submitLabel="Send answer"
-              placeholder="Answer in your own words..."
-            />
-          }
-        />
-      </div>
+      <ConstructInteractSession
+        blockId={block.id}
+        prompt={block.prompt}
+        theme={theme}
+        sessions={sessions}
+        result={interactResult}
+        progressLogs={interactProgressLogs}
+        answer={interactAnswer}
+        onAnswerChange={onInteractAnswerChange}
+        onSubmit={onSubmitInteract}
+        onAction={onInteractAction}
+        isPending={interactingId === block.id}
+        onOpenConcept={onOpenConcept}
+        onOpenFile={onOpenFile}
+      />
     );
   }
 
@@ -372,16 +349,16 @@ function GuideBlock({
       .filter((reference): reference is ReferenceCard => Boolean(reference));
 
     return (
-      <div className="guide-block recall-task">
-        <div className="recall-task__section recall-task__task">
-          <p className="guide-panel__label">Task</p>
+      <div className="space-y-4">
+        <div>
+          <p className="mb-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Task</p>
           <MarkdownBlock content={block.task} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
         </div>
         {block.mode === "reply" ? (
-          <div className="recall-task__section recall-task__reply">
-            <p className="guide-panel__label">Your answer</p>
+          <div className="border-t pt-4">
+            <p className="mb-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Your answer</p>
             <textarea
-              className="construct-interact__answer"
+              className="min-h-28 w-full resize-y rounded-md border bg-background p-3 text-sm outline-none focus:ring-2 focus:ring-ring/30"
               value={recallAnswer}
               onChange={(event) => onRecallAnswerChange(event.target.value)}
               placeholder="Explain it in your own words..."
@@ -393,17 +370,17 @@ function GuideBlock({
           <MissingFilesPanel files={recallMissingFiles} onCreateFile={onCreateFile} />
         ) : null}
         {block.support || block.supportSections.length > 0 ? (
-          <div className="recall-task__section recall-task__support">
-            <div className="recall-task__support-header">
-              <LightbulbIcon size={13} className="support-icon" />
-              <p className="guide-panel__label">Support</p>
+          <div className="rounded-lg border bg-muted/30 p-3">
+            <div className="mb-2 flex items-center gap-1.5 text-muted-foreground">
+              <LightbulbIcon size={13} />
+              <p className="text-[10px] font-medium uppercase tracking-wide">Support</p>
             </div>
             {block.support ? <MarkdownBlock content={block.support} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} /> : null}
             {block.supportSections.length > 0 ? (
-              <div className="recall-task__support-sections">
+              <div className="mt-3 space-y-3">
                 {block.supportSections.map((section) => (
-                  <section key={section.kind} className="recall-task__support-subsection">
-                    <p>{supportSectionLabel(section.kind)}</p>
+                  <section key={section.kind} className="border-t pt-3">
+                    <p className="mb-1 text-xs font-medium">{supportSectionLabel(section.kind)}</p>
                     <MarkdownBlock content={section.content} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
                   </section>
                 ))}
@@ -412,11 +389,11 @@ function GuideBlock({
           </div>
         ) : null}
         {linkedReferences.length > 0 ? (
-          <div className="recall-task__references">
+          <div className="flex flex-wrap gap-2">
             {linkedReferences.map((reference) => (
               <button
                 key={reference.id}
-                className="recall-task__reference-button"
+                className="rounded-md border bg-background px-2 py-1 text-xs hover:bg-muted"
                 type="button"
                 onClick={() => onOpenReference(reference.id)}
               >
@@ -440,7 +417,7 @@ function GuideBlock({
   }
 
   return (
-    <div className="guide-block">
+    <div className="space-y-3">
       <MarkdownBlock content={block.content} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
     </div>
   );
@@ -463,258 +440,17 @@ function supportSectionLabel(kind: string): string {
   }
 }
 
-function buildInteractMessages({
-  blockId,
-  sessions,
-  result,
-  answerDraft,
-  isPending,
-  theme,
-  onInteractAction,
-  onOpenConcept,
-  onOpenFile
-}: {
-  blockId: string;
-  sessions: ProjectLearningState["constructInteractSessions"];
-  result?: ConstructInteractClientResult;
-  answerDraft: string;
-  isPending: boolean;
-  theme: "light" | "dark" | "system";
-  onInteractAction?: (action: NonNullable<ConstructInteractClientResult["actions"]>[number]) => void;
-  onOpenConcept: (conceptId: string) => void;
-  onOpenFile: (reference: InlineFileRef) => void;
-}): AgentSessionMessage[] {
-  const recentSessions = sessions.slice(-6);
-  const latestSessionId = recentSessions.at(-1)?.id;
-  const messages = recentSessions.flatMap((session): AgentSessionMessage[] => {
-    const assistantParts: AgentSessionMessagePart[] = [
-      {
-        type: "text",
-        id: `${session.id}:reply`,
-        content: <MarkdownBlock content={session.reply} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />,
-        meta: `${interactStatusLabel(session.status)} · ${session.confidence} confidence · ${session.assistanceLevel}`
-      }
-    ];
-
-    if (result && session.id === latestSessionId) {
-      const enrichedParts = buildInteractResultParts(result, {
-        sessionId: session.id,
-        onInteractAction
-      });
-      assistantParts.unshift(...enrichedParts.prelude);
-      assistantParts.push(...enrichedParts.trailing);
-    }
-
-    return [
-      {
-        id: `${session.id}:user`,
-        role: "user",
-        content: session.answer,
-        meta: "Your answer"
-      },
-      {
-        id: `${session.id}:assistant`,
-        role: "assistant",
-        parts: assistantParts
-      }
-    ];
-  });
-
-  if (isPending && answerDraft.trim()) {
-    messages.push(
-      {
-        id: `${blockId}:pending-user`,
-        role: "user",
-        content: answerDraft,
-        meta: "Your answer"
-      },
-      {
-        id: `${blockId}:pending-assistant`,
-        role: "assistant",
-        parts: [
-          {
-            type: "reasoning",
-            id: `${blockId}:thinking`,
-            label: "Construct Interact is thinking",
-            active: true,
-            defaultOpen: true,
-            content: "Reviewing your explanation and deciding whether you can continue or need a targeted follow-up."
-          }
-        ]
-      }
-    );
-  }
-
-  return messages;
-}
-
-function buildInteractResultParts(
-  result: ConstructInteractClientResult,
-  {
-    sessionId,
-    onInteractAction
-  }: {
-    sessionId: string;
-    onInteractAction?: (action: NonNullable<ConstructInteractClientResult["actions"]>[number]) => void;
-  }
-): {
-  prelude: AgentSessionMessagePart[];
-  trailing: AgentSessionMessagePart[];
-} {
-  const prelude: AgentSessionMessagePart[] = [];
-  const trailing: AgentSessionMessagePart[] = [];
-  const toolEntries = buildInteractToolEntries(result.toolCalls ?? []);
-
-  if (toolEntries.length > 0) {
-    prelude.push({
-      type: "context",
-      id: `${sessionId}:context`,
-      doneLabel: "Gathered context",
-      summary: summarizeContextEntries(toolEntries),
-      entries: toolEntries,
-      defaultOpen: false
-    });
-  }
-
-  if (result.actions?.length) {
-    trailing.push({
-      type: "actions",
-      id: `${sessionId}:actions`,
-      content: (
-        <div className="construct-interact__actions">
-          {result.actions.map((action, index) => (
-            <button key={`${action.type}-${index}`} type="button" onClick={() => onInteractAction?.(action)}>
-              <SparklesIcon size={13} />
-              <span>{action.label}</span>
-            </button>
-          ))}
-        </div>
-      )
-    });
-  }
-
-  if (result.generatedLiveSteps?.length) {
-    trailing.push({
-      type: "tool",
-      id: `${sessionId}:live-steps`,
-      tool: {
-        id: `${sessionId}:live-steps-tool`,
-        title: "Generated live steps",
-        subtitle: `${result.generatedLiveSteps.length} step${result.generatedLiveSteps.length === 1 ? "" : "s"}`,
-        status: "completed",
-        content: (
-          <div className="construct-interact__generated">
-            {result.generatedLiveSteps.map((step) => (
-              <div key={step.id ?? step.title} className="construct-interact__generated-step">
-                <strong>{step.title}</strong>
-                <p>{step.reason}</p>
-              </div>
-            ))}
-          </div>
-        )
-      }
-    });
-  }
-
-  if (result.liveStepValidation?.length) {
-    trailing.push({
-      type: "tool",
-      id: `${sessionId}:validation`,
-      tool: {
-        id: `${sessionId}:validation-tool`,
-        title: "Live step validation",
-        subtitle: `${result.liveStepValidation.length} check${result.liveStepValidation.length === 1 ? "" : "s"}`,
-        status: result.liveStepValidation.some((entry) => entry.status === "rejected") ? "error" : "completed",
-        content: (
-          <div className="construct-interact__generated">
-            {result.liveStepValidation.map((entry, index) => (
-              <div key={`${entry.stepId ?? entry.draftTitle ?? index}`} className="construct-interact__generated-step">
-                <strong>{entry.stepId ?? entry.draftTitle ?? "Generated step"}</strong>
-                <p>{entry.reason}</p>
-              </div>
-            ))}
-          </div>
-        )
-      }
-    });
-  }
-
-  return { prelude, trailing };
-}
-
-function buildInteractToolEntries(toolCalls: NonNullable<ConstructInteractClientResult["toolCalls"]>): AgentSessionToolEntry[] {
-  return toolCalls.map((toolCall, index) => {
-    const classification = classifyInteractTool(toolCall.name);
-    return {
-      id: toolCall.id ?? `${toolCall.name}-${index}`,
-      title: classification.title,
-      subtitle: toolCall.reason,
-      args: classification.args,
-      status: "completed",
-      content: toolCall.outputPreview ? <pre className="construct-interact__tool-output">{toolCall.outputPreview}</pre> : undefined
-    };
-  });
-}
-
-function classifyInteractTool(name: string): { title: string; args?: ReactNode[] } {
-  const normalized = name.toLowerCase();
-  if (normalized.includes("read")) return { title: "Read" };
-  if (normalized.includes("list")) return { title: "List" };
-  if (normalized.includes("glob")) return { title: "Glob" };
-  if (normalized.includes("grep") || normalized.includes("search")) return { title: "Search" };
-  if (normalized.includes("web")) return { title: "Web" };
-  if (normalized.includes("shell") || normalized.includes("bash")) return { title: "Shell" };
-  return { title: name };
-}
-
-function summarizeContextEntries(entries: AgentSessionToolEntry[]) {
-  const counts = {
-    read: 0,
-    search: 0,
-    list: 0,
-    other: 0
-  };
-
-  for (const entry of entries) {
-    const title = typeof entry.title === "string" ? entry.title.toLowerCase() : "";
-    if (title === "read") counts.read += 1;
-    else if (title === "search" || title === "glob") counts.search += 1;
-    else if (title === "list") counts.list += 1;
-    else counts.other += 1;
-  }
-
-  return [
-    counts.read ? `${counts.read} read${counts.read === 1 ? "" : "s"}` : null,
-    counts.search ? `${counts.search} search${counts.search === 1 ? "" : "es"}` : null,
-    counts.list ? `${counts.list} list${counts.list === 1 ? "" : "s"}` : null,
-    counts.other ? `${counts.other} tool${counts.other === 1 ? "" : "s"}` : null
-  ].filter(Boolean).join(", ");
-}
-
-function interactStatusLabel(status: ConstructInteractClientResult["status"]): string {
-  switch (status) {
-    case "pass":
-      return "Ready to continue";
-    case "almost":
-      return "Almost there";
-    case "skip":
-      return "Continuing with support";
-    default:
-      return "Follow-up";
-  }
-}
-
 function CodeProgressMeter({ progress }: { progress: GhostProgress }) {
   return (
-    <div className="ghost-progress" aria-label="Code step progress">
-      <div className="ghost-progress__row">
+    <div className="space-y-2 rounded-md border bg-muted/30 p-3" aria-label="Code step progress">
+      <div className="flex items-center justify-between text-xs">
         <span>Code step progress</span>
         <strong>
           {progress.typedLines} / {progress.totalLines} lines · {progress.percent}%
         </strong>
       </div>
-      <div className="ghost-progress__track">
-        <span style={{ width: `${progress.percent}%` }} />
+      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+        <span className="block h-full rounded-full bg-primary" style={{ width: `${progress.percent}%` }} />
       </div>
     </div>
   );
@@ -743,12 +479,12 @@ function MissingFilesPanel({
   }
 
   return (
-    <div className="recall-missing-files">
+    <div className="rounded-lg border border-dashed p-3">
       <div>
-        <p className="guide-panel__label">Workspace action</p>
+        <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Workspace action</p>
         <p>The verifier needs these files as evidence.</p>
       </div>
-      <div className="recall-missing-files__list">
+      <div className="mt-3 space-y-1">
         {files.map((path) => (
           <button
             key={path}
@@ -762,20 +498,20 @@ function MissingFilesPanel({
           </button>
         ))}
       </div>
-      {error ? <p className="recall-missing-files__error">{error}</p> : null}
+      {error ? <p className="mt-2 text-xs text-destructive">{error}</p> : null}
     </div>
   );
 }
 
 function ConfidenceBadge({ level }: { level: string }) {
   const normLevel = level ? level.toLowerCase() : "";
-  let statusColor = "is-high";
-  if (normLevel === "medium") statusColor = "is-medium";
-  else if (normLevel === "low") statusColor = "is-low";
+  let statusColor = "bg-emerald-500";
+  if (normLevel === "medium") statusColor = "bg-amber-500";
+  else if (normLevel === "low") statusColor = "bg-destructive";
 
   return (
-    <div className={`confidence-badge ${statusColor}`}>
-      <span className="confidence-badge__dot" aria-hidden="true" />
+    <div className="inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[10px] text-muted-foreground">
+      <span className={`size-1.5 rounded-full ${statusColor}`} aria-hidden="true" />
       <span>Confidence: {level}</span>
     </div>
   );
@@ -798,9 +534,9 @@ function VerificationPanel({
 
   if (verifying) {
     return (
-      <div className="verification-panel is-running">
-        <div className="verification-panel__status">
-          <WandSparklesIcon size={15} className="spinner-sparkles" />
+      <div className="space-y-3 rounded-lg border bg-muted/30 p-3">
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <WandSparklesIcon size={15} className="animate-spin" />
           <span>Verifier run</span>
         </div>
         <VerificationLogList logs={visibleLogs} />
@@ -813,31 +549,31 @@ function VerificationPanel({
   }
 
   const isAlmost = result.status === "almost";
-  const panelState = result.passed ? "is-passed" : isAlmost ? "is-almost" : "is-failed";
+  const panelState = result.passed ? "border-emerald-500/30 bg-emerald-500/5" : isAlmost ? "border-amber-500/30 bg-amber-500/5" : "border-destructive/30 bg-destructive/5";
   const statusText = result.passed ? successMessage : isAlmost ? "Close. One piece is still missing." : failureMessage;
 
   return (
-    <div className={`verification-panel ${panelState}`}>
-      <div className="verification-panel__status">
+    <div className={`space-y-3 rounded-lg border p-3 ${panelState}`}>
+      <div className="flex items-center gap-2 text-sm font-medium">
         {result.passed ? <CheckCircle2Icon size={16} /> : isAlmost ? <AlertCircleIcon size={16} /> : <XCircleIcon size={16} />}
         <span>{statusText}</span>
       </div>
-      <div className="verification-panel__body">
-        <p className="verification-panel__reason">{result.reason}</p>
+      <div className="space-y-2">
+        <p className="text-sm text-muted-foreground">{result.reason}</p>
         <ConfidenceBadge level={result.confidence} />
       </div>
       {result.suggestion ? (
-        <div className="verification-panel__suggestion">
-          <div className="verification-panel__suggestion-header">
-            <SparklesIcon size={13} className="suggestion-icon" />
-            <p className="guide-panel__label">Next</p>
+        <div className="border-t pt-3">
+          <div className="flex items-center gap-1.5 text-muted-foreground">
+            <SparklesIcon size={13} />
+            <p className="text-[10px] font-medium uppercase tracking-wide">Next</p>
           </div>
-          <p className="verification-panel__suggestion-text">{result.suggestion}</p>
+          <p className="mt-1 text-sm">{result.suggestion}</p>
         </div>
       ) : null}
       {visibleLogs.length > 0 ? (
-        <div className="verification-panel__activity">
-          <p className="guide-panel__label">Agent activity</p>
+        <div className="border-t pt-3">
+          <p className="mb-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Agent activity</p>
           <VerificationLogList logs={visibleLogs} />
         </div>
       ) : null}
@@ -859,9 +595,9 @@ function VerificationLogList({ logs }: { logs: VerificationLogEntry[] }) {
 
     if (isFilesList) {
       return (
-        <div className="verification-log-detail-files">
+        <div className="flex flex-wrap gap-1">
           {items.map((file, idx) => (
-            <code key={idx} className="verification-log-file-badge">{file}</code>
+            <code key={idx} className="rounded border bg-muted px-1.5 py-0.5 font-mono text-[10px]">{file}</code>
           ))}
         </div>
       );
@@ -872,7 +608,6 @@ function VerificationLogList({ logs }: { logs: VerificationLogEntry[] }) {
 
   return <Timeline
     aria-label="Verification activity"
-    className="verification-log-list"
     density="compact"
     items={logs.map((log, index) => ({
       id: `${log.at}:${index}`,

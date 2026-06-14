@@ -361,7 +361,7 @@ export function FileTree({
         <ContextMenuSeparator key="sep-del" />,
         <ContextMenuItem
           key="delete"
-          className="construct-context-menu-item--danger"
+          className="text-destructive focus:text-destructive"
           onSelect={() => void handleDelete()}
           onClick={() => void handleDelete()}
         >
@@ -426,7 +426,7 @@ export function FileTree({
         gitStatus: isTarget ? "modified" : undefined,
         expanded: isExpanded,
         decoration: isTarget ? (
-          <span className="construct-file-tree-active-step-indicator" title="Active step file">
+          <span className="flex size-4 items-center justify-center text-primary" title="Active step file">
             <PencilSimpleLine size={13} weight="bold" />
           </span>
         ) : undefined,
@@ -481,13 +481,13 @@ export function FileTree({
   }, [nodes, activePath, relevantPath, expandedPaths, renamingPath, creatingState, onCreateFile, onCreateFolder, onRenameFile]);
 
   return (
-    <div className="construct-file-tree">
-      <div className="construct-file-tree-header">
-        <span className="construct-file-tree-header-title">Explorer</span>
-        <div className="construct-file-tree-header-actions">
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex h-9 shrink-0 items-center justify-between border-b px-2">
+        <span className="text-xs font-medium">Explorer</span>
+        <div className="flex items-center gap-0.5">
           {onCreateFile ? (
             <button
-              className="construct-file-tree-action-btn"
+              className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
               type="button"
               onClick={() => setIsCreating((value) => !value)}
               title="New File..."
@@ -500,12 +500,12 @@ export function FileTree({
       </div>
 
       {isCreating ? (
-        <div className="construct-file-create-row">
-          <div className="construct-file-create-row-inner">
+        <div className="shrink-0 border-b p-2">
+          <div className="flex h-8 items-center gap-2 rounded-md border bg-background px-2 [&_svg]:size-4">
             {getIconForExtension(getExtension(draftPath))}
-            <input
+            <input className="min-w-0 flex-1 bg-transparent text-xs outline-none"
               value={draftPath}
-              onChange={(event) => setDraftPath(event.currentTarget.value)}
+              onChange={(event) => setDraftPath(event.target.value)}
               autoFocus
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
@@ -529,7 +529,7 @@ export function FileTree({
         </div>
       ) : null}
 
-      <div className="construct-file-tree-container-inner">
+      <div className="min-h-0 flex-1 overflow-hidden">
         <OpalineFileTree
           items={openShellItems}
           gitLane={false}

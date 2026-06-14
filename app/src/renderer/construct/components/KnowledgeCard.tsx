@@ -27,7 +27,6 @@ export function KnowledgeCard({
 
   return (
     <AdaptiveSidecarSurface
-      className="reference-card knowledge-card"
       data-construct-explainable="knowledge-card"
       data-construct-explainable-label={concept.title}
       data-saved={saved ? "true" : "false"}
@@ -53,20 +52,20 @@ export function KnowledgeCard({
     >
       {concept.summary ? <MarkdownBlock content={concept.summary} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} /> : null}
       {concept.why ? (
-        <section className="knowledge-card__section">
-          <p className="guide-panel__label">Why it matters</p>
+        <section className="mt-4 border-t pt-4">
+          <p className="mb-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Why it matters</p>
           <MarkdownBlock content={concept.why} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
         </section>
       ) : null}
       {concept.commonMistake ? (
-        <section className="knowledge-card__section">
-          <p className="guide-panel__label">Common mistake</p>
+        <section className="mt-4 border-t pt-4">
+          <p className="mb-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Common mistake</p>
           <MarkdownBlock content={concept.commonMistake} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
         </section>
       ) : null}
       {concept.guides.map((guide) => (
-        <section key={guide.id} className="knowledge-card__section">
-          <p className="guide-panel__label">{guideLabel(guide.guideKind)}</p>
+        <section key={guide.id} className="mt-4 border-t pt-4">
+          <p className="mb-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{guideLabel(guide.guideKind)}</p>
           {guide.content ? <MarkdownBlock content={guide.content} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} /> : null}
           {guide.sections.map((section) => (
             <MarkdownBlock key={section.kind} content={section.content} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
@@ -74,15 +73,15 @@ export function KnowledgeCard({
         </section>
       ))}
       {concept.example ? (
-        <section className="knowledge-card__section">
-          <p className="guide-panel__label">Example</p>
+        <section className="mt-4 border-t pt-4">
+          <p className="mb-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Example</p>
           <MarkdownBlock content={`\`\`\`ts\n${concept.example}\n\`\`\``} theme={theme} onOpenConcept={onOpenConcept} />
         </section>
       ) : null}
       {concept.docs.length > 0 ? (
-        <div className="reference-card__links">
+        <div className="mt-4 space-y-1 border-t pt-4">
           {concept.docs.map((link) => (
-            <a key={link.url} href={link.url} target="_blank" rel="noreferrer">
+            <a className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground" key={link.url} href={link.url} target="_blank" rel="noreferrer">
               <ExternalLinkIcon size={13} />
               <span>{link.title}</span>
             </a>

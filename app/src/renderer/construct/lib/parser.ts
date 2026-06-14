@@ -17,6 +17,7 @@ import type {
   VerificationMessages
 } from "../types";
 import { collectInlineRefs } from "./inlineRefs";
+import { normalizeTapeSpec, supportsConstructInteract } from "../../../shared/tapeFeatures";
 
 type Cursor = {
   lines: string[];
@@ -988,12 +989,7 @@ function parseRecallMode(value: string | undefined): "code" | "reply" {
 }
 
 function normalizeSpec(value: string): string {
-  const trimmed = value.trim();
-  if (/^0\.(?:1|2|3|4)(?:\.\d+)?$/.test(trimmed)) {
-    return `tape-${trimmed}`;
-  }
-
-  return trimmed;
+  return normalizeTapeSpec(value);
 }
 
 function splitList(value: string | undefined): string[] {
@@ -1099,7 +1095,7 @@ function lintProgram(program: ConstructProgram): ConstructLintWarning[] {
           id: `deprecated-guide:${block.id}`,
           severity: "warning",
           target: block.id,
-          message: `${block.guideKind} is deprecated. Prefer ::explain, ::interact, or ::recall mode="reply" for new tape-0.4 content.`
+              message: `${block.guideKind} is deprecated. Prefer ::explain, ::interact, or ::recall mode="reply" for new tape-0.4 content.`
         });
       }
 
@@ -1147,13 +1143,13 @@ function lintProgram(program: ConstructProgram): ConstructLintWarning[] {
         if (block.verify) {
           completableIds.add(block.verify.id);
           const hasEvidence = block.verify.evidence.files.length > 0 || Boolean(block.verify.evidence.answer || block.verify.evidence.interaction || block.verify.evidence.terminalCommand || block.verify.evidence.terminalOutput);
-          const needsLegacyMessages = program.spec !== "tape-0.4" && !block.verify.messages?.success && !block.verify.messages?.failure;
+          const needsLegacyMessages = !supportsConstructInteract(program.spec) && !block.verify.messages?.success && !block.verify.messages?.failure;
           if (!block.verify.goal || !block.verify.rubric || !hasEvidence || needsLegacyMessages) {
             warnings.push({
               id: `incomplete-verify:${block.verify.id}`,
               severity: "warning",
               target: block.verify.id,
-              message: program.spec === "tape-0.4"
+              message: supportsConstructInteract(program.spec)
                 ? "::verify kind=\"agent\" should include goal, evidence, and rubric."
                 : "::verify kind=\"agent\" should include goal, evidence files, rubric, and messages."
             });

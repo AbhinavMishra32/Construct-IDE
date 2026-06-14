@@ -1,0 +1,123 @@
+export type AgentLogChannel = "verifier" | "authoring-review" | "selection-explain" | "interact" | "code-ghost";
+export type AgentLogLevel = "info" | "warn" | "error" | "debug";
+
+export type AgentStructuredLogPayload = {
+  kind: "structured";
+  title: string;
+  preview: string;
+  raw: string;
+  payload: unknown;
+};
+
+export type AgentTextLogPayload = {
+  kind: "text";
+};
+
+export type AgentLogEnvelope = {
+  agent: AgentLogChannel;
+  message: string;
+  level: AgentLogLevel;
+  timestamp: string;
+  structured?: AgentStructuredLogPayload | AgentTextLogPayload;
+};
+
+type PublishAgentLog = (channel: "construct:project:agent-log", payload: AgentLogEnvelope) => void;
+
+export class AgentLogService {
+  constructor(private readonly publish: PublishAgentLog) {}
+
+  text(agent: AgentLogChannel, message: string, level: AgentLogLevel = "info"): void {
+    this.publish("construct:project:agent-log", {
+      agent,
+      message,
+      level,
+      timestamp: new Date().toISOString(),
+      structured: {
+        kind: "text"
+      }
+    });
+  }
+
+  structured(agent: AgentLogChannel, title: string, payload: unknown, level: AgentLogLevel = "debug"): void {
+    const raw = formatAgentPayload(payload);
+    this.publish("construct:project:agent-log", {
+      agent,
+      message: `${title}\n${raw}`,
+      level,
+      timestamp: new Date().toISOString(),
+      structured: {
+        kind: "structured",
+        title,
+        preview: summarizeStructuredPayload(payload),
+        raw,
+        payload,
+      }
+    });
+  }
+}
+
+function formatAgentPayload(payload: unknown): string {
+  try {
+    return JSON.stringify(payload, (_key, value) => {
+      if (value instanceof Error) {
+        return {
+          name: value.name,
+          message: value.message,
+          stack: value.stack
+        };
+      }
+      if (typeof value === "string" && value.length > 60_000) {
+        return `${value.slice(0, 60_000)}\n... [truncated]`;
+      }
+      return value;
+    }, 2);
+  } catch {
+    return String(payload);
+  }
+}
+
+function summarizeStructuredPayload(payload: unknown): string {
+  if (!payload || typeof payload !== "object") {
+    return truncateInline(String(payload ?? ""), 240);
+  }
+
+  if (Array.isArray(payload)) {
+    return `${payload.length} item${payload.length === 1 ? "" : "s"}`;
+  }
+
+  const record = payload as Record<string, unknown>;
+  const preferredKeys = [
+    "status",
+    "confidence",
+    "passed",
+    "reason",
+    "suggestion",
+    "model",
+    "provider",
+    "requestId",
+    "projectId",
+    "blockId",
+    "tool",
+    "query",
+    "message",
+    "error"
+  ];
+  const parts: string[] = [];
+
+  for (const key of preferredKeys) {
+    if (record[key] !== undefined) {
+      parts.push(`${key}: ${truncateInline(JSON.stringify(record[key]), 120)}`);
+    }
+    if (parts.length >= 4) break;
+  }
+
+  if (parts.length === 0) {
+    parts.push(...Object.keys(record).slice(0, 5));
+  }
+
+  return parts.join(" | ");
+}
+
+function truncateInline(value: string, maxLength: number): string {
+  return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value;
+}

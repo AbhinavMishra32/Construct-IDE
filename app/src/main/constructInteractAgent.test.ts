@@ -14,6 +14,7 @@ describe("Construct Interact agent boundary", () => {
     const source = readFileSync(fileURLToPath(new URL("./constructInteractAgent.ts", import.meta.url)), "utf8");
     assert.match(source, /ConstructInteractActionSchema/);
     assert.match(source, /GeneratedLiveStepDraftSchema/);
+    assert.match(source, /supportsGeneratedLiveSteps/);
     assert.match(source, /go-to-step/);
     assert.match(source, /open-concept/);
     assert.match(source, /generatedLiveSteps/);

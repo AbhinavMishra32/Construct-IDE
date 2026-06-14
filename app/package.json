@@ -19,6 +19,7 @@
     "test": "node --import tsx --test src/main/constructAiFeatures.test.ts src/main/constructInteractAgent.test.ts src/main/constructLearningStore.test.ts src/main/generatedLiveSteps.test.ts src/main/constructSelectionExplainAgent.test.ts src/renderer/construct/components/StepList.test.ts src/renderer/construct/components/Workspace.render-stability.test.ts src/renderer/construct/lib/documentSession.test.ts src/renderer/construct/lib/inlineRefs.test.ts src/renderer/construct/lib/parser.test.ts src/renderer/construct/lib/selectionContext.test.ts src/renderer/construct/compiler/parser.test.ts src/renderer/construct/compiler/pipeline.test.ts"
   },
   "dependencies": {
+    "@arizeai/phoenix-otel": "^1.0.2",
     "@fontsource-variable/geist": "^5.2.8",
     "@fontsource-variable/geist-mono": "^5.2.8",
     "@homebridge/node-pty-prebuilt-multiarch": "^0.13.1",
@@ -52,17 +53,18 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.1",
+    "@tailwindcss/vite": "^4.3.1",
     "@types/node": "^24.0.0",
     "@types/react": "^19.0.12",
     "@types/react-dom": "^19.0.4",
     "@vitejs/plugin-react": "^4.3.4",
-    "autoprefixer": "^10.4.20",
     "concurrently": "^9.1.2",
     "cross-env": "^7.0.3",
     "electron": "^35.0.1",
     "postcss": "^8.5.3",
     "pyright": "^1.1.410",
-    "tailwindcss": "^3.4.17",
+    "tailwindcss": "^4.3.1",
     "tsup": "^8.4.0",
     "tsx": "^4.19.2",
     "typescript": "^5.8.2",

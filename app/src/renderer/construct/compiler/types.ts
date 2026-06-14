@@ -1,4 +1,4 @@
-export type ConstructSpec = "tape-0.1" | "tape-0.2" | "tape-0.3" | "tape-0.3.1" | string;
+export type ConstructSpec = "tape-0.1" | "tape-0.2" | "tape-0.3" | "tape-0.3.1" | "tape-0.4" | "tape-0.4.1" | string;
 
 export type SourceRange = {
   start: number;

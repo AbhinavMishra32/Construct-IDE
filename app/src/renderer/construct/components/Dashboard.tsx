@@ -1,18 +1,18 @@
 import {
-  AlertCircle,
   ArrowRight,
   BookOpen,
   CheckCircle2,
   FileCode2,
   Folder,
   Plus,
-  RefreshCcw,
+  RotateCcw,
   Settings,
-  Sparkles
+  Sparkles,
+  TerminalSquare
 } from "lucide-react";
 import type { ReactNode } from "react";
 
-import { Button } from "@opaline/ui";
+import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle } from "@opaline/ui";
 import type { ProjectSummary } from "../types";
 
 export function Dashboard({
@@ -32,250 +32,233 @@ export function Dashboard({
   onOpenProject: (projectId: string) => void;
   onOpenProjectSettings: (projectId: string) => void;
 }) {
-  const inProgressProjects = projects.filter((project) => project.progress > 0 && project.progress < 100);
   const mostRecent = [...projects].sort((a, b) => {
     const left = a.lastOpenedAt ? Date.parse(a.lastOpenedAt) : 0;
     const right = b.lastOpenedAt ? Date.parse(b.lastOpenedAt) : 0;
     return right - left;
   });
-  const nextProject = inProgressProjects[0] ?? mostRecent[0] ?? null;
-  const attentionProjects = mostRecent
-    .filter((project) => (project.verificationFailCount ?? 0) > 0 || (project.authoringFixCount ?? 0) > 0)
-    .slice(0, 4);
-  const knowledgeProjects = mostRecent
-    .filter((project) => (project.conceptCount ?? 0) > 0 || (project.referenceCount ?? 0) > 0 || (project.fileCount ?? 0) > 0)
-    .slice(0, 4);
+  const nextProject = mostRecent.find((project) => project.progress > 0 && project.progress < 100) ?? mostRecent[0] ?? null;
+  const completedProjects = mostRecent
+    .filter((project) => project.progress >= 100 || project.completedAt)
+    .slice(0, 3);
+  const activeCount = projects.filter((project) => project.progress > 0 && project.progress < 100).length;
+  const savedConceptCount = projects.reduce((count, project) => count + (project.conceptCount ?? 0), 0);
+  const verificationPassCount = projects.reduce((count, project) => count + (project.verificationPassCount ?? 0), 0);
 
   return (
-    <div className="construct-dashboard">
-      <header className="construct-dashboard__hero">
-        <div className="construct-dashboard__hero-copy">
-          <span className="construct-dashboard__eyebrow">Construct workspace</span>
-          <h1>Build projects that teach you back.</h1>
-          <p>
-            Open a local tape, continue the next code step, and keep verification close to the work.
-          </p>
-        </div>
-        <div className="construct-dashboard__actions">
-          <Button variant="secondary" size="small" onClick={onRefresh} disabled={busy}>
-            <RefreshCcw size={14} className={busy ? "animate-spin" : ""} />
-            Refresh
-          </Button>
-          <Button size="small" onClick={onCreateProject}>
-            <Plus size={14} />
-            New project
-          </Button>
-        </div>
-      </header>
-
-      {error ? <div className="dashboard__error">{error}</div> : null}
-
-      <main className="construct-dashboard__grid">
-        <section className="construct-dashboard__continue">
-          <div className="construct-dashboard__panel-header">
-            <h2>Continue</h2>
-            <span>{nextProject ? formatProjectPosition(nextProject) : "ready"}</span>
+    <div className="h-full overflow-auto bg-transparent px-8 py-7 text-foreground">
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-5">
+        <header className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="truncate text-2xl font-semibold tracking-tight">Projects</h1>
+            <p className="text-sm text-muted-foreground">{projects.length} local tapes</p>
           </div>
-          {nextProject ? (
-            <button
-              className="construct-dashboard__continue-card"
-              type="button"
-              onClick={() => onOpenProject(nextProject.id)}
-            >
-              <span className="construct-dashboard__continue-icon">
-                <Sparkles size={18} />
-              </span>
-              <span className="construct-dashboard__continue-copy">
-                <strong>{nextProject.title}</strong>
-                <small>{describeNextWork(nextProject)}</small>
-              </span>
-              <span className="construct-dashboard__continue-progress">
-                <span style={{ width: `${nextProject.progress}%` }} />
-              </span>
-              <ArrowRight size={16} />
-            </button>
-          ) : (
-            <div className="construct-dashboard__empty construct-dashboard__empty--large">
-              <BookOpen size={20} />
-              <div>
-                <strong>No local tapes yet.</strong>
-                <span>Create a project from a `.construct` tape to start building.</span>
-              </div>
+          <div className="flex items-center gap-2">
+            <Button size="small" variant="ghost" onClick={onRefresh} disabled={busy}>
+              <RotateCcw size={14} className={busy ? "animate-spin" : undefined} />
+              Refresh
+            </Button>
+            <Button size="small" onClick={onCreateProject}>
+              <Plus size={14} />
+              New project
+            </Button>
+          </div>
+        </header>
+
+        {error ? (
+          <div className="rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {error}
+          </div>
+        ) : null}
+
+        <main className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="flex min-w-0 flex-col gap-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Continue</CardTitle>
+                <CardDescription>{nextProject ? formatProjectPosition(nextProject) : "No active tape"}</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {nextProject ? (
+                  <button
+                    className="flex w-full items-center gap-3 rounded-lg p-2 text-left transition-colors hover:bg-foreground/6"
+                    type="button"
+                    onClick={() => onOpenProject(nextProject.id)}
+                  >
+                    <IconTile><Sparkles size={18} /></IconTile>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-base font-medium">{nextProject.title}</span>
+                      <span className="block truncate text-sm text-muted-foreground">{describeNextWork(nextProject)}</span>
+                    </span>
+                    <Progress value={nextProject.progress} />
+                    <ArrowRight size={16} className="text-muted-foreground" />
+                  </button>
+                ) : (
+                  <EmptyState icon={<BookOpen size={18} />} title="No local tapes yet" description="Create a project from a .construct tape to start building." />
+                )}
+              </CardContent>
+            </Card>
+
+            <div className="grid gap-3 sm:grid-cols-3">
+              <Metric label="Active" value={activeCount} icon={<TerminalSquare size={15} />} />
+              <Metric label="Knowledge" value={savedConceptCount} icon={<BookOpen size={15} />} />
+              <Metric label="Verified" value={verificationPassCount} icon={<CheckCircle2 size={15} />} />
             </div>
-          )}
-        </section>
 
-        <section className="construct-dashboard__protocol">
-          <div className="construct-dashboard__panel-header">
-            <h2>Supported protocols</h2>
-            <span>project-safe</span>
+            <Card>
+              <CardHeader>
+                <CardTitle>Projects</CardTitle>
+                <CardDescription>Recent local project state</CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-1">
+                {mostRecent.map((project) => (
+                  <ProjectRow
+                    key={project.id}
+                    project={project}
+                    onOpen={() => onOpenProject(project.id)}
+                    onSettings={() => onOpenProjectSettings(project.id)}
+                  />
+                ))}
+                {projects.length === 0 ? (
+                  <EmptyState icon={<Folder size={18} />} title="No projects" description="Open or create a local project to see it here." />
+                ) : null}
+              </CardContent>
+            </Card>
           </div>
-          <div className="construct-dashboard__protocol-list">
-            {["tape-0.1", "tape-0.2", "tape-0.3", "tape-0.3.1"].map((protocol) => (
-              <span key={protocol}>
-                <CheckCircle2 size={14} />
-                {protocol}
-              </span>
-            ))}
-          </div>
-        </section>
 
-        <section className="construct-dashboard__spotlight" aria-label="Project queue">
-          {mostRecent.slice(0, 3).map((project) => (
-            <MiniProject
-              key={project.id}
-              project={project}
-              onOpenProject={onOpenProject}
-            />
-          ))}
-          {mostRecent.length === 0 ? (
-            <div className="construct-dashboard__empty">
-              <Folder size={18} />
-              <span>No recent project state yet.</span>
-            </div>
-          ) : null}
-        </section>
+          <aside className="flex min-w-0 flex-col gap-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Up next</CardTitle>
+                <CardDescription>{mostRecent.length ? "Recent tape queue" : "Nothing queued"}</CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-1">
+                {mostRecent.slice(0, 3).map((project) => (
+                  <MiniProject key={project.id} project={project} onOpen={() => onOpenProject(project.id)} />
+                ))}
+                {mostRecent.length === 0 ? (
+                  <EmptyState icon={<Folder size={18} />} title="No recent project state" description="Projects will appear here after opening a tape." />
+                ) : null}
+              </CardContent>
+            </Card>
 
-        <section className="construct-dashboard__panel construct-dashboard__panel--projects">
-          <div className="construct-dashboard__panel-header">
-            <h2>Recent projects</h2>
-            <span>{projects.length} local</span>
-          </div>
-          <div className="construct-dashboard__project-table">
-            {mostRecent.map((project) => (
-              <button
-                className="construct-dashboard__project"
-                key={project.id}
-                type="button"
-                onClick={() => onOpenProject(project.id)}
-              >
-                <span className="construct-dashboard__project-icon">
-                  <Folder size={17} />
-                </span>
-                <span className="construct-dashboard__project-copy">
-                  <strong>{project.title}</strong>
-                  <small>{describeProjectRow(project)}</small>
-                </span>
-                <span className="construct-dashboard__progress" aria-hidden="true">
-                  <span style={{ width: `${project.progress}%` }} />
-                </span>
-                <span className="construct-dashboard__percent">{project.progress}%</span>
-                <span
-                  className="construct-dashboard__project-settings"
-                  role="button"
-                  tabIndex={0}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onOpenProjectSettings(project.id);
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      onOpenProjectSettings(project.id);
-                    }
-                  }}
-                  aria-label={`Open settings for ${project.title}`}
-                >
-                  <Settings size={15} />
-                </span>
-              </button>
-            ))}
-            {projects.length === 0 ? (
-              <div className="construct-dashboard__empty">
-                <Folder size={18} />
-                <span>No local projects yet.</span>
-              </div>
-            ) : null}
-          </div>
-        </section>
+            <Card>
+              <CardHeader>
+                <CardTitle>Completed</CardTitle>
+                <CardDescription>{completedProjects.length ? "Recently finished" : "None yet"}</CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-1">
+                {completedProjects.map((project) => (
+                  <MiniProject
+                    key={project.id}
+                    icon={<CheckCircle2 size={15} />}
+                    project={project}
+                    meta={formatDashboardSidebarTime(project.completedAt ?? project.lastOpenedAt)}
+                    onOpen={() => onOpenProject(project.id)}
+                  />
+                ))}
+                {completedProjects.length === 0 ? (
+                  <EmptyState icon={<Sparkles size={18} />} title="No completed tapes" description="Finished projects will settle here." />
+                ) : null}
+              </CardContent>
+            </Card>
+          </aside>
+        </main>
+      </div>
+    </div>
+  );
+}
 
-        <aside className="construct-dashboard__side">
-          <section className="construct-dashboard__panel">
-            <div className="construct-dashboard__panel-header">
-              <h2>Needs attention</h2>
-              <span>{attentionProjects.length ? "from projects" : "clear"}</span>
-            </div>
-            {attentionProjects.map((project) => (
-              <ProjectSignal
-                key={project.id}
-                icon={<AlertCircle size={15} />}
-                title={project.title}
-                meta={describeAttention(project)}
-                onClick={() => onOpenProject(project.id)}
-              />
-            ))}
-            {attentionProjects.length === 0 ? (
-              <div className="construct-dashboard__empty">
-                <CheckCircle2 size={18} />
-                <span>No failed verifications or tape fixes.</span>
-              </div>
-            ) : null}
-          </section>
+function Metric({ icon, label, value }: { icon: ReactNode; label: string; value: number }) {
+  return (
+    <Card size="sm">
+      <CardContent className="flex items-center gap-3">
+        <IconTile compact>{icon}</IconTile>
+        <span className="min-w-0 flex-1 text-sm text-muted-foreground">{label}</span>
+        <strong className="text-lg font-semibold tabular-nums">{value}</strong>
+      </CardContent>
+    </Card>
+  );
+}
 
-          <section className="construct-dashboard__panel">
-            <div className="construct-dashboard__panel-header">
-              <h2>Project inventory</h2>
-              <span>real tape data</span>
-            </div>
-            {knowledgeProjects.map((project) => (
-              <ProjectSignal
-                key={project.id}
-                icon={<BookOpen size={15} />}
-                title={project.title}
-                meta={`${project.fileCount ?? 0} files · ${project.conceptCount ?? 0} concepts · ${project.referenceCount ?? 0} refs`}
-                onClick={() => onOpenProject(project.id)}
-              />
-            ))}
-          </section>
-        </aside>
-      </main>
+function ProjectRow({
+  project,
+  onOpen,
+  onSettings
+}: {
+  project: ProjectSummary;
+  onOpen: () => void;
+  onSettings: () => void;
+}) {
+  return (
+    <div className="group flex items-center gap-3 rounded-lg p-2 transition-colors hover:bg-foreground/6">
+      <button className="flex min-w-0 flex-1 items-center gap-3 text-left" type="button" onClick={onOpen}>
+        <IconTile><Folder size={17} /></IconTile>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-medium">{project.title}</span>
+          <span className="block truncate text-xs text-muted-foreground">{describeProjectRow(project)}</span>
+        </span>
+        <Badge variant="secondary">{project.progress >= 100 || project.completedAt ? "Done" : `${project.progress}%`}</Badge>
+      </button>
+      <button
+        className="grid size-8 place-items-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-foreground/8 hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
+        type="button"
+        onClick={onSettings}
+        aria-label={`Open settings for ${project.title}`}
+      >
+        <Settings size={15} />
+      </button>
     </div>
   );
 }
 
 function MiniProject({
+  icon = <FileCode2 size={15} />,
+  meta,
   project,
-  onOpenProject
+  onOpen
 }: {
+  icon?: ReactNode;
+  meta?: string;
   project: ProjectSummary;
-  onOpenProject: (projectId: string) => void;
+  onOpen: () => void;
 }) {
   return (
-    <button
-      className="construct-dashboard__mini"
-      type="button"
-      onClick={() => onOpenProject(project.id)}
-    >
-      <span className="construct-dashboard__mini-icon">
-        <FileCode2 size={15} />
+    <button className="flex min-w-0 items-center gap-3 rounded-lg p-2 text-left transition-colors hover:bg-foreground/6" type="button" onClick={onOpen}>
+      <IconTile compact>{icon}</IconTile>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-medium">{project.currentStepTitle || project.title}</span>
+        <span className="block truncate text-xs text-muted-foreground">{meta ?? describeNextWork(project)}</span>
       </span>
-      <span>
-        <strong>{project.currentStepTitle || project.title}</strong>
-        <small>{describeNextWork(project)}</small>
-      </span>
-      <em>{project.progress}%</em>
     </button>
   );
 }
 
-function ProjectSignal({
-  icon,
-  title,
-  meta,
-  onClick
-}: {
-  icon: ReactNode;
-  title: string;
-  meta: string;
-  onClick: () => void;
-}) {
+function EmptyState({ description, icon, title }: { description: string; icon: ReactNode; title: string }) {
   return (
-    <button className="construct-dashboard__signal" type="button" onClick={onClick}>
-      {icon}
-      <span>{title}</span>
-      <small>{meta}</small>
-    </button>
+    <div className="flex items-center gap-3 rounded-lg border border-dashed border-foreground/10 p-3 text-sm text-muted-foreground">
+      <IconTile compact>{icon}</IconTile>
+      <span className="min-w-0">
+        <strong className="block text-foreground">{title}</strong>
+        <span className="block">{description}</span>
+      </span>
+    </div>
+  );
+}
+
+function IconTile({ children, compact = false }: { children: ReactNode; compact?: boolean }) {
+  return (
+    <span className={compact ? "grid size-8 shrink-0 place-items-center rounded-lg bg-foreground/6 text-muted-foreground" : "grid size-11 shrink-0 place-items-center rounded-lg bg-foreground/6 text-muted-foreground"}>
+      {children}
+    </span>
+  );
+}
+
+function Progress({ value }: { value: number }) {
+  return (
+    <span className="hidden h-1.5 w-20 overflow-hidden rounded-full bg-foreground/8 sm:block" aria-hidden="true">
+      <span className="block h-full rounded-full bg-foreground/45" style={{ width: `${Math.max(0, Math.min(100, value))}%` }} />
+    </span>
   );
 }
 
@@ -290,17 +273,6 @@ function describeNextWork(project: ProjectSummary): string {
   return block ? `${step} — ${block}` : step;
 }
 
-function describeAttention(project: ProjectSummary): string {
-  const parts = [];
-  if ((project.verificationFailCount ?? 0) > 0) {
-    parts.push(`${project.verificationFailCount} failed verify`);
-  }
-  if ((project.authoringFixCount ?? 0) > 0) {
-    parts.push(`${project.authoringFixCount} tape fix${project.authoringFixCount === 1 ? "" : "es"}`);
-  }
-  return parts.join(" · ");
-}
-
 function formatProjectPosition(project: ProjectSummary): string {
   const step = typeof project.currentStepIndex === "number" && project.stepCount
     ? `step ${project.currentStepIndex + 1}/${project.stepCount}`
@@ -309,4 +281,33 @@ function formatProjectPosition(project: ProjectSummary): string {
     ? `${project.completedBlockCount}/${project.blockCount} blocks`
     : `${project.progress}%`;
   return `${step} · ${blocks}`;
+}
+
+function formatDashboardSidebarTime(value: string | null | undefined) {
+  if (!value) {
+    return "Recently opened";
+  }
+
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) {
+    return "Recently opened";
+  }
+
+  const diffMs = Date.now() - timestamp;
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+
+  if (diffHours < 1) {
+    return "Just now";
+  }
+
+  if (diffHours < 24) {
+    return `${diffHours}h ago`;
+  }
+
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 7) {
+    return `${diffDays}d ago`;
+  }
+
+  return new Date(timestamp).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }

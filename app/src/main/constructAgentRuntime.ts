@@ -1,9 +1,13 @@
 import { Agent } from "@mastra/core/agent";
 import { Mastra } from "@mastra/core/mastra";
+import type { ToolsInput } from "@mastra/core/agent";
 import { z } from "zod";
 
 import { resolveConstructAgentModel } from "./constructAgentModels";
 import type { ConstructAiFeatureId } from "./constructAiFeatures";
+import { resolveConstructAiSettings } from "./constructAiSettings";
+
+export type ConstructAgentTools = ToolsInput;
 
 export type ConstructAgentRuntimeRequest<T> = {
   id: string;
@@ -13,6 +17,7 @@ export type ConstructAgentRuntimeRequest<T> = {
   instructions: string;
   prompt: string;
   schema: z.ZodType<T>;
+  tools?: ConstructAgentTools;
   maxRetries?: number;
   onTrace?: (entry: ConstructAgentTraceEntry) => void;
 };
@@ -29,13 +34,21 @@ export type ConstructAgentTraceEntry = {
 };
 
 export function createConstructAgentRuntime(): ConstructAgentRuntime {
-  const runtime = (process.env.CONSTRUCT_AGENT_RUNTIME ?? "mastra").trim().toLowerCase();
+  const runtime = resolveConstructAiSettings().runtime;
 
   switch (runtime) {
     case "mastra":
       return new MastraConstructAgentRuntime();
+    case "fxpnt":
+      return new FxpntConstructAgentRuntime();
     default:
-      throw new Error(`Unsupported CONSTRUCT_AGENT_RUNTIME "${runtime}". Available runtime: mastra.`);
+      throw new Error(`Unsupported Construct agent runtime "${runtime}". Available runtimes: mastra, fxpnt.`);
+  }
+}
+
+class FxpntConstructAgentRuntime implements ConstructAgentRuntime {
+  async generateStructured<T>(_request: ConstructAgentRuntimeRequest<T>): Promise<T> {
+    throw new Error("FXPNT runtime is selectable but not installed yet. Use Mastra until the external fxpnt runtime package is wired in.");
   }
 }
 
@@ -56,6 +69,7 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
         name: request.name,
         purpose: request.purpose,
         featureId: request.featureId,
+        toolCount: request.tools ? Object.keys(request.tools).length : 0,
         maxRetries: request.maxRetries ?? 1
       }
     });
@@ -83,14 +97,32 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
       name: request.name,
       instructions: request.instructions,
       model: resolveConstructAgentModel(request.purpose, request.featureId),
+      tools: request.tools,
       maxRetries: request.maxRetries ?? 1
     });
 
     new Mastra({ agents: { [request.id]: agent }, logger: false });
     try {
-      const output = await agent.generate(request.prompt, {
-        structuredOutput: { schema: request.schema }
-      });
+      let output;
+      try {
+        output = await agent.generate(request.prompt, {
+          structuredOutput: { schema: request.schema },
+          maxSteps: request.tools ? 8 : undefined,
+          toolChoice: request.tools ? "auto" : undefined
+        });
+      } catch (structuredError) {
+        const rawAttempt = await agent.generate(request.prompt, {
+          maxSteps: request.tools ? 8 : undefined,
+          toolChoice: request.tools ? "auto" : undefined
+        });
+        const rawText = typeof rawAttempt === "string" ? rawAttempt : (rawAttempt as { text?: string })?.text ?? String(rawAttempt);
+        const jsonMatch = rawText.match(/```(?:json)?\s*([\s\S]*?)```/) || rawText.match(/(\{[\s\S]*\})/);
+        if (jsonMatch?.[1]) {
+          output = { object: JSON.parse(jsonMatch[1].trim()) };
+        } else {
+          throw structuredError;
+        }
+      }
 
       request.onTrace?.({
         title: "Raw structured output",

@@ -49,22 +49,22 @@ export function MarkdownBlock({
 
       if (isInlineLike) {
         return (
-          <code className="construct-markdown-inline-code" {...props}>
+          <code className="rounded border bg-muted px-1 py-0.5 font-mono text-[0.85em]" {...props}>
             {children}
           </code>
         );
       }
 
       return (
-        <div className="construct-markdown-code-frame">
-          <div className="construct-markdown-code-header">
+        <div className="my-3 overflow-hidden rounded-lg border bg-muted/30">
+          <div className="border-b bg-muted/50 px-3 py-1.5">
             <span>{languageMatch?.[1] ?? "code"}</span>
           </div>
           <SyntaxHighlighter
             style={codeTheme}
             language={languageMatch?.[1] ?? "text"}
             PreTag="div"
-            className="construct-markdown-code-block"
+            className="font-mono"
             customStyle={{
               margin: 0,
               padding: "12px 14px",
@@ -76,7 +76,7 @@ export function MarkdownBlock({
             }}
             codeTagProps={{
               style: {
-                fontFamily: "var(--opaline-font-mono)"
+                fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
               }
             }}
           >
@@ -91,7 +91,7 @@ export function MarkdownBlock({
       if (reference?.kind === "concept") {
         return (
           <button
-            className="construct-concept-chip"
+            className="inline-flex rounded-md bg-primary/10 px-1.5 py-0.5 text-sm font-medium text-primary hover:bg-primary/20"
             type="button"
             onClick={(event) => {
               event.preventDefault();
@@ -106,7 +106,7 @@ export function MarkdownBlock({
       if (reference?.kind === "file") {
         return (
           <button
-            className="construct-file-ref"
+            className="inline-flex rounded-md border bg-muted px-1.5 py-0.5 font-mono text-xs hover:bg-muted/80"
             type="button"
             onClick={(event) => {
               event.preventDefault();
@@ -119,12 +119,12 @@ export function MarkdownBlock({
         );
       }
       const external = /^https?:\/\//.test(href);
-      return <a {...props} className={`construct-markdown-link ${className ?? ""}`.trim()} rel={external ? "noreferrer" : props.rel} target={external ? "_blank" : props.target} />;
+      return <a {...props} className={`font-medium text-primary underline underline-offset-4 hover:opacity-80 ${className ?? ""}`.trim()} rel={external ? "noreferrer" : props.rel} target={external ? "_blank" : props.target} />;
     },
     ul({ className, ...props }) {
       return (
         <ul
-          className={`construct-markdown-list construct-markdown-list--unordered ${className ?? ""}`.trim()}
+          className={`my-2 list-disc space-y-1 pl-5 ${className ?? ""}`.trim()}
           {...props}
         />
       );
@@ -132,7 +132,7 @@ export function MarkdownBlock({
     ol({ className, ...props }) {
       return (
         <ol
-          className={`construct-markdown-list construct-markdown-list--ordered ${className ?? ""}`.trim()}
+          className={`my-2 list-decimal space-y-1 pl-5 ${className ?? ""}`.trim()}
           {...props}
         />
       );
@@ -140,33 +140,33 @@ export function MarkdownBlock({
     li({ className, ...props }) {
       return (
         <li
-          className={`construct-markdown-list-item ${className ?? ""}`.trim()}
+          className={`pl-1 ${className ?? ""}`.trim()}
           {...props}
         />
       );
     },
     table({ className, ...props }) {
       return (
-        <div className="construct-markdown-table-wrap">
-          <table className={`construct-markdown-table ${className ?? ""}`.trim()} {...props} />
+        <div className="my-3 overflow-x-auto rounded-lg border">
+          <table className={`w-full border-collapse text-left text-sm [&_td]:border-t [&_td]:px-3 [&_td]:py-2 [&_th]:bg-muted [&_th]:px-3 [&_th]:py-2 [&_th]:font-medium ${className ?? ""}`.trim()} {...props} />
         </div>
       );
     },
     blockquote({ className, ...props }) {
       return (
         <blockquote
-          className={`construct-markdown-quote ${className ?? ""}`.trim()}
+          className={`my-3 border-l-2 pl-4 text-muted-foreground ${className ?? ""}`.trim()}
           {...props}
         />
       );
     },
     hr({ className, ...props }) {
-      return <hr className={`construct-markdown-divider ${className ?? ""}`.trim()} {...props} />;
+      return <hr className={`my-4 border-border ${className ?? ""}`.trim()} {...props} />;
     }
   };
 
   return (
-    <div className="construct-markdown">
+    <div className="space-y-3 text-sm leading-relaxed text-foreground [&_h1]:text-xl [&_h1]:font-semibold [&_h2]:text-lg [&_h2]:font-semibold [&_h3]:text-base [&_h3]:font-semibold [&_p]:leading-relaxed [&_strong]:font-semibold">
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
         {renderInlineRefsAsMarkdown(content)}
       </ReactMarkdown>
