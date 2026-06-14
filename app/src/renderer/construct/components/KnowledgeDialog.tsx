@@ -1,13 +1,16 @@
 import { BookmarkCheckIcon, BookmarkIcon, ExternalLinkIcon } from "lucide-react";
 import {
   Button,
-  Dialog,
-  DialogBody,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogSection
-} from "@opaline/ui";
+  Card,
+  CardContent,
+  ShadcnDialog,
+  ShadcnDialogContent,
+  ShadcnDialogDescription,
+  ShadcnDialogFooter,
+  ShadcnDialogHeader,
+  ShadcnDialogTitle,
+  ShadcnScrollArea
+} from "@opaline/ui/v2";
 import type { ConceptCard } from "../types";
 import type { InlineFileRef } from "../lib/inlineRefs";
 import { MarkdownBlock } from "./MarkdownBlock";
@@ -33,38 +36,39 @@ export function KnowledgeDialog({
 }) {
   if (!concept) return null;
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        size="wide"
-        contentClassName="construct-knowledge-dialog"
+    <ShadcnDialog open={open} onOpenChange={onOpenChange}>
+      <ShadcnDialogContent
+        className="construct-knowledge-dialog"
         data-construct-explainable="knowledge-dialog"
         data-construct-explainable-label={concept.title}
-        style={{ height: "min(720px, calc(100vh - 48px))" }}
       >
-        <DialogHeader title={concept.title} subtitle={`${concept.kind} · ${concept.tags.join(" · ")}`} />
-        <DialogBody className="construct-knowledge-dialog__body">
-          <DialogSection>
+        <ShadcnDialogHeader>
+          <ShadcnDialogTitle>{concept.title}</ShadcnDialogTitle>
+          <ShadcnDialogDescription>{concept.kind} · {concept.tags.join(" · ")}</ShadcnDialogDescription>
+        </ShadcnDialogHeader>
+        <ShadcnScrollArea className="construct-knowledge-dialog__scroll"><div className="construct-knowledge-dialog__body">
+          <Card size="sm"><CardContent>
             <p className="construct-knowledge-dialog__label">Summary</p>
             <MarkdownBlock content={concept.summary} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
-          </DialogSection>
-          {concept.why ? <DialogSection>
+          </CardContent></Card>
+          {concept.why ? <Card size="sm"><CardContent>
             <p className="construct-knowledge-dialog__label">Why it matters</p>
             <MarkdownBlock content={concept.why} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
-          </DialogSection> : null}
-          {concept.commonMistake ? <DialogSection>
+          </CardContent></Card> : null}
+          {concept.commonMistake ? <Card size="sm"><CardContent>
             <p className="construct-knowledge-dialog__label">Common mistake</p>
             <MarkdownBlock content={concept.commonMistake} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
-          </DialogSection> : null}
-          {concept.guides.map((guide) => <DialogSection key={guide.id}>
+          </CardContent></Card> : null}
+          {concept.guides.map((guide) => <Card size="sm" key={guide.id}><CardContent>
             <p className="construct-knowledge-dialog__label">{guideLabel(guide.guideKind)}</p>
             {guide.content ? <MarkdownBlock content={guide.content} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} /> : null}
             {guide.sections.map((section) => <MarkdownBlock key={section.kind} content={section.content} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />)}
-          </DialogSection>)}
-          {concept.example ? <DialogSection>
+          </CardContent></Card>)}
+          {concept.example ? <Card size="sm"><CardContent>
             <p className="construct-knowledge-dialog__label">Example</p>
             <MarkdownBlock content={`\`\`\`ts\n${concept.example}\n\`\`\``} theme={theme} onOpenConcept={() => undefined} />
-          </DialogSection> : null}
-          {concept.docs.length > 0 ? <DialogSection>
+          </CardContent></Card> : null}
+          {concept.docs.length > 0 ? <Card size="sm"><CardContent>
             <p className="construct-knowledge-dialog__label">Resources</p>
             <div className="construct-knowledge-dialog__docs">
               {concept.docs.map((doc) => <a href={doc.url} key={doc.url} rel="noreferrer" target="_blank">
@@ -72,16 +76,16 @@ export function KnowledgeDialog({
                 <ExternalLinkIcon />
               </a>)}
             </div>
-          </DialogSection> : null}
-        </DialogBody>
-        <DialogFooter>
+          </CardContent></Card> : null}
+        </div></ShadcnScrollArea>
+        <ShadcnDialogFooter>
           <Button variant={saved ? "secondary" : "primary"} onClick={() => onSaveChange(!saved)}>
             {saved ? <BookmarkCheckIcon /> : <BookmarkIcon />}
             {saved ? "Saved" : "Save to knowledge base"}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </ShadcnDialogFooter>
+      </ShadcnDialogContent>
+    </ShadcnDialog>
   );
 }
 
