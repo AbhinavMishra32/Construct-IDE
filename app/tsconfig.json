@@ -8,6 +8,12 @@
       "@opaline/ui": [
         "opaline/packages/ui/src/index.ts"
       ],
+      "@opaline/ui/v2": [
+        "opaline/packages/ui/src/opaline-v2/index.ts"
+      ],
+      "@opaline/ui/v2/styles.css": [
+        "opaline/packages/ui/src/opaline-v2/styles.css"
+      ],
       "@opaline/ui/styles.css": [
         "opaline/packages/ui/src/styles.css"
       ]

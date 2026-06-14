@@ -22,7 +22,7 @@ import {
   type AgentSessionMessage,
   type AgentSessionMessagePart,
   type AgentSessionToolEntry
-} from "@opaline/ui";
+} from "@opaline/ui/v2";
 
 import { MarkdownBlock } from "./MarkdownBlock";
 import { assistanceLabel, blockLabel, currentBlockNumber, totalBlocks } from "../lib/runtime";

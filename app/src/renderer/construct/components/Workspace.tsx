@@ -16,10 +16,10 @@ import {
 } from "@phosphor-icons/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
-import { AdaptiveSidecarLayout, HoverPreview, SidebarBottomSlot, SlotPanel, Timeline } from "@opaline/ui";
+import { AdaptiveSidecarLayout, HoverPreview, SidebarBottomSlot, SlotPanel, Timeline } from "@opaline/ui/v2";
 import { logStore } from "../lib/logStore";
 import { lspClient } from "../lib/lspClient";
-import type { SlotTab } from "@opaline/ui";
+import type { SlotTab } from "@opaline/ui/v2";
 import { EditorPane } from "./EditorPane";
 import { GuidePanel } from "./GuidePanel";
 import { MarkdownBlock } from "./MarkdownBlock";

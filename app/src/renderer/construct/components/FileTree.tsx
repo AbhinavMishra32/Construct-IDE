@@ -5,7 +5,7 @@ import {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
-} from "@opaline/ui";
+} from "@opaline/ui/v2";
 import {
   Atom,
   File,

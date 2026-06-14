@@ -11,7 +11,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
   TerminalSurface,
-} from "@opaline/ui";
+} from "@opaline/ui/v2";
 
 type OutputChannel = Exclude<LogChannel, AgentLogChannel> | "debug-processes" | "agents";
 

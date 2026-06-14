@@ -21,7 +21,7 @@ import {
   ContextMenuSub,
   ContextMenuSubTrigger,
   ContextMenuSubContent
-} from "@opaline/ui";
+} from "@opaline/ui/v2";
 import {
   ArrowSquareOut,
   Eye,

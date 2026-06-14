@@ -1,4 +1,4 @@
-import { AdaptiveSidecarSurface } from "@opaline/ui";
+import { AdaptiveSidecarSurface } from "@opaline/ui/v2";
 import { BookmarkCheckIcon, BookmarkIcon, ExternalLinkIcon } from "lucide-react";
 import { useState } from "react";
 

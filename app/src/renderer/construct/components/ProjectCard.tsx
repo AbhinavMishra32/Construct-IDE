@@ -1,6 +1,6 @@
 import { ArrowRightIcon, Clock3Icon, FolderCodeIcon } from "lucide-react";
 
-import { Button, Pill } from "@opaline/ui";
+import { Button, Pill } from "@opaline/ui/v2";
 
 import { formatLastOpened } from "../lib/projectStore";
 import type { ProjectSummary } from "../types";
