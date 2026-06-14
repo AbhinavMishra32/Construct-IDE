@@ -2,7 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 
 import "./index.css";
-import ConstructApp from "./construct/App";
+import ConstructApp from "./construct/ConstructApplication";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { logStore } from "./construct/lib/logStore";
 

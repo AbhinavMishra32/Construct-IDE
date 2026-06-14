@@ -4,7 +4,7 @@ import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const workspaceSource = readFileSync(fileURLToPath(new URL("./Workspace.tsx", import.meta.url)), "utf8");
-const appSource = readFileSync(fileURLToPath(new URL("../App.tsx", import.meta.url)), "utf8");
+const appSource = readFileSync(fileURLToPath(new URL("../ConstructApplication.tsx", import.meta.url)), "utf8");
 
 describe("Workspace render stability", () => {
   it("uses stable empty arrays for optional project data read during render", () => {

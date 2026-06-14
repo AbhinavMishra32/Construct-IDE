@@ -128,21 +128,21 @@ export function GuidePanel({
     block && block.kind === "edit" ? codeProgressForBlock(block, (project.typingProgress ?? {})[block.id] ?? 0) : null;
 
   return (
-    <aside className="guide-panel" data-construct-explainable="guide" data-construct-explainable-label="Guide">
+    <aside className="flex h-full min-h-0 flex-col overflow-y-auto bg-background p-4 text-foreground" data-construct-explainable="guide" data-construct-explainable-label="Guide">
       {!block ? (
-        <div className="guide-panel__completed-state">
-          <p className="eyebrow">Complete</p>
-          <h2>Project finished</h2>
+        <div className="flex min-h-48 flex-col items-center justify-center text-center">
+          <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Complete</p>
+          <h2 className="mt-1 text-lg font-semibold">Project finished</h2>
         </div>
       ) : (
         <>
-          <div className="guide-panel__meta">
+          <div className="mb-2 flex items-center justify-between text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
             <span>{blockLabel(block)}</span>
             <span>
               {currentBlockNumber(project)} / {totalBlocks(project.program)}
             </span>
           </div>
-          <h2>{project.program.steps[project.currentStepIndex]?.title}</h2>
+          <h2 className="mb-4 text-lg font-semibold tracking-tight">{project.program.steps[project.currentStepIndex]?.title}</h2>
           <GuideBlock
             block={block}
             theme={theme}
@@ -167,9 +167,9 @@ export function GuidePanel({
             interactingId={interactingId}
             projectLearningState={projectLearningState}
           />
-          <p className="guide-panel__assist">{assistanceLabel(assistance)}</p>
+          <p className="mt-4 text-xs text-muted-foreground">{assistanceLabel(assistance)}</p>
           {block.kind === "run" || (block.kind === "recall" && block.verify) || canContinue ? (
-            <div className="guide-panel__actions">
+            <div className="mt-4 flex flex-wrap justify-end gap-2 border-t pt-4">
               {block.kind === "run" ? (
                 <Button variant="secondary" onClick={() => onRunCommand(block.command, block.cwd)}>
                   <PlayIcon size={15} />
@@ -253,24 +253,24 @@ function GuideBlock({
 }) {
   if (block.kind === "run") {
     return (
-      <div className="guide-block">
-        <div className="run-command">
+      <div className="space-y-3">
+        <div className="flex items-center gap-2 rounded-md border bg-muted/50 px-3 py-2 font-mono text-xs">
           <TerminalIcon size={15} />
           <code>{block.command}</code>
         </div>
-        <p className="guide-panel__copy">cwd: {block.cwd}</p>
+        <p className="text-xs text-muted-foreground">cwd: {block.cwd}</p>
       </div>
     );
   }
 
   if (block.kind === "guide") {
     return (
-      <div className="guide-block guide-layer-block" data-guide-kind={block.guideKind}>
-        {block.title ? <h3>{block.title}</h3> : null}
+      <div className="space-y-4" data-guide-kind={block.guideKind}>
+        {block.title ? <h3 className="text-sm font-semibold">{block.title}</h3> : null}
         {block.content ? <MarkdownBlock content={block.content} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} /> : null}
         {block.sections.map((section) => (
-          <section key={section.kind} className="guide-layer-block__section">
-            <p className="guide-panel__label">{supportSectionLabel(section.kind.replace(/^guide\./, ""))}</p>
+          <section key={section.kind} className="border-t pt-3">
+            <p className="mb-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{supportSectionLabel(section.kind.replace(/^guide\./, ""))}</p>
             <MarkdownBlock content={section.content} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
           </section>
         ))}
@@ -282,7 +282,7 @@ function GuideBlock({
     const note = block.notes.find((candidate) => candidate.when === (editComplete ? "done" : "start"));
 
     return (
-      <div className="guide-block">
+      <div className="space-y-4">
         {block.guides.map((guide) => (
           <GuideBlock
             key={guide.id}
@@ -310,12 +310,12 @@ function GuideBlock({
             projectLearningState={projectLearningState}
           />
         ))}
-        <p className="guide-panel__copy">
+        <p className="text-sm text-muted-foreground">
           Complete the highlighted implementation in <code>{block.path}</code>.
         </p>
         {codeProgress ? <CodeProgressMeter progress={codeProgress} /> : null}
         {note ? (
-          <div className="guide-panel__note">
+          <div className="rounded-md border bg-muted/30 p-3">
             <MarkdownBlock content={note.content} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
           </div>
         ) : null}
@@ -338,7 +338,7 @@ function GuideBlock({
     });
 
     return (
-      <div className="guide-block construct-interact construct-interact--agent">
+      <div className="min-h-0 overflow-hidden rounded-lg border">
         <AgentSessionSurface
           eyebrow="Construct Interact"
           lead={
@@ -372,16 +372,16 @@ function GuideBlock({
       .filter((reference): reference is ReferenceCard => Boolean(reference));
 
     return (
-      <div className="guide-block recall-task">
-        <div className="recall-task__section recall-task__task">
-          <p className="guide-panel__label">Task</p>
+      <div className="space-y-4">
+        <div>
+          <p className="mb-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Task</p>
           <MarkdownBlock content={block.task} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
         </div>
         {block.mode === "reply" ? (
-          <div className="recall-task__section recall-task__reply">
-            <p className="guide-panel__label">Your answer</p>
+          <div className="border-t pt-4">
+            <p className="mb-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Your answer</p>
             <textarea
-              className="construct-interact__answer"
+              className="min-h-28 w-full resize-y rounded-md border bg-background p-3 text-sm outline-none focus:ring-2 focus:ring-ring/30"
               value={recallAnswer}
               onChange={(event) => onRecallAnswerChange(event.target.value)}
               placeholder="Explain it in your own words..."
@@ -393,17 +393,17 @@ function GuideBlock({
           <MissingFilesPanel files={recallMissingFiles} onCreateFile={onCreateFile} />
         ) : null}
         {block.support || block.supportSections.length > 0 ? (
-          <div className="recall-task__section recall-task__support">
-            <div className="recall-task__support-header">
-              <LightbulbIcon size={13} className="support-icon" />
-              <p className="guide-panel__label">Support</p>
+          <div className="rounded-lg border bg-muted/30 p-3">
+            <div className="mb-2 flex items-center gap-1.5 text-muted-foreground">
+              <LightbulbIcon size={13} />
+              <p className="text-[10px] font-medium uppercase tracking-wide">Support</p>
             </div>
             {block.support ? <MarkdownBlock content={block.support} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} /> : null}
             {block.supportSections.length > 0 ? (
-              <div className="recall-task__support-sections">
+              <div className="mt-3 space-y-3">
                 {block.supportSections.map((section) => (
-                  <section key={section.kind} className="recall-task__support-subsection">
-                    <p>{supportSectionLabel(section.kind)}</p>
+                  <section key={section.kind} className="border-t pt-3">
+                    <p className="mb-1 text-xs font-medium">{supportSectionLabel(section.kind)}</p>
                     <MarkdownBlock content={section.content} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
                   </section>
                 ))}
@@ -412,11 +412,11 @@ function GuideBlock({
           </div>
         ) : null}
         {linkedReferences.length > 0 ? (
-          <div className="recall-task__references">
+          <div className="flex flex-wrap gap-2">
             {linkedReferences.map((reference) => (
               <button
                 key={reference.id}
-                className="recall-task__reference-button"
+                className="rounded-md border bg-background px-2 py-1 text-xs hover:bg-muted"
                 type="button"
                 onClick={() => onOpenReference(reference.id)}
               >
@@ -440,7 +440,7 @@ function GuideBlock({
   }
 
   return (
-    <div className="guide-block">
+    <div className="space-y-3">
       <MarkdownBlock content={block.content} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
     </div>
   );
@@ -581,7 +581,7 @@ function buildInteractResultParts(
       type: "actions",
       id: `${sessionId}:actions`,
       content: (
-        <div className="construct-interact__actions">
+        <div className="flex flex-wrap gap-2">
           {result.actions.map((action, index) => (
             <button key={`${action.type}-${index}`} type="button" onClick={() => onInteractAction?.(action)}>
               <SparklesIcon size={13} />
@@ -603,10 +603,10 @@ function buildInteractResultParts(
         subtitle: `${result.generatedLiveSteps.length} step${result.generatedLiveSteps.length === 1 ? "" : "s"}`,
         status: "completed",
         content: (
-          <div className="construct-interact__generated">
+          <div className="space-y-2">
             {result.generatedLiveSteps.map((step) => (
-              <div key={step.id ?? step.title} className="construct-interact__generated-step">
-                <strong>{step.title}</strong>
+              <div key={step.id ?? step.title} className="rounded-md border bg-muted/30 p-3 text-xs">
+                <strong className="font-medium">{step.title}</strong>
                 <p>{step.reason}</p>
               </div>
             ))}
@@ -626,10 +626,10 @@ function buildInteractResultParts(
         subtitle: `${result.liveStepValidation.length} check${result.liveStepValidation.length === 1 ? "" : "s"}`,
         status: result.liveStepValidation.some((entry) => entry.status === "rejected") ? "error" : "completed",
         content: (
-          <div className="construct-interact__generated">
+          <div className="space-y-2">
             {result.liveStepValidation.map((entry, index) => (
-              <div key={`${entry.stepId ?? entry.draftTitle ?? index}`} className="construct-interact__generated-step">
-                <strong>{entry.stepId ?? entry.draftTitle ?? "Generated step"}</strong>
+              <div key={`${entry.stepId ?? entry.draftTitle ?? index}`} className="rounded-md border bg-muted/30 p-3 text-xs">
+                <strong className="font-medium">{entry.stepId ?? entry.draftTitle ?? "Generated step"}</strong>
                 <p>{entry.reason}</p>
               </div>
             ))}
@@ -651,7 +651,7 @@ function buildInteractToolEntries(toolCalls: NonNullable<ConstructInteractClient
       subtitle: toolCall.reason,
       args: classification.args,
       status: "completed",
-      content: toolCall.outputPreview ? <pre className="construct-interact__tool-output">{toolCall.outputPreview}</pre> : undefined
+      content: toolCall.outputPreview ? <pre className="overflow-auto rounded-md bg-muted p-3 font-mono text-xs">{toolCall.outputPreview}</pre> : undefined
     };
   });
 }
@@ -706,15 +706,15 @@ function interactStatusLabel(status: ConstructInteractClientResult["status"]): s
 
 function CodeProgressMeter({ progress }: { progress: GhostProgress }) {
   return (
-    <div className="ghost-progress" aria-label="Code step progress">
-      <div className="ghost-progress__row">
+    <div className="space-y-2 rounded-md border bg-muted/30 p-3" aria-label="Code step progress">
+      <div className="flex items-center justify-between text-xs">
         <span>Code step progress</span>
         <strong>
           {progress.typedLines} / {progress.totalLines} lines · {progress.percent}%
         </strong>
       </div>
-      <div className="ghost-progress__track">
-        <span style={{ width: `${progress.percent}%` }} />
+      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+        <span className="block h-full rounded-full bg-primary" style={{ width: `${progress.percent}%` }} />
       </div>
     </div>
   );
@@ -743,12 +743,12 @@ function MissingFilesPanel({
   }
 
   return (
-    <div className="recall-missing-files">
+    <div className="rounded-lg border border-dashed p-3">
       <div>
-        <p className="guide-panel__label">Workspace action</p>
+        <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Workspace action</p>
         <p>The verifier needs these files as evidence.</p>
       </div>
-      <div className="recall-missing-files__list">
+      <div className="mt-3 space-y-1">
         {files.map((path) => (
           <button
             key={path}
@@ -762,20 +762,20 @@ function MissingFilesPanel({
           </button>
         ))}
       </div>
-      {error ? <p className="recall-missing-files__error">{error}</p> : null}
+      {error ? <p className="mt-2 text-xs text-destructive">{error}</p> : null}
     </div>
   );
 }
 
 function ConfidenceBadge({ level }: { level: string }) {
   const normLevel = level ? level.toLowerCase() : "";
-  let statusColor = "is-high";
-  if (normLevel === "medium") statusColor = "is-medium";
-  else if (normLevel === "low") statusColor = "is-low";
+  let statusColor = "bg-emerald-500";
+  if (normLevel === "medium") statusColor = "bg-amber-500";
+  else if (normLevel === "low") statusColor = "bg-destructive";
 
   return (
-    <div className={`confidence-badge ${statusColor}`}>
-      <span className="confidence-badge__dot" aria-hidden="true" />
+    <div className="inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[10px] text-muted-foreground">
+      <span className={`size-1.5 rounded-full ${statusColor}`} aria-hidden="true" />
       <span>Confidence: {level}</span>
     </div>
   );
@@ -798,9 +798,9 @@ function VerificationPanel({
 
   if (verifying) {
     return (
-      <div className="verification-panel is-running">
-        <div className="verification-panel__status">
-          <WandSparklesIcon size={15} className="spinner-sparkles" />
+      <div className="space-y-3 rounded-lg border bg-muted/30 p-3">
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <WandSparklesIcon size={15} className="animate-spin" />
           <span>Verifier run</span>
         </div>
         <VerificationLogList logs={visibleLogs} />
@@ -813,31 +813,31 @@ function VerificationPanel({
   }
 
   const isAlmost = result.status === "almost";
-  const panelState = result.passed ? "is-passed" : isAlmost ? "is-almost" : "is-failed";
+  const panelState = result.passed ? "border-emerald-500/30 bg-emerald-500/5" : isAlmost ? "border-amber-500/30 bg-amber-500/5" : "border-destructive/30 bg-destructive/5";
   const statusText = result.passed ? successMessage : isAlmost ? "Close. One piece is still missing." : failureMessage;
 
   return (
-    <div className={`verification-panel ${panelState}`}>
-      <div className="verification-panel__status">
+    <div className={`space-y-3 rounded-lg border p-3 ${panelState}`}>
+      <div className="flex items-center gap-2 text-sm font-medium">
         {result.passed ? <CheckCircle2Icon size={16} /> : isAlmost ? <AlertCircleIcon size={16} /> : <XCircleIcon size={16} />}
         <span>{statusText}</span>
       </div>
-      <div className="verification-panel__body">
-        <p className="verification-panel__reason">{result.reason}</p>
+      <div className="space-y-2">
+        <p className="text-sm text-muted-foreground">{result.reason}</p>
         <ConfidenceBadge level={result.confidence} />
       </div>
       {result.suggestion ? (
-        <div className="verification-panel__suggestion">
-          <div className="verification-panel__suggestion-header">
-            <SparklesIcon size={13} className="suggestion-icon" />
-            <p className="guide-panel__label">Next</p>
+        <div className="border-t pt-3">
+          <div className="flex items-center gap-1.5 text-muted-foreground">
+            <SparklesIcon size={13} />
+            <p className="text-[10px] font-medium uppercase tracking-wide">Next</p>
           </div>
-          <p className="verification-panel__suggestion-text">{result.suggestion}</p>
+          <p className="mt-1 text-sm">{result.suggestion}</p>
         </div>
       ) : null}
       {visibleLogs.length > 0 ? (
-        <div className="verification-panel__activity">
-          <p className="guide-panel__label">Agent activity</p>
+        <div className="border-t pt-3">
+          <p className="mb-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Agent activity</p>
           <VerificationLogList logs={visibleLogs} />
         </div>
       ) : null}
@@ -859,9 +859,9 @@ function VerificationLogList({ logs }: { logs: VerificationLogEntry[] }) {
 
     if (isFilesList) {
       return (
-        <div className="verification-log-detail-files">
+        <div className="flex flex-wrap gap-1">
           {items.map((file, idx) => (
-            <code key={idx} className="verification-log-file-badge">{file}</code>
+            <code key={idx} className="rounded border bg-muted px-1.5 py-0.5 font-mono text-[10px]">{file}</code>
           ))}
         </div>
       );
@@ -872,7 +872,6 @@ function VerificationLogList({ logs }: { logs: VerificationLogEntry[] }) {
 
   return <Timeline
     aria-label="Verification activity"
-    className="verification-log-list"
     density="compact"
     items={logs.map((log, index) => ({
       id: `${log.at}:${index}`,

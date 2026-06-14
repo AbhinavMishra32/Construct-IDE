@@ -27,7 +27,6 @@ export function ReferenceCard({
 
   return (
     <AdaptiveSidecarSurface
-      className="reference-card"
       data-construct-explainable="knowledge-card"
       data-construct-explainable-label={card.title}
       draggable
@@ -44,13 +43,14 @@ export function ReferenceCard({
       pinLabel="Pin reference card"
       unpinLabel="Unpin reference card"
     >
-      <div className="reference-card__reveal">{card.reveal}</div>
+      <div className="mb-3 rounded-md border bg-muted/50 p-3 text-sm">{card.reveal}</div>
       <MarkdownBlock content={card.body} theme={theme} onOpenFile={onOpenFile} />
       {card.links.length > 0 ? (
-        <div className="reference-card__links">
+        <div className="mt-3 space-y-1 border-t pt-3">
           {card.links.map((link, index) => (
             <button
               key={`${link.anchor ?? link.file ?? "link"}:${index}`}
+              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
               type="button"
               onClick={() => onOpenLink(link)}
             >

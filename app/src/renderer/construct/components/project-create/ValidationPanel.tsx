@@ -50,27 +50,26 @@ export function ValidationPanel({
       : "Project tape needs attention";
 
   return (
-    <div className="construct-validation-flow">
+    <div className="space-y-3">
       <AgentThinking
-        className="construct-validation-flow__activity"
         state={activeStage ? "thinking" : "thought"}
         label={activityLabel}
         content={<AgentActivityList entries={entries} />}
       />
 
-      {!activeStage ? <p className="construct-validation-flow__summary">{result.valid ? `${result.document.spec} · ${result.document.root.children.length} top-level blocks${warnings.length > 0 ? ` · ${warnings.length} optional suggestion${warnings.length === 1 ? "" : "s"}` : ""}` : blockingError ? `Line ${blockingError.line}` : null}</p> : null}
+      {!activeStage ? <p className="text-xs text-muted-foreground">{result.valid ? `${result.document.spec} · ${result.document.root.children.length} top-level blocks${warnings.length > 0 ? ` · ${warnings.length} optional suggestion${warnings.length === 1 ? "" : "s"}` : ""}` : blockingError ? `Line ${blockingError.line}` : null}</p> : null}
 
       {blockingError ? (
-        <div className="construct-validation-flow__blocking">
-          <AlertCircle size={15} />
-          <div><strong>{blockingError.message}</strong><small>{blockingError.details}</small></div>
-          <button type="button" onClick={onRawEdit}><FileCode2 size={13} />Edit source</button>
+        <div className="flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-destructive">
+          <AlertCircle className="mt-0.5 shrink-0" size={15} />
+          <div className="min-w-0 flex-1"><strong className="block text-sm font-medium">{blockingError.message}</strong><small className="mt-0.5 block text-xs opacity-80">{blockingError.details}</small></div>
+          <button className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs hover:bg-destructive/10" type="button" onClick={onRawEdit}><FileCode2 size={13} />Edit source</button>
         </div>
       ) : null}
 
       {suggestions.length > 0 || authoringSuggestions.length > 0 ? (
-        <section className="construct-validation-flow__suggestions">
-          <header><Sparkles size={14} /><span>Optional suggestions</span></header>
+        <section className="space-y-2 border-t pt-3">
+          <header className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><Sparkles size={14} /><span>Optional suggestions</span></header>
           {suggestions.map((fix) => (
             <AgentSuggestion key={fix.id} title={fix.title} description={fix.description} onAction={() => onApplyFix(fix)} />
           ))}
@@ -79,13 +78,13 @@ export function ValidationPanel({
           ))}
         </section>
       ) : result.valid ? (
-        <button className="construct-validation-flow__review" type="button" disabled={reviewing} onClick={onRunSemanticReview}>
+        <button className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50" type="button" disabled={reviewing} onClick={onRunSemanticReview}>
           <Sparkles size={13} />{reviewing ? "Reviewing teaching flow…" : "Review teaching flow"}
         </button>
       ) : null}
 
       {result.valid && (suggestions.length > 0 || authoringSuggestions.length > 0) ? (
-        <Button className="construct-validation-flow__review-again" variant="secondary" disabled={reviewing} onClick={onRunSemanticReview}>
+        <Button variant="secondary" disabled={reviewing} onClick={onRunSemanticReview}>
           {reviewing ? "Reviewing…" : "Refresh suggestions"}
         </Button>
       ) : null}

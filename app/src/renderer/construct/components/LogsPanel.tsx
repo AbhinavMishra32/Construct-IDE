@@ -5,11 +5,11 @@ import { debugProcesses } from "../lib/bridge";
 import type { DebugProcessSnapshot } from "../types";
 import {
   Button,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuTrigger,
+  ShadcnDropdownMenu as DropdownMenu,
+  ShadcnDropdownMenuContent as DropdownMenuContent,
+  ShadcnDropdownMenuItem as DropdownMenuItem,
+  ShadcnDropdownMenuLabel as DropdownMenuLabel,
+  ShadcnDropdownMenuTrigger as DropdownMenuTrigger,
   TerminalSurface,
 } from "@opaline/ui/v2";
 
@@ -152,37 +152,35 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
   const getLevelColor = (level: LogEntry["level"]) => {
     switch (level) {
       case "error":
-        return "text-[var(--opaline-danger)] font-medium";
+        return "text-destructive font-medium";
       case "warn":
-        return "text-[var(--opaline-warning)] font-medium";
+        return "text-amber-600 dark:text-amber-400 font-medium";
       case "debug":
-        return "text-[var(--opaline-text-tertiary)] opacity-85";
+        return "text-muted-foreground opacity-85";
       default:
-        return "text-[var(--opaline-text-primary)]";
+        return "text-foreground";
     }
   };
 
   return (
     <TerminalSurface cwd={`Output · ${activeChannel === "agents" ? `Agents · ${activeAgentMeta?.label ?? activeAgentChannel}` : getChannelLabel(activeChannel)}`}>
-      <div className="flex h-full flex-col overflow-hidden bg-transparent text-[var(--opaline-text-primary)] select-text">
+      <div className="flex h-full flex-col overflow-hidden bg-transparent text-foreground select-text">
         <div className="flex items-center justify-between gap-2 px-2 py-1.5">
           <div className="flex min-w-0 items-center gap-1.5">
             <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
+              <DropdownMenuTrigger render={<button
                   type="button"
-                  className="inline-flex h-[26px] items-center gap-1.5 rounded-[8px] px-2.5 text-[12.5px] font-medium text-[var(--opaline-text-primary)] hover:bg-[color-mix(in_srgb,var(--opaline-text-primary)_6%,transparent)]"
-                >
+                  className="inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium text-foreground hover:bg-muted"
+                />}>
                   {activeChannel === "agents" ? (
                     <span className="inline-flex items-center gap-1">
-                      <Bot size={13} className="text-[var(--opaline-accent)]" />
+                      <Bot size={13} className="text-primary" />
                       Agents
                     </span>
                   ) : (
                     getChannelLabel(activeChannel)
                   )}
                   <ChevronDown size={14} />
-                </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="min-w-[220px]">
                 {SYSTEM_CHANNELS.map((channel) => (
@@ -198,20 +196,18 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
 
             {activeChannel === "agents" ? (
               <>
-                <span className="text-[var(--opaline-text-tertiary)]">/</span>
+                <span className="text-muted-foreground">/</span>
                 <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button
+                  <DropdownMenuTrigger render={<button
                       type="button"
-                      className="inline-flex h-[26px] max-w-[220px] items-center gap-1.5 rounded-[8px] px-2.5 text-[12.5px] font-medium text-[var(--opaline-text-primary)] hover:bg-[color-mix(in_srgb,var(--opaline-text-primary)_6%,transparent)]"
-                    >
-                      <Bot size={13} className="shrink-0 text-[var(--opaline-accent)]" />
+                      className="inline-flex h-7 max-w-[220px] items-center gap-1.5 rounded-md px-2.5 text-xs font-medium text-foreground hover:bg-muted"
+                    />}>
+                      <Bot size={13} className="shrink-0 text-primary" />
                       <span className="truncate">{activeAgentMeta?.label ?? activeAgentChannel}</span>
                       <ChevronDown size={14} className="shrink-0" />
-                    </button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start" className="min-w-[240px]">
-                    <DropdownMenuLabel className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-[var(--opaline-text-tertiary)]">
+                    <DropdownMenuLabel className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                       <Bot size={12} />
                       Agent channel
                     </DropdownMenuLabel>
@@ -222,13 +218,13 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
                         </span>
                         <span className="flex flex-col">
                           <span>{agent.label}</span>
-                          <span className="text-[10.5px] text-[var(--opaline-text-tertiary)] font-normal">{agent.description}</span>
+                          <span className="text-[10.5px] text-muted-foreground font-normal">{agent.description}</span>
                         </span>
                       </DropdownMenuItem>
                     ))}
                   </DropdownMenuContent>
                 </DropdownMenu>
-                <span className="truncate text-[11px] text-[var(--opaline-text-tertiary)]">{activeAgentMeta?.description}</span>
+                <span className="truncate text-[11px] text-muted-foreground">{activeAgentMeta?.description}</span>
               </>
             ) : null}
           </div>
@@ -239,8 +235,8 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
                 type="button"
                 onClick={() => setJsonOnly((value) => !value)}
                 className={`inline-flex h-[24px] items-center gap-1 rounded-[7px] px-2 text-[12px] ${
-                  jsonOnly ? "text-[var(--opaline-text-primary)]" : "text-[var(--opaline-text-tertiary)]"
-                } hover:bg-[color-mix(in_srgb,var(--opaline-text-primary)_6%,transparent)]`}
+                  jsonOnly ? "text-foreground" : "text-muted-foreground"
+                } hover:bg-muted`}
                 title="Toggle raw JSON view for structured agent payloads"
               >
                 <Braces size={12} />
@@ -250,7 +246,7 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
             <button
               type="button"
               onClick={() => setAutoScroll((value) => !value)}
-              className={`inline-flex h-[24px] items-center rounded-[7px] px-2 text-[12px] ${autoScroll ? "text-[var(--opaline-text-primary)]" : "text-[var(--opaline-text-tertiary)]"} hover:bg-[color-mix(in_srgb,var(--opaline-text-primary)_6%,transparent)]`}
+              className={`inline-flex h-6 items-center rounded-md px-2 text-xs ${autoScroll ? "text-foreground" : "text-muted-foreground"} hover:bg-muted`}
             >
               Auto-scroll
             </button>
@@ -265,22 +261,21 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
 
         <div
           ref={containerRef}
-          className="flex-1 overflow-auto px-3 py-2 text-[12.5px] leading-[1.45] select-text space-y-0.5 scrollbar-thin bg-transparent"
-          style={{ fontFamily: "var(--opaline-font-mono)" }}
+          className="flex-1 space-y-0.5 overflow-auto bg-transparent px-3 py-2 font-mono text-xs leading-relaxed select-text"
         >
           {activeChannel === "debug-processes" ? (
             <DebugProcesses processes={processes} />
           ) : logs.length === 0 ? (
-            <div className="text-[var(--opaline-text-tertiary)] italic select-none" style={{ fontFamily: "var(--opaline-font-mono)" }}>
+            <div className="font-mono text-muted-foreground italic select-none">
               No logs available in this channel.
             </div>
           ) : (
             logs.map((log, index) => (
-              <div key={index} className="flex items-start hover:bg-[color-mix(in_srgb,var(--opaline-text-primary)_4%,transparent)] py-[1px] px-1 rounded" style={{ fontFamily: "var(--opaline-font-mono)" }}>
-                <span className="text-[var(--opaline-text-tertiary)] select-none mr-3 flex-shrink-0 font-light text-[12px]" style={{ fontFamily: "var(--opaline-font-mono)" }}>
+              <div key={index} className="flex items-start rounded px-1 py-px font-mono hover:bg-muted/50">
+                <span className="mr-3 flex-shrink-0 text-xs font-light text-muted-foreground select-none">
                   [{formatTimestamp(log.timestamp)}]
                 </span>
-                <span className={`whitespace-pre-wrap break-all ${getLevelColor(log.level)}`} style={{ fontFamily: "var(--opaline-font-mono)" }}>
+                <span className={`whitespace-pre-wrap break-all font-mono ${getLevelColor(log.level)}`}>
                   {formatLogMessage(log, activeChannel === "agents" && jsonOnly)}
                 </span>
               </div>
@@ -309,37 +304,37 @@ function DebugProcesses({ processes }: { processes: DebugProcessSnapshot[] }) {
   const totalMemory = processes.reduce((sum, process) => sum + (process.memoryMb ?? 0), 0);
 
   return (
-    <div className="construct-debug-processes">
-      <div className="construct-debug-processes__header">
+    <div className="space-y-3">
+      <div className="flex items-center justify-between rounded-md border bg-muted/30 p-3 text-xs">
         <div>
-          <span>DEBUG PROCESS MATRIX</span>
-          <strong>{running}/{processes.length} online</strong>
+          <span className="block text-[10px] uppercase tracking-wide text-muted-foreground">Debug process matrix</span>
+          <strong className="font-medium">{running}/{processes.length} online</strong>
         </div>
         <div>
-          <span>RSS</span>
-          <strong>{totalMemory ? `${totalMemory.toFixed(1)} MB` : "scanning"}</strong>
+          <span className="block text-[10px] uppercase tracking-wide text-muted-foreground">RSS</span>
+          <strong className="font-medium">{totalMemory ? `${totalMemory.toFixed(1)} MB` : "scanning"}</strong>
         </div>
       </div>
 
       {processes.length === 0 ? (
-        <div className="construct-debug-processes__empty">No managed PTY, LSP, or installer process is online.</div>
+        <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">No managed PTY, LSP, or installer process is online.</div>
       ) : (
-        <div className="construct-debug-processes__grid">
+        <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
           {processes.map((process) => (
-            <div key={process.id} className={`construct-debug-process ${process.status === "running" ? "is-running" : "is-stopped"}`}>
-              <div className="construct-debug-process__topline">
+            <div key={process.id} className={`rounded-md border p-3 text-xs ${process.status === "running" ? "border-primary/30 bg-primary/5" : "bg-muted/20 opacity-75"}`}>
+              <div className="flex items-center justify-between text-[10px] uppercase tracking-wide text-muted-foreground">
                 <span>{process.kind}</span>
-                <b>{process.status}</b>
+                <b className="font-medium">{process.status}</b>
               </div>
-              <strong>{process.label}</strong>
-              <dl>
-                <div><dt>pid</dt><dd>{process.pid ?? "--"}</dd></div>
-                <div><dt>cpu</dt><dd>{formatPercent(process.cpuPercent)}</dd></div>
-                <div><dt>rss</dt><dd>{formatMemory(process.memoryMb)}</dd></div>
-                <div><dt>age</dt><dd>{process.elapsed ?? "--"}</dd></div>
+              <strong className="mt-1 block truncate text-sm font-medium">{process.label}</strong>
+              <dl className="mt-3 grid grid-cols-4 gap-2">
+                <div><dt className="text-muted-foreground">pid</dt><dd>{process.pid ?? "--"}</dd></div>
+                <div><dt className="text-muted-foreground">cpu</dt><dd>{formatPercent(process.cpuPercent)}</dd></div>
+                <div><dt className="text-muted-foreground">rss</dt><dd>{formatMemory(process.memoryMb)}</dd></div>
+                <div><dt className="text-muted-foreground">age</dt><dd>{process.elapsed ?? "--"}</dd></div>
               </dl>
-              <code title={process.command ?? ""}>{process.command ?? "idle"}</code>
-              {process.workspacePath && <small title={process.workspacePath}>{process.workspacePath}</small>}
+              <code className="mt-3 block truncate rounded bg-muted px-2 py-1 font-mono text-[10px]" title={process.command ?? ""}>{process.command ?? "idle"}</code>
+              {process.workspacePath && <small className="mt-1 block truncate text-[10px] text-muted-foreground" title={process.workspacePath}>{process.workspacePath}</small>}
             </div>
           ))}
         </div>

@@ -16,7 +16,7 @@ import {
 } from "@phosphor-icons/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
-import { AdaptiveSidecarLayout, HoverPreview, SidebarBottomSlot, SlotPanel, Timeline } from "@opaline/ui/v2";
+import { AdaptiveSidecarLayout, Button, HoverPreview, SidebarBottomSlot, SlotPanel, Timeline } from "@opaline/ui/v2";
 import { logStore } from "../lib/logStore";
 import { lspClient } from "../lib/lspClient";
 import type { SlotTab } from "@opaline/ui/v2";
@@ -122,12 +122,12 @@ function FileChooserContent({
   }, [files, search]);
 
   return (
-    <div className="construct-file-chooser">
-      <div className="construct-file-chooser-search">
-        <MagnifyingGlass size={14} weight="bold" className="construct-file-chooser-search-icon" />
+    <div className="flex max-h-80 min-w-80 flex-col overflow-hidden rounded-lg border bg-popover shadow-md">
+      <div className="flex h-9 shrink-0 items-center gap-2 border-b px-3 text-muted-foreground">
+        <MagnifyingGlass size={14} weight="bold" />
         <input
           ref={inputRef}
-          className="construct-file-chooser-input"
+          className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
           type="text"
           placeholder="Search files…"
           value={search}
@@ -136,24 +136,24 @@ function FileChooserContent({
           autoComplete="off"
         />
       </div>
-      <div className="construct-file-chooser-list">
+      <div className="min-h-0 overflow-y-auto p-1">
         {filtered.map((filePath) => {
           const filename = filePath.split("/").pop() || "";
           return (
             <button
               key={filePath}
-              className="construct-file-chooser-item"
+              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted"
               type="button"
               onClick={() => onSelectFile(filePath)}
             >
-              <span className="construct-file-chooser-item-icon">{iconForFile(filename)}</span>
-              <span className="construct-file-chooser-item-name">{filename}</span>
-              <span className="construct-file-chooser-item-path">{filePath}</span>
+              <span className="flex size-4 shrink-0 items-center justify-center">{iconForFile(filename)}</span>
+              <span className="shrink-0 font-medium">{filename}</span>
+              <span className="min-w-0 flex-1 truncate text-muted-foreground">{filePath}</span>
             </button>
           );
         })}
         {filtered.length === 0 && (
-          <div className="construct-file-chooser-empty">No matching files</div>
+          <div className="p-6 text-center text-sm text-muted-foreground">No matching files</div>
         )}
       </div>
     </div>
@@ -178,23 +178,23 @@ function LiveStepPanel({
   onBack: () => void;
 }) {
   return (
-    <aside className="guide-panel generated-live-guide" data-construct-explainable="generated-live-step" data-construct-explainable-label="Generated live step">
-      <div className="generated-live-guide__banner">
+    <aside className="flex h-full min-h-0 flex-col overflow-y-auto bg-background p-4" data-construct-explainable="generated-live-step" data-construct-explainable-label="Generated live step">
+      <div className="mb-3 flex items-center gap-2 rounded-md border bg-primary/5 px-3 py-2 text-xs font-medium text-primary">
         <Lightning size={15} weight="duotone" />
         <span>Generated live by Construct Interact</span>
       </div>
-      <div className="guide-panel__meta">
+      <div className="flex items-center justify-between text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
         <span>Adaptive live step</span>
         <span>{liveStep.status}</span>
       </div>
-      <h2>{liveStep.title}</h2>
-      <p className="generated-live-guide__reason">{liveStep.reason}</p>
-      <div className="generated-live-guide__blocks">
+      <h2 className="mt-2 text-lg font-semibold">{liveStep.title}</h2>
+      <p className="mt-1 text-sm text-muted-foreground">{liveStep.reason}</p>
+      <div className="mt-4 space-y-4">
         {liveStep.blocks.map((block) => {
           if (block.kind === "explain") {
             return (
-              <section key={block.id} className="generated-live-guide__block">
-                <p className="guide-panel__label">Explain</p>
+              <section key={block.id} className="border-t pt-4">
+                <p className="mb-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Explain</p>
                 <MarkdownBlock content={block.content} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
               </section>
             );
@@ -202,11 +202,11 @@ function LiveStepPanel({
 
           if (block.kind === "interact") {
             return (
-              <section key={block.id} className="generated-live-guide__block">
-                <p className="guide-panel__label">Construct Interact</p>
+              <section key={block.id} className="border-t pt-4">
+                <p className="mb-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Construct Interact</p>
                 <MarkdownBlock content={block.prompt} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
-                <div className="generated-live-guide__prompt-note">
-                  <strong>What to check</strong>
+                <div className="mt-3 rounded-md border bg-muted/30 p-3 text-xs">
+                  <strong className="font-medium">What to check</strong>
                   <span>{block.understanding}</span>
                 </div>
               </section>
@@ -214,12 +214,12 @@ function LiveStepPanel({
           }
 
           return (
-            <section key={block.id} className="generated-live-guide__block">
-              <p className="guide-panel__label">Reply Recall</p>
+            <section key={block.id} className="border-t pt-4">
+              <p className="mb-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Reply Recall</p>
               <MarkdownBlock content={block.task} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
               {block.support ? (
-                <div className="generated-live-guide__support">
-                  <p className="guide-panel__label">Support</p>
+                <div className="mt-3 rounded-md border bg-muted/30 p-3">
+                  <p className="mb-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Support</p>
                   <MarkdownBlock content={block.support} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
                 </div>
               ) : null}
@@ -227,10 +227,10 @@ function LiveStepPanel({
           );
         })}
       </div>
-      <div className="guide-panel__actions">
-        <button type="button" className="generated-live-guide__secondary" onClick={onBack}>Back to tape</button>
-        <button type="button" className="generated-live-guide__secondary" onClick={onDismiss}>Dismiss</button>
-        <button type="button" className="generated-live-guide__primary" onClick={onComplete}>Complete live step</button>
+      <div className="mt-4 flex flex-wrap justify-end gap-2 border-t pt-4">
+        <Button type="button" variant="secondary" onClick={onBack}>Back to tape</Button>
+        <Button type="button" variant="secondary" onClick={onDismiss}>Dismiss</Button>
+        <Button type="button" onClick={onComplete}>Complete live step</Button>
       </div>
     </aside>
   );
@@ -1400,17 +1400,18 @@ export function Workspace({
   ), [activeLiveStep, block, editComplete, interactAnswers, interactResults, interactingId, onRunCommand, project, recallAnswers, recallMissingFiles, theme, verificationLogs, verifyingId]);
 
   const stepsTabContent = useMemo(() => (
-    <div className={`workspace-right-panel-steps ${isStepsCollapsed ? "is-collapsed" : ""}`}>
-      <button
-        className="workspace-panel__header"
+    <div className="flex h-full min-h-0 flex-col">
+      <Button
+        variant="ghost"
+        className="w-full justify-between"
         onClick={() => setIsStepsCollapsed(prev => !prev)}
         aria-expanded={!isStepsCollapsed}
         aria-label="Toggle steps timeline"
       >
         <span>Steps</span>
-        <CaretDown size={11} weight="bold" className="workspace-panel__header-chevron" />
-      </button>
-      <div className="workspace-right-panel-steps-timeline-container">
+        <CaretDown data-icon="inline-end" weight="bold" />
+      </Button>
+      <div className={isStepsCollapsed ? "hidden" : "min-h-0 flex-1 overflow-hidden"}>
         <StepList
           project={project}
           onSelectStep={(idx) => void handleSelectStep(idx)}
@@ -1442,26 +1443,26 @@ export function Workspace({
 
     return (
       <SidebarBottomSlot
-        className="construct-sidebar-knowledge-slot"
+        className="border-t"
         defaultHeight={Math.min(320, Math.max(150, 58 + introducedConcepts.length * 34))}
         minHeight={118}
         maxHeight={520}
-        header={<div className="construct-sidebar-knowledge__header">
+        header={<div className="flex items-center gap-2 text-xs font-medium">
           <BookOpen size={14} weight="duotone" />
           <span>Knowledge</span>
           <small>{savedConcepts.length}/{introducedConcepts.length}</small>
         </div>}
       >
-        <section className="construct-sidebar-knowledge" aria-label="Project knowledge" data-construct-explainable="knowledge-card" data-construct-explainable-label="Project knowledge">
+        <section className="space-y-3 p-2" aria-label="Project knowledge" data-construct-explainable="knowledge-card" data-construct-explainable-label="Project knowledge">
           {availableConcepts.length > 0 ? (
-            <div className="construct-sidebar-knowledge__list">
+            <div className="space-y-1">
               {availableConcepts.map((concept) => renderSidebarConceptRow(concept, false, currentConceptIds.includes(concept.id)))}
             </div>
           ) : null}
           {savedConcepts.length > 0 ? (
-            <div className="construct-sidebar-knowledge__saved">
-              <span className="construct-sidebar-knowledge__group-label">Saved</span>
-              <div className="construct-sidebar-knowledge__list">
+            <div className="border-t pt-3">
+              <span className="px-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Saved</span>
+              <div className="mt-1 space-y-1">
                 {savedConcepts.map((concept) => renderSidebarConceptRow(concept, true, currentConceptIds.includes(concept.id)))}
               </div>
             </div>
@@ -1474,10 +1475,10 @@ export function Workspace({
       return (
         <HoverPreview
           key={concept.id}
-          content={<div className="construct-knowledge-preview"><span>{concept.kind}</span><strong>{concept.title}</strong><p>{concept.summary}</p>{concept.tags.length ? <small>{concept.tags.join(" · ")}</small> : null}</div>}
+          content={<div className="space-y-1"><span className="text-[10px] uppercase tracking-wide text-muted-foreground">{concept.kind}</span><strong className="block text-sm font-medium">{concept.title}</strong><p className="text-xs text-muted-foreground">{concept.summary}</p>{concept.tags.length ? <small className="block text-[10px] text-muted-foreground">{concept.tags.join(" · ")}</small> : null}</div>}
         >
           <button
-            className="construct-sidebar-knowledge__row"
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-muted hover:text-foreground data-[current=true]:bg-muted data-[current=true]:font-medium data-[current=true]:text-foreground"
             data-current={isCurrent ? "true" : "false"}
             onClick={() => {
               recordKnowledgeOpen(project, concept, block?.kind === "recall");
@@ -1495,8 +1496,8 @@ export function Workspace({
   }, [block, concepts, furthestUnlockedBlockIndex, furthestUnlockedStepIndex, project, savedConceptIds]);
 
   const gitTabContent = useMemo(() => (
-    <div className="git-panel">
-      <div className="git-panel__status">
+    <div className="space-y-4 p-3">
+      <div className="flex items-start gap-3 rounded-md border bg-muted/30 p-3 text-sm">
         <GitBranch size={16} weight="duotone" />
         <div>
           <strong>{gitProjectStatus?.isRepo ? gitProjectStatus.branch ?? "Git repository" : "No repository"}</strong>
@@ -1508,7 +1509,7 @@ export function Workspace({
         </div>
       </div>
 
-      {gitMilestones.length > 0 ? <Timeline className="git-panel__timeline" items={gitMilestones.map((milestone) => {
+      {gitMilestones.length > 0 ? <Timeline items={gitMilestones.map((milestone) => {
           const stored = gitMilestoneStates[milestone.id];
           const status = resolveMilestoneStatus(milestone, stored, project);
           const isBusy = gitBusyId === milestone.id;
@@ -1521,11 +1522,12 @@ export function Workspace({
             meta: milestone.after,
             status: status === "suggested" ? "warning" : status === "committed" ? "active" : status === "pushed" ? "pushed" : status === "failed" ? "error" : "pending",
             icon: status === "committed" || status === "pushed" ? <CheckCircle weight="bold" /> : <GitBranch weight="bold" />,
-            content: <div className="git-panel__milestone-body">
-                <div className="git-panel__milestone-head">
+            content: <div className="space-y-3">
+                <div className="flex items-start justify-between gap-3 text-xs text-muted-foreground">
                   <span>{milestone.description || "Suggested commit for this learning milestone."}</span>
                 </div>
                 <input
+                  className="h-8 w-full rounded-md border bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-ring/30"
                   value={message}
                   onChange={(event) => setGitMilestoneMessages((current) => ({
                     ...current,
@@ -1533,33 +1535,33 @@ export function Workspace({
                   }))}
                   aria-label={`Commit message for ${milestone.id}`}
                 />
-                <div className="git-panel__files">
+                <div className="flex flex-wrap gap-1">
                   {milestone.includePaths.length > 0
-                    ? milestone.includePaths.map((includePath) => <code key={includePath}>{includePath}</code>)
-                    : <code>all changed files</code>}
+                    ? milestone.includePaths.map((includePath) => <code className="rounded border bg-muted px-1.5 py-0.5 font-mono text-[10px]" key={includePath}>{includePath}</code>)
+                    : <code className="rounded border bg-muted px-1.5 py-0.5 font-mono text-[10px]">all changed files</code>}
                 </div>
-                {stored?.output ? <pre>{stored.output}</pre> : null}
-                <div className="git-panel__actions">
-                  <button type="button" disabled={!canCommit} onClick={() => void handleCommitMilestone(milestone, false)}>
+                {stored?.output ? <pre className="overflow-auto rounded-md bg-muted p-2 font-mono text-[10px]">{stored.output}</pre> : null}
+                <div className="flex flex-wrap gap-2">
+                  <Button size="small" variant="secondary" type="button" disabled={!canCommit} onClick={() => void handleCommitMilestone(milestone, false)}>
                     <CheckCircle size={13} weight="duotone" />
                     {isBusy ? "Committing" : "Commit"}
-                  </button>
-                  <button type="button" disabled={!canCommit || gitProjectStatus?.hasRemote !== true} onClick={() => void handleCommitMilestone(milestone, true)}>
+                  </Button>
+                  <Button size="small" variant="secondary" type="button" disabled={!canCommit || gitProjectStatus?.hasRemote !== true} onClick={() => void handleCommitMilestone(milestone, true)}>
                     <GitBranch size={13} weight="duotone" />
                     Commit + Push
-                  </button>
-                  <button
+                  </Button>
+                  <Button size="small" variant="ghost"
                     type="button"
                     disabled={status === "pending" || isBusy}
                     onClick={() => updateGitMilestoneState(milestone.id, { status: "pending", output: "Deferred for later." })}
                   >
                     Later
-                  </button>
+                  </Button>
                 </div>
               </div>
           };
         })} /> : (
-          <p className="git-panel__empty">No git milestones are declared in this tape yet.</p>
+          <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">No git milestones are declared in this tape yet.</p>
         )}
     </div>
   ), [gitBusyId, gitMilestoneMessages, gitMilestoneStates, gitMilestones, gitProjectStatus, project]);
@@ -1600,7 +1602,6 @@ export function Workspace({
         activeTabId={normalizedRightSlotId}
         tabs={panelTabs}
         syncTabs
-        className="construct-guide-slot-panel"
         ariaLabel="Guide and steps tabs"
         onActiveTabChange={(tabId) => onRightSlotChange(tabId ?? "guide")}
       />
@@ -1681,7 +1682,7 @@ export function Workspace({
   const hasOpenContextCards = openReferenceIds.length > 0 || openConceptIds.length > 0;
   const hasPinnedContextCard = openReferenceIds.some((referenceId) => pinnedReferenceIds.includes(referenceId));
   const contextCards = hasOpenContextCards ? (
-    <div className="construct-context-card-stack" aria-label="Open reference and knowledge cards">
+    <div className="flex max-h-full w-full flex-col gap-3 overflow-y-auto" aria-label="Open reference and knowledge cards">
       {openReferenceIds
         .map((referenceId) => references.find((reference) => reference.id === referenceId))
         .filter((reference): reference is (typeof references)[number] => Boolean(reference))
@@ -1717,7 +1718,7 @@ export function Workspace({
 
   return (
     <AdaptiveSidecarLayout
-      className="workspace workspace--editor-only construct-workspace-sidecar"
+      className="h-full min-h-0"
       open={hasOpenContextCards}
       pinned={hasPinnedContextCard}
       sidecar={contextCards}
@@ -1727,7 +1728,6 @@ export function Workspace({
         tabs={editorSlotTabs}
         syncTabs
         outlet={editorOutlet}
-        className="construct-editor-slot-panel"
         ariaLabel="Editor file tabs"
         onTabChange={handleTabChange}
         onTabClose={handleTabClose}

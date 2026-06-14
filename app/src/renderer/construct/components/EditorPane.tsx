@@ -423,7 +423,7 @@ export function EditorPane({
 
   if (!path) {
     return (
-      <section className="editor-pane editor-pane--empty">
+      <section className="flex h-full items-center justify-center bg-background text-sm text-muted-foreground">
         <p>Select a project file.</p>
       </section>
     );
@@ -431,11 +431,10 @@ export function EditorPane({
 
   return (
     <ContextMenu>
-      <ContextMenuTrigger asChild>
-        <section className="editor-pane" data-guided={isGuided ? "true" : "false"} data-wrong={wrongInput ? "true" : "false"}>
+      <ContextMenuTrigger render={<section className="relative h-full min-h-0 overflow-hidden bg-background" data-guided={isGuided ? "true" : "false"} data-wrong={wrongInput ? "true" : "false"} />}>
           <Editor
             path={absolutePath}
-            className="editor-pane__monaco"
+            className="h-full"
             height="100%"
             language={language}
             options={{
@@ -631,7 +630,7 @@ export function EditorPane({
       />
       {buttonTop !== null && (
         <button
-          className={`construct-editor-skip-button ${showSkipButton ? "is-visible" : ""}`}
+          className={`z-20 flex h-7 items-center gap-2 rounded-md border bg-background px-2 text-xs shadow-sm transition-opacity hover:bg-muted ${showSkipButton ? "opacity-100" : "pointer-events-none opacity-0"}`}
           style={{
             position: "absolute",
             top: buttonTop,
@@ -643,7 +642,7 @@ export function EditorPane({
           type="button"
         >
           <span>Skip Line</span>
-          <div className="construct-editor-skip-shortcut">
+          <div className="flex items-center gap-1 text-[10px] text-muted-foreground [&_kbd]:rounded [&_kbd]:border [&_kbd]:bg-muted [&_kbd]:px-1">
             {os === "mac" ? (
               <>
                 <kbd>⌥</kbd>
@@ -659,21 +658,20 @@ export function EditorPane({
         </button>
       )}
       {isGuided && activeEdit && (
-        <div className="construct-editor-ghost-badge">
-          <div className="construct-editor-ghost-badge__copy">
-          <span>Code step</span>
-            <strong>{Math.min(totalLines, typedLines)} / {totalLines} lines</strong>
+        <div className="absolute bottom-3 right-3 z-10 flex min-w-48 items-center gap-3 rounded-lg border bg-popover/95 p-3 text-popover-foreground shadow-md backdrop-blur">
+          <div className="min-w-0 flex-1">
+          <span className="block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Code step</span>
+            <strong className="block text-xs font-medium">{Math.min(totalLines, typedLines)} / {totalLines} lines</strong>
           </div>
-          <div className="construct-editor-ghost-badge__meter" aria-hidden="true">
-            <span style={{ width: `${percent}%` }} />
+          <div className="h-1 w-16 overflow-hidden rounded-full bg-muted" aria-hidden="true">
+            <span className="block h-full bg-primary" style={{ width: `${percent}%` }} />
           </div>
-          <b>{percent}%</b>
+          <b className="text-xs font-medium">{percent}%</b>
         </div>
       )}
-        </section>
       </ContextMenuTrigger>
 
-      <ContextMenuContent className="construct-editor-context-menu">
+      <ContextMenuContent className="min-w-52">
         <ContextMenuSub>
           <ContextMenuSubTrigger>
             <ArrowSquareOut size={14} weight="duotone" />

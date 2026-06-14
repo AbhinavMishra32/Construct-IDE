@@ -1,6 +1,5 @@
 import { CheckCircle, Circle, DotOutline, Lightning } from "@phosphor-icons/react";
-
-import { cn } from "@/lib/utils";
+import { Badge, Button, Timeline, type TimelineItem } from "@opaline/ui/v2";
 
 import { blockLabel } from "../lib/runtime";
 import type { ProjectRecord } from "../types";
@@ -23,100 +22,78 @@ export function StepList({
 }) {
   const completedBlocks = project.completedBlocks ?? {};
   const timeline = mergeStaticAndLiveSteps(project, generatedLiveSteps);
+  const items = timeline.flatMap<TimelineItem>((item) => {
+    if (item.kind === "live") {
+      const liveStep = item.step;
+      if (liveStep.status === "dismissed") {
+        return [];
+      }
 
-  return (
-    <div className="step-timeline">
-      {timeline.map((item) => {
-        if (item.kind === "live") {
-          const liveStep = item.step;
-          const isActive = liveStep.id === activeLiveStepId;
-          const isCompleted = liveStep.status === "completed";
-          const isDismissed = liveStep.status === "dismissed";
-          if (isDismissed) {
-            return null;
-          }
-
-          return (
-            <section
-              key={liveStep.id}
-              className={cn("step-timeline__step step-timeline__step--live", {
-                "is-active": isActive,
-                "is-complete": isCompleted,
-                "is-clickable": !!onSelectLiveStep
-              })}
-              onClick={() => onSelectLiveStep?.(liveStep.id)}
-            >
-              <div className="step-timeline__rail" aria-hidden="true">
-                {isCompleted ? <CheckCircle size={16} weight="fill" /> : <Lightning size={16} weight="duotone" />}
-              </div>
-              <div className="step-timeline__content">
-                <div className="step-timeline__title-row">
-                  <span>{liveStep.title}</span>
-                  <small>Live</small>
-                </div>
-                <p className="step-timeline__live-reason">{liveStep.reason}</p>
-                <div className="step-timeline__blocks">
-                  <span className="step-timeline__block step-timeline__block--live">Generated Live</span>
-                  {liveStep.blocks.map((block) => (
-                    <span key={block.id} className="step-timeline__block">
-                      {liveBlockLabel(block.kind)}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </section>
-          );
-        }
-
-        const { step, stepIndex } = item;
-        const isActiveStep = stepIndex === project.currentStepIndex;
-        const completed = step.blocks.every((block) => completedBlocks[block.id]);
-        const activeBlock = isActiveStep ? step.blocks[project.currentBlockIndex] : null;
-        const isClickable = !!onSelectStep && stepIndex <= furthestUnlockedStepIndex;
-
-        return (
-          <section
-            key={step.id}
-            className={cn("step-timeline__step", {
-              "is-active": isActiveStep,
-              "is-complete": completed,
-              "is-clickable": isClickable
-            })}
-            onClick={() => isClickable && onSelectStep?.(stepIndex)}
+      const isActive = liveStep.id === activeLiveStepId;
+      const isCompleted = liveStep.status === "completed";
+      return [{
+        id: liveStep.id,
+        title: (
+          <Button
+            variant="ghost"
+            size="small"
+            disabled={!onSelectLiveStep}
+            onClick={() => onSelectLiveStep?.(liveStep.id)}
           >
-            <div className="step-timeline__rail" aria-hidden="true">
-              {completed ? (
-                <CheckCircle size={16} weight="fill" />
-              ) : isActiveStep ? (
-                <DotOutline size={18} weight="fill" />
-              ) : (
-                <Circle size={14} weight="regular" />
-              )}
-            </div>
-            <div className="step-timeline__content">
-              <div className="step-timeline__title-row">
-                <span>{step.title}</span>
-                <small>{stepIndex + 1}</small>
-              </div>
-              <div className="step-timeline__blocks">
-                {step.blocks.map((block) => (
-                  <span
-                    key={block.id}
-                    className={cn("step-timeline__block", {
-                      "is-active": activeBlock?.id === block.id,
-                      "is-complete": completedBlocks[block.id]
-                    })}
-                  >
-                    {blockLabel(block)}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </section>
-        );
-      })}
-    </div>
-  );
+            {liveStep.title}
+          </Button>
+        ),
+        meta: <Badge variant="secondary">Generated Live</Badge>,
+        description: liveStep.reason,
+        status: isCompleted ? "completed" : isActive ? "active" : "warning",
+        icon: isCompleted ? <CheckCircle weight="fill" /> : <Lightning weight="duotone" />,
+        content: (
+          <div className="flex flex-wrap gap-1">
+            {liveStep.blocks.map((block) => (
+              <Badge key={block.id} variant="outline">{liveBlockLabel(block.kind)}</Badge>
+            ))}
+          </div>
+        )
+      }];
+    }
+
+    const { step, stepIndex } = item;
+    const isActiveStep = stepIndex === project.currentStepIndex;
+    const completed = step.blocks.every((block) => completedBlocks[block.id]);
+    const activeBlock = isActiveStep ? step.blocks[project.currentBlockIndex] : null;
+    const isClickable = Boolean(onSelectStep) && stepIndex <= furthestUnlockedStepIndex;
+
+    return [{
+      id: step.id,
+      title: (
+        <Button
+          variant="ghost"
+          size="small"
+          disabled={!isClickable}
+          onClick={() => onSelectStep?.(stepIndex)}
+        >
+          {step.title}
+        </Button>
+      ),
+      meta: <Badge variant="outline">{stepIndex + 1}</Badge>,
+      status: completed ? "completed" : isActiveStep ? "active" : "pending",
+      icon: completed ? <CheckCircle weight="fill" /> : isActiveStep ? <DotOutline weight="fill" /> : <Circle />,
+      content: (
+        <div className="flex flex-wrap gap-1">
+          {step.blocks.map((block) => (
+            <Badge
+              key={block.id}
+              variant={activeBlock?.id === block.id ? "default" : completedBlocks[block.id] ? "secondary" : "outline"}
+            >
+              {blockLabel(block)}
+            </Badge>
+          ))}
+        </div>
+      )
+    }];
+  });
+
+  return <Timeline className="h-full overflow-y-auto" density="compact" items={items} />;
 }
 
 function mergeStaticAndLiveSteps(project: ProjectRecord, generatedLiveSteps: GeneratedLiveStep[]) {
