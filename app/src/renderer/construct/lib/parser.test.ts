@@ -310,6 +310,37 @@ Pass for a clear boundary explanation.
     assert.equal(recall?.kind === "recall" ? recall.verify?.messages : undefined, undefined);
   });
 
+  it("parses tape-0.4.1 as the dynamic Construct Interact feature spec", () => {
+    const program = parseConstructSource(`@construct spec="tape-0.4.1"
+@id "interact-041-fixture"
+@title "Interact 0.4.1 fixture"
+@description "Exercises dynamic Construct Interact features."
+@root "."
+
+::step id="model" title="Model the runtime"
+::interact id="runtime-check" uses="runtime.validation" kind="guided-contribution"
+::prompt
+Why does runtime validation matter?
+::end
+::basis
+The learner has seen TypeScript types.
+::end
+::understanding
+Runtime data is untrusted until checked.
+::end
+::assessment
+Pass if the answer mentions runtime input.
+::end
+::resources
+concepts="runtime.validation"
+::end
+::end
+::end`);
+
+    assert.equal(program.spec, "tape-0.4.1");
+    assert.equal(program.steps[0]?.blocks[0]?.kind, "interact");
+  });
+
   it("defaults recall mode to code and deprecates guide blocks in tape-0.4", () => {
     const program = parseConstructSource(`@construct spec="tape-0.4"
 @id "compat-fixture"

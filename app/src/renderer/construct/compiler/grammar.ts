@@ -1,4 +1,5 @@
 import type { ConstructSpec } from "./types";
+import { parseTapeSpec } from "../../../shared/tapeFeatures";
 
 export type ConstructGrammar = {
   spec: ConstructSpec;
@@ -88,5 +89,7 @@ export function resolveGrammarKey(spec: ConstructSpec): "tape-0.1" | "tape-0.2" 
     return spec;
   }
   if (/^tape-0\.3\.\d+$/.test(spec)) return "tape-0.3.1";
+  const parsed = parseTapeSpec(spec);
+  if (parsed?.major === 0 && parsed.minor === 4 && parsed.patch >= 1) return "tape-0.4";
   return spec;
 }

@@ -1,6 +1,7 @@
-import { canContain, getConstructGrammar, resolveGrammarKey } from "./grammar";
+import { canContain, getConstructGrammar } from "./grammar";
 import { lexConstruct, readDeclaredSpec } from "./lexer";
 import type { ConstructDiagnostic, ConstructDocument, ConstructNode, ConstructToken } from "./types";
+import { isSupportedTapeSpec } from "../../../shared/tapeFeatures";
 
 export function parseConstructDocument(source: string): ConstructDocument {
   const tokens = lexConstruct(source);
@@ -18,8 +19,8 @@ export function parseConstructDocument(source: string): ConstructDocument {
   const stack: ConstructNode[] = [root];
   const diagnostics: ConstructDiagnostic[] = [];
 
-  if (!["tape-0.1", "tape-0.2", "tape-0.3", "tape-0.3.1", "tape-0.4"].includes(resolveGrammarKey(spec))) {
-    diagnostics.push({ id: `unknown-spec:${spec}`, severity: "error", code: `${spec}/E_UNKNOWN_SPEC`, message: `Unsupported Construct tape spec "${spec}".`, line: 1, spec, details: "Use tape-0.1, tape-0.2, tape-0.3, tape-0.3.1, or tape-0.4." });
+  if (!isSupportedTapeSpec(spec)) {
+    diagnostics.push({ id: `unknown-spec:${spec}`, severity: "error", code: `${spec}/E_UNKNOWN_SPEC`, message: `Unsupported Construct tape spec "${spec}".`, line: 1, spec, details: "Use tape-0.1, tape-0.2, tape-0.3, tape-0.3.1, tape-0.4, or tape-0.4.1." });
   }
 
   const fenceTokens = tokens.filter((token) => token.kind === "fence");
