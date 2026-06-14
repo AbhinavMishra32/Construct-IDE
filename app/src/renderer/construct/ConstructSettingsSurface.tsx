@@ -5,7 +5,6 @@ import {
   Alert,
   AlertDescription,
   AlertTitle,
-  Badge,
   Button,
   ShadcnDialog,
   ShadcnDialogContent,
@@ -24,11 +23,18 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-  Spinner,
   Textarea
 } from "@opaline/ui";
 import type { SettingsNavSection } from "@opaline/ui";
 
+import { ConstructAiSettingsSection } from "./components/settings/ConstructAiSettingsSection";
+import { ConstructLspSettingsPanel } from "./components/settings/ConstructLspSettingsPanel";
+import {
+  aggregateLspStatus,
+  createEmptyLspStatusReport,
+  lspLanguageOrder,
+  type LspStatusReport
+} from "./components/settings/lspSettingsModel";
 import { lspClient } from "./lib/lspClient";
 import { restartProjectLsp } from "./lib/lspRuntime";
 import { logStore, type LogChannel, type LogEntry } from "./lib/logStore";
@@ -55,57 +61,16 @@ import type {
 import type { ThemeMode } from "./theme";
 
 const defaultAiSettings: AiSettings = {
+  runtime: "mastra",
   provider: "openai",
   openAiApiKey: "",
   openAiModel: "gpt-5-mini",
+  openAiBaseUrl: "https://api.openai.com/v1",
   openRouterApiKey: "",
-  openRouterModel: "nvidia/nemotron-3-ultra-550b-a55b:free",
+  openRouterModel: "deepseek/deepseek-v4-flash",
+  openRouterBaseUrl: "https://openrouter.ai/api/v1",
   featureModels: {}
 };
-
-
-type LspLanguageId = "typescript" | "python";
-type LspServerStatus = "not-installed" | "running" | "stopped" | "installing";
-type LspStatusReport = Record<LspLanguageId, {
-  command: string;
-  installCommand: string;
-  installed: boolean;
-  label: string;
-  resolvedPath: string | null;
-  status: LspServerStatus;
-}>;
-
-const lspLanguageOrder: LspLanguageId[] = ["typescript", "python"];
-
-function createEmptyLspStatusReport(): LspStatusReport {
-  return {
-    typescript: {
-      command: "typescript-language-server --stdio",
-      installCommand: "npm install --save-dev typescript-language-server typescript",
-      installed: false,
-      label: "TypeScript / JavaScript",
-      resolvedPath: null,
-      status: "not-installed"
-    },
-    python: {
-      command: "pyright-langserver --stdio",
-      installCommand: "npm install --save-dev pyright",
-      installed: false,
-      label: "Python",
-      resolvedPath: null,
-      status: "not-installed"
-    }
-  };
-}
-
-function aggregateLspStatus(report: LspStatusReport): LspServerStatus {
-  const statuses = lspLanguageOrder.map((language) => report[language].status);
-  if (statuses.includes("installing")) return "installing";
-  if (statuses.includes("running")) return "running";
-  if (statuses.includes("stopped")) return "stopped";
-  return "not-installed";
-}
-
 export function ConstructSettingsSurface({
   activeItemId,
   projectId,
@@ -372,6 +337,24 @@ export function ConstructSettingsSurface({
     }
   }
 
+  function updateAiRuntime(runtime: AiSettings["runtime"]) {
+    setAiSettings((current) => ({ ...current, runtime }));
+  }
+
+  function updateAiProvider(provider: AiSettings["provider"]) {
+    setAiSettings((current) => ({ ...current, provider }));
+    setModelOptions([]);
+    setModelsError(null);
+    setAiFeatures((features) => features.map((feature) => {
+      const saved = aiSettings.featureModels[feature.id]?.trim();
+      if (saved) return feature;
+      const model = provider === "openrouter"
+        ? feature.defaultOpenRouterModel
+        : feature.defaultOpenAiModel;
+      return { ...feature, model };
+    }));
+  }
+
   async function saveAiConfiguration() {
     try {
       setAiBusy(true);
@@ -494,95 +477,19 @@ export function ConstructSettingsSurface({
 
   if (activeItemId === "lsp-settings") {
     return (
-      <SettingsPanel title="Language Server" subtitle="Manage editor intelligence, diagnostics, and code navigation for this workspace.">
-        <SettingsSection title="Configuration">
-          <SettingsCard>
-            <SettingsRow
-              title="Enable Language Server"
-              description="Enable diagnostics, autocomplete, hover cards, references, go to definition, type definition, and implementation lookup."
-              control={
-                <SettingsToggle
-                  checked={lspEnabled}
-                  onCheckedChange={(checked) => void handleToggleLsp(checked)}
-                />
-              }
-            />
-          </SettingsCard>
-        </SettingsSection>
-        
-        {lspEnabled && (
-          <SettingsSection title="Installed servers">
-            <SettingsCard>
-              {lspLanguageOrder.map((language) => {
-                const server = lspStatus[language];
-                return (
-                  <SettingsRow
-                    key={language}
-                    title={server.label}
-                    description={
-                      <div className="flex flex-col items-start gap-1">
-                        <Badge variant={server.status === "running" ? "default" : server.status === "not-installed" ? "destructive" : "secondary"}>
-                          {server.status.replace("-", " ")}
-                        </Badge>
-                        <code>{server.command}</code>
-                        <small>{server.resolvedPath ?? server.installCommand}</small>
-                      </div>
-                    }
-                  />
-                );
-              })}
-            </SettingsCard>
-          </SettingsSection>
-        )}
-
-        {lspEnabled && (
-          <SettingsSection title="Controls">
-            <SettingsCard>
-              <SettingsRow
-                title="Server lifecycle"
-                description="Starts every installed language server for the active workspace. Install adds TypeScript language server, TypeScript, and Pyright when missing."
-                control={
-                  <div className="flex items-center gap-2">
-                    {aggregateStatus === "running" ? (
-                      <>
-                        <Button variant="secondary" size="small" onClick={() => void handleRestartLsp()}>
-                          Restart
-                        </Button>
-                        <Button variant="danger" size="small" onClick={() => void handleStopLsp()}>
-                          Stop
-                        </Button>
-                      </>
-                    ) : (
-                      <Button size="small" disabled={aggregateStatus === "not-installed"} onClick={() => void handleStartLsp()}>
-                        Start
-                      </Button>
-                    )}
-                    <Button variant="secondary" size="small" disabled={installBusy} onClick={() => void handleInstallLsp()}>
-                      {aggregateStatus === "not-installed" ? "Download & Install" : "Reinstall / Update"}
-                    </Button>
-                  </div>
-                }
-              />
-              
-              {/* Installer Logs Box */}
-              {(aggregateStatus === "installing" || lspLogs.length > 0) && (
-                <Alert>
-                  <AlertTitle className="flex items-center justify-between gap-2">
-                    <span>Installation output</span>
-                    {installBusy && <span className="flex items-center gap-1"><Spinner /> Running npm install...</span>}
-                  </AlertTitle>
-                  <AlertDescription>
-                    <pre className="max-h-64 overflow-auto whitespace-pre-wrap">
-                    {lspLogs.length === 0 ? "Starting installer..." : lspLogs.join("\n")}
-                    </pre>
-                  </AlertDescription>
-                </Alert>
-              )}
-            </SettingsCard>
-          </SettingsSection>
-        )}
-        {error ? <Alert variant="destructive"><AlertTitle>Language server error</AlertTitle><AlertDescription>{error}</AlertDescription></Alert> : null}
-      </SettingsPanel>
+      <ConstructLspSettingsPanel
+        enabled={lspEnabled}
+        status={lspStatus}
+        aggregateStatus={aggregateStatus}
+        installBusy={installBusy}
+        logs={lspLogs}
+        error={error}
+        onToggle={(enabled) => void handleToggleLsp(enabled)}
+        onInstall={() => void handleInstallLsp()}
+        onStart={() => void handleStartLsp()}
+        onStop={() => void handleStopLsp()}
+        onRestart={() => void handleRestartLsp()}
+      />
     );
   }
 
@@ -595,13 +502,13 @@ export function ConstructSettingsSurface({
               <SettingsRow title="Title" description="Shown in the sidebar, dashboard, and shell history.">
                 <Input
                   value={projectTitle}
-                  onChange={(event) => setProjectTitle(event.currentTarget.value)}
+                  onChange={(event) => setProjectTitle(event.target.value)}
                 />
               </SettingsRow>
               <SettingsRow title="Description" description="Used for local project summaries.">
                 <Textarea
                   value={projectDescription}
-                  onChange={(event) => setProjectDescription(event.currentTarget.value)}
+                  onChange={(event) => setProjectDescription(event.target.value)}
                 />
               </SettingsRow>
               <SettingsRow
@@ -727,10 +634,11 @@ export function ConstructSettingsSurface({
       <SettingsSection title="Storage">
         <SettingsCard>
           <SettingsRow title="Workspace root" description="New and imported projects are kept under this folder.">
-            <div className="flex items-center gap-2">
+            <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto_auto]">
               <Input
+                className="min-w-0"
                 value={workspaceRoot}
-                onChange={(event) => setWorkspaceRootValue(event.currentTarget.value)}
+                onChange={(event) => setWorkspaceRootValue(event.target.value)}
               />
               <Button variant="secondary" size="small" onClick={() => void chooseRoot()}>
                 Browse
@@ -742,116 +650,23 @@ export function ConstructSettingsSurface({
           </SettingsRow>
         </SettingsCard>
       </SettingsSection>
-      <SettingsSection title="AI">
-        <SettingsCard>
-          <SettingsRow title="AI Provider" description="Choose the account Construct uses for AI-assisted features.">
-            <Select
-              value={aiSettings.provider}
-              onValueChange={(value) => {
-                const provider = value === "openrouter" ? "openrouter" : "openai";
-                setAiSettings((current) => ({ ...current, provider }));
-                setModelOptions([]);
-                setModelsError(null);
-                setAiFeatures((features) => features.map((feature) => {
-                  const saved = aiSettings.featureModels[feature.id]?.trim();
-                  if (saved) return feature;
-                  const model = provider === "openrouter"
-                    ? feature.defaultOpenRouterModel
-                    : feature.defaultOpenAiModel;
-                  return { ...feature, model };
-                }));
-              }}
-            >
-              <SelectTrigger className="h-8 w-44 text-xs">
-                <SelectValue placeholder="Select provider" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="openai">OpenAI</SelectItem>
-                <SelectItem value="openrouter">OpenRouter</SelectItem>
-              </SelectContent>
-            </Select>
-          </SettingsRow>
-
-          {aiSettings.provider === "openai" ? (
-            <SettingsRow title="OpenAI API Key" description="Stored locally by Construct and used by packaged releases.">
-              <Input
-                type="password"
-                value={aiSettings.openAiApiKey}
-                placeholder="sk-..."
-                onChange={(event) => setAiSettings((current) => ({ ...current, openAiApiKey: event.currentTarget.value }))}
-              />
-            </SettingsRow>
-          ) : (
-            <SettingsRow title="OpenRouter API Key" description="Stored locally by Construct and used by packaged releases.">
-              <Input
-                type="password"
-                value={aiSettings.openRouterApiKey}
-                placeholder="sk-or-..."
-                onChange={(event) => setAiSettings((current) => ({ ...current, openRouterApiKey: event.currentTarget.value }))}
-              />
-            </SettingsRow>
-          )}
-
-          <SettingsRow
-            title="Available models"
-            description={modelOptions.length > 0 ? `${modelOptions.length} models loaded` : "Load models from the selected provider before assigning feature models."}
-            control={
-              <Button
-                variant="secondary"
-                size="small"
-                disabled={modelsBusy}
-                onClick={() => void refreshModels(aiSettings.provider)}
-              >
-                {modelsBusy ? "Loading..." : "Refresh"}
-              </Button>
-            }
-          />
-
-          {aiFeatures.map((feature) => {
-            const modelItems = modelOptions.length > 0
-              ? modelOptions.some((m) => m.id === feature.model)
-                ? modelOptions
-                : [{ id: feature.model ?? "", name: feature.model || "No models loaded yet" }, ...modelOptions]
-              : [{ id: feature.model ?? "", name: feature.model || "No models loaded yet" }];
-
-            return (
-              <SettingsRow
-                key={feature.id}
-                title={feature.title}
-                description={feature.description}
-                control={
-                  <Select
-                    value={feature.model ?? ""}
-                    disabled={modelsBusy}
-                    onValueChange={(model) => model && updateFeatureModel(feature.id, model)}
-                  >
-                    <SelectTrigger className="h-8 w-44 text-xs">
-                      <SelectValue placeholder={feature.model || "Select model"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {modelItems.map((model) => (
-                        <SelectItem key={model.id} value={model.id}>
-                          {model.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                }
-              />
-            );
-          })}
-
-          <SettingsRow
-            title="Save AI settings"
-            description={modelsError ?? "Feature model choices are saved locally and used by packaged builds."}
-            control={
-              <Button size="small" disabled={aiBusy} onClick={() => void saveAiConfiguration()}>
-                {aiBusy ? "Saving..." : "Save"}
-              </Button>
-            }
-          />
-        </SettingsCard>
-      </SettingsSection>
+      <ConstructAiSettingsSection
+        settings={aiSettings}
+        features={aiFeatures}
+        modelOptions={modelOptions}
+        modelsBusy={modelsBusy}
+        aiBusy={aiBusy}
+        modelsError={modelsError}
+        onRuntimeChange={updateAiRuntime}
+        onProviderChange={updateAiProvider}
+        onOpenAiApiKeyChange={(openAiApiKey) => setAiSettings((current) => ({ ...current, openAiApiKey }))}
+        onOpenAiBaseUrlChange={(openAiBaseUrl) => setAiSettings((current) => ({ ...current, openAiBaseUrl }))}
+        onOpenRouterApiKeyChange={(openRouterApiKey) => setAiSettings((current) => ({ ...current, openRouterApiKey }))}
+        onOpenRouterBaseUrlChange={(openRouterBaseUrl) => setAiSettings((current) => ({ ...current, openRouterBaseUrl }))}
+        onRefreshModels={(provider) => void refreshModels(provider)}
+        onFeatureModelChange={updateFeatureModel}
+        onSave={() => void saveAiConfiguration()}
+      />
 
       <SettingsSection title="About">
         <SettingsCard>
