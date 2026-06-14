@@ -10,7 +10,7 @@ import {
   ShadcnDialogHeader,
   ShadcnDialogTitle,
   ShadcnScrollArea
-} from "@opaline/ui/v2";
+} from "@opaline/ui";
 import type { ConceptCard } from "../types";
 import type { InlineFileRef } from "../lib/inlineRefs";
 import { MarkdownBlock } from "./MarkdownBlock";

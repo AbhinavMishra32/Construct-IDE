@@ -8,9 +8,6 @@
       "@opaline/ui": [
         "opaline/packages/ui/src/index.ts"
       ],
-      "@opaline/ui/v2": [
-        "opaline/packages/ui/src/opaline-v2/index.ts"
-      ],
       "@opaline/ui/styles.css": [
         "opaline/packages/ui/src/styles.css"
       ]
@@ -25,7 +22,6 @@
     "src/**/*.tsx",
     "src/**/*.d.ts",
     "vite.config.ts",
-    "tailwind.config.ts",
     "tsup.config.ts"
   ]
 }

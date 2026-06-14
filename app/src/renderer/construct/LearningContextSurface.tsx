@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Alert, AlertDescription, AlertTitle, Card, CardContent, CardDescription, CardHeader, CardTitle } from "@opaline/ui/v2";
+import { Alert, AlertDescription, AlertTitle, Card, CardContent, CardDescription, CardHeader, CardTitle } from "@opaline/ui";
 
 import type { ConstructLearningState } from "../../shared/constructLearning";
 import { getLearningState } from "./lib/bridge";

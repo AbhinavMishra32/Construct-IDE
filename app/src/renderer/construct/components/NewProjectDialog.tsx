@@ -14,7 +14,7 @@ import {
   ShadcnDialogHeader,
   ShadcnDialogTitle,
   Input,
-} from "@opaline/ui/v2";
+} from "@opaline/ui";
 
 import { applyConstructPatch } from "../compiler/patches";
 import { validateConstructSource } from "../compiler/pipeline";

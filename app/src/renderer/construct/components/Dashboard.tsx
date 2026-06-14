@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 
-import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle } from "@opaline/ui/v2";
+import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle } from "@opaline/ui";
 import type { ProjectSummary } from "../types";
 
 export function Dashboard({

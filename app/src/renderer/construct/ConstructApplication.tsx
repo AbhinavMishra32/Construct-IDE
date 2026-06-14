@@ -26,8 +26,8 @@ import {
   Sidebar,
   SettingsSidebar,
   useShellHistory
-} from "@opaline/ui/v2";
-import type { SettingsNavItem, ShellHistoryEntry } from "@opaline/ui/v2";
+} from "@opaline/ui";
+import type { SettingsNavItem, ShellHistoryEntry } from "@opaline/ui";
 
 import { Dashboard } from "./components/Dashboard";
 import { DashboardSidebar } from "./components/DashboardSidebar";

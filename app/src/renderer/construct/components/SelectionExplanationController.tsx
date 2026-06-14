@@ -7,8 +7,8 @@ import {
   AgentContextSources,
   AgentContextSurface,
   AgentThinking
-} from "@opaline/ui/v2";
-import type { AgentActivityEntry, AgentContextMode } from "@opaline/ui/v2";
+} from "@opaline/ui";
+import type { AgentActivityEntry, AgentContextMode } from "@opaline/ui";
 
 import { explainSelection, onSelectionExplanationLog } from "../lib/bridge";
 import { currentBlock } from "../lib/runtime";

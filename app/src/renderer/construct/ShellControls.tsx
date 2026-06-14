@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { GearSix, Notebook } from "@phosphor-icons/react";
-import { Button, Spinner } from "@opaline/ui/v2";
+import { Button, Spinner } from "@opaline/ui";
 
 
 export function HeaderGuidePanelIcon({ open }: { open: boolean }) {

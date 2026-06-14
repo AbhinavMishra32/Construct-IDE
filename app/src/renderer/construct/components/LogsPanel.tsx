@@ -11,7 +11,7 @@ import {
   ShadcnDropdownMenuLabel as DropdownMenuLabel,
   ShadcnDropdownMenuTrigger as DropdownMenuTrigger,
   TerminalSurface,
-} from "@opaline/ui/v2";
+} from "@opaline/ui";
 
 type OutputChannel = Exclude<LogChannel, AgentLogChannel> | "debug-processes" | "agents";
 

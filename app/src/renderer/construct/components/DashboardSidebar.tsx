@@ -7,7 +7,7 @@ import {
   ShadcnDropdownMenuItem,
   ShadcnDropdownMenuTrigger,
   SidebarSection
-} from "@opaline/ui/v2";
+} from "@opaline/ui";
 import type { ProjectSummary } from "../types";
 
 export function DashboardSidebar({

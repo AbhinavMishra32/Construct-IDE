@@ -22,8 +22,8 @@ import {
   SettingsToggle,
   Spinner,
   Textarea
-} from "@opaline/ui/v2";
-import type { SettingsNavSection } from "@opaline/ui/v2";
+} from "@opaline/ui";
+import type { SettingsNavSection } from "@opaline/ui";
 
 import { lspClient } from "./lib/lspClient";
 import { restartProjectLsp } from "./lib/lspRuntime";

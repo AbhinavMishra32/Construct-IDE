@@ -1,5 +1,5 @@
-import { AgentActivityList, AgentSuggestion, AgentThinking, Button } from "@opaline/ui/v2";
-import type { AgentActivityEntry } from "@opaline/ui/v2";
+import { AgentActivityList, AgentSuggestion, AgentThinking, Button } from "@opaline/ui";
+import type { AgentActivityEntry } from "@opaline/ui";
 import { AlertCircle, FileCode2, Sparkles } from "lucide-react";
 
 import type { AuthoringSuggestion } from "../../compiler/semantic-review";

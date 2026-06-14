@@ -1,5 +1,5 @@
 import { CheckCircle, Circle, DotOutline, Lightning } from "@phosphor-icons/react";
-import { Badge, Button, Timeline, type TimelineItem } from "@opaline/ui/v2";
+import { Badge, Button, Timeline, type TimelineItem } from "@opaline/ui";
 
 import { blockLabel } from "../lib/runtime";
 import type { ProjectRecord } from "../types";

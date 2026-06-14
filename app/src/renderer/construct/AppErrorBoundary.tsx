@@ -1,5 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
-import { Alert, AlertDescription, AlertTitle } from "@opaline/ui/v2";
+import { Alert, AlertDescription, AlertTitle } from "@opaline/ui";
 
 export class AppErrorBoundary extends Component<
   { children: ReactNode },

@@ -1,6 +1,6 @@
 import { BookOpenIcon, ExternalLinkIcon, SearchIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, ShadcnScrollArea } from "@opaline/ui/v2";
+import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, ShadcnScrollArea } from "@opaline/ui";
 import { readKnowledgeRecords, subscribeKnowledgeRecords, type SavedKnowledgeRecord } from "../lib/knowledgeStore";
 
 export function KnowledgeBaseSurface({ onOpenProject }: { onOpenProject: (projectId: string) => void }) {

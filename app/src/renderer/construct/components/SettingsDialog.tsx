@@ -10,7 +10,7 @@ import {
   ShadcnDialogFooter,
   ShadcnDialogHeader,
   ShadcnDialogTitle
-} from "@opaline/ui/v2";
+} from "@opaline/ui";
 
 import {
   getSettings,
