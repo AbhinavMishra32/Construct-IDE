@@ -1,18 +1,17 @@
 import {
-  AlertCircle,
   ArrowRight,
   BookOpen,
   CheckCircle2,
   FileCode2,
   Folder,
   Plus,
-  RefreshCcw,
   Settings,
-  Sparkles
+  Sparkles,
+  TerminalSquare
 } from "lucide-react";
 import type { ReactNode } from "react";
 
-import { Button } from "@opaline/ui";
+import { Button } from "@opaline/ui/v2";
 import type { ProjectSummary } from "../types";
 
 export function Dashboard({
@@ -39,28 +38,18 @@ export function Dashboard({
     return right - left;
   });
   const nextProject = inProgressProjects[0] ?? mostRecent[0] ?? null;
-  const attentionProjects = mostRecent
-    .filter((project) => (project.verificationFailCount ?? 0) > 0 || (project.authoringFixCount ?? 0) > 0)
-    .slice(0, 4);
-  const knowledgeProjects = mostRecent
-    .filter((project) => (project.conceptCount ?? 0) > 0 || (project.referenceCount ?? 0) > 0 || (project.fileCount ?? 0) > 0)
-    .slice(0, 4);
+  const completedProjects = mostRecent
+    .filter((project) => project.progress >= 100 || project.completedAt)
+    .slice(0, 3);
+  const activeCount = projects.filter((project) => project.progress > 0 && project.progress < 100).length;
+  const savedConceptCount = projects.reduce((count, project) => count + (project.conceptCount ?? 0), 0);
+  const verificationPassCount = projects.reduce((count, project) => count + (project.verificationPassCount ?? 0), 0);
 
   return (
     <div className="construct-dashboard">
-      <header className="construct-dashboard__hero">
-        <div className="construct-dashboard__hero-copy">
-          <span className="construct-dashboard__eyebrow">Construct workspace</span>
-          <h1>Build projects that teach you back.</h1>
-          <p>
-            Open a local tape, continue the next code step, and keep verification close to the work.
-          </p>
-        </div>
+      <header className="construct-dashboard__toolbar">
+        <h1>Projects</h1>
         <div className="construct-dashboard__actions">
-          <Button variant="secondary" size="small" onClick={onRefresh} disabled={busy}>
-            <RefreshCcw size={14} className={busy ? "animate-spin" : ""} />
-            Refresh
-          </Button>
           <Button size="small" onClick={onCreateProject}>
             <Plus size={14} />
             New project
@@ -73,8 +62,8 @@ export function Dashboard({
       <main className="construct-dashboard__grid">
         <section className="construct-dashboard__continue">
           <div className="construct-dashboard__panel-header">
-            <h2>Continue</h2>
-            <span>{nextProject ? formatProjectPosition(nextProject) : "ready"}</span>
+            <h2>Continue now</h2>
+            <button type="button" onClick={onRefresh} disabled={busy}>{busy ? "Refreshing" : "Refresh"}</button>
           </div>
           {nextProject ? (
             <button
@@ -105,19 +94,10 @@ export function Dashboard({
           )}
         </section>
 
-        <section className="construct-dashboard__protocol">
-          <div className="construct-dashboard__panel-header">
-            <h2>Supported protocols</h2>
-            <span>project-safe</span>
-          </div>
-          <div className="construct-dashboard__protocol-list">
-            {["tape-0.1", "tape-0.2", "tape-0.3", "tape-0.3.1"].map((protocol) => (
-              <span key={protocol}>
-                <CheckCircle2 size={14} />
-                {protocol}
-              </span>
-            ))}
-          </div>
+        <section className="construct-dashboard__metrics" aria-label="Workspace summary">
+          <Metric label="Active" value={activeCount} icon={<TerminalSquare size={15} />} />
+          <Metric label="Knowledge" value={savedConceptCount} icon={<BookOpen size={15} />} />
+          <Metric label="Verified" value={verificationPassCount} icon={<CheckCircle2 size={15} />} />
         </section>
 
         <section className="construct-dashboard__spotlight" aria-label="Project queue">
@@ -138,7 +118,7 @@ export function Dashboard({
 
         <section className="construct-dashboard__panel construct-dashboard__panel--projects">
           <div className="construct-dashboard__panel-header">
-            <h2>Recent projects</h2>
+            <h2>Projects</h2>
             <span>{projects.length} local</span>
           </div>
           <div className="construct-dashboard__project-table">
@@ -193,43 +173,37 @@ export function Dashboard({
         <aside className="construct-dashboard__side">
           <section className="construct-dashboard__panel">
             <div className="construct-dashboard__panel-header">
-              <h2>Needs attention</h2>
-              <span>{attentionProjects.length ? "from projects" : "clear"}</span>
+              <h2>Recently completed</h2>
+              <span>{completedProjects.length ? "done" : "none yet"}</span>
             </div>
-            {attentionProjects.map((project) => (
+            {completedProjects.map((project) => (
               <ProjectSignal
                 key={project.id}
-                icon={<AlertCircle size={15} />}
+                icon={<CheckCircle2 size={15} />}
                 title={project.title}
-                meta={describeAttention(project)}
+                meta={formatDashboardSidebarTime(project.completedAt ?? project.lastOpenedAt)}
                 onClick={() => onOpenProject(project.id)}
               />
             ))}
-            {attentionProjects.length === 0 ? (
+            {completedProjects.length === 0 ? (
               <div className="construct-dashboard__empty">
-                <CheckCircle2 size={18} />
-                <span>No failed verifications or tape fixes.</span>
+                <Sparkles size={18} />
+                <span>Finished tapes will settle here.</span>
               </div>
             ) : null}
           </section>
-
-          <section className="construct-dashboard__panel">
-            <div className="construct-dashboard__panel-header">
-              <h2>Project inventory</h2>
-              <span>real tape data</span>
-            </div>
-            {knowledgeProjects.map((project) => (
-              <ProjectSignal
-                key={project.id}
-                icon={<BookOpen size={15} />}
-                title={project.title}
-                meta={`${project.fileCount ?? 0} files · ${project.conceptCount ?? 0} concepts · ${project.referenceCount ?? 0} refs`}
-                onClick={() => onOpenProject(project.id)}
-              />
-            ))}
-          </section>
         </aside>
       </main>
+    </div>
+  );
+}
+
+function Metric({ icon, label, value }: { icon: ReactNode; label: string; value: number }) {
+  return (
+    <div className="construct-dashboard__metric">
+      {icon}
+      <span>{label}</span>
+      <strong>{value}</strong>
     </div>
   );
 }
@@ -290,17 +264,6 @@ function describeNextWork(project: ProjectSummary): string {
   return block ? `${step} — ${block}` : step;
 }
 
-function describeAttention(project: ProjectSummary): string {
-  const parts = [];
-  if ((project.verificationFailCount ?? 0) > 0) {
-    parts.push(`${project.verificationFailCount} failed verify`);
-  }
-  if ((project.authoringFixCount ?? 0) > 0) {
-    parts.push(`${project.authoringFixCount} tape fix${project.authoringFixCount === 1 ? "" : "es"}`);
-  }
-  return parts.join(" · ");
-}
-
 function formatProjectPosition(project: ProjectSummary): string {
   const step = typeof project.currentStepIndex === "number" && project.stepCount
     ? `step ${project.currentStepIndex + 1}/${project.stepCount}`
@@ -309,4 +272,33 @@ function formatProjectPosition(project: ProjectSummary): string {
     ? `${project.completedBlockCount}/${project.blockCount} blocks`
     : `${project.progress}%`;
   return `${step} · ${blocks}`;
+}
+
+function formatDashboardSidebarTime(value: string | null | undefined) {
+  if (!value) {
+    return "Recently opened";
+  }
+
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) {
+    return "Recently opened";
+  }
+
+  const diffMs = Date.now() - timestamp;
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+
+  if (diffHours < 1) {
+    return "Just now";
+  }
+
+  if (diffHours < 24) {
+    return `${diffHours}h ago`;
+  }
+
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 7) {
+    return `${diffDays}d ago`;
+  }
+
+  return new Date(timestamp).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }

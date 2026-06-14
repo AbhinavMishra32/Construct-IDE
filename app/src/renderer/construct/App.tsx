@@ -1,4 +1,4 @@
-import "@opaline/ui/styles.css";
+import "@opaline/ui/v2/styles.css";
 import "./styles/construct.css";
 import { lspClient } from "./lib/lspClient";
 
@@ -42,9 +42,13 @@ import {
   DialogContent,
   DialogFooter,
   DialogHeader,
+  ShadcnDropdownMenu,
+  ShadcnDropdownMenuContent,
+  ShadcnDropdownMenuItem,
+  ShadcnDropdownMenuTrigger,
   useShellHistory
-} from "@opaline/ui";
-import type { SettingsNavItem, SettingsNavSection, ShellHistoryEntry } from "@opaline/ui";
+} from "@opaline/ui/v2";
+import type { SettingsNavItem, SettingsNavSection, ShellHistoryEntry } from "@opaline/ui/v2";
 
 import { Dashboard } from "./components/Dashboard";
 import { FileTree } from "./components/FileTree";
@@ -413,7 +417,7 @@ export default function ConstructApp() {
     setActiveProject(null);
     setKnowledgeBaseOpen(false);
     setLearningContextOpen(true);
-    pushHistory({ id: "learner-context", title: "Learner Context", type: "learner-context" });
+    pushHistory({ id: "learner-context", title: "Context", type: "learner-context" });
   }, [pushHistory]);
 
   const handleRightSlotChange = useCallback((slotId: string) => {
@@ -850,6 +854,7 @@ export default function ConstructApp() {
     <AppErrorBoundary>
       <div className="construct-app">
         <AppShell
+          className="construct-opaline-shell"
           key={activeProject?.id ?? "dashboard"}
           history={history}
           showSidebarChrome
@@ -1000,8 +1005,10 @@ export default function ConstructApp() {
                 items={[]}
                 footer={
                   <>
-                    <SidebarLearningButton onClick={openLearningContext} />
-                    <SidebarSettingsButton onClick={() => openSettingsSurface("workspace")} />
+                    <div className="construct-sidebar-footer-stack">
+                      <SidebarLearningButton onClick={openLearningContext} />
+                      <SidebarSettingsButton onClick={() => openSettingsSurface("workspace")} />
+                    </div>
                   </>
                 }
               >
@@ -1045,11 +1052,11 @@ export default function ConstructApp() {
                   {
                     id: "learner-context",
                     icon: <Notebook size={18} weight="duotone" />,
-                    label: "Learner Context",
+                    label: "Context",
                     onClick: openLearningContext
                   }
                 ]}
-                footer={<SidebarSettingsButton onClick={() => openSettingsSurface("workspace")} />}
+                footer={<div className="construct-sidebar-footer-stack"><SidebarSettingsButton onClick={() => openSettingsSurface("workspace")} /></div>}
               >
                 <DashboardSidebar
                   projects={projects}
@@ -1066,6 +1073,8 @@ export default function ConstructApp() {
                 activeTabId={activeBottomTabId}
                 syncTabs
                 keepMounted
+                height={300}
+                mainContentHeight={window.innerHeight - 72}
                 onClose={() => shellState.setBottomPanelOpen(false)}
                 onActiveTabChange={(tabId) => {
                   if (tabId) {
@@ -2081,78 +2090,41 @@ function DashboardSidebar({
     return right - left;
   });
 
-  const continueProjects = sortedByRecent
-    .filter((project) => project.progress < 100)
-    .slice(0, 4);
-  const attentionProjects = sortedByRecent
-    .filter((project) => (project.verificationFailCount ?? 0) > 0 || (project.authoringFixCount ?? 0) > 0)
-    .slice(0, 3);
-  const completedProjects = sortedByRecent
-    .filter((project) => project.progress >= 100 || project.completedAt)
-    .slice(0, 3);
+  const visibleProjects = sortedByRecent.slice(0, 8);
 
   return (
     <>
-      <SidebarSection heading="Continue now">
+      <SidebarSection heading="Projects">
         <div className="construct-dashboard-sidebar-list">
-          {continueProjects.map((project) => (
+          {visibleProjects.map((project) => (
             <DashboardSidebarProjectRow
               key={project.id}
               icon={<Folder size={16} weight="duotone" />}
-              meta={`${project.progress}%`}
+              meta={formatDashboardProjectMeta(project)}
               onClick={() => onOpenProject(project.id)}
               onOpenSettings={() => onOpenProjectSettings(project.id)}
               subtitle={project.currentStepTitle || project.currentBlockLabel || formatDashboardSidebarTime(project.lastOpenedAt)}
               title={project.title}
+              tone={project.progress >= 100 || project.completedAt ? "success" : "default"}
             />
           ))}
-          {continueProjects.length === 0 ? (
+          {visibleProjects.length === 0 ? (
             <div className="construct-dashboard-sidebar-empty">No active project yet. Open a tape to start building.</div>
-          ) : null}
-        </div>
-      </SidebarSection>
-
-      <SidebarSection heading="Needs attention">
-        <div className="construct-dashboard-sidebar-list">
-          {attentionProjects.map((project) => (
-            <DashboardSidebarProjectRow
-              key={project.id}
-              icon={<Trash size={15} weight="duotone" />}
-              meta={formatAttentionMeta(project)}
-              onClick={() => onOpenProject(project.id)}
-              onOpenSettings={() => onOpenProjectSettings(project.id)}
-              subtitle={project.currentStepTitle || "Review the current tape state"}
-              title={project.title}
-              tone="warning"
-            />
-          ))}
-          {attentionProjects.length === 0 ? (
-            <div className="construct-dashboard-sidebar-empty">No failed verification or repair work waiting.</div>
-          ) : null}
-        </div>
-      </SidebarSection>
-
-      <SidebarSection heading="Completed recently">
-        <div className="construct-dashboard-sidebar-list">
-          {completedProjects.map((project) => (
-            <DashboardSidebarProjectRow
-              key={project.id}
-              icon={<Notebook size={15} weight="duotone" />}
-              meta={`${project.verificationPassCount ?? 0} pass`}
-              onClick={() => onOpenProject(project.id)}
-              onOpenSettings={() => onOpenProjectSettings(project.id)}
-              subtitle={formatDashboardSidebarTime(project.completedAt ?? project.lastOpenedAt)}
-              title={project.title}
-              tone="success"
-            />
-          ))}
-          {completedProjects.length === 0 ? (
-            <div className="construct-dashboard-sidebar-empty">Completed tapes will show up here once you finish one.</div>
           ) : null}
         </div>
       </SidebarSection>
     </>
   );
+}
+
+function formatDashboardProjectMeta(project: ProjectSummary) {
+  if (project.progress >= 100 || project.completedAt) {
+    return "Done";
+  }
+  if (project.progress > 0) {
+    return `${project.progress}%`;
+  }
+  return formatDashboardSidebarTime(project.lastOpenedAt);
 }
 
 function DashboardSidebarProjectRow({
@@ -2173,38 +2145,37 @@ function DashboardSidebarProjectRow({
   tone?: "default" | "success" | "warning";
 }) {
   return (
-    <button
+    <div
       className="construct-dashboard-sidebar-row"
       data-tone={tone}
-      onClick={onClick}
-      type="button"
     >
-      <span className="construct-dashboard-sidebar-row__icon">{icon}</span>
-      <span className="construct-dashboard-sidebar-row__copy">
-        <strong>{title}</strong>
-        <small>{subtitle}</small>
-      </span>
-      <span
-        className="construct-dashboard-sidebar-row__settings"
-        role="button"
-        tabIndex={0}
-        onClick={(event) => {
-          event.stopPropagation();
-          onOpenSettings();
-        }}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            event.stopPropagation();
-            onOpenSettings();
-          }
-        }}
-        aria-label={`Open settings for ${title}`}
-      >
-        <GearSix size={15} weight="duotone" />
-      </span>
-      <span className="construct-dashboard-sidebar-row__meta">{meta}</span>
-    </button>
+      <button className="construct-dashboard-sidebar-row__open" onClick={onClick} type="button">
+        <span className="construct-dashboard-sidebar-row__icon">{icon}</span>
+        <span className="construct-dashboard-sidebar-row__copy">
+          <strong>{title}</strong>
+          <small>{subtitle}</small>
+        </span>
+        <span className="construct-dashboard-sidebar-row__meta">{meta}</span>
+      </button>
+      <ShadcnDropdownMenu>
+        <ShadcnDropdownMenuTrigger
+          className="construct-dashboard-sidebar-row__settings"
+          aria-label={`Project actions for ${title}`}
+        >
+          <span aria-hidden="true">•••</span>
+        </ShadcnDropdownMenuTrigger>
+        <ShadcnDropdownMenuContent align="end" side="right" sideOffset={6}>
+          <ShadcnDropdownMenuItem onClick={onClick}>
+            <Folder size={14} weight="duotone" />
+            Open project
+          </ShadcnDropdownMenuItem>
+          <ShadcnDropdownMenuItem onClick={onOpenSettings}>
+            <GearSix size={14} weight="duotone" />
+            Project settings
+          </ShadcnDropdownMenuItem>
+        </ShadcnDropdownMenuContent>
+      </ShadcnDropdownMenu>
+    </div>
   );
 }
 
@@ -2236,17 +2207,6 @@ function formatDashboardSidebarTime(value: string | null | undefined) {
     month: "short",
     day: "numeric"
   });
-}
-
-function formatAttentionMeta(project: ProjectSummary) {
-  const parts: string[] = [];
-  if ((project.verificationFailCount ?? 0) > 0) {
-    parts.push(`${project.verificationFailCount} fail`);
-  }
-  if ((project.authoringFixCount ?? 0) > 0) {
-    parts.push(`${project.authoringFixCount} fix`);
-  }
-  return parts.join(" · ") || `${project.progress}%`;
 }
 
 async function restartProjectLsp(projectId: string) {
@@ -2294,8 +2254,8 @@ function LearningContextSurface() {
       <header className="construct-learning-context__header">
         <div>
           <span>Local-first learner memory</span>
-          <h1>Learner Context</h1>
-          <p>Inspect the state Construct Interact, recall, Knowledge Base, and future sync will use.</p>
+          <h1>Context</h1>
+          <p>Inspect the local state Construct Interact, recall, Knowledge Base, and future sync will use.</p>
         </div>
         <code>{state.sync.mode} · {state.sync.deviceId.slice(0, 8)}</code>
       </header>
@@ -2468,19 +2428,19 @@ function HeaderBottomPanelIcon({ open }: { open: boolean }) {
 
 function SidebarLearningButton({ onClick }: { onClick: () => void }) {
   return (
-    <button className="construct-sidebar-settings" onClick={onClick} type="button">
+    <Button className="construct-sidebar-settings" onClick={onClick} variant="ghost">
       <Notebook size={19} weight="duotone" />
-      <span>Learner Context</span>
-    </button>
+      <span>Context</span>
+    </Button>
   );
 }
 
 function SidebarSettingsButton({ onClick }: { onClick: () => void }) {
   return (
-    <button className="construct-sidebar-settings" onClick={onClick} type="button">
+    <Button className="construct-sidebar-settings" onClick={onClick} variant="ghost">
       <GearSix size={19} weight="duotone" />
       <span>Settings</span>
-    </button>
+    </Button>
   );
 }
 

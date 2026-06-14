@@ -1833,28 +1833,43 @@
 
 .construct-dashboard-sidebar-list {
   display: grid;
-  gap: 4px;
-  padding: 0 0 8px;
+  gap: 2px;
+  padding: 0 0 4px;
 }
 
 .construct-dashboard-sidebar-row {
+  position: relative;
   display: grid;
-  grid-template-columns: 24px minmax(0, 1fr) 24px auto;
+  grid-template-columns: minmax(0, 1fr) 26px;
   align-items: center;
-  gap: 7px;
-  min-height: 44px;
+  gap: 2px;
+  min-height: 42px;
   border: 0;
-  border-radius: 10px;
-  padding: 7px 10px;
+  border-radius: 12px;
+  padding: 3px;
   background: transparent;
   color: var(--opaline-text-primary);
-  cursor: default;
-  font: inherit;
-  text-align: left;
+  corner-shape: squircle;
 }
 
 .construct-dashboard-sidebar-row:hover {
   background: var(--color-token-list-hover-background);
+}
+
+.construct-dashboard-sidebar-row__open {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  min-height: 36px;
+  border: 0;
+  padding: 3px 4px;
+  background: transparent;
+  color: inherit;
+  cursor: default;
+  font: inherit;
+  text-align: left;
 }
 
 .construct-dashboard-sidebar-row__icon {
@@ -1902,8 +1917,8 @@
 .construct-dashboard-sidebar-row__meta {
   color: var(--opaline-text-tertiary);
   font-size: 11.5px;
-  opacity: 0;
-  transition: opacity 120ms ease;
+  opacity: 0.7;
+  transition: none;
 }
 
 .construct-dashboard-sidebar-row__settings {
@@ -1911,18 +1926,18 @@
   width: 24px;
   height: 24px;
   place-items: center;
+  border: 0;
   border-radius: 7px;
+  padding: 0;
+  background: transparent;
   color: var(--opaline-text-tertiary);
   opacity: 0;
+  corner-shape: squircle;
+  transition: none;
 }
 
 .construct-dashboard-sidebar-row:hover .construct-dashboard-sidebar-row__settings,
 .construct-dashboard-sidebar-row__settings:focus-visible {
-  opacity: 1;
-}
-
-.construct-dashboard-sidebar-row:hover .construct-dashboard-sidebar-row__meta,
-.construct-dashboard-sidebar-row:focus-visible .construct-dashboard-sidebar-row__meta {
   opacity: 1;
 }
 
@@ -1941,16 +1956,19 @@
 .construct-sidebar-settings {
   display: inline-flex;
   width: 100%;
-  height: 38px;
+  height: 34px;
   align-items: center;
   gap: 10px;
   border: 0;
-  border-radius: 12px;
-  padding: 0 12px;
+  border-radius: 11px;
+  padding: 0 9px;
   color: var(--opaline-text-primary);
   background: transparent;
   cursor: default;
   font: inherit;
+  font-size: 12px;
+  corner-shape: squircle;
+  transition: none !important;
 }
 
 .construct-sidebar-settings:hover {
@@ -4913,6 +4931,187 @@
   .knowledge-base-surface__metadata { grid-template-columns: 1fr; }
 }
 
+/* Opaline v2 shadcn surfaces */
+.construct-v2-project-dialog {
+  width: min(680px, calc(100vw - 32px));
+  max-width: min(680px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  gap: 0;
+  overflow: hidden;
+  border-radius: 22px;
+  padding: 0;
+  corner-shape: squircle;
+}
+
+.construct-v2-project-dialog.is-wide {
+  width: min(920px, calc(100vw - 32px));
+  max-width: min(920px, calc(100vw - 32px));
+}
+
+.construct-v2-project-dialog__header {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 12px;
+  padding: 18px 18px 14px;
+  border-bottom: 1px solid var(--opaline-border-subtle);
+}
+
+.construct-v2-project-dialog__header > div {
+  min-width: 0;
+}
+
+.construct-v2-project-dialog__icon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 12px;
+  background: var(--muted);
+  corner-shape: squircle;
+}
+
+.construct-v2-project-dialog__body {
+  min-height: 0;
+  overflow: auto;
+  padding: 16px 18px;
+}
+
+.construct-v2-project-dialog__footer {
+  padding: 12px 18px 16px;
+  border-top: 1px solid var(--opaline-border-subtle);
+}
+
+.new-project-choice {
+  display: flex;
+  grid-template-columns: none;
+  align-items: stretch;
+  gap: 0;
+  min-height: 116px;
+  flex-direction: column;
+  border: 0;
+  border-radius: 16px;
+  padding: 0;
+  background: var(--card);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--opaline-border-subtle) 86%, transparent) !important;
+  cursor: default;
+  corner-shape: squircle;
+  transition: none !important;
+}
+
+.new-project-choice [data-slot="card-header"],
+.new-project-choice [data-slot="card-content"] {
+  width: 100%;
+}
+
+.new-project-choice [data-slot="card-header"] {
+  grid-template-columns: 34px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  gap: 2px 10px;
+}
+
+.new-project-choice [data-slot="card-header"] > span {
+  grid-row: 1 / span 2;
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 11px;
+  background: var(--muted);
+  corner-shape: squircle;
+}
+
+.new-project-choice__action {
+  display: inline-flex;
+  margin-left: 44px;
+  color: var(--foreground);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.construct-knowledge-dialog {
+  width: min(720px, calc(100vw - 32px));
+  max-width: min(720px, calc(100vw - 32px));
+  height: min(720px, calc(100vh - 48px));
+  max-height: calc(100vh - 48px);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  border-radius: 20px;
+  corner-shape: squircle;
+}
+
+.construct-knowledge-dialog__scroll {
+  min-height: 0;
+}
+
+.construct-knowledge-dialog__body {
+  gap: 8px;
+  padding: 2px 3px 10px 0;
+  overflow: visible;
+}
+
+.construct-knowledge-dialog__body [data-slot="card"] {
+  border-radius: 14px;
+  corner-shape: squircle;
+}
+
+.knowledge-base-surface {
+  width: min(1100px, calc(100% - 36px));
+  gap: 12px;
+  padding: 22px 0 28px;
+}
+
+.knowledge-base-surface__search {
+  min-height: 34px;
+  border-radius: 11px;
+  corner-shape: squircle;
+}
+
+.knowledge-base-surface__layout {
+  grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+  gap: 12px;
+  border-top: 0;
+}
+
+.knowledge-base-surface__list-scroll {
+  min-height: 0;
+  border-right: 1px solid var(--opaline-border-subtle);
+}
+
+.knowledge-base-surface__list {
+  display: grid;
+  gap: 2px;
+  overflow: visible;
+  border-right: 0;
+  padding: 3px 10px 3px 0;
+}
+
+.knowledge-base-surface__list button {
+  min-height: 46px;
+  height: auto;
+  justify-content: flex-start;
+  border-radius: 11px;
+  padding: 7px 9px;
+  corner-shape: squircle;
+  transition: none !important;
+}
+
+.knowledge-base-surface__detail {
+  min-width: 0;
+  overflow: auto;
+  border-radius: 16px;
+  padding: 0;
+  corner-shape: squircle;
+}
+
+.knowledge-base-surface__detail [data-slot="card-content"] {
+  padding-bottom: 16px;
+}
+
+[data-slot="dropdown-menu-content"] {
+  box-shadow:
+    0 12px 30px color-mix(in srgb, black 16%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--opaline-border-subtle) 88%, transparent) !important;
+}
+
 .construct-dashboard {
   display: grid;
   gap: 14px;
@@ -5578,17 +5777,13 @@
   flex: 0 0 30px;
   min-width: 30px;
   min-height: 30px;
-  border-radius: 10px !important;
+  border-radius: 8px !important;
+  corner-shape: squircle;
   padding: 0 !important;
   background: transparent !important;
   box-shadow: none !important;
   color: color-mix(in srgb, var(--opaline-text-secondary, #a3a3a3) 88%, transparent) !important;
-  transition:
-    background-color var(--transition-duration-basic, 120ms) var(--cubic-enter, cubic-bezier(0.16, 1, 0.3, 1)),
-    box-shadow var(--transition-duration-basic, 120ms) var(--cubic-enter, cubic-bezier(0.16, 1, 0.3, 1)),
-    color var(--transition-duration-basic, 120ms) var(--cubic-enter, cubic-bezier(0.16, 1, 0.3, 1)),
-    transform var(--transition-duration-basic, 120ms) var(--cubic-enter, cubic-bezier(0.16, 1, 0.3, 1)) !important;
-  clip-path: polygon(8% 0%, 92% 0%, 96% 1%, 99% 4%, 100% 8%, 100% 92%, 99% 96%, 96% 99%, 92% 100%, 8% 100%, 4% 99%, 1% 96%, 0% 92%, 0% 8%, 1% 4%, 4% 1%);
+  transition: none !important;
 }
 
 .construct-header-panel-toggle svg {
@@ -6007,4 +6202,789 @@
 .monaco-editor .peekview-widget .peekview-list .monaco-list-row.focused {
   background-color: var(--color-token-list-hover-background, rgba(0,0,0,0.06)) !important;
   color: var(--opaline-text-primary) !important;
+}
+
+/* Final shell polish: macOS translucency, dashboard, slots, and panel finish */
+.construct-app .opaline-left-panel,
+.construct-app .opaline-sidebar-chrome,
+.construct-app .opaline-left-panel-inner,
+.construct-app .opaline-sidebar,
+.construct-app .app-shell-left-panel {
+  background: color-mix(in srgb, var(--opaline-bg-primary) 34%, transparent) !important;
+  background-color: color-mix(in srgb, var(--opaline-bg-primary) 34%, transparent) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(160%);
+  backdrop-filter: blur(22px) saturate(160%);
+}
+
+.construct-app .opaline-left-panel {
+  border-right-color: color-mix(in srgb, var(--opaline-border-subtle) 62%, transparent) !important;
+  box-shadow: inset -1px 0 0 color-mix(in srgb, var(--opaline-text-primary) 4%, transparent);
+}
+
+.construct-app .opaline-sidebar-chrome {
+  border-bottom: 0;
+}
+
+.construct-app .opaline-sidebar {
+  border-right-color: transparent !important;
+}
+
+.construct-app .opaline-sidebar-primary,
+.construct-app .opaline-sidebar-scroll,
+.construct-app .opaline-sidebar-footer,
+.construct-app .opaline-sidebar-bottom-slot,
+.construct-app .opaline-sidebar-bottom-slot-header,
+.construct-app .opaline-sidebar-bottom-slot-content,
+.construct-sidebar-active,
+.construct-sidebar-tree-container {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+.construct-app .opaline-sidebar-nav-item[data-active="true"],
+.construct-app .opaline-sidebar-nav-item:hover,
+.construct-app .construct-dashboard-sidebar-row:hover,
+.construct-app .construct-sidebar-settings:hover,
+.construct-app .construct-sidebar-knowledge__row:hover,
+.construct-app .construct-sidebar-knowledge__row[data-current="true"] {
+  background: color-mix(in srgb, var(--opaline-bg-primary) 34%, transparent) !important;
+}
+
+.construct-sidebar-footer-stack {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.construct-dashboard {
+  min-height: 100%;
+  padding: 26px 30px 34px;
+  color: var(--opaline-text-primary);
+  background:
+    linear-gradient(to bottom, color-mix(in srgb, var(--opaline-bg-elevated) 36%, transparent), transparent 280px),
+    var(--opaline-bg-primary);
+}
+
+.construct-dashboard__toolbar {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 22px;
+  margin-bottom: 14px;
+}
+
+.construct-dashboard__panel-header span,
+.construct-dashboard__panel-header button {
+  color: var(--opaline-text-tertiary);
+  font-size: 11px;
+  font-weight: 680;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+}
+
+.construct-dashboard__toolbar h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 650;
+  line-height: 1.1;
+  letter-spacing: 0;
+}
+
+.construct-dashboard__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.construct-dashboard__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+  gap: 14px;
+}
+
+.construct-dashboard__continue,
+.construct-dashboard__panel,
+.construct-dashboard__metrics,
+.construct-dashboard__spotlight {
+  border: 1px solid color-mix(in srgb, var(--opaline-border-subtle) 82%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--opaline-bg-elevated) 64%, transparent);
+}
+
+.construct-dashboard__continue,
+.construct-dashboard__panel {
+  overflow: hidden;
+}
+
+.construct-dashboard__continue {
+  grid-column: 1;
+}
+
+.construct-dashboard__panel-header {
+  display: flex;
+  min-height: 45px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--opaline-border-subtle) 72%, transparent);
+  padding: 0 14px;
+}
+
+.construct-dashboard__panel-header h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.construct-dashboard__panel-header button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: default;
+}
+
+.construct-dashboard__panel-header button:not(:disabled):hover {
+  color: var(--opaline-text-primary);
+}
+
+.construct-dashboard__continue-card {
+  display: grid;
+  width: 100%;
+  grid-template-columns: 34px minmax(0, 1fr) minmax(86px, 0.24fr) 22px;
+  align-items: center;
+  gap: 12px;
+  min-height: 86px;
+  border: 0;
+  padding: 14px;
+  background: transparent;
+  color: var(--opaline-text-primary);
+  cursor: default;
+  text-align: left;
+}
+
+.construct-dashboard__continue-card:hover {
+  background: color-mix(in srgb, var(--opaline-text-primary) 4%, transparent);
+}
+
+.construct-dashboard__continue-icon,
+.construct-dashboard__mini-icon,
+.construct-dashboard__project-icon,
+.construct-dashboard__signal > svg,
+.construct-dashboard__metric > svg {
+  display: grid;
+  place-items: center;
+  color: var(--opaline-text-secondary);
+}
+
+.construct-dashboard__continue-icon,
+.construct-dashboard__mini-icon,
+.construct-dashboard__project-icon {
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--opaline-text-primary) 6%, transparent);
+}
+
+.construct-dashboard__continue-icon {
+  width: 34px;
+  height: 34px;
+}
+
+.construct-dashboard__continue-copy,
+.construct-dashboard__mini span,
+.construct-dashboard__project-copy {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.construct-dashboard__continue-copy strong,
+.construct-dashboard__mini strong,
+.construct-dashboard__project-copy strong,
+.construct-dashboard__signal span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--opaline-text-primary);
+  font-weight: 640;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.construct-dashboard__continue-copy small,
+.construct-dashboard__mini small,
+.construct-dashboard__project-copy small,
+.construct-dashboard__signal small {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--opaline-text-tertiary);
+  font-size: 12px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.construct-dashboard__continue-progress,
+.construct-dashboard__progress {
+  overflow: hidden;
+  height: 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--opaline-text-primary) 8%, transparent);
+}
+
+.construct-dashboard__continue-progress > span,
+.construct-dashboard__progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--opaline-text-primary);
+}
+
+.construct-dashboard__metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  overflow: hidden;
+}
+
+.construct-dashboard__metric {
+  display: grid;
+  min-height: 76px;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-content: center;
+  gap: 4px 8px;
+  border-right: 1px solid color-mix(in srgb, var(--opaline-border-subtle) 68%, transparent);
+  padding: 0 14px;
+}
+
+.construct-dashboard__metric:last-child {
+  border-right: 0;
+}
+
+.construct-dashboard__metric span {
+  color: var(--opaline-text-tertiary);
+  font-size: 12px;
+}
+
+.construct-dashboard__metric strong {
+  grid-column: 2;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.construct-dashboard__spotlight,
+.construct-dashboard__panel--projects {
+  grid-column: 1;
+}
+
+.construct-dashboard__spotlight {
+  display: grid;
+  gap: 0;
+  overflow: hidden;
+}
+
+.construct-dashboard__mini,
+.construct-dashboard__project,
+.construct-dashboard__signal {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--opaline-text-primary);
+  cursor: default;
+  font: inherit;
+  text-align: left;
+}
+
+.construct-dashboard__mini {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 60px;
+  border-bottom: 1px solid color-mix(in srgb, var(--opaline-border-subtle) 58%, transparent);
+  padding: 10px 14px;
+}
+
+.construct-dashboard__mini:last-child {
+  border-bottom: 0;
+}
+
+.construct-dashboard__mini:hover,
+.construct-dashboard__project:hover,
+.construct-dashboard__signal:hover {
+  background: color-mix(in srgb, var(--opaline-text-primary) 4%, transparent);
+}
+
+.construct-dashboard__mini-icon,
+.construct-dashboard__project-icon {
+  width: 30px;
+  height: 30px;
+}
+
+.construct-dashboard__mini em,
+.construct-dashboard__percent {
+  color: var(--opaline-text-tertiary);
+  font-size: 12px;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+}
+
+.construct-dashboard__project-table {
+  display: grid;
+}
+
+.construct-dashboard__project {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) minmax(72px, 0.2fr) 42px 28px;
+  align-items: center;
+  gap: 10px;
+  min-height: 58px;
+  border-bottom: 1px solid color-mix(in srgb, var(--opaline-border-subtle) 58%, transparent);
+  padding: 9px 12px;
+}
+
+.construct-dashboard__project:last-child {
+  border-bottom: 0;
+}
+
+.construct-dashboard__project-settings {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border-radius: 7px;
+  color: var(--opaline-text-tertiary);
+}
+
+.construct-dashboard__project-settings:hover {
+  background: color-mix(in srgb, var(--opaline-text-primary) 7%, transparent);
+  color: var(--opaline-text-primary);
+}
+
+.construct-dashboard__side {
+  display: grid;
+  grid-column: 2;
+  grid-row: 1 / span 4;
+  align-content: start;
+  gap: 14px;
+}
+
+.construct-dashboard__signal {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 3px 9px;
+  min-height: 54px;
+  border-bottom: 1px solid color-mix(in srgb, var(--opaline-border-subtle) 58%, transparent);
+  padding: 10px 14px;
+}
+
+.construct-dashboard__signal:last-child {
+  border-bottom: 0;
+}
+
+.construct-dashboard__signal > svg {
+  grid-row: 1 / span 2;
+  width: 22px;
+  height: 22px;
+  align-self: center;
+}
+
+.construct-dashboard__empty {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 14px;
+  color: var(--opaline-text-tertiary);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.construct-dashboard__empty--large {
+  min-height: 86px;
+}
+
+.construct-dashboard-sidebar-list {
+  gap: 1px;
+  padding: 0 6px 6px;
+}
+
+.construct-dashboard-sidebar-row {
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 44px;
+  padding: 2px;
+  border-radius: 8px;
+}
+
+.construct-dashboard-sidebar-row__open {
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  min-height: 40px;
+  gap: 8px;
+  padding: 4px 7px;
+}
+
+.construct-dashboard-sidebar-row__settings {
+  position: absolute;
+  right: 5px;
+  top: 8px;
+  background: color-mix(in srgb, var(--opaline-bg-primary) 72%, transparent);
+}
+
+.construct-sidebar-settings {
+  justify-content: flex-start;
+  height: 32px;
+  border-radius: 8px;
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+.construct-guide-slot-panel,
+.construct-app .opaline-right-panel:has(.construct-guide-slot-panel),
+.construct-app .opaline-bottom-panel {
+  background: color-mix(in srgb, var(--opaline-bg-primary) 78%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(145%);
+  backdrop-filter: blur(18px) saturate(145%);
+}
+
+.construct-app .opaline-right-panel:has(.construct-guide-slot-panel) {
+  gap: 0;
+  overflow: hidden !important;
+  border-left-color: color-mix(in srgb, var(--opaline-border-subtle) 76%, transparent);
+  padding: 0;
+}
+
+.construct-guide-slot-panel .opaline-slot-panel-tabbar {
+  min-height: 50px;
+  border-bottom-color: color-mix(in srgb, var(--opaline-border-subtle) 68%, transparent);
+  padding: 8px 12px;
+}
+
+.construct-guide-slot-panel .opaline-slot-panel-tabs {
+  gap: 6px;
+}
+
+.construct-guide-slot-panel .opaline-slot-panel-tab {
+  height: 34px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.construct-guide-slot-panel .opaline-slot-panel-outlet {
+  min-height: 0;
+  overflow: auto;
+  padding: 0 12px 12px;
+}
+
+.construct-guide-slot-panel .guide-panel {
+  padding: 14px 0 0;
+}
+
+.construct-guide-slot-panel .guide-panel > h2 {
+  margin-bottom: 14px;
+  font-size: 22px;
+  line-height: 1.1;
+}
+
+.workspace-right-panel-steps {
+  border-top: 0;
+  margin-top: 0;
+  padding-top: 0;
+}
+
+.workspace-right-panel-steps button.workspace-panel__header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  min-height: 40px;
+  border-bottom: 1px solid color-mix(in srgb, var(--opaline-border-subtle) 62%, transparent);
+  padding: 0 2px;
+  background: color-mix(in srgb, var(--opaline-bg-primary) 88%, transparent);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+
+.workspace-right-panel-steps::before,
+.workspace-right-panel-steps::after {
+  display: none;
+}
+
+.workspace-right-panel-steps .step-timeline {
+  padding: 12px 0 18px;
+}
+
+.git-panel {
+  display: grid;
+  gap: 12px;
+  padding: 12px 0 20px;
+}
+
+.git-panel__status {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  border: 1px solid color-mix(in srgb, var(--opaline-border-subtle) 78%, transparent);
+  border-radius: 10px;
+  padding: 12px;
+  background: color-mix(in srgb, var(--opaline-bg-elevated) 58%, transparent);
+}
+
+.git-panel__status strong,
+.git-panel__status span {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.git-panel__status span {
+  margin-top: 2px;
+  color: var(--opaline-text-tertiary);
+  font-size: 12px;
+}
+
+.git-panel__milestone-body {
+  display: grid;
+  gap: 9px;
+}
+
+.git-panel__milestone-body input {
+  min-width: 0;
+  border: 1px solid var(--opaline-border-subtle);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: color-mix(in srgb, var(--opaline-bg-primary) 74%, transparent);
+  color: var(--opaline-text-primary);
+  font: inherit;
+  font-size: 12px;
+}
+
+.git-panel__files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.git-panel__files code {
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--opaline-border-subtle);
+  border-radius: 7px;
+  padding: 3px 7px;
+  background: color-mix(in srgb, var(--opaline-text-primary) 5%, transparent);
+  color: var(--opaline-text-tertiary);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.git-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.git-panel__actions button {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--opaline-border-subtle);
+  border-radius: 8px;
+  padding: 0 9px;
+  background: color-mix(in srgb, var(--opaline-bg-elevated) 64%, transparent);
+  color: var(--opaline-text-secondary);
+  font: inherit;
+  font-size: 12px;
+}
+
+.git-panel__actions button:disabled {
+  opacity: 0.48;
+}
+
+.construct-app .opaline-bottom-panel {
+  min-height: 150px;
+  border-top: 1px solid color-mix(in srgb, var(--opaline-border-subtle) 78%, transparent);
+}
+
+.construct-app .opaline-bottom-panel-slot,
+.construct-app .opaline-bottom-panel-slot-inner {
+  overflow: visible;
+}
+
+.construct-app .opaline-bottom-panel-resize-handle {
+  top: -7px;
+  height: 14px;
+  z-index: 8;
+}
+
+.construct-app .opaline-bottom-panel-resize-handle::before {
+  top: 6px;
+  left: 45%;
+  right: 45%;
+  height: 3px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--opaline-text-primary) 18%, transparent);
+}
+
+.construct-app .opaline-bottom-panel-resize-handle:hover::before,
+html[data-opaline-bottom-panel-resizing="true"] .construct-app .opaline-bottom-panel-resize-handle::before {
+  left: 0;
+  right: 0;
+  background: color-mix(in srgb, var(--opaline-text-primary) 30%, transparent);
+}
+
+.construct-app .opaline-bottom-panel[data-fullscreen="true"] {
+  min-height: calc(100vh - 72px);
+}
+
+@media (max-width: 1100px) {
+  .construct-dashboard__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .construct-dashboard__side {
+    grid-column: 1;
+    grid-row: auto;
+  }
+}
+
+/* Final Construct shell polish: target the actual Opaline v2 shell nodes. */
+.construct-app .construct-opaline-shell {
+  --opaline-v2-control-size: 30px;
+  --opaline-v2-radius-control: 10px;
+  --opaline-v2-radius-item: 9px;
+  --opaline-v2-radius-surface: 20px;
+  --opaline-v2-sidebar-glass: color-mix(in srgb, var(--opaline-bg-primary, #f8f7f4) 40%, transparent);
+  background: transparent !important;
+}
+
+.construct-app .construct-opaline-shell .opaline-v2-sidebar-shell {
+  overflow: hidden;
+  border-top-left-radius: 20px;
+  border-bottom-left-radius: 20px;
+  background: color-mix(in srgb, var(--opaline-bg-primary, #f8f7f4) 42%, transparent) !important;
+  -webkit-backdrop-filter: blur(30px) saturate(175%) !important;
+  backdrop-filter: blur(30px) saturate(175%) !important;
+  box-shadow: none !important;
+}
+
+.construct-app .construct-opaline-shell .opaline-v2-sidebar {
+  background: transparent !important;
+  border-right: 0 !important;
+}
+
+.construct-app .construct-opaline-shell .opaline-v2-sidebar-chrome {
+  height: 58px;
+  padding-right: 16px;
+}
+
+[data-opaline-os="darwin"] .construct-app .construct-opaline-shell .opaline-v2-sidebar-chrome {
+  padding-left: 78px !important;
+}
+
+.construct-app .construct-opaline-shell .opaline-v2-main {
+  border-left: 1px solid color-mix(in srgb, var(--opaline-text-primary, #111) 12%, transparent);
+  border-top-left-radius: 20px !important;
+  border-bottom-left-radius: 20px !important;
+  background: color-mix(in srgb, var(--opaline-bg-primary, #fff) 42%, transparent) !important;
+  -webkit-backdrop-filter: blur(26px) saturate(165%) !important;
+  backdrop-filter: blur(26px) saturate(165%) !important;
+  box-shadow: none !important;
+  overflow: hidden;
+}
+
+.construct-app .construct-opaline-shell .opaline-v2-titlebar {
+  background: color-mix(in srgb, var(--opaline-bg-primary, #fff) 36%, transparent) !important;
+  -webkit-backdrop-filter: blur(28px) saturate(170%) !important;
+  backdrop-filter: blur(28px) saturate(170%) !important;
+  border-bottom: 1px solid color-mix(in srgb, var(--opaline-border-subtle, #d9d6ce) 62%, transparent) !important;
+}
+
+.construct-app .construct-opaline-shell .opaline-v2-chrome-button,
+.construct-app .construct-opaline-shell .opaline-v2-collapsed-trigger-button,
+.construct-app .construct-opaline-shell .opaline-v2-header-tool-button,
+.construct-app .construct-opaline-shell .construct-header-panel-toggle {
+  width: 30px !important;
+  height: 30px !important;
+  flex: 0 0 30px !important;
+  min-width: 30px !important;
+  min-height: 30px !important;
+  border-radius: 10px !important;
+  clip-path: none !important;
+  corner-shape: squircle;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.construct-app .construct-opaline-shell .opaline-v2-chrome-button:hover,
+.construct-app .construct-opaline-shell .opaline-v2-collapsed-trigger-button:hover,
+.construct-app .construct-opaline-shell .opaline-v2-header-tool-button:hover,
+.construct-app .construct-opaline-shell .construct-header-panel-toggle:hover,
+.construct-app .construct-opaline-shell .construct-header-panel-toggle[data-active="true"] {
+  background: color-mix(in srgb, var(--opaline-text-primary, #111) 10%, transparent) !important;
+  color: var(--opaline-text-primary, #111) !important;
+}
+
+.construct-app .construct-opaline-shell .opaline-v2-workspace,
+.construct-app .construct-opaline-shell .opaline-v2-content-stack,
+.construct-app .construct-opaline-shell .opaline-v2-content {
+  background: transparent !important;
+}
+
+.construct-app .construct-opaline-shell .opaline-v2-content {
+  background: color-mix(in srgb, var(--opaline-bg-primary, #fff) 38%, transparent) !important;
+}
+
+.construct-app .construct-opaline-shell .opaline-v2-inspector-shell {
+  background: color-mix(in srgb, var(--opaline-bg-primary, #fff) 68%, transparent) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(155%) !important;
+  backdrop-filter: blur(22px) saturate(155%) !important;
+  border-left: 1px solid color-mix(in srgb, var(--opaline-border-subtle, #d9d6ce) 70%, transparent) !important;
+}
+
+.construct-app .construct-opaline-shell .opaline-v2-inspector {
+  background: transparent !important;
+}
+
+.construct-app .construct-opaline-shell .opaline-v2-bottom {
+  height: var(--opaline-v2-bottom-panel-height, 300px);
+  flex-basis: var(--opaline-v2-bottom-panel-height, 300px);
+  overflow: visible;
+  background: color-mix(in srgb, var(--opaline-bg-primary, #fff) 34%, transparent) !important;
+  -webkit-backdrop-filter: blur(28px) saturate(170%) !important;
+  backdrop-filter: blur(28px) saturate(170%) !important;
+  border-top: 1px solid color-mix(in srgb, var(--opaline-border-subtle, #d9d6ce) 72%, transparent) !important;
+}
+
+.construct-app .construct-opaline-shell .opaline-v2-bottom .opaline-bottom-panel {
+  background: transparent !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+.construct-app .construct-opaline-shell .opaline-v2-bottom[data-open="false"] {
+  height: 0;
+  flex-basis: 0;
+}
+
+.construct-app .construct-opaline-shell .opaline-v2-resize-handle-line {
+  background: color-mix(in srgb, var(--opaline-text-primary, #111) 26%, transparent);
+}
+
+.construct-app .construct-dashboard-sidebar-row {
+  background: transparent !important;
+}
+
+.construct-app .construct-dashboard-sidebar-row:hover,
+.construct-app .construct-dashboard-sidebar-row:focus-within {
+  background: color-mix(in srgb, var(--opaline-text-primary, #111) 11%, transparent) !important;
+}
+
+.construct-app .construct-dashboard-sidebar-row__settings {
+  opacity: 0;
+}
+
+.construct-app .construct-dashboard-sidebar-row:hover .construct-dashboard-sidebar-row__settings,
+.construct-app .construct-dashboard-sidebar-row:focus-within .construct-dashboard-sidebar-row__settings {
+  opacity: 1;
+  background: color-mix(in srgb, var(--opaline-bg-primary, #fff) 78%, transparent) !important;
 }

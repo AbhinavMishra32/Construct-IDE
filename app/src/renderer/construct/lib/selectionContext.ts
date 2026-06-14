@@ -64,5 +64,5 @@ function normalizeSource(value: string | undefined): ConstructSelectionSource {
 
 function inferSurfaceLabel(element: Element): string {
   const heading = element.querySelector("h1, h2, h3, [role=heading]")?.textContent?.trim();
-  return heading || "Construct workspace";
+  return heading || "Workspace";
 }
