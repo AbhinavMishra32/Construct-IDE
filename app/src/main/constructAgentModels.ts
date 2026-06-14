@@ -22,8 +22,8 @@ export function resolveConstructAgentModel(purpose: string, featureId?: Construc
   if (openRouter) {
     return {
       providerId: "openrouter",
-      modelId: featureId ? modelForAiFeature(settings, featureId) : (settings.openRouterModel || "nvidia/nemotron-3-ultra-550b-a55b:free"),
-      url: process.env.CONSTRUCT_OPENROUTER_BASE_URL?.trim() || "https://openrouter.ai/api/v1",
+      modelId: featureId ? modelForAiFeature(settings, featureId) : (settings.openRouterModel || "deepseek/deepseek-v4-flash"),
+      url: settings.openRouterBaseUrl,
       apiKey
     };
   }
@@ -31,7 +31,7 @@ export function resolveConstructAgentModel(purpose: string, featureId?: Construc
   return {
     providerId: "openai",
     modelId: featureId ? modelForAiFeature(settings, featureId) : (settings.openAiModel || "gpt-5-mini"),
-    url: process.env.CONSTRUCT_OPENAI_BASE_URL?.trim(),
+    url: settings.openAiBaseUrl,
     apiKey
   };
 }
@@ -42,7 +42,7 @@ export function resolveConstructOpenAiResponsesConfig(featureId?: ConstructAiFea
   if (!apiKey) return null;
   return {
     apiKey,
-    baseUrl: (process.env.CONSTRUCT_OPENAI_BASE_URL?.trim() || "https://api.openai.com/v1").replace(/\/$/, ""),
+    baseUrl: settings.openAiBaseUrl,
     model: featureId ? modelForAiFeature(settings, featureId) : (settings.openAiModel || "gpt-5-mini")
   };
 }

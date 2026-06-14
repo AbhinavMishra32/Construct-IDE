@@ -9,11 +9,14 @@ import {
 import type { StoredAiSettings } from "./constructAiSettings";
 
 const baseSettings: StoredAiSettings = {
+  runtime: "mastra",
   provider: "openai",
   openAiApiKey: "",
   openAiModel: "gpt-5-mini",
+  openAiBaseUrl: "https://api.openai.com/v1",
   openRouterApiKey: "",
-  openRouterModel: "nvidia/nemotron-3-ultra-550b-a55b:free",
+  openRouterModel: "deepseek/deepseek-v4-flash",
+  openRouterBaseUrl: "https://openrouter.ai/api/v1",
   featureModels: {}
 };
 
@@ -31,7 +34,7 @@ test("feature models use provider defaults and saved per-feature overrides", () 
 
   assert.equal(
     modelForAiFeature({ ...baseSettings, provider: "openrouter" }, "verification"),
-    "nvidia/nemotron-3-ultra-550b-a55b:free"
+    "deepseek/deepseek-v4-flash"
   );
 
   assert.equal(

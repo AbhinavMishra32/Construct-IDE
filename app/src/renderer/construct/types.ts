@@ -378,13 +378,17 @@ export type AuthoringFixRecord = {
 };
 
 export type AiProvider = "openai" | "openrouter";
+export type AiRuntime = "mastra" | "fxpnt";
 
 export type AiSettings = {
+  runtime: AiRuntime;
   provider: AiProvider;
   openAiApiKey: string;
   openAiModel: string;
+  openAiBaseUrl: string;
   openRouterApiKey: string;
   openRouterModel: string;
+  openRouterBaseUrl: string;
   featureModels: Record<string, string>;
 };
 
@@ -405,9 +409,18 @@ export type ModelCatalogEntry = {
   pricing?: string | null;
 };
 
+export type ObservabilitySettings = {
+  enabled: boolean;
+  phoenixEndpoint: string;
+  phoenixApiKey: string;
+  phoenixProjectName: string;
+  batch: boolean;
+};
+
 export type ProjectSettings = {
   workspaceRoot: string;
   ai: AiSettings;
+  observability: ObservabilitySettings;
   releaseVersion: string;
 };
 
