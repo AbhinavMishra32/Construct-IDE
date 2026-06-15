@@ -182,12 +182,15 @@ jobs:
             EXTRA_FLAGS="--latest"
           fi
           
+          # Find only files recursively inside release-artifacts (ignoring directories)
+          FILES=$(find release-artifacts -type f)
+          
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" release-artifacts/* --clobber
+            gh release upload "$TAG" $FILES --clobber
           elif [ "$IS_PRERELEASE" = "true" ]; then
-            gh release create "$TAG" release-artifacts/* $EXTRA_FLAGS --title "Construct Canary ${VERSION}" --notes "Automated canary pre-release build."
+            gh release create "$TAG" $FILES $EXTRA_FLAGS --title "Construct Canary ${VERSION}" --notes "Automated canary pre-release build."
           elif [ -f "$NOTES" ]; then
-            gh release create "$TAG" release-artifacts/* $EXTRA_FLAGS --title "Construct ${VERSION}" --notes-file "$NOTES"
+            gh release create "$TAG" $FILES $EXTRA_FLAGS --title "Construct ${VERSION}" --notes-file "$NOTES"
           else
-            gh release create "$TAG" release-artifacts/* $EXTRA_FLAGS --title "Construct ${VERSION}" --notes "Construct ${VERSION}"
+            gh release create "$TAG" $FILES $EXTRA_FLAGS --title "Construct ${VERSION}" --notes "Construct ${VERSION}"
           fi
