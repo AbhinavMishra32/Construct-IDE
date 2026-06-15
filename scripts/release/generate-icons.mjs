@@ -1,11 +1,17 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
-const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..", "..");
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const source = path.join(root, "app", "assets", "icon.png");
 const outputDir = path.join(root, "app", "build", "icons");
 const pngDir = path.join(outputDir, "png");
+
+if (process.platform !== "darwin") {
+  console.log("Skipping icon generation: 'sips' is a macOS-only tool. Using pre-generated icons.");
+  process.exit(0);
+}
 
 mkdirSync(outputDir, { recursive: true });
 mkdirSync(pngDir, { recursive: true });

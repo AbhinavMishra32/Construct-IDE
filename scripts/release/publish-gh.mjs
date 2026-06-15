@@ -1,8 +1,9 @@
 import { existsSync, readdirSync, statSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
-const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..", "..");
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const packageJson = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
 const version = packageJson.version;
 const tag = `v${version}`;
