@@ -23,9 +23,14 @@ export class ConstructAgentIpcController {
   register(): void {
     const { ipcMain } = this.options;
 
-    ipcMain.handle("construct:project:interact", async (_event, input: Omit<ConstructInteractRuntimeInput, "learningState">) => {
+    ipcMain.handle("construct:project:interact", async (event, input: Omit<ConstructInteractRuntimeInput, "learningState">) => {
       const project = await this.projectById(input.projectId);
-      return this.options.interact.evaluate(project, input);
+      return this.options.interact.evaluate(project, input, (payload) => {
+        if (event.sender.isDestroyed()) {
+          return;
+        }
+        event.sender.send("construct:project:interact-session-event", payload);
+      });
     });
 
     ipcMain.handle("construct:project:verify-recall", async (_event, input) => {

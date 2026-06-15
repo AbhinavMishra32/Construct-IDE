@@ -11,6 +11,7 @@ import {
   BookOpen,
   FileTerminalIcon,
   FileTextIcon,
+  MessageCircleIcon,
   Plus as PlusIcon
 } from "lucide-react";
 import { Notebook } from "@phosphor-icons/react";
@@ -63,6 +64,13 @@ type SettingsSurfaceState = {
   itemId: string;
   projectId?: string;
 };
+
+function rightSlotTitle(slotId: string): string {
+  if (slotId === "steps") return "Steps";
+  if (slotId === "interact") return "Interact";
+  if (slotId === "git") return "Git";
+  return "Guide";
+}
 
 export default function ConstructApp() {
   const history = useShellHistory<ConstructHistoryEntry>([
@@ -251,7 +259,12 @@ export default function ConstructApp() {
   }, [history]);
 
   const runCommand = useCallback((command: string, cwd: string) => {
-    terminalRef.current?.runCommand(command, cwd);
+    setOpenBottomTabIds((current) => current.includes("terminal") ? current : [...current, "terminal"]);
+    setActiveBottomTabId("terminal");
+    if (!command.trim()) {
+      return;
+    }
+    window.setTimeout(() => terminalRef.current?.runCommand(command, cwd), 0);
   }, []);
 
   const handleWorkspaceTreeChange = useCallback((
@@ -327,7 +340,7 @@ export default function ConstructApp() {
     pushHistory({
       id: `right-slot:${activeProject.id}:${slotId}`,
       payload: { projectId: activeProject.id, slotId },
-      title: slotId === "steps" ? "Steps" : "Guide",
+      title: rightSlotTitle(slotId),
       type: "right-slot"
     });
   }, [activeProject, pushHistory]);
@@ -753,6 +766,18 @@ export default function ConstructApp() {
 
                       <SavingIndicator isSaving={isSaving} />
                       <div className="flex items-center gap-1" aria-label="Workspace panels">
+                        <AppShellHeaderToolButton
+                          data-active={state.isRightPanelOpen && activeRightSlotId === "interact" ? "true" : "false"}
+                          onClick={() => {
+                            handleRightSlotChange("interact");
+                            if (!state.isRightPanelOpen) {
+                              state.toggleRightPanel();
+                            }
+                          }}
+                          aria-label="Open Construct Interact"
+                        >
+                          <MessageCircleIcon size={15} />
+                        </AppShellHeaderToolButton>
                         <AppShellHeaderToolButton
                           data-active={state.isRightPanelOpen ? "true" : "false"}
                           onClick={state.toggleRightPanel}

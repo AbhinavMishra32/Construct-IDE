@@ -4,27 +4,25 @@ import { ConstructLearningStore } from "../constructLearningStore";
 import { runConstructInteract } from "../constructInteractAgent";
 import { createConstructInteractTools } from "../constructInteractTools";
 import { validateGeneratedLiveStepDrafts } from "../generatedLiveSteps";
+import {
+  isLearnerFacingReply,
+  selectLearnerFacingReply
+} from "../constructInteractReply";
 import { ConstructObservabilityService } from "../observability/ConstructObservabilityService";
 import type { StoredProject } from "../projects/ConstructProjectTypes";
 import { supportsGeneratedLiveSteps } from "../../shared/tapeFeatures";
 import type {
   ConstructAgentRunEvent,
+  ConstructInteractAssessment,
   ConstructInteractAction,
   ConstructInteractResult,
   ConstructInteractRuntimeInput,
+  ConstructInteractSessionEvent,
   ConstructInteractSession,
-  GeneratedLiveStepValidationRecord
+  GeneratedLiveStepValidationRecord,
+  LearningStatePatch
 } from "../../shared/constructLearning";
 import { AgentLogService } from "./AgentLogService";
-
-const CONSTRUCT_INTERACT_TIMEOUT_MS = 180_000;
-
-class ConstructInteractTimeoutError extends Error {
-  constructor(timeoutMs: number) {
-    super(`Construct Interact did not return within ${Math.round(timeoutMs / 1000)} seconds.`);
-    this.name = "ConstructInteractTimeoutError";
-  }
-}
 
 type ConstructInteractEvaluation = ConstructInteractResult & {
   actions: ConstructInteractAction[];
@@ -33,6 +31,8 @@ type ConstructInteractEvaluation = ConstructInteractResult & {
   session: ConstructInteractSession;
   learningState: Awaited<ReturnType<ConstructLearningStore["getState"]>>;
 };
+
+export type ConstructInteractSessionEventSink = (event: ConstructInteractSessionEvent) => void;
 
 export class ConstructInteractService {
   constructor(private readonly options: {
@@ -44,7 +44,8 @@ export class ConstructInteractService {
 
   async evaluate(
     project: StoredProject,
-    input: Omit<ConstructInteractRuntimeInput, "learningState">
+    input: Omit<ConstructInteractRuntimeInput, "learningState">,
+    onSessionEvent?: ConstructInteractSessionEventSink
   ): Promise<ConstructInteractEvaluation> {
     return this.options.observability?.traceAgentOperation(
       "construct.interact.evaluate",
@@ -54,42 +55,136 @@ export class ConstructInteractService {
         tapeSpec: project.program.spec ?? input.tapeSpec ?? "tape-0.1",
         runtime: "construct"
       },
-      () => this.runEvaluate(project, input)
-    ) ?? this.runEvaluate(project, input);
+      () => this.runEvaluate(project, input, onSessionEvent)
+    ) ?? this.runEvaluate(project, input, onSessionEvent);
   }
 
   private async runEvaluate(
     project: StoredProject,
-    input: Omit<ConstructInteractRuntimeInput, "learningState">
+    input: Omit<ConstructInteractRuntimeInput, "learningState">,
+    onSessionEvent?: ConstructInteractSessionEventSink
   ): Promise<ConstructInteractEvaluation> {
     const store = this.options.learningStore();
     const learningState = await store.getState();
-    const sourceStep = project.program.steps.find((step) => step.blocks.some((block) => block.id === input.blockId));
+    const sourceStepIndex = project.program.steps.findIndex((step) => step.blocks.some((block) => block.id === input.blockId));
+    const sourceStep = sourceStepIndex >= 0 ? project.program.steps[sourceStepIndex] : undefined;
     const sourceStepId = sourceStep?.id;
     const sourceRunId = randomUUID();
     const runStartedAt = Date.now();
     const agentEvents: ConstructAgentRunEvent[] = [];
     const tapeSpec = project.program.spec ?? input.tapeSpec ?? "tape-0.1";
     const canGenerateLiveSteps = supportsGeneratedLiveSteps(tapeSpec);
-    const { tools, toolCalls } = createConstructInteractTools({
+    const mode = input.mode ?? "lesson-check";
+    const threadId = input.threadId ?? (mode === "general" ? `general:${project.id}` : `${input.blockId}:lesson`);
+    const now = new Date().toISOString();
+    const session: ConstructInteractSession = {
+      id: randomUUID(),
+      threadId,
+      mode,
+      projectId: input.projectId,
+      blockId: input.blockId,
+      prompt: input.prompt,
+      answer: input.answer,
+      status: "continue",
+      confidence: "low",
+      reply: "",
+      coveredConceptIds: [],
+      missingConceptIds: [],
+      assistanceLevel: "none",
+      createdAt: now,
+      updatedAt: now,
+      runStatus: "running",
+      actions: [],
+      dynamicSteps: [],
+      dynamicStepValidation: [],
+      generatedLiveSteps: [],
+      liveStepValidation: [],
+      toolCalls: [],
+      agentEvents: [],
+      durationMs: 0
+    };
+    let publishQueue: Promise<void> = Promise.resolve();
+    let liveUpdateTimer: NodeJS.Timeout | undefined;
+    const queueSessionEvent = (
+      type: ConstructInteractSessionEvent["type"],
+      result?: ConstructInteractResult,
+      stateOverride?: Awaited<ReturnType<ConstructLearningStore["getState"]>>
+    ) => {
+      const snapshot = cloneSession(session);
+      if (type === "updated") {
+        onSessionEvent?.({
+          type,
+          runId: sourceRunId,
+          projectId: input.projectId,
+          blockId: input.blockId,
+          threadId,
+          session: snapshot,
+          result
+        });
+        return Promise.resolve();
+      }
+      publishQueue = publishQueue
+        .then(async () => {
+          const state = stateOverride ?? await store.upsertConstructInteractSession(snapshot);
+          onSessionEvent?.({
+            type,
+            runId: sourceRunId,
+            projectId: input.projectId,
+            blockId: input.blockId,
+            threadId,
+            session: snapshot,
+            result,
+            learningState: state
+          });
+        })
+        .catch((error) => {
+          this.logStructured("Interact session event failed", error instanceof Error
+            ? { name: error.name, message: error.message, stack: error.stack }
+            : { message: String(error) }, "warn");
+        });
+      return publishQueue;
+    };
+    const updateLiveSessionSnapshot = () => {
+      session.updatedAt = new Date().toISOString();
+      session.durationMs = Date.now() - runStartedAt;
+      session.toolCalls = [...(session.toolCalls ?? [])];
+      session.agentEvents = [...agentEvents];
+    };
+    const flushLiveSessionUpdate = () => {
+      if (liveUpdateTimer) {
+        clearTimeout(liveUpdateTimer);
+        liveUpdateTimer = undefined;
+      }
+      updateLiveSessionSnapshot();
+      void queueSessionEvent("updated");
+    };
+    const publishUpdatedSession = () => {
+      updateLiveSessionSnapshot();
+      if (liveUpdateTimer) {
+        return;
+      }
+      liveUpdateTimer = setTimeout(() => {
+        liveUpdateTimer = undefined;
+        updateLiveSessionSnapshot();
+        void queueSessionEvent("updated");
+      }, 50);
+    };
+    session.agentEvents = [...agentEvents];
+    const { tools, toolCalls, dynamicSteps, getAssessment } = createConstructInteractTools({
       project,
       request: input,
       learningState,
+      sourceBlockId: input.blockId,
+      sourceStepId,
+      sourceRunId,
       latestTerminalOutput: this.options.latestTerminalOutput(input.projectId),
+      onToolCallStart: (toolCall) => {
+        this.logStructured("Agent tool call started", toolCall, "debug");
+      },
       onToolCall: (toolCall) => {
-        const event: ConstructAgentRunEvent = {
-          id: toolCall.id,
-          type: "tool",
-          status: "completed",
-          title: toolCall.name,
-          detail: toolCall.reason,
-          toolName: toolCall.name,
-          input: toolCall.input,
-          outputPreview: toolCall.outputPreview,
-          createdAt: toolCall.createdAt
-        };
-        agentEvents.push(event);
-        this.logStructured("Agent tool call", event, "debug");
+        session.toolCalls = [...toolCalls];
+        publishUpdatedSession();
+        this.logStructured("Agent tool call", toolCall, "debug");
       }
     });
 
@@ -102,17 +197,49 @@ export class ConstructInteractService {
       learningState
     });
     console.log("[Construct Interact] evaluating", input.projectId, input.blockId);
-    this.logText(`Waiting for model response (timeout ${Math.round(CONSTRUCT_INTERACT_TIMEOUT_MS / 1000)}s)`, "debug");
+    this.logText("Waiting for model response", "debug");
+    await queueSessionEvent("started");
 
     let result: ConstructInteractResult;
+    let runError: unknown;
+    let streamedReply = "";
+    const abortController = new AbortController();
     try {
-      result = await this.withTimeout(runConstructInteract({
+      result = await runConstructInteract({
         ...input,
         tapeSpec,
         learningState
       }, (entry) => {
+        if (abortController.signal.aborted) {
+          return;
+        }
+        if (entry.responseText !== undefined) {
+          streamedReply = entry.responseText;
+          if (isLearnerFacingReply(streamedReply)) {
+            session.reply = streamedReply;
+          }
+          publishUpdatedSession();
+        }
         if (entry.event) {
-          agentEvents.push(entry.event);
+          const existingEventIndex = findMatchingAgentEventIndex(agentEvents, entry.event);
+          if (existingEventIndex >= 0) {
+            agentEvents.splice(existingEventIndex, 1, entry.event);
+          } else {
+            agentEvents.push(entry.event);
+          }
+          session.agentEvents = [...agentEvents];
+          publishUpdatedSession();
+        }
+        if (entry.partialObject) {
+          applyPartialResultToSession(session, entry.partialObject);
+          if (isLearnerFacingReply(streamedReply)) {
+            session.reply = streamedReply;
+          }
+          publishUpdatedSession();
+          return;
+        }
+        if (entry.responseText !== undefined && entry.payload === undefined && !entry.event && !entry.partialObject) {
+          return;
         }
         if (entry.payload !== undefined) {
           this.logStructured(entry.title, entry.event ? {
@@ -122,8 +249,10 @@ export class ConstructInteractService {
           return;
         }
         this.logText(`${entry.title}\n${entry.detail}`, entry.level ?? "debug");
-      }, tools));
+      }, tools, { abortSignal: abortController.signal });
     } catch (error) {
+      runError = error;
+      abortController.abort();
       this.logStructured("Interaction recovery fallback", {
         error: error instanceof Error
           ? {
@@ -132,10 +261,28 @@ export class ConstructInteractService {
               stack: error.stack
             }
           : { message: String(error) },
-        timeoutMs: CONSTRUCT_INTERACT_TIMEOUT_MS,
         blockId: input.blockId
       }, "warn");
       result = this.buildRecoveryResult(input, error);
+    }
+    flushLiveSessionUpdate();
+    await publishQueue;
+    result.dynamicSteps = dynamicSteps;
+    result.reply = runError
+      ? result.reply
+      : selectLearnerFacingReply(result, streamedReply);
+    const assessment = runError ? undefined : getAssessment();
+    if (assessment) {
+      result.assessment = assessment;
+      result.status = assessment.status;
+      result.confidence = assessment.confidence;
+      result.coveredConceptIds = assessment.coveredConceptIds;
+      result.missingConceptIds = assessment.missingConceptIds;
+      result.assistanceLevel = assessment.assistanceLevel;
+      result.shouldAdvance = assessment.shouldAdvance;
+    }
+    if (runError || mode === "general") {
+      result.shouldAdvance = false;
     }
 
     const validationContext = {
@@ -148,46 +295,55 @@ export class ConstructInteractService {
         .map((concept) => typeof concept === "object" && concept !== null ? String((concept as { id?: unknown }).id ?? "") : "")
         .filter(Boolean))
     };
-    const requestedLiveSteps = result.generatedLiveSteps ?? [];
+    const requestedLiveSteps = dynamicSteps;
     if (!canGenerateLiveSteps && requestedLiveSteps.length > 0) {
-      this.logText(`Ignoring ${requestedLiveSteps.length} generated live step draft(s): ${tapeSpec} does not support generated live steps.`, "warn");
+      this.logText(`Ignoring ${requestedLiveSteps.length} Dynamic Step draft(s): ${tapeSpec} does not support Dynamic Steps.`, "warn");
     }
     const liveStepValidation = validateGeneratedLiveStepDrafts(
       canGenerateLiveSteps ? requestedLiveSteps : [],
       validationContext
     );
     const acceptedLiveSteps = liveStepValidation.steps;
-    const actions = this.normalizeActions(result.actions ?? [], acceptedLiveSteps.map((step) => step.id), liveStepValidation.validation);
-    this.logText(`Interaction result: ${result.status} (confidence=${result.confidence}, reply=${result.reply?.slice(0, 80) ?? "none"}...)`);
+    let actions = this.normalizeActions(result.actions ?? [], acceptedLiveSteps.map((step) => step.id), liveStepValidation.validation);
+    if (runError) {
+      actions = [];
+    } else if (result.requestedOutcome === "create-dynamic-steps" && acceptedLiveSteps.length === 0) {
+      result.shouldAdvance = false;
+      actions = actions.filter((action) => action.type !== "go-to-step");
+    }
+    this.logText(`Interaction result: ${assessment ? `${result.status} assessment, ` : ""}reply=${result.reply?.slice(0, 80) ?? "none"}...`);
     this.logStructured("Interaction result payload", {
       ...result,
       actions,
       toolCalls,
-      generatedLiveSteps: acceptedLiveSteps,
-      liveStepValidation: liveStepValidation.validation
+      dynamicSteps: acceptedLiveSteps,
+      dynamicStepValidation: liveStepValidation.validation
     });
 
-    const now = new Date().toISOString();
-    const session: ConstructInteractSession = {
-      id: randomUUID(),
-      projectId: input.projectId,
-      blockId: input.blockId,
-      prompt: input.prompt,
-      answer: input.answer,
-      status: result.status,
-      confidence: result.confidence,
-      reply: result.reply,
-      coveredConceptIds: result.coveredConceptIds,
-      missingConceptIds: result.missingConceptIds,
-      assistanceLevel: result.assistanceLevel,
-      createdAt: now,
-      toolCalls,
-      agentEvents,
-      durationMs: Date.now() - runStartedAt
-    };
+    session.status = result.status;
+    session.confidence = result.confidence;
+    session.reply = result.reply;
+    session.coveredConceptIds = result.coveredConceptIds;
+    session.missingConceptIds = result.missingConceptIds;
+    session.assistanceLevel = result.assistanceLevel;
+    session.assessment = assessment;
+    session.updatedAt = new Date().toISOString();
+    session.runStatus = runError ? "error" : "completed";
+    session.errorMessage = runError instanceof Error ? errorMessageForSession(runError) : undefined;
+    session.actions = actions;
+    session.generatedLiveSteps = acceptedLiveSteps;
+    session.liveStepValidation = liveStepValidation.validation;
+    session.dynamicSteps = acceptedLiveSteps;
+    session.dynamicStepValidation = liveStepValidation.validation;
+    session.toolCalls = [...toolCalls];
+    session.agentEvents = [...agentEvents];
+    session.durationMs = Date.now() - runStartedAt;
 
     if (result.statePatch) {
       await store.applyPatch(result.statePatch);
+    }
+    if (assessment) {
+      await store.applyPatch(assessmentToLearningStatePatch(assessment, input.projectId));
     }
     let state = await store.recordConstructInteractAttempt(session);
     if (acceptedLiveSteps.length > 0 || actions.length > 0 || toolCalls.length > 0 || liveStepValidation.validation.length > 0) {
@@ -209,34 +365,31 @@ export class ConstructInteractService {
         }
       });
     }
-    console.log("[Construct Interact] result", result.status, result.confidence, result.shouldAdvance ? "advance" : "stay");
+    console.log("[Construct Interact] result", assessment ? result.status : "unassessed", result.shouldAdvance ? "advance" : "stay");
+    await queueSessionEvent(runError ? "error" : "completed", {
+      ...result,
+      actions,
+      toolCalls,
+      agentEvents,
+      durationMs: session.durationMs,
+      generatedLiveSteps: acceptedLiveSteps,
+      liveStepValidation: liveStepValidation.validation,
+      dynamicSteps: acceptedLiveSteps,
+      dynamicStepValidation: liveStepValidation.validation
+    }, state);
     return {
       ...result,
       actions,
       toolCalls,
       agentEvents,
-      durationMs: Date.now() - runStartedAt,
+      durationMs: session.durationMs,
       generatedLiveSteps: acceptedLiveSteps,
       liveStepValidation: liveStepValidation.validation,
+      dynamicSteps: acceptedLiveSteps,
+      dynamicStepValidation: liveStepValidation.validation,
       session,
       learningState: state
     };
-  }
-
-  private async withTimeout<T>(promise: Promise<T>, timeoutMs = CONSTRUCT_INTERACT_TIMEOUT_MS): Promise<T> {
-    let timeoutId: NodeJS.Timeout | undefined;
-    try {
-      return await Promise.race([
-        promise,
-        new Promise<T>((_resolve, reject) => {
-          timeoutId = setTimeout(() => reject(new ConstructInteractTimeoutError(timeoutMs)), timeoutMs);
-        })
-      ]);
-    } finally {
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
-    }
   }
 
   private buildRecoveryResult(
@@ -249,22 +402,16 @@ export class ConstructInteractService {
     const isProviderProblem =
       /json|timeout|timed out|response|api|invalid|parse|structure|user not found|unauthorized|forbidden|api.key|401|403|quota|rate.limit|billing/i.test(combined);
     const providerProblem = isProviderProblem
-      ? "The AI model call did not finish cleanly"
-      : "Construct Interact hit a runtime error";
-
-    const assessmentClue = input.assessment
-      ? input.assessment.split("\n").find(Boolean) ?? input.assessment
-      : null;
+        ? "Construct Interact could not finish the agent run cleanly"
+        : "Construct Interact hit a runtime error";
 
     return {
       status: "almost",
       confidence: "low",
       reply: [
-        `${providerProblem}, so I am not going to leave this block stuck.`,
+        `${providerProblem}.`,
         "",
-        "Try rephrasing your answer and submitting again. If this keeps happening, check your API key in Settings.",
-        "",
-        assessmentClue ? `Hint: ${assessmentClue}` : null
+        "The work completed before the provider error is shown above. Retry the same request after checking the model connection."
       ].filter(Boolean).join("\n"),
       coveredConceptIds: [],
       missingConceptIds: input.resources?.concepts ?? [],
@@ -281,7 +428,7 @@ export class ConstructInteractService {
     validation: GeneratedLiveStepValidationRecord[]
   ): ConstructInteractAction[] {
     const normalized = actions.filter((action) => {
-      if (action.type !== "create-live-steps") {
+      if (action.type !== "create-live-steps" && action.type !== "open-dynamic-steps") {
         return true;
       }
       return action.stepIds.some((stepId) => acceptedLiveStepIds.includes(stepId));
@@ -289,17 +436,17 @@ export class ConstructInteractService {
 
     if (
       acceptedLiveStepIds.length > 0 &&
-      !normalized.some((action) => action.type === "create-live-steps")
+      !normalized.some((action) => action.type === "create-live-steps" || action.type === "open-dynamic-steps")
     ) {
       normalized.push({
-        type: "create-live-steps",
+        type: "open-dynamic-steps",
         stepIds: acceptedLiveStepIds,
-        label: acceptedLiveStepIds.length === 1 ? "Review generated live step" : "Review generated live steps",
-        reason: validation.find((record) => record.status === "accepted")?.reason ?? "Construct Interact generated focused live practice."
+        label: acceptedLiveStepIds.length === 1 ? "Review Dynamic Step" : "Review Dynamic Steps",
+        reason: validation.find((record) => record.status === "accepted")?.reason ?? "A compiler-validated Dynamic Step is ready."
       });
     }
 
-    return normalized.slice(0, 4);
+    return normalized.slice(0, 6);
   }
 
   private logText(message: string, level: "debug" | "info" | "warn" | "error" = "info"): void {
@@ -313,4 +460,96 @@ export class ConstructInteractService {
   ): void {
     this.options.logs.structured("interact", title, payload, level);
   }
+}
+
+function cloneSession(session: ConstructInteractSession): ConstructInteractSession {
+  return {
+    ...session,
+    coveredConceptIds: [...session.coveredConceptIds],
+    missingConceptIds: [...session.missingConceptIds],
+    actions: session.actions ? [...session.actions] : undefined,
+    dynamicSteps: session.dynamicSteps ? [...session.dynamicSteps] : undefined,
+    dynamicStepValidation: session.dynamicStepValidation ? [...session.dynamicStepValidation] : undefined,
+    generatedLiveSteps: session.generatedLiveSteps ? [...session.generatedLiveSteps] : undefined,
+    liveStepValidation: session.liveStepValidation ? [...session.liveStepValidation] : undefined,
+    toolCalls: session.toolCalls ? [...session.toolCalls] : undefined,
+    agentEvents: session.agentEvents ? [...session.agentEvents] : undefined
+  };
+}
+
+function errorMessageForSession(error: Error): string {
+  return error.message;
+}
+
+function applyPartialResultToSession(
+  session: ConstructInteractSession,
+  partial: Partial<ConstructInteractResult>
+): void {
+  if (typeof partial.reply === "string" && isLearnerFacingReply(partial.reply)) {
+    session.reply = partial.reply;
+  }
+  if (Array.isArray(partial.actions)) {
+    session.actions = partial.actions;
+  }
+}
+
+function findMatchingAgentEventIndex(
+  events: ConstructAgentRunEvent[],
+  nextEvent: ConstructAgentRunEvent
+): number {
+  const sameIdIndex = events.findIndex((event) => event.id === nextEvent.id);
+  if (sameIdIndex >= 0) {
+    return sameIdIndex;
+  }
+  if (nextEvent.type !== "tool" || !nextEvent.toolName) {
+    return -1;
+  }
+  return events.findIndex((event) => (
+    event.type === "tool" &&
+    event.toolName === nextEvent.toolName &&
+    event.status === "running" &&
+    !event.outputPreview
+  ));
+}
+
+function assessmentToLearningStatePatch(
+  assessment: ConstructInteractAssessment,
+  projectId: string
+): LearningStatePatch {
+  const at = new Date().toISOString();
+  const coveredConfidence = assessment.status === "pass"
+    ? "strong"
+    : assessment.confidence === "high"
+      ? "emerging"
+      : "weak";
+  const globalConceptUnderstanding = Object.fromEntries([
+    ...assessment.coveredConceptIds.map((conceptId) => [conceptId, {
+      conceptId,
+      confidence: coveredConfidence,
+      lastEvidenceAt: at,
+      notes: assessment.reason,
+      projectIds: [projectId]
+    }]),
+    ...assessment.missingConceptIds.map((conceptId) => [conceptId, {
+      conceptId,
+      confidence: "weak" as const,
+      lastEvidenceAt: at,
+      notes: assessment.reason,
+      projectIds: [projectId]
+    }])
+  ]);
+  return {
+    globalConceptUnderstanding,
+    projectConceptUnderstanding: {
+      [projectId]: globalConceptUnderstanding
+    },
+    assistanceEvent: assessment.assistanceLevel === "none" ? undefined : {
+      id: randomUUID(),
+      projectId,
+      kind: "interact",
+      conceptIds: [...new Set([...assessment.coveredConceptIds, ...assessment.missingConceptIds])],
+      detail: assessment.reason,
+      createdAt: at
+    }
+  };
 }

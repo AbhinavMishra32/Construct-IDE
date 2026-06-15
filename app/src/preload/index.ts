@@ -50,6 +50,10 @@ contextBridge.exposeInMainWorld("constructProjects", {
   openProject: (id: string) => ipcRenderer.invoke("construct:project:open", id),
   updateProject: (input: unknown) =>
     ipcRenderer.invoke("construct:project:update", input),
+  readProjectTape: (projectId: string) =>
+    ipcRenderer.invoke("construct:project:read-tape", projectId),
+  updateProjectTape: (input: unknown) =>
+    ipcRenderer.invoke("construct:project:update-tape", input),
   listFiles: (projectId: string) =>
     ipcRenderer.invoke("construct:project:list-files", projectId),
   readFile: (input: unknown) => ipcRenderer.invoke("construct:project:read-file", input),
@@ -62,6 +66,11 @@ contextBridge.exposeInMainWorld("constructProjects", {
     ipcRenderer.invoke("construct:project:verify-recall", input),
   runConstructInteract: (input: unknown) =>
     ipcRenderer.invoke("construct:project:interact", input),
+  onConstructInteractSessionEvent: (callback: (event: unknown) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
+    ipcRenderer.on("construct:project:interact-session-event", listener);
+    return () => ipcRenderer.off("construct:project:interact-session-event", listener);
+  },
   reviewConstructAuthoring: (input: unknown) =>
     ipcRenderer.invoke("construct:project:review-authoring", input),
   explainSelection: (input: unknown) =>

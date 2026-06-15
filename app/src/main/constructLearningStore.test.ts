@@ -109,6 +109,59 @@ describe("ConstructLearningStore", () => {
     assert.equal(session?.agentEvents?.[0]?.outputPreview, "Step text");
   });
 
+  it("upserts live Construct Interact sessions without duplicating a run", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "construct-learning-interact-upsert-"));
+    const store = new ConstructLearningStore(path.join(dir, "learning-state.json"));
+
+    await store.upsertConstructInteractSession({
+      id: "session-live",
+      threadId: "lesson:interact-1",
+      mode: "lesson-check",
+      projectId: "project-a",
+      blockId: "interact-1",
+      prompt: "Explain the boundary.",
+      answer: "It stores state.",
+      status: "continue",
+      confidence: "low",
+      reply: "",
+      coveredConceptIds: [],
+      missingConceptIds: [],
+      assistanceLevel: "none",
+      createdAt: "2026-06-15T00:00:00.000Z",
+      updatedAt: "2026-06-15T00:00:00.000Z",
+      runStatus: "running",
+      toolCalls: [],
+      agentEvents: []
+    });
+
+    await store.recordConstructInteractAttempt({
+      id: "session-live",
+      threadId: "lesson:interact-1",
+      mode: "lesson-check",
+      projectId: "project-a",
+      blockId: "interact-1",
+      prompt: "Explain the boundary.",
+      answer: "It stores state.",
+      status: "pass",
+      confidence: "high",
+      reply: "Exactly: the session state is the canonical source.",
+      coveredConceptIds: ["session.state"],
+      missingConceptIds: [],
+      assistanceLevel: "none",
+      createdAt: "2026-06-15T00:00:00.000Z",
+      updatedAt: "2026-06-15T00:00:02.000Z",
+      runStatus: "completed",
+      toolCalls: [],
+      agentEvents: []
+    });
+
+    const sessions = (await store.getState()).projects["project-a"]?.constructInteractSessions ?? [];
+    assert.equal(sessions.length, 1);
+    assert.equal(sessions[0]?.status, "pass");
+    assert.equal(sessions[0]?.runStatus, "completed");
+    assert.equal(sessions[0]?.reply, "Exactly: the session state is the canonical source.");
+  });
+
   it("persists generated live steps and status changes without mutating authored tape source", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "construct-learning-live-"));
     const store = new ConstructLearningStore(path.join(dir, "learning-state.json"));

@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img alt="Release" src="https://img.shields.io/badge/version-0.2.0-111111?style=flat-square">
+  <img alt="Release" src="https://img.shields.io/badge/version-0.2.1-111111?style=flat-square">
   <img alt="Platforms" src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-111111?style=flat-square">
   <img alt="Tape" src="https://img.shields.io/badge/tape-0.1%20through%200.4.2-cb9b2d?style=flat-square">
   <img alt="Desktop" src="https://img.shields.io/badge/desktop-Electron-47848f?style=flat-square&logo=electron&logoColor=white">
@@ -18,7 +18,7 @@
 
 <p align="center">
   <a href="https://tryconstruct.cc">Website</a> ·
-  <a href="https://github.com/AbhinavMishra32/Construct-IDE/releases/latest">Download Construct 0.2.0</a> ·
+  <a href="https://github.com/AbhinavMishra32/Construct-IDE/releases/latest">Download Construct 0.2.1</a> ·
   <a href="docs/tape-changelog.md">Tape changelog</a>
 </p>
 
@@ -62,7 +62,7 @@ Tapes are plain-text `.construct` programs. They describe the workspace and lear
 
 ## Tape compatibility
 
-Construct `0.2.0` supports every tape revision from `tape-0.1` through `tape-0.4.2`.
+Construct `0.2.1` supports every tape revision from `tape-0.1` through `tape-0.4.2`.
 
 | Revision | Adds |
 | --- | --- |

@@ -2,6 +2,43 @@
 @import "tw-animate-css";
 @source "../../../opaline/packages/ui/src";
 
+@keyframes opaline-agent-thinking-shimmer {
+  from { background-position: 100% center; }
+  to { background-position: 0% center; }
+}
+
+.opaline-agent-thinking-shimmer {
+  display: inline-flex;
+  background-image: linear-gradient(90deg, var(--muted-foreground) 0%, var(--muted-foreground) 40%, var(--foreground) 50%, var(--muted-foreground) 60%, var(--muted-foreground) 100%);
+  background-size: 250% 100%;
+  background-clip: text;
+  color: transparent;
+  animation: opaline-agent-thinking-shimmer 1.2s linear infinite;
+}
+
+@keyframes construct-interact-streaming-caret {
+  0%, 45% { opacity: 1; transform: scaleY(1); }
+  55%, 100% { opacity: 0.18; transform: scaleY(0.72); }
+}
+
+.construct-interact-streaming-reply > div > p:last-child::after,
+.construct-interact-streaming-reply > div > h1:last-child::after,
+.construct-interact-streaming-reply > div > h2:last-child::after,
+.construct-interact-streaming-reply > div > h3:last-child::after,
+.construct-interact-streaming-reply > div > ul:last-child li:last-child::after,
+.construct-interact-streaming-reply > div > ol:last-child li:last-child::after {
+  content: "";
+  display: inline-block;
+  width: 0.12rem;
+  height: 0.95em;
+  margin-left: 0.25rem;
+  border-radius: 999px;
+  background: currentColor;
+  vertical-align: -0.08em;
+  transform-origin: center;
+  animation: construct-interact-streaming-caret 0.9s ease-in-out infinite;
+}
+
 html, body, #root {
   height: 100%;
   margin: 0;

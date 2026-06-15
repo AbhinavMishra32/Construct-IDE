@@ -85,7 +85,13 @@ export function LearningContextSurface() {
 
         <LearningPanel title="Construct Interact" meta={`${sessions.length} sessions`}>
           {sessions.slice(-8).reverse().map((session) => (
-            <LearningRow key={session.id} title={session.prompt} meta={`${session.status} · ${session.confidence} · ${session.assistanceLevel}`} />
+            <LearningRow
+              key={session.id}
+              title={session.prompt}
+              meta={session.assessment
+                ? `${session.assessment.status} · ${session.assessment.confidence} · ${session.assessment.assistanceLevel}`
+                : session.runStatus ?? "completed"}
+            />
           ))}
           {sessions.length === 0 ? <p>No Construct Interact sessions yet.</p> : null}
         </LearningPanel>

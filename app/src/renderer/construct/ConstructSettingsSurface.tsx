@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useDeferredValue, useEffect, useState } from "react";
 import { PanelRight } from "lucide-react";
-import { Folder, GearSix, Notebook, TerminalWindow, Trash } from "@phosphor-icons/react";
+import { FileCode, Folder, GearSix, Notebook, TerminalWindow, Trash } from "@phosphor-icons/react";
 import {
   Alert,
   AlertDescription,
@@ -29,6 +29,7 @@ import type { SettingsNavSection } from "@opaline/ui";
 
 import { ConstructAiSettingsSection } from "./components/settings/ConstructAiSettingsSection";
 import { ConstructLspSettingsPanel } from "./components/settings/ConstructLspSettingsPanel";
+import { validateConstructSource } from "./compiler/pipeline";
 import {
   aggregateLspStatus,
   createEmptyLspStatusReport,
@@ -42,14 +43,18 @@ import {
   deleteProject,
   getSettings,
   listAiFeatures,
+  listProjects,
   listModels,
   onAgentLog,
   selectWorkspaceDirectory,
   setThemeSource,
   setWorkspaceRoot,
   updateAiSettings,
-  updateProject
+  updateProject,
+  readProjectTape,
+  updateProjectTape
 } from "./lib/bridge";
+import { parseConstructSource } from "./lib/parser";
 import type {
   AiFeatureSettings,
   AiSettings,
@@ -104,6 +109,15 @@ export function ConstructSettingsSurface({
   const [deleteCheck, setDeleteCheck] = useState<DeleteProjectCheck | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [tapeEditorOpen, setTapeEditorOpen] = useState(false);
+  const [tapeSource, setTapeSource] = useState("");
+  const [tapeSourcePath, setTapeSourcePath] = useState<string | null>(null);
+  const [tapeLoaded, setTapeLoaded] = useState(false);
+  const [tapeBusy, setTapeBusy] = useState(false);
+  const [tapeError, setTapeError] = useState<string | null>(null);
+  const deferredTapeSource = useDeferredValue(tapeSource);
+  const tapeValidation = tapeLoaded ? validateConstructSource(deferredTapeSource) : null;
+  const tapeErrors = tapeValidation?.diagnostics.filter((diagnostic) => diagnostic.severity === "error") ?? [];
 
   const [lspEnabled, setLspEnabled] = useState(() => {
     return window.localStorage.getItem("construct.lsp.enabled") !== "false";
@@ -448,6 +462,65 @@ export function ConstructSettingsSurface({
     }
   }
 
+  async function openTapeEditor() {
+    if (!projectId) return;
+    setTapeEditorOpen(true);
+    setTapeBusy(true);
+    setTapeError(null);
+    setTapeLoaded(false);
+    try {
+      const tape = await readProjectTape(projectId);
+      setTapeSource(tape.source);
+      setTapeSourcePath(tape.sourcePath);
+      setTapeLoaded(true);
+    } catch (caught) {
+      setTapeError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setTapeBusy(false);
+    }
+  }
+
+  async function saveTapeSource() {
+    if (!projectId) return;
+    const validation = validateConstructSource(tapeSource);
+    if (!validation.valid) {
+      setTapeError("Fix the tape errors before saving.");
+      return;
+    }
+
+    try {
+      setTapeBusy(true);
+      setTapeError(null);
+      const program = parseConstructSource(validation.source);
+      const updated = await updateProjectTape({
+        projectId,
+        source: validation.source,
+        originalSource: tapeSource,
+        authoringFixes: validation.appliedFixes.map((fix) => ({
+          id: fix.id,
+          title: fix.title,
+          description: fix.description,
+          kind: fix.kind,
+          safety: fix.safety,
+          line: fix.line,
+          appliedAt: fix.appliedAt
+        })),
+        program
+      });
+      setTapeSource(validation.source);
+      onActiveProjectChange((current) => current?.id === updated.id ? updated : current);
+      onProjectsChange(await listProjects());
+      setProjectTitle(updated.title);
+      setProjectDescription(updated.description);
+      setTapeEditorOpen(false);
+      setTapeLoaded(false);
+    } catch (caught) {
+      setTapeError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setTapeBusy(false);
+    }
+  }
+
   if (activeItemId === "appearance") {
     return (
       <SettingsPanel title="Appearance" subtitle="Theme source for Construct and the embedded editor shell.">
@@ -567,6 +640,27 @@ export function ConstructSettingsSurface({
           </SettingsSection>
         ) : null}
 
+        {activeItemId === "project-advanced" ? (
+          <SettingsSection title="Advanced">
+            <SettingsCard>
+              <SettingsRow
+                title="Tape source"
+                description={project.sourcePath ?? "Managed inside this Construct project"}
+                control={
+                  <Button size="small" variant="secondary" onClick={() => void openTapeEditor()}>
+                    <FileCode size={14} weight="duotone" style={{ marginRight: 4 }} />
+                    Edit tape
+                  </Button>
+                }
+              />
+              <SettingsRow
+                title="What saving changes"
+                description="Validates the tape, reloads the active project structure, updates the managed tape artifact, and writes the imported .construct file when present. Existing workspace edits are preserved."
+              />
+            </SettingsCard>
+          </SettingsSection>
+        ) : null}
+
         {error ? <Alert variant="destructive"><AlertTitle>Project settings error</AlertTitle><AlertDescription>{error}</AlertDescription></Alert> : null}
         {deleteError ? <Alert variant="destructive"><AlertTitle>Could not delete project</AlertTitle><AlertDescription>{deleteError}</AlertDescription></Alert> : null}
 
@@ -621,6 +715,75 @@ export function ConstructSettingsSurface({
               </Button>
               <Button variant="danger" size="small" onClick={() => void handleConfirmDelete()} disabled={deleting}>
                 {deleting ? "Deleting..." : "Delete project"}
+              </Button>
+            </ShadcnDialogFooter>
+          </ShadcnDialogContent>
+        </ShadcnDialog>
+
+        <ShadcnDialog
+          open={tapeEditorOpen}
+          onOpenChange={(open) => {
+            setTapeEditorOpen(open);
+            if (!open) {
+              setTapeLoaded(false);
+              setTapeError(null);
+            }
+          }}
+        >
+          <ShadcnDialogContent className="flex max-h-[88vh] flex-col sm:max-w-4xl">
+            <ShadcnDialogHeader>
+              <div className="mb-1 flex size-9 items-center justify-center rounded-md bg-muted text-foreground"><FileCode size={20} weight="duotone" /></div>
+              <ShadcnDialogTitle>Edit project tape</ShadcnDialogTitle>
+              <ShadcnDialogDescription>{tapeSourcePath ?? "Managed project tape"}</ShadcnDialogDescription>
+            </ShadcnDialogHeader>
+
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto py-2">
+              {tapeBusy && !tapeLoaded ? (
+                <div className="animate-pulse rounded-md border bg-muted/25 p-4 text-sm text-muted-foreground">Loading tape source...</div>
+              ) : (
+                <Textarea
+                  aria-label="Project tape source"
+                  className="min-h-[26rem] resize-y font-mono text-xs leading-5"
+                  value={tapeSource}
+                  onChange={(event) => {
+                    setTapeSource(event.target.value);
+                    setTapeError(null);
+                  }}
+                  spellCheck={false}
+                />
+              )}
+
+              {tapeLoaded && tapeValidation ? (
+                tapeValidation.valid ? (
+                  <Alert>
+                    <AlertTitle>Valid tape</AlertTitle>
+                    <AlertDescription>
+                      {tapeValidation.appliedFixes.length > 0
+                        ? `${tapeValidation.appliedFixes.length} safe repair${tapeValidation.appliedFixes.length === 1 ? "" : "s"} will be applied when saved.`
+                        : "The tape is ready to save."}
+                    </AlertDescription>
+                  </Alert>
+                ) : (
+                  <Alert variant="destructive">
+                    <AlertTitle>{tapeErrors.length} tape error{tapeErrors.length === 1 ? "" : "s"}</AlertTitle>
+                    <AlertDescription>
+                      <ul className="list-disc space-y-1 pl-5">
+                        {tapeErrors.slice(0, 6).map((diagnostic) => (
+                          <li key={`${diagnostic.id}:${diagnostic.line}`}>Line {diagnostic.line}: {diagnostic.message}</li>
+                        ))}
+                      </ul>
+                    </AlertDescription>
+                  </Alert>
+                )
+              ) : null}
+
+              {tapeError ? <Alert variant="destructive"><AlertTitle>Could not save tape</AlertTitle><AlertDescription>{tapeError}</AlertDescription></Alert> : null}
+            </div>
+
+            <ShadcnDialogFooter>
+              <Button variant="secondary" onClick={() => setTapeEditorOpen(false)}>Cancel</Button>
+              <Button disabled={tapeBusy || !tapeLoaded || !tapeValidation?.valid} onClick={() => void saveTapeSource()}>
+                {tapeBusy ? "Saving..." : "Save and reload tape"}
               </Button>
             </ShadcnDialogFooter>
           </ShadcnDialogContent>
@@ -716,6 +879,11 @@ export function buildSettingsSections(projects: ProjectSummary[], projectId?: st
           label: "Slots",
           icon: <PanelRight size={18} />,
           badge: `${project.progress}%`
+        },
+        {
+          id: "project-advanced",
+          label: "Advanced",
+          icon: <GearSix size={18} weight="duotone" />
         }
       ]
     });

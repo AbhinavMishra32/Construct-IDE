@@ -119,6 +119,14 @@ export function updateProject(input: Parameters<ConstructProjectsApi["updateProj
   return api().updateProject(input);
 }
 
+export function readProjectTape(projectId: string): ReturnType<ConstructProjectsApi["readProjectTape"]> {
+  return api().readProjectTape(projectId);
+}
+
+export function updateProjectTape(input: Parameters<ConstructProjectsApi["updateProjectTape"]>[0]): ReturnType<ConstructProjectsApi["updateProjectTape"]> {
+  return api().updateProjectTape(input);
+}
+
 export function listFiles(projectId: string): Promise<WorkspaceTreeNode[]> {
   return api().listFiles(projectId);
 }
@@ -181,6 +189,10 @@ export function verifyRecall(input: {
 
 export function runConstructInteract(input: Parameters<ConstructProjectsApi["runConstructInteract"]>[0]): Promise<ConstructInteractClientResult> {
   return api().runConstructInteract(input);
+}
+
+export function onConstructInteractSessionEvent(callback: Parameters<ConstructProjectsApi["onConstructInteractSessionEvent"]>[0]): () => void {
+  return api().onConstructInteractSessionEvent(callback);
 }
 
 export function reviewConstructAuthoring(input: Parameters<ConstructProjectsApi["reviewConstructAuthoring"]>[0]): ReturnType<ConstructProjectsApi["reviewConstructAuthoring"]> {

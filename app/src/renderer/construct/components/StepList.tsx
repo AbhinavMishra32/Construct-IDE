@@ -3,7 +3,7 @@ import { Badge, Button, Timeline, type TimelineItem } from "@opaline/ui";
 
 import { blockLabel } from "../lib/runtime";
 import type { ProjectRecord } from "../types";
-import type { GeneratedLiveStep } from "../../../shared/constructLearning";
+import type { DynamicStep } from "../../../shared/constructLearning";
 
 export function StepList({
   project,
@@ -15,7 +15,7 @@ export function StepList({
 }: {
   project: ProjectRecord;
   onSelectStep?: (stepIndex: number) => void;
-  generatedLiveSteps?: GeneratedLiveStep[];
+  generatedLiveSteps?: DynamicStep[];
   activeLiveStepId?: string | null;
   onSelectLiveStep?: (stepId: string) => void;
   furthestUnlockedStepIndex: number;
@@ -43,7 +43,7 @@ export function StepList({
             {liveStep.title}
           </Button>
         ),
-        meta: <Badge variant="secondary">Generated Live</Badge>,
+        meta: <Badge variant="secondary">Dynamic</Badge>,
         description: liveStep.reason,
         status: isCompleted ? "completed" : isActive ? "active" : "warning",
         icon: isCompleted ? <CheckCircle weight="fill" /> : <Lightning weight="duotone" />,
@@ -96,13 +96,13 @@ export function StepList({
   return <Timeline className="h-full overflow-y-auto" density="compact" items={items} />;
 }
 
-function mergeStaticAndLiveSteps(project: ProjectRecord, generatedLiveSteps: GeneratedLiveStep[]) {
+function mergeStaticAndLiveSteps(project: ProjectRecord, generatedLiveSteps: DynamicStep[]) {
   const items: Array<
     | { kind: "static"; step: ProjectRecord["program"]["steps"][number]; stepIndex: number }
-    | { kind: "live"; step: GeneratedLiveStep }
+    | { kind: "live"; step: DynamicStep }
   > = [];
-  const liveByAfter = new Map<string, GeneratedLiveStep[]>();
-  const liveByBefore = new Map<string, GeneratedLiveStep[]>();
+  const liveByAfter = new Map<string, DynamicStep[]>();
+  const liveByBefore = new Map<string, DynamicStep[]>();
 
   for (const liveStep of generatedLiveSteps) {
     if (liveStep.status === "dismissed") continue;
@@ -137,13 +137,23 @@ function mergeStaticAndLiveSteps(project: ProjectRecord, generatedLiveSteps: Gen
   return items;
 }
 
-function liveBlockLabel(kind: GeneratedLiveStep["blocks"][number]["kind"]): string {
+function liveBlockLabel(kind: DynamicStep["blocks"][number]["kind"]): string {
   switch (kind) {
     case "explain":
       return "Explain";
+    case "guide":
+      return "Guide";
     case "interact":
-      return "Construct Interact";
+      return "Interact";
+    case "edit":
+      return "Edit";
     case "recall":
-      return "Reply Recall";
+      return "Recall";
+    case "run":
+      return "Run";
+    case "expect":
+      return "Expect";
+    case "checkpoint":
+      return "Checkpoint";
   }
 }

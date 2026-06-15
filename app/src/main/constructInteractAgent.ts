@@ -4,33 +4,13 @@ import { createConstructAgentRuntime, type ConstructAgentTools, type ConstructAg
 import type {
   ConstructInteractAction,
   ConstructInteractResult,
-  ConstructInteractRuntimeInput,
-  GeneratedLiveStepDraft,
-  LearningStatePatch
+  ConstructInteractRuntimeInput
 } from "../shared/constructLearning";
 import { supportsConstructInteract, supportsGeneratedLiveSteps, supportsToolDrivenInteract } from "../shared/tapeFeatures";
+import { isCompleteLearnerFacingReply } from "./constructInteractReply";
 
 export const CONSTRUCT_INTERACT_AGENT_ID = "construct-interact-agent";
 export const CONSTRUCT_INTERACT_AGENT_NAME = "Construct Interact";
-
-const LearningStatePatchSchema: z.ZodType<LearningStatePatch> = z.object({
-  globalConceptUnderstanding: z.record(z.object({
-    conceptId: z.string().min(1),
-    confidence: z.enum(["unknown", "weak", "emerging", "strong"]).optional(),
-    lastEvidenceAt: z.string().optional(),
-    notes: z.string().optional(),
-    projectIds: z.array(z.string()).optional()
-  })).optional(),
-  projectConceptUnderstanding: z.record(z.record(z.object({
-    conceptId: z.string().min(1),
-    confidence: z.enum(["unknown", "weak", "emerging", "strong"]).optional(),
-    lastEvidenceAt: z.string().optional(),
-    notes: z.string().optional(),
-    projectIds: z.array(z.string()).optional()
-  }))).optional(),
-  assistanceEvent: z.any().optional(),
-  plannedOverlay: z.any().optional()
-}).passthrough();
 
 const ConstructInteractActionSchema: z.ZodType<ConstructInteractAction> = z.discriminatedUnion("type", [
   z.object({
@@ -53,69 +33,66 @@ const ConstructInteractActionSchema: z.ZodType<ConstructInteractAction> = z.disc
     reason: z.string().min(1)
   }),
   z.object({
-    type: z.literal("create-live-steps"),
-    stepIds: z.array(z.string().min(1)).max(3),
+    type: z.literal("focus-code"),
+    path: z.string().min(1),
+    line: z.number().int().positive().optional(),
+    endLine: z.number().int().positive().optional(),
+    anchor: z.string().optional(),
     label: z.string().min(1),
     reason: z.string().min(1)
-  })
+  }),
+  z.object({
+    type: z.literal("focus-terminal"),
+    label: z.string().min(1),
+    reason: z.string().min(1)
+  }),
+  z.object({
+    type: z.literal("run-terminal-command"),
+    command: z.string().min(1),
+    cwd: z.string().optional(),
+    label: z.string().min(1),
+    reason: z.string().min(1)
+  }),
 ]);
 
-const GeneratedLiveStepDraftSchema: z.ZodType<GeneratedLiveStepDraft> = z.object({
-  id: z.string().optional(),
-  source: z.enum(["construct-interact", "adaptive-planner"]),
-  sourceBlockId: z.string().optional(),
-  sourceStepId: z.string().optional(),
-  sourceRunId: z.string().optional(),
-  insertAfterStepId: z.string().optional(),
-  insertBeforeStepId: z.string().optional(),
-  title: z.string().min(1).max(80),
-  reason: z.string().min(1),
-  status: z.enum(["pending", "active", "completed", "dismissed"]).optional(),
-  blocks: z.array(z.discriminatedUnion("kind", [
-    z.object({
-      kind: z.literal("explain"),
-      id: z.string().min(1),
-      content: z.string().min(1),
-      concepts: z.array(z.string().min(1)).optional()
-    }),
-    z.object({
-      kind: z.literal("interact"),
-      id: z.string().min(1),
-      prompt: z.string().min(1),
-      basis: z.string().min(1),
-      understanding: z.string().min(1),
-      assessment: z.string().min(1),
-      concepts: z.array(z.string().min(1)).optional()
-    }),
-    z.object({
-      kind: z.literal("recall"),
-      id: z.string().min(1),
-      mode: z.literal("reply"),
-      task: z.string().min(1),
-      support: z.string().optional(),
-      concepts: z.array(z.string().min(1)).optional()
-    })
-  ])).min(1).max(3),
-  conceptIds: z.array(z.string().min(1)).optional()
+const ConstructInteractResultBaseSchema = z.object({
+  requestedOutcome: z.enum([
+    "answer",
+    "clarify",
+    "navigate",
+    "create-dynamic-steps",
+    "edit-project",
+    "run-command"
+  ]),
+  reply: z.string().min(2).refine((value) => !looksInternalReplyLabel(value), {
+    message: "Reply must be learner-facing prose, not an internal label."
+  }).refine(isCompleteLearnerFacingReply, {
+    message: "Reply must be complete prose with balanced Markdown delimiters."
+  }),
+  actions: z.array(ConstructInteractActionSchema).max(6).default([])
 });
 
-const ConstructInteractResultSchema = z.object({
-  status: z.enum(["continue", "pass", "almost", "skip"]),
-  confidence: z.enum(["low", "medium", "high"]),
-  reply: z.string().min(1),
-  coveredConceptIds: z.array(z.string().min(1)).default([]),
-  missingConceptIds: z.array(z.string().min(1)).default([]),
-  assistanceLevel: z.enum(["none", "hint", "guided", "answer"]),
-  shouldAdvance: z.boolean(),
-  statePatch: LearningStatePatchSchema.optional(),
-  actions: z.array(ConstructInteractActionSchema).max(4).default([]),
-  generatedLiveSteps: z.array(GeneratedLiveStepDraftSchema).max(3).default([])
-});
+function constructInteractResultSchema() {
+  return ConstructInteractResultBaseSchema.superRefine((value, context) => {
+    if (value.requestedOutcome === "clarify" && !value.reply.includes("?")) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["reply"],
+        message: "A clarify outcome must contain a learner-facing question."
+      });
+    }
+  });
+}
+
+function looksInternalReplyLabel(value: string): boolean {
+  return /^[a-z][a-z0-9]*(?:[_-][a-z0-9]+)+$/i.test(value.trim());
+}
 
 export async function runConstructInteract(
   input: ConstructInteractRuntimeInput,
   onTrace?: (entry: ConstructAgentTraceEntry) => void,
-  tools?: ConstructAgentTools
+  tools?: ConstructAgentTools,
+  options?: { abortSignal?: AbortSignal }
 ): Promise<ConstructInteractResult> {
   const runtime = createConstructAgentRuntime();
   const canGenerateLiveSteps = supportsGeneratedLiveSteps(input.tapeSpec ?? "");
@@ -126,77 +103,101 @@ export async function runConstructInteract(
     featureId: "construct-interact",
     name: CONSTRUCT_INTERACT_AGENT_NAME,
     purpose: "Construct Interact evaluation",
-    instructions: buildConstructInteractInstructions({ canGenerateLiveSteps, formalToolDrivenSpec }),
+    instructions: buildConstructInteractInstructions({
+      canGenerateLiveSteps,
+      formalToolDrivenSpec,
+      mode: input.mode ?? "lesson-check"
+    }),
     prompt: buildConstructInteractPrompt(input, toolDriven),
-    schema: ConstructInteractResultSchema,
+    schema: constructInteractResultSchema(),
     tools,
     maxSteps: 12,
-    completionGuard: (iteration) => {
-      if (!iteration.isFinal) return;
-      if (/\b(?:let me|i(?:'|’)ll|i will|i need to)\s+(?:check|inspect|look|read|review|find|search|add|create|open|verify)\b/i.test(iteration.text)) {
-        return {
-          continue: true,
-          feedback: "Do the promised inspection or action now. Use only the tools that help, inspect their results, and finish with the learner-facing response rather than another promise."
-        };
-      }
-    },
+    abortSignal: options?.abortSignal,
     maxRetries: 2,
     onTrace
   });
   return {
     ...result,
-    coveredConceptIds: result.coveredConceptIds ?? [],
-    missingConceptIds: result.missingConceptIds ?? [],
-    actions: result.actions ?? [],
-    generatedLiveSteps: result.generatedLiveSteps ?? []
+    status: "continue",
+    confidence: "low",
+    coveredConceptIds: [],
+    missingConceptIds: [],
+    assistanceLevel: "none",
+    shouldAdvance: false,
+    actions: result.actions ?? []
   };
 }
 
 export function buildConstructInteractInstructions({
   canGenerateLiveSteps,
-  formalToolDrivenSpec
+  formalToolDrivenSpec,
+  mode
 }: {
   canGenerateLiveSteps: boolean;
   formalToolDrivenSpec: boolean;
+  mode?: ConstructInteractRuntimeInput["mode"];
 }): string {
+  const isGeneralMode = mode === "general";
   return [
-      "You are Construct Interact, an active learning evaluator inside Construct IDE.",
-      "Use the authored block, relevant resources, and learner state available through tools to evaluate the learner's message.",
-      "Do not reveal the full answer immediately when the learner is close. Ask one smaller grounded follow-up instead.",
-      "You have read-only scoped tools for the authored tape, concepts, learner state, scoped files, and terminal context. Call only the tools you need. Do not require every tool every time.",
-      "Never claim wording appeared in a lesson step unless an authored-step or authored-step-block tool result contains that wording. Concept-card and reference-card text are separate sources; name the source accurately.",
-      "When the learner asks whether something was explained, compare the exact authored step text with attached resource cards. If the detail exists only in a card, say that plainly.",
-      "Use concept engagement from tools. If a relevant concept card has never been opened, prefer an open-concept action before repeating its full answer. If it was opened, acknowledge that and use a smaller targeted follow-up.",
-      formalToolDrivenSpec
-        ? "This is tape-0.4.2 agentic Interact. Resource ids are discovery hints, not preloaded evidence."
-        : "This older tape-0.4.x project uses the same agentic Interact behavior for backwards compatibility.",
-      "Decide which tools, if any, are needed for this learner message. Explore only as far as needed to give a grounded, useful response. Do not follow a fixed tool sequence.",
-      "Do not call a tool merely because it is available, and do not repeat the previous turn's tool set unless the learner's new message actually requires it.",
-      "Finish the work inside this agent run. Never stop with 'let me check', 'I will inspect', or another promise to act later. Call useful tools, read their results, and only then return the learner-facing response.",
-      "Do not expose private chain-of-thought. Observable progress may summarize decisions, tool calls, and evidence, but the learner-facing reply should contain only useful conclusions and guidance.",
-      canGenerateLiveSteps
-        ? "Prefer existing tape content before generating new content: open a concept card, go to the exact step where a concept was introduced, show an existing reference, then generate a small live step only if existing content is not enough."
-        : "Prefer existing tape content: open a concept card, go to the exact step where a concept was introduced, or show an existing reference. Do not generate live steps for this tape spec.",
-      canGenerateLiveSteps
-        ? "You may return structured actions for stronger CTAs: go-to-step, open-concept, open-file, or create-live-steps. Labels and reasons must be dynamic and learner-specific."
-        : "You may return structured actions for stronger CTAs: go-to-step, open-concept, or open-file. Labels and reasons must be dynamic and learner-specific.",
-      canGenerateLiveSteps
-        ? "You may return generatedLiveSteps only when the learner is stuck, weak on a prerequisite, used heavy assistance, failed or almost failed recall, says they do not understand, or the answer reveals a missing concept."
-        : "Return generatedLiveSteps as an empty array for this tape spec.",
-      canGenerateLiveSteps
-        ? "Generated live steps must be learning-focused only: explain, Construct Interact, or reply recall. No file edits and no code ghost edits."
-        : "Do not return create-live-steps actions for this tape spec.",
-      canGenerateLiveSteps
-        ? "Generate usually one live step. Never generate more than three. Keep titles short, reasons explicit, and content small."
-        : "Use go-to-step, open-concept, or open-file actions when an existing resource can help.",
-      "Use status=pass only when the learner has enough ownership to continue.",
-      "Use status=almost for a focused follow-up. Set shouldAdvance=true only if the missing detail is minor.",
-      "Use status=skip when the learner cannot answer and needs to continue with assistance recorded.",
-      "Return structured statePatch updates. The app will validate and apply them; do not assume direct mutation."
-    ].join("\n");
+    isGeneralMode
+      ? "You are Construct Interact, a general-purpose project agent inside Construct IDE."
+      : "You are Construct Interact, an active learning agent inside Construct IDE.",
+    "Complete the user's actual request. Do not substitute navigation, advice, or a promise for an action the available tools can perform.",
+    "Choose tools from the situation, not from a fixed checklist. Run independent reads together when possible and do not repeat a tool without a new reason.",
+    "Finish tool work before returning. Never end with 'let me check', 'I will create', or similar future-tense filler.",
+    "Match the response to the request. Do not add canned project introductions, capability menus, message-type classifications, or generic suggested topics.",
+    "Never claim wording or project state without tool evidence. Preserve whether evidence came from a tape step, concept card, reference, workspace file, or terminal output.",
+    "The final reply must be complete learner-facing prose with balanced Markdown. The structured result contains only requestedOutcome, reply, and optional UI actions.",
+    "Do not place confidence, pass/fail status, assistance level, learning-state patches, or Dynamic Step JSON in the final structured result.",
+    isGeneralMode
+      ? "Do not assess ordinary project chat. If the user asks for file or terminal work, use the available workspace tools and return a relevant UI action."
+      : "Call recordLearnerAssessment only when this turn genuinely evaluates learner understanding. That tool is the only place for confidence, pass/fail status, assistance level, concept coverage, or advancement.",
+    canGenerateLiveSteps
+      ? "When the user asks for new or expanded learning steps, set requestedOutcome=create-dynamic-steps and create them with createDynamicStep. Do not return step content in the final object."
+      : "This tape cannot create Dynamic Steps. Use existing tape resources or explain the limitation without inventing an action.",
+    canGenerateLiveSteps
+      ? "Before createDynamicStep, inspect the authored tape with getTapeOverview and the relevant getTapeStep/getTapeStepBlock or file tools. Match its actual structure and use any useful combination of explain, guide, interact, edit, recall, run, expect, and checkpoint blocks."
+      : "Prefer grounded go-to-step, open-concept, open-file, focus-code, or terminal actions.",
+    canGenerateLiveSteps
+      ? "Write proposed Dynamic Steps as real .construct ::step source. Use parseDynamicStep or compileDynamicStep while drafting when useful; createDynamicStep performs the final production compiler validation."
+      : null,
+    formalToolDrivenSpec
+      ? "This tape uses tape-0.4.2 agentic Interact; resource ids are discovery hints, not preloaded evidence."
+      : "Apply the same agentic behavior to this compatible tape version."
+  ].filter(Boolean).join("\n");
 }
 
 export function buildConstructInteractPrompt(input: ConstructInteractRuntimeInput, toolDriven: boolean): string {
+  if (input.mode === "general") {
+    return [
+      `Project id: ${input.projectId}`,
+      `Construct Interact mode: general`,
+      `Synthetic chat block id: ${input.blockId}`,
+      `Tape spec: ${input.tapeSpec ?? "unknown"}`,
+      "",
+      "User message:",
+      input.answer || "(empty message)",
+      "",
+      "Current project context:",
+      JSON.stringify(input.projectContext ?? {}, null, 2),
+      "",
+      "Scoped resources:",
+      JSON.stringify(input.resources, null, 2),
+      "",
+      "General-mode tool guidance:",
+      [
+        "Use read tools when you need authored tape, learner state, workspace, or terminal context.",
+        "Use writeWorkspaceFile, appendWorkspaceFile, or createWorkspaceFolder only when the user clearly asks for a file/project change or the change is the obvious next step.",
+        "Return UI actions for concrete next moves: focus-code, open-file, go-to-step, open-concept, focus-terminal, or run-terminal-command.",
+        "If you say a file changed, the file-writing tool must have succeeded in this run.",
+        "If a terminal command should run, return run-terminal-command instead of only telling the user to run it.",
+        "Keep the reply proportional to the request. Do not include a project introduction or capability list unless it directly answers the user."
+      ].filter(Boolean).join("\n"),
+      "",
+      "Return a concise project-facing reply and concrete UI actions."
+    ].join("\n");
+  }
+
   if (toolDriven) {
     return [
       `Project id: ${input.projectId}`,
@@ -206,8 +207,8 @@ export function buildConstructInteractPrompt(input: ConstructInteractRuntimeInpu
       "Learner message:",
       input.answer || "(empty answer)",
       "",
-      "Use the available tools when they help you understand what was authored, what the learner has already seen or opened, and what response would move learning forward. Return a concise learner-facing reply plus structured actions and state updates."
-    ].join("\n");
+      "Use tools when they help establish authored content, learner history, or the requested action. Record an assessment only when this is actually an evaluation. Return concise learner-facing prose and optional UI actions."
+    ].filter(Boolean).join("\n");
   }
 
   return [
@@ -229,16 +230,16 @@ export function buildConstructInteractPrompt(input: ConstructInteractRuntimeInpu
     "Tape feature gates:",
     JSON.stringify({
       tapeSpec: input.tapeSpec ?? "unknown",
-      generatedLiveSteps: supportsGeneratedLiveSteps(input.tapeSpec ?? "")
+      dynamicSteps: supportsGeneratedLiveSteps(input.tapeSpec ?? "")
     }, null, 2),
     "",
     "Scoped Construct Interact tool guidance:",
     [
-      "Use the read-only tools when you need more context. Available tools include getCurrentStep, getStepById, getPreviousSteps, getNextSteps, getCurrentBlock, getConceptCard, findWhereConceptWasIntroduced, searchTape, getLearnerState, getProjectLearnerState, getKnowledgeBase, getRecallHistory, getConstructInteractHistory, getStepFiles, readWorkspaceFile, and getLatestTerminalOutput.",
+      "Use the available tape, learner, workspace, and terminal tools only when they improve the answer or complete the requested action.",
       "Use the smallest relevant set. If no tool is needed, answer directly from the prompt and rubric.",
-      "When existing content directly addresses the gap, return an action instead of generatedLiveSteps."
+      "For requested Dynamic Steps, inspect the authored tape and create compiler-validated steps through createDynamicStep instead of returning step JSON."
     ].join("\n"),
     "",
-    "Return a concise learner-facing reply, statePatch updates for covered and missing concepts, optional structured actions, and optional generatedLiveSteps."
-  ].join("\n");
+    "Return a concise learner-facing reply and optional structured UI actions."
+  ].filter(Boolean).join("\n");
 }

@@ -5,7 +5,10 @@ import {
   CheckCircle,
   File,
   FileCode,
-  GitBranch
+  GitBranch,
+  ChatCircle,
+  PlusCircle,
+  ArrowCounterClockwise
 } from "@phosphor-icons/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
@@ -15,6 +18,7 @@ import { lspClient } from "../lib/lspClient";
 import type { SlotTab } from "@opaline/ui";
 import { EditorPane } from "./EditorPane";
 import { GuidePanel } from "./GuidePanel";
+import { ConstructInteractSession } from "./guide/ConstructInteractSession";
 import { ReferenceCard } from "./ReferenceCard";
 import { KnowledgeCard } from "./KnowledgeCard";
 import { KnowledgeDialog } from "./KnowledgeDialog";
@@ -34,7 +38,6 @@ import {
   writeGitMilestoneStates,
   type StoredGitMilestoneState
 } from "./workspace/gitMilestoneState";
-import { useInteractProgressLogBuffer } from "./workspace/useInteractProgressLogBuffer";
 import { buildVerificationStartLogs } from "./workspace/verificationLogSeed";
 import {
   conceptIdsIntroducedThrough,
@@ -59,6 +62,7 @@ import {
   getProjectLearningState,
   listFiles,
   onVerifyLog,
+  onConstructInteractSessionEvent,
   readFile,
   renameFile,
   runConstructInteract,
@@ -82,6 +86,7 @@ import {
 } from "../lib/knowledgeStore";
 import type {
   BlockAssistance,
+  ConstructBlock,
   ConceptCard,
   ConstructTarget,
   EditBlock,
@@ -95,7 +100,11 @@ import type {
   ConstructInteractClientResult,
   WorkspaceTreeNode
 } from "../types";
-import type { GeneratedLiveStep, ProjectLearningState } from "../../../shared/constructLearning";
+import type {
+  ConstructInteractSession as ConstructInteractSessionRecord,
+  GeneratedLiveStep,
+  ProjectLearningState
+} from "../../../shared/constructLearning";
 
 const EMPTY_CONCEPTS: ConceptCard[] = [];
 const EMPTY_GENERATED_LIVE_STEPS: GeneratedLiveStep[] = [];
@@ -167,13 +176,12 @@ export function Workspace({
   const [recallAnswers, setRecallAnswers] = useState<Record<string, string>>({});
   const [interactAnswers, setInteractAnswers] = useState<Record<string, string>>({});
   const [interactResults, setInteractResults] = useState<Record<string, ConstructInteractClientResult>>({});
-  const {
-    interactProgressLogs,
-    setInteractProgressLogs,
-    interactingId,
-    setInteractingId,
-    resetInteractProgress
-  } = useInteractProgressLogBuffer();
+  const [interactingId, setInteractingId] = useState<string | null>(null);
+  const [liveInteractSessions, setLiveInteractSessions] = useState<Record<string, ConstructInteractSessionRecord>>({});
+  const [lessonInteractThreadIds, setLessonInteractThreadIds] = useState<Record<string, string>>({});
+  const [generalInteractAnswer, setGeneralInteractAnswer] = useState("");
+  const [generalInteractThreadId, setGeneralInteractThreadId] = useState(() => createInteractThreadId());
+  const [generalInteractResult, setGeneralInteractResult] = useState<ConstructInteractClientResult | undefined>();
   const [projectLearningState, setProjectLearningState] = useState<ProjectLearningState | null>(null);
   const [activeLiveStepId, setActiveLiveStepId] = useState<string | null>(null);
   const autoOpenedRecallRef = useRef<string | null>(null);
@@ -202,6 +210,46 @@ export function Workspace({
   const activeLiveStep = activeLiveStepId
     ? generatedLiveSteps.find((step) => step.id === activeLiveStepId && step.status !== "dismissed") ?? null
     : null;
+  const generalInteractBlockId = `general:${project.id}`;
+  const activeLessonInteractThreadId = block?.kind === "interact"
+    ? lessonInteractThreadIds[block.id] ?? `lesson:${block.id}`
+    : null;
+  const lessonInteractSessions = useMemo(() => {
+    if (!block || block.kind !== "interact") {
+      return [];
+    }
+    return (projectLearningState?.constructInteractSessions ?? []).filter((session) => (
+      session.blockId === block.id &&
+      (session.threadId ?? `lesson:${block.id}`) === activeLessonInteractThreadId
+    ));
+  }, [activeLessonInteractThreadId, block, projectLearningState?.constructInteractSessions]);
+  const liveLessonInteractSession = block?.kind === "interact" &&
+    liveInteractSessions[block.id]?.threadId === activeLessonInteractThreadId
+    ? liveInteractSessions[block.id]
+    : undefined;
+  const generalInteractSessions = useMemo(() => {
+    return (projectLearningState?.constructInteractSessions ?? []).filter((session) => session.blockId === generalInteractBlockId);
+  }, [generalInteractBlockId, projectLearningState?.constructInteractSessions]);
+  const generalInteractThreads = useMemo(() => {
+    const byThread = new Map<string, ConstructInteractSessionRecord[]>();
+    for (const session of generalInteractSessions) {
+      const threadId = session.threadId ?? generalInteractBlockId;
+      byThread.set(threadId, [...(byThread.get(threadId) ?? []), session]);
+    }
+    return [...byThread.entries()]
+      .map(([threadId, sessions]) => ({
+        threadId,
+        label: sessions.at(-1)?.answer.slice(0, 48) || "New chat",
+        updatedAt: sessions.at(-1)?.updatedAt ?? sessions.at(-1)?.createdAt ?? ""
+      }))
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }, [generalInteractBlockId, generalInteractSessions]);
+  const activeGeneralInteractSessions = useMemo(() => {
+    return generalInteractSessions.filter((session) => (session.threadId ?? generalInteractBlockId) === generalInteractThreadId);
+  }, [generalInteractBlockId, generalInteractSessions, generalInteractThreadId]);
+  const liveGeneralInteractSession = liveInteractSessions[generalInteractBlockId]?.threadId === generalInteractThreadId
+    ? liveInteractSessions[generalInteractBlockId]
+    : undefined;
 
   const { furthestUnlockedStepIndex, furthestUnlockedBlockIndex } = useMemo(() => {
     const completedBlocks = project.completedBlocks ?? {};
@@ -261,10 +309,15 @@ export function Workspace({
     setPinnedReferenceIds([]);
     setVerifyingId(null);
     setVerificationLogs({});
-    resetInteractProgress();
+    setInteractingId(null);
+    setLiveInteractSessions({});
+    setLessonInteractThreadIds({});
+    setGeneralInteractAnswer("");
+    setGeneralInteractThreadId(createInteractThreadId());
+    setGeneralInteractResult(undefined);
     setActiveLiveStepId(null);
     autoOpenedRecallRef.current = null;
-  }, [project.id, resetInteractProgress]);
+  }, [project.id]);
 
   useEffect(() => {
     let disposed = false;
@@ -282,6 +335,49 @@ export function Workspace({
     return () => {
       disposed = true;
     };
+  }, [project.id]);
+
+  useEffect(() => {
+    return onConstructInteractSessionEvent((event) => {
+      if (event.projectId !== project.id) {
+        return;
+      }
+
+      setLiveInteractSessions((current) => {
+        if (event.type === "completed" || event.type === "error") {
+          const next = { ...current };
+          delete next[event.blockId];
+          return next;
+        }
+        return {
+          ...current,
+          [event.blockId]: event.session
+        };
+      });
+
+      if (event.learningState) {
+        setProjectLearningState(event.learningState.projects[project.id] ?? null);
+      }
+
+      if (event.result && event.learningState) {
+        if (event.session.mode === "general") {
+          setGeneralInteractResult({
+            ...event.result,
+            session: event.session,
+            learningState: event.learningState
+          });
+        } else {
+          setInteractResults((current) => ({
+            ...current,
+            [event.blockId]: {
+              ...event.result!,
+              session: event.session,
+              learningState: event.learningState!
+            }
+          }));
+        }
+      }
+    });
   }, [project.id]);
 
   useEffect(() => {
@@ -1073,17 +1169,11 @@ export function Workspace({
 
     setInteractingId(block.id);
     setInteractAnswers((current) => ({ ...current, [block.id]: "" }));
-    const queuedAt = new Date().toISOString();
-    setInteractProgressLogs((current) => ({
-      ...current,
-      [block.id]: [{
-        timestamp: queuedAt,
-        level: "info",
-        message: `Queued answer for ${block.id}`
-      }]
-    }));
     try {
+      const threadId = lessonInteractThreadIds[block.id] ?? `lesson:${block.id}`;
       const result = await runConstructInteract({
+        mode: "lesson-check",
+        threadId,
         projectId: project.id,
         blockId: block.id,
         tapeSpec: project.program.spec,
@@ -1097,7 +1187,7 @@ export function Workspace({
           title: project.title,
           currentStep: project.program.steps[project.currentStepIndex]?.title,
           currentBlock: block.id,
-          concepts: block.resources.concepts
+          concepts: (block.resources.concepts ?? [])
             .map((conceptId) => concepts.find((concept) => concept.id === conceptId))
             .filter(Boolean)
         }
@@ -1107,16 +1197,94 @@ export function Workspace({
         [block.id]: result
       }));
       setProjectLearningState(result.learningState.projects[project.id] ?? null);
-      const firstGenerated = result.generatedLiveSteps?.[0];
+      setLiveInteractSessions((current) => {
+        const next = { ...current };
+        delete next[block.id];
+        return next;
+      });
+      const firstGenerated = (result.dynamicSteps ?? result.generatedLiveSteps)?.[0];
       if (firstGenerated?.id) {
         setActiveLiveStepId(firstGenerated.id);
-      }
-      if (result.shouldAdvance) {
-        await handleNext();
       }
     } finally {
       setInteractingId(null);
     }
+  }
+
+  async function handleGeneralConstructInteract() {
+    const submittedAnswer = generalInteractAnswer.trim();
+    if (!submittedAnswer) {
+      return;
+    }
+
+    const threadId = generalInteractThreadId || createInteractThreadId();
+    setGeneralInteractThreadId(threadId);
+    setInteractingId(generalInteractBlockId);
+    setGeneralInteractAnswer("");
+    try {
+      const result = await runConstructInteract({
+        mode: "general",
+        threadId,
+        projectId: project.id,
+        blockId: generalInteractBlockId,
+        tapeSpec: project.program.spec,
+        prompt: "Construct Interact",
+        answer: submittedAnswer,
+        basis: "General-purpose Construct project assistant. It can inspect the current tape, workspace files, learner state, and terminal output.",
+        understanding: "Help the user move the project forward. Prefer concrete actions when the intent is clear.",
+        assessment: "Use tools before claiming state. When an action is useful, return an action for the UI to execute.",
+        resources: buildGeneralInteractResources(project, block, activeFilePath, openTabs),
+        projectContext: {
+          title: project.title,
+          currentStep: project.program.steps[project.currentStepIndex]?.title,
+          currentBlock: block?.id,
+          activeFilePath,
+          openTabs,
+          workspacePath: project.workspacePath
+        }
+      });
+      setGeneralInteractResult(result);
+      setProjectLearningState(result.learningState.projects[project.id] ?? null);
+      await refreshTree();
+    } finally {
+      setInteractingId(null);
+      setLiveInteractSessions((current) => {
+        const next = { ...current };
+        delete next[generalInteractBlockId];
+        return next;
+      });
+    }
+  }
+
+  function handleNewGeneralInteractThread() {
+    setGeneralInteractThreadId(createInteractThreadId());
+    setGeneralInteractAnswer("");
+    setGeneralInteractResult(undefined);
+  }
+
+  function handleResetLessonInteract() {
+    if (!block || block.kind !== "interact") {
+      return;
+    }
+    const nextThreadId = createInteractThreadId();
+    setLessonInteractThreadIds((current) => ({
+      ...current,
+      [block.id]: nextThreadId
+    }));
+    setInteractAnswers((current) => ({
+      ...current,
+      [block.id]: ""
+    }));
+    setInteractResults((current) => {
+      const next = { ...current };
+      delete next[block.id];
+      return next;
+    });
+    setLiveInteractSessions((current) => {
+      const next = { ...current };
+      delete next[block.id];
+      return next;
+    });
   }
 
   async function handleNext() {
@@ -1171,6 +1339,14 @@ export function Workspace({
     }
   }
 
+  function openGeneratedLiveStep(stepId: string) {
+    if (!generatedLiveSteps.some((step) => step.id === stepId && step.status !== "dismissed")) {
+      return;
+    }
+    setActiveLiveStepId(stepId);
+    onRightSlotChange("guide");
+  }
+
   async function handleInteractAction(action: NonNullable<ConstructInteractClientResult["actions"]>[number]) {
     if (action.type === "go-to-step") {
       const stepIndex = project.program.steps.findIndex((step) => step.id === action.stepId);
@@ -1194,9 +1370,39 @@ export function Workspace({
       return;
     }
 
+    if (action.type === "focus-code") {
+      if (action.anchor) {
+        await focusAnchor(action.anchor);
+        return;
+      }
+      await navigateToFile(action.path, { persist: true });
+      setDocumentSession((session) => revealDocument(session, {
+        kind: action.endLine ? "focus" : "jump",
+        path: action.path,
+        line: action.line ?? 1,
+        endLine: action.endLine,
+        column: 1
+      }));
+      return;
+    }
+
+    if (action.type === "focus-terminal") {
+      onRunCommand("", project.workspacePath);
+      return;
+    }
+
+    if (action.type === "run-terminal-command") {
+      onRunCommand(action.command, action.cwd ?? project.workspacePath);
+      return;
+    }
+
+    if (action.type !== "create-live-steps" && action.type !== "open-dynamic-steps") {
+      return;
+    }
+
     const firstStepId = action.stepIds.find((stepId) => generatedLiveSteps.some((step) => step.id === stepId));
     if (firstStepId) {
-      setActiveLiveStepId(firstStepId);
+      openGeneratedLiveStep(firstStepId);
     }
   }
 
@@ -1264,6 +1470,7 @@ export function Workspace({
       theme={theme}
       onOpenConcept={openConceptCard}
       onOpenFile={(reference) => void openInlineFile(reference)}
+      onRunCommand={onRunCommand}
       onComplete={() => void updateLiveStepStatus(activeLiveStep.id, "completed")}
       onDismiss={() => void updateLiveStepStatus(activeLiveStep.id, "dismissed")}
       onBack={() => setActiveLiveStepId(null)}
@@ -1294,7 +1501,22 @@ export function Workspace({
         }
       }}
       interactResult={block?.kind === "interact" ? interactResults[block.id] : undefined}
-      interactProgressLogs={block?.kind === "interact" ? interactProgressLogs[block.id] ?? [] : []}
+      liveInteractSession={liveLessonInteractSession}
+      interactSessions={lessonInteractSessions}
+      interactToolbar={block?.kind === "interact" ? (
+        <div className="flex items-center justify-end">
+          <Button
+            size="small"
+            variant="ghost"
+            type="button"
+            aria-label="Reset learner chat"
+            title="Start over for this step"
+            onClick={handleResetLessonInteract}
+          >
+            <ArrowCounterClockwise size={14} weight="duotone" />
+          </Button>
+        </div>
+      ) : undefined}
       onSubmitInteract={() => void handleConstructInteract()}
       onInteractAction={(action) => void handleInteractAction(action)}
       interactingId={interactingId}
@@ -1305,7 +1527,101 @@ export function Workspace({
         : []}
       recallMissingFiles={recallMissingFiles}
     />
-  ), [activeLiveStep, block, editComplete, interactAnswers, interactProgressLogs, interactResults, interactingId, onRunCommand, project, recallAnswers, recallMissingFiles, theme, verificationLogs, verifyingId]);
+  ), [
+    activeLiveStep,
+    block,
+    editComplete,
+    interactAnswers,
+    interactResults,
+    interactingId,
+    lessonInteractSessions,
+    liveLessonInteractSession,
+    onRunCommand,
+    project,
+    recallAnswers,
+    recallMissingFiles,
+    theme,
+    verificationLogs,
+    verifyingId
+  ]);
+
+  const generalInteractTabContent = useMemo(() => {
+    const activeResult = generalInteractResult?.session.threadId === generalInteractThreadId
+      ? generalInteractResult
+      : undefined;
+    const threadOptions = generalInteractThreads.some((thread) => thread.threadId === generalInteractThreadId)
+      ? generalInteractThreads
+      : [
+          {
+            threadId: generalInteractThreadId,
+            label: "New chat",
+            updatedAt: ""
+          },
+          ...generalInteractThreads
+        ];
+
+    return (
+      <ConstructInteractSession
+        blockId={generalInteractBlockId}
+        prompt={`Project: ${project.title}\n\nCurrent step: ${project.program.steps[project.currentStepIndex]?.title ?? "None"}`}
+        theme={theme}
+        sessions={activeGeneralInteractSessions}
+        liveSession={liveGeneralInteractSession}
+        result={activeResult}
+        answer={generalInteractAnswer}
+        onAnswerChange={setGeneralInteractAnswer}
+        onSubmit={() => void handleGeneralConstructInteract()}
+        onAction={(action) => void handleInteractAction(action)}
+        isPending={interactingId === generalInteractBlockId}
+        onOpenConcept={openConceptCard}
+        onOpenFile={(reference) => void openInlineFile(reference)}
+        eyebrow="Construct Interact"
+        submitLabel="Send"
+        placeholder="Ask about the project..."
+        toolbar={
+          <div className="flex items-center gap-2">
+            <select
+              className="min-w-0 flex-1 rounded-md border bg-background px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-ring/30"
+              value={generalInteractThreadId}
+              onChange={(event) => {
+                setGeneralInteractThreadId(event.target.value);
+                setGeneralInteractAnswer("");
+                setGeneralInteractResult(undefined);
+              }}
+              aria-label="Construct Interact session"
+            >
+              {threadOptions.map((thread) => (
+                <option key={thread.threadId} value={thread.threadId}>
+                  {thread.label || "New chat"}
+                </option>
+              ))}
+            </select>
+            <Button
+              size="small"
+              variant="ghost"
+              type="button"
+              aria-label="Start new Construct Interact chat"
+              title="Start new chat"
+              onClick={handleNewGeneralInteractThread}
+            >
+              <PlusCircle size={14} weight="duotone" />
+            </Button>
+          </div>
+        }
+      />
+    );
+  }, [
+    activeGeneralInteractSessions,
+    generalInteractAnswer,
+    generalInteractBlockId,
+    generalInteractResult,
+    generalInteractThreadId,
+    generalInteractThreads,
+    interactingId,
+    liveGeneralInteractSession,
+    project,
+    theme
+  ]);
 
   const stepsTabContent = useMemo(() => (
     <div className="flex h-full min-h-0 flex-col">
@@ -1325,7 +1641,7 @@ export function Workspace({
           onSelectStep={(idx) => void handleSelectStep(idx)}
           generatedLiveSteps={generatedLiveSteps}
           activeLiveStepId={activeLiveStepId}
-          onSelectLiveStep={setActiveLiveStepId}
+          onSelectLiveStep={openGeneratedLiveStep}
           furthestUnlockedStepIndex={furthestUnlockedStepIndex}
         />
       </div>
@@ -1336,7 +1652,7 @@ export function Workspace({
     const currentConceptIds = block?.kind === "recall" || block?.kind === "explain"
       ? block.concepts
       : block?.kind === "interact"
-        ? block.resources.concepts
+        ? (block.resources.concepts ?? [])
         : [];
     const introducedConceptIds = conceptIdsIntroducedThrough(
       project,
@@ -1507,6 +1823,13 @@ export function Workspace({
         content: stepsTabContent
       },
       {
+        id: "interact",
+        title: "Interact",
+        icon: <ChatCircle size={13} weight="duotone" />,
+        active: normalizedRightSlotId === "interact",
+        content: generalInteractTabContent
+      },
+      {
         id: "git",
         title: "Git",
         icon: <GitBranch size={13} weight="duotone" />,
@@ -1526,7 +1849,7 @@ export function Workspace({
     );
 
     return () => onGuidePanelChange(null);
-  }, [activeRightSlotId, gitTabContent, guideTabContent, onGuidePanelChange, onRightSlotChange, stepsTabContent]);
+  }, [activeRightSlotId, generalInteractTabContent, gitTabContent, guideTabContent, onGuidePanelChange, onRightSlotChange, stepsTabContent]);
 
   useEffect(() => {
     onKnowledgePanelChange?.(sidebarKnowledgeContent);
@@ -1662,4 +1985,58 @@ export function Workspace({
       />
     </AdaptiveSidecarLayout>
   );
+}
+
+function createInteractThreadId(): string {
+  return `chat:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function buildGeneralInteractResources(
+  project: ProjectRecord,
+  block: ConstructBlock | null,
+  activeFilePath: string | null,
+  openTabs: string[]
+) {
+  const currentStep = project.program.steps[project.currentStepIndex];
+  const stepId = currentStep?.id ?? `step-${project.currentStepIndex + 1}`;
+  const concepts: string[] = [];
+  const files: string[] = [];
+  const references: string[] = [];
+
+  if (block?.kind === "interact") {
+    concepts.push(...(block.resources.concepts ?? []));
+    files.push(...(block.resources.files ?? []));
+    references.push(...(block.resources.references ?? []));
+  }
+
+  if (block?.kind === "recall") {
+    concepts.push(...block.concepts);
+    references.push(...block.references);
+    if (block.path) {
+      files.push(block.path);
+    }
+    if (block.verify) {
+      files.push(...block.verify.evidence.files);
+    }
+  }
+
+  if (block?.kind === "explain") {
+    concepts.push(...block.concepts);
+  }
+
+  if (block?.kind === "edit") {
+    files.push(block.path);
+  }
+
+  if (activeFilePath) {
+    files.push(activeFilePath);
+  }
+  files.push(...openTabs);
+
+  return {
+    concepts: uniqueStrings(concepts),
+    files: uniqueStrings(files.map((filePath) => normalizeWorkspacePath(filePath)).filter(Boolean)),
+    references: uniqueStrings(references),
+    steps: uniqueStrings([stepId])
+  };
 }

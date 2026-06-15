@@ -201,6 +201,47 @@ export class ConstructProjectIpcController {
       return projects[index];
     });
 
+    ipcMain.handle("construct:project:read-tape", async (_event, projectId: string) => {
+      const project = this.options.findProject(await this.options.readProjects(), projectId);
+      const source = project.sourcePath && existsSync(project.sourcePath)
+        ? await readFile(project.sourcePath, "utf8")
+        : project.source;
+      return {
+        projectId: project.id,
+        sourcePath: project.sourcePath,
+        source
+      };
+    });
+
+    ipcMain.handle("construct:project:update-tape", async (_event, input) => {
+      const projects = await this.options.readProjects();
+      const project = this.options.findProject(projects, input.projectId);
+      if (input.program?.id !== project.id) {
+        throw new Error(`Tape project id must remain "${project.id}".`);
+      }
+
+      project.source = String(input.source ?? "");
+      project.originalSource = typeof input.originalSource === "string" ? input.originalSource : project.source;
+      project.authoringFixes = Array.isArray(input.authoringFixes) ? input.authoringFixes : [];
+      project.program = input.program;
+      project.title = input.program.title;
+      project.description = input.program.description;
+      project.currentStepIndex = Math.min(project.currentStepIndex, Math.max(0, project.program.steps.length - 1));
+      project.currentBlockIndex = Math.min(
+        project.currentBlockIndex,
+        Math.max(0, (project.program.steps[project.currentStepIndex]?.blocks.length ?? 1) - 1)
+      );
+      project.progress = this.options.workspace.calculateProgress(project);
+
+      if (project.sourcePath) {
+        await mkdir(path.dirname(project.sourcePath), { recursive: true });
+        await writeFile(project.sourcePath, project.source, "utf8");
+      }
+      await this.options.workspace.materializeInitialFiles(project);
+      await this.options.writeProjects(projects);
+      return project;
+    });
+
     ipcMain.handle("construct:project:list-files", async (_event, projectId: string) => {
       const project = this.options.findProject(await this.options.readProjects(), projectId);
       await mkdir(project.workspacePath, { recursive: true });

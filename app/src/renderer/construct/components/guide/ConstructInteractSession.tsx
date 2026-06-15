@@ -1,5 +1,5 @@
 import { BookOpenIcon, FileCodeIcon, PathIcon, SparkleIcon } from "@phosphor-icons/react";
-import { useRef } from "react";
+import { useRef, type ReactNode } from "react";
 
 import {
   AgentRunTrace,
@@ -12,11 +12,11 @@ import {
 
 import type {
   ConstructAgentRunEvent,
+  ConstructInteractSession as ConstructInteractSessionRecord,
   ConstructInteractToolCallRecord,
   ProjectLearningState
 } from "../../../../shared/constructLearning";
 import type { InlineFileRef } from "../../lib/inlineRefs";
-import type { LogEntry } from "../../lib/logStore";
 import type { ConstructInteractClientResult } from "../../types";
 import { MarkdownBlock } from "../MarkdownBlock";
 
@@ -27,22 +27,26 @@ export function ConstructInteractSession({
   prompt,
   theme,
   sessions,
+  liveSession,
   result,
-  progressLogs,
   answer,
   onAnswerChange,
   onSubmit,
   onAction,
   isPending,
   onOpenConcept,
-  onOpenFile
+  onOpenFile,
+  toolbar,
+  eyebrow = "Question",
+  submitLabel = "Send answer",
+  placeholder = "Answer in your own words..."
 }: {
   blockId: string;
   prompt: string;
   theme: "light" | "dark" | "system";
   sessions: ProjectLearningState["constructInteractSessions"];
+  liveSession?: ConstructInteractSessionRecord;
   result?: ConstructInteractClientResult;
-  progressLogs: LogEntry[];
   answer: string;
   onAnswerChange: (answer: string) => void;
   onSubmit: () => void;
@@ -50,6 +54,10 @@ export function ConstructInteractSession({
   isPending: boolean;
   onOpenConcept: (conceptId: string) => void;
   onOpenFile: (reference: InlineFileRef) => void;
+  toolbar?: ReactNode;
+  eyebrow?: string;
+  submitLabel?: string;
+  placeholder?: string;
 }) {
   const submittedAnswerRef = useRef("");
   if (!isPending && answer.trim()) {
@@ -59,8 +67,8 @@ export function ConstructInteractSession({
   const messages = buildInteractMessages({
     blockId,
     sessions,
+    liveSession,
     result,
-    progressLogs,
     answerDraft: pendingAnswer,
     isPending,
     theme,
@@ -70,9 +78,10 @@ export function ConstructInteractSession({
   });
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+      {toolbar ? <div className="shrink-0 border-b p-2">{toolbar}</div> : null}
       <AgentSessionSurface
-        eyebrow="Question"
+        eyebrow={eyebrow}
         lead={
           <MarkdownBlock
             className="space-y-2 text-[13px] leading-5 [&_p]:leading-5"
@@ -84,15 +93,15 @@ export function ConstructInteractSession({
         }
         messages={messages}
         emptyState={null}
-        scrollKey={`${sessions.length}:${progressLogs.length}:${isPending}:${result?.status ?? "idle"}`}
+        scrollKey={`${sessions.length}:${liveSession?.id ?? "idle"}:${liveSession?.updatedAt ?? "none"}:${isPending}:${result?.status ?? "idle"}`}
         composer={
           <AgentSessionComposer
             value={answer}
             onValueChange={onAnswerChange}
             onSubmit={onSubmit}
             pending={isPending}
-            submitLabel="Send answer"
-            placeholder="Answer in your own words..."
+            submitLabel={submitLabel}
+            placeholder={placeholder}
           />
         }
       />
@@ -103,8 +112,8 @@ export function ConstructInteractSession({
 function buildInteractMessages({
   blockId,
   sessions,
+  liveSession,
   result,
-  progressLogs,
   answerDraft,
   isPending,
   theme,
@@ -114,8 +123,8 @@ function buildInteractMessages({
 }: {
   blockId: string;
   sessions: ProjectLearningState["constructInteractSessions"];
+  liveSession?: ConstructInteractSessionRecord;
   result?: ConstructInteractClientResult;
-  progressLogs: LogEntry[];
   answerDraft: string;
   isPending: boolean;
   theme: "light" | "dark" | "system";
@@ -123,46 +132,67 @@ function buildInteractMessages({
   onOpenConcept: (conceptId: string) => void;
   onOpenFile: (reference: InlineFileRef) => void;
 }): AgentSessionMessage[] {
-  const recentSessions = sessions;
+  const recentSessions = mergeSessions(sessions, liveSession);
   const latestSessionId = recentSessions.at(-1)?.id;
   const messages = recentSessions.flatMap((session): AgentSessionMessage[] => {
-    const isLatestResult = Boolean(result && session.id === latestSessionId);
-    const events = isLatestResult ? (result?.agentEvents ?? session.agentEvents ?? []) : (session.agentEvents ?? []);
-    const toolCalls = isLatestResult ? (result?.toolCalls ?? session.toolCalls ?? []) : (session.toolCalls ?? []);
-    const traceEntries = buildAgentRunTraceEntries(events, toolCalls);
+    const isLiveSession = Boolean(liveSession && session.id === liveSession.id && session.runStatus === "running");
+    const isLatestResult = Boolean(result && (result.session?.id === session.id || session.id === latestSessionId));
+    const completedEvents = isLatestResult
+      ? (result?.agentEvents ?? session.agentEvents ?? [])
+      : (session.agentEvents ?? []);
+    const completedToolCalls = isLatestResult
+      ? (result?.toolCalls ?? session.toolCalls ?? [])
+      : (session.toolCalls ?? []);
+    const events = (isLiveSession ? (session.agentEvents ?? []) : completedEvents)
+      .filter((event) => event.type !== "message" && event.type !== "iteration");
+    const toolCalls = isLiveSession ? (session.toolCalls ?? []) : completedToolCalls;
+    const traceEntries = buildAgentRunTraceEntries(events, toolCalls, isLiveSession);
     const assistantParts: AgentSessionMessagePart[] = [];
+    const tracePart: AgentSessionMessagePart | null = traceEntries.length > 0 || isLiveSession
+      ? {
+          type: "text",
+          id: `${session.id}:agent-trace`,
+          content: (
+            <AgentRunTrace
+              state={isLiveSession ? "thinking" : "thought"}
+              entries={traceEntries}
+              durationMs={isLatestResult ? (result?.durationMs ?? session.durationMs) : session.durationMs}
+              defaultOpen={isLiveSession}
+            />
+          )
+        }
+      : null;
 
-    if (traceEntries.length > 0) {
+    if (tracePart) {
+      assistantParts.push(tracePart);
+    }
+
+    if (session.reply.trim()) {
       assistantParts.push({
         type: "text",
-        id: `${session.id}:agent-trace`,
+        id: `${session.id}:reply`,
         content: (
-          <AgentRunTrace
-            state="thought"
-            entries={traceEntries}
-            durationMs={isLatestResult ? (result?.durationMs ?? session.durationMs) : session.durationMs}
-          />
-        )
+          <div className={isLiveSession ? "construct-interact-streaming-reply" : undefined} data-streaming={isLiveSession || undefined}>
+            <MarkdownBlock
+              className="space-y-2 text-[13px] leading-[1.65] [&_p]:leading-[1.65]"
+              content={session.reply}
+              theme={theme}
+              onOpenConcept={onOpenConcept}
+              onOpenFile={onOpenFile}
+            />
+          </div>
+        ),
+        meta: !isLiveSession && session.assessment
+          ? `${interactStatusLabel(session.assessment.status)} · ${session.assessment.confidence} confidence · ${session.assessment.assistanceLevel}`
+          : undefined
       });
     }
 
-    assistantParts.push({
-      type: "text",
-      id: `${session.id}:reply`,
-      content: (
-        <MarkdownBlock
-          className="space-y-2 text-[13px] leading-[1.65] [&_p]:leading-[1.65]"
-          content={session.reply}
-          theme={theme}
-          onOpenConcept={onOpenConcept}
-          onOpenFile={onOpenFile}
-        />
-      ),
-      meta: `${interactStatusLabel(session.status)} · ${session.confidence} confidence · ${session.assistanceLevel}`
-    });
-
-    if (isLatestResult && result) {
-      assistantParts.push(...buildInteractResultParts(result, {
+    const resultSource = isLatestResult && result
+      ? result
+      : sessionToResultPartsSource(session);
+    if (!isLiveSession) {
+      assistantParts.push(...buildInteractResultParts(resultSource, {
         sessionId: session.id,
         onInteractAction
       }));
@@ -182,7 +212,7 @@ function buildInteractMessages({
     ];
   });
 
-  if (isPending && answerDraft.trim()) {
+  if (isPending && !liveSession && answerDraft.trim()) {
     messages.push(
       {
         id: `${blockId}:pending-user`,
@@ -198,7 +228,7 @@ function buildInteractMessages({
           content: (
             <AgentRunTrace
               state="thinking"
-              entries={buildPendingAgentRunTraceEntries(progressLogs)}
+              entries={[]}
               defaultOpen
             />
           )
@@ -210,70 +240,62 @@ function buildInteractMessages({
   return messages;
 }
 
-function buildPendingAgentRunTraceEntries(logs: LogEntry[]): AgentRunTraceEntry[] {
-  const entries: AgentRunTraceEntry[] = [];
-  const seen = new Set<string>();
-
-  for (const log of logs) {
-    const payload = log.structured?.kind === "structured" ? log.structured.payload : undefined;
-    const event = extractRunEvent(payload);
-    if (event && !seen.has(event.id)) {
-      seen.add(event.id);
-      entries.push(runEventToTraceEntry(event));
-      continue;
-    }
-
-    const legacyToolName = parseLegacyToolCallName(log.message);
-    if (!legacyToolName) continue;
-    const legacyId = `${log.timestamp}:${legacyToolName}`;
-    if (seen.has(legacyId)) continue;
-    seen.add(legacyId);
-    entries.push({
-      id: legacyId,
-      kind: "tool",
-      title: classifyInteractTool(legacyToolName),
-      subtitle: log.message.split("\n").slice(1).find((line) => line.trim())?.trim(),
-      status: log.level === "error" ? "error" : "completed",
-      icon: classifyToolTraceIcon(legacyToolName)
-    });
-  }
-
-  return entries.slice(-16);
-}
-
 function buildAgentRunTraceEntries(
   events: ConstructAgentRunEvent[],
-  toolCalls: ConstructInteractToolCallRecord[]
+  toolCalls: ConstructInteractToolCallRecord[],
+  active = false
 ): AgentRunTraceEntry[] {
-  const entries = events.map(runEventToTraceEntry);
-  const recordedToolIds = new Set(events.filter((event) => event.type === "tool").map((event) => event.id));
+  const entries = events.filter((event) => event.type !== "iteration").map(runEventToTraceEntry);
+  const recordedToolCounts = new Map<string, number>();
+  for (const event of events) {
+    if (event.type === "tool") {
+      const name = event.toolName ?? event.title;
+      recordedToolCounts.set(name, (recordedToolCounts.get(name) ?? 0) + 1);
+    }
+  }
 
   for (const toolCall of toolCalls) {
-    if (!recordedToolIds.has(toolCall.id)) {
-      entries.push(toolCallToTraceEntry(toolCall));
+    const recordedCount = recordedToolCounts.get(toolCall.name) ?? 0;
+    if (recordedCount > 0) {
+      recordedToolCounts.set(toolCall.name, recordedCount - 1);
+      continue;
     }
+    entries.push(toolCallToTraceEntry(toolCall));
+  }
+
+  if (active && !entries.some((entry) => entry.status === "running" || entry.status === "pending")) {
+    entries.push({
+      id: "construct-interact-live-tail",
+      kind: "thought",
+      title: "Continuing",
+      status: "running"
+    });
   }
 
   return entries;
 }
 
 function runEventToTraceEntry(event: ConstructAgentRunEvent): AgentRunTraceEntry {
-  if (event.type === "iteration") {
+  if (event.type === "iteration" || event.type === "reasoning") {
     return {
       id: event.id,
       kind: "thought",
-      title: event.title,
-      subtitle: event.detail,
-      status: traceStatus(event.status)
+      title: event.type === "reasoning" ? "Analyzing request" : event.title,
+      subtitle: event.type === "reasoning" && event.status === "completed" ? undefined : event.detail,
+      status: traceStatus(event.status),
+      input: event.type === "iteration" ? stringifyTraceValue(event.input) : undefined,
+      output: event.type === "iteration" ? sanitizeIterationOutput(event.outputPreview) : undefined
     };
   }
 
+  const status = traceStatus(event.status);
+  const copy = interactToolCopy(event.toolName ?? event.title, status);
   return {
     id: event.id,
     kind: "tool",
-    title: classifyInteractTool(event.toolName ?? event.title),
+    title: copy.title,
     subtitle: event.detail,
-    status: traceStatus(event.status),
+    status,
     icon: classifyToolTraceIcon(event.toolName ?? event.title),
     input: stringifyTraceValue(event.input),
     output: event.outputPreview
@@ -281,35 +303,17 @@ function runEventToTraceEntry(event: ConstructAgentRunEvent): AgentRunTraceEntry
 }
 
 function toolCallToTraceEntry(toolCall: ConstructInteractToolCallRecord): AgentRunTraceEntry {
+  const copy = interactToolCopy(toolCall.name, "completed");
   return {
     id: toolCall.id,
     kind: "tool",
-    title: classifyInteractTool(toolCall.name),
+    title: copy.title,
     subtitle: toolCall.reason,
     status: "completed",
     icon: classifyToolTraceIcon(toolCall.name),
     input: stringifyTraceValue(toolCall.input),
     output: toolCall.outputPreview
   };
-}
-
-function extractRunEvent(payload: unknown): ConstructAgentRunEvent | null {
-  if (isRunEvent(payload)) return payload;
-  if (isRecord(payload) && isRunEvent(payload.event)) return payload.event;
-  return null;
-}
-
-function isRunEvent(value: unknown): value is ConstructAgentRunEvent {
-  if (!isRecord(value)) return false;
-  return typeof value.id === "string"
-    && (value.type === "iteration" || value.type === "tool")
-    && (value.status === "running" || value.status === "completed" || value.status === "error")
-    && typeof value.title === "string"
-    && typeof value.createdAt === "string";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function traceStatus(status: ConstructAgentRunEvent["status"]): AgentRunTraceEntry["status"] {
@@ -328,8 +332,15 @@ function stringifyTraceValue(value: unknown): string | undefined {
   }
 }
 
-function parseLegacyToolCallName(message: string): string | null {
-  return message.match(/^Tool call:\s*([^\n]+)/)?.[1]?.trim() ?? null;
+function sanitizeIterationOutput(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  try {
+    const parsed = JSON.parse(value) as Record<string, unknown>;
+    delete parsed.text;
+    return JSON.stringify(parsed, null, 2);
+  } catch {
+    return undefined;
+  }
 }
 
 function classifyToolTraceIcon(name: string): AgentRunTraceEntry["icon"] {
@@ -338,6 +349,9 @@ function classifyToolTraceIcon(name: string): AgentRunTraceEntry["icon"] {
       return "search";
     case "getStepFiles":
     case "readWorkspaceFile":
+    case "writeWorkspaceFile":
+    case "appendWorkspaceFile":
+    case "createWorkspaceFolder":
       return "file";
     case "getLatestTerminalOutput":
       return "terminal";
@@ -363,7 +377,7 @@ function classifyToolTraceIcon(name: string): AgentRunTraceEntry["icon"] {
 }
 
 function buildInteractResultParts(
-  result: ConstructInteractClientResult,
+  result: Pick<ConstructInteractClientResult, "actions" | "dynamicSteps" | "dynamicStepValidation" | "generatedLiveSteps" | "liveStepValidation">,
   {
     sessionId,
     onInteractAction
@@ -373,6 +387,8 @@ function buildInteractResultParts(
   }
 ): AgentSessionMessagePart[] {
   const parts: AgentSessionMessagePart[] = [];
+  const dynamicSteps = result.dynamicSteps ?? result.generatedLiveSteps ?? [];
+  const dynamicStepValidation = result.dynamicStepValidation ?? result.liveStepValidation ?? [];
 
   if (result.actions?.length) {
     parts.push({
@@ -389,18 +405,18 @@ function buildInteractResultParts(
     });
   }
 
-  if (result.generatedLiveSteps?.length) {
+  if (dynamicSteps.length) {
     parts.push({
       type: "tool",
       id: `${sessionId}:live-steps`,
       tool: {
         id: `${sessionId}:live-steps-tool`,
-        title: "Generated live steps",
-        subtitle: `${result.generatedLiveSteps.length} step${result.generatedLiveSteps.length === 1 ? "" : "s"}`,
+        title: "Dynamic Steps",
+        subtitle: `${dynamicSteps.length} step${dynamicSteps.length === 1 ? "" : "s"}`,
         status: "completed",
         content: (
           <div className="flex flex-col gap-2">
-            {result.generatedLiveSteps.map((step) => (
+            {dynamicSteps.map((step) => (
               <div key={step.id ?? step.title} className="rounded-md border bg-muted/30 p-3 text-xs">
                 <strong className="font-medium">{step.title}</strong>
                 <p>{step.reason}</p>
@@ -412,20 +428,20 @@ function buildInteractResultParts(
     });
   }
 
-  if (result.liveStepValidation?.length) {
+  if (dynamicStepValidation.length) {
     parts.push({
       type: "tool",
       id: `${sessionId}:validation`,
       tool: {
         id: `${sessionId}:validation-tool`,
-        title: "Live step validation",
-        subtitle: `${result.liveStepValidation.length} check${result.liveStepValidation.length === 1 ? "" : "s"}`,
-        status: result.liveStepValidation.some((entry) => entry.status === "rejected") ? "error" : "completed",
+        title: "Dynamic Step validation",
+        subtitle: `${dynamicStepValidation.length} check${dynamicStepValidation.length === 1 ? "" : "s"}`,
+        status: dynamicStepValidation.some((entry) => entry.status === "rejected") ? "error" : "completed",
         content: (
           <div className="flex flex-col gap-2">
-            {result.liveStepValidation.map((entry, index) => (
+            {dynamicStepValidation.map((entry, index) => (
               <div key={`${entry.stepId ?? entry.draftTitle ?? index}`} className="rounded-md border bg-muted/30 p-3 text-xs">
-                <strong className="font-medium">{entry.stepId ?? entry.draftTitle ?? "Generated step"}</strong>
+                <strong className="font-medium">{entry.stepId ?? entry.draftTitle ?? "Dynamic Step"}</strong>
                 <p>{entry.reason}</p>
               </div>
             ))}
@@ -443,6 +459,7 @@ function interactActionIcon(action: ConstructInteractAction) {
     case "open-concept":
       return <BookOpenIcon data-icon="inline-start" />;
     case "open-file":
+    case "focus-code":
       return <FileCodeIcon data-icon="inline-start" />;
     case "go-to-step":
       return <PathIcon data-icon="inline-start" />;
@@ -451,39 +468,87 @@ function interactActionIcon(action: ConstructInteractAction) {
   }
 }
 
-function classifyInteractTool(name: string): string {
+function interactToolCopy(name: string, status: AgentRunTraceEntry["status"]): { title: string } {
+  const done = status === "completed";
+  const failed = status === "error";
+  const title = failed ? "Failed" : done ? "Completed" : "Running";
   switch (name) {
+    case "getTapeOverview":
+      return { title: failed ? "Could not inspect tape" : done ? "Inspected tape" : "Inspecting tape" };
+    case "getTapeStep":
+    case "getTapeStepBlock":
+      return { title: failed ? "Could not read tape structure" : done ? "Read tape structure" : "Reading tape structure" };
+    case "getTapeFileManifest":
+      return { title: failed ? "Could not inspect tape files" : done ? "Inspected tape files" : "Inspecting tape files" };
+    case "parseDynamicStep":
+      return { title: failed ? "Could not parse Dynamic Step" : done ? "Parsed Dynamic Step" : "Parsing Dynamic Step" };
+    case "compileDynamicStep":
+      return { title: failed ? "Could not compile Dynamic Step" : done ? "Compiled Dynamic Step" : "Compiling Dynamic Step" };
+    case "createDynamicStep":
+      return { title: failed ? "Could not create Dynamic Step" : done ? "Created Dynamic Step" : "Creating Dynamic Step" };
+    case "recordLearnerAssessment":
+      return { title: failed ? "Could not record assessment" : done ? "Recorded assessment" : "Recording assessment" };
     case "getCurrentStep":
     case "getStepById":
     case "getPreviousSteps":
     case "getNextSteps":
-      return "Read lesson step";
+      return { title: failed ? "Could not read lesson step" : done ? "Read lesson step" : "Reading lesson step" };
     case "getCurrentBlock":
-      return "Checked current question";
+      return { title: failed ? "Could not check current question" : done ? "Checked current question" : "Checking current question" };
     case "getAuthoredResources":
-      return "Checked lesson resources";
+      return { title: failed ? "Could not fetch lesson resources" : done ? "Fetched lesson resources" : "Fetching lesson resources" };
     case "getConceptCard":
-      return "Checked concept card";
+      return { title: failed ? "Could not fetch concept card" : done ? "Fetched concept card" : "Fetching concept card" };
     case "getReferenceCard":
-      return "Checked reference card";
+      return { title: failed ? "Could not fetch reference card" : done ? "Fetched reference card" : "Fetching reference card" };
     case "findWhereConceptWasIntroduced":
-      return "Found concept introduction";
+      return { title: failed ? "Could not find concept introduction" : done ? "Found concept introduction" : "Finding concept introduction" };
     case "searchTape":
-      return "Searched the tape";
+      return { title: failed ? "Could not search lesson" : done ? "Searched lesson" : "Searching lesson" };
     case "getLearnerState":
     case "getProjectLearnerState":
     case "getKnowledgeBase":
     case "getRecallHistory":
     case "getConstructInteractHistory":
-      return "Checked learner history";
+      return { title: failed ? "Could not check learner history" : done ? "Checked learner history" : "Checking learner history" };
     case "getStepFiles":
     case "readWorkspaceFile":
-      return "Read project context";
+      return { title: failed ? "Could not read project context" : done ? "Read project context" : "Reading project context" };
+    case "writeWorkspaceFile":
+    case "appendWorkspaceFile":
+    case "createWorkspaceFolder":
+      return { title: failed ? "Could not edit workspace" : done ? "Edited workspace" : "Editing workspace" };
     case "getLatestTerminalOutput":
-      return "Checked terminal output";
+      return { title: failed ? "Could not check terminal output" : done ? "Checked terminal output" : "Checking terminal output" };
     default:
-      return name;
+      return { title: `${title} ${name}` };
   }
+}
+
+function mergeSessions(
+  sessions: ConstructInteractSessionRecord[],
+  liveSession?: ConstructInteractSessionRecord
+): ConstructInteractSessionRecord[] {
+  if (!liveSession) {
+    return sessions;
+  }
+  const index = sessions.findIndex((session) => session.id === liveSession.id);
+  if (index >= 0) {
+    return sessions.map((session, sessionIndex) => sessionIndex === index ? liveSession : session);
+  }
+  return [...sessions, liveSession];
+}
+
+function sessionToResultPartsSource(
+  session: ConstructInteractSessionRecord
+): Pick<ConstructInteractClientResult, "actions" | "dynamicSteps" | "dynamicStepValidation" | "generatedLiveSteps" | "liveStepValidation"> {
+  return {
+    actions: session.actions,
+    dynamicSteps: session.dynamicSteps,
+    dynamicStepValidation: session.dynamicStepValidation,
+    generatedLiveSteps: session.generatedLiveSteps,
+    liveStepValidation: session.liveStepValidation
+  };
 }
 
 function interactStatusLabel(status: ConstructInteractClientResult["status"]): string {

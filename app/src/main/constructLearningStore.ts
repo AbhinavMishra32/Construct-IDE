@@ -48,6 +48,10 @@ export class ConstructLearningStore {
     });
   }
 
+  async upsertConstructInteractSession(session: ConstructInteractSession): Promise<ConstructLearningState> {
+    return this.applyPatch({ constructInteractSessionUpsert: session });
+  }
+
   async recordRecallAttempt(attempt: RecallAttemptRecord): Promise<ConstructLearningState> {
     return this.applyPatch({
       recallAttempt: attempt,
@@ -193,7 +197,11 @@ export function applyLearningPatch(state: ConstructLearningState, patch: Learnin
   }
 
   if (patch.constructInteractSession) {
-    ensureProjectState(state, patch.constructInteractSession.projectId).constructInteractSessions.push(patch.constructInteractSession);
+    upsertConstructInteractSession(state, patch.constructInteractSession);
+  }
+
+  if (patch.constructInteractSessionUpsert) {
+    upsertConstructInteractSession(state, patch.constructInteractSessionUpsert);
   }
 
   if (patch.recallAttempt) {
@@ -267,6 +275,16 @@ export function applyLearningPatch(state: ConstructLearningState, patch: Learnin
     kind: "learning-state-patch",
     createdAt: new Date().toISOString()
   });
+}
+
+function upsertConstructInteractSession(state: ConstructLearningState, session: ConstructInteractSession): void {
+  const project = ensureProjectState(state, session.projectId);
+  const index = project.constructInteractSessions.findIndex((candidate) => candidate.id === session.id);
+  if (index >= 0) {
+    project.constructInteractSessions[index] = session;
+    return;
+  }
+  project.constructInteractSessions.push(session);
 }
 
 function normalizeLearningState(input: Partial<ConstructLearningState>): ConstructLearningState {

@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { createDefaultLearningState } from "../shared/constructLearning";
-import { buildAuthoredResourceContext } from "./constructInteractTools";
+import {
+  buildAuthoredResourceContext,
+  buildConstructInteractHistorySummary,
+  buildLearnerStateSummary,
+  buildProjectLearnerStateSummary
+} from "./constructInteractTools";
 
 describe("Construct Interact authored resource provenance", () => {
   it("keeps ABI wording attributed to its concept card instead of the lesson step", () => {
@@ -100,5 +105,48 @@ describe("Construct Interact authored resource provenance", () => {
       savedAt: undefined
     });
     assert.equal(context.references[0]?.sourceType, "authored-reference-card");
+  });
+});
+
+describe("Construct Interact compact learner context", () => {
+  it("does not return prior traces and tool payloads to the model", () => {
+    const state = createDefaultLearningState("test-device");
+    state.projects.project = {
+      projectId: "project",
+      conceptUnderstanding: {},
+      constructInteractSessions: [{
+        id: "session-1",
+        projectId: "project",
+        blockId: "general:project",
+        prompt: "Ask",
+        answer: "Help me",
+        status: "continue",
+        confidence: "low",
+        reply: "Here is focused help.",
+        coveredConceptIds: [],
+        missingConceptIds: [],
+        assistanceLevel: "hint",
+        createdAt: new Date().toISOString(),
+        toolCalls: [{ id: "tool-1", name: "largeTool", reason: "test", outputPreview: "large payload", createdAt: new Date().toISOString() }],
+        agentEvents: [{ id: "event-1", type: "reasoning", status: "completed", title: "Analysis", text: "private", createdAt: new Date().toISOString() }]
+      }],
+      recallAttempts: [],
+      assistanceEvents: [],
+      conceptEngagement: {},
+      plannedOverlays: [],
+      generatedLiveSteps: [],
+      generatedLiveStepRuns: []
+    };
+
+    const globalSummary = buildLearnerStateSummary(state, []);
+    const projectSummary = buildProjectLearnerStateSummary(state, "project");
+    const history = buildConstructInteractHistorySummary(state, "project", 8);
+
+    assert.equal(globalSummary.projectCount, 1);
+    assert.equal(projectSummary?.interactAttemptCount, 1);
+    assert.equal("agentEvents" in history[0], false);
+    assert.equal("toolCalls" in history[0], false);
+    assert.equal(JSON.stringify(history).includes("large payload"), false);
+    assert.equal(JSON.stringify(history).includes("private"), false);
   });
 });

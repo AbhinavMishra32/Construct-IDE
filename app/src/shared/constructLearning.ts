@@ -6,8 +6,24 @@ export type ConceptUnderstanding = {
   projectIds: string[];
 };
 
+export type ConstructInteractMode = "lesson-check" | "general";
+
+export type ConstructInteractRunStatus = "queued" | "running" | "completed" | "error";
+
+export type ConstructInteractAssessment = {
+  status: "continue" | "pass" | "almost" | "skip";
+  confidence: "low" | "medium" | "high";
+  coveredConceptIds: string[];
+  missingConceptIds: string[];
+  assistanceLevel: "none" | "hint" | "guided" | "answer";
+  shouldAdvance: boolean;
+  reason: string;
+};
+
 export type ConstructInteractSession = {
   id: string;
+  threadId?: string;
+  mode?: ConstructInteractMode;
   projectId: string;
   blockId: string;
   prompt: string;
@@ -19,6 +35,15 @@ export type ConstructInteractSession = {
   missingConceptIds: string[];
   assistanceLevel: "none" | "hint" | "guided" | "answer";
   createdAt: string;
+  updatedAt?: string;
+  runStatus?: ConstructInteractRunStatus;
+  errorMessage?: string;
+  assessment?: ConstructInteractAssessment;
+  actions?: ConstructInteractAction[];
+  dynamicSteps?: DynamicStepDraft[];
+  dynamicStepValidation?: DynamicStepValidationRecord[];
+  generatedLiveSteps?: GeneratedLiveStepDraft[];
+  liveStepValidation?: GeneratedLiveStepValidationRecord[];
   toolCalls?: ConstructInteractToolCallRecord[];
   agentEvents?: ConstructAgentRunEvent[];
   durationMs?: number;
@@ -26,10 +51,11 @@ export type ConstructInteractSession = {
 
 export type ConstructAgentRunEvent = {
   id: string;
-  type: "iteration" | "tool";
+  type: "iteration" | "tool" | "reasoning" | "message";
   status: "running" | "completed" | "error";
   title: string;
   detail?: string;
+  text?: string;
   iteration?: number;
   toolName?: string;
   input?: unknown;
@@ -58,6 +84,33 @@ export type ConstructInteractAction =
       reason: string;
     }
   | {
+      type: "focus-code";
+      path: string;
+      line?: number;
+      endLine?: number;
+      anchor?: string;
+      label: string;
+      reason: string;
+    }
+  | {
+      type: "focus-terminal";
+      label: string;
+      reason: string;
+    }
+  | {
+      type: "run-terminal-command";
+      command: string;
+      cwd?: string;
+      label: string;
+      reason: string;
+    }
+  | {
+      type: "open-dynamic-steps";
+      stepIds: string[];
+      label: string;
+      reason: string;
+    }
+  | {
       type: "create-live-steps";
       stepIds: string[];
       label: string;
@@ -69,24 +122,72 @@ export type GeneratedLiveStepBlock =
       kind: "explain";
       id: string;
       content: string;
+      focus?: string;
       concepts?: string[];
+    }
+  | {
+      kind: "guide";
+      id: string;
+      guideKind?: string;
+      title?: string;
+      content: string;
+      sections?: Array<{ kind: string; content: string }>;
     }
   | {
       kind: "interact";
       id: string;
+      interactKind?: string;
+      uses?: string[];
       prompt: string;
       basis: string;
       understanding: string;
       assessment: string;
       concepts?: string[];
+      resources?: {
+        concepts?: string[];
+        files?: string[];
+        references?: string[];
+        steps?: string[];
+      };
+    }
+  | {
+      kind: "edit";
+      id: string;
+      path: string;
+      mode: "create" | "append" | "replace";
+      typing?: "ghost";
+      anchor?: string;
+      language?: string;
+      content: string;
+      notes?: Array<{ when: "start" | "done" | "progress"; content: string }>;
     }
   | {
       kind: "recall";
       id: string;
-      mode: "reply";
+      mode: "code" | "reply";
+      path?: string;
+      target?: string;
+      references?: string[];
       task: string;
       support?: string;
       concepts?: string[];
+    }
+  | {
+      kind: "run";
+      id: string;
+      cwd?: string;
+      command: string;
+    }
+  | {
+      kind: "expect";
+      id: string;
+      expectationType?: "manual";
+      content: string;
+    }
+  | {
+      kind: "checkpoint";
+      id: string;
+      content: string;
     };
 
 export type GeneratedLiveStep = {
@@ -132,7 +233,16 @@ export type GeneratedLiveStepValidationRecord = {
   createdAt: string;
 };
 
+// Dynamic Steps are tape-shaped, runtime-authored steps. The GeneratedLiveStep
+// aliases remain while existing learning-state files migrate without data loss.
+export type DynamicStepBlock = GeneratedLiveStepBlock;
+export type DynamicStep = GeneratedLiveStep;
+export type DynamicStepDraft = GeneratedLiveStepDraft;
+export type DynamicStepValidationRecord = GeneratedLiveStepValidationRecord;
+
 export type ConstructInteractRuntimeInput = {
+  mode?: ConstructInteractMode;
+  threadId?: string;
   projectId: string;
   blockId: string;
   tapeSpec?: string;
@@ -152,6 +262,7 @@ export type ConstructInteractRuntimeInput = {
 };
 
 export type ConstructInteractResult = {
+  requestedOutcome?: "answer" | "clarify" | "navigate" | "create-dynamic-steps" | "generate-learning-steps" | "edit-project" | "run-command";
   status: "continue" | "pass" | "almost" | "skip";
   confidence: "low" | "medium" | "high";
   reply: string;
@@ -159,13 +270,27 @@ export type ConstructInteractResult = {
   missingConceptIds: string[];
   assistanceLevel: "none" | "hint" | "guided" | "answer";
   shouldAdvance: boolean;
+  assessment?: ConstructInteractAssessment;
   statePatch?: LearningStatePatch;
   actions?: ConstructInteractAction[];
+  dynamicSteps?: DynamicStepDraft[];
+  dynamicStepValidation?: DynamicStepValidationRecord[];
   generatedLiveSteps?: GeneratedLiveStepDraft[];
   toolCalls?: ConstructInteractToolCallRecord[];
   agentEvents?: ConstructAgentRunEvent[];
   durationMs?: number;
   liveStepValidation?: GeneratedLiveStepValidationRecord[];
+};
+
+export type ConstructInteractSessionEvent = {
+  type: "started" | "updated" | "completed" | "error";
+  runId: string;
+  projectId: string;
+  blockId: string;
+  threadId?: string;
+  session: ConstructInteractSession;
+  result?: ConstructInteractResult;
+  learningState?: ConstructLearningState;
 };
 
 export type RecallAttemptRecord = {
@@ -275,6 +400,7 @@ export type LearningStatePatch = {
   globalConceptUnderstanding?: Record<string, Partial<ConceptUnderstanding> & { conceptId: string }>;
   projectConceptUnderstanding?: Record<string, Record<string, Partial<ConceptUnderstanding> & { conceptId: string }>>;
   constructInteractSession?: ConstructInteractSession;
+  constructInteractSessionUpsert?: ConstructInteractSession;
   recallAttempt?: RecallAttemptRecord;
   assistanceEvent?: AssistanceEventRecord;
   conceptOpen?: {

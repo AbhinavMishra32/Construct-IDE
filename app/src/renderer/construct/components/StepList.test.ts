@@ -3,15 +3,15 @@ import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 
-describe("StepList generated live step UI", () => {
-  it("merges static and generated live steps with an amber generated treatment", () => {
+describe("StepList Dynamic Step UI", () => {
+  it("merges static and Dynamic Steps with a distinct treatment", () => {
     const source = readFileSync(fileURLToPath(new URL("./StepList.tsx", import.meta.url)), "utf8");
     assert.match(source, /mergeStaticAndLiveSteps/);
     assert.match(source, /insertAfterStepId/);
     assert.match(source, /insertBeforeStepId/);
-    assert.match(source, /Generated Live/);
+    assert.match(source, /DynamicStep/);
     assert.match(source, /<Timeline/);
-    assert.match(source, /<Badge variant="secondary">Generated Live<\/Badge>/);
+    assert.match(source, /<Badge variant="secondary">Dynamic<\/Badge>/);
   });
 
   it("keeps the right-panel Steps tab full-height with an internal scroller", () => {

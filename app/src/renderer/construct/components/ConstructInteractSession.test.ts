@@ -4,15 +4,34 @@ import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 
 describe("Construct Interact Codex-style UI", () => {
-  it("uses an unboxed conversation surface with durable, genuine agent traces", () => {
+  it("uses an unboxed conversation surface with live-only agent activity", () => {
     const source = readFileSync(fileURLToPath(new URL("./guide/ConstructInteractSession.tsx", import.meta.url)), "utf8");
-    assert.match(source, /const recentSessions = sessions;/);
+    assert.match(source, /const recentSessions = mergeSessions\(sessions, liveSession\);/);
+    assert.match(source, /className="flex h-full min-h-0 flex-1 flex-col overflow-hidden"/);
     assert.match(source, /emptyState=\{null\}/);
     assert.match(source, /session\.agentEvents/);
+    assert.match(source, /const completedEvents = isLatestResult/);
     assert.match(source, /result\?\.agentEvents/);
+    assert.match(source, /\(isLiveSession \? \(session\.agentEvents \?\? \[\]\) : completedEvents\)/);
+    assert.match(source, /\.filter\(\(event\) => event\.type !== "message" && event\.type !== "iteration"\)/);
+    assert.match(source, /if \(tracePart\)[\s\S]*assistantParts\.push\(tracePart\);[\s\S]*if \(session\.reply\.trim\(\)\)/);
+    assert.match(source, /title: event\.type === "reasoning" \? "Analyzing request" : event\.title/);
+    assert.match(source, /event\.status === "completed" \? undefined : event\.detail/);
+    assert.match(source, /events\.filter\(\(event\) => event\.type !== "iteration"\)/);
+    assert.match(source, /liveSession\?: ConstructInteractSessionRecord/);
     assert.match(source, /<AgentRunTrace/);
-    assert.match(source, /buildPendingAgentRunTraceEntries/);
+    assert.match(source, /entries=\{\[\]\}/);
+    assert.match(source, /buildAgentRunTraceEntries\(events, toolCalls, isLiveSession\)/);
+    assert.match(source, /title: "Continuing"/);
+    assert.match(source, /construct-interact-streaming-reply/);
+    assert.match(source, /meta: !isLiveSession && session\.assessment/);
+    assert.match(source, /title: "Dynamic Steps"/);
     assert.match(source, /output: event\.outputPreview/);
+    assert.doesNotMatch(source, /event\.text \?\? event\.detail/);
+    assert.doesNotMatch(source, /LogEntry/);
+    assert.doesNotMatch(source, /progressLogs/);
+    assert.doesNotMatch(source, /buildPendingAgentRunTraceEntries/);
+    assert.doesNotMatch(source, /parseLegacyToolCallName/);
     assert.doesNotMatch(source, /AgentThinkingSteps/);
     assert.doesNotMatch(source, /ExploringToolList/);
     assert.doesNotMatch(source, /Preparing to inspect/);
@@ -36,13 +55,23 @@ describe("Construct Interact Codex-style UI", () => {
     assert.doesNotMatch(source, /Enter to send<\/span>/);
   });
 
+  it("keeps slot tab bodies as real scrollable flex viewports", () => {
+    const source = readFileSync(fileURLToPath(new URL("../../../../../opaline/packages/ui/src/slot-panel/SlotPanel.tsx", import.meta.url)), "utf8");
+    assert.match(source, /className="flex min-h-0 flex-1 flex-col overflow-hidden"/);
+    assert.match(source, /className="flex min-h-0 flex-1 flex-col overflow-hidden outline-none"/);
+  });
+
   it("renders a compact expandable trace with distinct thought and tool rows", () => {
     const source = readFileSync(fileURLToPath(new URL("../../../../../opaline/packages/ui/src/agent-session/AgentRunTrace.tsx", import.meta.url)), "utf8");
-    assert.match(source, /Thought for/);
+    assert.match(source, /Working/);
+    assert.match(source, /Worked for/);
+    assert.match(source, /animate-in fade-in-0 slide-in-from-top-1/);
+    assert.match(source, /slide-in-from-left-1/);
     assert.match(source, /opaline-agent-thinking-shimmer/);
     assert.match(source, /data-slot="agent-run-trace-entry"/);
     assert.match(source, /TraceDetail label="Input"/);
     assert.match(source, /TraceDetail label="Result"/);
     assert.match(source, /border-l border-border/);
+    assert.doesNotMatch(source, /Thought for/);
   });
 });

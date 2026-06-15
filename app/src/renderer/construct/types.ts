@@ -2,6 +2,7 @@ import type {
   ConceptUnderstanding,
   ConstructInteractResult,
   ConstructInteractRuntimeInput,
+  ConstructInteractSessionEvent,
   ConstructInteractSession,
   ConstructLearningState,
   KnowledgeBaseRecord,
@@ -539,6 +540,18 @@ export type ConstructProjectsApi = {
       >
     >;
   }): Promise<ProjectRecord>;
+  readProjectTape(projectId: string): Promise<{
+    projectId: string;
+    sourcePath: string | null;
+    source: string;
+  }>;
+  updateProjectTape(input: {
+    projectId: string;
+    source: string;
+    originalSource: string;
+    authoringFixes: AuthoringFixRecord[];
+    program: ConstructProgram;
+  }): Promise<ProjectRecord>;
   listFiles(projectId: string): Promise<WorkspaceTreeNode[]>;
   readFile(input: { projectId: string; path: string }): Promise<WorkspaceFile>;
   writeFile(input: {
@@ -559,6 +572,7 @@ export type ConstructProjectsApi = {
     answer?: string;
   }): Promise<VerificationResult>;
   runConstructInteract(input: Omit<ConstructInteractRuntimeInput, "learningState">): Promise<ConstructInteractClientResult>;
+  onConstructInteractSessionEvent(callback: (event: ConstructInteractSessionEvent) => void): () => void;
   reviewConstructAuthoring(input: {
     spec: string;
     projectView: unknown;

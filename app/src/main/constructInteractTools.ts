@@ -1,21 +1,29 @@
 import path from "node:path";
-import { readFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 
 import { createTool } from "@mastra/core/tools";
 import type { ToolsInput } from "@mastra/core/agent";
 import { z } from "zod";
 
 import type {
+  ConstructInteractAssessment,
   ConstructInteractRuntimeInput,
   ConstructInteractToolCallRecord,
-  ConstructLearningState
+  ConstructLearningState,
+  DynamicStepDraft
 } from "../shared/constructLearning";
+import { supportsGeneratedLiveSteps } from "../shared/tapeFeatures";
+import {
+  createConstructTapeAgentTools,
+  createLearnerAssessmentTool,
+  type ConstructTapeToolProject
+} from "./agent-tools/constructTapeTools";
 
-type ToolProject = {
+type ToolProject = ConstructTapeToolProject & {
   id: string;
   title: string;
   workspacePath: string;
-  program: {
+  program: ConstructTapeToolProject["program"] & {
     steps: Array<{
       id?: string;
       title?: string;
@@ -35,25 +43,46 @@ export function createConstructInteractTools(input: {
   request: Omit<ConstructInteractRuntimeInput, "learningState">;
   learningState: ConstructLearningState;
   latestTerminalOutput?: string;
+  sourceBlockId?: string;
+  sourceStepId?: string;
+  sourceRunId?: string;
+  onToolCallStart?: (record: Omit<ConstructInteractToolCallRecord, "outputPreview">) => void;
   onToolCall?: (record: ConstructInteractToolCallRecord) => void;
 }): {
   tools: ToolsInput;
   toolCalls: ConstructInteractToolCallRecord[];
+  dynamicSteps: DynamicStepDraft[];
+  getAssessment: () => ConstructInteractAssessment | undefined;
 } {
   const toolCalls: ConstructInteractToolCallRecord[] = [];
-  const recordToolCall = (name: string, reason: string, output: unknown, toolInput?: unknown) => {
-    const record: ConstructInteractToolCallRecord = {
+  const recordToolCall = async <T>(name: string, reason: string, output: T | Promise<T>, toolInput?: unknown): Promise<T> => {
+    const baseRecord = {
       id: `${name}-${toolCalls.length + 1}`,
       name,
       reason,
       input: toolInput,
-      outputPreview: preview(output),
       createdAt: new Date().toISOString()
+    } satisfies Omit<ConstructInteractToolCallRecord, "outputPreview">;
+    input.onToolCallStart?.(baseRecord);
+    const resolvedOutput = await output;
+    const record: ConstructInteractToolCallRecord = {
+      ...baseRecord,
+      outputPreview: preview(resolvedOutput)
     };
     toolCalls.push(record);
     input.onToolCall?.(record);
-    return output;
+    return resolvedOutput;
   };
+
+  const tapeTools = createConstructTapeAgentTools({
+    project: input.project,
+    recordToolCall,
+    canCreateDynamicSteps: supportsGeneratedLiveSteps(input.request.tapeSpec ?? input.project.program.spec ?? ""),
+    sourceBlockId: input.sourceBlockId ?? input.request.blockId,
+    sourceStepId: input.sourceStepId,
+    sourceRunId: input.sourceRunId
+  });
+  const learnerAssessment = createLearnerAssessmentTool(recordToolCall);
 
   const getCurrentStep = createTool({
     id: "getCurrentStep",
@@ -61,7 +90,7 @@ export function createConstructInteractTools(input: {
     inputSchema: z.object({}).strict(),
     execute: async () => recordToolCall(
       "getCurrentStep",
-      "Anchor the learner answer to the active authored tape step.",
+      "Active lesson step",
       summarizeStep(input.project.program.steps[input.project.currentStepIndex], input.project.currentStepIndex)
     )
   });
@@ -72,7 +101,7 @@ export function createConstructInteractTools(input: {
     inputSchema: z.object({ stepId: z.string().min(1) }).strict(),
     execute: async (toolInput) => recordToolCall(
       "getStepById",
-      "Inspect a specific authored step requested by the evaluator.",
+      "Requested lesson step",
       input.project.program.steps
         .map((step, index) => ({ step, index }))
         .filter(({ step, index }) => (step.id ?? `step-${index + 1}`) === toolInput.stepId)
@@ -90,7 +119,7 @@ export function createConstructInteractTools(input: {
       const start = Math.max(0, input.project.currentStepIndex - limit);
       return recordToolCall(
         "getPreviousSteps",
-        "Check whether remediation already exists in completed or previous authored steps.",
+        "Previous lesson steps",
         input.project.program.steps.slice(start, input.project.currentStepIndex).map((step, offset) => summarizeStep(step, start + offset)),
         toolInput
       );
@@ -103,7 +132,7 @@ export function createConstructInteractTools(input: {
     inputSchema: z.object({ limit: z.number().int().min(1).max(4).default(2) }).strict(),
     execute: async (toolInput) => recordToolCall(
       "getNextSteps",
-      "Inspect upcoming authored steps before deciding whether to advance.",
+      "Upcoming lesson steps",
       input.project.program.steps
         .slice(input.project.currentStepIndex + 1, input.project.currentStepIndex + 1 + (toolInput.limit ?? 2))
         .map((step, offset) => summarizeStep(step, input.project.currentStepIndex + 1 + offset)),
@@ -117,7 +146,7 @@ export function createConstructInteractTools(input: {
     inputSchema: z.object({}).strict(),
     execute: async () => recordToolCall(
       "getCurrentBlock",
-      "Compare the answer against the active Construct Interact block.",
+      "Current question block",
       summarizeBlock(input.project.program.steps[input.project.currentStepIndex]?.blocks[input.project.currentBlockIndex] ?? null)
     )
   });
@@ -128,7 +157,7 @@ export function createConstructInteractTools(input: {
     inputSchema: z.object({}).strict(),
     execute: async () => recordToolCall(
       "getAuthoredResources",
-      "Resolve authored remediation hints without mixing step text, concept cards, and reference cards.",
+      "Authored resources",
       buildAuthoredResourceContext(input)
     )
   });
@@ -139,7 +168,7 @@ export function createConstructInteractTools(input: {
     inputSchema: z.object({ conceptIds: z.array(z.string().min(1)).min(1).max(5) }).strict(),
     execute: async (toolInput) => recordToolCall(
       "getConceptCard",
-      "Inspect relevant concept cards before generating new help.",
+      "Relevant concept cards",
       uniqueStrings(toolInput.conceptIds)
         .map((conceptId) => conceptResource(input, conceptId))
         .filter(Boolean),
@@ -153,7 +182,7 @@ export function createConstructInteractTools(input: {
     inputSchema: z.object({ referenceIds: z.array(z.string().min(1)).min(1).max(5) }).strict(),
     execute: async (toolInput) => recordToolCall(
       "getReferenceCard",
-      "Inspect authored reference cards without attributing their text to the lesson step.",
+      "Authored reference cards",
       uniqueStrings(toolInput.referenceIds)
         .map((referenceId) => referenceResource(input.project.program.references, referenceId))
         .filter(Boolean),
@@ -167,7 +196,7 @@ export function createConstructInteractTools(input: {
     inputSchema: z.object({ conceptIds: z.array(z.string().min(1)).min(1).max(5) }).strict(),
     execute: async (toolInput) => recordToolCall(
       "findWhereConceptWasIntroduced",
-      "Prefer sending the learner back to the authored introduction when it exists.",
+      "Concept introduction points",
       uniqueStrings(toolInput.conceptIds).map((conceptId) => ({
         conceptId,
         steps: input.project.program.steps
@@ -190,25 +219,29 @@ export function createConstructInteractTools(input: {
         .filter(({ step }) => JSON.stringify(step).toLowerCase().includes(query))
         .slice(0, toolInput.limit)
         .map(({ step, index }) => summarizeStep(step, index));
-      return recordToolCall("searchTape", "Search authored content for an existing explanation.", results, toolInput);
+      return recordToolCall("searchTape", "Authored lesson search results", results, toolInput);
     }
   });
 
   const getLearnerState = createTool({
     id: "getLearnerState",
-    description: "Read the global learner state snapshot.",
+    description: "Read a compact global learner summary relevant to this request.",
     inputSchema: z.object({}).strict(),
-    execute: async () => recordToolCall("getLearnerState", "Inspect global learner state.", input.learningState)
+    execute: async () => recordToolCall(
+      "getLearnerState",
+      "Global learner state",
+      buildLearnerStateSummary(input.learningState, input.request.resources?.concepts ?? [])
+    )
   });
 
   const getProjectLearnerState = createTool({
     id: "getProjectLearnerState",
-    description: "Read learner state for this project: recall attempts, assistance, generated live steps, and concept weakness.",
+    description: "Read a compact learner summary for this project: recent recall, assistance, generated steps, and concept weakness.",
     inputSchema: z.object({}).strict(),
     execute: async () => recordToolCall(
       "getProjectLearnerState",
-      "Inspect project-specific recall, assistance, generated live steps, and concept weakness.",
-      input.learningState.projects[input.project.id] ?? null,
+      "Project learner state",
+      buildProjectLearnerStateSummary(input.learningState, input.project.id),
       { projectId: input.project.id }
     )
   });
@@ -219,7 +252,7 @@ export function createConstructInteractTools(input: {
     inputSchema: z.object({}).strict(),
     execute: async () => recordToolCall(
       "getKnowledgeBase",
-      "Inspect saved knowledge records relevant to this project.",
+      "Saved project knowledge",
       Object.values(input.learningState.knowledgeBase.concepts).filter((record) => record.sourceProjectId === input.project.id)
     )
   });
@@ -230,7 +263,7 @@ export function createConstructInteractTools(input: {
     inputSchema: z.object({ limit: z.number().int().min(1).max(12).default(8) }).strict(),
     execute: async (toolInput) => recordToolCall(
       "getRecallHistory",
-      "Use recent recall outcomes to decide whether this is a weak prerequisite.",
+      "Recent recall attempts",
       (input.learningState.projects[input.project.id]?.recallAttempts ?? []).slice(-(toolInput.limit ?? 8)),
       toolInput
     )
@@ -238,12 +271,12 @@ export function createConstructInteractTools(input: {
 
   const getConstructInteractHistory = createTool({
     id: "getConstructInteractHistory",
-    description: "Read recent Construct Interact attempts for this project.",
+    description: "Read compact recent Construct Interact outcomes for this project. Traces and full tool payloads are intentionally omitted.",
     inputSchema: z.object({ limit: z.number().int().min(1).max(12).default(8) }).strict(),
     execute: async (toolInput) => recordToolCall(
       "getConstructInteractHistory",
-      "Use recent Construct Interact attempts without relying only on the latest answer.",
-      (input.learningState.projects[input.project.id]?.constructInteractSessions ?? []).slice(-(toolInput.limit ?? 8)),
+      "Recent Construct Interact attempts",
+      buildConstructInteractHistorySummary(input.learningState, input.project.id, toolInput.limit ?? 8),
       toolInput
     )
   });
@@ -254,7 +287,7 @@ export function createConstructInteractTools(input: {
     inputSchema: z.object({}).strict(),
     execute: async () => recordToolCall(
       "getStepFiles",
-      "Inspect file references explicitly scoped by the current interact block.",
+      "Scoped file references",
       input.request.resources?.files ?? []
     )
   });
@@ -265,8 +298,50 @@ export function createConstructInteractTools(input: {
     inputSchema: z.object({ path: z.string().min(1) }).strict(),
     execute: async (toolInput) => recordToolCall(
       "readWorkspaceFile",
-      "Read a scoped project file.",
+      `Project file: ${toolInput.path}`,
       { path: toolInput.path, content: await readWorkspaceFile(input.project, toolInput.path) },
+      toolInput
+    )
+  });
+
+  const writeWorkspaceFileTool = createTool({
+    id: "writeWorkspaceFile",
+    description: "Create or replace a project-relative workspace file. Available only in general Construct Interact.",
+    inputSchema: z.object({
+      path: z.string().min(1),
+      content: z.string()
+    }).strict(),
+    execute: async (toolInput) => recordToolCall(
+      "writeWorkspaceFile",
+      `Project file: ${toolInput.path}`,
+      await writeWorkspaceFile(input.project, toolInput.path, toolInput.content),
+      toolInput
+    )
+  });
+
+  const appendWorkspaceFileTool = createTool({
+    id: "appendWorkspaceFile",
+    description: "Append text to a project-relative workspace file. Available only in general Construct Interact.",
+    inputSchema: z.object({
+      path: z.string().min(1),
+      content: z.string()
+    }).strict(),
+    execute: async (toolInput) => recordToolCall(
+      "appendWorkspaceFile",
+      `Project file: ${toolInput.path}`,
+      await appendWorkspaceFile(input.project, toolInput.path, toolInput.content),
+      toolInput
+    )
+  });
+
+  const createWorkspaceFolderTool = createTool({
+    id: "createWorkspaceFolder",
+    description: "Create a project-relative workspace folder. Available only in general Construct Interact.",
+    inputSchema: z.object({ path: z.string().min(1) }).strict(),
+    execute: async (toolInput) => recordToolCall(
+      "createWorkspaceFolder",
+      `Project folder: ${toolInput.path}`,
+      await createWorkspaceFolder(input.project, toolInput.path),
       toolInput
     )
   });
@@ -277,33 +352,46 @@ export function createConstructInteractTools(input: {
     inputSchema: z.object({}).strict(),
     execute: async () => recordToolCall(
       "getLatestTerminalOutput",
-      "Use latest terminal output when the learner mentions an error or command result.",
+      "Latest terminal output",
       (input.latestTerminalOutput ?? "").slice(-4000)
     )
   });
 
+  const tools: ToolsInput = {
+    ...tapeTools.tools,
+    getCurrentStep,
+    getStepById,
+    getPreviousSteps,
+    getNextSteps,
+    getCurrentBlock,
+    getAuthoredResources,
+    getConceptCard,
+    getReferenceCard,
+    findWhereConceptWasIntroduced,
+    searchTape,
+    getLearnerState,
+    getProjectLearnerState,
+    getKnowledgeBase,
+    getRecallHistory,
+    getConstructInteractHistory,
+    getStepFiles,
+    readWorkspaceFile: readWorkspaceFileTool,
+    getLatestTerminalOutput
+  };
+
+  if (input.request.mode === "general") {
+    tools.writeWorkspaceFile = writeWorkspaceFileTool;
+    tools.appendWorkspaceFile = appendWorkspaceFileTool;
+    tools.createWorkspaceFolder = createWorkspaceFolderTool;
+  } else {
+    tools.recordLearnerAssessment = learnerAssessment.tool;
+  }
+
   return {
     toolCalls,
-    tools: {
-      getCurrentStep,
-      getStepById,
-      getPreviousSteps,
-      getNextSteps,
-      getCurrentBlock,
-      getAuthoredResources,
-      getConceptCard,
-      getReferenceCard,
-      findWhereConceptWasIntroduced,
-      searchTape,
-      getLearnerState,
-      getProjectLearnerState,
-      getKnowledgeBase,
-      getRecallHistory,
-      getConstructInteractHistory,
-      getStepFiles,
-      readWorkspaceFile: readWorkspaceFileTool,
-      getLatestTerminalOutput
-    }
+    tools,
+    dynamicSteps: tapeTools.dynamicSteps,
+    getAssessment: learnerAssessment.getAssessment
   };
 }
 
@@ -354,6 +442,69 @@ export function buildAuthoredResourceContext(input: Parameters<typeof createCons
   };
 }
 
+export function buildLearnerStateSummary(
+  state: ConstructLearningState,
+  relevantConceptIds: string[]
+) {
+  const relevantConcepts = Object.fromEntries(uniqueStrings(relevantConceptIds)
+    .map((conceptId) => [conceptId, state.learner.globalConceptUnderstanding[conceptId]])
+    .filter((entry): entry is [string, NonNullable<typeof entry[1]>] => Boolean(entry[1])));
+  return {
+    sourceType: "global-learner-summary",
+    preferences: state.learner.preferences,
+    relevantConceptUnderstanding: relevantConcepts,
+    recentAssistance: state.learner.assistanceEvents.slice(-6),
+    projectCount: Object.keys(state.projects).length,
+    savedConceptCount: Object.keys(state.knowledgeBase.concepts).length,
+    updatedAt: state.sync.updatedAt
+  };
+}
+
+export function buildProjectLearnerStateSummary(state: ConstructLearningState, projectId: string) {
+  const project = state.projects[projectId];
+  if (!project) return null;
+  return {
+    sourceType: "project-learner-summary",
+    projectId,
+    currentPosition: project.currentPosition,
+    conceptUnderstanding: project.conceptUnderstanding,
+    conceptEngagement: project.conceptEngagement,
+    recentRecallAttempts: project.recallAttempts.slice(-8),
+    recentAssistance: project.assistanceEvents.slice(-8),
+    activeOverlays: project.plannedOverlays.filter((overlay) => overlay.enabled),
+    dynamicSteps: project.generatedLiveSteps.slice(-8).map((step) => ({
+      id: step.id,
+      title: step.title,
+      reason: step.reason,
+      status: step.status,
+      conceptIds: step.conceptIds,
+      createdAt: step.createdAt
+    })),
+    interactAttemptCount: project.constructInteractSessions.length
+  };
+}
+
+export function buildConstructInteractHistorySummary(
+  state: ConstructLearningState,
+  projectId: string,
+  limit: number
+) {
+  return (state.projects[projectId]?.constructInteractSessions ?? [])
+    .slice(-Math.max(1, Math.min(limit, 12)))
+    .map((session) => ({
+      id: session.id,
+      blockId: session.blockId,
+      mode: session.mode,
+      answer: session.answer.slice(0, 600),
+      reply: session.reply.slice(0, 900),
+      assessment: session.assessment,
+      dynamicStepCount: (session.dynamicSteps ?? session.generatedLiveSteps)?.length ?? 0,
+      runStatus: session.runStatus,
+      createdAt: session.createdAt,
+      durationMs: session.durationMs
+    }));
+}
+
 function conceptResource(input: Parameters<typeof createConstructInteractTools>[0], conceptId: string) {
   const concept = conceptObjects(input.project.program.concepts).find((candidate) => candidate.id === conceptId);
   if (!concept) return null;
@@ -400,20 +551,57 @@ function conceptObjects(concepts: unknown[] | undefined): Array<Record<string, u
 }
 
 async function readWorkspaceFile(project: ToolProject, relativePath: string): Promise<string> {
-  const workspace = path.resolve(project.workspacePath);
-  const normalized = path.normalize(relativePath);
-  if (path.isAbsolute(normalized) || normalized === ".." || normalized.startsWith(`..${path.sep}`)) {
-    return "[blocked: invalid project-relative path]";
-  }
-  const resolved = path.resolve(workspace, normalized);
-  if (resolved !== workspace && !resolved.startsWith(`${workspace}${path.sep}`)) {
-    return "[blocked: path escaped project workspace]";
-  }
+  const target = resolveWorkspacePath(project, relativePath);
+  if (!target.ok) return `[blocked: ${target.reason}]`;
   try {
-    return (await readFile(resolved, "utf8")).slice(0, 5000);
+    return (await readFile(target.resolved, "utf8")).slice(0, 5000);
   } catch (error) {
     return `[unavailable: ${error instanceof Error ? error.message : String(error)}]`;
   }
+}
+
+async function writeWorkspaceFile(project: ToolProject, relativePath: string, content: string) {
+  const target = resolveWorkspacePath(project, relativePath);
+  if (!target.ok) return { path: relativePath, status: "blocked", reason: target.reason };
+  await mkdir(path.dirname(target.resolved), { recursive: true });
+  await writeFile(target.resolved, content, "utf8");
+  return { path: target.normalized, status: "written", bytes: Buffer.byteLength(content, "utf8") };
+}
+
+async function appendWorkspaceFile(project: ToolProject, relativePath: string, content: string) {
+  const target = resolveWorkspacePath(project, relativePath);
+  if (!target.ok) return { path: relativePath, status: "blocked", reason: target.reason };
+  await mkdir(path.dirname(target.resolved), { recursive: true });
+  await appendFile(target.resolved, content, "utf8");
+  return { path: target.normalized, status: "appended", bytes: Buffer.byteLength(content, "utf8") };
+}
+
+async function createWorkspaceFolder(project: ToolProject, relativePath: string) {
+  const target = resolveWorkspacePath(project, relativePath);
+  if (!target.ok) return { path: relativePath, status: "blocked", reason: target.reason };
+  await mkdir(target.resolved, { recursive: true });
+  return { path: target.normalized, status: "created" };
+}
+
+function resolveWorkspacePath(
+  project: ToolProject,
+  relativePath: string
+): { ok: true; workspace: string; normalized: string; resolved: string } | { ok: false; reason: string } {
+  const workspace = path.resolve(project.workspacePath);
+  const normalized = path.normalize(relativePath);
+  if (
+    path.isAbsolute(normalized) ||
+    normalized === "." ||
+    normalized === ".." ||
+    normalized.startsWith(`..${path.sep}`)
+  ) {
+    return { ok: false, reason: "invalid project-relative path" };
+  }
+  const resolved = path.resolve(workspace, normalized);
+  if (resolved !== workspace && !resolved.startsWith(`${workspace}${path.sep}`)) {
+    return { ok: false, reason: "path escaped project workspace" };
+  }
+  return { ok: true, workspace, normalized, resolved };
 }
 
 function preview(value: unknown): string {

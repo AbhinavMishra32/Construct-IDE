@@ -21,8 +21,8 @@ export type ConstructAgentRuntimeRequest<T> = {
   tools?: ConstructAgentTools;
   maxRetries?: number;
   maxSteps?: number;
-  completionGuard?: (iteration: ConstructAgentIteration) => { continue?: boolean; feedback?: string } | void;
-  onTrace?: (entry: ConstructAgentTraceEntry) => void;
+  abortSignal?: AbortSignal;
+  onTrace?: (entry: ConstructAgentTraceEntry<T>) => void;
 };
 
 export type ConstructAgentIteration = {
@@ -39,12 +39,14 @@ export type ConstructAgentRuntime = {
   generateStructured<T>(request: ConstructAgentRuntimeRequest<T>): Promise<T>;
 };
 
-export type ConstructAgentTraceEntry = {
+export type ConstructAgentTraceEntry<T = unknown> = {
   title: string;
   detail: string;
   level?: "info" | "warn" | "error" | "debug";
   payload?: unknown;
   event?: ConstructAgentRunEvent;
+  responseText?: string;
+  partialObject?: Partial<T>;
 };
 
 export function createConstructAgentRuntime(): ConstructAgentRuntime {
@@ -134,13 +136,13 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
     new Mastra({ agents: { [request.id]: agent }, logger: false });
     try {
       const hasTools = request.tools && Object.keys(request.tools).length > 0;
-      const availableToolNames = new Set(Object.keys(request.tools ?? {}));
       const runStartedAt = Date.now();
-      const output = await agent.generate(request.prompt, {
+      const runEventId = outputEventId(request.id);
+      const output = await agent.stream(request.prompt, {
         structuredOutput: {
-          schema: request.schema,
-          model
+          schema: request.schema
         },
+        abortSignal: request.abortSignal,
         maxSteps: request.maxSteps ?? (hasTools ? 12 : 1),
         toolChoice: hasTools ? "auto" : undefined,
         onIterationComplete: (iteration) => {
@@ -154,12 +156,26 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
             finishReason: iteration.finishReason
           };
           const event: ConstructAgentRunEvent = {
-            id: `${outputEventId(request.id)}:iteration:${iteration.iteration}`,
+            id: `${runEventId}:model-step:${iteration.iteration}`,
             type: "iteration",
             status: "completed",
-            title: iterationTitle(normalized, availableToolNames),
-            detail: iterationDetail(normalized, availableToolNames),
+            title: `Model step ${iteration.iteration}`,
+            detail: iterationDetail(normalized),
             iteration: iteration.iteration,
+            input: {
+              iteration: iteration.iteration,
+              maxIterations: iteration.maxIterations,
+              toolCalls: iteration.toolCalls
+            },
+            outputPreview: stringifyForTrace({
+              toolResults: iteration.toolResults.map((result) => ({
+                id: result.id,
+                name: result.name,
+                status: result.error ? "error" : "completed"
+              })),
+              isFinal: iteration.isFinal,
+              finishReason: iteration.finishReason
+            }),
             createdAt: new Date().toISOString()
           };
           request.onTrace?.({
@@ -177,47 +193,36 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
             }
           });
 
-          const guarded = request.completionGuard?.(normalized);
-          if (guarded) return guarded;
-          if (iteration.isFinal && deferredWorkPromise(iteration.text)) {
-            return {
-              continue: true,
-              feedback: "Your response only promises future inspection or action. Complete that work in this run: call whichever tools are useful, inspect their results, and then return the final structured learner response."
-            };
-          }
         }
       });
+      const [object, steps, finishReason, totalUsage] = await Promise.all([
+        output.object,
+        output.steps,
+        output.finishReason,
+        output.totalUsage,
+        this.observeStream(output.fullStream, request, runStartedAt, runEventId)
+      ]);
 
       request.onTrace?.({
         title: "Raw structured output",
         level: "debug",
-        detail: stringifyForTrace(output.object),
-        payload: output.object
+        detail: stringifyForTrace(object),
+        payload: object
       });
 
-      const finishEvent: ConstructAgentRunEvent = {
-        id: `${outputEventId(request.id)}:finish`,
-        type: "iteration",
-        status: "completed",
-        title: "Prepared the response",
-        detail: `${output.steps.length} model step${output.steps.length === 1 ? "" : "s"} completed in ${formatDuration(Date.now() - runStartedAt)}.`,
-        iteration: output.steps.length,
-        createdAt: new Date().toISOString()
-      };
       request.onTrace?.({
         title: "Agent run completed",
         level: "debug",
-        detail: finishEvent.detail ?? finishEvent.title,
-        event: finishEvent,
+        detail: `${steps.length} model step${steps.length === 1 ? "" : "s"} completed in ${formatDuration(Date.now() - runStartedAt)}.`,
         payload: {
-          stepCount: output.steps.length,
-          finishReason: output.finishReason,
-          totalUsage: output.totalUsage,
+          stepCount: steps.length,
+          finishReason,
+          totalUsage,
           durationMs: Date.now() - runStartedAt
         }
       });
 
-      const parsed = request.schema.parse(output.object);
+      const parsed = request.schema.parse(object);
       request.onTrace?.({
         title: "Validated structured result",
         level: "debug",
@@ -241,6 +246,266 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
       throw error;
     }
   }
+
+  private async observeStream<T>(
+    stream: { getReader: () => { read: () => Promise<{ done?: boolean; value?: unknown }>; releaseLock?: () => void } },
+    request: ConstructAgentRuntimeRequest<T>,
+    runStartedAt: number,
+    runEventId: string
+  ): Promise<void> {
+    const reasoning = new Map<string, {
+      event: ConstructAgentRunEvent;
+      characterCount: number;
+      lastPublishedAt: number;
+    }>();
+    const messages = new Map<string, {
+      text: string;
+      lastPublishedAt: number;
+    }>();
+    const pendingToolInputs = new Map<string, string>();
+    const toolEvents = new Map<string, ConstructAgentRunEvent>();
+
+    const reader = stream.getReader();
+    try {
+      while (true) {
+        const { done, value: rawChunk } = await reader.read();
+        if (done) {
+          break;
+        }
+      const chunk = rawChunk as {
+        type?: string;
+        payload?: Record<string, unknown>;
+        object?: Partial<T>;
+      };
+
+      if (chunk.type === "reasoning-start") {
+        const id = stringField(chunk.payload, "id") ?? `${runEventId}:reasoning`;
+        const event: ConstructAgentRunEvent = {
+          id,
+          type: "reasoning",
+          status: "running",
+          title: "Analyzing request",
+          detail: "Working through the request",
+          createdAt: new Date().toISOString()
+        };
+        reasoning.set(id, {
+          event,
+          characterCount: 0,
+          lastPublishedAt: Date.now()
+        });
+        request.onTrace?.({
+          title: "Agent analysis started",
+          level: "debug",
+          detail: event.detail ?? "",
+          event,
+          payload: { type: chunk.type, id }
+        });
+        continue;
+      }
+
+      if (chunk.type === "reasoning-delta") {
+        const id = stringField(chunk.payload, "id") ?? `${runEventId}:reasoning`;
+        const text = stringField(chunk.payload, "text") ?? "";
+        const state = reasoning.get(id) ?? {
+          event: {
+            id,
+            type: "reasoning" as const,
+            status: "running" as const,
+            title: "Analyzing request",
+            detail: "Working through the request",
+            createdAt: new Date().toISOString()
+          },
+          characterCount: 0,
+          lastPublishedAt: 0
+        };
+        state.characterCount += text.length;
+        const now = Date.now();
+        if (now - state.lastPublishedAt >= 500) {
+          state.lastPublishedAt = now;
+          request.onTrace?.({
+            title: "Agent analysis progress",
+            level: "debug",
+            detail: `${state.characterCount} reasoning characters received`,
+            event: state.event,
+            payload: {
+              type: chunk.type,
+              id,
+              characterCount: state.characterCount
+            }
+          });
+        }
+        reasoning.set(id, state);
+        continue;
+      }
+
+      if (chunk.type === "reasoning-end") {
+        const id = stringField(chunk.payload, "id");
+        const state = id ? reasoning.get(id) : undefined;
+        if (state) {
+          state.event.status = "completed";
+          state.event.detail = "Analysis complete";
+          request.onTrace?.({
+            title: "Agent analysis completed",
+            level: "debug",
+            detail: state.event.detail,
+            event: state.event,
+            payload: {
+              type: chunk.type,
+              id,
+              characterCount: state.characterCount
+            }
+          });
+        }
+        continue;
+      }
+
+      if (chunk.type === "text-start") {
+        const id = stringField(chunk.payload, "id") ?? `${runEventId}:message`;
+        messages.set(id, { text: "", lastPublishedAt: 0 });
+        request.onTrace?.({
+          title: "Agent response started",
+          level: "debug",
+          detail: "",
+          responseText: "",
+          payload: { type: chunk.type, id }
+        });
+        continue;
+      }
+
+      if (chunk.type === "text-delta") {
+        const id = stringField(chunk.payload, "id") ?? `${runEventId}:message`;
+        const text = stringField(chunk.payload, "text") ?? "";
+        const state = messages.get(id) ?? { text: "", lastPublishedAt: 0 };
+        state.text += text;
+        const now = Date.now();
+        if (now - state.lastPublishedAt >= 50) {
+          state.lastPublishedAt = now;
+          request.onTrace?.({
+            title: "Agent response streaming",
+            level: "debug",
+            detail: `${state.text.length} response characters received`,
+            responseText: state.text
+          });
+        }
+        messages.set(id, state);
+        continue;
+      }
+
+      if (chunk.type === "text-end") {
+        const id = stringField(chunk.payload, "id");
+        const state = id ? messages.get(id) : undefined;
+        if (state) {
+          request.onTrace?.({
+            title: "Agent response completed",
+            level: "debug",
+            detail: `${state.text.length} response characters received`,
+            responseText: state.text,
+            payload: {
+              type: chunk.type,
+              id,
+              text: state.text
+            }
+          });
+        }
+        continue;
+      }
+
+      if (chunk.type === "tool-call-input-streaming-start") {
+        const toolCallId = stringField(chunk.payload, "toolCallId");
+        if (toolCallId) {
+          pendingToolInputs.set(toolCallId, "");
+          const toolName = stringField(chunk.payload, "toolName") ?? "tool";
+          const event: ConstructAgentRunEvent = {
+            id: toolCallId,
+            type: "tool",
+            status: "running",
+            title: toolName,
+            detail: "Preparing input",
+            toolName,
+            input: {},
+            createdAt: new Date().toISOString()
+          };
+          toolEvents.set(toolCallId, event);
+          request.onTrace?.({ title: "Agent tool input started", level: "debug", detail: toolName, event, payload: chunk });
+        }
+        continue;
+      }
+
+      if (chunk.type === "tool-call-delta") {
+        const toolCallId = stringField(chunk.payload, "toolCallId");
+        if (toolCallId) {
+          pendingToolInputs.set(toolCallId, `${pendingToolInputs.get(toolCallId) ?? ""}${stringField(chunk.payload, "argsTextDelta") ?? ""}`);
+          request.onTrace?.({
+            title: "Agent tool input streaming",
+            level: "debug",
+            detail: stringField(chunk.payload, "toolName") ?? toolEvents.get(toolCallId)?.toolName ?? "tool",
+            payload: {
+              type: chunk.type,
+              toolCallId,
+              toolName: stringField(chunk.payload, "toolName"),
+              inputLength: pendingToolInputs.get(toolCallId)?.length ?? 0
+            }
+          });
+        }
+        continue;
+      }
+
+      if (chunk.type === "tool-call") {
+        const toolCallId = stringField(chunk.payload, "toolCallId") ?? `${runEventId}:tool`;
+        const toolName = stringField(chunk.payload, "toolName") ?? "tool";
+        const event: ConstructAgentRunEvent = {
+          id: toolCallId,
+          type: "tool",
+          status: "running",
+          title: toolName,
+          detail: "Running",
+          toolName,
+          input: chunk.payload?.args ?? parseMaybeJson(pendingToolInputs.get(toolCallId)),
+          createdAt: new Date().toISOString()
+        };
+        toolEvents.set(toolCallId, event);
+        request.onTrace?.({ title: "Agent tool call streamed", level: "debug", detail: toolName, event, payload: chunk });
+        continue;
+      }
+
+      if (chunk.type === "tool-result" || chunk.type === "tool-error") {
+        const toolCallId = stringField(chunk.payload, "toolCallId") ?? `${runEventId}:tool`;
+        const toolName = stringField(chunk.payload, "toolName") ?? "tool";
+        const existing = toolEvents.get(toolCallId);
+        const event: ConstructAgentRunEvent = {
+          id: toolCallId,
+          type: "tool",
+          status: chunk.type === "tool-error" ? "error" : "completed",
+          title: toolName,
+          detail: chunk.type === "tool-error" ? "Failed" : "Completed",
+          toolName,
+          input: existing?.input ?? chunk.payload?.args,
+          outputPreview: previewUnknown(chunk.type === "tool-error" ? chunk.payload?.error : chunk.payload?.result),
+          createdAt: existing?.createdAt ?? new Date().toISOString()
+        };
+        toolEvents.set(toolCallId, event);
+        request.onTrace?.({ title: "Agent tool result streamed", level: chunk.type === "tool-error" ? "error" : "debug", detail: toolName, event, payload: chunk });
+        continue;
+      }
+
+      const partialObject = chunk.type === "network-object"
+        ? (chunk.payload?.object as Partial<T> | undefined)
+        : chunk.object;
+      if ((chunk.type === "object" || chunk.type === "network-object") && partialObject) {
+        request.onTrace?.({
+          title: "Structured response delta",
+          level: "debug",
+          detail: `${formatDuration(Date.now() - runStartedAt)} elapsed`,
+          partialObject,
+          payload: partialObject
+        });
+        continue;
+      }
+    }
+    } finally {
+      reader.releaseLock?.();
+    }
+  }
 }
 
 let runEventSequence = 0;
@@ -250,29 +515,39 @@ function outputEventId(agentId: string): string {
   return `${agentId}-${Date.now()}-${runEventSequence}`;
 }
 
-function deferredWorkPromise(text: string): boolean {
-  return /\b(?:let me|i(?:'|’)ll|i will|before i .*?let me|i need to)\s+(?:check|inspect|look|read|review|find|search|add|create|open|verify)\b/i.test(text);
+function iterationDetail(iteration: ConstructAgentIteration): string {
+  const toolCallCount = iteration.toolCalls.length;
+  const toolResultCount = iteration.toolResults.length;
+  if (toolCallCount > 0 || toolResultCount > 0) {
+    return [
+      toolCallCount > 0 ? `${toolCallCount} tool call${toolCallCount === 1 ? "" : "s"}` : null,
+      toolResultCount > 0 ? `${toolResultCount} result${toolResultCount === 1 ? "" : "s"}` : null,
+      iteration.isFinal ? "final step" : null
+    ].filter(Boolean).join(" · ");
+  }
+  return iteration.isFinal ? `Final step · ${iteration.finishReason}` : `Step ${iteration.iteration} · ${iteration.finishReason}`;
 }
 
-function iterationTitle(iteration: ConstructAgentIteration, availableToolNames: Set<string>): string {
-  const toolCalls = iteration.toolCalls.filter((call) => availableToolNames.has(call.name));
-  if (toolCalls.length > 0) {
-    return `Used ${toolCalls.length} tool${toolCalls.length === 1 ? "" : "s"}`;
-  }
-  if (iteration.isFinal) return "Formed the final response";
-  if (iteration.toolCalls.length > 0) return "Organized the structured response";
-  return "Reviewed the available context";
+function stringField(payload: Record<string, unknown> | undefined, key: string): string | undefined {
+  const value = payload?.[key];
+  return typeof value === "string" ? value : undefined;
 }
 
-function iterationDetail(iteration: ConstructAgentIteration, availableToolNames: Set<string>): string {
-  const toolCalls = iteration.toolCalls.filter((call) => availableToolNames.has(call.name));
-  if (toolCalls.length > 0) {
-    return toolCalls.map((call) => call.name).join(", ");
+function parseMaybeJson(value: string | undefined): unknown {
+  if (!value) return undefined;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
   }
-  if (iteration.toolResults.length > 0) {
-    return `Reviewed ${iteration.toolResults.length} tool result${iteration.toolResults.length === 1 ? "" : "s"}.`;
+}
+
+function previewUnknown(value: unknown): string {
+  try {
+    return JSON.stringify(value, null, 2).slice(0, 1600);
+  } catch {
+    return String(value).slice(0, 1600);
   }
-  return `Iteration ${iteration.iteration} finished with ${iteration.finishReason}.`;
 }
 
 function formatDuration(durationMs: number): string {

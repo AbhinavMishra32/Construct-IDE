@@ -6,19 +6,19 @@ import {
   FilePlusIcon,
   LightbulbIcon,
   PlayIcon,
+  RotateCcwIcon,
   SparklesIcon,
   TerminalIcon,
   WandSparklesIcon,
   XCircleIcon
 } from "lucide-react";
 import { BookOpenIcon as PhosphorBookOpenIcon } from "@phosphor-icons/react";
-import { useState, useMemo } from "react";
+import { useState, useMemo, type ReactNode } from "react";
 
 import { Button, Timeline } from "@opaline/ui";
 
 import { ConstructInteractSession } from "./guide/ConstructInteractSession";
 import { MarkdownBlock } from "./MarkdownBlock";
-import type { LogEntry } from "../lib/logStore";
 import { assistanceLabel, blockLabel, currentBlockNumber, totalBlocks } from "../lib/runtime";
 import type { InlineFileRef } from "../lib/inlineRefs";
 import type {
@@ -31,7 +31,7 @@ import type {
   VerificationLogEntry,
   VerificationResult
 } from "../types";
-import type { ProjectLearningState } from "../../../shared/constructLearning";
+import type { ConstructInteractSession as ConstructInteractSessionRecord, ProjectLearningState } from "../../../shared/constructLearning";
 
 type GhostProgress = {
   typedChars: number;
@@ -58,7 +58,9 @@ export function GuidePanel({
   interactAnswer,
   onInteractAnswerChange,
   interactResult,
-  interactProgressLogs,
+  liveInteractSession,
+  interactSessions,
+  interactToolbar,
   onSubmitInteract,
   onInteractAction,
   interactingId,
@@ -83,7 +85,9 @@ export function GuidePanel({
   interactAnswer: string;
   onInteractAnswerChange: (answer: string) => void;
   interactResult?: ConstructInteractClientResult;
-  interactProgressLogs: LogEntry[];
+  liveInteractSession?: ConstructInteractSessionRecord;
+  interactSessions?: ProjectLearningState["constructInteractSessions"];
+  interactToolbar?: ReactNode;
   onSubmitInteract: () => void;
   onInteractAction?: (action: NonNullable<ConstructInteractClientResult["actions"]>[number]) => void;
   interactingId: string | null;
@@ -160,7 +164,9 @@ export function GuidePanel({
             interactAnswer={interactAnswer}
             onInteractAnswerChange={onInteractAnswerChange}
             interactResult={interactResult}
-            interactProgressLogs={interactProgressLogs}
+            liveInteractSession={liveInteractSession}
+            interactSessions={interactSessions}
+            interactToolbar={interactToolbar}
             onSubmitInteract={onSubmitInteract}
             onInteractAction={onInteractAction}
             interactingId={interactingId}
@@ -219,7 +225,9 @@ function GuideBlock({
   interactAnswer,
   onInteractAnswerChange,
   interactResult,
-  interactProgressLogs,
+  liveInteractSession,
+  interactSessions,
+  interactToolbar,
   onSubmitInteract,
   onInteractAction,
   interactingId,
@@ -244,7 +252,9 @@ function GuideBlock({
   interactAnswer: string;
   onInteractAnswerChange: (answer: string) => void;
   interactResult?: ConstructInteractClientResult;
-  interactProgressLogs: LogEntry[];
+  liveInteractSession?: ConstructInteractSessionRecord;
+  interactSessions?: ProjectLearningState["constructInteractSessions"];
+  interactToolbar?: ReactNode;
   onSubmitInteract: () => void;
   onInteractAction?: (action: NonNullable<ConstructInteractClientResult["actions"]>[number]) => void;
   interactingId: string | null;
@@ -308,7 +318,7 @@ function GuideBlock({
             interactAnswer={interactAnswer}
             onInteractAnswerChange={onInteractAnswerChange}
             interactResult={interactResult}
-            interactProgressLogs={interactProgressLogs}
+            liveInteractSession={liveInteractSession}
             onSubmitInteract={onSubmitInteract}
             onInteractAction={onInteractAction}
             interactingId={interactingId}
@@ -329,7 +339,8 @@ function GuideBlock({
   }
 
   if (block.kind === "interact") {
-    const sessions = (projectLearningState?.constructInteractSessions ?? []).filter((session) => session.blockId === block.id);
+    const sessions = interactSessions
+      ?? (projectLearningState?.constructInteractSessions ?? []).filter((session) => session.blockId === block.id);
     return (
       <ConstructInteractSession
         blockId={block.id}
@@ -337,7 +348,8 @@ function GuideBlock({
         theme={theme}
         sessions={sessions}
         result={interactResult}
-        progressLogs={interactProgressLogs}
+        liveSession={liveInteractSession}
+        toolbar={interactToolbar}
         answer={interactAnswer}
         onAnswerChange={onInteractAnswerChange}
         onSubmit={onSubmitInteract}

@@ -86,7 +86,13 @@ function summarizeStructuredPayload(payload: unknown): string {
   }
 
   const record = payload as Record<string, unknown>;
+  const tracePreview = summarizeAgentTracePayload(record);
+  if (tracePreview) {
+    return tracePreview;
+  }
+
   const preferredKeys = [
+    "type",
     "status",
     "confidence",
     "passed",
@@ -116,6 +122,60 @@ function summarizeStructuredPayload(payload: unknown): string {
   }
 
   return parts.join(" | ");
+}
+
+function summarizeAgentTracePayload(record: Record<string, unknown>): string | undefined {
+  const event = isRecord(record.event) ? record.event : undefined;
+  const payload = isRecord(record.payload) ? record.payload : undefined;
+  const nestedPayload = isRecord(payload?.payload) ? payload.payload : undefined;
+  const parts: string[] = [];
+
+  if (event) {
+    pushPart(parts, "event", event.type);
+    pushPart(parts, "status", event.status);
+    pushPart(parts, "title", event.title);
+    pushPart(parts, "tool", event.toolName);
+    pushPart(parts, "iteration", event.iteration);
+  }
+
+  if (payload) {
+    pushPart(parts, "chunk", payload.type);
+    pushPart(parts, "iteration", payload.iteration);
+    pushPart(parts, "maxIterations", payload.maxIterations);
+    pushArrayCount(parts, "toolCalls", payload.toolCalls);
+    pushArrayCount(parts, "toolResults", payload.toolResults);
+    pushPart(parts, "isFinal", payload.isFinal);
+    pushPart(parts, "finishReason", payload.finishReason);
+  }
+
+  const detailSource = nestedPayload ?? payload;
+  if (detailSource) {
+    pushPart(parts, "tool", detailSource.toolName);
+    pushPart(parts, "toolCallId", detailSource.toolCallId);
+    pushPart(parts, "text", detailSource.text);
+    pushPart(parts, "delta", detailSource.argsTextDelta);
+  }
+
+  pushArrayCount(parts, "toolCalls", record.toolCalls);
+  pushArrayCount(parts, "toolResults", record.toolResults);
+  pushPart(parts, "isFinal", record.isFinal);
+  pushPart(parts, "finishReason", record.finishReason);
+
+  return parts.length > 0 ? parts.slice(0, 7).join(" | ") : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function pushPart(parts: string[], label: string, value: unknown): void {
+  if (value === undefined || value === null || value === "") return;
+  parts.push(`${label}: ${truncateInline(String(value), 120)}`);
+}
+
+function pushArrayCount(parts: string[], label: string, value: unknown): void {
+  if (!Array.isArray(value)) return;
+  parts.push(`${label}: ${value.length}`);
 }
 
 function truncateInline(value: string, maxLength: number): string {
