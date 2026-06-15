@@ -7,7 +7,8 @@
   "description": "Construct desktop IDE for executable learning tapes.",
   "productName": "Construct",
   "desktopName": "cc.tryconstruct.desktop.desktop",
-  "author": "Abhinav Mishra",
+  "author": "Abhinav Mishra <abhinav@tryconstruct.cc>",
+  "homepage": "https://github.com/AbhinavMishra32/Construct-IDE#readme",
   "scripts": {
     "dev": "concurrently -k -n renderer,main,electron \"pnpm dev:renderer\" \"pnpm dev:main\" \"pnpm dev:electron\"",
     "dev:renderer": "vite",
