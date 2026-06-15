@@ -4,6 +4,7 @@ import type { ProjectRecord } from "../types";
 import { logStore } from "./logStore";
 import { lspClient } from "./lspClient";
 import { restartProjectLsp } from "./lspRuntime";
+import { apiTracker } from "./apiTracker";
 
 type LspProject = Pick<ProjectRecord, "id" | "workspacePath"> | null;
 
@@ -13,19 +14,31 @@ export function useProjectLspLifecycle(project: LspProject): void {
       const enabled = localStorage.getItem("construct.lsp.enabled") !== "false";
       if (enabled) {
         console.log("[LSP Client] Workspace path changed, initializing LSP for:", project.workspacePath);
-        void window.constructProjects.lspStart(project.id).then((result) => {
-          if (result.languages.length > 0) {
-            void lspClient.initialize(project.workspacePath, { languages: result.languages });
-          } else {
-            console.log("[LSP Client] No supported language servers were started for this project.");
-          }
-        });
+        apiTracker.setLspStatus("Starting");
+        void window.constructProjects.lspStart(project.id)
+          .then((result) => {
+            if (result.languages.length > 0) {
+              const label = result.languages
+                .map((l) => (l === "typescript" ? "TS" : "PY"))
+                .join("/");
+              apiTracker.setLspStatus(label);
+              void lspClient.initialize(project.workspacePath, { languages: result.languages });
+            } else {
+              apiTracker.setLspStatus("Inactive");
+              console.log("[LSP Client] No supported language servers were started for this project.");
+            }
+          })
+          .catch(() => {
+            apiTracker.setLspStatus("Failed");
+          });
       } else {
         console.log("[LSP Client] LSP disabled in settings, stopping server process.");
+        apiTracker.setLspStatus("Disabled");
         void window.constructProjects.lspStop();
       }
     } else {
       console.log("[LSP Client] No active project, disposing LSP");
+      apiTracker.setLspStatus(null);
       lspClient.dispose();
     }
 

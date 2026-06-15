@@ -15,6 +15,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { AdaptiveSidecarLayout, Button, HoverPreview, SidebarBottomSlot, SlotPanel, Timeline } from "@opaline/ui";
 import { logStore } from "../lib/logStore";
 import { lspClient } from "../lib/lspClient";
+import { apiTracker } from "../lib/apiTracker";
 import type { SlotTab } from "@opaline/ui";
 import { EditorPane } from "./EditorPane";
 import { GuidePanel } from "./GuidePanel";
@@ -186,6 +187,14 @@ export function Workspace({
   const [activeLiveStepId, setActiveLiveStepId] = useState<string | null>(null);
   const autoOpenedRecallRef = useRef<string | null>(null);
   const fileLoadSequenceRef = useRef(0);
+
+  useEffect(() => {
+    if (gitProjectStatus?.isRepo) {
+      apiTracker.setGit(gitProjectStatus.branch, gitProjectStatus.dirtyFiles.length);
+    } else {
+      apiTracker.setGit(null, 0);
+    }
+  }, [gitProjectStatus]);
 
   const typingProgress = project.typingProgress ?? {};
   const editAnchors = project.editAnchors ?? {};

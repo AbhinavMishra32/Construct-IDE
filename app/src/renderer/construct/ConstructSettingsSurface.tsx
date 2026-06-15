@@ -1,6 +1,7 @@
 import { useDeferredValue, useEffect, useState } from "react";
 import { PanelRight } from "lucide-react";
 import { FileCode, Folder, GearSix, Notebook, TerminalWindow, Trash } from "@phosphor-icons/react";
+import { toast } from "sonner";
 import {
   Alert,
   AlertDescription,
@@ -379,6 +380,7 @@ export function ConstructSettingsSurface({
         ...(settings.ai ?? {})
       });
       setAiFeatures(await listAiFeatures());
+      toast.success("AI settings saved");
     } catch (caught) {
       setModelsError(caught instanceof Error ? caught.message : String(caught));
     } finally {
@@ -822,13 +824,15 @@ export function ConstructSettingsSurface({
         modelsError={modelsError}
         onRuntimeChange={updateAiRuntime}
         onProviderChange={updateAiProvider}
-        onOpenAiApiKeyChange={(openAiApiKey) => setAiSettings((current) => ({ ...current, openAiApiKey }))}
-        onOpenAiBaseUrlChange={(openAiBaseUrl) => setAiSettings((current) => ({ ...current, openAiBaseUrl }))}
-        onOpenRouterApiKeyChange={(openRouterApiKey) => setAiSettings((current) => ({ ...current, openRouterApiKey }))}
-        onOpenRouterBaseUrlChange={(openRouterBaseUrl) => setAiSettings((current) => ({ ...current, openRouterBaseUrl }))}
-        onRefreshModels={(provider) => void refreshModels(provider)}
+        onOpenAiApiKeyChange={(openAiApiKey: string) => setAiSettings((current) => ({ ...current, openAiApiKey }))}
+        onOpenAiBaseUrlChange={(openAiBaseUrl: string) => setAiSettings((current) => ({ ...current, openAiBaseUrl }))}
+        onOpenRouterApiKeyChange={(openRouterApiKey: string) => setAiSettings((current) => ({ ...current, openRouterApiKey }))}
+        onOpenRouterBaseUrlChange={(openRouterBaseUrl: string) => setAiSettings((current) => ({ ...current, openRouterBaseUrl }))}
+        onOpenRouterModelChange={(openRouterModel: string) => setAiSettings((current) => ({ ...current, openRouterModel }))}
+        onOpenAiModelChange={(openAiModel: string) => setAiSettings((current) => ({ ...current, openAiModel }))}
+        onRefreshModels={(provider) => { void refreshModels(provider); }}
         onFeatureModelChange={updateFeatureModel}
-        onSave={() => void saveAiConfiguration()}
+        onSave={() => { void saveAiConfiguration(); }}
       />
 
       <SettingsSection title="About">

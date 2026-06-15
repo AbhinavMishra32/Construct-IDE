@@ -5,6 +5,8 @@ import { HeaderBottomPanelIcon, HeaderGuidePanelIcon, SavingIndicator, SidebarLe
 import { applyDocumentTheme, getInitialTheme, resolveActiveTheme, type ThemeMode } from "./theme";
 import { useConstructLogBridge } from "./lib/useConstructLogBridge";
 import { useProjectLspLifecycle } from "./lib/useProjectLspLifecycle";
+import { StatusBar } from "./components/StatusBar";
+import { apiTracker } from "./lib/apiTracker";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
@@ -387,6 +389,13 @@ export default function ConstructApp() {
   }, [activeProject?.id]);
 
   useEffect(() => {
+    if (!activeProject) {
+      apiTracker.setGit(null, 0);
+      apiTracker.setLspStatus(null);
+    }
+  }, [activeProject]);
+
+  useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Toggle Terminal: Ctrl+` or Cmd+`
       if ((e.ctrlKey || e.metaKey) && e.key === "`") {
@@ -689,9 +698,10 @@ export default function ConstructApp() {
 
   return (
     <AppErrorBoundary>
-      <div className="min-h-screen">
-        <AppShell
-          className="h-screen"
+      <div className="flex flex-col h-screen overflow-hidden bg-background">
+        <div className="flex-1 min-h-0 relative">
+          <AppShell
+            className="h-full"
           key={activeProject?.id ?? "dashboard"}
           history={history}
           showSidebarChrome
@@ -970,6 +980,8 @@ export default function ConstructApp() {
             onOpenFile={treeData.openFile ?? undefined}
           />
         ) : null}
+        </div>
+        <StatusBar theme={theme} onThemeChange={setTheme} />
       </div>
       <NewProjectDialog
         open={isNewProjectOpen}

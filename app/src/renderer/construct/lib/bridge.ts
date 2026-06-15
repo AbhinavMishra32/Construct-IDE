@@ -14,10 +14,22 @@ import type {
   WorkspaceTreeNode
 } from "../types";
 import type { ConstructSelectionContext } from "./selectionContext";
+import { apiTracker } from "./apiTracker";
 
 declare global {
   interface Window {
     constructProjects: ConstructProjectsApi;
+  }
+}
+
+const activeGhostCalls = new Map<string, string>();
+
+async function trackPromise<T>(key: string, label: string, promise: Promise<T>): Promise<T> {
+  const id = apiTracker.start(key, label);
+  try {
+    return await promise;
+  } finally {
+    apiTracker.end(id);
   }
 }
 
@@ -64,7 +76,10 @@ export function setWorkspaceRoot(input: Parameters<ConstructProjectsApi["setWork
 }
 
 export function updateAiSettings(input: Parameters<ConstructProjectsApi["updateAiSettings"]>[0]) {
-  return api().updateAiSettings(input);
+  return api().updateAiSettings(input).then((settings) => {
+    void apiTracker.refreshSettings();
+    return settings;
+  });
 }
 
 export function listAiFeatures() {
@@ -184,11 +199,11 @@ export function verifyRecall(input: {
   savedKnowledge?: ConceptCard[];
   answer?: string;
 }): Promise<VerificationResult> {
-  return api().verifyRecall(input);
+  return trackPromise("verify-recall", "Verifying block", api().verifyRecall(input));
 }
 
 export function runConstructInteract(input: Parameters<ConstructProjectsApi["runConstructInteract"]>[0]): Promise<ConstructInteractClientResult> {
-  return api().runConstructInteract(input);
+  return trackPromise("interact", "Running Q&A", api().runConstructInteract(input));
 }
 
 export function onConstructInteractSessionEvent(callback: Parameters<ConstructProjectsApi["onConstructInteractSessionEvent"]>[0]): () => void {
@@ -196,7 +211,7 @@ export function onConstructInteractSessionEvent(callback: Parameters<ConstructPr
 }
 
 export function reviewConstructAuthoring(input: Parameters<ConstructProjectsApi["reviewConstructAuthoring"]>[0]): ReturnType<ConstructProjectsApi["reviewConstructAuthoring"]> {
-  return api().reviewConstructAuthoring(input);
+  return trackPromise("authoring-review", "Reviewing authoring", api().reviewConstructAuthoring(input));
 }
 
 export function explainSelection(input: {
@@ -205,7 +220,7 @@ export function explainSelection(input: {
   selection: ConstructSelectionContext;
   learningContext?: unknown;
 }) {
-  return api().explainSelection(input);
+  return trackPromise("explain-selection", "Explaining selection", api().explainSelection(input));
 }
 
 export function onSelectionExplanationLog(callback: Parameters<ConstructProjectsApi["onSelectionExplanationLog"]>[0]): () => void {
@@ -224,13 +239,24 @@ export function startCodeGhostStream(input: {
   linesBefore: string[];
   linesAfter: string[];
 }): void {
+  const callId = apiTracker.start("code-ghost", "Code Ghost stream");
+  activeGhostCalls.set(input.requestId, callId);
   return api().startCodeGhostStream(input);
 }
 
 export function onCodeGhostToken(
   callback: (payload: { requestId: string; lineNumber: number; token: string; done: boolean; error?: string }) => void
 ): () => void {
-  return api().onCodeGhostToken(callback);
+  return api().onCodeGhostToken((payload) => {
+    if (payload.done || payload.error) {
+      const callId = activeGhostCalls.get(payload.requestId);
+      if (callId) {
+        apiTracker.end(callId);
+        activeGhostCalls.delete(payload.requestId);
+      }
+    }
+    callback(payload);
+  });
 }
 
 export function deleteProject(input: { projectId: string; force?: boolean }): Promise<import("../types").DeleteProjectCheck | { deleted: true }> {
@@ -238,15 +264,15 @@ export function deleteProject(input: { projectId: string; force?: boolean }): Pr
 }
 
 export function gitStatus(projectId: string): ReturnType<ConstructProjectsApi["gitStatus"]> {
-  return api().gitStatus(projectId);
+  return trackPromise("git-status", "Checking git status", api().gitStatus(projectId));
 }
 
 export function gitCommit(input: Parameters<ConstructProjectsApi["gitCommit"]>[0]): ReturnType<ConstructProjectsApi["gitCommit"]> {
-  return api().gitCommit(input);
+  return trackPromise("git-commit", "Git commit", api().gitCommit(input));
 }
 
 export function gitPush(projectId: string): ReturnType<ConstructProjectsApi["gitPush"]> {
-  return api().gitPush(projectId);
+  return trackPromise("git-push", "Git push", api().gitPush(projectId));
 }
 
 export function terminalCreate(projectId: string, size?: { cols: number; rows: number }): Promise<{ sessionId: string }> {
