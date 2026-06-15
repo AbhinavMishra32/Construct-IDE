@@ -64,6 +64,7 @@
     "concurrently": "^9.1.2",
     "cross-env": "^7.0.3",
     "electron": "^35.0.1",
+    "electron-builder": "^26.15.3",
     "postcss": "^8.5.3",
     "pyright": "^1.1.410",
     "tailwindcss": "^4.3.1",

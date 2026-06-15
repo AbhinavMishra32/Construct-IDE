@@ -101,7 +101,7 @@ jobs:
 
       - name: Package desktop
         working-directory: app
-        run: pnpm build && pnpm dlx electron-builder@latest --projectDir . --config electron-builder.yml ${{ matrix.target }}
+        run: pnpm build && pnpm exec electron-builder --projectDir . --config electron-builder.yml ${{ matrix.target }}
 
 
       - name: Upload package artifacts
