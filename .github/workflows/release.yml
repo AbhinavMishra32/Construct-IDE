@@ -7,9 +7,10 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Release tag, for example v0.0.3
-        required: true
+        description: "Release tag (optional, e.g. v0.2.2). If omitted, an automated canary pre-release will be created."
+        required: false
         type: string
+
 
 permissions:
   contents: write
@@ -56,9 +57,52 @@ jobs:
       - name: Generate icons
         run: node scripts/release/generate-icons.mjs
 
+      - name: Calculate Release Tag
+        id: release
+        shell: bash
+        run: |
+          INPUT_TAG="${{ github.event.inputs.tag }}"
+          
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -z "$INPUT_TAG" ]; then
+            # Calculate dynamic pre-release version
+            BASE_VERSION=$(node -e "console.log(require('./package.json').version)")
+            DATE_STR=$(node -e "const d = new Date(); console.log(d.getUTCFullYear() + String(d.getUTCMonth() + 1).padStart(2, '0') + String(d.getUTCDate()).padStart(2, '0'))")
+            SHA_SHORT=$(git rev-parse --short HEAD)
+            NEW_VERSION="${BASE_VERSION}-canary.${DATE_STR}.${SHA_SHORT}"
+            TAG="v${NEW_VERSION}"
+            
+            echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
+            echo "version=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
+            echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+            
+            # Update version in package.json files
+            node -e "
+              const fs = require('fs');
+              const newVer = '${NEW_VERSION}';
+              ['package.json', 'app/package.json'].forEach(p => {
+                const pkg = JSON.parse(fs.readFileSync(p, 'utf8'));
+                pkg.version = newVer;
+                fs.writeFileSync(p, JSON.stringify(pkg, null, 2) + '\n');
+              });
+            "
+            echo "Updated package.json files to version ${NEW_VERSION}"
+          else
+            # For tag push or manual dispatch with tag
+            if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+              TAG="$INPUT_TAG"
+            else
+              TAG="${GITHUB_REF_NAME}"
+            fi
+            VERSION="${TAG#v}"
+            echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
+            echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+            echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Package desktop
         working-directory: app
         run: pnpm build && pnpm dlx electron-builder@latest --projectDir . --config electron-builder.yml ${{ matrix.target }}
+
 
       - name: Upload package artifacts
         uses: actions/upload-artifact@v4
@@ -91,28 +135,59 @@ jobs:
           path: release-artifacts
           merge-multiple: true
 
-      - name: Resolve tag
+      - name: Calculate Release Tag
         id: release
         shell: bash
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          INPUT_TAG="${{ github.event.inputs.tag }}"
+          
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -z "$INPUT_TAG" ]; then
+            # Calculate dynamic pre-release version
+            BASE_VERSION=$(node -e "console.log(require('./package.json').version)")
+            DATE_STR=$(node -e "const d = new Date(); console.log(d.getUTCFullYear() + String(d.getUTCMonth() + 1).padStart(2, '0') + String(d.getUTCDate()).padStart(2, '0'))")
+            SHA_SHORT=$(git rev-parse --short HEAD)
+            NEW_VERSION="${BASE_VERSION}-canary.${DATE_STR}.${SHA_SHORT}"
+            TAG="v${NEW_VERSION}"
+            
+            echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
+            echo "version=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
+            echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           else
-            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            # For tag push or manual dispatch with tag
+            if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+              TAG="$INPUT_TAG"
+            else
+              TAG="${GITHUB_REF_NAME}"
+            fi
+            VERSION="${TAG#v}"
+            echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
+            echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+            echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Create or update release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.release.outputs.tag }}
+          IS_PRERELEASE: ${{ steps.release.outputs.is_prerelease }}
         shell: bash
         run: |
           VERSION="${TAG#v}"
           NOTES="docs/releases/${VERSION}.md"
+          
+          EXTRA_FLAGS=""
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            EXTRA_FLAGS="--prerelease --latest=false"
+          else
+            EXTRA_FLAGS="--latest"
+          fi
+          
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" release-artifacts/* --clobber
+          elif [ "$IS_PRERELEASE" = "true" ]; then
+            gh release create "$TAG" release-artifacts/* $EXTRA_FLAGS --title "Construct Canary ${VERSION}" --notes "Automated canary pre-release build."
           elif [ -f "$NOTES" ]; then
-            gh release create "$TAG" release-artifacts/* --title "Construct ${VERSION}" --notes-file "$NOTES" --latest
+            gh release create "$TAG" release-artifacts/* $EXTRA_FLAGS --title "Construct ${VERSION}" --notes-file "$NOTES"
           else
-            gh release create "$TAG" release-artifacts/* --title "Construct ${VERSION}" --notes "Construct ${VERSION}" --latest
+            gh release create "$TAG" release-artifacts/* $EXTRA_FLAGS --title "Construct ${VERSION}" --notes "Construct ${VERSION}"
           fi
