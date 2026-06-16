@@ -28,7 +28,8 @@ const RECOMMENDED_OPENROUTER_MODELS = [
   { id: "anthropic/claude-3.5-haiku", name: "Claude 3.5 Haiku" },
   { id: "google/gemini-2.5-flash", name: "Gemini 2.5 Flash" },
   { id: "openai/gpt-4.1-mini", name: "GPT-4.1 Mini" },
-  { id: "openai/gpt-4.1-nano", name: "GPT-4.1 Nano" }
+  { id: "openai/gpt-4.1-nano", name: "GPT-4.1 Nano" },
+  { id: "nvidia/nemotron-3-ultra-550b-a55b:free", name: "Nemotron 3 Ultra 550B" }
 ];
 
 type AiProvider = AiSettings["provider"];
@@ -47,6 +48,8 @@ export function ConstructAiSettingsSection({
   onOpenAiBaseUrlChange,
   onOpenRouterApiKeyChange,
   onOpenRouterBaseUrlChange,
+  onOpenRouterModelChange,
+  onOpenAiModelChange,
   onRefreshModels,
   onFeatureModelChange,
   onSave
@@ -63,10 +66,26 @@ export function ConstructAiSettingsSection({
   onOpenAiBaseUrlChange: (baseUrl: string) => void;
   onOpenRouterApiKeyChange: (apiKey: string) => void;
   onOpenRouterBaseUrlChange: (baseUrl: string) => void;
+  onOpenRouterModelChange: (model: string) => void;
+  onOpenAiModelChange: (model: string) => void;
   onRefreshModels: (provider: AiProvider) => void;
   onFeatureModelChange: (featureId: string, model: string) => void;
   onSave: () => void;
 }) {
+  const recommended = settings.provider === "openrouter"
+    ? RECOMMENDED_OPENROUTER_MODELS
+    : RECOMMENDED_OPENAI_MODELS;
+
+  const globalModel = settings.provider === "openrouter"
+    ? settings.openRouterModel
+    : settings.openAiModel;
+
+  const onGlobalModelChange = settings.provider === "openrouter"
+    ? onOpenRouterModelChange
+    : onOpenAiModelChange;
+
+  const baseModels = modelOptions.length > 0 ? modelOptions : recommended;
+
   return (
     <SettingsSection title="AI">
       <SettingsCard>
@@ -153,43 +172,73 @@ export function ConstructAiSettingsSection({
           }
         />
 
-        {features.map((feature) => {
-          const recommended = settings.provider === "openrouter"
-            ? RECOMMENDED_OPENROUTER_MODELS
-            : RECOMMENDED_OPENAI_MODELS;
+        <SettingsRow
+          title="Global model"
+          description="Type any model ID. All agents use this unless you override a specific feature below."
+          control={
+            <div className="flex items-center gap-2">
+              <Input
+                className="h-8 w-56 text-xs"
+                value={globalModel}
+                placeholder="provider/model-name"
+                onChange={(e) => onGlobalModelChange(e.target.value)}
+              />
+              <Select
+                value=""
+                disabled={modelsBusy}
+                onValueChange={(model) => model && onGlobalModelChange(model)}
+              >
+                <SelectTrigger className="h-8 w-auto px-2 text-xs">
+                  <SelectValue placeholder="Pick..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {baseModels.map((model) => (
+                    <SelectItem key={model.id} value={model.id}>
+                      {model.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          }
+        />
 
-          const baseModels = modelOptions.length > 0 ? modelOptions : recommended;
-
-          const modelItems = baseModels.some((model) => model.id === feature.model)
-            ? baseModels
-            : [{ id: feature.model ?? "", name: feature.model || "Select model" }, ...baseModels];
-
-          return (
-            <SettingsRow
-              key={feature.id}
-              title={feature.title}
-              description={feature.description}
-              control={
-                <Select
-                  value={feature.model ?? ""}
-                  disabled={modelsBusy}
-                  onValueChange={(model) => model && onFeatureModelChange(feature.id, model)}
-                >
-                  <SelectTrigger className="h-8 w-44 text-xs">
-                    <SelectValue placeholder={feature.model || "Select model"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {modelItems.map((model) => (
-                      <SelectItem key={model.id} value={model.id}>
-                        {model.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              }
-            />
-          );
-        })}
+        {features.map((feature) => (
+          <SettingsRow
+            key={feature.id}
+            title={feature.title}
+            description={feature.description}
+            control={
+              <Select
+                value={feature.model ?? ""}
+                disabled={modelsBusy}
+                onValueChange={(model) => model && onFeatureModelChange(feature.id, model)}
+              >
+                <SelectTrigger className="h-8 w-44 text-xs">
+                  <SelectValue placeholder={feature.model || "Select model"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {baseModels.some((m) => m.id === feature.model)
+                    ? baseModels.map((model) => (
+                        <SelectItem key={model.id} value={model.id}>
+                          {model.name}
+                        </SelectItem>
+                      ))
+                    : [
+                        <SelectItem key={feature.model ?? ""} value={feature.model ?? ""}>
+                          {feature.model || "Select model"}
+                        </SelectItem>,
+                        ...baseModels.map((model) => (
+                          <SelectItem key={model.id} value={model.id}>
+                            {model.name}
+                          </SelectItem>
+                        ))
+                      ]}
+                </SelectContent>
+              </Select>
+            }
+          />
+        ))}
 
         <SettingsRow
           title="Save AI settings"

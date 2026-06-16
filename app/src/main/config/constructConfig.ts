@@ -129,7 +129,7 @@ export function normalizeSettings(
       openAiModel: normalizeString(inputAi.openAiModel, defaults.ai.openAiModel),
       openAiBaseUrl: normalizeBaseUrl(inputAi.openAiBaseUrl, defaults.ai.openAiBaseUrl),
       openRouterApiKey: normalizeString(inputAi.openRouterApiKey, ""),
-      openRouterModel: migrateOpenRouterModel(normalizeString(inputAi.openRouterModel, defaults.ai.openRouterModel)),
+      openRouterModel: normalizeString(inputAi.openRouterModel, defaults.ai.openRouterModel),
       openRouterBaseUrl: normalizeBaseUrl(inputAi.openRouterBaseUrl, defaults.ai.openRouterBaseUrl),
       featureModels: normalizeFeatureModels(inputAi.featureModels)
     },
@@ -219,19 +219,8 @@ function normalizeFeatureModels(input: unknown): Record<string, string> {
   return Object.fromEntries(
     Object.entries(input)
       .filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].trim().length > 0)
-      .map(([key, value]) => [key, migrateOpenRouterModel(value.trim())])
+      .map(([key, value]) => [key, value.trim()])
   );
 }
 
-function migrateOpenRouterModel(model: string): string {
-  if (
-    model === "openai/gpt-5-mini" ||
-    model === "gpt-5-mini" ||
-    model === "nvidia/nemotron-3-ultra-550b-a55b:free" ||
-    model === "openrouter/owl-alpha"
-  ) {
-    return "deepseek/deepseek-v4-flash";
-  }
 
-  return model;
-}

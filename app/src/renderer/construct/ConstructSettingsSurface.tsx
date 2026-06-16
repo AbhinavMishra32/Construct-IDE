@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useState } from "react";
+import { useDeferredValue, useEffect, useRef, useState } from "react";
 import { PanelRight } from "lucide-react";
 import { FileCode, Folder, GearSix, Notebook, TerminalWindow, Trash } from "@phosphor-icons/react";
 import { toast } from "sonner";
@@ -97,6 +97,8 @@ export function ConstructSettingsSurface({
   const project = projectId ? projects.find((item) => item.id === projectId) : null;
   const [workspaceRoot, setWorkspaceRootValue] = useState("");
   const [aiSettings, setAiSettings] = useState<AiSettings>(defaultAiSettings);
+  const aiSettingsRef = useRef(aiSettings);
+  aiSettingsRef.current = aiSettings;
   const [aiFeatures, setAiFeatures] = useState<AiFeatureSettings[]>([]);
   const [modelOptions, setModelOptions] = useState<ModelCatalogEntry[]>([]);
   const [modelsBusy, setModelsBusy] = useState(false);
@@ -374,7 +376,7 @@ export function ConstructSettingsSurface({
     try {
       setAiBusy(true);
       setModelsError(null);
-      const settings = await updateAiSettings({ ai: aiSettings });
+      const settings = await updateAiSettings({ ai: aiSettingsRef.current });
       setAiSettings({
         ...defaultAiSettings,
         ...(settings.ai ?? {})
@@ -399,6 +401,21 @@ export function ConstructSettingsSurface({
     setAiFeatures((current) => current.map((feature) => (
       feature.id === featureId ? { ...feature, model } : feature
     )));
+  }
+
+  function updateGlobalModel(model: string) {
+    setAiSettings((current) => {
+      const key = current.provider === "openrouter" ? "openRouterModel" : "openAiModel";
+      return {
+        ...current,
+        [key]: model,
+        featureModels: {}
+      };
+    });
+    setAiFeatures((current) => current.map((feature) => ({
+      ...feature,
+      model: model || feature.defaultOpenRouterModel
+    })));
   }
 
   async function handleDeleteClick() {
@@ -828,8 +845,8 @@ export function ConstructSettingsSurface({
         onOpenAiBaseUrlChange={(openAiBaseUrl: string) => setAiSettings((current) => ({ ...current, openAiBaseUrl }))}
         onOpenRouterApiKeyChange={(openRouterApiKey: string) => setAiSettings((current) => ({ ...current, openRouterApiKey }))}
         onOpenRouterBaseUrlChange={(openRouterBaseUrl: string) => setAiSettings((current) => ({ ...current, openRouterBaseUrl }))}
-        onOpenRouterModelChange={(openRouterModel: string) => setAiSettings((current) => ({ ...current, openRouterModel }))}
-        onOpenAiModelChange={(openAiModel: string) => setAiSettings((current) => ({ ...current, openAiModel }))}
+        onOpenRouterModelChange={updateGlobalModel}
+        onOpenAiModelChange={updateGlobalModel}
         onRefreshModels={(provider) => { void refreshModels(provider); }}
         onFeatureModelChange={updateFeatureModel}
         onSave={() => { void saveAiConfiguration(); }}

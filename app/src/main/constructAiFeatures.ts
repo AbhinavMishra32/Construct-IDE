@@ -58,6 +58,12 @@ export function modelForAiFeature(settings: StoredAiSettings, featureId: Constru
   const saved = settings.featureModels?.[featureId]?.trim();
   if (saved) return saved;
 
+  const globalModel = settings.provider === "openrouter"
+    ? settings.openRouterModel?.trim()
+    : settings.openAiModel?.trim();
+
+  if (globalModel) return globalModel;
+
   if (settings.provider === "openrouter") {
     return feature?.defaultOpenRouterModel ?? settings.openRouterModel;
   }

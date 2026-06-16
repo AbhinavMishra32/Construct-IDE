@@ -1,5 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import { Toaster } from "sonner";
 
 import "./index.css";
 import ConstructApp from "./construct/ConstructApplication";
@@ -69,6 +70,7 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <TooltipProvider>
       <ConstructApp />
+      <Toaster richColors position="bottom-right" />
     </TooltipProvider>
   </React.StrictMode>
 );
