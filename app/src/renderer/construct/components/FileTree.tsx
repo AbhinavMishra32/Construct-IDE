@@ -7,16 +7,7 @@ import {
   ContextMenuSeparator,
 } from "@opaline/ui";
 import {
-  Atom,
-  File,
-  FileCode,
-  FileCss,
-  FileJs,
-  FileMd,
   FilePlus,
-  FilePy,
-  FileTs,
-  FileTsx,
   Folder,
   FolderPlus,
   PencilSimpleLine,
@@ -30,6 +21,7 @@ import {
 } from "lucide-react";
 
 import type { WorkspaceTreeNode } from "../types";
+import { iconForFile as renderFileIcon } from "./workspace/fileIcons";
 
 // Helper to extract parent paths of a file path
 function getParentPaths(path: string): string[] {
@@ -60,30 +52,6 @@ function resolvePasteDest(copiedPath: string, targetPath: string, targetType: "f
       : "";
   }
   return folderPath ? `${folderPath}/${fileName}` : fileName;
-}
-
-function getExtension(filename: string): string {
-  const parts = filename.split("/");
-  const lastPart = parts[parts.length - 1] || "";
-  const dotParts = lastPart.split(".");
-  return dotParts.length > 1 ? dotParts.pop() || "" : "";
-}
-
-function getIconForExtension(ext: string) {
-  const props = { size: 17, weight: "duotone" as const };
-  const extLower = ext.toLowerCase();
-  
-  if (["tsx", "jsx"].includes(extLower)) return <Atom {...props} color="#00d8ff" />;
-  if (["ts", "mts", "cts"].includes(extLower)) return <FileTs {...props} color="#3178c6" />;
-  if (["js", "mjs", "cjs"].includes(extLower)) return <FileJs {...props} color="#e9c46a" />;
-  if (["css", "scss", "sass", "less"].includes(extLower)) return <FileCss {...props} color="#a259ff" />;
-  if (extLower === "json") return <FileCode {...props} color="#cb8e00" />;
-  if (["md", "mdx"].includes(extLower)) return <FileMd {...props} color="#4d7bbd" />;
-  if (["py", "ipy"].includes(extLower)) return <FilePy {...props} color="#3572a5" />;
-  if (extLower === "go") return <FileCode {...props} color="#00add8" />;
-  if (extLower === "swift") return <FileCode {...props} color="#f05138" />;
-  if (extLower === "rs") return <FileCode {...props} color="#dea584" />;
-  return <File {...props} color="var(--opaline-text-tertiary)" />;
 }
 
 // ─── Helpers to find a node by path in the tree ────────────────────────────────
@@ -396,7 +364,7 @@ export function FileTree({
             name: "",
             path: tempPath,
             type: creatingState.type === "folder" ? "directory" : "file",
-            icon: creatingState.type === "folder" ? <Folder size={17} weight="duotone" /> : <File size={17} weight="duotone" />,
+            icon: creatingState.type === "folder" ? <Folder size={14} weight="duotone" /> : renderFileIcon("", { size: 14 }),
             isEditing: true,
             onEditSubmit: (val) => {
               const trimmed = val.trim();
@@ -421,7 +389,7 @@ export function FileTree({
         name: node.name,
         path: node.path,
         type: node.type,
-        icon: iconForFile(node),
+        icon: renderFileIcon(node.name, { size: 14, type: node.type }),
         selected: node.path === activePath,
         gitStatus: isTarget ? "modified" : undefined,
         expanded: isExpanded,
@@ -458,7 +426,7 @@ export function FileTree({
         name: "",
         path: "__new_item__",
         type: creatingState.type === "folder" ? "directory" : "file",
-        icon: creatingState.type === "folder" ? <Folder size={17} weight="duotone" /> : <File size={17} weight="duotone" />,
+        icon: creatingState.type === "folder" ? <Folder size={12} weight="duotone" /> : renderFileIcon("", { size: 12 }),
         isEditing: true,
         onEditSubmit: (val) => {
           const trimmed = val.trim();
@@ -502,7 +470,7 @@ export function FileTree({
       {isCreating ? (
         <div className="shrink-0 border-b p-2">
           <div className="flex h-7 items-center gap-2 rounded-[8px] border bg-background/70 px-2 shadow-sm [&_svg]:size-4">
-            {getIconForExtension(getExtension(draftPath))}
+            {renderFileIcon(draftPath || "file", { size: 16 })}
             <input className="min-w-0 flex-1 bg-transparent text-xs outline-none"
               value={draftPath}
               onChange={(event) => setDraftPath(event.target.value)}
@@ -559,21 +527,4 @@ function normalizeDraftPath(path: string): string {
     .replace(/\\/g, "/")
     .replace(/^\/+/, "")
     .replace(/\/+/g, "/");
-}
-
-function iconForFile(node: WorkspaceTreeNode) {
-  const props = { size: 17, weight: "duotone" as const };
-
-  if (node.type === "directory") {
-    return <Folder {...props} />;
-  }
-
-  if (/\.(tsx)$/.test(node.name)) return <FileTsx {...props} />;
-  if (/\.(ts|mts|cts)$/.test(node.name)) return <FileTs {...props} />;
-  if (/\.(js|jsx|mjs|cjs)$/.test(node.name)) return <FileJs {...props} />;
-  if (/\.css$/.test(node.name)) return <FileCss {...props} />;
-  if (/\.json$/.test(node.name)) return <FileCode {...props} />;
-  if (/\.mdx?$/.test(node.name)) return <FileMd {...props} />;
-
-  return <File {...props} />;
 }

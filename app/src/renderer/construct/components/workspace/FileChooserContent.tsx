@@ -1,17 +1,10 @@
-import { File, FileCode, FileCss, FileJs, FileMd, FileTs, FileTsx, MagnifyingGlass } from "@phosphor-icons/react";
+import { MagnifyingGlass } from "@phosphor-icons/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { iconForFile as renderFileIcon } from "./fileIcons";
+
 export function iconForFile(filename: string) {
-  const props = { size: 12, weight: "duotone" as const };
-
-  if (/\.(tsx)$/.test(filename)) return <FileTsx {...props} />;
-  if (/\.(ts|mts|cts)$/.test(filename)) return <FileTs {...props} />;
-  if (/\.(js|jsx|mjs|cjs)$/.test(filename)) return <FileJs {...props} />;
-  if (/\.css$/.test(filename)) return <FileCss {...props} />;
-  if (/\.json$/.test(filename)) return <FileCode {...props} />;
-  if (/\.mdx?$/.test(filename)) return <FileMd {...props} />;
-
-  return <File {...props} />;
+  return renderFileIcon(filename, { size: 12 });
 }
 
 export function FileChooserContent({
@@ -35,7 +28,7 @@ export function FileChooserContent({
   }, [files, search]);
 
   return (
-    <div className="flex max-h-80 min-w-80 flex-col overflow-hidden rounded-lg border bg-popover shadow-md">
+    <div className="construct-overlay-shadow flex max-h-80 min-w-80 flex-col overflow-hidden rounded-lg border bg-popover">
       <div className="flex h-9 shrink-0 items-center gap-2 border-b px-3 text-muted-foreground">
         <MagnifyingGlass size={14} weight="bold" />
         <input
