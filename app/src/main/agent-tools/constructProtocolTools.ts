@@ -518,16 +518,16 @@ export function createConstructProtocolTools(options: ConstructProtocolToolsOpti
     )
   });
 
-  const createQuestionTool = (id: "ask-question" | "ask-user") => createTool({
+  const createQuestionTool = (id: "ask-question" | "askQuestion" | "ask-user" | "askUser") => createTool({
     id,
-    description: "Ask the learner a direct tracked question. The question field should be the short direct question only; put any brief setup in normal chat before the tool call. Reason is internal and should stay concise. This is mandatory whenever the agent needs an answer from the learner; do not ask required questions only in prose. Use for clarification, design choices, understanding checks, blockers, approvals, or Socratic checks. Does not itself wait in the backend.",
+    description: "Ask the learner a direct tracked question. The question field should be the short direct question only; put any brief setup in normal chat before the tool call. Reason is internal and should stay concise. This is mandatory whenever the agent needs an answer from the learner; do not ask required questions only in prose. Use for clarification, design choices, understanding checks, blockers, approvals, or Socratic checks. Questions pause the Flow session until answered unless the caller explicitly resumes later.",
     inputSchema: z.object({
       question: z.string().min(1),
       reason: z.string().optional(),
       choices: z.array(z.string()).max(6).optional(),
       allowOther: z.boolean().default(true),
       allowSkip: z.boolean().default(true),
-      blocksProgress: z.boolean().default(false)
+      blocksProgress: z.boolean().default(true)
     }).strict(),
     execute: async (toolInput) => recordToolCall(
       id,
@@ -538,7 +538,9 @@ export function createConstructProtocolTools(options: ConstructProtocolToolsOpti
     )
   });
   const askQuestion = createQuestionTool("ask-question");
+  const askQuestionAlias = createQuestionTool("askQuestion");
   const askUser = createQuestionTool("ask-user");
+  const askUserAlias = createQuestionTool("askUser");
 
   const internetSearch = createTool({
     id: "internet-search",
@@ -555,6 +557,37 @@ export function createConstructProtocolTools(options: ConstructProtocolToolsOpti
       toolInput
     )
   });
+  const createInternetFetchTool = (id: "internet-fetch" | "internetFetch") => createTool({
+    id,
+    description: "Fetch readable content from exact public web URLs. Uses Tavily Extract when configured, with a bounded public HTTP fallback. Use after internet-search when you need the source page contents.",
+    inputSchema: z.object({
+      urls: z.array(z.string().url()).min(1).max(5),
+      query: z.string().min(2).max(180).optional(),
+      maxChars: z.number().int().min(1_000).max(20_000).default(6_000),
+      extractDepth: z.enum(["basic", "advanced"]).default("basic"),
+      chunksPerSource: z.number().int().min(1).max(5).optional(),
+      format: z.enum(["markdown", "text"]).default("markdown"),
+      timeoutSeconds: z.number().min(1).max(30).default(10)
+    }).strict(),
+    execute: async (toolInput) => recordToolCall(
+      id,
+      "Fetched web page",
+      toolInput.query ?? toolInput.urls.join(", "),
+      fetchInternetPages({
+        urls: toolInput.urls,
+        query: toolInput.query,
+        maxChars: toolInput.maxChars ?? 6_000,
+        extractDepth: toolInput.extractDepth ?? "basic",
+        chunksPerSource: toolInput.chunksPerSource,
+        format: toolInput.format ?? "markdown",
+        timeoutSeconds: toolInput.timeoutSeconds ?? 10,
+        tavilyApiKey: options.tavilyApiKey
+      }),
+      toolInput
+    )
+  });
+  const internetFetch = createInternetFetchTool("internet-fetch");
+  const internetFetchAlias = createInternetFetchTool("internetFetch");
 
   const tools: ToolsInput = {
     findFiles,
@@ -568,9 +601,13 @@ export function createConstructProtocolTools(options: ConstructProtocolToolsOpti
     focusTerminal,
     terminalLatest,
     workspaceDiff,
-    askQuestion,
-    askUser,
-    internetSearch
+    "ask-question": askQuestion,
+    askQuestion: askQuestionAlias,
+    "ask-user": askUser,
+    askUser: askUserAlias,
+    internetSearch,
+    "internet-fetch": internetFetch,
+    internetFetch: internetFetchAlias
   };
 
   if (isFlowProject(options.project)) {
@@ -747,9 +784,16 @@ async function writeWorkspaceFile(
     throw new Error("Workspace mutation is not allowed for this agent run.");
   }
   const target = options.workspace.safeProjectPath(options.project, relativePath);
+  const existed = existsSync(target);
+  const before = existed ? await readFile(target, "utf8").catch(() => "") : "";
   await mkdir(path.dirname(target), { recursive: true });
   await writeFile(target, content, "utf8");
-  return { path: relativePath, bytes: Buffer.byteLength(content, "utf8") };
+  return {
+    path: relativePath,
+    bytes: Buffer.byteLength(content, "utf8"),
+    existed,
+    lineStats: lineChangeStats(before, content, existed ? "overwrite" : "create")
+  };
 }
 
 async function replaceInWorkspaceFile(
@@ -770,12 +814,60 @@ async function replaceInWorkspaceFile(
     throw new Error(`Exact text appears more than once in ${relativePath}; use a narrower replacement.`);
   }
   const next = `${content.slice(0, first)}${replace}${content.slice(first + find.length)}`;
-  await writeWorkspaceFile(options, relativePath, next);
+  const target = options.workspace.safeProjectPath(options.project, relativePath);
+  await writeFile(target, next, "utf8");
   return {
     path: relativePath,
     replacedCharacters: find.length,
-    insertedCharacters: replace.length
+    insertedCharacters: replace.length,
+    lineStats: {
+      additions: countTextLines(replace),
+      deletions: countTextLines(find),
+      beforeLines: countTextLines(content),
+      afterLines: countTextLines(next),
+      netLines: countTextLines(next) - countTextLines(content),
+      mode: "replace"
+    }
   };
+}
+
+function lineChangeStats(before: string, after: string, mode: "create" | "overwrite") {
+  const beforeLines = countTextLines(before);
+  const afterLines = countTextLines(after);
+  if (mode === "create") {
+    return {
+      additions: afterLines,
+      deletions: 0,
+      beforeLines: 0,
+      afterLines,
+      netLines: afterLines,
+      mode
+    };
+  }
+  if (before === after) {
+    return {
+      additions: 0,
+      deletions: 0,
+      beforeLines,
+      afterLines,
+      netLines: 0,
+      mode
+    };
+  }
+  return {
+    additions: afterLines,
+    deletions: beforeLines,
+    beforeLines,
+    afterLines,
+    netLines: afterLines - beforeLines,
+    mode
+  };
+}
+
+function countTextLines(value: string): number {
+  if (!value) return 0;
+  const normalized = value.endsWith("\n") ? value.slice(0, -1) : value;
+  return normalized ? normalized.split(/\r?\n/).length : 0;
 }
 
 async function currentWorkspaceDiff(project: StoredProject) {
@@ -819,19 +911,47 @@ async function runCommand(
   const resolvedCwd = cwd
     ? options.workspace.safeProjectPath(options.project, cwd)
     : options.project.workspacePath;
-  const { stdout, stderr } = await execFileAsync("/bin/zsh", ["-lc", command], {
-    cwd: resolvedCwd,
-    timeout: timeoutMs,
-    maxBuffer: 512_000
-  });
-  return {
-    status: "completed",
-    command,
-    cwd: resolvedCwd,
-    stdout: stdout.slice(-8_000),
-    stderr: stderr.slice(-8_000),
-    truncated: stdout.length + stderr.length > 16_000
-  };
+  try {
+    const { stdout, stderr } = await execFileAsync("/bin/zsh", ["-lc", command], {
+      cwd: resolvedCwd,
+      timeout: timeoutMs,
+      maxBuffer: 512_000
+    });
+    return {
+      status: "completed",
+      command,
+      cwd: resolvedCwd,
+      stdout: stdout.slice(-8_000),
+      stderr: stderr.slice(-8_000),
+      truncated: stdout.length + stderr.length > 16_000
+    };
+  } catch (error) {
+    const record = error as {
+      code?: number | string;
+      signal?: string;
+      stdout?: string | Buffer;
+      stderr?: string | Buffer;
+      message?: string;
+    };
+    const stdout = bufferToString(record.stdout).slice(-8_000);
+    const stderr = (bufferToString(record.stderr) || record.message || "Command failed.").slice(-8_000);
+    return {
+      status: "failed",
+      command,
+      cwd: resolvedCwd,
+      exitCode: record.code ?? null,
+      signal: record.signal ?? null,
+      stdout,
+      stderr,
+      truncated: stdout.length + stderr.length > 16_000
+    };
+  }
+}
+
+function bufferToString(value: string | Buffer | undefined): string {
+  if (typeof value === "string") return value;
+  if (Buffer.isBuffer(value)) return value.toString("utf8");
+  return "";
 }
 
 async function searchInternet(query: string, limit: number, tavilyApiKey?: string) {
@@ -883,6 +1003,126 @@ async function searchInternet(query: string, limit: number, tavilyApiKey?: strin
     snippet: stripHtml(match[3]),
     provider: "duckduckgo"
   }));
+}
+
+async function fetchInternetPages(input: {
+  urls: string[];
+  query?: string;
+  maxChars: number;
+  extractDepth: "basic" | "advanced";
+  chunksPerSource?: number;
+  format: "markdown" | "text";
+  timeoutSeconds: number;
+  tavilyApiKey?: string;
+}) {
+  const urls = input.urls.map(normalizePublicWebUrl);
+  const maxChars = Math.min(Math.max(input.maxChars, 1_000), 20_000);
+  if (input.tavilyApiKey?.trim()) {
+    const body: Record<string, unknown> = {
+      urls: urls.length === 1 ? urls[0] : urls,
+      extract_depth: input.extractDepth,
+      include_images: false,
+      include_favicon: true,
+      format: input.format,
+      timeout: Math.min(Math.max(input.timeoutSeconds, 1), 30),
+      include_usage: true
+    };
+    if (input.query?.trim()) {
+      body.query = input.query.trim().slice(0, 180);
+      body.chunks_per_source = input.chunksPerSource ?? 3;
+    }
+    const response = await fetch("https://api.tavily.com/extract", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        Authorization: `Bearer ${input.tavilyApiKey.trim()}`
+      },
+      body: JSON.stringify(body)
+    });
+    if (!response.ok) {
+      const detail = await response.text().catch(() => "");
+      throw new Error(`Tavily extract failed (${response.status}): ${detail.slice(0, 500)}`);
+    }
+    const json = await response.json() as {
+      results?: Array<{ url?: string; raw_content?: string; favicon?: string }>;
+      failed_results?: Array<{ url?: string; error?: string }>;
+      response_time?: number;
+      usage?: { credits?: number };
+      request_id?: string;
+    };
+    return {
+      provider: "tavily",
+      results: (json.results ?? []).map((result) => {
+        const content = result.raw_content ?? "";
+        return {
+          url: result.url ?? "",
+          title: titleFromMarkdown(content) ?? result.url ?? "Fetched page",
+          content: content.slice(0, maxChars),
+          truncated: content.length > maxChars,
+          favicon: result.favicon
+        };
+      }),
+      failedResults: json.failed_results ?? [],
+      responseTime: json.response_time,
+      usage: json.usage,
+      requestId: json.request_id
+    };
+  }
+
+  return {
+    provider: "http",
+    results: await Promise.all(urls.map((url) => fetchPublicPage(url, maxChars))),
+    failedResults: []
+  };
+}
+
+async function fetchPublicPage(url: string, maxChars: number) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12_000);
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        "user-agent": "Construct Flow Research/1.0"
+      }
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    const contentType = response.headers.get("content-type") ?? "";
+    const text = await response.text();
+    const content = contentType.includes("html") ? htmlToReadableText(text) : text.replace(/\s+/g, " ").trim();
+    return {
+      url,
+      title: readHtmlTitle(text) ?? url,
+      content: content.slice(0, maxChars),
+      truncated: content.length > maxChars,
+      provider: "http"
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function normalizePublicWebUrl(value: string): string {
+  const url = new URL(value);
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error(`Only http(s) URLs can be fetched: ${value}`);
+  }
+  const hostname = url.hostname.toLowerCase();
+  if (
+    hostname === "localhost"
+    || hostname.endsWith(".local")
+    || /^127\./.test(hostname)
+    || hostname === "0.0.0.0"
+    || hostname === "::1"
+    || /^10\./.test(hostname)
+    || /^192\.168\./.test(hostname)
+    || /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname)
+  ) {
+    throw new Error(`Refusing to fetch non-public URL: ${value}`);
+  }
+  return url.toString();
 }
 
 async function listProjectFiles(
@@ -988,6 +1228,25 @@ function stripHtml(value: string): string {
     .replace(/&amp;/g, "&")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function htmlToReadableText(value: string): string {
+  return stripHtml(value
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
+    .replace(/<\/(?:p|div|section|article|h[1-6]|li|tr)>/gi, "\n"));
+}
+
+function readHtmlTitle(value: string): string | undefined {
+  const match = value.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  const title = match ? stripHtml(match[1]) : "";
+  return title || undefined;
+}
+
+function titleFromMarkdown(value: string): string | undefined {
+  const heading = value.split(/\r?\n/).find((line) => /^#{1,3}\s+\S/.test(line.trim()));
+  return heading?.replace(/^#{1,3}\s+/, "").trim() || undefined;
 }
 
 function previewToolOutput(name: string, value: unknown): string {
