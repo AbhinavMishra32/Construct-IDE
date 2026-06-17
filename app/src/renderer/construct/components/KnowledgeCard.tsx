@@ -1,8 +1,9 @@
 import { AdaptiveSidecarSurface } from "@opaline/ui";
-import { BookmarkCheckIcon, BookmarkIcon, ExternalLinkIcon } from "lucide-react";
-import { useState } from "react";
+import { BookmarkCheckIcon, BookmarkIcon, ChevronDownIcon, ExternalLinkIcon } from "lucide-react";
+import { useState, type ReactNode } from "react";
 
 import { MarkdownBlock } from "./MarkdownBlock";
+import { ConceptSummaryCard } from "./ConceptSummaryCard";
 import type { ConceptCard } from "../types";
 import type { InlineFileRef } from "../lib/inlineRefs";
 
@@ -50,48 +51,90 @@ export function KnowledgeCard({
         </button>
       )}
     >
-      {concept.summary ? <MarkdownBlock content={concept.summary} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} /> : null}
+      <div className="flex flex-col gap-3">
+        <ConceptSummaryCard concept={concept} />
+        <div className="flex flex-wrap gap-1.5 text-[10px]">
+          {concept.language ? (
+            <span className="rounded-full border bg-background/70 px-2 py-0.5 font-medium text-muted-foreground">{concept.language}</span>
+          ) : null}
+          {concept.technology ? (
+            <span className="rounded-full border bg-background/70 px-2 py-0.5 font-medium text-muted-foreground">{concept.technology}</span>
+          ) : null}
+          <span className="rounded-full border bg-background/70 px-2 py-0.5 font-mono text-muted-foreground">{concept.id}</span>
+        </div>
+      </div>
+      {concept.summary ? (
+        <ConceptSidecarSection title="Summary" defaultOpen>
+          <MarkdownBlock content={concept.summary} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
+        </ConceptSidecarSection>
+      ) : null}
       {concept.why ? (
-        <section className="mt-4 border-t pt-3">
-          <p className="mb-2 text-xs font-medium text-muted-foreground">Why it matters</p>
+        <ConceptSidecarSection title="Why it matters">
           <MarkdownBlock content={concept.why} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
-        </section>
+        </ConceptSidecarSection>
       ) : null}
       {concept.commonMistake ? (
-        <section className="mt-4 border-t pt-3">
-          <p className="mb-2 text-xs font-medium text-muted-foreground">Common mistake</p>
+        <ConceptSidecarSection title="Common mistake">
           <MarkdownBlock content={concept.commonMistake} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
-        </section>
+        </ConceptSidecarSection>
       ) : null}
       {concept.guides.map((guide) => (
-        <section key={guide.id} className="mt-4 border-t pt-3">
-          <p className="mb-2 text-xs font-medium text-muted-foreground">{guideLabel(guide.guideKind)}</p>
+        <ConceptSidecarSection key={guide.id} title={guideLabel(guide.guideKind)} defaultOpen>
           {guide.content ? <MarkdownBlock content={guide.content} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} /> : null}
           {guide.sections.map((section) => (
             <MarkdownBlock key={section.kind} content={section.content} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
           ))}
-        </section>
+        </ConceptSidecarSection>
       ))}
       {concept.example ? (
-        <section className="mt-4 border-t pt-3">
-          <p className="mb-2 text-xs font-medium text-muted-foreground">Example</p>
-          <MarkdownBlock content={`\`\`\`ts\n${concept.example}\n\`\`\``} theme={theme} onOpenConcept={onOpenConcept} />
-        </section>
+        <ConceptSidecarSection title="Example">
+          <MarkdownBlock content={`\`\`\`${exampleLanguage(concept)}\n${concept.example}\n\`\`\``} theme={theme} onOpenConcept={onOpenConcept} />
+        </ConceptSidecarSection>
       ) : null}
       {concept.docs.length > 0 ? (
-        <div className="mt-4 space-y-1 border-t pt-3">
+        <ConceptSidecarSection title="Docs">
           {concept.docs.map((link) => (
             <a className="flex items-center gap-2 rounded-[7px] px-2 py-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground" key={link.url} href={link.url} target="_blank" rel="noreferrer">
               <ExternalLinkIcon size={13} />
               <span>{link.title}</span>
             </a>
           ))}
-        </div>
+        </ConceptSidecarSection>
       ) : null}
     </AdaptiveSidecarSurface>
   );
 }
 
+function ConceptSidecarSection({
+  title,
+  defaultOpen = false,
+  children
+}: {
+  title: string;
+  defaultOpen?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <details className="construct-sidecar-accordion" open={defaultOpen}>
+      <summary>
+        <span>{title}</span>
+        <ChevronDownIcon size={14} />
+      </summary>
+      <div className="construct-sidecar-accordion__content">
+        {children}
+      </div>
+    </details>
+  );
+}
+
 function guideLabel(kind: string): string {
   return kind.replace(/^guide\./, "").replace(/-/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function exampleLanguage(concept: ConceptCard): string {
+  if (concept.language === "swift") return "swift";
+  if (concept.language === "python") return "python";
+  if (concept.language === "javascript") return "javascript";
+  if (concept.language === "cpp") return "cpp";
+  return "ts";
 }

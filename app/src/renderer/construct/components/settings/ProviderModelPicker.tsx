@@ -15,6 +15,7 @@ type ProviderModelPickerProps = {
   models: ModelCatalogEntry[];
   disabled?: boolean;
   placeholder?: string;
+  triggerTitle?: string;
   onChange: (model: string) => void;
 };
 
@@ -34,6 +35,7 @@ export function ProviderModelPicker({
   models,
   disabled,
   placeholder = "Pick model",
+  triggerTitle,
   onChange
 }: ProviderModelPickerProps) {
   const [open, setOpen] = useState(false);
@@ -84,6 +86,7 @@ export function ProviderModelPicker({
           variant="secondary"
           size="small"
           disabled={disabled}
+          title={triggerTitle}
           className="h-7 min-w-0 max-w-[16rem] justify-between gap-2 rounded-full px-2 text-xs"
         >
           <span className="flex min-w-0 items-center gap-2">
@@ -95,7 +98,7 @@ export function ProviderModelPicker({
       </PopoverTrigger>
       <PopoverContent
         align="start"
-        className="w-[min(44rem,calc(100vw-3rem))] overflow-hidden rounded-[10px] border bg-popover p-0 shadow-xl"
+        className="w-[min(44rem,calc(100vw-3rem))] overflow-hidden rounded-[10px] border bg-popover p-0"
       >
         <div className="flex max-h-[34rem] min-h-[24rem]">
           <div className="w-12 shrink-0 border-r bg-muted/20 p-1">
