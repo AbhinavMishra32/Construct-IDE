@@ -185,9 +185,10 @@ jobs:
           # Find only files recursively inside release-artifacts (ignoring directories)
           FILES=$(find release-artifacts -type f)
           
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" $FILES --clobber
-          elif [ "$IS_PRERELEASE" = "true" ]; then
+          # Delete existing release first to avoid 404 errors on stale release uploads
+          gh release delete "$TAG" --yes 2>/dev/null || true
+          
+          if [ "$IS_PRERELEASE" = "true" ]; then
             gh release create "$TAG" $FILES $EXTRA_FLAGS --title "Construct Canary ${VERSION}" --notes "Automated canary pre-release build."
           elif [ -f "$NOTES" ]; then
             gh release create "$TAG" $FILES $EXTRA_FLAGS --title "Construct ${VERSION}" --notes-file "$NOTES"
