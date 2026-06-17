@@ -11,25 +11,42 @@ import { apiTracker } from "./lib/apiTracker";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   BookOpen,
+  ArrowLeftIcon,
+  ArrowRightIcon,
+  CopyIcon,
   FileTerminalIcon,
   FileTextIcon,
+  FolderOpenIcon,
+  HomeIcon,
+  MoreHorizontalIcon,
   MessageCircleIcon,
-  Plus as PlusIcon
+  PanelRightIcon,
+  Plus as PlusIcon,
+  SettingsIcon,
+  SidebarIcon,
+  TerminalSquareIcon
 } from "lucide-react";
 import { Notebook } from "@phosphor-icons/react";
 
 import {
   AppShell,
   AppShellChromeButton,
+  AppShellCollapsedSidebarTrigger,
   AppShellHeaderToolButton,
   Badge,
   BottomPanel,
   Button,
   Sidebar,
   SettingsSidebar,
+  ShadcnDropdownMenu,
+  ShadcnDropdownMenuContent,
+  ShadcnDropdownMenuItem,
+  ShadcnDropdownMenuSeparator,
+  ShadcnDropdownMenuTrigger,
   useShellHistory
 } from "@opaline/ui";
 import type { SettingsNavItem, ShellHistoryEntry } from "@opaline/ui";
+import type { AppShellState } from "@opaline/ui";
 
 import { Dashboard } from "./components/Dashboard";
 import { DashboardSidebar } from "./components/DashboardSidebar";
@@ -723,6 +740,31 @@ export default function ConstructApp() {
     return allTabs.filter((tab) => openBottomTabIds.includes(tab.id));
   }, [activeProject, openBottomTabIds, activeBottomTabId, theme]);
 
+  const headerTitle = settingsSurface
+    ? settingsTitle(settingsSurface.itemId, settingsSurface.projectId, projects)
+    : activeProject?.title ?? "Projects";
+
+  const copyText = useCallback((text: string | undefined) => {
+    if (!text) return;
+    void navigator.clipboard?.writeText(text).catch(() => {
+      // Clipboard is unavailable in browser-only smoke checks.
+    });
+  }, []);
+
+  const openBottomTerminal = useCallback((shellState: AppShellState) => {
+    setOpenBottomTabIds((current) => current.includes("terminal") ? current : [...current, "terminal"]);
+    setActiveBottomTabId("terminal");
+    shellState.setBottomPanelOpen(true);
+  }, []);
+
+  const openRightWorkspacePanel = useCallback((shellState: AppShellState) => {
+    if (!activeProject) return;
+    if (!isFlowProjectRecord(activeProject)) {
+      handleRightSlotChange("guide");
+    }
+    shellState.setRightPanelOpen(true);
+  }, [activeProject, handleRightSlotChange]);
+
   return (
     <AppErrorBoundary>
       <div className="flex h-screen flex-col overflow-hidden bg-transparent">
@@ -732,6 +774,12 @@ export default function ConstructApp() {
           key={activeProject?.id ?? "dashboard"}
           history={history}
           showSidebarChrome
+          sidebarChrome={(state) => (
+            <ConstructShellNavigationControls state={state} variant="sidebar" />
+          )}
+          collapsedSidebarTrigger={(state) => (
+            <ConstructShellNavigationControls state={state} variant="collapsed" />
+          )}
           defaultBottomPanelOpen={Boolean(activeProject && !settingsSurface)}
           defaultRightPanelOpen={Boolean(activeProject && !settingsSurface)}
           headerTabs={[
@@ -739,16 +787,28 @@ export default function ConstructApp() {
               id: settingsSurface
                 ? `settings-${settingsSurface.itemId}`
                 : activeProject?.id ?? "dashboard",
-              title: settingsSurface
-                ? settingsTitle(settingsSurface.itemId, settingsSurface.projectId, projects)
-                : activeProject?.title ?? "Projects",
+              title: headerTitle,
               active: true
             }
           ]}
-          renderHeaderTab={(tab) => (
-            <Button className="max-w-56 rounded-lg shadow-sm" variant="secondary" size="small" type="button" title={String(tab.title)}>
-              <span>{tab.title}</span>
-            </Button>
+          renderHeaderTab={(tab, shellState) => (
+            <ConstructProjectTitleMenu
+              activeProject={activeProject}
+              isSettingsSurface={settingsSurface != null}
+              onBack={handleBack}
+              onCopyProjectId={() => copyText(activeProject?.id)}
+              onCopyWorkspacePath={() => copyText(activeProject?.workspacePath)}
+              onNewProject={() => setIsNewProjectOpen(true)}
+              onOpenProjectSettings={() => {
+                if (activeProject) {
+                  openSettingsSurface("project-overview", activeProject.id);
+                }
+              }}
+              onOpenRightPanel={() => openRightWorkspacePanel(shellState)}
+              onOpenTerminal={() => openBottomTerminal(shellState)}
+              onOpenWorkspaceSettings={() => openSettingsSurface("workspace")}
+              title={String(tab.title)}
+            />
           )}
           onNavigateHome={handleBack}
           headerActions={
@@ -906,7 +966,7 @@ export default function ConstructApp() {
                       />
                     ) : null}
                   </div>
-                  {sidebarKnowledgePanel ? (
+                  {sidebarKnowledgePanel && !isFlowProjectRecord(activeProject) ? (
                     sidebarKnowledgePanel
                   ) : null}
                 </div>
@@ -1067,5 +1127,149 @@ export default function ConstructApp() {
         }}
       />
     </AppErrorBoundary>
+  );
+}
+
+function ConstructShellNavigationControls({
+  state,
+  variant,
+}: {
+  state: AppShellState;
+  variant: "collapsed" | "sidebar";
+}) {
+  const Control = variant === "collapsed" ? AppShellCollapsedSidebarTrigger : AppShellChromeButton;
+  const active = variant === "collapsed";
+
+  return (
+    <div className="flex items-center gap-1">
+      <Control
+        aria-label={state.sidebarOpen ? "Close sidebar" : "Open sidebar"}
+        className="rounded-[12px]"
+        onClick={state.toggleSidebar}
+      >
+        <SidebarIcon size={15} strokeWidth={1.8} />
+      </Control>
+      <Control
+        aria-label="Projects"
+        className="rounded-[12px]"
+        data-active={active ? "true" : undefined}
+        disabled={!state.canNavigateHome}
+        onClick={state.navigateHome}
+      >
+        <HomeIcon size={15} strokeWidth={1.8} />
+      </Control>
+      <Control
+        aria-label="Back"
+        className="rounded-[12px]"
+        disabled={!state.canNavigateBack}
+        onClick={state.navigateBack}
+      >
+        <ArrowLeftIcon size={15} strokeWidth={1.8} />
+      </Control>
+      <Control
+        aria-label="Forward"
+        className="rounded-[12px]"
+        disabled={!state.canNavigateForward}
+        onClick={state.navigateForward}
+      >
+        <ArrowRightIcon size={15} strokeWidth={1.8} />
+      </Control>
+    </div>
+  );
+}
+
+function ConstructProjectTitleMenu({
+  activeProject,
+  isSettingsSurface,
+  onBack,
+  onCopyProjectId,
+  onCopyWorkspacePath,
+  onNewProject,
+  onOpenProjectSettings,
+  onOpenRightPanel,
+  onOpenTerminal,
+  onOpenWorkspaceSettings,
+  title,
+}: {
+  activeProject: AnyProjectRecord | null;
+  isSettingsSurface: boolean;
+  onBack: () => void;
+  onCopyProjectId: () => void;
+  onCopyWorkspacePath: () => void;
+  onNewProject: () => void;
+  onOpenProjectSettings: () => void;
+  onOpenRightPanel: () => void;
+  onOpenTerminal: () => void;
+  onOpenWorkspaceSettings: () => void;
+  title: string;
+}) {
+  const isFlow = activeProject != null && isFlowProjectRecord(activeProject);
+
+  return (
+    <div className="inline-flex max-w-[min(24rem,48vw)] items-center gap-1.5">
+      <span className="min-w-0 max-w-80 truncate px-1 text-sm font-medium" title={title}>
+        {title}
+      </span>
+      <ShadcnDropdownMenu>
+        <ShadcnDropdownMenuTrigger
+          render={
+            <Button
+              aria-label="Project actions"
+              className="size-8 shrink-0 rounded-[14px] text-muted-foreground hover:text-foreground"
+              size="icon"
+              type="button"
+              variant="ghost"
+            />
+          }
+        >
+          <MoreHorizontalIcon size={15} strokeWidth={2} />
+        </ShadcnDropdownMenuTrigger>
+        <ShadcnDropdownMenuContent align="start" className="w-64 rounded-[18px] p-1.5">
+          {activeProject != null ? (
+            <>
+              <ShadcnDropdownMenuItem onClick={onOpenRightPanel}>
+                <PanelRightIcon size={14} />
+                {isFlow ? "Open Flow agent" : "Open guide panel"}
+              </ShadcnDropdownMenuItem>
+              <ShadcnDropdownMenuItem onClick={onOpenTerminal}>
+                <TerminalSquareIcon size={14} />
+                Open terminal
+              </ShadcnDropdownMenuItem>
+              <ShadcnDropdownMenuItem onClick={onOpenProjectSettings}>
+                <SettingsIcon size={14} />
+                Project settings
+              </ShadcnDropdownMenuItem>
+              <ShadcnDropdownMenuSeparator />
+              <ShadcnDropdownMenuItem onClick={onCopyWorkspacePath}>
+                <FolderOpenIcon size={14} />
+                Copy workspace path
+              </ShadcnDropdownMenuItem>
+              <ShadcnDropdownMenuItem onClick={onCopyProjectId}>
+                <CopyIcon size={14} />
+                Copy project ID
+              </ShadcnDropdownMenuItem>
+              <ShadcnDropdownMenuSeparator />
+            </>
+          ) : null}
+          <ShadcnDropdownMenuItem onClick={onNewProject}>
+            <PlusIcon size={14} />
+            New project
+          </ShadcnDropdownMenuItem>
+          <ShadcnDropdownMenuItem onClick={onOpenWorkspaceSettings}>
+            <SettingsIcon size={14} />
+            Workspace settings
+          </ShadcnDropdownMenuItem>
+          {(activeProject != null || isSettingsSurface) ? (
+            <>
+              <ShadcnDropdownMenuSeparator />
+              <ShadcnDropdownMenuItem onClick={onBack}>
+                <HomeIcon size={14} />
+                Back to projects
+              </ShadcnDropdownMenuItem>
+            </>
+          ) : null}
+        </ShadcnDropdownMenuContent>
+      </ShadcnDropdownMenu>
+    </div>
   );
 }

@@ -109,7 +109,7 @@ export function SelectionDropdown({
           layout
           layoutId="selection-dropdown-surface"
           className={cn(
-            "fixed z-50 flex min-w-32 flex-col origin-(--radix-dropdown-menu-content-transform-origin) overflow-hidden rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10",
+            "construct-overlay-shadow fixed z-50 flex min-w-32 flex-col origin-(--radix-dropdown-menu-content-transform-origin) overflow-hidden rounded-lg bg-popover p-1 text-popover-foreground ring-1 ring-foreground/10",
             className
           )}
           data-mode={mode}
