@@ -208,5 +208,12 @@ contextBridge.exposeInMainWorld("constructProjects", {
     return () => ipcRenderer.off("construct:litellm:status-change", listener);
   },
   importOpencodeAuth: () =>
-    ipcRenderer.invoke("construct:settings:import-opencode-auth")
+    ipcRenderer.invoke("construct:settings:import-opencode-auth"),
+  onProviderLog: (callback: (payload: { provider: string; message: string; level: string }) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: { provider: string; message: string; level: string }) => {
+      callback(payload);
+    };
+    ipcRenderer.on("construct:provider:log", listener);
+    return () => ipcRenderer.off("construct:provider:log", listener);
+  }
 });

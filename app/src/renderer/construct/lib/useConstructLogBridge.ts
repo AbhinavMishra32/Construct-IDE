@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 
-import { onAgentLog, onLitellmLog } from "./bridge";
-import { logStore, PROVIDER_CHANNELS, type LogChannel } from "./logStore";
+import { onAgentLog, onLitellmLog, onProviderLog } from "./bridge";
+import { logStore, PROVIDER_CHANNELS, type LogChannel, type ProviderLogChannel } from "./logStore";
 
 export function useConstructLogBridge(): void {
   useEffect(() => {
@@ -46,11 +46,20 @@ export function useConstructLogBridge(): void {
       logStore.addLog("litellm", payload.message, level);
     });
 
+    const unsubscribeProvider = onProviderLog((payload) => {
+      const channel = payload.provider as ProviderLogChannel;
+      const level = payload.level === "error" || payload.level === "warn" || payload.level === "debug"
+        ? payload.level
+        : "info";
+      logStore.addLog(channel, payload.message, level);
+    });
+
     return () => {
       unsubscribeLsp();
       unsubscribeMain();
       unsubscribeAgent();
       unsubscribeLitellm();
+      unsubscribeProvider();
     };
   }, []);
 }

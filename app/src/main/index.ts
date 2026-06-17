@@ -9,6 +9,7 @@ import { ConstructCodeGhostService } from "./ai/ConstructCodeGhostService";
 import { ConstructLitellmService } from "./ai/ConstructLitellmService";
 import { ConstructSelectionExplainService } from "./ai/ConstructSelectionExplainService";
 import { ConstructVerifierService } from "./ai/ConstructVerifierService";
+import { providerLogService } from "./ai/ProviderLogService";
 import { MainProcessLogBridge } from "./app/MainProcessLogBridge";
 import { ConstructWindowManager } from "./app/ConstructWindowManager";
 import {
@@ -265,6 +266,9 @@ function installConstructProjectIpcHandlers(): void {
     ipcMain,
     litellm: litellmService
   }).register(() => activeWebContents);
+
+  // Set up provider log service with web contents provider
+  providerLogService.setWebContentsProvider(() => activeWebContents);
 }
 
 

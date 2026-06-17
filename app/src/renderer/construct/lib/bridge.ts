@@ -368,3 +368,7 @@ export function onLitellmStatusChange(callback: (payload: import("../types").Lit
 export function importOpencodeAuth(): Promise<string | null> {
   return api().importOpencodeAuth();
 }
+
+export function onProviderLog(callback: (payload: { provider: string; message: string; level: string }) => void): () => void {
+  return api().onProviderLog(callback);
+}

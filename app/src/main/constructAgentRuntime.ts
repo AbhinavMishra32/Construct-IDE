@@ -7,6 +7,7 @@ import { resolveConstructLlmModel } from "./constructAgentModels";
 import type { ConstructAiFeatureId } from "./constructAiFeatures";
 import { resolveConstructAiSettings } from "./constructAiSettings";
 import type { ConstructAgentRunEvent } from "../shared/constructLearning";
+import { emitProviderLog } from "./ai/ProviderLogService";
 
 export type ConstructAgentTools = ToolsInput;
 
@@ -110,6 +111,14 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
     });
 
     const model = await resolveConstructLlmModel(request.purpose, request.featureId);
+    
+    // Log to provider channel
+    emitProviderLog(
+      model.providerId,
+      `Model resolved: ${model.modelId} | Provider: ${model.providerId} | Base URL: ${model.url || "default"}`,
+      "info"
+    );
+    
     request.onTrace?.({
       title: "Resolved agent model",
       level: "debug",
@@ -142,6 +151,14 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
       const hasTools = request.tools && Object.keys(request.tools).length > 0;
       const runStartedAt = Date.now();
       const runEventId = outputEventId(request.id);
+      
+      // Log API call start
+      emitProviderLog(
+        model.providerId,
+        `API call started: ${request.purpose} | Model: ${model.modelId} | Tools: ${hasTools ? "yes" : "no"} | Prompt length: ${request.prompt.length} chars`,
+        "info"
+      );
+      
       const output = await agent.stream(request.prompt, {
         structuredOutput: {
           schema: request.schema,
@@ -227,6 +244,48 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
         }
       });
 
+      // Log raw structured output for debugging
+      request.onTrace?.({
+        title: "Raw structured output from model",
+        level: "info",
+        detail: `Model: ${model.modelId} | Provider: ${model.providerId} | Response object type: ${typeof object}`,
+        payload: {
+          model: model.modelId,
+          provider: model.providerId,
+          object: object,
+          objectString: stringifyForTrace(object),
+          stepCount: steps.length,
+          finishReason,
+          isNull: object === null || object === undefined,
+          isEmpty: object && typeof object === 'object' && Object.keys(object).length === 0
+        }
+      });
+
+      // Log API call completion
+      emitProviderLog(
+        model.providerId,
+        `API call completed: ${steps.length} step(s) | Finish reason: ${finishReason} | Duration: ${formatDuration(Date.now() - runStartedAt)} | Object type: ${typeof object}`,
+        object ? "info" : "warn"
+      );
+
+      // Validate the structured output
+      if (!object || (typeof object === 'object' && Object.keys(object).length === 0)) {
+        const errorMsg = `Model returned empty structured output. Model: ${model.modelId}, Provider: ${model.providerId}. The model may not support structured output or returned empty JSON.`;
+        request.onTrace?.({
+          title: "Structured output validation error",
+          level: "error",
+          detail: errorMsg,
+          payload: {
+            model: model.modelId,
+            provider: model.providerId,
+            object: object
+          }
+        });
+        // Log error to provider channel
+        emitProviderLog(model.providerId, errorMsg, "error");
+        throw new Error(errorMsg);
+      }
+
       const parsed = request.schema.parse(object);
       request.onTrace?.({
         title: "Validated structured result",
@@ -234,6 +293,14 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
         detail: stringifyForTrace(parsed),
         payload: parsed
       });
+      
+      // Log successful validation
+      emitProviderLog(
+        model.providerId,
+        `Structured output validated successfully | Model: ${model.modelId} | Provider: ${model.providerId}`,
+        "info"
+      );
+      
       return parsed;
     } catch (error) {
       request.onTrace?.({
@@ -248,6 +315,15 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
             }
           : { error: String(error) }
       });
+      
+      // Log error to provider channel
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      emitProviderLog(
+        model.providerId,
+        `API call failed: ${errorMessage} | Model: ${model.modelId} | Provider: ${model.providerId}`,
+        "error"
+      );
+      
       throw error;
     }
   }

@@ -708,6 +708,7 @@ export type ConstructProjectsApi = {
   onLitellmLog(callback: (payload: { level: string; message: string }) => void): () => void;
   onLitellmStatusChange(callback: (payload: LitellmState) => void): () => void;
   importOpencodeAuth(): Promise<string | null>;
+  onProviderLog(callback: (payload: { provider: string; message: string; level: string }) => void): () => void;
 };
 
 export type LitellmStatus = "stopped" | "starting" | "running" | "stopping" | "error";
