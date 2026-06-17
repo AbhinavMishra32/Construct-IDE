@@ -7,6 +7,7 @@ import { z } from "zod";
 
 import type {
   ConstructInteractAssessment,
+  ConstructInteractAction,
   ConstructInteractRuntimeInput,
   ConstructInteractToolCallRecord,
   ConstructLearningState,
@@ -18,6 +19,9 @@ import {
   createLearnerAssessmentTool,
   type ConstructTapeToolProject
 } from "./agent-tools/constructTapeTools";
+import { createConstructProtocolTools } from "./agent-tools/constructProtocolTools";
+import type { StoredProject } from "./projects/ConstructProjectTypes";
+import type { ConstructProjectWorkspaceService } from "./projects/ConstructProjectWorkspaceService";
 
 type ToolProject = ConstructTapeToolProject & {
   id: string;
@@ -43,6 +47,7 @@ export function createConstructInteractTools(input: {
   request: Omit<ConstructInteractRuntimeInput, "learningState">;
   learningState: ConstructLearningState;
   latestTerminalOutput?: string;
+  workspace?: ConstructProjectWorkspaceService;
   sourceBlockId?: string;
   sourceStepId?: string;
   sourceRunId?: string;
@@ -83,6 +88,36 @@ export function createConstructInteractTools(input: {
     sourceRunId: input.sourceRunId
   });
   const learnerAssessment = createLearnerAssessmentTool(recordToolCall);
+  const protocolTools = input.workspace
+    ? createConstructProtocolTools({
+        project: input.project as unknown as StoredProject,
+        workspace: input.workspace,
+        latestTerminalOutput: input.latestTerminalOutput,
+        allowWorkspaceMutation: input.request.mode === "general",
+        allowTerminalCommands: false,
+        onToolCallStart: (record) => {
+          input.onToolCallStart?.({
+            id: record.id,
+            name: record.name,
+            reason: record.reason,
+            input: record.input,
+            createdAt: record.createdAt
+          });
+        },
+        onToolCall: (record) => {
+          const normalized: ConstructInteractToolCallRecord = {
+            id: record.id,
+            name: record.name,
+            reason: record.reason,
+            input: record.input,
+            outputPreview: record.outputPreview,
+            createdAt: record.createdAt
+          };
+          toolCalls.push(normalized);
+          input.onToolCall?.(normalized);
+        }
+      })
+    : undefined;
 
   const getCurrentStep = createTool({
     id: "getCurrentStep",
@@ -357,7 +392,100 @@ export function createConstructInteractTools(input: {
     )
   });
 
+  const goToStep = createTool({
+    id: "goToStep",
+    description: "Request that the UI navigate to an authored or generated lesson step.",
+    inputSchema: z.object({
+      stepId: z.string().min(1),
+      label: z.string().min(1).default("Go to step"),
+      reason: z.string().min(1).default("Relevant next step")
+    }).strict(),
+    execute: async (toolInput) => recordToolCall("goToStep", toolInput.reason ?? "Relevant next step", {
+      action: {
+        type: "go-to-step",
+        stepId: toolInput.stepId,
+        label: toolInput.label ?? "Go to step",
+        reason: toolInput.reason ?? "Relevant next step"
+      } satisfies ConstructInteractAction
+    }, toolInput)
+  });
+
+  const openConcept = createTool({
+    id: "openConcept",
+    description: "Request that the UI open a concept card.",
+    inputSchema: z.object({
+      conceptId: z.string().min(1),
+      label: z.string().min(1).default("Open concept"),
+      reason: z.string().min(1).default("Relevant concept")
+    }).strict(),
+    execute: async (toolInput) => recordToolCall("openConcept", toolInput.reason ?? "Relevant concept", {
+      action: {
+        type: "open-concept",
+        conceptId: toolInput.conceptId,
+        label: toolInput.label ?? "Open concept",
+        reason: toolInput.reason ?? "Relevant concept"
+      } satisfies ConstructInteractAction
+    }, toolInput)
+  });
+
+  const openFile = createTool({
+    id: "openFile",
+    description: "Request that the UI open a project file. Does not edit code.",
+    inputSchema: z.object({
+      path: z.string().min(1),
+      anchor: z.string().optional(),
+      label: z.string().min(1).default("Open file"),
+      reason: z.string().min(1).default("Relevant file")
+    }).strict(),
+    execute: async (toolInput) => recordToolCall("openFile", toolInput.reason ?? "Relevant file", {
+      action: {
+        type: "open-file",
+        path: toolInput.path,
+        anchor: toolInput.anchor,
+        label: toolInput.label ?? "Open file",
+        reason: toolInput.reason ?? "Relevant file"
+      } satisfies ConstructInteractAction
+    }, toolInput)
+  });
+
+  const focusTerminal = createTool({
+    id: "focusTerminal",
+    description: "Request that the UI focus the terminal.",
+    inputSchema: z.object({
+      label: z.string().min(1).default("Focus terminal"),
+      reason: z.string().min(1).default("Terminal output is relevant")
+    }).strict(),
+    execute: async (toolInput) => recordToolCall("focusTerminal", toolInput.reason ?? "Terminal output is relevant", {
+      action: {
+        type: "focus-terminal",
+        label: toolInput.label ?? "Focus terminal",
+        reason: toolInput.reason ?? "Terminal output is relevant"
+      } satisfies ConstructInteractAction
+    }, toolInput)
+  });
+
+  const requestTerminalCommand = createTool({
+    id: "requestTerminalCommand",
+    description: "Request that the UI offer a terminal command for the learner to run.",
+    inputSchema: z.object({
+      command: z.string().min(1),
+      cwd: z.string().optional(),
+      label: z.string().min(1).default("Run command"),
+      reason: z.string().min(1).default("Command is useful")
+    }).strict(),
+    execute: async (toolInput) => recordToolCall("requestTerminalCommand", toolInput.reason ?? "Command is useful", {
+      action: {
+        type: "run-terminal-command",
+        command: toolInput.command,
+        cwd: toolInput.cwd,
+        label: toolInput.label ?? "Run command",
+        reason: toolInput.reason ?? "Command is useful"
+      } satisfies ConstructInteractAction
+    }, toolInput)
+  });
+
   const tools: ToolsInput = {
+    ...(protocolTools?.tools ?? {}),
     ...tapeTools.tools,
     getCurrentStep,
     getStepById,
@@ -376,7 +504,12 @@ export function createConstructInteractTools(input: {
     getConstructInteractHistory,
     getStepFiles,
     readWorkspaceFile: readWorkspaceFileTool,
-    getLatestTerminalOutput
+    getLatestTerminalOutput,
+    goToStep,
+    openConcept,
+    openFile,
+    focusTerminal,
+    requestTerminalCommand
   };
 
   if (input.request.mode === "general") {

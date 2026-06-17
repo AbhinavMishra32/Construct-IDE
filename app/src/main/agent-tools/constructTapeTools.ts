@@ -230,6 +230,39 @@ export function createConstructTapeAgentTools(input: {
     }
   });
 
+  const editNextStep = createTool({
+    id: "editNextStep",
+    description: "Create one compiler-validated adaptive step that appears before the next authored tape step. Use when the learner asks to edit, improve, or replace the next step based on current understanding. This does not rewrite the authored tape.",
+    inputSchema: z.object({
+      source: z.string().min(20).max(30_000),
+      reason: z.string().min(4).max(500),
+      targetStepId: z.string().min(1).optional()
+    }).strict(),
+    execute: async (toolInput) => {
+      const output = (() => {
+        const nextStepIndex = Math.min(input.project.program.steps.length - 1, input.project.currentStepIndex + 1);
+        const nextStep = input.project.program.steps[nextStepIndex];
+        const targetStepId = toolInput.targetStepId ?? nextStep?.id ?? (nextStep ? `step-${nextStepIndex + 1}` : undefined);
+        if (!targetStepId) {
+          return { created: false, reason: "There is no next authored step to edit around." };
+        }
+        return createDynamicStepDraft({
+          project: input.project,
+          source: toolInput.source,
+          reason: toolInput.reason,
+          canCreateDynamicSteps: input.canCreateDynamicSteps,
+          inspectedTape,
+          dynamicSteps,
+          sourceBlockId: input.sourceBlockId,
+          sourceStepId: input.sourceStepId,
+          sourceRunId: input.sourceRunId,
+          insertBeforeStepId: targetStepId
+        });
+      })();
+      return input.recordToolCall("editNextStep", "Create adaptive next-step edit", output, toolInput);
+    }
+  });
+
   return {
     tools: {
       getTapeOverview,
@@ -238,7 +271,8 @@ export function createConstructTapeAgentTools(input: {
       getTapeFileManifest,
       parseDynamicStep,
       compileDynamicStep,
-      createDynamicStep
+      createDynamicStep,
+      editNextStep
     },
     dynamicSteps
   };
@@ -274,6 +308,68 @@ export function createLearnerAssessmentTool(recordToolCall: AgentToolCallRecorde
     }
   });
   return { tool, getAssessment: () => assessment };
+}
+
+function createDynamicStepDraft(input: {
+  project: ConstructTapeToolProject;
+  source: string;
+  reason: string;
+  canCreateDynamicSteps: boolean;
+  inspectedTape: boolean;
+  dynamicSteps: DynamicStepDraft[];
+  sourceBlockId?: string;
+  sourceStepId?: string;
+  sourceRunId?: string;
+  insertAfterStepId?: string;
+  insertBeforeStepId?: string;
+}) {
+  if (!input.canCreateDynamicSteps) {
+    return { created: false, reason: `Tape spec ${input.project.program.spec ?? "unknown"} does not support Dynamic Steps.` };
+  }
+  if (!input.inspectedTape) {
+    return { created: false, reason: "Inspect the authored tape with getTapeOverview, getTapeStep, or getTapeStepBlock before creating or editing a Dynamic Step." };
+  }
+  if (input.dynamicSteps.length >= 3) {
+    return { created: false, reason: "This run already created the maximum of three Dynamic Steps." };
+  }
+  const knownStepIds = new Set(input.project.program.steps.map((step, index) => step.id ?? `step-${index + 1}`));
+  if (input.insertAfterStepId && !knownStepIds.has(input.insertAfterStepId)) {
+    return { created: false, reason: `Unknown insertAfterStepId: ${input.insertAfterStepId}.` };
+  }
+  if (input.insertBeforeStepId && !knownStepIds.has(input.insertBeforeStepId)) {
+    return { created: false, reason: `Unknown insertBeforeStepId: ${input.insertBeforeStepId}.` };
+  }
+  const compiled = compileDynamicStepSource(input.project, input.source);
+  if (!compiled.valid || !compiled.step) {
+    return { created: false, reason: "The proposed Dynamic Step did not compile.", diagnostics: compiled.diagnostics };
+  }
+  const draft: DynamicStepDraft = {
+    id: compiled.step.id,
+    source: "construct-interact",
+    sourceBlockId: input.sourceBlockId,
+    sourceStepId: input.sourceStepId,
+    sourceRunId: input.sourceRunId,
+    insertAfterStepId: input.insertAfterStepId,
+    insertBeforeStepId: input.insertBeforeStepId,
+    title: compiled.step.title,
+    reason: input.reason,
+    blocks: compiled.step.blocks.map(toDynamicBlock),
+    conceptIds: compiled.step.teaches
+  };
+  input.dynamicSteps.push(draft);
+  return {
+    created: true,
+    step: {
+      id: draft.id,
+      title: draft.title,
+      reason: draft.reason,
+      blockKinds: draft.blocks.map((block) => block.kind),
+      blockCount: draft.blocks.length,
+      insertAfterStepId: draft.insertAfterStepId,
+      insertBeforeStepId: draft.insertBeforeStepId
+    },
+    diagnostics: compiled.diagnostics
+  };
 }
 
 function dynamicStepSourceSchema() {
