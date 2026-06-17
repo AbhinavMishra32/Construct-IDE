@@ -332,7 +332,7 @@ export function FlowWorkspace({
   }, [onKnowledgePanelChange, sidebarKnowledgeContent]);
 
   const sidecar = openConcept ? (
-    <div className="flex max-h-full w-full flex-col gap-3 overflow-y-auto" aria-label="Open knowledge cards">
+    <div className="flex h-full max-h-full min-h-0 w-full flex-col gap-3 overflow-y-auto" aria-label="Open knowledge cards">
       <KnowledgeCard
         key={openConcept.id}
         concept={openConcept}

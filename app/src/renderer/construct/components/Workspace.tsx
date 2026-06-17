@@ -1932,7 +1932,7 @@ export function Workspace({
   const hasOpenContextCards = openReferenceIds.length > 0 || openConceptIds.length > 0;
   const hasPinnedContextCard = openReferenceIds.some((referenceId) => pinnedReferenceIds.includes(referenceId));
   const contextCards = hasOpenContextCards ? (
-    <div className="flex max-h-full w-full flex-col gap-3 overflow-y-auto" aria-label="Open reference and knowledge cards">
+    <div className="flex h-full max-h-full min-h-0 w-full flex-col gap-3 overflow-y-auto" aria-label="Open reference and knowledge cards">
       {openReferenceIds
         .map((referenceId) => references.find((reference) => reference.id === referenceId))
         .filter((reference): reference is (typeof references)[number] => Boolean(reference))
