@@ -182,8 +182,8 @@ jobs:
             EXTRA_FLAGS="--latest"
           fi
           
-          # Find only files recursively inside release-artifacts (ignoring directories)
-          FILES=$(find release-artifacts -type f)
+          # Find files recursively, deduplicating by basename to avoid 422 duplicate asset errors
+          FILES=$(find release-artifacts -type f | awk '!seen[$NF]++')
           
           # Delete existing release first to avoid 404 errors on stale release uploads
           gh release delete "$TAG" --yes 2>/dev/null || true
