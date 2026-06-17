@@ -50,7 +50,7 @@ describe("Construct Interact Codex-style UI", () => {
   it("uses Codex message geometry and a real icon-only composer", () => {
     const source = readFileSync(fileURLToPath(new URL("../../../../../opaline/packages/ui/src/agent-session/AgentSessionSurface.tsx", import.meta.url)), "utf8");
     assert.match(source, /max-w-\[77%\]/);
-    assert.match(source, /rounded-2xl/);
+    assert.match(source, /rounded-\[18px\]/);
     assert.match(source, /rounded-3xl/);
     assert.match(source, /ArrowUpIcon/);
     assert.match(source, /event\.key === "Enter"/);
@@ -65,7 +65,7 @@ describe("Construct Interact Codex-style UI", () => {
     assert.match(source, /className="flex min-h-0 flex-1 flex-col overflow-hidden outline-none"/);
   });
 
-  it("keeps Flow projects inside the same file-tab and knowledge-sidebar shell", () => {
+  it("keeps Flow projects inside the same file-tab shell without a sidebar knowledge block", () => {
     const flow = readFileSync(fileURLToPath(new URL("./FlowWorkspace.tsx", import.meta.url)), "utf8");
     const app = readFileSync(fileURLToPath(new URL("../ConstructApplication.tsx", import.meta.url)), "utf8");
     const slotPanel = readFileSync(fileURLToPath(new URL("../../../../../opaline/packages/ui/src/slot-panel/SlotPanel.tsx", import.meta.url)), "utf8");
@@ -74,13 +74,48 @@ describe("Construct Interact Codex-style UI", () => {
     assert.match(flow, /const editorSlotTabs: SlotTab\[\] = useMemo/);
     assert.match(flow, /<SlotPanel/);
     assert.match(flow, /ariaLabel="Editor file tabs"/);
-    assert.match(flow, /onKnowledgePanelChange\?\.\(sidebarKnowledgeContent\)/);
-    assert.match(flow, /<SidebarBottomSlot/);
+    assert.match(flow, /onKnowledgePanelChange\?\.\(null\)/);
+    assert.doesNotMatch(flow, /<SidebarBottomSlot/);
     assert.match(flow, /collectFlowConcepts/);
     assert.match(app, /onKnowledgePanelChange=\{setSidebarKnowledgePanel\}/);
+    assert.match(app, /sidebarKnowledgePanel && !isFlowProjectRecord\(activeProject\)/);
     assert.match(slotPanel, /rounded-\[8px\]/);
     assert.match(slotPanel, /data-\[state=active\]:bg-muted/);
     assert.doesNotMatch(slotPanel, /after:bg-primary/);
+  });
+
+  it("uses the Opaline adaptive sidecar rewrite with deterministic collapse animation", () => {
+    const sidecar = readFileSync(fileURLToPath(new URL("../../../../../opaline/packages/ui/src/adaptive-sidecar/AdaptiveSidecar.tsx", import.meta.url)), "utf8");
+
+    assert.match(sidecar, /AnimatePresence initial=\{false\}/);
+    assert.match(sidecar, /className=\{cn\([\s\S]*opaline-overlay-shadow/);
+    assert.match(sidecar, /aria-expanded=\{!collapsed\}/);
+    assert.match(sidecar, /key="opaline-sidecar-body"/);
+    assert.match(sidecar, /exit=\{\{ height: 0, opacity: 0 \}\}/);
+    assert.match(sidecar, /clampSidecarWidth/);
+    assert.doesNotMatch(sidecar, /flexGrow: collapsed/);
+    assert.doesNotMatch(sidecar, /scale: open \? 1 : 0\.8/);
+  });
+
+  it("renders Opaline concept cards directly inside Flow chat and routes active-task messages through the main composer", () => {
+    const flow = readFileSync(fileURLToPath(new URL("./FlowWorkspace.tsx", import.meta.url)), "utf8");
+    const conceptCard = readFileSync(fileURLToPath(new URL("./ConceptSummaryCard.tsx", import.meta.url)), "utf8");
+    const css = readFileSync(fileURLToPath(new URL("../../index.css", import.meta.url)), "utf8");
+
+    assert.match(conceptCard, /rounded-\[8px\] border border-border\/70 bg-card\/82/);
+    assert.match(conceptCard, /if \(concept\.language === "swift"\) return "Swift";/);
+    assert.match(conceptCard, /if \(concept\.language === "typescript"\) return "TypeScript";/);
+    assert.match(conceptCard, /concept\.technology \? <ConceptChip label=\{concept\.technology\} \/> : null/);
+    assert.match(flow, /language: readConceptLanguage/);
+    assert.match(flow, /technology: readString\(conceptObj\.technology\) \?\? readString\(inputObj\.technology\) \?\? readString\(outputObj\.technology\)/);
+    assert.match(flow, /<ConceptSummaryCard[\s\S]*variant="chat"/);
+    assert.match(flow, /taskMessage: \{ taskId: activeTask\.id, pathNodeId: activeTask\.pathNodeId \}/);
+    assert.match(flow, /placeholder=\{activeTask \? `Message Flow about: \$\{activeTask\.title\}`/);
+    assert.match(flow, /<FloatingFlowTaskCard/);
+    assert.doesNotMatch(css, /construct-concept-shimmer/);
+    assert.doesNotMatch(css, /construct-concept-profile-card/);
+    assert.match(css, /\.construct-floating-task-card/);
+    assert.match(css, /grid-template-rows 260ms cubic-bezier/);
   });
 
   it("renders a compact expandable trace with distinct thought and tool rows", () => {
@@ -88,7 +123,12 @@ describe("Construct Interact Codex-style UI", () => {
     assert.match(source, /Working/);
     assert.match(source, /traceGroupLabel/);
     assert.match(source, /Read file/);
-    assert.match(source, /Ran shell command/);
+    assert.match(source, /Ran command/);
+    assert.match(source, /AgentRunCommandRow/);
+    assert.match(source, /readCommandRun/);
+    assert.match(source, /Command failed/);
+    assert.match(source, /Success/);
+    assert.match(source, /max-h-72 overflow-auto/);
     assert.match(source, /animate-in fade-in-0 slide-in-from-top-1/);
     assert.match(source, /slide-in-from-left-1/);
     assert.match(source, /opaline-agent-thinking-shimmer/);
@@ -96,7 +136,7 @@ describe("Construct Interact Codex-style UI", () => {
     assert.match(source, /TraceDetail label="Input"/);
     assert.match(source, /TraceDetail label="Result"/);
     const surface = readFileSync(fileURLToPath(new URL("../../../../../opaline/packages/ui/src/agent-session/AgentSessionSurface.tsx", import.meta.url)), "utf8");
-    assert.match(surface, /border-l border-border\/40/);
+    assert.match(surface, /className="pl-1 pr-1"/);
     assert.doesNotMatch(source, /Thought for/);
   });
 
@@ -107,6 +147,13 @@ describe("Construct Interact Codex-style UI", () => {
     assert.match(types, /type: "activity"/);
     assert.match(primitives, /data-component="activity-part"/);
     assert.match(primitives, /<AgentRunTraceRow entry=\{part\.entry\}/);
+    assert.match(types, /footerStart\?: ReactNode/);
+    assert.match(flow, /<FlowComposerControls/);
+    assert.match(flow, /FlowContextMeter/);
+    assert.match(flow, /ProviderModelPicker/);
+    assert.match(flow, /"construct-flow": model/);
+    assert.match(flow, /collectAnsweredQuestionKeys/);
+    assert.match(flow, /answeredQuestionKeys\.has\(questionKey\(session\.id, candidate\.id\)\)/);
     assert.match(flow, /buildFlowAgentParts/);
     assert.match(flow, /type: "activity"/);
     assert.match(flow, /findActiveFlowQuestion\(mergedSessions\)/);

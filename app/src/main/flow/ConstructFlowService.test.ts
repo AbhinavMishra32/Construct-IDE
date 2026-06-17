@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { mkdtemp, mkdir, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -10,6 +10,7 @@ import { ConstructProjectWorkspaceService } from "../projects/ConstructProjectWo
 import { ConstructFlowMemoryService } from "./ConstructFlowMemoryService";
 import { AgentLogService } from "../ai/AgentLogService";
 import { ConstructLearningStore } from "../constructLearningStore";
+import { createConstructProtocolTools } from "../agent-tools/constructProtocolTools";
 import type { StoredFlowProject } from "../projects/ConstructProjectTypes";
 import type { ConstructFlowSession } from "../../shared/constructFlow";
 
@@ -39,8 +40,8 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     const project: StoredFlowProject = {
       kind: "flow",
       id: "test-project",
-      title: "Test Project",
-      description: "A test project",
+      title: "Notes App Test Project",
+      description: "A SwiftUI NotesApp test project",
       progress: 0,
       lastOpenedAt: new Date().toISOString(),
       workspacePath: path.join(workspaceRoot, "test-project"),
@@ -49,7 +50,7 @@ describe("ConstructFlowService Concept and Task Tools", () => {
       fileTreeExpanded: [],
       completedAt: null,
       flow: {
-        goal: "Test goals",
+        goal: "Build a SwiftUI notes app",
         memoryDirectory: ".construct/flow-memory",
         threadId: "test-thread",
         researchEnabled: false,
@@ -60,6 +61,19 @@ describe("ConstructFlowService Concept and Task Tools", () => {
       }
     };
     await mkdir(project.workspacePath, { recursive: true });
+
+    const protocol = createConstructProtocolTools({
+      project,
+      workspace,
+      flowMemory,
+      allowWorkspaceMutation: true,
+      allowTerminalCommands: true
+    });
+    assert.ok(protocol.tools["ask-question"]);
+    assert.ok(protocol.tools.askQuestion);
+    assert.ok(protocol.tools.internetSearch);
+    assert.ok(protocol.tools["internet-fetch"]);
+    assert.ok(protocol.tools.internetFetch);
 
     const session: ConstructFlowSession = {
       id: "session-1",
@@ -81,6 +95,8 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     const addResult = await addTool.execute({
       id: "typescript.syntax.interface",
       title: "Interface",
+      language: "typescript",
+      technology: "TypeScript",
       content: "TypeScript interface defines shape.",
       examples: ["interface User { name: string; }"],
       confidence: "emerging",
@@ -91,8 +107,28 @@ describe("ConstructFlowService Concept and Task Tools", () => {
 
     assert.ok(addResult.created);
     assert.equal(addResult.concept.id, "typescript.syntax.interface");
+    assert.equal(addResult.concept.language, "typescript");
+    assert.equal(addResult.concept.technology, "TypeScript");
     assert.equal(addResult.concept.parentId, "typescript.syntax");
     assert.equal(addResult.concept.confidenceReason, "They correctly described the interface as a shape contract.");
+
+    const swiftResult = await addTool.execute({
+      id: "swiftui.notesapp.core-structure",
+      title: "SwiftUI core structure",
+      language: "swift",
+      technology: "SwiftUI",
+      content: "SwiftUI core structure covers App, state, and the first view tree.",
+      confidence: "unknown",
+      reason: "The agent scaffolded the app and needs a reusable global concept.",
+      evidence: ["The scaffold introduced the SwiftUI App entry point and first view tree."]
+    });
+
+    assert.ok(swiftResult.created);
+    assert.equal(swiftResult.canonicalId, "swiftui.core-structure");
+    assert.equal(swiftResult.normalizedFrom, "swiftui.notesapp.core-structure");
+    assert.equal(swiftResult.concept.id, "swiftui.core-structure");
+    assert.equal(swiftResult.concept.language, "swift");
+    assert.equal(swiftResult.concept.technology, "SwiftUI");
 
     // Verify parent stubs auto-created
     const state = await learningStore.getState();
@@ -196,6 +232,27 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     const ignoredFile = path.join(project.workspacePath, "ignored.ts");
     await writeFile(ignoredFile, "console.log('ignored');", "utf8");
 
+    const pathTool = (service as any).createPlanLearningPathTool(project, () => {});
+    const pathResult = await pathTool.execute({
+      reason: "Create a first learner-aware path before assigning tasks.",
+      currentNodeId: "typescript-foundation",
+      nodes: [{
+        id: "typescript-foundation",
+        title: "TypeScript foundation",
+        summary: "Practice small functions before wiring the project together.",
+        kind: "foundation",
+        learnerLevel: "beginner",
+        concepts: ["typescript.functions"],
+        status: "active",
+        entryCriteria: ["Learner has selected TypeScript."],
+        exitCriteria: ["Learner can write and submit a small function."]
+      }]
+    });
+
+    assert.equal(pathResult.currentNodeId, "typescript-foundation");
+    assert.equal(project.flow.currentPathNodeId, "typescript-foundation");
+    assert.equal(project.flow.pathNodes?.[0]?.concepts?.[0], "typescript.functions");
+
     const taskTool = (service as any).createPracticeTaskTool(project, session, () => {});
     const taskResult = await taskTool.execute({
       title: "Task 1",
@@ -224,6 +281,8 @@ describe("ConstructFlowService Concept and Task Tools", () => {
 
     const task = session.practiceTasks[0];
     assert.ok(task);
+    assert.equal(task.pathNodeId, "typescript-foundation");
+    assert.deepEqual(project.flow.pathNodes?.[0]?.taskIds, [task.id]);
     assert.deepEqual(task.taskFiles, ["src/greet.ts"]);
     assert.equal(task.baseline.files["src/greet.ts"], "export function greet() {}");
     assert.equal(task.baseline.files["ignored.ts"], undefined);
@@ -401,5 +460,13 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     });
     assert.equal(starterSession.origin, "system");
     assert.deepEqual(starterSession.messages, []);
+  });
+
+  it("records estimated context window metadata before Flow model runs", () => {
+    const source = readFileSync(new URL("./ConstructFlowService.ts", import.meta.url), "utf8");
+    assert.match(source, /session\.contextWindow = estimateContextWindow/);
+    assert.match(source, /modelForAiFeature\(settings, "construct-flow"\)/);
+    assert.match(source, /source: "estimated"/);
+    assert.match(source, /estimateModelContextTokens/);
   });
 });
