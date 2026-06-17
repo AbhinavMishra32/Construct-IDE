@@ -630,7 +630,7 @@ export function EditorPane({
       />
       {buttonTop !== null && (
         <button
-          className={`z-20 flex h-7 items-center gap-2 rounded-md border bg-background px-2 text-xs shadow-sm transition-opacity hover:bg-muted ${showSkipButton ? "opacity-100" : "pointer-events-none opacity-0"}`}
+          className={`z-20 flex h-7 items-center gap-2 rounded-full border bg-background/80 px-2 text-xs shadow-sm transition-opacity hover:bg-muted ${showSkipButton ? "opacity-100" : "pointer-events-none opacity-0"}`}
           style={{
             position: "absolute",
             top: buttonTop,
@@ -658,9 +658,9 @@ export function EditorPane({
         </button>
       )}
       {isGuided && activeEdit && (
-        <div className="absolute bottom-3 right-3 z-10 flex min-w-48 items-center gap-3 rounded-lg border bg-popover/95 p-3 text-popover-foreground shadow-md backdrop-blur">
+        <div className="absolute bottom-3 right-3 z-10 flex min-w-48 items-center gap-3 rounded-[8px] border bg-popover/95 p-3 text-popover-foreground shadow-md backdrop-blur">
           <div className="min-w-0 flex-1">
-          <span className="block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Code step</span>
+          <span className="block text-xs font-medium text-muted-foreground">Code step</span>
             <strong className="block text-xs font-medium">{Math.min(totalLines, typedLines)} / {totalLines} lines</strong>
           </div>
           <div className="h-1 w-16 overflow-hidden rounded-full bg-muted" aria-hidden="true">

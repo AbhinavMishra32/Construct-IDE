@@ -222,13 +222,13 @@ export function ConstructAiSettingsSection({
                 onChange={(event) => onOpenAiApiKeyChange(event.target.value)}
               />
             </SettingsRow>
-            <div className="pl-2">
+            <div className="px-4 py-2">
               <button
                 type="button"
-                className="text-xs text-muted-foreground hover:text-foreground cursor-pointer border-0 bg-transparent px-1 py-0.5"
+                className="inline-flex h-7 items-center rounded-full px-2 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 onClick={() => setShowBaseUrl(!showBaseUrl)}
               >
-                {showBaseUrl ? "−" : "+"} Base URL
+                {showBaseUrl ? "Hide" : "Show"} Base URL
               </button>
               {showBaseUrl ? (
                 <SettingsRow title="">
@@ -251,13 +251,13 @@ export function ConstructAiSettingsSection({
                 onChange={(event) => onOpenRouterApiKeyChange(event.target.value)}
               />
             </SettingsRow>
-            <div className="pl-2">
+            <div className="px-4 py-2">
               <button
                 type="button"
-                className="text-xs text-muted-foreground hover:text-foreground cursor-pointer border-0 bg-transparent px-1 py-0.5"
+                className="inline-flex h-7 items-center rounded-full px-2 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 onClick={() => setShowBaseUrl(!showBaseUrl)}
               >
-                {showBaseUrl ? "−" : "+"} Base URL
+                {showBaseUrl ? "Hide" : "Show"} Base URL
               </button>
               {showBaseUrl ? (
                 <SettingsRow title="">
@@ -294,13 +294,13 @@ export function ConstructAiSettingsSection({
                 ) : null}
               </div>
             </SettingsRow>
-            <div className="pl-2">
+            <div className="px-4 py-2">
               <button
                 type="button"
-                className="text-xs text-muted-foreground hover:text-foreground cursor-pointer border-0 bg-transparent px-1 py-0.5"
+                className="inline-flex h-7 items-center rounded-full px-2 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 onClick={() => setShowBaseUrl(!showBaseUrl)}
               >
-                {showBaseUrl ? "−" : "+"} Base URL
+                {showBaseUrl ? "Hide" : "Show"} Base URL
               </button>
               {showBaseUrl ? (
                 <SettingsRow title="">
@@ -385,13 +385,13 @@ export function ConstructAiSettingsSection({
         />
 
         {/* Per-feature model overrides — collapsible */}
-        <div className="pl-2">
+        <div className="px-4 py-2">
           <button
             type="button"
-            className="text-xs text-muted-foreground hover:text-foreground cursor-pointer border-0 bg-transparent px-1 py-1"
+            className="inline-flex h-7 items-center rounded-full px-2 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             onClick={() => setShowFeatureModels(!showFeatureModels)}
           >
-            {showFeatureModels ? "−" : "+"} Per-feature models ({features.length})
+            {showFeatureModels ? "Hide" : "Show"} per-feature models ({features.length})
           </button>
           {showFeatureModels ? features.map((feature) => (
             <SettingsRow

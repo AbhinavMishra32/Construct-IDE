@@ -129,21 +129,21 @@ export function GuidePanel({
     block && block.kind === "edit" ? codeProgressForBlock(block, (project.typingProgress ?? {})[block.id] ?? 0) : null;
 
   return (
-    <aside className={`flex h-full min-h-0 flex-col bg-background p-4 text-foreground ${block?.kind === "interact" ? "overflow-hidden" : "overflow-y-auto"}`} data-construct-explainable="guide" data-construct-explainable-label="Guide">
+    <aside className={`flex h-full min-h-0 flex-col bg-background p-3 text-foreground ${block?.kind === "interact" ? "overflow-hidden" : "overflow-y-auto"}`} data-construct-explainable="guide" data-construct-explainable-label="Guide">
       {!block ? (
         <div className="flex min-h-48 flex-col items-center justify-center text-center">
-          <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Complete</p>
-          <h2 className="mt-1 text-lg font-semibold">Project finished</h2>
+          <p className="text-xs font-medium text-muted-foreground">Complete</p>
+          <h2 className="mt-1 text-base font-semibold">Project finished</h2>
         </div>
       ) : (
         <>
-          <div className="mb-2 flex items-center justify-between text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          <div className="mb-2 flex items-center justify-between text-xs font-medium text-muted-foreground">
             <span>{blockLabel(block)}</span>
             <span>
               {currentBlockNumber(project)} / {totalBlocks(project.program)}
             </span>
           </div>
-          <h2 className="mb-4 text-lg font-semibold tracking-tight">{project.program.steps[project.currentStepIndex]?.title}</h2>
+          <h2 className="mb-4 text-base font-semibold tracking-tight">{project.program.steps[project.currentStepIndex]?.title}</h2>
           <GuideBlock
             block={block}
             theme={theme}
@@ -174,7 +174,7 @@ export function GuidePanel({
           />
           {block.kind !== "interact" ? <p className="mt-4 text-xs text-muted-foreground">{assistanceLabel(assistance)}</p> : null}
           {block.kind === "run" || (block.kind === "recall" && block.verify) || canContinue ? (
-            <div className={block.kind === "interact" ? "mt-2 flex flex-wrap justify-end gap-2" : "mt-4 flex flex-wrap justify-end gap-2 border-t pt-4"}>
+            <div className={block.kind === "interact" ? "mt-2 flex flex-wrap justify-end gap-2" : "mt-4 flex flex-wrap justify-end gap-2 border-t pt-3"}>
               {block.kind === "run" ? (
                 <Button variant="secondary" onClick={() => onRunCommand(block.command, block.cwd)}>
                   <PlayIcon size={15} />
@@ -267,7 +267,7 @@ function GuideBlock({
   if (block.kind === "run") {
     return (
       <div className="space-y-3">
-        <div className="flex items-center gap-2 rounded-md border bg-muted/50 px-3 py-2 font-mono text-xs">
+        <div className="flex items-center gap-2 rounded-[8px] border bg-muted/30 px-3 py-2 font-mono text-xs shadow-sm">
           <TerminalIcon size={15} />
           <code>{block.command}</code>
         </div>
@@ -283,7 +283,7 @@ function GuideBlock({
         {block.content ? <MarkdownBlock content={block.content} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} /> : null}
         {block.sections.map((section) => (
           <section key={section.kind} className="border-t pt-3">
-            <p className="mb-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{supportSectionLabel(section.kind.replace(/^guide\./, ""))}</p>
+            <p className="mb-2 text-xs font-medium text-muted-foreground">{supportSectionLabel(section.kind.replace(/^guide\./, ""))}</p>
             <MarkdownBlock content={section.content} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
           </section>
         ))}
@@ -330,7 +330,7 @@ function GuideBlock({
         </p>
         {codeProgress ? <CodeProgressMeter progress={codeProgress} /> : null}
         {note ? (
-          <div className="rounded-md border bg-muted/30 p-3">
+          <div className="rounded-[8px] border bg-muted/25 p-3">
             <MarkdownBlock content={note.content} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
           </div>
         ) : null}
@@ -371,7 +371,7 @@ function GuideBlock({
         <MarkdownBlock content={block.content} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
         {linkedConcepts.length > 0 ? (
           <section className="flex flex-col gap-2 border-t pt-3" aria-label="Concepts introduced in this explanation">
-            <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Concepts introduced here</p>
+            <p className="text-xs font-medium text-muted-foreground">Concepts introduced here</p>
             <div className="flex flex-wrap gap-2">
               {linkedConcepts.map((concept) => (
                 <Button key={concept.id} size="small" variant="secondary" onClick={() => onOpenConcept(concept.id)}>
@@ -394,14 +394,14 @@ function GuideBlock({
     return (
       <div className="space-y-4">
         <div>
-          <p className="mb-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Task</p>
+          <p className="mb-2 text-xs font-medium text-muted-foreground">Task</p>
           <MarkdownBlock content={block.task} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
         </div>
         {block.mode === "reply" ? (
           <div className="border-t pt-4">
-            <p className="mb-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Your answer</p>
+            <p className="mb-2 text-xs font-medium text-muted-foreground">Your answer</p>
             <textarea
-              className="min-h-28 w-full resize-y rounded-md border bg-background p-3 text-sm outline-none focus:ring-2 focus:ring-ring/30"
+              className="min-h-28 w-full resize-y rounded-[8px] border bg-background/70 p-3 text-sm outline-none transition-shadow focus:ring-2 focus:ring-ring/30"
               value={recallAnswer}
               onChange={(event) => onRecallAnswerChange(event.target.value)}
               placeholder="Explain it in your own words..."
@@ -413,10 +413,10 @@ function GuideBlock({
           <MissingFilesPanel files={recallMissingFiles} onCreateFile={onCreateFile} />
         ) : null}
         {block.support || block.supportSections.length > 0 ? (
-          <div className="rounded-lg border bg-muted/30 p-3">
+          <div className="rounded-[8px] border bg-muted/25 p-3">
             <div className="mb-2 flex items-center gap-1.5 text-muted-foreground">
               <LightbulbIcon size={13} />
-              <p className="text-[10px] font-medium uppercase tracking-wide">Support</p>
+              <p className="text-xs font-medium">Support</p>
             </div>
             {block.support ? <MarkdownBlock content={block.support} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} /> : null}
             {block.supportSections.length > 0 ? (
@@ -436,7 +436,7 @@ function GuideBlock({
             {linkedReferences.map((reference) => (
               <button
                 key={reference.id}
-                className="rounded-md border bg-background px-2 py-1 text-xs hover:bg-muted"
+                className="inline-flex items-center gap-1.5 rounded-full border bg-background/70 px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 type="button"
                 onClick={() => onOpenReference(reference.id)}
               >
@@ -485,7 +485,7 @@ function supportSectionLabel(kind: string): string {
 
 function CodeProgressMeter({ progress }: { progress: GhostProgress }) {
   return (
-    <div className="space-y-2 rounded-md border bg-muted/30 p-3" aria-label="Code step progress">
+    <div className="space-y-2 rounded-[8px] border bg-muted/25 p-3" aria-label="Code step progress">
       <div className="flex items-center justify-between text-xs">
         <span>Code step progress</span>
         <strong>
@@ -522,22 +522,23 @@ function MissingFilesPanel({
   }
 
   return (
-    <div className="rounded-lg border border-dashed p-3">
+    <div className="rounded-[8px] border border-dashed p-3">
       <div>
-        <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Workspace action</p>
-        <p>The verifier needs these files as evidence.</p>
+        <p className="text-xs font-medium text-muted-foreground">Workspace action</p>
+        <p className="text-sm">The verifier needs these files as evidence.</p>
       </div>
       <div className="mt-3 space-y-1">
         {files.map((path) => (
           <button
             key={path}
             type="button"
+            className="flex w-full min-w-0 items-center gap-2 rounded-[7px] px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-60"
             onClick={() => void createFile(path)}
             disabled={creatingPath === path}
           >
             <FilePlusIcon size={14} />
             <span>{creatingPath === path ? "Creating" : "Create"}</span>
-            <code>{path}</code>
+            <code className="min-w-0 truncate font-mono text-[11px] text-foreground">{path}</code>
           </button>
         ))}
       </div>
@@ -553,7 +554,7 @@ function ConfidenceBadge({ level }: { level: string }) {
   else if (normLevel === "low") statusColor = "bg-destructive";
 
   return (
-    <div className="inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[10px] text-muted-foreground">
+    <div className="inline-flex items-center gap-1.5 rounded-full border bg-background/70 px-2 py-1 text-[10px] text-muted-foreground">
       <span className={`size-1.5 rounded-full ${statusColor}`} aria-hidden="true" />
       <span>Confidence: {level}</span>
     </div>
@@ -577,7 +578,7 @@ function VerificationPanel({
 
   if (verifying) {
     return (
-      <div className="space-y-3 rounded-lg border bg-muted/30 p-3">
+      <div className="space-y-3 rounded-[8px] border bg-muted/25 p-3">
         <div className="flex items-center gap-2 text-sm font-medium">
           <WandSparklesIcon size={15} className="animate-spin" />
           <span>Verifier run</span>
@@ -596,7 +597,7 @@ function VerificationPanel({
   const statusText = result.passed ? successMessage : isAlmost ? "Close. One piece is still missing." : failureMessage;
 
   return (
-    <div className={`space-y-3 rounded-lg border p-3 ${panelState}`}>
+    <div className={`space-y-3 rounded-[8px] border p-3 ${panelState}`}>
       <div className="flex items-center gap-2 text-sm font-medium">
         {result.passed ? <CheckCircle2Icon size={16} /> : isAlmost ? <AlertCircleIcon size={16} /> : <XCircleIcon size={16} />}
         <span>{statusText}</span>
@@ -609,14 +610,14 @@ function VerificationPanel({
         <div className="border-t pt-3">
           <div className="flex items-center gap-1.5 text-muted-foreground">
             <SparklesIcon size={13} />
-            <p className="text-[10px] font-medium uppercase tracking-wide">Next</p>
+            <p className="text-xs font-medium">Next</p>
           </div>
           <p className="mt-1 text-sm">{result.suggestion}</p>
         </div>
       ) : null}
       {visibleLogs.length > 0 ? (
         <div className="border-t pt-3">
-          <p className="mb-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Agent activity</p>
+          <p className="mb-2 text-xs font-medium text-muted-foreground">Agent activity</p>
           <VerificationLogList logs={visibleLogs} />
         </div>
       ) : null}

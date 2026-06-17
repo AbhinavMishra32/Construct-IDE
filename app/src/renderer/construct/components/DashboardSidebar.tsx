@@ -39,7 +39,7 @@ export function DashboardSidebar({
           />
         ))}
         {visibleProjects.length === 0 ? (
-          <div className="px-3 py-2 text-sm text-muted-foreground">No active project yet. Open or create a project to start building.</div>
+          <div className="px-2 py-1.5 text-[13px] text-muted-foreground">No active project yet.</div>
         ) : null}
       </div>
     </SidebarSection>
@@ -58,9 +58,9 @@ function DashboardSidebarProjectRow({
   title: string;
 }) {
   return (
-    <div className="group relative min-h-9 rounded-lg hover:bg-foreground/8 focus-within:bg-foreground/8">
-      <button className="flex h-9 w-full min-w-0 items-center rounded-lg px-2 py-1.5 text-left" onClick={onClick} type="button">
-        <span className="block min-w-0 flex-1 truncate pr-14 text-sm font-medium text-foreground">{title}</span>
+    <div className="group relative min-h-8 rounded-lg hover:bg-muted focus-within:bg-muted">
+      <button className="flex h-8 w-full min-w-0 items-center rounded-lg px-2 py-1 text-left" onClick={onClick} type="button">
+        <span className="block min-w-0 flex-1 truncate pr-14 text-[13px] font-medium text-foreground">{title}</span>
       </button>
       {meta ? (
         <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground group-hover:opacity-0 group-focus-within:opacity-0">
@@ -69,7 +69,7 @@ function DashboardSidebarProjectRow({
       ) : null}
       <ShadcnDropdownMenu>
         <ShadcnDropdownMenuTrigger
-          className="absolute right-1 grid size-8 place-items-center rounded-md text-muted-foreground opacity-0 hover:bg-foreground/8 hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
+          className="absolute right-1 top-0 grid size-8 place-items-center rounded-md text-muted-foreground opacity-0 hover:bg-muted hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
           aria-label={`Project actions for ${title}`}
         >
           <span aria-hidden="true">•••</span>

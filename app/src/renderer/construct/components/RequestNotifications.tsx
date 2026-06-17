@@ -39,7 +39,7 @@ export function RequestNotifications() {
 
     toast.custom(
       () => (
-        <div className="w-[min(38rem,calc(100vw-2rem))] rounded-2xl border border-border bg-popover/95 p-5 text-popover-foreground shadow-2xl backdrop-blur">
+        <div className="w-[min(38rem,calc(100vw-2rem))] rounded-[10px] border border-border bg-popover/95 p-4 text-popover-foreground shadow-xl backdrop-blur">
           <button
             type="button"
             className="absolute -right-3 -top-3 flex size-9 items-center justify-center rounded-full border border-border bg-popover text-muted-foreground shadow"
@@ -51,7 +51,7 @@ export function RequestNotifications() {
           <div className="flex items-start gap-3">
             <TriangleAlert className="mt-1 size-5 shrink-0 text-amber-500" />
             <div className="min-w-0 flex-1">
-              <div className="text-base font-semibold">Some requests are slow</div>
+              <div className="text-sm font-semibold">Some requests are slow</div>
               <button
                 type="button"
                 className="mt-1 flex w-full items-center justify-between gap-3 text-left text-sm font-medium text-muted-foreground"
@@ -61,9 +61,9 @@ export function RequestNotifications() {
                 {expanded ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
               </button>
               {expanded ? (
-                <div className="mt-4 space-y-3">
+                <div className="mt-3 space-y-2">
                   {slowCalls.map((call) => (
-                    <div key={call.id}>
+                    <div className="rounded-[8px] border bg-muted/20 p-2" key={call.id}>
                       <div className="text-sm font-semibold">{call.key}</div>
                       <div className="text-xs text-muted-foreground">{call.label}</div>
                       <div className="mt-1 text-xs text-muted-foreground">
@@ -124,7 +124,7 @@ export function showProviderUpdateToast(phase: "running" | "succeeded" | "failed
 
 function ProviderToast({ icon, title, description }: { icon: ReactNode; title: string; description: string }) {
   return (
-    <div className="relative w-[min(34rem,calc(100vw-2rem))] rounded-2xl border border-border bg-popover/95 p-5 text-popover-foreground shadow-2xl backdrop-blur">
+    <div className="relative w-[min(34rem,calc(100vw-2rem))] rounded-[10px] border border-border bg-popover/95 p-4 text-popover-foreground shadow-xl backdrop-blur">
       <button
         type="button"
         className="absolute -right-3 -top-3 flex size-9 items-center justify-center rounded-full border border-border bg-popover text-muted-foreground shadow"
@@ -136,10 +136,10 @@ function ProviderToast({ icon, title, description }: { icon: ReactNode; title: s
       <div className="flex items-start gap-3">
         {icon}
         <div className="min-w-0 flex-1">
-          <div className="text-base font-semibold">{title}</div>
+          <div className="text-sm font-semibold">{title}</div>
           <div className="mt-1 text-sm font-medium text-muted-foreground">{description}</div>
         </div>
-        <button className="rounded-lg bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground" type="button">
+        <button className="h-7 rounded-full bg-primary px-3 text-xs font-semibold text-primary-foreground" type="button">
           Update
         </button>
       </div>

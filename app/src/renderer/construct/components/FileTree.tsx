@@ -481,13 +481,13 @@ export function FileTree({
   }, [nodes, activePath, relevantPath, expandedPaths, renamingPath, creatingState, onCreateFile, onCreateFolder, onRenameFile]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="flex h-9 shrink-0 items-center justify-between border-b px-2">
-        <span className="text-xs font-medium">Explorer</span>
+    <div className="flex h-full min-h-0 flex-col bg-transparent">
+      <div className="flex h-8 shrink-0 items-center justify-between border-b px-2.5">
+        <span className="text-[13px] font-medium">Explorer</span>
         <div className="flex items-center gap-0.5">
           {onCreateFile ? (
             <button
-              className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+              className="flex size-6 items-center justify-center rounded-[7px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               type="button"
               onClick={() => setIsCreating((value) => !value)}
               title="New File..."
@@ -501,7 +501,7 @@ export function FileTree({
 
       {isCreating ? (
         <div className="shrink-0 border-b p-2">
-          <div className="flex h-8 items-center gap-2 rounded-md border bg-background px-2 [&_svg]:size-4">
+          <div className="flex h-7 items-center gap-2 rounded-[8px] border bg-background/70 px-2 shadow-sm [&_svg]:size-4">
             {getIconForExtension(getExtension(draftPath))}
             <input className="min-w-0 flex-1 bg-transparent text-xs outline-none"
               value={draftPath}

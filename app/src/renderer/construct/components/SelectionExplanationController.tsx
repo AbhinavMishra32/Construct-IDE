@@ -215,10 +215,10 @@ export function SelectionExplanationController({
                 />
                 {codeSources.length > 0 ? (
                   <section className="border-t pt-3">
-                    <small className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">In this project</small>
+                    <small className="text-xs font-medium text-muted-foreground">In this project</small>
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       {codeSources.map((source) => (
-                        <button className="inline-flex items-center gap-1 rounded-md border bg-background px-2 py-1 text-xs hover:bg-muted" key={source.id} type="button" onClick={() => source.path && onOpenFile?.(source.path)}>
+                        <button className="inline-flex items-center gap-1 rounded-full border bg-background/70 px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground" key={source.id} type="button" onClick={() => source.path && onOpenFile?.(source.path)}>
                           <Code2 size={12} />
                           <span>{source.title}</span>
                         </button>

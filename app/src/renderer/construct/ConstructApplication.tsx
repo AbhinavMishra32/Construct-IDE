@@ -640,6 +640,7 @@ export default function ConstructApp() {
         project={activeProject}
         theme={theme}
         onGuidePanelChange={setRightPanel}
+        onKnowledgePanelChange={setSidebarKnowledgePanel}
         onProjectChange={handleFlowProjectChange}
         onRunCommand={runCommand}
         onFileOpened={handleFileOpened}
@@ -745,7 +746,7 @@ export default function ConstructApp() {
             }
           ]}
           renderHeaderTab={(tab) => (
-            <Button variant="ghost" size="small" type="button" title={String(tab.title)}>
+            <Button className="max-w-56 rounded-lg shadow-sm" variant="secondary" size="small" type="button" title={String(tab.title)}>
               <span>{tab.title}</span>
             </Button>
           )}

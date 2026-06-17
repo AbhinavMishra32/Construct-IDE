@@ -1695,13 +1695,13 @@ export function Workspace({
         <section className="space-y-3 p-2" aria-label="Project knowledge" data-construct-explainable="knowledge-card" data-construct-explainable-label="Project knowledge">
           {availableConcepts.length > 0 ? (
             <div className="space-y-1">
-              <span className="px-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Introduced</span>
+              <span className="px-2 text-xs font-medium text-muted-foreground">Introduced</span>
               {availableConcepts.map((concept) => renderSidebarConceptRow(concept, false, openedConceptIds.has(concept.id), currentConceptIds.includes(concept.id)))}
             </div>
           ) : null}
           {savedConcepts.length > 0 ? (
             <div className="border-t pt-3">
-              <span className="px-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Saved</span>
+              <span className="px-2 text-xs font-medium text-muted-foreground">Saved</span>
               <div className="mt-1 space-y-1">
                 {savedConcepts.map((concept) => renderSidebarConceptRow(concept, true, openedConceptIds.has(concept.id), currentConceptIds.includes(concept.id)))}
               </div>
@@ -1715,7 +1715,7 @@ export function Workspace({
       return (
         <HoverPreview
           key={concept.id}
-          content={<div className="space-y-1"><span className="text-[10px] uppercase tracking-wide text-muted-foreground">{concept.kind}</span><strong className="block text-sm font-medium">{concept.title}</strong><p className="text-xs text-muted-foreground">{concept.summary}</p>{concept.tags.length ? <small className="block text-[10px] text-muted-foreground">{concept.tags.join(" · ")}</small> : null}</div>}
+          content={<div className="space-y-1"><span className="text-xs font-medium text-muted-foreground">{concept.kind}</span><strong className="block text-sm font-medium">{concept.title}</strong><p className="text-xs text-muted-foreground">{concept.summary}</p>{concept.tags.length ? <small className="block text-[10px] text-muted-foreground">{concept.tags.join(" · ")}</small> : null}</div>}
         >
           <button
             className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-muted hover:text-foreground data-[current=true]:bg-muted data-[current=true]:font-medium data-[current=true]:text-foreground"

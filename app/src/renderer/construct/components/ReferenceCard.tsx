@@ -43,14 +43,14 @@ export function ReferenceCard({
       pinLabel="Pin reference card"
       unpinLabel="Unpin reference card"
     >
-      <div className="mb-3 rounded-md border bg-muted/50 p-3 text-sm">{card.reveal}</div>
+      <div className="mb-3 rounded-[8px] border bg-muted/30 p-3 text-sm">{card.reveal}</div>
       <MarkdownBlock content={card.body} theme={theme} onOpenFile={onOpenFile} />
       {card.links.length > 0 ? (
         <div className="mt-3 space-y-1 border-t pt-3">
           {card.links.map((link, index) => (
             <button
               key={`${link.anchor ?? link.file ?? "link"}:${index}`}
-              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+              className="flex w-full items-center gap-2 rounded-[7px] px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
               type="button"
               onClick={() => onOpenLink(link)}
             >

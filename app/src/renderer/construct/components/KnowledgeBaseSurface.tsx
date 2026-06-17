@@ -17,25 +17,25 @@ export function KnowledgeBaseSurface({ onOpenProject }: { onOpenProject: (projec
   const selected = filtered.find((record) => recordKey(record) === selectedId) ?? filtered[0] ?? null;
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background p-6">
+    <div className="mx-auto flex h-full min-h-0 w-full max-w-[1080px] flex-col bg-background p-4">
       <header className="flex shrink-0 items-end justify-between gap-4">
-        <div><p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Local learning memory</p><h1 className="mt-1 text-2xl font-semibold tracking-tight">Knowledge Base</h1></div>
+        <div><p className="text-xs font-medium text-muted-foreground">Local learning memory</p><h1 className="mt-1 text-lg font-semibold tracking-tight">Knowledge Base</h1></div>
         <span className="text-xs text-muted-foreground">{records.length} saved concept{records.length === 1 ? "" : "s"}</span>
       </header>
-      <div className="mt-5 flex h-9 shrink-0 items-center gap-2 rounded-md border bg-background px-3 text-muted-foreground focus-within:ring-2 focus-within:ring-ring/30">
+      <div className="mt-4 flex h-8 shrink-0 items-center gap-2 rounded-[8px] border bg-background/70 px-3 text-muted-foreground focus-within:ring-2 focus-within:ring-ring/30">
         <SearchIcon className="size-4" /><input className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search concepts, tags, or projects" />
       </div>
-      {filtered.length > 0 ? <div className="mt-5 grid min-h-0 flex-1 grid-cols-[minmax(220px,0.8fr)_minmax(320px,1.4fr)] gap-4">
-        <ShadcnScrollArea className="min-h-0 rounded-lg border"><nav className="space-y-1 p-2" aria-label="Saved concepts">
-          {filtered.map((record) => <Button className="h-auto w-full justify-start px-2 py-2 text-left data-[active=true]:bg-muted" key={recordKey(record)} variant="ghost" data-active={recordKey(record) === recordKey(selected ?? record) ? "true" : undefined} onClick={() => setSelectedId(recordKey(record))}>
+      {filtered.length > 0 ? <div className="mt-4 grid min-h-0 flex-1 grid-cols-[minmax(220px,0.8fr)_minmax(320px,1.4fr)] gap-3">
+        <ShadcnScrollArea className="min-h-0 rounded-[8px] border"><nav className="space-y-0.5 p-2" aria-label="Saved concepts">
+          {filtered.map((record) => <Button className="h-auto min-h-8 w-full justify-start rounded-[7px] px-2 py-1.5 text-left data-[active=true]:bg-muted" key={recordKey(record)} variant="ghost" data-active={recordKey(record) === recordKey(selected ?? record) ? "true" : undefined} onClick={() => setSelectedId(recordKey(record))}>
             <BookOpenIcon />
             <span className="min-w-0"><strong className="block truncate text-xs">{record.title}</strong><small className="block truncate text-[10px] font-normal text-muted-foreground">{record.sourceProjectTitle} · opened {record.openCount} times</small></span>
           </Button>)}
         </nav></ShadcnScrollArea>
-        {selected ? <Card className="min-h-0 overflow-y-auto" size="sm">
-          <CardHeader><span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{selected.kind}</span><CardTitle>{selected.title}</CardTitle><CardDescription>{selected.summary}</CardDescription></CardHeader>
+        {selected ? <Card className="min-h-0 overflow-y-auto bg-card/70 shadow-none" size="sm">
+          <CardHeader><span className="text-xs font-medium text-muted-foreground">{selected.kind}</span><CardTitle>{selected.title}</CardTitle><CardDescription>{selected.summary}</CardDescription></CardHeader>
           <CardContent className="space-y-5"><section><h3 className="text-sm font-semibold">Why it matters</h3><p className="mt-1 text-sm text-muted-foreground">{selected.why}</p></section>
-          {selected.example ? <section><h3 className="text-sm font-semibold">Example</h3><pre className="mt-2 overflow-auto rounded-md border bg-muted p-3 text-xs"><code>{selected.example}</code></pre></section> : null}
+          {selected.example ? <section><h3 className="text-sm font-semibold">Example</h3><pre className="mt-2 overflow-auto rounded-[8px] border bg-muted/40 p-3 text-xs"><code>{selected.example}</code></pre></section> : null}
           <section className="grid grid-cols-3 gap-3 border-y py-4 text-xs">{[["Source", selected.sourceProjectTitle], ["Saved", formatDate(selected.savedAt)], ["Recall", selected.usedInRecall ? "Used" : "Not yet"]].map(([label, value]) => <div key={label}><span className="block text-muted-foreground">{label}</span><strong className="mt-0.5 block truncate font-medium">{value}</strong></div>)}</section>
           <div className="flex flex-wrap gap-2">
             <Button variant="secondary" onClick={() => onOpenProject(selected.sourceProjectId)}>Open project</Button>

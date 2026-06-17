@@ -98,25 +98,25 @@ function DebugProcesses({ processes }: { processes: DebugProcessSnapshot[] }) {
   const totalMemory = processes.reduce((sum, process) => sum + (process.memoryMb ?? 0), 0);
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between rounded-md border bg-muted/30 p-3 text-xs">
+    <div className="space-y-2">
+      <div className="flex items-center justify-between rounded-[8px] border bg-muted/25 p-3 text-xs">
         <div>
-          <span className="block text-[10px] uppercase tracking-wide text-muted-foreground">Debug process matrix</span>
+          <span className="block text-xs text-muted-foreground">Debug process matrix</span>
           <strong className="font-medium">{running}/{processes.length} online</strong>
         </div>
         <div>
-          <span className="block text-[10px] uppercase tracking-wide text-muted-foreground">RSS</span>
+          <span className="block text-xs text-muted-foreground">RSS</span>
           <strong className="font-medium">{totalMemory ? `${totalMemory.toFixed(1)} MB` : "scanning"}</strong>
         </div>
       </div>
 
       {processes.length === 0 ? (
-        <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">No managed PTY, LSP, or installer process is online.</div>
+        <div className="rounded-[8px] border border-dashed p-6 text-center text-sm text-muted-foreground">No managed PTY, LSP, or installer process is online.</div>
       ) : (
         <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
           {processes.map((process) => (
-            <div key={process.id} className={`rounded-md border p-3 text-xs ${process.status === "running" ? "border-primary/30 bg-primary/5" : "bg-muted/20 opacity-75"}`}>
-              <div className="flex items-center justify-between text-[10px] uppercase tracking-wide text-muted-foreground">
+            <div key={process.id} className={`rounded-[8px] border p-3 text-xs ${process.status === "running" ? "bg-muted/25" : "bg-muted/15 opacity-75"}`}>
+              <div className="flex items-center justify-between text-[11px] text-muted-foreground">
                 <span>{process.kind}</span>
                 <b className="font-medium">{process.status}</b>
               </div>
@@ -127,7 +127,7 @@ function DebugProcesses({ processes }: { processes: DebugProcessSnapshot[] }) {
                 <div><dt className="text-muted-foreground">rss</dt><dd>{formatMemory(process.memoryMb)}</dd></div>
                 <div><dt className="text-muted-foreground">age</dt><dd>{process.elapsed ?? "--"}</dd></div>
               </dl>
-              <code className="mt-3 block truncate rounded bg-muted px-2 py-1 font-mono text-[10px]" title={process.command ?? ""}>{process.command ?? "idle"}</code>
+              <code className="mt-3 block truncate rounded-[7px] bg-muted px-2 py-1 font-mono text-[10px]" title={process.command ?? ""}>{process.command ?? "idle"}</code>
               {process.workspacePath && <small className="mt-1 block truncate text-[10px] text-muted-foreground" title={process.workspacePath}>{process.workspacePath}</small>}
             </div>
           ))}

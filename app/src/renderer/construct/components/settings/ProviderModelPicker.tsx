@@ -84,7 +84,7 @@ export function ProviderModelPicker({
           variant="secondary"
           size="small"
           disabled={disabled}
-          className="h-8 min-w-0 max-w-[16rem] justify-between gap-2 px-2 text-xs"
+          className="h-7 min-w-0 max-w-[16rem] justify-between gap-2 rounded-full px-2 text-xs"
         >
           <span className="flex min-w-0 items-center gap-2">
             <ActiveIcon className="size-4 shrink-0" />
@@ -95,10 +95,10 @@ export function ProviderModelPicker({
       </PopoverTrigger>
       <PopoverContent
         align="start"
-        className="w-[min(44rem,calc(100vw-3rem))] overflow-hidden rounded-lg border bg-popover p-0 shadow-2xl"
+        className="w-[min(44rem,calc(100vw-3rem))] overflow-hidden rounded-[10px] border bg-popover p-0 shadow-xl"
       >
         <div className="flex max-h-[34rem] min-h-[24rem]">
-          <div className="w-14 shrink-0 border-r bg-muted/25 p-1">
+          <div className="w-12 shrink-0 border-r bg-muted/20 p-1">
             <RailButton
               active={selectedProvider === "favorites"}
               label="Favorites"
@@ -126,7 +126,7 @@ export function ProviderModelPicker({
 
           <div className="flex min-w-0 flex-1 flex-col">
             <div className="border-b p-2">
-              <label className="flex h-9 items-center gap-2 rounded-md border bg-background px-3 text-sm ring-offset-background focus-within:ring-2 focus-within:ring-ring">
+              <label className="flex h-8 items-center gap-2 rounded-[8px] border bg-background/70 px-3 text-sm ring-offset-background focus-within:ring-2 focus-within:ring-ring/30">
                 <Search className="size-4 shrink-0 text-muted-foreground" />
                 <input
                   autoFocus
@@ -154,7 +154,7 @@ export function ProviderModelPicker({
                       role="button"
                       tabIndex={0}
                       className={cn(
-                        "group flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors",
+                        "group flex w-full items-center gap-3 rounded-[7px] px-2.5 py-2 text-left transition-colors",
                         "hover:bg-muted focus-visible:bg-muted focus-visible:outline-none",
                         selected && "bg-muted/70"
                       )}
@@ -169,7 +169,7 @@ export function ProviderModelPicker({
                       <button
                         type="button"
                         className={cn(
-                          "flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground/70 hover:text-foreground",
+                          "flex size-5 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground/70 hover:bg-muted hover:text-foreground",
                           favorite && "text-yellow-500"
                         )}
                         aria-label={favorite ? "Remove from favorites" : "Add to favorites"}
@@ -193,7 +193,7 @@ export function ProviderModelPicker({
                           </span>
                         </div>
                       </div>
-                      <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                      <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
                         ⌘{index + 1}
                       </span>
                     </div>
@@ -225,7 +225,7 @@ function RailButton({
         <button
           type="button"
           className={cn(
-            "relative flex aspect-square w-full items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+            "relative flex aspect-square w-full items-center justify-center rounded-[7px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
             active && "bg-muted text-foreground"
           )}
           aria-label={label}

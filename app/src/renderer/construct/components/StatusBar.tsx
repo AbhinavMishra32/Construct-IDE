@@ -92,22 +92,22 @@ export function StatusBar({ theme, onThemeChange }: StatusBarProps) {
 
   return (
     <div 
-      className="h-[22px] min-h-[22px] w-full flex items-center justify-between px-3 text-[11px] select-none border-t border-border bg-sidebar text-muted-foreground font-sans transition-all duration-150"
+      className="flex h-[22px] min-h-[22px] w-full select-none items-center justify-between border-t border-border bg-sidebar/80 px-3 font-sans text-[11px] text-muted-foreground transition-all duration-150"
       style={{ zIndex: 100 }}
     >
       {/* Left Section: Git and Activity */}
-      <div className="flex items-center gap-4 h-full">
+      <div className="flex h-full items-center gap-3">
         {/* Git Branch Info */}
         {gitBranch && (
-          <div 
-            className="flex items-center gap-1 hover:bg-accent hover:text-accent-foreground cursor-pointer px-1.5 h-full rounded transition-colors duration-150"
+          <div
+            className="flex h-full cursor-default items-center gap-1 rounded-[6px] px-1.5 transition-colors duration-150 hover:bg-accent hover:text-accent-foreground"
             title={`Git branch: ${gitBranch}`}
           >
             <GitBranch size={12} className="stroke-[2px]" />
             <span>{gitBranch}</span>
             {gitDirtyCount > 0 && (
-              <span 
-                className="inline-block w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse ml-0.5" 
+              <span
+                className="ml-0.5 inline-block size-1.5 animate-pulse rounded-full bg-amber-500"
                 title={`${gitDirtyCount} modified files`}
               />
             )}
@@ -115,7 +115,7 @@ export function StatusBar({ theme, onThemeChange }: StatusBarProps) {
         )}
 
         {/* API Usage & Status Indicator */}
-        <div className="flex items-center h-full">
+        <div className="flex h-full items-center">
           {currentCall ? (
             <div className="flex items-center gap-1.5 text-primary">
               <Loader2 size={12} className="animate-spin text-primary" />
@@ -123,7 +123,7 @@ export function StatusBar({ theme, onThemeChange }: StatusBarProps) {
             </div>
           ) : (
             <div className="flex items-center gap-1.5">
-              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+              <div className="size-1.5 rounded-full bg-emerald-500" />
               <span>Ready</span>
             </div>
           )}
@@ -131,11 +131,11 @@ export function StatusBar({ theme, onThemeChange }: StatusBarProps) {
       </div>
 
       {/* Right Section: Telemetry, LSP, Model and Theme */}
-      <div className="flex items-center gap-3 h-full">
+      <div className="flex h-full items-center gap-2">
         {/* Observability Indicator */}
         {obsEnabled && (
-          <div 
-            className="flex items-center gap-1 px-1.5 h-full text-emerald-500" 
+          <div
+            className="flex h-full items-center gap-1 px-1.5 text-emerald-500"
             title="Arize Phoenix Telemetry is enabled and connected"
           >
             <Activity size={12} className="stroke-[2.5px]" />
@@ -145,17 +145,17 @@ export function StatusBar({ theme, onThemeChange }: StatusBarProps) {
 
         {/* LSP Status Indicator */}
         <div 
-          className="flex items-center gap-1 px-1.5 h-full"
+          className="flex h-full items-center gap-1 px-1.5"
           title={lspStatus ? `LSP status: ${lspStatus}` : "Language Server Protocol Status"}
         >
-          <span className="text-[10px] font-mono bg-accent text-accent-foreground px-1 py-[1px] rounded">LSP</span>
+          <span className="rounded-full bg-accent px-1.5 py-[1px] font-mono text-[10px] text-accent-foreground">LSP</span>
           <span>{lspStatus ? lspStatus : "Active"}</span>
         </div>
 
         {/* LiteLLM Server Status */}
         {litellmStatusState && provider === "litellm" ? (
           <div
-            className="flex items-center gap-1 px-1.5 h-full"
+            className="flex h-full items-center gap-1 px-1.5"
             title={`LiteLLM server: ${litellmStatusState.status}${litellmStatusState.error ? ` — ${litellmStatusState.error}` : ""}`}
           >
             <Power size={11} className={litellmStatusState.status === "running" ? "text-emerald-500" : litellmStatusState.status === "error" ? "text-destructive" : "text-muted-foreground"} />
@@ -167,7 +167,7 @@ export function StatusBar({ theme, onThemeChange }: StatusBarProps) {
 
         {/* Model Identifier */}
         <div 
-          className="flex items-center gap-1 hover:bg-accent hover:text-accent-foreground cursor-pointer px-1.5 h-full rounded transition-colors duration-150"
+          className="flex h-full cursor-default items-center gap-1 rounded-[6px] px-1.5 transition-colors duration-150 hover:bg-accent hover:text-accent-foreground"
           title={`Active Provider: ${providerLabel}\nModel: ${modelRaw}`}
         >
           <Sparkles size={11} className="text-amber-500 stroke-[2.5px]" />
@@ -177,7 +177,7 @@ export function StatusBar({ theme, onThemeChange }: StatusBarProps) {
         {/* Theme Quick Toggle */}
         <button 
           onClick={handleThemeToggle}
-          className="flex items-center justify-center hover:bg-accent hover:text-accent-foreground cursor-pointer px-1.5 h-full rounded transition-colors duration-150 border-0 bg-transparent text-muted-foreground outline-none"
+          className="flex h-full cursor-default items-center justify-center rounded-[6px] border-0 bg-transparent px-1.5 text-muted-foreground outline-none transition-colors duration-150 hover:bg-accent hover:text-accent-foreground"
           title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
         >
           {theme === "dark" ? <Sun size={12} /> : <Moon size={12} />}

@@ -13,8 +13,8 @@ export function ProjectCard({
   onOpen: (projectId: string) => void;
 }) {
   return (
-    <article className="flex items-center gap-4 rounded-lg border bg-card p-4 text-card-foreground shadow-sm">
-      <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground" aria-hidden="true">
+    <article className="flex items-center gap-3 rounded-[8px] border bg-card/70 p-3 text-card-foreground shadow-sm transition-colors hover:bg-muted/35">
+      <div className="flex size-9 shrink-0 items-center justify-center rounded-[8px] bg-muted text-muted-foreground" aria-hidden="true">
         <FolderCodeIcon size={18} />
       </div>
       <div className="min-w-0 flex-1">
@@ -31,7 +31,7 @@ export function ProjectCard({
           <span className="truncate">{project.workspacePath}</span>
         </div>
         <div className="mt-3 h-1 overflow-hidden rounded-full bg-muted" aria-label={`${project.progress}% complete`}>
-          <span className="block h-full rounded-full bg-primary" style={{ width: `${project.progress}%` }} />
+          <span className="block h-full rounded-full bg-muted-foreground/55" style={{ width: `${project.progress}%` }} />
         </div>
       </div>
       <Button className="shrink-0" size="small" variant="secondary" onClick={() => onOpen(project.id)}>

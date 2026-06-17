@@ -65,6 +65,24 @@ describe("Construct Interact Codex-style UI", () => {
     assert.match(source, /className="flex min-h-0 flex-1 flex-col overflow-hidden outline-none"/);
   });
 
+  it("keeps Flow projects inside the same file-tab and knowledge-sidebar shell", () => {
+    const flow = readFileSync(fileURLToPath(new URL("./FlowWorkspace.tsx", import.meta.url)), "utf8");
+    const app = readFileSync(fileURLToPath(new URL("../ConstructApplication.tsx", import.meta.url)), "utf8");
+    const slotPanel = readFileSync(fileURLToPath(new URL("../../../../../opaline/packages/ui/src/slot-panel/SlotPanel.tsx", import.meta.url)), "utf8");
+
+    assert.match(flow, /createDocumentSession\(project\.activeFilePath\)/);
+    assert.match(flow, /const editorSlotTabs: SlotTab\[\] = useMemo/);
+    assert.match(flow, /<SlotPanel/);
+    assert.match(flow, /ariaLabel="Editor file tabs"/);
+    assert.match(flow, /onKnowledgePanelChange\?\.\(sidebarKnowledgeContent\)/);
+    assert.match(flow, /<SidebarBottomSlot/);
+    assert.match(flow, /collectFlowConcepts/);
+    assert.match(app, /onKnowledgePanelChange=\{setSidebarKnowledgePanel\}/);
+    assert.match(slotPanel, /rounded-\[8px\]/);
+    assert.match(slotPanel, /data-\[state=active\]:bg-muted/);
+    assert.doesNotMatch(slotPanel, /after:bg-primary/);
+  });
+
   it("renders a compact expandable trace with distinct thought and tool rows", () => {
     const source = readFileSync(fileURLToPath(new URL("../../../../../opaline/packages/ui/src/agent-session/AgentRunTrace.tsx", import.meta.url)), "utf8");
     assert.match(source, /Working/);

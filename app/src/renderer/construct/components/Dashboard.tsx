@@ -46,12 +46,12 @@ export function Dashboard({
   const verificationPassCount = projects.reduce((count, project) => count + (project.verificationPassCount ?? 0), 0);
 
   return (
-    <div className="h-full overflow-auto bg-transparent px-8 py-7 text-foreground">
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-5">
+    <div className="h-full overflow-auto bg-background px-8 py-7 text-foreground">
+      <div className="mx-auto flex w-full max-w-[980px] flex-col gap-5">
         <header className="flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <h1 className="truncate text-2xl font-semibold tracking-tight">Projects</h1>
-            <p className="text-sm text-muted-foreground">{projects.length} local project{projects.length === 1 ? "" : "s"}</p>
+            <h1 className="truncate text-lg font-semibold">Projects</h1>
+            <p className="text-[13px] text-muted-foreground">{projects.length} local project{projects.length === 1 ? "" : "s"}</p>
           </div>
           <div className="flex items-center gap-2">
             <Button size="small" variant="ghost" onClick={onRefresh} disabled={busy}>
@@ -81,14 +81,14 @@ export function Dashboard({
               <CardContent>
                 {nextProject ? (
                   <button
-                    className="flex w-full items-center gap-3 rounded-lg p-2 text-left transition-colors hover:bg-foreground/6"
+                    className="flex w-full items-center gap-3 rounded-lg p-2 text-left transition-colors hover:bg-muted"
                     type="button"
                     onClick={() => onOpenProject(nextProject.id)}
                   >
                     <IconTile><Sparkles size={18} /></IconTile>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-base font-medium">{nextProject.title}</span>
-                      <span className="block truncate text-sm text-muted-foreground">{describeNextWork(nextProject)}</span>
+                      <span className="block truncate text-sm font-medium">{nextProject.title}</span>
+                      <span className="block truncate text-xs text-muted-foreground">{describeNextWork(nextProject)}</span>
                     </span>
                     <Progress value={nextProject.progress} />
                     <ArrowRight size={16} className="text-muted-foreground" />
@@ -191,7 +191,7 @@ function ProjectRow({
   onSettings: () => void;
 }) {
   return (
-    <div className="group flex items-center gap-3 rounded-lg p-2 transition-colors hover:bg-foreground/6">
+    <div className="group flex items-center gap-3 rounded-lg p-2 transition-colors hover:bg-muted">
       <button className="flex min-w-0 flex-1 items-center gap-3 text-left" type="button" onClick={onOpen}>
         <IconTile><Folder size={17} /></IconTile>
         <span className="min-w-0 flex-1">
@@ -201,7 +201,7 @@ function ProjectRow({
         <Badge variant="secondary">{project.kind === "flow" ? "Flow" : project.progress >= 100 || project.completedAt ? "Done" : `${project.progress}%`}</Badge>
       </button>
       <button
-        className="grid size-8 place-items-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-foreground/8 hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
+        className="grid size-8 place-items-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
         type="button"
         onClick={onSettings}
         aria-label={`Open settings for ${project.title}`}
@@ -224,7 +224,7 @@ function MiniProject({
   onOpen: () => void;
 }) {
   return (
-    <button className="flex min-w-0 items-center gap-3 rounded-lg p-2 text-left transition-colors hover:bg-foreground/6" type="button" onClick={onOpen}>
+    <button className="flex min-w-0 items-center gap-3 rounded-lg p-2 text-left transition-colors hover:bg-muted" type="button" onClick={onOpen}>
       <IconTile compact>{icon}</IconTile>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium">{project.currentStepTitle || project.title}</span>
@@ -236,7 +236,7 @@ function MiniProject({
 
 function EmptyState({ description, icon, title }: { description: string; icon: ReactNode; title: string }) {
   return (
-    <div className="flex items-center gap-3 rounded-lg border border-dashed border-foreground/10 p-3 text-sm text-muted-foreground">
+    <div className="flex items-center gap-3 rounded-lg border border-dashed border-border p-3 text-sm text-muted-foreground">
       <IconTile compact>{icon}</IconTile>
       <span className="min-w-0">
         <strong className="block text-foreground">{title}</strong>
@@ -248,7 +248,7 @@ function EmptyState({ description, icon, title }: { description: string; icon: R
 
 function IconTile({ children, compact = false }: { children: ReactNode; compact?: boolean }) {
   return (
-    <span className={compact ? "grid size-8 shrink-0 place-items-center rounded-lg bg-foreground/6 text-muted-foreground" : "grid size-11 shrink-0 place-items-center rounded-lg bg-foreground/6 text-muted-foreground"}>
+    <span className={compact ? "grid size-8 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground" : "grid size-10 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground"}>
       {children}
     </span>
   );
@@ -256,8 +256,8 @@ function IconTile({ children, compact = false }: { children: ReactNode; compact?
 
 function Progress({ value }: { value: number }) {
   return (
-    <span className="hidden h-1.5 w-20 overflow-hidden rounded-full bg-foreground/8 sm:block" aria-hidden="true">
-      <span className="block h-full rounded-full bg-foreground/45" style={{ width: `${Math.max(0, Math.min(100, value))}%` }} />
+    <span className="hidden h-1.5 w-20 overflow-hidden rounded-full bg-muted sm:block" aria-hidden="true">
+      <span className="block h-full rounded-full bg-muted-foreground/55" style={{ width: `${Math.max(0, Math.min(100, value))}%` }} />
     </span>
   );
 }

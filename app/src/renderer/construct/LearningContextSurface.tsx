@@ -24,11 +24,11 @@ export function LearningContextSurface() {
   }, []);
 
   if (error) {
-    return <div className="p-6"><Alert variant="destructive"><AlertTitle>Could not load learner context</AlertTitle><AlertDescription>{error}</AlertDescription></Alert></div>;
+    return <div className="p-4"><Alert variant="destructive"><AlertTitle>Could not load learner context</AlertTitle><AlertDescription>{error}</AlertDescription></Alert></div>;
   }
 
   if (!state) {
-    return <div className="flex items-center gap-2 p-6 text-sm text-muted-foreground">Loading context...</div>;
+    return <div className="flex items-center gap-2 p-4 text-sm text-muted-foreground">Loading context...</div>;
   }
 
   const projects = Object.values(state.projects);
@@ -40,17 +40,17 @@ export function LearningContextSurface() {
   const weakConcepts = globalConcepts.filter((concept) => concept.confidence === "weak" || concept.confidence === "unknown");
 
   return (
-    <div className="flex flex-col gap-6 p-6">
+    <div className="mx-auto flex w-full max-w-[980px] flex-col gap-5 p-4">
       <header className="flex items-start justify-between gap-6">
         <div>
-          <span>Local-first learner memory</span>
-          <h1>Context</h1>
-          <p>Inspect the local state Construct Interact, recall, Knowledge Base, and future sync will use.</p>
+          <span className="text-xs font-medium text-muted-foreground">Local-first learner memory</span>
+          <h1 className="mt-1 text-lg font-semibold tracking-tight">Context</h1>
+          <p className="mt-1 max-w-2xl text-[13px] text-muted-foreground">Inspect the local state Construct Interact, recall, Knowledge Base, and future sync will use.</p>
         </div>
-        <code>{state.sync.mode} · {state.sync.deviceId.slice(0, 8)}</code>
+        <code className="rounded-full border bg-background/70 px-2 py-1 text-xs text-muted-foreground">{state.sync.mode} · {state.sync.deviceId.slice(0, 8)}</code>
       </header>
 
-      <section className="grid grid-cols-2 gap-3 md:grid-cols-5">
+      <section className="grid grid-cols-2 gap-2 md:grid-cols-5">
         <LearningStat label="Concepts" value={globalConcepts.length} />
         <LearningStat label="Weak" value={weakConcepts.length} />
         <LearningStat label="Knowledge" value={knowledge.length} />
@@ -58,7 +58,7 @@ export function LearningContextSurface() {
         <LearningStat label="Recall" value={recalls.length} />
       </section>
 
-      <main className="grid gap-4 lg:grid-cols-2">
+      <main className="grid gap-3 lg:grid-cols-2">
         <LearningPanel title="Weak concepts" meta={`${weakConcepts.length} global`}>
           {weakConcepts.slice(0, 8).map((concept) => (
             <LearningRow key={concept.conceptId} title={concept.conceptId} meta={`${concept.confidence} · ${concept.projectIds.length} project`} />
@@ -115,21 +115,33 @@ export function LearningContextSurface() {
 }
 
 function LearningStat({ label, value }: { label: string; value: number }) {
-  return <Card><CardHeader><CardDescription>{label}</CardDescription><CardTitle>{value}</CardTitle></CardHeader></Card>;
+  return (
+    <Card className="bg-card/70 shadow-none">
+      <CardHeader className="p-3">
+        <CardDescription className="text-xs">{label}</CardDescription>
+        <CardTitle className="text-lg">{value}</CardTitle>
+      </CardHeader>
+    </Card>
+  );
 }
 
 function LearningPanel({ children, meta, title }: { children: ReactNode; meta: string; title: string }) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-        <CardDescription>{meta}</CardDescription>
+    <Card className="bg-card/70 shadow-none">
+      <CardHeader className="p-3 pb-2">
+        <CardTitle className="text-sm">{title}</CardTitle>
+        <CardDescription className="text-xs">{meta}</CardDescription>
       </CardHeader>
-      <CardContent className="flex flex-col gap-2">{children}</CardContent>
+      <CardContent className="flex flex-col gap-1 p-3 pt-0">{children}</CardContent>
     </Card>
   );
 }
 
 function LearningRow({ meta, title }: { meta: string; title: string }) {
-  return <div className="flex items-start justify-between gap-4"><strong>{title}</strong><small className="text-muted-foreground">{meta}</small></div>;
+  return (
+    <div className="flex min-h-8 items-center justify-between gap-4 rounded-[7px] px-2 py-1 text-sm hover:bg-muted/60">
+      <strong className="min-w-0 truncate font-medium">{title}</strong>
+      <small className="shrink-0 text-xs text-muted-foreground">{meta}</small>
+    </div>
+  );
 }

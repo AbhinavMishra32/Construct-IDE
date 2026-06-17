@@ -169,7 +169,7 @@ export function MarkdownBlock({
   };
 
   return (
-    <div className={cn("space-y-3 text-sm leading-relaxed text-foreground [&_h1]:text-xl [&_h1]:font-semibold [&_h2]:text-lg [&_h2]:font-semibold [&_h3]:text-base [&_h3]:font-semibold [&_p]:leading-relaxed [&_strong]:font-semibold", className)}>
+    <div className={cn("space-y-3 text-sm leading-relaxed text-foreground [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:text-base [&_h2]:font-semibold [&_h3]:text-sm [&_h3]:font-semibold [&_p]:leading-relaxed [&_strong]:font-semibold", className)}>
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
         {renderInlineRefsAsMarkdown(content)}
       </ReactMarkdown>

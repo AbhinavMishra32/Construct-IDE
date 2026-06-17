@@ -35,19 +35,19 @@ export function LiveStepPanel({
   }, [liveStep.id]);
 
   return (
-    <aside className="flex h-full min-h-0 animate-in flex-col overflow-y-auto bg-background p-4 duration-300 fade-in slide-in-from-right-2" data-construct-explainable="dynamic-step" data-construct-explainable-label="Dynamic Step">
-      <div className="mb-3 flex items-center gap-2 rounded-md border bg-primary/5 px-3 py-2 text-xs font-medium text-primary">
+    <aside className="flex h-full min-h-0 animate-in flex-col overflow-y-auto bg-background p-3 duration-300 fade-in slide-in-from-right-2" data-construct-explainable="dynamic-step" data-construct-explainable-label="Dynamic Step">
+      <div className="mb-3 flex h-8 items-center gap-2 rounded-[8px] border bg-muted/25 px-3 text-xs font-medium text-muted-foreground">
         <Lightning size={15} weight="duotone" />
         <span>Dynamic Step</span>
       </div>
-      <div className="flex items-center justify-between text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+      <div className="flex items-center justify-between text-xs font-medium text-muted-foreground">
         <span>Adaptive tape step</span>
         <span>{liveStep.status}</span>
       </div>
-      <h2 className="mt-2 text-lg font-semibold">{liveStep.title}</h2>
+      <h2 className="mt-2 text-base font-semibold">{liveStep.title}</h2>
       <p className="mt-1 text-sm text-muted-foreground">{liveStep.reason}</p>
-      <div className="mt-4 border-t pt-4">
-        <div className="mb-3 flex items-center justify-between text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+      <div className="mt-4 border-t pt-3">
+        <div className="mb-3 flex items-center justify-between text-xs font-medium text-muted-foreground">
           <span>{block ? blockLabel(block) : "Empty step"}</span>
           <span>{Math.min(blockIndex + 1, liveStep.blocks.length)} / {liveStep.blocks.length}</span>
         </div>
@@ -63,7 +63,7 @@ export function LiveStepPanel({
           <p className="text-sm text-muted-foreground">This Dynamic Step has no blocks.</p>
         )}
       </div>
-      <div className="mt-4 flex flex-wrap justify-end gap-2 border-t pt-4">
+      <div className="mt-4 flex flex-wrap justify-end gap-2 border-t pt-3">
         <Button type="button" variant="ghost" onClick={onBack}>Back to tape</Button>
         <Button type="button" variant="secondary" onClick={onDismiss}>Dismiss</Button>
         {blockIndex > 0 ? (
@@ -100,7 +100,7 @@ function LiveStepBlock({
 }) {
   const markdown = (content: string) => (
     <MarkdownBlock
-      className="space-y-3 text-sm leading-6 [&_h1]:text-xl [&_h2]:text-lg [&_h3]:text-base [&_li]:my-1 [&_p]:leading-6"
+      className="space-y-3 text-sm leading-6 [&_h1]:text-lg [&_h2]:text-base [&_h3]:text-sm [&_li]:my-1 [&_p]:leading-6"
       content={normalizeGeneratedMarkdown(content)}
       theme={theme}
       onOpenConcept={onOpenConcept}
@@ -124,8 +124,8 @@ function LiveStepBlock({
         {block.title ? <h3 className="text-base font-semibold">{block.title}</h3> : null}
         {markdown(block.content)}
         {block.sections?.map((section, index) => (
-          <section className="rounded-lg border bg-muted/20 p-3" key={`${section.kind}-${index}`}>
-            <p className="mb-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{section.kind}</p>
+          <section className="rounded-[8px] border bg-muted/20 p-3" key={`${section.kind}-${index}`}>
+            <p className="mb-2 text-xs font-medium text-muted-foreground">{section.kind}</p>
             {markdown(section.content)}
           </section>
         ))}
@@ -136,7 +136,7 @@ function LiveStepBlock({
     return (
       <div className="space-y-3">
         {markdown(block.prompt)}
-        <div className="rounded-lg border bg-muted/20 p-3 text-xs leading-5 text-muted-foreground">
+        <div className="rounded-[8px] border bg-muted/20 p-3 text-xs leading-5 text-muted-foreground">
           <p className="font-medium text-foreground">What this checks</p>
           {markdown(block.understanding)}
         </div>
@@ -151,9 +151,9 @@ function LiveStepBlock({
           Open {block.path}
         </Button>
         {block.notes?.filter((note) => note.when === "start").map((note, index) => (
-          <div className="rounded-lg border bg-muted/20 p-3" key={index}>{markdown(note.content)}</div>
+          <div className="rounded-[8px] border bg-muted/20 p-3" key={index}>{markdown(note.content)}</div>
         ))}
-        <pre className="max-h-80 overflow-auto rounded-lg border bg-muted/30 p-3 text-xs leading-5"><code>{block.content}</code></pre>
+        <pre className="max-h-80 overflow-auto rounded-[8px] border bg-muted/30 p-3 text-xs leading-5"><code>{block.content}</code></pre>
       </div>
     );
   }
@@ -168,14 +168,14 @@ function LiveStepBlock({
             Open {path}
           </Button>
         ) : null}
-        {block.support ? <div className="rounded-lg border bg-muted/20 p-3">{markdown(block.support)}</div> : null}
+        {block.support ? <div className="rounded-[8px] border bg-muted/20 p-3">{markdown(block.support)}</div> : null}
       </div>
     );
   }
   if (block.kind === "run") {
     return (
       <div className="space-y-3">
-        <pre className="overflow-auto rounded-lg border bg-muted/30 p-3 text-xs"><code>{block.command}</code></pre>
+        <pre className="overflow-auto rounded-[8px] border bg-muted/30 p-3 text-xs"><code>{block.command}</code></pre>
         <Button type="button" onClick={() => onRunCommand(block.command, block.cwd ?? ".")}>
           <Play data-icon="inline-start" />
           Run command

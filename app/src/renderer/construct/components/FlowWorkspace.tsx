@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { BotIcon, CheckIcon, Code2Icon, PlayIcon, SendIcon, SparklesIcon } from "lucide-react";
+import { BookOpenIcon, BotIcon, CheckIcon, CheckCircle2Icon, Code2Icon, PlayIcon, SendIcon, SparklesIcon } from "lucide-react";
 import {
   AdaptiveSidecarLayout,
   AgentSessionComposer,
   AgentSessionSurface,
   Button,
+  HoverPreview,
+  SidebarBottomSlot,
+  SlotPanel,
   type AgentRunTraceEntry,
   type AgentSessionMessage,
-  type AgentSessionMessagePart
+  type AgentSessionMessagePart,
+  type SlotTab
 } from "@opaline/ui";
 
 import type {
@@ -36,11 +40,19 @@ import {
 import { EditorPane } from "./EditorPane";
 import { MarkdownBlock } from "./MarkdownBlock";
 import { KnowledgeCard } from "./KnowledgeCard";
+import { iconForFile } from "./workspace/FileChooserContent";
+import {
+  activateDocument,
+  closeDocument,
+  createDocumentSession,
+  normalizeDocumentPath
+} from "../lib/documentSession";
 
 export function FlowWorkspace({
   project,
   theme,
   onGuidePanelChange,
+  onKnowledgePanelChange,
   onProjectChange,
   onRunCommand,
   onFileOpened,
@@ -50,6 +62,7 @@ export function FlowWorkspace({
   project: FlowProjectRecord;
   theme: "light" | "dark" | "system";
   onGuidePanelChange: (panel: ReactNode | null) => void;
+  onKnowledgePanelChange?: (panel: ReactNode | null) => void;
   onProjectChange: (project: FlowProjectRecord) => void;
   onRunCommand: (command: string, cwd: string) => void;
   onFileOpened: (filePath: string) => void;
@@ -67,14 +80,17 @@ export function FlowWorkspace({
   onSavingChange: (saving: boolean) => void;
 }) {
   const [tree, setTree] = useState<WorkspaceTreeNode[]>([]);
-  const [activePath, setActivePath] = useState<string | null>(project.activeFilePath);
-  const [content, setContent] = useState("");
-  const [dirty, setDirty] = useState(false);
+  const [documentSession, setDocumentSession] = useState(() => createDocumentSession(project.activeFilePath));
+  const [fileContents, setFileContents] = useState<Record<string, string>>({});
+  const [dirtyPaths, setDirtyPaths] = useState<Record<string, boolean>>({});
   const [focusRange, setFocusRange] = useState<{ line: number; endLine?: number } | null>(null);
   const [sessions, setSessions] = useState<ConstructFlowSession[]>(project.flow.sessions ?? []);
   const [liveSession, setLiveSession] = useState<ConstructFlowSession | undefined>();
   const [pending, setPending] = useState(false);
   const [openConcept, setOpenConcept] = useState<ConceptCard | null>(null);
+  const activePath = documentSession.activePath;
+  const content = activePath ? fileContents[activePath] ?? "" : "";
+  const dirty = activePath ? dirtyPaths[activePath] === true : false;
 
   const refreshTree = useCallback(async () => {
     const next = await listFiles(project.id);
@@ -82,30 +98,46 @@ export function FlowWorkspace({
     return next;
   }, [project.id]);
 
-  const openFile = useCallback(async (path: string) => {
-    const file = await readFile({ projectId: project.id, path });
-    setActivePath(path);
-    setContent(file.content);
-    setDirty(false);
+  useEffect(() => {
+    setDocumentSession(createDocumentSession(project.activeFilePath));
+    setFileContents({});
+    setDirtyPaths({});
     setFocusRange(null);
-    onFileOpened(path);
-    const updated = await updateProject({ id: project.id, patch: { activeFilePath: path } });
+    setSessions(project.flow.sessions ?? []);
+    setLiveSession(undefined);
+    setOpenConcept(null);
+  }, [project.id]);
+
+  const openFile = useCallback(async (path: string) => {
+    const normalizedPath = normalizeDocumentPath(path);
+    if (!normalizedPath) return;
+
+    if (!dirtyPaths[normalizedPath]) {
+      const file = await readFile({ projectId: project.id, path: normalizedPath });
+      setFileContents((current) => ({ ...current, [normalizedPath]: file.content }));
+      setDirtyPaths((current) => ({ ...current, [normalizedPath]: false }));
+    }
+
+    setDocumentSession((session) => activateDocument(session, normalizedPath));
+    setFocusRange(null);
+    onFileOpened(normalizedPath);
+    const updated = await updateProject({ id: project.id, patch: { activeFilePath: normalizedPath } });
     if (updated.kind === "flow") {
       onProjectChange(updated);
     }
-  }, [onFileOpened, onProjectChange, project.id]);
+  }, [dirtyPaths, onFileOpened, onProjectChange, project.id]);
 
   const saveFile = useCallback(async () => {
     if (!activePath) return;
     onSavingChange(true);
     try {
-      await writeFile({ projectId: project.id, path: activePath, content });
-      setDirty(false);
+      await writeFile({ projectId: project.id, path: activePath, content: fileContents[activePath] ?? "" });
+      setDirtyPaths((current) => ({ ...current, [activePath]: false }));
       await refreshTree();
     } finally {
       onSavingChange(false);
     }
-  }, [activePath, content, onSavingChange, project.id, refreshTree]);
+  }, [activePath, fileContents, onSavingChange, project.id, refreshTree]);
 
   const createFile = useCallback((path: string) => {
     void writeFile({ projectId: project.id, path, content: "" })
@@ -114,21 +146,45 @@ export function FlowWorkspace({
   }, [openFile, project.id, refreshTree]);
 
   const deleteFileFn = useCallback(async (path: string) => {
-    await deleteFile({ projectId: project.id, path });
-    if (activePath === path) {
-      setActivePath(null);
-      setContent("");
-    }
+    const normalizedPath = normalizeDocumentPath(path);
+    await deleteFile({ projectId: project.id, path: normalizedPath });
+    setDocumentSession((session) => closeDocument(session, normalizedPath));
+    setFileContents((current) => {
+      const next = { ...current };
+      delete next[normalizedPath];
+      return next;
+    });
+    setDirtyPaths((current) => {
+      const next = { ...current };
+      delete next[normalizedPath];
+      return next;
+    });
     await refreshTree();
-  }, [activePath, project.id, refreshTree]);
+  }, [project.id, refreshTree]);
 
   const renameFileFn = useCallback(async (oldPath: string, newPath: string) => {
-    await renameFile({ projectId: project.id, oldPath, newPath });
-    if (activePath === oldPath) {
-      setActivePath(newPath);
-    }
+    const normalizedOldPath = normalizeDocumentPath(oldPath);
+    const normalizedNewPath = normalizeDocumentPath(newPath);
+    await renameFile({ projectId: project.id, oldPath: normalizedOldPath, newPath: normalizedNewPath });
+    setDocumentSession((session) => ({
+      ...session,
+      activePath: session.activePath === normalizedOldPath ? normalizedNewPath : session.activePath,
+      tabs: session.tabs.map((tab) => tab === normalizedOldPath ? normalizedNewPath : tab),
+    }));
+    setFileContents((current) => {
+      if (!(normalizedOldPath in current)) return current;
+      const next = { ...current, [normalizedNewPath]: current[normalizedOldPath] };
+      delete next[normalizedOldPath];
+      return next;
+    });
+    setDirtyPaths((current) => {
+      if (!(normalizedOldPath in current)) return current;
+      const next = { ...current, [normalizedNewPath]: current[normalizedOldPath] };
+      delete next[normalizedOldPath];
+      return next;
+    });
     await refreshTree();
-  }, [activePath, project.id, refreshTree]);
+  }, [project.id, refreshTree]);
 
   const createFolderFn = useCallback(async (path: string) => {
     await createFolder({ projectId: project.id, path });
@@ -225,6 +281,56 @@ export function FlowWorkspace({
     return () => onGuidePanelChange(null);
   }, [focusCode, liveSession, onGuidePanelChange, onRunCommand, pending, project, runAgent, sessions, submitTask, theme, setOpenConcept]);
 
+  const flowConcepts = useMemo(() => collectFlowConcepts(mergeSessions(sessions, liveSession)), [liveSession, sessions]);
+
+  const sidebarKnowledgeContent = useMemo(() => (
+    <SidebarBottomSlot
+      className="border-t"
+      defaultHeight={Math.min(300, Math.max(132, 50 + flowConcepts.length * 34))}
+      minHeight={118}
+      maxHeight={420}
+      header={(
+        <div className="flex w-full items-center gap-2 text-xs font-medium">
+          <BookOpenIcon size={14} />
+          <span className="min-w-0 flex-1 text-left">Knowledge</span>
+          <small className="text-muted-foreground">{flowConcepts.length}</small>
+        </div>
+      )}
+    >
+      <section className="h-full min-h-0 overflow-y-auto p-2" aria-label="Flow knowledge">
+        {flowConcepts.length > 0 ? (
+          <div className="space-y-1">
+            {flowConcepts.map((concept) => (
+              <HoverPreview
+                key={concept.id}
+                content={<div className="space-y-1"><span className="text-xs font-medium text-muted-foreground">{concept.kind}</span><strong className="block text-sm font-medium">{concept.title}</strong><p className="text-xs text-muted-foreground">{concept.summary}</p>{concept.tags.length ? <small className="block text-[10px] text-muted-foreground">{concept.tags.join(" · ")}</small> : null}</div>}
+              >
+                <button
+                  className="flex h-8 w-full items-center gap-2 rounded-[7px] px-2 text-left text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+                  type="button"
+                  onClick={() => setOpenConcept(concept)}
+                >
+                  <BookOpenIcon size={13} />
+                  <span className="min-w-0 flex-1 truncate">{concept.title}</span>
+                  <CheckCircle2Icon size={12} className="opacity-60" />
+                </button>
+              </HoverPreview>
+            ))}
+          </div>
+        ) : (
+          <div className="flex h-full min-h-20 items-center justify-center rounded-[8px] border border-dashed px-3 text-center text-xs text-muted-foreground">
+            Flow concepts will appear here.
+          </div>
+        )}
+      </section>
+    </SidebarBottomSlot>
+  ), [flowConcepts]);
+
+  useEffect(() => {
+    onKnowledgePanelChange?.(sidebarKnowledgeContent);
+    return () => onKnowledgePanelChange?.(null);
+  }, [onKnowledgePanelChange, sidebarKnowledgeContent]);
+
   const sidecar = openConcept ? (
     <div className="flex max-h-full w-full flex-col gap-3 overflow-y-auto" aria-label="Open knowledge cards">
       <KnowledgeCard
@@ -240,6 +346,73 @@ export function FlowWorkspace({
     </div>
   ) : null;
 
+  const editorSlotTabs: SlotTab[] = useMemo(() => (
+    documentSession.tabs.map((tabPath) => {
+      const filename = tabPath.split("/").pop() || tabPath;
+      return {
+        id: tabPath,
+        title: filename,
+        icon: iconForFile(filename),
+        closable: true,
+        active: tabPath === activePath,
+        content: null,
+      };
+    })
+  ), [activePath, documentSession.tabs]);
+
+  const handleTabChange = useCallback((tabId: string) => {
+    if (tabId && tabId !== activePath) {
+      void openFile(tabId);
+    }
+  }, [activePath, openFile]);
+
+  const handleTabClose = useCallback((tabId: string) => {
+    const normalizedPath = normalizeDocumentPath(tabId);
+    setDocumentSession((session) => closeDocument(session, normalizedPath));
+    setFileContents((current) => {
+      const next = { ...current };
+      delete next[normalizedPath];
+      return next;
+    });
+    setDirtyPaths((current) => {
+      const next = { ...current };
+      delete next[normalizedPath];
+      return next;
+    });
+  }, []);
+
+  const editorOutlet = (
+    <div className="relative grid h-full min-h-0 grid-cols-[minmax(0,1fr)] bg-background">
+      <EditorPane
+        path={activePath}
+        workspacePath={project.workspacePath}
+        content={content}
+        activeEdit={null}
+        editAnchor=""
+        editProgress={0}
+        onFreeEdit={(next) => {
+          if (!activePath) return;
+          setFileContents((current) => ({ ...current, [activePath]: next }));
+          setDirtyPaths((current) => ({ ...current, [activePath]: true }));
+        }}
+        onGuidedProgress={() => undefined}
+        onRevealLine={() => undefined}
+        onSave={saveFile}
+        theme={theme}
+        focusRange={focusRange}
+        onOpenFileAndJump={(path, line) => {
+          void openFile(path).then(() => setFocusRange({ line }));
+        }}
+      />
+      {dirty ? (
+        <div className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full border bg-popover px-3 py-1.5 text-xs shadow-md">
+          <span>Unsaved changes</span>
+          <Button size="sm" onClick={() => void saveFile()}><CheckIcon size={14} />Save</Button>
+        </div>
+      ) : null}
+    </div>
+  );
+
   return (
     <AdaptiveSidecarLayout
       className="h-full min-h-0"
@@ -247,36 +420,48 @@ export function FlowWorkspace({
       pinned={false}
       sidecar={sidecar}
     >
-      <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)] bg-background">
-        <EditorPane
-          path={activePath}
-          workspacePath={project.workspacePath}
-          content={content}
-          activeEdit={null}
-          editAnchor=""
-          editProgress={0}
-          onFreeEdit={(next) => {
-            setContent(next);
-            setDirty(true);
-          }}
-          onGuidedProgress={() => undefined}
-          onRevealLine={() => undefined}
-          onSave={saveFile}
-          theme={theme}
-          focusRange={focusRange}
-          onOpenFileAndJump={(path, line) => {
-            void openFile(path).then(() => setFocusRange({ line }));
-          }}
-        />
-        {dirty ? (
-          <div className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-lg border bg-popover px-3 py-2 text-xs shadow-md">
-            <span>Unsaved changes</span>
-            <Button size="sm" onClick={() => void saveFile()}><CheckIcon size={14} />Save</Button>
-          </div>
-        ) : null}
-      </div>
+      <SlotPanel
+        activeTabId={activePath ?? undefined}
+        tabs={editorSlotTabs}
+        syncTabs
+        outlet={editorOutlet}
+        ariaLabel="Editor file tabs"
+        onTabChange={handleTabChange}
+        onTabClose={handleTabClose}
+      />
     </AdaptiveSidecarLayout>
   );
+}
+
+function collectFlowConcepts(sessions: ConstructFlowSession[]): ConceptCard[] {
+  const concepts = new Map<string, ConceptCard>();
+
+  for (const session of sessions) {
+    for (const event of session.agentEvents) {
+      if (event.type !== "tool") continue;
+      const toolName = event.toolName ?? event.title;
+      applyFlowConceptRecord(concepts, toolName, event.input);
+    }
+
+    for (const toolCall of session.toolCalls) {
+      applyFlowConceptRecord(concepts, toolCall.name, toolCall.input);
+    }
+  }
+
+  return Array.from(concepts.values());
+}
+
+function applyFlowConceptRecord(concepts: Map<string, ConceptCard>, toolName: string | undefined, input: unknown) {
+  if (!toolName?.includes("concept")) return;
+  const inputObj = typeof input === "string" ? parseJsonObject(input) : (input as Record<string, unknown> | null | undefined);
+  if (!inputObj || typeof inputObj.id !== "string" || !inputObj.id.trim()) return;
+
+  if (toolName === "remove-concept") {
+    concepts.delete(inputObj.id);
+    return;
+  }
+
+  concepts.set(inputObj.id, buildConceptCardFromInput(inputObj));
 }
 
 function FlowAgentPanel({
@@ -313,14 +498,14 @@ function FlowAgentPanel({
 
   return (
     <aside className="flex h-full min-h-0 flex-col bg-background">
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b px-3 py-2">
+      <div className="flex h-11 shrink-0 items-center justify-between gap-2 border-b px-3">
         <div className="min-w-0">
           <strong className="block truncate text-sm">Construct Flow</strong>
           <span className="block truncate text-[11px] text-muted-foreground">{project.flow.goal}</span>
         </div>
         <Button size="sm" variant="ghost" onClick={onRunResearch}><SparklesIcon size={14} />Research</Button>
       </div>
-      <div className="flex shrink-0 flex-wrap gap-1 border-b px-3 py-2">
+      <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-1 border-b px-2 py-1">
         <Button size="sm" variant="secondary" onClick={() => void onRunAgent("Continue from the current project state.")}><PlayIcon size={14} />Continue</Button>
         <Button size="sm" variant="ghost" onClick={() => void onRunAgent("I tried. Help me review what changed.")}>I tried</Button>
         <Button size="sm" variant="ghost" onClick={() => void onRunAgent("I'm stuck. Ask one focused question or give a smaller next step.")}>I'm stuck</Button>
@@ -377,7 +562,7 @@ function buildFlowMessages({
         type: "actions",
         id: `${task.id}:task`,
         content: (
-          <div className="flex min-w-0 flex-col gap-2 rounded-md border bg-muted/25 p-3 text-xs">
+          <div className="flex min-w-0 flex-col gap-2 rounded-[8px] border bg-muted/25 p-3 text-xs">
             <strong className="text-sm">{task.title}</strong>
             <MarkdownBlock content={task.prompt} theme={theme} />
             {task.focus ? <span className="inline-flex items-center gap-1 text-muted-foreground"><Code2Icon size={13} />{task.focus.path}{task.focus.line ? `:${task.focus.line}` : ""}</span> : null}
@@ -419,25 +604,25 @@ function buildFlowMessages({
     let userContent: ReactNode;
     if (submittedTask && submittedTask.submission) {
       userContent = (
-        <div className="flex min-w-0 flex-col gap-3 rounded-lg border border-sky-500/20 bg-sky-500/5 p-4 text-xs shadow-sm w-full">
-          <div className="flex items-center justify-between gap-2 border-b border-sky-500/10 pb-2">
-            <span className="flex items-center gap-1.5 font-bold text-sky-700 dark:text-sky-400 text-sm">
-              <span>📝</span>
-              <span>Task Submission</span>
+        <div className="flex w-full min-w-0 flex-col gap-3 rounded-[8px] border bg-muted/20 p-3 text-xs shadow-sm">
+          <div className="flex items-center justify-between gap-2 border-b pb-2">
+            <span className="flex items-center gap-1.5 text-sm font-semibold">
+              <SendIcon size={14} />
+              <span>Task submission</span>
             </span>
-            <span className="rounded bg-sky-500/10 px-2 py-0.5 text-[10px] font-semibold text-sky-700 dark:text-sky-400 border border-sky-500/20">
+            <span className="rounded-full border bg-background/70 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
               {submittedTask.title}
             </span>
           </div>
           {submittedTask.learnerNote ? (
-            <div className="rounded bg-background/50 border p-2 italic text-muted-foreground">
-              <span className="font-semibold block not-italic text-[10px] uppercase tracking-wider opacity-70 mb-1">Your note:</span>
-              "{submittedTask.learnerNote}"
+            <div className="rounded-[8px] border bg-background/60 p-2 italic text-muted-foreground">
+              <span className="mb-1 block text-[11px] font-medium not-italic text-foreground">Your note</span>
+              {submittedTask.learnerNote}
             </div>
           ) : null}
           <div>
-            <span className="font-semibold block opacity-85 mb-1">Changes:</span>
-            <pre className="rounded bg-background/80 border p-3 overflow-x-auto text-[10px] font-mono leading-relaxed max-h-80 overflow-y-auto">
+            <span className="mb-1 block font-medium">Changes</span>
+            <pre className="max-h-80 overflow-y-auto overflow-x-auto rounded-[8px] border bg-background/80 p-3 font-mono text-[10px] leading-relaxed">
               <code className="text-foreground">{submittedTask.submission.compactDiff}</code>
             </pre>
           </div>
@@ -607,13 +792,13 @@ function buildAskUserPart(
     type: "actions",
     id: `${sessionId}:ask-user:${id}`,
     content: (
-      <div className="flex min-w-0 flex-col gap-2 rounded-md border bg-muted/25 p-3 text-xs">
+      <div className="flex min-w-0 flex-col gap-2 rounded-[8px] border bg-muted/25 p-3 text-xs">
         <strong className="text-sm">Question for you</strong>
         <MarkdownBlock content={payload.question || "I need one more detail before continuing."} theme={theme} />
         {payload.reason ? <span className="text-muted-foreground">{payload.reason}</span> : null}
         {payload.choices?.length ? (
           <div className="flex flex-wrap gap-1">
-            {payload.choices.map((choice) => <span key={choice} className="rounded-md border px-2 py-1 text-muted-foreground">{choice}</span>)}
+            {payload.choices.map((choice) => <span key={choice} className="rounded-full border bg-background/70 px-2 py-1 text-muted-foreground">{choice}</span>)}
           </div>
         ) : null}
       </div>
@@ -687,10 +872,10 @@ function buildConceptCardPart(
   const confidence = inputObj.confidence;
   
   let actionLabel = "Added Concept";
-  let badgeColor = "text-emerald-700 bg-emerald-500/10 dark:text-emerald-400 dark:bg-emerald-500/10 border-emerald-500/20";
+  let badgeColor = "text-muted-foreground bg-background/70 border-border";
   if (toolName === "modify-concept") {
     actionLabel = "Modified Concept";
-    badgeColor = "text-amber-700 bg-amber-500/10 dark:text-amber-400 dark:bg-amber-500/10 border-amber-500/20";
+    badgeColor = "text-muted-foreground bg-background/70 border-border";
   } else if (toolName === "remove-concept") {
     actionLabel = "Removed Concept";
     badgeColor = "text-destructive bg-destructive/10 border-destructive/20";
@@ -702,9 +887,9 @@ function buildConceptCardPart(
     type: "actions",
     id: `${sessionId}:concept:${eventId}`,
     content: (
-      <div className="flex min-w-0 flex-col gap-2 rounded-lg border border-border bg-muted/20 p-3 text-xs w-full shadow-sm">
+      <div className="flex w-full min-w-0 flex-col gap-2 rounded-[8px] border border-border bg-muted/20 p-3 text-xs shadow-sm">
         <div className="flex items-center justify-between gap-2 border-b border-border pb-1.5">
-          <span className={`rounded-md px-2 py-0.5 text-[10px] font-semibold border ${badgeColor}`}>
+          <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${badgeColor}`}>
             {actionLabel}
           </span>
           {confidence && <ConfidenceBadge level={confidence} />}
@@ -719,7 +904,7 @@ function buildConceptCardPart(
           <div className="mt-1 flex items-center justify-end">
             <button
               type="button"
-              className="text-[11px] font-semibold text-primary hover:underline font-medium"
+              className="rounded-full px-2 py-1 text-[11px] font-medium text-primary hover:bg-primary/10"
               onClick={() => onOpenConceptDetails(conceptCard)}
             >
               View Details
@@ -897,4 +1082,3 @@ function firstFilePath(nodes: WorkspaceTreeNode[]): string | null {
   }
   return null;
 }
-
