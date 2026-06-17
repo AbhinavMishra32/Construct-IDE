@@ -1,12 +1,16 @@
 import { useEffect } from "react";
 
 import { onAgentLog, onLitellmLog } from "./bridge";
-import { logStore, type LogChannel } from "./logStore";
+import { logStore, PROVIDER_CHANNELS, type LogChannel } from "./logStore";
 
 export function useConstructLogBridge(): void {
   useEffect(() => {
     logStore.addLog("lsp-server", "Language server log channel attached.", "debug");
     logStore.addLog("lsp-protocol", "LSP protocol log channel attached.", "debug");
+    logStore.addLog("openai", "OpenAI log channel attached. API call logs will appear here.", "debug");
+    logStore.addLog("openrouter", "OpenRouter log channel attached. API call logs will appear here.", "debug");
+    logStore.addLog("opencode-zen", "OpenCode Zen log channel attached. API call logs will appear here.", "debug");
+    logStore.addLog("github-copilot", "GitHub Copilot log channel attached. API call logs will appear here.", "debug");
 
     const constructProjects = window.constructProjects;
     if (!constructProjects) {

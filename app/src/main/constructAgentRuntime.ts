@@ -3,7 +3,7 @@ import { Mastra } from "@mastra/core/mastra";
 import type { ToolsInput } from "@mastra/core/agent";
 import { z } from "zod";
 
-import { resolveConstructAgentModel } from "./constructAgentModels";
+import { resolveConstructLlmModel } from "./constructAgentModels";
 import type { ConstructAiFeatureId } from "./constructAiFeatures";
 import { resolveConstructAiSettings } from "./constructAiSettings";
 import type { ConstructAgentRunEvent } from "../shared/constructLearning";
@@ -50,7 +50,8 @@ export type ConstructAgentTraceEntry<T = unknown> = {
 };
 
 export function createConstructAgentRuntime(): ConstructAgentRuntime {
-  const runtime = resolveConstructAiSettings().runtime;
+  const settings = resolveConstructAiSettings();
+  const runtime = settings.runtime;
 
   switch (runtime) {
     case "mastra":
@@ -108,21 +109,24 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
       payload: describeSchema(request.schema)
     });
 
-    const model = resolveConstructAgentModel(request.purpose, request.featureId);
+    const model = await resolveConstructLlmModel(request.purpose, request.featureId);
     request.onTrace?.({
       title: "Resolved agent model",
       level: "debug",
       detail: [
         `provider: ${model.providerId}`,
         `model: ${model.modelId}`,
+        model.id ? `id: ${model.id}` : null,
         model.url ? `baseUrl: ${model.url}` : null
       ].filter(Boolean).join("\n"),
       payload: {
         provider: model.providerId,
         model: model.modelId,
+        id: model.id,
         baseUrl: model.url
       }
     });
+    await ensureModelEndpointReachable(model, request);
 
     const agent = new Agent({
       id: request.id,
@@ -140,7 +144,8 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
       const runEventId = outputEventId(request.id);
       const output = await agent.stream(request.prompt, {
         structuredOutput: {
-          schema: request.schema
+          schema: request.schema,
+          jsonPromptInjection: model.providerId === "opencode-zen"
         },
         abortSignal: request.abortSignal,
         maxSteps: request.maxSteps ?? (hasTools ? 12 : 1),
@@ -284,8 +289,8 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
           id,
           type: "reasoning",
           status: "running",
-          title: "Analyzing request",
-          detail: "Working through the request",
+          title: "Model reasoning stream",
+          detail: "Receiving reasoning activity from the model",
           createdAt: new Date().toISOString()
         };
         reasoning.set(id, {
@@ -311,8 +316,8 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
             id,
             type: "reasoning" as const,
             status: "running" as const,
-            title: "Analyzing request",
-            detail: "Working through the request",
+            title: "Model reasoning stream",
+            detail: "Receiving reasoning activity from the model",
             createdAt: new Date().toISOString()
           },
           characterCount: 0,
@@ -553,6 +558,57 @@ function previewUnknown(value: unknown): string {
 function formatDuration(durationMs: number): string {
   if (durationMs < 1_000) return `${durationMs} ms`;
   return `${(durationMs / 1_000).toFixed(durationMs < 10_000 ? 1 : 0)} s`;
+}
+
+async function ensureModelEndpointReachable<T>(
+  model: { providerId: string; modelId: string; url?: string; apiKey?: string },
+  request: ConstructAgentRuntimeRequest<T>
+): Promise<void> {
+  if (!isLiteLlmBackedProvider(model.providerId)) {
+    return;
+  }
+
+  const baseUrl = model.url?.trim();
+  if (!baseUrl) {
+    throw new Error(`LiteLLM base URL is required for ${request.purpose}.`);
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 4000);
+  const modelsUrl = `${baseUrl.replace(/\/$/, "")}/models`;
+  try {
+    const response = await fetch(modelsUrl, {
+      method: "GET",
+      headers: model.apiKey ? { Authorization: `Bearer ${model.apiKey}` } : undefined,
+      signal: controller.signal
+    });
+    request.onTrace?.({
+      title: "LiteLLM proxy preflight",
+      level: response.ok || response.status === 401 || response.status === 403 ? "debug" : "warn",
+      detail: `GET ${modelsUrl} returned ${response.status}.`,
+      payload: {
+        url: modelsUrl,
+        status: response.status,
+        model: model.modelId,
+        provider: model.providerId
+      }
+    });
+  } catch (error) {
+    const cause = error instanceof Error && error.name === "AbortError"
+      ? "request timed out"
+      : error instanceof Error && error.message
+        ? error.message
+        : String(error);
+    throw new Error(
+      `LiteLLM proxy is unreachable at ${baseUrl}. Start LiteLLM or update Settings > AI > LiteLLM Proxy. Model "${model.modelId}" cannot run until the proxy is reachable. (${cause})`
+    );
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function isLiteLlmBackedProvider(providerId: string): boolean {
+  return providerId === "litellm" || providerId === "github-copilot";
 }
 
 function stringifyForTrace(value: unknown): string {
