@@ -47,8 +47,8 @@ export function StatusBar({ theme, onThemeChange }: StatusBarProps) {
   const provider = settings?.ai?.provider ?? "openai";
   const modelRaw = provider === "openrouter"
     ? (settings?.ai?.openRouterModel ?? "deepseek/deepseek-v4-flash")
-    : provider === "opencode"
-      ? (settings?.ai?.openCodeModel ?? "opencode/openai/gpt-5")
+    : provider === "opencode-zen"
+      ? (settings?.ai?.opencodeZenModel ?? "gpt-5.1-codex")
       : provider === "github-copilot"
         ? (settings?.ai?.githubCopilotModel ?? "github_copilot/gpt-4")
         : provider === "litellm"
@@ -74,8 +74,8 @@ export function StatusBar({ theme, onThemeChange }: StatusBarProps) {
   const formattedModel = formatModelName(modelRaw);
   const providerLabel = provider === "openrouter"
     ? "OpenRouter"
-    : provider === "opencode"
-      ? "OpenCode"
+    : provider === "opencode-zen"
+      ? "OpenCode Zen"
       : provider === "github-copilot"
         ? "GitHub Copilot"
         : provider === "litellm"

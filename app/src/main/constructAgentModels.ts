@@ -2,10 +2,11 @@ import { resolveConstructAiSettings, type StoredAiSettings } from "./constructAi
 import { modelForAiFeature, type ConstructAiFeatureId } from "./constructAiFeatures";
 
 export type ConstructAgentModel = {
-  providerId: "openai" | "openrouter";
+  providerId: string;
   modelId: string;
+  id?: string;
   url?: string;
-  apiKey: string;
+  apiKey?: string;
 };
 
 export function resolveConstructAgentModel(purpose: string, featureId?: ConstructAiFeatureId): ConstructAgentModel {
@@ -17,30 +18,52 @@ export function resolveConstructAgentModelFromSettings(
   purpose: string,
   featureId?: ConstructAiFeatureId
 ): ConstructAgentModel {
-  const openRouter = settings.provider === "openrouter";
-  const apiKey = openRouter ? settings.openRouterApiKey : settings.openAiApiKey;
+  if (isLiteLlmBackedProvider(settings.provider)) {
+    return resolveLiteLlmModelFromSettings(settings, purpose, featureId);
+  }
 
-  if (!apiKey) {
-    throw new Error(openRouter
+  const directProvider = settings.provider; // "openai" | "openrouter" | "opencode-zen"
+
+  const apiKey = directProvider === "openrouter" ? settings.openRouterApiKey
+    : directProvider === "opencode-zen" ? settings.opencodeZenApiKey
+    : settings.openAiApiKey;
+
+  const baseUrl = directProvider === "openrouter" ? settings.openRouterBaseUrl
+    : directProvider === "opencode-zen" ? settings.opencodeZenBaseUrl
+    : settings.openAiBaseUrl;
+
+  const defaultModel = directProvider === "openrouter" ? "deepseek/deepseek-v4-flash"
+    : directProvider === "opencode-zen" ? "gpt-5.1-codex"
+    : "gpt-5-mini";
+
+  const modelKey = directProvider === "openrouter" ? settings.openRouterModel
+    : directProvider === "opencode-zen" ? settings.opencodeZenModel
+    : settings.openAiModel;
+
+  if (directProvider !== "opencode-zen" && !apiKey) {
+    throw new Error(directProvider === "openrouter"
       ? `OpenRouter API key is required for ${purpose}.`
       : `OpenAI API key is required for ${purpose}.`);
   }
 
-  if (openRouter) {
-    return {
-      providerId: "openrouter",
-      modelId: featureId ? modelForAiFeature(settings, featureId) : (settings.openRouterModel || "deepseek/deepseek-v4-flash"),
-      url: settings.openRouterBaseUrl,
-      apiKey
-    };
-  }
-
   return {
-    providerId: "openai",
-    modelId: featureId ? modelForAiFeature(settings, featureId) : (settings.openAiModel || "gpt-5-mini"),
-    url: settings.openAiBaseUrl,
-    apiKey
+    providerId: directProvider,
+    modelId: featureId ? modelForAiFeature(settings, featureId) : (modelKey || defaultModel),
+    url: baseUrl,
+    apiKey: apiKey || undefined
   };
+}
+
+export async function resolveConstructLlmModel(purpose: string, featureId?: ConstructAiFeatureId): Promise<ConstructAgentModel> {
+  return resolveConstructLlmModelFromSettings(resolveConstructAiSettings(), purpose, featureId);
+}
+
+export async function resolveConstructLlmModelFromSettings(
+  settings: StoredAiSettings,
+  purpose: string,
+  featureId?: ConstructAiFeatureId
+): Promise<ConstructAgentModel> {
+  return resolveConstructAgentModelFromSettings(settings, purpose, featureId);
 }
 
 export function resolveConstructOpenAiResponsesConfig(featureId?: ConstructAiFeatureId): { apiKey: string; baseUrl: string; model: string } | null {
@@ -59,4 +82,32 @@ export function resolveConstructOpenAiResponsesConfigFromSettings(
     baseUrl: settings.openAiBaseUrl,
     model: featureId ? modelForAiFeature(settings, featureId) : (settings.openAiModel || "gpt-5-mini")
   };
+}
+
+function isLiteLlmBackedProvider(provider: StoredAiSettings["provider"]): boolean {
+  return provider === "github-copilot" || provider === "litellm";
+}
+
+function resolveLiteLlmModelFromSettings(
+  settings: StoredAiSettings,
+  purpose: string,
+  featureId?: ConstructAiFeatureId
+): ConstructAgentModel {
+  const modelId = featureId ? modelForAiFeature(settings, featureId) : liteLlmModelForProvider(settings);
+  if (!modelId) {
+    throw new Error(`Select a LiteLLM model for ${purpose}.`);
+  }
+
+  return {
+    providerId: settings.provider,
+    modelId,
+    id: modelId,
+    url: settings.liteLlmBaseUrl,
+    apiKey: settings.liteLlmApiKey || undefined
+  };
+}
+
+function liteLlmModelForProvider(settings: StoredAiSettings): string {
+  if (settings.provider === "github-copilot") return settings.githubCopilotModel?.trim() || "github_copilot/gpt-4";
+  return settings.liteLlmModel?.trim() || "openai/gpt-5-mini";
 }

@@ -46,6 +46,7 @@ import {
   listAiFeatures,
   listProjects,
   listModels,
+  importOpencodeAuth,
   litellmCheckInstall,
   litellmInstall,
   litellmStart,
@@ -90,10 +91,9 @@ const defaultAiSettings: AiSettings = {
   liteLlmModel: "openai/gpt-5-mini",
   liteLlmBaseUrl: "http://localhost:4000/v1",
   liteLlmManageServer: false,
-  openCodeBaseUrl: "http://localhost:4096",
-  openCodePort: 4096,
-  openCodeManageServer: false,
-  openCodeModel: "opencode/openai/gpt-5",
+  opencodeZenApiKey: "",
+  opencodeZenBaseUrl: "https://opencode.ai/zen/v1",
+  opencodeZenModel: "gpt-5.1-codex",
   githubCopilotModel: "github_copilot/gpt-4",
   featureModels: {}
 };
@@ -105,9 +105,9 @@ const flowMemoryFiles: FlowMemoryFileName[] = [
   "learner.md"
 ];
 
-function modelSettingsKeyForProvider(provider: AiSettings["provider"]): "openAiModel" | "openRouterModel" | "openCodeModel" | "githubCopilotModel" | "liteLlmModel" {
+function modelSettingsKeyForProvider(provider: AiSettings["provider"]): "openAiModel" | "openRouterModel" | "opencodeZenModel" | "githubCopilotModel" | "liteLlmModel" {
   if (provider === "openrouter") return "openRouterModel";
-  if (provider === "opencode") return "openCodeModel";
+  if (provider === "opencode-zen") return "opencodeZenModel";
   if (provider === "github-copilot") return "githubCopilotModel";
   if (provider === "litellm") return "liteLlmModel";
   return "openAiModel";
@@ -115,7 +115,7 @@ function modelSettingsKeyForProvider(provider: AiSettings["provider"]): "openAiM
 
 function defaultModelForFeature(provider: AiSettings["provider"], feature: AiFeatureSettings): string {
   if (provider === "openrouter") return feature.defaultOpenRouterModel;
-  if (provider === "opencode") return feature.defaultOpenCodeModel;
+  if (provider === "opencode-zen") return feature.defaultOpenCodeZenModel;
   if (provider === "github-copilot") return feature.defaultGithubCopilotModel;
   if (provider === "litellm") return feature.defaultLiteLlmModel;
   return feature.defaultOpenAiModel;
@@ -355,7 +355,7 @@ export function ConstructSettingsSurface({
   }, []);
 
   useEffect(() => {
-    if (aiSettings.provider === "opencode" || aiSettings.provider === "github-copilot" || aiSettings.provider === "litellm") {
+    if (aiSettings.provider === "opencode-zen" || aiSettings.provider === "github-copilot" || aiSettings.provider === "litellm") {
       void refreshModels(aiSettings.provider);
       return;
     }
@@ -494,10 +494,20 @@ export function ConstructSettingsSurface({
   }
 
   async function refreshModels(provider = aiSettings.provider, apiKey?: string) {
-    const usesLiteLlm = provider === "github-copilot" || provider === "opencode" || provider === "litellm";
-    const resolvedKey = (apiKey ?? (provider === "openrouter" ? aiSettings.openRouterApiKey : provider === "openai" ? aiSettings.openAiApiKey : aiSettings.liteLlmApiKey)).trim();
-    if (!usesLiteLlm && !resolvedKey) {
-      setModelsError(`Enter your ${provider === "openrouter" ? "OpenRouter" : "OpenAI"} API key first.`);
+    const usesLiteLlm = provider === "github-copilot" || provider === "litellm";
+    const resolvedKey = (apiKey ?? (
+      provider === "openrouter" ? aiSettings.openRouterApiKey
+      : provider === "openai" ? aiSettings.openAiApiKey
+      : provider === "opencode-zen" ? aiSettings.opencodeZenApiKey
+      : aiSettings.liteLlmApiKey
+    )).trim();
+    if (!usesLiteLlm && !resolvedKey && provider !== "opencode-zen" && provider !== "openrouter" && provider !== "openai") {
+      setModelsError("Enter an API key first.");
+      setModelOptions([]);
+      return;
+    }
+    if (!usesLiteLlm && !resolvedKey && provider === "openai") {
+      setModelsError("Enter your OpenAI API key first.");
       setModelOptions([]);
       return;
     }
@@ -514,26 +524,12 @@ export function ConstructSettingsSurface({
       }
       setModelOptions(models);
       setAiSettingsDraft((current) => {
-        if (provider === "openrouter") {
-          const nextModel = current.openRouterModel && models.some((model) => model.id === current.openRouterModel)
-            ? current.openRouterModel
-            : (models[0]?.id ?? current.openRouterModel);
-          return { ...current, openRouterModel: nextModel };
-        }
-
-        if (provider === "opencode" || provider === "github-copilot" || provider === "litellm") {
-          const key = modelSettingsKeyForProvider(provider);
-          const currentModel = current[key];
-          const nextModel = currentModel && models.some((model) => model.id === currentModel)
-            ? currentModel
-            : (models[0]?.id ?? currentModel);
-          return { ...current, [key]: nextModel };
-        }
-
-        const nextModel = current.openAiModel && models.some((model) => model.id === current.openAiModel)
-          ? current.openAiModel
-          : (models[0]?.id ?? current.openAiModel);
-        return { ...current, openAiModel: nextModel };
+        const key = modelSettingsKeyForProvider(provider);
+        const currentModel = current[key];
+        const nextModel = currentModel && models.some((model) => model.id === currentModel)
+          ? currentModel
+          : (models[0]?.id ?? currentModel);
+        return { ...current, [key]: nextModel };
       });
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : String(caught);
@@ -1111,14 +1107,31 @@ export function ConstructSettingsSurface({
         onOpenRouterBaseUrlChange={(openRouterBaseUrl: string) => setAiSettingsDraft((current) => ({ ...current, openRouterBaseUrl }))}
         onLiteLlmApiKeyChange={(liteLlmApiKey: string) => setAiSettingsDraft((current) => ({ ...current, liteLlmApiKey }))}
         onLiteLlmBaseUrlChange={(liteLlmBaseUrl: string) => setAiSettingsDraft((current) => ({ ...current, liteLlmBaseUrl }))}
+        onOpencodeZenApiKeyChange={(opencodeZenApiKey: string) => setAiSettingsDraft((current) => ({ ...current, opencodeZenApiKey }))}
+        onOpencodeZenBaseUrlChange={(opencodeZenBaseUrl: string) => setAiSettingsDraft((current) => ({ ...current, opencodeZenBaseUrl }))}
         onOpenRouterModelChange={updateGlobalModel}
         onOpenAiModelChange={updateGlobalModel}
-        onOpenCodeModelChange={updateGlobalModel}
+        onOpencodeZenModelChange={updateGlobalModel}
         onGithubCopilotModelChange={updateGlobalModel}
         onLiteLlmModelChange={updateGlobalModel}
         onRefreshModels={(provider) => { void refreshModels(provider); }}
         onFeatureModelChange={updateFeatureModel}
         onSave={() => { void saveAiConfiguration(); }}
+        onImportOpencodeAuth={async (): Promise<string | null> => {
+          try {
+            const apiKey = await importOpencodeAuth();
+            if (apiKey) {
+              setAiSettingsDraft((current) => ({ ...current, opencodeZenApiKey: apiKey }));
+              toast.success("OpenCode Zen API key imported from opencode CLI");
+            } else {
+              toast.error("No OpenCode API key found in opencode auth file.");
+            }
+            return apiKey;
+          } catch {
+            toast.error("Failed to import OpenCode API key.");
+            return null;
+          }
+        }}
         litellmState={litellmState}
         onLitellmStart={handleLitellmStart}
         onLitellmStop={handleLitellmStop}

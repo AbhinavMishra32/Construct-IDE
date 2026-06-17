@@ -21,10 +21,9 @@ const baseSettings: StoredAiSettings = {
   liteLlmModel: "openai/gpt-5-mini",
   liteLlmBaseUrl: "http://localhost:4000/v1",
   liteLlmManageServer: false,
-  openCodeBaseUrl: "http://localhost:4096",
-  openCodePort: 4096,
-  openCodeManageServer: false,
-  openCodeModel: "opencode/openai/gpt-5",
+  opencodeZenApiKey: "",
+  opencodeZenBaseUrl: "https://opencode.ai/zen/v1",
+  opencodeZenModel: "gpt-5.1-codex",
   githubCopilotModel: "github_copilot/gpt-4",
   featureModels: {}
 };
@@ -47,8 +46,8 @@ test("feature models use provider defaults and saved per-feature overrides", () 
   );
 
   assert.equal(
-    modelForAiFeature({ ...baseSettings, provider: "opencode" }, "verification"),
-    "opencode/openai/gpt-5"
+    modelForAiFeature({ ...baseSettings, provider: "opencode-zen" }, "verification"),
+    "gpt-5.1-codex"
   );
 
   assert.equal(

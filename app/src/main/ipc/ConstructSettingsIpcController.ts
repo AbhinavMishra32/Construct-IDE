@@ -1,5 +1,6 @@
 import path from "node:path";
-import { mkdir } from "node:fs/promises";
+import os from "node:os";
+import { mkdir, readFile } from "node:fs/promises";
 
 import type { IpcMain } from "electron";
 
@@ -63,21 +64,41 @@ export class ConstructSettingsIpcController {
       return featureSettingsView((await this.options.readSettings()).ai);
     });
 
+    ipcMain.handle("construct:settings:import-opencode-auth", async () => {
+      try {
+        const authPath = path.join(os.homedir(), ".local", "share", "opencode", "auth.json");
+        const content = await readFile(authPath, "utf-8");
+        const data = JSON.parse(content) as Record<string, { apiKey?: string }>;
+        const key = data.opencode?.apiKey ?? data["opencode-zen"]?.apiKey ?? null;
+        return key ?? null;
+      } catch {
+        return null;
+      }
+    });
+
     ipcMain.handle("construct:settings:list-models", async (_event, input) => {
-      const provider = input?.provider === "openrouter" ? "openrouter" : "openai";
+      const provider = input?.provider === "openrouter"
+        || input?.provider === "github-copilot"
+        || input?.provider === "opencode-zen"
+        || input?.provider === "litellm"
+        ? input.provider
+        : "openai";
       const apiKey = String(input?.apiKey ?? "").trim();
       const settings = await this.options.readSettings();
+      const usesLiteLlm = provider === "github-copilot" || provider === "litellm";
 
-      if (!apiKey) {
-        throw new Error(`Enter a ${provider === "openrouter" ? "OpenRouter" : "OpenAI"} API key first.`);
-      }
+      const baseUrl = provider === "openrouter"
+        ? settings.ai.openRouterBaseUrl
+        : provider === "opencode-zen"
+          ? settings.ai.opencodeZenBaseUrl
+          : usesLiteLlm
+            ? settings.ai.liteLlmBaseUrl
+            : settings.ai.openAiBaseUrl;
 
       return fetchProviderModels({
         provider,
-        apiKey,
-        baseUrl: provider === "openrouter"
-          ? settings.ai.openRouterBaseUrl
-          : settings.ai.openAiBaseUrl
+        apiKey: usesLiteLlm ? settings.ai.liteLlmApiKey : apiKey,
+        baseUrl
       });
     });
   }

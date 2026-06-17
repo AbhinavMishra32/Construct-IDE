@@ -364,3 +364,7 @@ export function onLitellmLog(callback: (payload: { level: string; message: strin
 export function onLitellmStatusChange(callback: (payload: import("../types").LitellmState) => void): () => void {
   return api().onLitellmStatusChange(callback);
 }
+
+export function importOpencodeAuth(): Promise<string | null> {
+  return api().importOpencodeAuth();
+}

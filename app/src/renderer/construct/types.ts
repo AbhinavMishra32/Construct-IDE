@@ -421,7 +421,7 @@ export type AuthoringFixRecord = {
   appliedAt: string;
 };
 
-export type AiProvider = "openai" | "openrouter" | "github-copilot" | "opencode" | "litellm";
+export type AiProvider = "openai" | "openrouter" | "github-copilot" | "opencode-zen" | "litellm";
 export type AiRuntime = "mastra" | "fxpnt";
 
 export type AiSettings = {
@@ -437,10 +437,9 @@ export type AiSettings = {
   liteLlmModel: string;
   liteLlmBaseUrl: string;
   liteLlmManageServer: boolean;
-  openCodeBaseUrl: string;
-  openCodePort: number;
-  openCodeManageServer: boolean;
-  openCodeModel: string;
+  opencodeZenApiKey: string;
+  opencodeZenBaseUrl: string;
+  opencodeZenModel: string;
   githubCopilotModel: string;
   featureModels: Record<string, string>;
 };
@@ -451,7 +450,7 @@ export type AiFeatureSettings = {
   description: string;
   defaultOpenAiModel: string;
   defaultOpenRouterModel: string;
-  defaultOpenCodeModel: string;
+  defaultOpenCodeZenModel: string;
   defaultGithubCopilotModel: string;
   defaultLiteLlmModel: string;
   model: string;
@@ -708,6 +707,7 @@ export type ConstructProjectsApi = {
   litellmInstall(): Promise<boolean>;
   onLitellmLog(callback: (payload: { level: string; message: string }) => void): () => void;
   onLitellmStatusChange(callback: (payload: LitellmState) => void): () => void;
+  importOpencodeAuth(): Promise<string | null>;
 };
 
 export type LitellmStatus = "stopped" | "starting" | "running" | "stopping" | "error";

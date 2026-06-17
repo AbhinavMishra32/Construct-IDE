@@ -206,5 +206,7 @@ contextBridge.exposeInMainWorld("constructProjects", {
     };
     ipcRenderer.on("construct:litellm:status-change", listener);
     return () => ipcRenderer.off("construct:litellm:status-change", listener);
-  }
+  },
+  importOpencodeAuth: () =>
+    ipcRenderer.invoke("construct:settings:import-opencode-auth")
 });
