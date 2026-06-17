@@ -37,6 +37,7 @@ import { FileTree } from "./components/FileTree";
 import { NewProjectDialog } from "./components/NewProjectDialog";
 import { TerminalPanel, type TerminalPanelHandle } from "./components/TerminalPanel";
 import { Workspace } from "./components/Workspace";
+import { FlowWorkspace } from "./components/FlowWorkspace";
 import { LogsPanel } from "./components/LogsPanel";
 import { KnowledgeBaseSurface } from "./components/KnowledgeBaseSurface";
 import { SelectionExplanationController } from "./components/SelectionExplanationController";
@@ -48,7 +49,8 @@ import {
   setThemeSource,
   updateProject
 } from "./lib/bridge";
-import type { ProjectRecord, ProjectSummary, WorkspaceTreeNode } from "./types";
+import type { AnyProjectRecord, FlowProjectRecord, ProjectRecord, ProjectSummary, WorkspaceTreeNode } from "./types";
+import { isFlowProjectRecord } from "./types";
 import { currentBlock, currentBlockNumber, totalBlocks, nextPosition } from "./lib/runtime";
 
 type ConstructHistoryEntry = ShellHistoryEntry<
@@ -80,7 +82,7 @@ export default function ConstructApp() {
   ]);
 
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
-  const [activeProject, setActiveProject] = useState<ProjectRecord | null>(null);
+  const [activeProject, setActiveProject] = useState<AnyProjectRecord | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [rightPanel, setRightPanel] = useState<ReactNode | null>(null);
   const [sidebarKnowledgePanel, setSidebarKnowledgePanel] = useState<ReactNode | null>(null);
@@ -124,6 +126,7 @@ export default function ConstructApp() {
 
   const { furthestUnlockedStepIndex, furthestUnlockedBlockIndex } = useMemo(() => {
     if (!activeProject) return { furthestUnlockedStepIndex: 0, furthestUnlockedBlockIndex: 0 };
+    if (isFlowProjectRecord(activeProject)) return { furthestUnlockedStepIndex: 0, furthestUnlockedBlockIndex: 0 };
     const completedBlocks = activeProject.completedBlocks ?? {};
     const steps = activeProject.program.steps;
     for (let i = 0; i < steps.length; i++) {
@@ -141,6 +144,7 @@ export default function ConstructApp() {
 
   const canContinue = useMemo(() => {
     if (!activeProject) return false;
+    if (isFlowProjectRecord(activeProject)) return false;
     const block = currentBlock(activeProject);
     if (!block) return false;
 
@@ -163,6 +167,7 @@ export default function ConstructApp() {
 
   const isAtEnd = useMemo(() => {
     if (!activeProject) return true;
+    if (isFlowProjectRecord(activeProject)) return true;
     const steps = activeProject.program.steps;
     const lastStepIdx = steps.length - 1;
     const lastStep = steps[lastStepIdx];
@@ -173,20 +178,22 @@ export default function ConstructApp() {
   }, [activeProject]);
 
   async function persistProjectState(patch: Partial<ProjectRecord>) {
-    if (!activeProject) return;
+    if (!activeProject || isFlowProjectRecord(activeProject)) return;
     try {
       const updated = await updateProject({
         id: activeProject.id,
         patch
       });
-      setActiveProject(updated);
+      if (!isFlowProjectRecord(updated)) {
+        setActiveProject(updated);
+      }
     } catch (caught) {
       console.error("[construct] update project failed", { id: activeProject.id, patch, caught });
     }
   }
 
   async function handlePrevBlock() {
-    if (!activeProject) return;
+    if (!activeProject || isFlowProjectRecord(activeProject)) return;
     if (activeProject.currentBlockIndex > 0) {
       await persistProjectState({
         currentStepIndex: activeProject.currentStepIndex,
@@ -205,7 +212,7 @@ export default function ConstructApp() {
   }
 
   async function handleNextBlock() {
-    if (!activeProject) return;
+    if (!activeProject || isFlowProjectRecord(activeProject)) return;
     const currentStep = activeProject.program.steps[activeProject.currentStepIndex];
     const isAtFrontier =
       activeProject.currentStepIndex === furthestUnlockedStepIndex &&
@@ -245,7 +252,7 @@ export default function ConstructApp() {
   }
 
   async function handleReturnToActive() {
-    if (activeProject) {
+    if (activeProject && !isFlowProjectRecord(activeProject)) {
       await persistProjectState({
         currentStepIndex: furthestUnlockedStepIndex,
         currentBlockIndex: furthestUnlockedBlockIndex,
@@ -259,6 +266,10 @@ export default function ConstructApp() {
       history.push(entry);
     }
   }, [history]);
+
+  const handleFlowProjectChange = useCallback((project: FlowProjectRecord) => {
+    setActiveProject(project);
+  }, []);
 
   const runCommand = useCallback((command: string, cwd: string) => {
     setOpenBottomTabIds((current) => current.includes("terminal") ? current : [...current, "terminal"]);
@@ -364,7 +375,9 @@ export default function ConstructApp() {
     const active = resolveActiveTheme(theme);
     applyDocumentTheme(active);
     localStorage.setItem("construct.theme", theme);
-    void setThemeSource(theme);
+    void Promise.resolve().then(() => setThemeSource(theme)).catch(() => {
+      // The Vite renderer can be opened without Electron preload during local smoke checks.
+    });
   }, [theme]);
 
   useEffect(() => {
@@ -449,11 +462,12 @@ export default function ConstructApp() {
   }, [openBottomTabIds, activeBottomTabId]);
 
   useEffect(() => {
+    const runtimeInfo = window.construct?.getRuntimeInfo?.();
     document.documentElement.dataset.opalineWindowType = "electron";
     document.documentElement.dataset.windowType = "electron";
-    document.documentElement.dataset.opalineOs = window.construct.getRuntimeInfo().platform;
+    document.documentElement.dataset.opalineOs = runtimeInfo?.platform ?? "unknown";
     console.log("[construct] renderer boot", {
-      platform: window.construct.getRuntimeInfo().platform,
+      platform: runtimeInfo?.platform ?? "unknown",
       theme: getInitialTheme()
     });
 
@@ -501,11 +515,12 @@ export default function ConstructApp() {
       console.log("[construct] open project loaded", {
         id: project.id,
         title: project.title,
-        stepCount: project.program.steps.length,
-        fileCount: project.program.files.length,
+        kind: project.kind ?? "tape",
+        stepCount: isFlowProjectRecord(project) ? null : project.program.steps.length,
+        fileCount: isFlowProjectRecord(project) ? null : project.program.files.length,
         activeFilePath: nextProject.activeFilePath,
-        currentStepIndex: project.currentStepIndex,
-        currentBlockIndex: project.currentBlockIndex
+        currentStepIndex: isFlowProjectRecord(project) ? null : project.currentStepIndex,
+        currentBlockIndex: isFlowProjectRecord(project) ? null : project.currentBlockIndex
       });
       setSettingsSurface(null);
       setActiveProject(nextProject);
@@ -620,9 +635,20 @@ export default function ConstructApp() {
       setKnowledgeBaseOpen(false);
       void openProject(projectId);
     }} />
+  ) : activeProject && isFlowProjectRecord(activeProject) ? (
+      <FlowWorkspace
+        project={activeProject}
+        theme={theme}
+        onGuidePanelChange={setRightPanel}
+        onProjectChange={handleFlowProjectChange}
+        onRunCommand={runCommand}
+        onFileOpened={handleFileOpened}
+        onTreeChange={handleWorkspaceTreeChange}
+        onSavingChange={setIsSaving}
+      />
   ) : activeProject ? (
       <Workspace
-        project={activeProject}
+        project={activeProject as ProjectRecord}
         theme={theme}
         onGuidePanelChange={setRightPanel}
         onKnowledgePanelChange={setSidebarKnowledgePanel}
@@ -727,9 +753,33 @@ export default function ConstructApp() {
           headerActions={
             activeProject && !settingsSurface
               ? (state) => {
+                  if (isFlowProjectRecord(activeProject)) {
+                    return (
+                      <>
+                        <SavingIndicator isSaving={isSaving} />
+                        <div className="flex items-center gap-1" aria-label="Workspace panels">
+                          <AppShellHeaderToolButton
+                            data-active={state.isRightPanelOpen ? "true" : "false"}
+                            onClick={state.toggleRightPanel}
+                            aria-label="Toggle Flow agent"
+                          >
+                            <MessageCircleIcon size={15} />
+                          </AppShellHeaderToolButton>
+                          <AppShellHeaderToolButton
+                            data-active={state.isBottomPanelOpen ? "true" : "false"}
+                            onClick={state.toggleBottomPanel}
+                            aria-label="Toggle terminal"
+                          >
+                            <HeaderBottomPanelIcon open={state.isBottomPanelOpen} />
+                          </AppShellHeaderToolButton>
+                        </div>
+                      </>
+                    );
+                  }
+                  const tapeProject = activeProject;
                   const isAtFrontier =
-                    activeProject.currentStepIndex === furthestUnlockedStepIndex &&
-                    activeProject.currentBlockIndex === furthestUnlockedBlockIndex;
+                    tapeProject.currentStepIndex === furthestUnlockedStepIndex &&
+                    tapeProject.currentBlockIndex === furthestUnlockedBlockIndex;
                   return (
                     <>
                       <div
@@ -743,7 +793,7 @@ export default function ConstructApp() {
                       >
                         <AppShellChromeButton
                           onClick={(e) => { e.stopPropagation(); void handlePrevBlock(); }}
-                          disabled={activeProject.currentStepIndex === 0 && activeProject.currentBlockIndex === 0}
+                          disabled={tapeProject.currentStepIndex === 0 && tapeProject.currentBlockIndex === 0}
                           title="Previous Panel"
                         >
                           <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 14, height: 14 }}>
@@ -753,7 +803,7 @@ export default function ConstructApp() {
                         </AppShellChromeButton>
 
                         <Badge variant="secondary">
-                          {currentBlockNumber(activeProject)}/{totalBlocks(activeProject.program)}
+                          {currentBlockNumber(tapeProject)}/{totalBlocks(tapeProject.program)}
                         </Badge>
 
                         {!isAtFrontier && (
@@ -973,7 +1023,7 @@ export default function ConstructApp() {
               />
             ) : null}
         />
-        {activeProject && !settingsSurface ? (
+        {activeProject && !settingsSurface && !isFlowProjectRecord(activeProject) ? (
           <SelectionExplanationController
             project={activeProject}
             theme={theme}
@@ -998,13 +1048,17 @@ export default function ConstructApp() {
             const withoutProject = current.filter((item) => item.id !== project.id);
             return [
               {
+                kind: project.kind ?? "tape",
                 id: project.id,
                 title: project.title,
                 description: project.description,
                 progress: project.progress,
                 lastOpenedAt: project.lastOpenedAt,
                 sourcePath: project.sourcePath,
-                workspacePath: project.workspacePath
+                workspacePath: project.workspacePath,
+                flowGoal: isFlowProjectRecord(project) ? project.flow.goal : undefined,
+                flowSessionCount: isFlowProjectRecord(project) ? project.flow.sessions.length : undefined,
+                flowLastActivityAt: isFlowProjectRecord(project) ? project.flow.updatedAt : undefined
               },
               ...withoutProject
             ];
