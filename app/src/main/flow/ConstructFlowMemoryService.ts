@@ -2,7 +2,7 @@ import path from "node:path";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 
-import type { FlowMemoryFileName } from "../../shared/constructFlow";
+import type { ConstructFlowMemoryPatchResult, FlowMemoryFileName } from "../../shared/constructFlow";
 import type { StoredFlowProject } from "../projects/ConstructProjectTypes";
 import { ConstructProjectWorkspaceService } from "../projects/ConstructProjectWorkspaceService";
 
@@ -21,6 +21,14 @@ export type FlowMemoryReadResult = {
   content: string;
   exists: boolean;
   updatedAt: string | null;
+};
+
+export type FlowMemoryPatchInput = {
+  file: FlowMemoryFileName;
+  mode: "append" | "prepend" | "replace";
+  content: string;
+  reason: string;
+  find?: string;
 };
 
 export class ConstructFlowMemoryService {
@@ -80,6 +88,60 @@ export class ConstructFlowMemoryService {
     return this.read(project, updates.map((update) => update.file));
   }
 
+  async updateWithDiff(
+    project: StoredFlowProject,
+    updates: Array<{ file: FlowMemoryFileName; content: string; reason?: string }>
+  ): Promise<ConstructFlowMemoryPatchResult[]> {
+    await mkdir(this.workspace.safeProjectPath(project, FLOW_MEMORY_DIRECTORY), { recursive: true });
+
+    const results: ConstructFlowMemoryPatchResult[] = [];
+    for (const update of updates) {
+      const target = this.memoryFilePath(project, update.file);
+      const before = existsSync(target) ? await readFile(target, "utf8") : "";
+      const after = normalizeMarkdown(update.content);
+      await writeFile(target, after, "utf8");
+      results.push({
+        file: update.file,
+        path: path.posix.join(FLOW_MEMORY_DIRECTORY, update.file),
+        reason: update.reason ?? "Saved the full Flow Memory file.",
+        mode: "replace",
+        diff: simpleUnifiedDiff(update.file, before, after),
+        updatedAt: new Date().toISOString(),
+        addedText: after
+      });
+    }
+
+    return results;
+  }
+
+  async patch(
+    project: StoredFlowProject,
+    patches: FlowMemoryPatchInput[]
+  ): Promise<ConstructFlowMemoryPatchResult[]> {
+    await mkdir(this.workspace.safeProjectPath(project, FLOW_MEMORY_DIRECTORY), { recursive: true });
+
+    const results: ConstructFlowMemoryPatchResult[] = [];
+    for (const patch of patches) {
+      const target = this.memoryFilePath(project, patch.file);
+      const before = existsSync(target) ? await readFile(target, "utf8") : "";
+      const after = applyMemoryPatch(before, patch);
+      await writeFile(target, normalizeMarkdown(after), "utf8");
+      const updatedAt = new Date().toISOString();
+      results.push({
+        file: patch.file,
+        path: path.posix.join(FLOW_MEMORY_DIRECTORY, patch.file),
+        reason: patch.reason,
+        mode: patch.mode,
+        diff: simpleUnifiedDiff(patch.file, before, normalizeMarkdown(after)),
+        updatedAt,
+        addedText: patch.content,
+        removedText: patch.mode === "replace" ? patch.find : undefined
+      });
+    }
+
+    return results;
+  }
+
   memoryFilePath(project: StoredFlowProject, file: FlowMemoryFileName): string {
     if (!(FLOW_MEMORY_FILES as readonly string[]).includes(file)) {
       throw new Error(`Unsupported Flow Memory file: ${file}`);
@@ -91,6 +153,61 @@ export class ConstructFlowMemoryService {
 function normalizeMarkdown(value: string): string {
   const trimmedRight = String(value ?? "").replace(/[ \t]+\n/g, "\n").trimEnd();
   return `${trimmedRight}\n`;
+}
+
+function applyMemoryPatch(before: string, patch: FlowMemoryPatchInput): string {
+  const content = normalizeMarkdown(patch.content).trimEnd();
+  if (!content.trim()) {
+    throw new Error("Flow Memory patch content cannot be empty.");
+  }
+
+  if (patch.mode === "append") {
+    return before.trimEnd() ? `${before.trimEnd()}\n\n${content}\n` : `${content}\n`;
+  }
+
+  if (patch.mode === "prepend") {
+    return before.trim() ? `${content}\n\n${before.trimStart()}` : `${content}\n`;
+  }
+
+  const find = patch.find ?? "";
+  if (!find) {
+    throw new Error("Flow Memory replace patches require exact find text.");
+  }
+  const first = before.indexOf(find);
+  if (first < 0) {
+    throw new Error(`Could not find exact memory text in ${patch.file}.`);
+  }
+  if (before.indexOf(find, first + find.length) >= 0) {
+    throw new Error(`Exact memory text appears more than once in ${patch.file}; use a narrower find string.`);
+  }
+  return `${before.slice(0, first)}${content}${before.slice(first + find.length)}`;
+}
+
+function simpleUnifiedDiff(file: string, before: string, after: string): string {
+  const beforeLines = before.split(/\r?\n/);
+  const afterLines = after.split(/\r?\n/);
+  let start = 0;
+  while (start < beforeLines.length && start < afterLines.length && beforeLines[start] === afterLines[start]) {
+    start += 1;
+  }
+  let beforeEnd = beforeLines.length - 1;
+  let afterEnd = afterLines.length - 1;
+  while (beforeEnd >= start && afterEnd >= start && beforeLines[beforeEnd] === afterLines[afterEnd]) {
+    beforeEnd -= 1;
+    afterEnd -= 1;
+  }
+  const contextStart = Math.max(0, start - 3);
+  const beforeContextEnd = Math.min(beforeLines.length - 1, beforeEnd + 3);
+  const afterContextEnd = Math.min(afterLines.length - 1, afterEnd + 3);
+  const removed = beforeLines.slice(contextStart, Math.max(contextStart, beforeContextEnd + 1));
+  const added = afterLines.slice(contextStart, Math.max(contextStart, afterContextEnd + 1));
+  return [
+    `--- ${file}`,
+    `+++ ${file}`,
+    `@@ ${contextStart + 1} @@`,
+    ...removed.map((line) => `-${line}`),
+    ...added.map((line) => `+${line}`)
+  ].join("\n");
 }
 
 function starterContent(project: StoredFlowProject, file: FlowMemoryFileName): string {

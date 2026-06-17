@@ -75,6 +75,7 @@ export function ConstructAiSettingsSection({
   onOpenRouterBaseUrlChange,
   onLiteLlmApiKeyChange,
   onLiteLlmBaseUrlChange,
+  onTavilyApiKeyChange,
   onLiteLlmModelChange,
   onOpenRouterModelChange,
   onOpenAiModelChange,
@@ -104,6 +105,7 @@ export function ConstructAiSettingsSection({
   onOpenRouterBaseUrlChange: (baseUrl: string) => void;
   onLiteLlmApiKeyChange: (apiKey: string) => void;
   onLiteLlmBaseUrlChange: (baseUrl: string) => void;
+  onTavilyApiKeyChange: (apiKey: string) => void;
   onLiteLlmModelChange: (model: string) => void;
   onOpenRouterModelChange: (model: string) => void;
   onOpenAiModelChange: (model: string) => void;
@@ -351,6 +353,15 @@ export function ConstructAiSettingsSection({
             </div>
           </SettingsRow>
         ) : null}
+
+        <SettingsRow title="Tavily API key" description="Used by the Flow Research Agent for bounded web research. Stored locally by Construct.">
+          <Input
+            type="password"
+            value={settings.tavilyApiKey}
+            placeholder="tvly-..."
+            onChange={(event) => onTavilyApiKeyChange(event.target.value)}
+          />
+        </SettingsRow>
 
         {/* Model */}
         <SettingsRow

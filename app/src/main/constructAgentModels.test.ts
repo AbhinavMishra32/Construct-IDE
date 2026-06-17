@@ -24,6 +24,7 @@ const settings: StoredAiSettings = {
   opencodeZenBaseUrl: "https://opencode.ai/zen/v1",
   opencodeZenModel: "gpt-5.1-codex",
   githubCopilotModel: "github_copilot/gpt-4",
+  tavilyApiKey: "",
   featureModels: {
     "construct-interact": "deepseek/deepseek-v4-flash"
   }

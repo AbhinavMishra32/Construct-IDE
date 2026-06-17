@@ -65,7 +65,7 @@ import {
   updateProjectTape
 } from "./lib/bridge";
 import { parseConstructSource } from "./lib/parser";
-import { showProviderUpdateToast } from "./components/RequestNotifications";
+import { showProviderUpdateToast } from "./components/ProviderUpdateToast";
 import type {
   AiFeatureSettings,
   AiSettings,
@@ -95,6 +95,7 @@ const defaultAiSettings: AiSettings = {
   opencodeZenBaseUrl: "https://opencode.ai/zen/v1",
   opencodeZenModel: "gpt-5.1-codex",
   githubCopilotModel: "github_copilot/gpt-4",
+  tavilyApiKey: "",
   featureModels: {}
 };
 
@@ -1109,6 +1110,7 @@ export function ConstructSettingsSurface({
         onLiteLlmBaseUrlChange={(liteLlmBaseUrl: string) => setAiSettingsDraft((current) => ({ ...current, liteLlmBaseUrl }))}
         onOpencodeZenApiKeyChange={(opencodeZenApiKey: string) => setAiSettingsDraft((current) => ({ ...current, opencodeZenApiKey }))}
         onOpencodeZenBaseUrlChange={(opencodeZenBaseUrl: string) => setAiSettingsDraft((current) => ({ ...current, opencodeZenBaseUrl }))}
+        onTavilyApiKeyChange={(tavilyApiKey: string) => setAiSettingsDraft((current) => ({ ...current, tavilyApiKey }))}
         onOpenRouterModelChange={updateGlobalModel}
         onOpenAiModelChange={updateGlobalModel}
         onOpencodeZenModelChange={updateGlobalModel}

@@ -23,6 +23,7 @@ export type StoredAiSettings = {
   opencodeZenBaseUrl: string;
   opencodeZenModel: string;
   githubCopilotModel: string;
+  tavilyApiKey: string;
   featureModels: Record<string, string>;
 };
 
@@ -149,6 +150,7 @@ export function normalizeSettings(
       opencodeZenBaseUrl: normalizeBaseUrl(inputAi.opencodeZenBaseUrl, defaults.ai.opencodeZenBaseUrl),
       opencodeZenModel: normalizeString(inputAi.opencodeZenModel, defaults.ai.opencodeZenModel),
       githubCopilotModel: normalizeString(inputAi.githubCopilotModel, defaults.ai.githubCopilotModel),
+      tavilyApiKey: normalizeString(inputAi.tavilyApiKey, ""),
       featureModels: normalizeFeatureModels(inputAi.featureModels)
     },
     observability: {
@@ -179,6 +181,7 @@ function defaultAiSettings(): StoredAiSettings {
     opencodeZenBaseUrl: DEFAULT_OPENCODE_ZEN_BASE_URL,
     opencodeZenModel: "gpt-5.1-codex",
     githubCopilotModel: "github_copilot/gpt-4",
+    tavilyApiKey: "",
     featureModels: {}
   };
 }

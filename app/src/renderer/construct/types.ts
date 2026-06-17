@@ -441,6 +441,7 @@ export type AiSettings = {
   opencodeZenBaseUrl: string;
   opencodeZenModel: string;
   githubCopilotModel: string;
+  tavilyApiKey: string;
   featureModels: Record<string, string>;
 };
 
@@ -641,7 +642,7 @@ export type ConstructProjectsApi = {
   runConstructFlowResearch(input: { projectId: string }): Promise<ConstructFlowAgentResult>;
   readFlowMemory(input: { projectId: string; files?: FlowMemoryFileName[] }): Promise<ConstructFlowMemoryRead[]>;
   updateFlowMemory(input: { projectId: string; updates: Array<{ file: FlowMemoryFileName; content: string }> }): Promise<ConstructFlowMemoryRead[]>;
-  submitFlowTask(input: { projectId: string; taskId: string; note?: string }): Promise<ConstructFlowTaskSubmission>;
+  submitFlowTask(input: { projectId: string; taskId: string; subtaskId?: string; note?: string }): Promise<ConstructFlowTaskSubmission>;
   onConstructFlowSessionEvent(callback: (event: ConstructFlowSessionEvent) => void): () => void;
   reviewConstructAuthoring(input: {
     spec: string;
