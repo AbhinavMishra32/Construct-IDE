@@ -1,4 +1,4 @@
-export type AgentLogChannel = "verifier" | "authoring-review" | "selection-explain" | "interact" | "code-ghost";
+export type AgentLogChannel = "verifier" | "authoring-review" | "selection-explain" | "interact" | "flow" | "code-ghost";
 export type AgentLogLevel = "info" | "warn" | "error" | "debug";
 
 export type AgentStructuredLogPayload = {

@@ -9,7 +9,8 @@ import {
   selectLearnerFacingReply
 } from "../constructInteractReply";
 import { ConstructObservabilityService } from "../observability/ConstructObservabilityService";
-import type { StoredProject } from "../projects/ConstructProjectTypes";
+import { isTapeProject, type StoredProject, type StoredTapeProject } from "../projects/ConstructProjectTypes";
+import type { ConstructProjectWorkspaceService } from "../projects/ConstructProjectWorkspaceService";
 import { supportsGeneratedLiveSteps } from "../../shared/tapeFeatures";
 import type {
   ConstructAgentRunEvent,
@@ -19,6 +20,7 @@ import type {
   ConstructInteractRuntimeInput,
   ConstructInteractSessionEvent,
   ConstructInteractSession,
+  ConstructInteractToolCallRecord,
   GeneratedLiveStepValidationRecord,
   LearningStatePatch
 } from "../../shared/constructLearning";
@@ -38,6 +40,7 @@ export class ConstructInteractService {
   constructor(private readonly options: {
     learningStore: () => ConstructLearningStore;
     latestTerminalOutput: (projectId: string) => string;
+    workspace: ConstructProjectWorkspaceService;
     logs: AgentLogService;
     observability?: ConstructObservabilityService;
   }) {}
@@ -47,6 +50,10 @@ export class ConstructInteractService {
     input: Omit<ConstructInteractRuntimeInput, "learningState">,
     onSessionEvent?: ConstructInteractSessionEventSink
   ): Promise<ConstructInteractEvaluation> {
+    if (!isTapeProject(project)) {
+      throw new Error("Construct Interact is available for tape projects. Use Construct Flow for Flow projects.");
+    }
+
     return this.options.observability?.traceAgentOperation(
       "construct.interact.evaluate",
       {
@@ -60,7 +67,7 @@ export class ConstructInteractService {
   }
 
   private async runEvaluate(
-    project: StoredProject,
+    project: StoredTapeProject,
     input: Omit<ConstructInteractRuntimeInput, "learningState">,
     onSessionEvent?: ConstructInteractSessionEventSink
   ): Promise<ConstructInteractEvaluation> {
@@ -178,6 +185,7 @@ export class ConstructInteractService {
       sourceStepId,
       sourceRunId,
       latestTerminalOutput: this.options.latestTerminalOutput(input.projectId),
+      workspace: this.options.workspace,
       onToolCallStart: (toolCall) => {
         this.logStructured("Agent tool call started", toolCall, "debug");
       },
@@ -284,6 +292,7 @@ export class ConstructInteractService {
     if (runError || mode === "general") {
       result.shouldAdvance = false;
     }
+    const actionsFromTools = extractActionsFromToolCalls(toolCalls);
 
     const validationContext = {
       projectId: input.projectId,
@@ -304,7 +313,7 @@ export class ConstructInteractService {
       validationContext
     );
     const acceptedLiveSteps = liveStepValidation.steps;
-    let actions = this.normalizeActions(result.actions ?? [], acceptedLiveSteps.map((step) => step.id), liveStepValidation.validation);
+    let actions = this.normalizeActions([...actionsFromTools, ...(result.actions ?? [])], acceptedLiveSteps.map((step) => step.id), liveStepValidation.validation);
     if (runError) {
       actions = [];
     } else if (result.requestedOutcome === "create-dynamic-steps" && acceptedLiveSteps.length === 0) {
@@ -491,6 +500,28 @@ function applyPartialResultToSession(
   if (Array.isArray(partial.actions)) {
     session.actions = partial.actions;
   }
+}
+
+function extractActionsFromToolCalls(toolCalls: ConstructInteractToolCallRecord[]): ConstructInteractAction[] {
+  const actions: ConstructInteractAction[] = [];
+  for (const toolCall of toolCalls) {
+    if (!toolCall.outputPreview) continue;
+    try {
+      const parsed = JSON.parse(toolCall.outputPreview) as { action?: ConstructInteractAction };
+      if (parsed.action) {
+        actions.push(parsed.action);
+      }
+    } catch {
+      // Tool output previews are best-effort debug strings; non-JSON previews simply do not carry UI actions.
+    }
+  }
+  const seen = new Set<string>();
+  return actions.filter((action) => {
+    const key = JSON.stringify(action);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function findMatchingAgentEventIndex(
