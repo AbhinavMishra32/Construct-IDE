@@ -37,6 +37,26 @@ export type ConstructFlowQuestionResponse = {
 
 export type ConstructFlowSessionOrigin = "user" | "system" | "question-response" | "task-submission";
 
+export type ConstructFlowPathNodeStatus = "planned" | "active" | "completed" | "blocked" | "revising";
+
+export type ConstructFlowPathNode = {
+  id: string;
+  title: string;
+  summary: string;
+  status: ConstructFlowPathNodeStatus;
+  order: number;
+  kind?: "profile" | "foundation" | "build" | "connect" | "polish" | "ship" | "custom";
+  learnerLevel?: "new" | "beginner" | "comfortable" | "advanced" | "unknown";
+  concepts?: string[];
+  taskIds?: string[];
+  entryCriteria?: string[];
+  exitCriteria?: string[];
+  researchNotes?: string[];
+  createdAt: string;
+  updatedAt: string;
+  completedAt?: string;
+};
+
 export type ConstructFlowAction =
   | {
       type: "open-concept";
@@ -92,6 +112,7 @@ export type ConstructFlowPracticeTask = {
   id: string;
   projectId: string;
   sessionId: string;
+  pathNodeId?: string;
   title: string;
   prompt: string;
   focus?: {
@@ -109,6 +130,12 @@ export type ConstructFlowPracticeTask = {
   conceptIds?: string[];
   successCriteria?: string[];
   subtasks?: ConstructFlowPracticeSubtask[];
+  messages?: Array<{
+    id: string;
+    role: ConstructFlowMessageRole;
+    content: string;
+    createdAt: string;
+  }>;
   preparedFiles?: Array<{
     path: string;
     mode: "create" | "overwrite" | "replace";
@@ -177,6 +204,10 @@ export type ConstructFlowAgentInput = {
   message: string;
   threadId?: string;
   taskSubmission?: ConstructFlowTaskSubmission;
+  taskMessage?: {
+    taskId: string;
+    pathNodeId?: string;
+  };
   questionResponse?: ConstructFlowQuestionResponse;
   startReason?: "new-project";
   quickAction?: "continue" | "tried" | "stuck" | "run-tests" | "explain-selection" | "checkpoint";

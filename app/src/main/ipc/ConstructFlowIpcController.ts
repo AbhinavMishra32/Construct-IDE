@@ -61,6 +61,10 @@ export class ConstructFlowIpcController {
           threadId: randomUUID(),
           researchEnabled: input?.researchFirst !== false,
           researchCompletedAt: null,
+          pathNodes: [],
+          currentPathNodeId: null,
+          pathCreatedAt: null,
+          pathUpdatedAt: null,
           sessions: [],
           createdAt: now,
           updatedAt: now

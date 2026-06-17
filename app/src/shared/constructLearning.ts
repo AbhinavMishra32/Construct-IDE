@@ -6,6 +6,10 @@ export type ConceptUnderstanding = {
   projectIds: string[];
 };
 
+export const CONSTRUCT_CONCEPT_LANGUAGES = ["swift", "python", "typescript", "javascript", "cpp", "unknown"] as const;
+
+export type ConstructConceptLanguage = typeof CONSTRUCT_CONCEPT_LANGUAGES[number];
+
 export type ConstructInteractMode = "lesson-check" | "general";
 
 export type ConstructInteractRunStatus = "queued" | "running" | "completed" | "error";
@@ -332,6 +336,8 @@ export type KnowledgeBaseRecord = {
   sourceProjectTitle: string;
   title: string;
   kind: string;
+  language?: ConstructConceptLanguage;
+  technology?: string;
   tags: string[];
   summary: string;
   why: string;

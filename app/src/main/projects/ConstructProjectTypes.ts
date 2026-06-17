@@ -1,5 +1,5 @@
 import type { VerificationResult } from "../constructVerifierAgent";
-import type { ConstructFlowSession, FlowMemoryFileName } from "../../shared/constructFlow";
+import type { ConstructFlowPathNode, ConstructFlowSession, FlowMemoryFileName } from "../../shared/constructFlow";
 
 export type ConstructProjectKind = "tape" | "flow";
 
@@ -77,6 +77,10 @@ export type StoredFlowProject = StoredProjectBase & {
     threadId: string;
     researchEnabled: boolean;
     researchCompletedAt?: string | null;
+    pathNodes?: ConstructFlowPathNode[];
+    currentPathNodeId?: string | null;
+    pathCreatedAt?: string | null;
+    pathUpdatedAt?: string | null;
     sessions: ConstructFlowSession[];
     createdAt: string;
     updatedAt: string;

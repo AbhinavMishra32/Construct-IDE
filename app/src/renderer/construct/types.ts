@@ -1,4 +1,5 @@
 import type {
+  ConstructConceptLanguage,
   ConceptUnderstanding,
   ConstructInteractResult,
   ConstructInteractRuntimeInput,
@@ -143,6 +144,8 @@ export type ConceptCard = {
   id: string;
   title: string;
   kind: string;
+  language?: ConstructConceptLanguage;
+  technology?: string;
   tags: string[];
   summary: string;
   why: string;
@@ -399,6 +402,10 @@ export type FlowProjectRecord = ProjectSummary & {
     threadId: string;
     researchEnabled: boolean;
     researchCompletedAt?: string | null;
+    pathNodes?: import("../../shared/constructFlow").ConstructFlowPathNode[];
+    currentPathNodeId?: string | null;
+    pathCreatedAt?: string | null;
+    pathUpdatedAt?: string | null;
     sessions: import("../../shared/constructFlow").ConstructFlowSession[];
     createdAt: string;
     updatedAt: string;

@@ -64,7 +64,11 @@ export class ConstructProjectWorkspaceService {
 
   calculateProgress(project: StoredProject): number {
     if (isFlowProject(project)) {
-      return project.completedAt ? 100 : project.progress ?? 0;
+      if (project.completedAt) return 100;
+      const nodes = project.flow.pathNodes ?? [];
+      if (!nodes.length) return project.progress ?? 0;
+      const completed = nodes.filter((node) => node.status === "completed").length;
+      return Math.min(100, Math.round((completed / nodes.length) * 100));
     }
 
     const blockCount = project.program.steps.reduce(
