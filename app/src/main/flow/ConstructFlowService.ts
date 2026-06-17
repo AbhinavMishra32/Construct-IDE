@@ -28,7 +28,8 @@ import type {
   ConstructFlowTaskSubmission,
   ConstructFlowToolCallRecord
 } from "../../shared/constructFlow";
-import type { ConstructAgentRunEvent } from "../../shared/constructLearning";
+import type { ConstructAgentRunEvent, KnowledgeBaseRecord } from "../../shared/constructLearning";
+import { ConstructLearningStore } from "../constructLearningStore";
 
 const ignoredNames = new Set([".git", ".construct", "node_modules", "dist", "build", ".next", "coverage"]);
 const maxBaselineFileBytes = 120_000;
@@ -55,6 +56,7 @@ export class ConstructFlowService {
     flowMemory: ConstructFlowMemoryService;
     latestTerminalOutput: (projectId: string) => string;
     logs: AgentLogService;
+    learningStore: () => ConstructLearningStore;
   }) {}
 
   async runMainAgent(
@@ -71,6 +73,15 @@ export class ConstructFlowService {
       session.durationMs = Date.now() - startedAt;
       onSessionEvent?.({ type, projectId: project.id, session: cloneSession(session), result });
     };
+
+    if (input.taskSubmission) {
+      const task = project.flow.sessions
+        .flatMap((s) => s.practiceTasks)
+        .find((t) => t.id === input.taskSubmission?.taskId);
+      if (task) {
+        task.submissionSessionId = session.id;
+      }
+    }
 
     project.flow.sessions.push(session);
     trimSessions(project);
@@ -95,10 +106,20 @@ export class ConstructFlowService {
       }
     });
 
+    const store = this.options.learningStore();
+    const learningState = await store.getState();
+    const concepts = Object.values(learningState.knowledgeBase.concepts).filter((c) => c.sourceProjectId === project.id);
+
     const practiceTask = this.createPracticeTaskTool(project, session, publish);
+    const addConcept = this.createAddConceptTool(project, publish);
+    const modifyConcept = this.createModifyConceptTool(project, publish);
+    const removeConcept = this.createRemoveConceptTool(project, publish);
     const tools: ToolsInput = {
       ...protocol.tools,
-      "practice-task": practiceTask
+      "practice-task": practiceTask,
+      "add-concept": addConcept,
+      "modify-concept": modifyConcept,
+      "remove-concept": removeConcept
     };
 
     let reply: string;
@@ -110,7 +131,7 @@ export class ConstructFlowService {
         name: "Construct Flow",
         purpose: "Construct Flow mentor agent",
         instructions: FLOW_MAIN_AGENT_PROMPT,
-        prompt: buildMainPrompt(project, input, memory),
+        prompt: buildMainPrompt(project, input, memory, concepts),
         tools,
         maxSteps: 16,
         maxRetries: 2,
@@ -249,7 +270,7 @@ export class ConstructFlowService {
       throw new Error(`Unknown Flow practice task: ${taskId}`);
     }
     const baseline = task.baseline;
-    const current = await captureBaseline(project, this.options.workspace);
+    const current = await captureBaseline(project, this.options.workspace, task.taskFiles);
     const submission = diffBaseline(baseline, current, taskId, note);
     task.status = "submitted";
     task.submittedAt = submission.submittedAt;
@@ -290,7 +311,7 @@ export class ConstructFlowService {
   ): ToolsInput[string] {
     return createTool({
       id: "practice-task",
-      description: "Create a real learner coding task in the workspace. Optionally prepare a tiny scaffold, capture a baseline, focus code, and wait for the learner to submit.",
+      description: "Create a real learner coding task in the workspace. Prepare files, capture a baseline of relevant task files, focus code, and wait for the learner to submit.",
       inputSchema: z.object({
         title: z.string().min(1).max(120),
         prompt: z.string().min(1).max(2_000),
@@ -299,18 +320,20 @@ export class ConstructFlowService {
           line: z.number().int().positive().optional(),
           endLine: z.number().int().positive().optional()
         }).optional(),
-        scaffold: z.object({
+        taskFiles: z.array(z.string().min(1)).min(1).describe("List of files relevant to this task for scoped diffing"),
+        preparations: z.array(z.object({
           path: z.string().min(1),
-          find: z.string().min(1).optional(),
-          replace: z.string().optional(),
-          append: z.string().optional()
-        }).optional()
+          content: z.string(),
+          mode: z.enum(["create", "overwrite", "replace"]),
+          find: z.string().optional()
+        })).optional().describe("Files to prepare/scaffold for the learner"),
+        conceptIds: z.array(z.string().min(1)).optional().describe("Concept IDs related to this task")
       }).strict(),
       execute: async (toolInput) => {
-        if (toolInput.scaffold) {
-          await applyTaskScaffold(project, this.options.workspace, toolInput.scaffold);
+        if (toolInput.preparations && toolInput.preparations.length > 0) {
+          await applyTaskPreparations(project, this.options.workspace, toolInput.preparations);
         }
-        const baseline = await captureBaseline(project, this.options.workspace);
+        const baseline = await captureBaseline(project, this.options.workspace, toolInput.taskFiles);
         const task: ConstructFlowPracticeTask = {
           id: randomUUID(),
           projectId: project.id,
@@ -320,7 +343,9 @@ export class ConstructFlowService {
           focus: toolInput.focus,
           status: "waiting",
           baseline,
-          createdAt: new Date().toISOString()
+          createdAt: new Date().toISOString(),
+          taskFiles: toolInput.taskFiles,
+          conceptIds: toolInput.conceptIds
         };
         session.practiceTasks.push(task);
         publish("updated");
@@ -329,40 +354,219 @@ export class ConstructFlowService {
           taskId: task.id,
           title: task.title,
           prompt: task.prompt,
-          focus: task.focus
+          focus: task.focus,
+          taskFiles: task.taskFiles,
+          conceptIds: task.conceptIds
+        };
+      }
+    });
+  }
+
+  private createAddConceptTool(
+    project: StoredFlowProject,
+    publish: (type: ConstructFlowSessionEvent["type"]) => void
+  ): ToolsInput[string] {
+    return createTool({
+      id: "add-concept",
+      description: "Create a new concept with a dot-notated hierarchical ID, title, and content. Parent concepts will be auto-created if they do not exist.",
+      inputSchema: z.object({
+        id: z.string().min(1).describe("The dot-notated hierarchical ID, e.g., 'typescript.syntax.interface'"),
+        title: z.string().min(1).describe("Short user-friendly title of the concept"),
+        content: z.string().min(1).describe("Rich, detailed free-form markdown explanation of the concept"),
+        examples: z.array(z.string()).optional().describe("Code examples illustrating the concept"),
+        relatedConcepts: z.array(z.string()).optional().describe("IDs of related concepts"),
+        confidence: z.enum(["unknown", "weak", "emerging", "strong"]).optional().default("unknown").describe("Learner's current confidence level with this concept")
+      }).strict(),
+      execute: async (toolInput) => {
+        const now = new Date().toISOString();
+        const store = this.options.learningStore();
+        const state = await store.getState();
+        const existingConcepts = Object.values(state.knowledgeBase.concepts).filter(
+          (c) => c.sourceProjectId === project.id
+        );
+
+        const parts = toolInput.id.split(".");
+        for (let i = 1; i < parts.length; i++) {
+          const parentId = parts.slice(0, i).join(".");
+          const parentExists = existingConcepts.some((c) => c.id === parentId);
+          if (!parentExists) {
+            const parentParts = parentId.split(".");
+            const parentTitle = parentParts[parentParts.length - 1];
+            const friendlyParentTitle = parentTitle.charAt(0).toUpperCase() + parentTitle.slice(1);
+            const parentStub: KnowledgeBaseRecord = {
+              id: parentId,
+              sourceProjectId: project.id,
+              sourceProjectTitle: project.title,
+              title: friendlyParentTitle,
+              kind: "concept",
+              tags: [],
+              summary: `Parent concept stub for ${parentId}`,
+              why: "",
+              examples: [],
+              docs: [],
+              content: "",
+              confidence: "unknown",
+              parentId: parentParts.length > 1 ? parentParts.slice(0, -1).join(".") : null,
+              savedAt: now,
+              openCount: 0,
+              usedInRecall: false,
+              lastModifiedAt: now
+            };
+            await store.saveKnowledgeConcept(parentStub);
+          }
+        }
+
+        const parentId = parts.length > 1 ? parts.slice(0, -1).join(".") : null;
+        const newRecord: KnowledgeBaseRecord = {
+          id: toolInput.id,
+          sourceProjectId: project.id,
+          sourceProjectTitle: project.title,
+          title: toolInput.title,
+          kind: "concept",
+          tags: parts.slice(0, -1),
+          summary: toolInput.content.split("\n")[0] || toolInput.title,
+          why: "",
+          example: toolInput.examples?.[0] || "",
+          examples: toolInput.examples ?? [],
+          docs: [],
+          content: toolInput.content,
+          confidence: toolInput.confidence,
+          relatedConcepts: toolInput.relatedConcepts ?? [],
+          parentId,
+          savedAt: now,
+          openCount: 0,
+          usedInRecall: false,
+          lastModifiedAt: now
+        };
+
+        await store.saveKnowledgeConcept(newRecord);
+        publish("updated");
+
+        return {
+          created: true,
+          concept: newRecord
+        };
+      }
+    });
+  }
+
+  private createModifyConceptTool(
+    project: StoredFlowProject,
+    publish: (type: ConstructFlowSessionEvent["type"]) => void
+  ): ToolsInput[string] {
+    return createTool({
+      id: "modify-concept",
+      description: "Modify an existing concept. Only the fields provided in the patch will be updated.",
+      inputSchema: z.object({
+        id: z.string().min(1).describe("The ID of the concept to modify"),
+        title: z.string().optional().describe("New title"),
+        content: z.string().optional().describe("New markdown explanation"),
+        examples: z.array(z.string()).optional().describe("New code examples"),
+        relatedConcepts: z.array(z.string()).optional().describe("New related concepts"),
+        confidence: z.enum(["unknown", "weak", "emerging", "strong"]).optional().describe("Updated learner confidence level")
+      }).strict(),
+      execute: async (toolInput) => {
+        const now = new Date().toISOString();
+        const store = this.options.learningStore();
+        const state = await store.getState();
+        const recordKey = `${project.id}:${toolInput.id}`;
+        const existing = state.knowledgeBase.concepts[recordKey];
+        if (!existing) {
+          throw new Error(`Concept with ID ${toolInput.id} not found in project ${project.title}`);
+        }
+
+        const updatedRecord: KnowledgeBaseRecord = {
+          ...existing,
+          title: toolInput.title ?? existing.title,
+          content: toolInput.content ?? existing.content,
+          example: toolInput.examples ? (toolInput.examples[0] || "") : existing.example,
+          examples: toolInput.examples ?? existing.examples,
+          relatedConcepts: toolInput.relatedConcepts ?? existing.relatedConcepts,
+          confidence: toolInput.confidence ?? existing.confidence,
+          lastModifiedAt: now
+        };
+
+        if (toolInput.content) {
+          updatedRecord.summary = toolInput.content.split("\n")[0] || updatedRecord.title;
+        }
+
+        await store.saveKnowledgeConcept(updatedRecord);
+        publish("updated");
+
+        return {
+          modified: true,
+          concept: updatedRecord
+        };
+      }
+    });
+  }
+
+  private createRemoveConceptTool(
+    project: StoredFlowProject,
+    publish: (type: ConstructFlowSessionEvent["type"]) => void
+  ): ToolsInput[string] {
+    return createTool({
+      id: "remove-concept",
+      description: "Remove a concept by ID.",
+      inputSchema: z.object({
+        id: z.string().min(1).describe("The ID of the concept to remove")
+      }).strict(),
+      execute: async (toolInput) => {
+        const store = this.options.learningStore();
+        await store.removeKnowledgeConcept(project.id, toolInput.id);
+        publish("updated");
+
+        return {
+          removed: true,
+          id: toolInput.id
         };
       }
     });
   }
 }
 
-async function applyTaskScaffold(
+async function applyTaskPreparations(
   project: StoredFlowProject,
   workspace: ConstructProjectWorkspaceService,
-  scaffold: { path: string; find?: string; replace?: string; append?: string }
+  preparations: Array<{ path: string; content: string; mode: "create" | "overwrite" | "replace"; find?: string }>
 ) {
-  const target = workspace.safeProjectPath(project, scaffold.path);
-  let content = existsSync(target) ? await readWorkspaceFileForProtocol(project, workspace, scaffold.path) : "";
-  if (scaffold.find !== undefined) {
-    const index = content.indexOf(scaffold.find);
-    if (index < 0) {
-      throw new Error(`Could not find scaffold target in ${scaffold.path}`);
+  for (const prep of preparations) {
+    const target = workspace.safeProjectPath(project, prep.path);
+    await mkdir(path.dirname(target), { recursive: true });
+
+    if (prep.mode === "create" || prep.mode === "overwrite") {
+      await writeFile(target, prep.content, "utf8");
+    } else if (prep.mode === "replace") {
+      let currentContent = existsSync(target) ? await readFile(target, "utf8") : "";
+      if (prep.find !== undefined) {
+        const index = currentContent.indexOf(prep.find);
+        if (index < 0) {
+          throw new Error(`Could not find target string "${prep.find}" in file ${prep.path}`);
+        }
+        currentContent = `${currentContent.slice(0, index)}${prep.content}${currentContent.slice(index + prep.find.length)}`;
+      } else {
+        currentContent = prep.content;
+      }
+      await writeFile(target, currentContent, "utf8");
     }
-    content = `${content.slice(0, index)}${scaffold.replace ?? ""}${content.slice(index + scaffold.find.length)}`;
   }
-  if (scaffold.append) {
-    content = `${content}${content.endsWith("\n") || content.length === 0 ? "" : "\n"}${scaffold.append}`;
-  }
-  await mkdir(path.dirname(target), { recursive: true });
-  await writeFile(target, content, "utf8");
 }
 
 async function captureBaseline(
   project: StoredFlowProject,
-  workspace: ConstructProjectWorkspaceService
+  workspace: ConstructProjectWorkspaceService,
+  taskFiles?: string[]
 ): Promise<ConstructFlowTaskBaseline> {
-  const files = await listTextFiles(project, workspace);
-  const entries = await Promise.all(files.map(async (file) => [file, await readFile(workspace.safeProjectPath(project, file), "utf8")] as const));
+  const files = taskFiles && taskFiles.length > 0
+    ? taskFiles
+    : await listTextFiles(project, workspace);
+  const entries = await Promise.all(
+    files.map(async (file) => {
+      const filePath = workspace.safeProjectPath(project, file);
+      const content = existsSync(filePath) ? await readFile(filePath, "utf8") : "";
+      return [file, content] as const;
+    })
+  );
   return {
     capturedAt: new Date().toISOString(),
     files: Object.fromEntries(entries)
@@ -448,7 +652,8 @@ async function listTextFiles(
 function buildMainPrompt(
   project: StoredFlowProject,
   input: ConstructFlowAgentInput,
-  memory: Array<{ file: string; content: string; updatedAt: string | null }>
+  memory: Array<{ file: string; content: string; updatedAt: string | null }>,
+  concepts: KnowledgeBaseRecord[]
 ): string {
   const recent = project.flow.sessions.slice(-6).map((session) => ({
     id: session.id,
@@ -466,6 +671,17 @@ function buildMainPrompt(
       file: item.file,
       updatedAt: item.updatedAt,
       content: item.content.slice(0, 5_000)
+    })), null, 2),
+    "",
+    "Concepts / Knowledge Base:",
+    JSON.stringify(concepts.map((c) => ({
+      id: c.id,
+      parentId: c.parentId,
+      title: c.title,
+      content: c.content,
+      examples: c.examples,
+      confidence: c.confidence,
+      relatedConcepts: c.relatedConcepts
     })), null, 2),
     "",
     "Recent Flow context:",
@@ -583,6 +799,15 @@ export const FLOW_MAIN_AGENT_PROMPT = `You are Construct Flow, an understanding-
 You are not a code vending machine. Your job is to help the learner become capable of writing and understanding the project themselves.
 
 You can inspect files, search code, use LSP/static analysis when tools expose it, focus code ranges in the editor, prepare real coding tasks, receive learner diffs, propose patches, run terminal commands, ask questions, update Flow Memory, and create/update concepts.
+
+When you teach or the learner demonstrates understanding, ALWAYS update the concepts database:
+- After explaining something new, use add-concept or modify-concept to record it.
+- After a practice task is submitted and reviewed, modify-concept to update the learner's confidence level for the related concepts.
+- Use dot-notated hierarchical IDs for concepts (e.g. 'typescript.syntax.interface', 'reactjs.hooks.useState'). Max 3 levels deep (domain.area.topic).
+- Do not create smaller and smaller concepts. Group related sub-concepts inside parent concepts logically.
+- Keep concept content detailed, natural, and free-form markdown so it can be easily read and modified. Write detailed text explanations.
+- When a learner struggles, modify the concept to note the specific confusion point.
+- Concepts are your persistent memory of what the learner knows. Always consult them.
 
 Stay natural. Do not reveal internal modes. Do not force responses into rigid templates. Respond like a strong human mentor reviewing and building with the learner.
 

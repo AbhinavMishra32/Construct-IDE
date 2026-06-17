@@ -341,6 +341,13 @@ export type KnowledgeBaseRecord = {
   openedAt?: string;
   openCount: number;
   usedInRecall: boolean;
+  parentId?: string | null;
+  content?: string;
+  examples?: string[];
+  relatedConcepts?: string[];
+  confidence?: "unknown" | "weak" | "emerging" | "strong";
+  lastPracticedAt?: string;
+  lastModifiedAt?: string;
 };
 
 export type ConceptEngagement = {

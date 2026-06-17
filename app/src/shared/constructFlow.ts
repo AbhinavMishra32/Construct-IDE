@@ -70,6 +70,9 @@ export type ConstructFlowPracticeTask = {
   submittedAt?: string;
   learnerNote?: string;
   submission?: ConstructFlowTaskSubmission;
+  taskFiles?: string[];
+  conceptIds?: string[];
+  submissionSessionId?: string;
 };
 
 export type ConstructFlowTaskBaseline = {

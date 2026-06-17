@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { BotIcon, CheckIcon, Code2Icon, PlayIcon, SendIcon, SparklesIcon } from "lucide-react";
 import {
+  AdaptiveSidecarLayout,
   AgentSessionComposer,
   AgentSessionSurface,
   Button,
@@ -17,7 +18,7 @@ import type {
   ConstructFlowSessionEvent,
   ConstructFlowToolCallRecord
 } from "../../../shared/constructFlow";
-import type { FlowProjectRecord, WorkspaceTreeNode } from "../types";
+import type { ConceptCard, FlowProjectRecord, WorkspaceTreeNode } from "../types";
 import {
   createFolder,
   deleteFile,
@@ -34,6 +35,7 @@ import {
 } from "../lib/bridge";
 import { EditorPane } from "./EditorPane";
 import { MarkdownBlock } from "./MarkdownBlock";
+import { KnowledgeCard } from "./KnowledgeCard";
 
 export function FlowWorkspace({
   project,
@@ -72,6 +74,7 @@ export function FlowWorkspace({
   const [sessions, setSessions] = useState<ConstructFlowSession[]>(project.flow.sessions ?? []);
   const [liveSession, setLiveSession] = useState<ConstructFlowSession | undefined>();
   const [pending, setPending] = useState(false);
+  const [openConcept, setOpenConcept] = useState<ConceptCard | null>(null);
 
   const refreshTree = useCallback(async () => {
     const next = await listFiles(project.id);
@@ -216,40 +219,63 @@ export function FlowWorkspace({
         onRunResearch={() => void runConstructFlowResearch({ projectId: project.id })}
         onAction={(action) => applyFlowActions([action], focusCode, onRunCommand, project.workspacePath)}
         onSubmitTask={submitTask}
+        onOpenConceptDetails={(concept) => setOpenConcept(concept)}
       />
     );
     return () => onGuidePanelChange(null);
-  }, [focusCode, liveSession, onGuidePanelChange, onRunCommand, pending, project, runAgent, sessions, submitTask, theme]);
+  }, [focusCode, liveSession, onGuidePanelChange, onRunCommand, pending, project, runAgent, sessions, submitTask, theme, setOpenConcept]);
+
+  const sidecar = openConcept ? (
+    <div className="flex max-h-full w-full flex-col gap-3 overflow-y-auto" aria-label="Open knowledge cards">
+      <KnowledgeCard
+        key={openConcept.id}
+        concept={openConcept}
+        saved={false}
+        theme={theme}
+        onClose={() => setOpenConcept(null)}
+        onOpenConcept={() => {}}
+        onOpenFile={() => {}}
+        onSaveChange={() => {}}
+      />
+    </div>
+  ) : null;
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)] bg-background">
-      <EditorPane
-        path={activePath}
-        workspacePath={project.workspacePath}
-        content={content}
-        activeEdit={null}
-        editAnchor=""
-        editProgress={0}
-        onFreeEdit={(next) => {
-          setContent(next);
-          setDirty(true);
-        }}
-        onGuidedProgress={() => undefined}
-        onRevealLine={() => undefined}
-        onSave={saveFile}
-        theme={theme}
-        focusRange={focusRange}
-        onOpenFileAndJump={(path, line) => {
-          void openFile(path).then(() => setFocusRange({ line }));
-        }}
-      />
-      {dirty ? (
-        <div className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-lg border bg-popover px-3 py-2 text-xs shadow-md">
-          <span>Unsaved changes</span>
-          <Button size="sm" onClick={() => void saveFile()}><CheckIcon size={14} />Save</Button>
-        </div>
-      ) : null}
-    </div>
+    <AdaptiveSidecarLayout
+      className="h-full min-h-0"
+      open={openConcept !== null}
+      pinned={false}
+      sidecar={sidecar}
+    >
+      <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)] bg-background">
+        <EditorPane
+          path={activePath}
+          workspacePath={project.workspacePath}
+          content={content}
+          activeEdit={null}
+          editAnchor=""
+          editProgress={0}
+          onFreeEdit={(next) => {
+            setContent(next);
+            setDirty(true);
+          }}
+          onGuidedProgress={() => undefined}
+          onRevealLine={() => undefined}
+          onSave={saveFile}
+          theme={theme}
+          focusRange={focusRange}
+          onOpenFileAndJump={(path, line) => {
+            void openFile(path).then(() => setFocusRange({ line }));
+          }}
+        />
+        {dirty ? (
+          <div className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-lg border bg-popover px-3 py-2 text-xs shadow-md">
+            <span>Unsaved changes</span>
+            <Button size="sm" onClick={() => void saveFile()}><CheckIcon size={14} />Save</Button>
+          </div>
+        ) : null}
+      </div>
+    </AdaptiveSidecarLayout>
   );
 }
 
@@ -262,7 +288,8 @@ function FlowAgentPanel({
   onRunAgent,
   onRunResearch,
   onAction,
-  onSubmitTask
+  onSubmitTask,
+  onOpenConceptDetails
 }: {
   project: FlowProjectRecord;
   sessions: ConstructFlowSession[];
@@ -273,14 +300,16 @@ function FlowAgentPanel({
   onRunResearch: () => void;
   onAction: (action: ConstructFlowAction) => void;
   onSubmitTask: (task: ConstructFlowPracticeTask, note?: string) => Promise<void>;
+  onOpenConceptDetails: (concept: ConceptCard) => void;
 }) {
   const [draft, setDraft] = useState("");
   const messages = useMemo(() => buildFlowMessages({
     sessions: mergeSessions(sessions, liveSession),
     theme,
     onAction,
-    onSubmitTask
-  }), [liveSession, onAction, onSubmitTask, sessions, theme]);
+    onSubmitTask,
+    onOpenConceptDetails
+  }), [liveSession, onAction, onSubmitTask, sessions, theme, onOpenConceptDetails]);
 
   return (
     <aside className="flex h-full min-h-0 flex-col bg-background">
@@ -325,17 +354,24 @@ function buildFlowMessages({
   sessions,
   theme,
   onAction,
-  onSubmitTask
+  onSubmitTask,
+  onOpenConceptDetails
 }: {
   sessions: ConstructFlowSession[];
   theme: "light" | "dark" | "system";
   onAction: (action: ConstructFlowAction) => void;
   onSubmitTask: (task: ConstructFlowPracticeTask, note?: string) => Promise<void>;
+  onOpenConceptDetails: (concept: ConceptCard) => void;
 }): AgentSessionMessage[] {
   return sessions.flatMap((session): AgentSessionMessage[] => {
     const user = session.messages.find((message) => message.role === "user");
     const assistant = [...session.messages].reverse().find((message) => message.role === "assistant");
-    const parts = buildFlowAgentParts({ session, assistantContent: assistant?.content, theme });
+    const parts = buildFlowAgentParts({
+      session,
+      assistantContent: assistant?.content,
+      theme,
+      onOpenConceptDetails
+    });
     session.practiceTasks.filter((task) => task.status === "waiting").forEach((task) => {
       parts.push({
         type: "actions",
@@ -375,8 +411,44 @@ function buildFlowMessages({
         }))
       });
     }
+
+    const submittedTask = sessions
+      .flatMap((s) => s.practiceTasks)
+      .find((t) => t.submissionSessionId === session.id);
+
+    let userContent: ReactNode;
+    if (submittedTask && submittedTask.submission) {
+      userContent = (
+        <div className="flex min-w-0 flex-col gap-3 rounded-lg border border-sky-500/20 bg-sky-500/5 p-4 text-xs shadow-sm w-full">
+          <div className="flex items-center justify-between gap-2 border-b border-sky-500/10 pb-2">
+            <span className="flex items-center gap-1.5 font-bold text-sky-700 dark:text-sky-400 text-sm">
+              <span>📝</span>
+              <span>Task Submission</span>
+            </span>
+            <span className="rounded bg-sky-500/10 px-2 py-0.5 text-[10px] font-semibold text-sky-700 dark:text-sky-400 border border-sky-500/20">
+              {submittedTask.title}
+            </span>
+          </div>
+          {submittedTask.learnerNote ? (
+            <div className="rounded bg-background/50 border p-2 italic text-muted-foreground">
+              <span className="font-semibold block not-italic text-[10px] uppercase tracking-wider opacity-70 mb-1">Your note:</span>
+              "{submittedTask.learnerNote}"
+            </div>
+          ) : null}
+          <div>
+            <span className="font-semibold block opacity-85 mb-1">Changes:</span>
+            <pre className="rounded bg-background/80 border p-3 overflow-x-auto text-[10px] font-mono leading-relaxed max-h-80 overflow-y-auto">
+              <code className="text-foreground">{submittedTask.submission.compactDiff}</code>
+            </pre>
+          </div>
+        </div>
+      );
+    } else {
+      userContent = user?.content ?? "";
+    }
+
     return [
-      { id: `${session.id}:user`, role: "user", content: user?.content ?? "" },
+      { id: `${session.id}:user`, role: "user", content: userContent },
       { id: `${session.id}:assistant`, role: "assistant", parts }
     ];
   });
@@ -385,11 +457,13 @@ function buildFlowMessages({
 function buildFlowAgentParts({
   session,
   assistantContent,
-  theme
+  theme,
+  onOpenConceptDetails
 }: {
   session: ConstructFlowSession;
   assistantContent?: string;
   theme: "light" | "dark" | "system";
+  onOpenConceptDetails: (concept: ConceptCard) => void;
 }): AgentSessionMessagePart[] {
   const parts: AgentSessionMessagePart[] = [];
   const seenToolIds = new Set<string>();
@@ -422,6 +496,17 @@ function buildFlowAgentParts({
       continue;
     }
 
+    const toolName = event.toolName ?? event.title;
+    const isConcept = toolName?.includes("concept");
+
+    if (isConcept && event.type === "tool") {
+      seenToolIds.add(event.id);
+      seenToolNames.set(toolName, (seenToolNames.get(toolName) ?? 0) + 1);
+      parts.push(buildConceptCardPart(session.id, event.id, toolName, event.input, event.status, theme, onOpenConceptDetails));
+      pushFallbackReasoning();
+      continue;
+    }
+
     const entry = flowEventToTraceEntry(event);
     parts.push({
       type: "activity",
@@ -448,6 +533,14 @@ function buildFlowAgentParts({
       seenToolNames.set(toolCall.name, seenCount - 1);
       continue;
     }
+
+    const isConcept = toolCall.name.includes("concept");
+    if (isConcept) {
+      parts.push(buildConceptCardPart(session.id, toolCall.id, toolCall.name, toolCall.input, toolCall.status, theme, onOpenConceptDetails));
+      pushFallbackReasoning();
+      continue;
+    }
+
     parts.push({
       type: "activity",
       id: `${session.id}:tool-call:${toolCall.id}`,
@@ -528,6 +621,116 @@ function buildAskUserPart(
   };
 }
 
+function ConfidenceBadge({ level }: { level: string }) {
+  const normLevel = level ? level.toLowerCase() : "";
+  let statusColor = "bg-muted-foreground/45";
+  if (normLevel === "strong") statusColor = "bg-emerald-500";
+  else if (normLevel === "emerging") statusColor = "bg-amber-500";
+  else if (normLevel === "weak") statusColor = "bg-destructive";
+
+  return (
+    <div className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] text-muted-foreground bg-background">
+      <span className={`size-1.5 rounded-full ${statusColor}`} aria-hidden="true" />
+      <span className="capitalize">{level} confidence</span>
+    </div>
+  );
+}
+
+function renderConceptBreadcrumb(id: string) {
+  const parts = id.split(".");
+  return (
+    <div className="flex flex-wrap items-center gap-1 text-[10px] text-muted-foreground font-mono">
+      {parts.map((part, index) => (
+        <span key={index} className="flex items-center gap-1">
+          {index > 0 && <span className="opacity-55">/</span>}
+          <span>{part}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function buildConceptCardFromInput(input: any): ConceptCard {
+  return {
+    id: input.id ?? "",
+    title: input.title ?? input.id ?? "Concept",
+    kind: "concept",
+    tags: (input.id ?? "").split(".").slice(0, -1),
+    summary: input.content ? (input.content.split("\n")[0] || input.title || "") : (input.title || ""),
+    why: "",
+    example: input.examples?.[0] || "",
+    docs: [],
+    guides: input.content ? [
+      {
+        kind: "guide",
+        id: "explanation",
+        guideKind: "guide.explanation",
+        content: input.content,
+        sections: []
+      }
+    ] : []
+  };
+}
+
+function buildConceptCardPart(
+  sessionId: string,
+  eventId: string,
+  toolName: string,
+  input: unknown,
+  status: string,
+  theme: "light" | "dark" | "system",
+  onOpenConceptDetails: (concept: ConceptCard) => void
+): AgentSessionMessagePart {
+  const inputObj = typeof input === "string" ? parseJsonObject(input) : (input as any || {});
+  const conceptId = inputObj.id ?? "";
+  const conceptTitle = inputObj.title ?? "";
+  const confidence = inputObj.confidence;
+  
+  let actionLabel = "Added Concept";
+  let badgeColor = "text-emerald-700 bg-emerald-500/10 dark:text-emerald-400 dark:bg-emerald-500/10 border-emerald-500/20";
+  if (toolName === "modify-concept") {
+    actionLabel = "Modified Concept";
+    badgeColor = "text-amber-700 bg-amber-500/10 dark:text-amber-400 dark:bg-amber-500/10 border-amber-500/20";
+  } else if (toolName === "remove-concept") {
+    actionLabel = "Removed Concept";
+    badgeColor = "text-destructive bg-destructive/10 border-destructive/20";
+  }
+
+  const conceptCard = buildConceptCardFromInput(inputObj);
+
+  return {
+    type: "actions",
+    id: `${sessionId}:concept:${eventId}`,
+    content: (
+      <div className="flex min-w-0 flex-col gap-2 rounded-lg border border-border bg-muted/20 p-3 text-xs w-full shadow-sm">
+        <div className="flex items-center justify-between gap-2 border-b border-border pb-1.5">
+          <span className={`rounded-md px-2 py-0.5 text-[10px] font-semibold border ${badgeColor}`}>
+            {actionLabel}
+          </span>
+          {confidence && <ConfidenceBadge level={confidence} />}
+        </div>
+        <div className="flex flex-col gap-1 min-w-0">
+          {renderConceptBreadcrumb(conceptId)}
+          <strong className="text-sm font-semibold truncate text-foreground">
+            {conceptTitle || conceptId}
+          </strong>
+        </div>
+        {toolName !== "remove-concept" && (
+          <div className="mt-1 flex items-center justify-end">
+            <button
+              type="button"
+              className="text-[11px] font-semibold text-primary hover:underline font-medium"
+              onClick={() => onOpenConceptDetails(conceptCard)}
+            >
+              View Details
+            </button>
+          </div>
+        )}
+      </div>
+    )
+  };
+}
+
 function readAskUserPayload(input: unknown, outputPreview?: string): { question?: string; reason?: string; choices?: string[] } {
   const parsedOutput = parseJsonObject(outputPreview);
   const source = parsedOutput ?? (typeof input === "object" && input !== null ? input as Record<string, unknown> : {});
@@ -549,13 +752,33 @@ function parseJsonObject(value: string | undefined): Record<string, unknown> | u
 }
 
 function flowEventToTraceEntry(event: ConstructFlowSession["agentEvents"][number]): AgentRunTraceEntry {
+  const toolName = event.toolName ?? event.title;
+  const isConcept = toolName?.includes("concept");
+  let title = event.type === "reasoning" ? "Reasoning" : event.title;
+  let subtitle = event.type === "reasoning" && event.text ? undefined : event.detail;
+
+  if (isConcept && event.type === "tool") {
+    const inputObj = typeof event.input === "string" ? parseJsonObject(event.input) : (event.input as any || {});
+    const conceptId = inputObj.id ?? "";
+    const conceptTitle = inputObj.title ?? "";
+
+    if (toolName === "add-concept") {
+      title = `Added concept "${conceptTitle || conceptId}"`;
+    } else if (toolName === "modify-concept") {
+      title = `Modified concept "${conceptTitle || conceptId}"`;
+    } else if (toolName === "remove-concept") {
+      title = `Removed concept "${conceptId}"`;
+    }
+    subtitle = conceptId;
+  }
+
   return {
     id: event.id,
     kind: event.type === "reasoning" ? "thought" : "tool",
-    title: event.type === "reasoning" ? "Reasoning" : event.title,
-    subtitle: event.type === "reasoning" && event.text ? undefined : event.detail,
+    title,
+    subtitle,
     status: event.status === "error" ? "error" : event.status === "running" ? "running" : "completed",
-    icon: event.type === "tool" ? classifyToolIcon(event.toolName ?? event.title) : undefined,
+    icon: event.type === "tool" ? classifyToolIcon(toolName) : undefined,
     input: stringify(event.input),
     output: event.type === "reasoning" ? event.text : event.outputPreview
   };
@@ -590,11 +813,30 @@ function splitReasoningSegments(text: string | undefined): string[] {
 }
 
 function toolCallToFlowTraceEntry(toolCall: ConstructFlowToolCallRecord): AgentRunTraceEntry {
+  const isConcept = toolCall.name.includes("concept");
+  let title = toolCall.title;
+  let subtitle = toolCall.reason;
+
+  if (isConcept) {
+    const inputObj = typeof toolCall.input === "string" ? parseJsonObject(toolCall.input) : (toolCall.input as any || {});
+    const conceptId = inputObj.id ?? "";
+    const conceptTitle = inputObj.title ?? "";
+
+    if (toolCall.name === "add-concept") {
+      title = `Added concept "${conceptTitle || conceptId}"`;
+    } else if (toolCall.name === "modify-concept") {
+      title = `Modified concept "${conceptTitle || conceptId}"`;
+    } else if (toolCall.name === "remove-concept") {
+      title = `Removed concept "${conceptId}"`;
+    }
+    subtitle = conceptId;
+  }
+
   return {
     id: toolCall.id,
     kind: "tool",
-    title: toolCall.title,
-    subtitle: toolCall.reason,
+    title,
+    subtitle,
     status: toolCall.status,
     icon: classifyToolIcon(toolCall.name),
     input: stringify(toolCall.input),
@@ -603,7 +845,7 @@ function toolCallToFlowTraceEntry(toolCall: ConstructFlowToolCallRecord): AgentR
 }
 
 function classifyToolIcon(name: string): AgentRunTraceEntry["icon"] {
-  if (name.includes("memory")) return "memory";
+  if (name.includes("memory") || name.includes("concept")) return "memory";
   if (name.includes("search") || name.includes("find")) return "search";
   if (name.includes("terminal") || name.includes("command")) return "terminal";
   if (name.includes("file") || name.includes("edit") || name.includes("view")) return "file";
@@ -655,3 +897,4 @@ function firstFilePath(nodes: WorkspaceTreeNode[]): string | null {
   }
   return null;
 }
+

@@ -80,7 +80,8 @@ const constructFlowService = new ConstructFlowService({
   workspace: workspaceService,
   flowMemory: flowMemoryService,
   latestTerminalOutput: (projectId) => terminalService.latestOutput(projectId),
-  logs: agentLogService
+  logs: agentLogService,
+  learningStore
 });
 const verifierService = new ConstructVerifierService({
   logs: agentLogService,
