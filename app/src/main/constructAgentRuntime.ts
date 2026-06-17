@@ -159,7 +159,12 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
         "info"
       );
       
-      const output = await agent.stream(request.prompt, {
+      // Enhance prompt for opencode-zen to ensure JSON output
+      const effectivePrompt = model.providerId === "opencode-zen" 
+        ? enhancePromptForJsonOutput(request.prompt, request.schema)
+        : request.prompt;
+      
+      const output = await agent.stream(effectivePrompt, {
         structuredOutput: {
           schema: request.schema,
           jsonPromptInjection: model.providerId === "opencode-zen"
@@ -719,4 +724,14 @@ function describeSchema(schema: z.ZodTypeAny): unknown {
     );
   }
   return schema.constructor?.name || "unknown";
+}
+
+function enhancePromptForJsonOutput(prompt: string, schema: z.ZodTypeAny): string {
+  const schemaDescription = JSON.stringify(describeSchema(schema), null, 2);
+  return `${prompt}
+
+IMPORTANT: Your response MUST be valid JSON only. Do not include any other text, explanations, markdown formatting, or code blocks. Your entire response must be parseable JSON that matches this schema:
+${schemaDescription}
+
+Begin your response with { and end with }. No other text before or after.`;
 }
