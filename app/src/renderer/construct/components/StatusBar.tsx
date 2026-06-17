@@ -19,8 +19,13 @@ export function StatusBar({ theme, onThemeChange }: StatusBarProps) {
   const [litellmStatusState, setLitellmStatusState] = useState<LitellmState | null>(null);
 
   useEffect(() => {
-    void litellmStatus().then(setLitellmStatusState).catch(() => {});
-    const unsubscribe = onLitellmStatusChange(setLitellmStatusState);
+    void Promise.resolve().then(() => litellmStatus()).then(setLitellmStatusState).catch(() => {});
+    let unsubscribe = () => {};
+    try {
+      unsubscribe = onLitellmStatusChange(setLitellmStatusState);
+    } catch {
+      // The Vite renderer can be opened without Electron preload during local smoke checks.
+    }
     return unsubscribe;
   }, []);
 

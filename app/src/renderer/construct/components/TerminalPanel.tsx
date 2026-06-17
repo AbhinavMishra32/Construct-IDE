@@ -206,7 +206,10 @@ export const TerminalPanel = forwardRef<
 
   return (
     <TerminalSurface cwd={`${cwd} · ${status}`}>
-      <div ref={containerRef} className="h-full w-full overflow-hidden" />
+      <div
+        ref={containerRef}
+        className="h-full min-h-0 w-full overflow-hidden px-2.5 pb-2.5 pt-0 [&_.xterm]:!bg-transparent [&_.xterm-cursor-layer]:[mix-blend-mode:normal] [&_.xterm-rows]:-translate-y-px [&_.xterm-screen]:[font-kerning:none] [&_.xterm-screen]:[text-rendering:optimizeLegibility] [&_.xterm-screen]:antialiased [&_.xterm-viewport]:!bg-transparent"
+      />
     </TerminalSurface>
   );
 });

@@ -725,7 +725,7 @@ export default function ConstructApp() {
 
   return (
     <AppErrorBoundary>
-      <div className="flex flex-col h-screen overflow-hidden bg-background">
+      <div className="flex h-screen flex-col overflow-hidden bg-transparent">
         <div className="flex-1 min-h-0 relative">
           <AppShell
             className="h-full"

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { BookOpenIcon, BotIcon, CheckIcon, CheckCircle2Icon, Code2Icon, PlayIcon, SendIcon, SparklesIcon } from "lucide-react";
+import { BookOpenIcon, BotIcon, CheckIcon, CheckCircle2Icon, Code2Icon, SendIcon, SparklesIcon } from "lucide-react";
 import {
   AdaptiveSidecarLayout,
   AgentSessionComposer,
@@ -488,13 +488,21 @@ function FlowAgentPanel({
   onOpenConceptDetails: (concept: ConceptCard) => void;
 }) {
   const [draft, setDraft] = useState("");
+  const mergedSessions = useMemo(() => mergeSessions(sessions, liveSession), [liveSession, sessions]);
+  const headerAction = useMemo(() => {
+    for (const session of [...mergedSessions].reverse()) {
+      const action = [...session.actions].reverse().find(isFlowHeaderAction);
+      if (action) return action;
+    }
+    return null;
+  }, [mergedSessions]);
   const messages = useMemo(() => buildFlowMessages({
-    sessions: mergeSessions(sessions, liveSession),
+    sessions: mergedSessions,
     theme,
     onAction,
     onSubmitTask,
     onOpenConceptDetails
-  }), [liveSession, onAction, onSubmitTask, sessions, theme, onOpenConceptDetails]);
+  }), [mergedSessions, onAction, onSubmitTask, theme, onOpenConceptDetails]);
 
   return (
     <aside className="flex h-full min-h-0 flex-col bg-background">
@@ -503,13 +511,14 @@ function FlowAgentPanel({
           <strong className="block truncate text-sm">Construct Flow</strong>
           <span className="block truncate text-[11px] text-muted-foreground">{project.flow.goal}</span>
         </div>
-        <Button size="sm" variant="ghost" onClick={onRunResearch}><SparklesIcon size={14} />Research</Button>
-      </div>
-      <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-1 border-b px-2 py-1">
-        <Button size="sm" variant="secondary" onClick={() => void onRunAgent("Continue from the current project state.")}><PlayIcon size={14} />Continue</Button>
-        <Button size="sm" variant="ghost" onClick={() => void onRunAgent("I tried. Help me review what changed.")}>I tried</Button>
-        <Button size="sm" variant="ghost" onClick={() => void onRunAgent("I'm stuck. Ask one focused question or give a smaller next step.")}>I'm stuck</Button>
-        <Button size="sm" variant="ghost" onClick={() => void onRunAgent("Run the relevant tests or checks for the current project state.")}>Run tests</Button>
+        <div className="flex shrink-0 items-center gap-1">
+          {headerAction ? (
+            <Button size="sm" variant="secondary" onClick={() => onAction(headerAction)}>
+              {headerAction.label}
+            </Button>
+          ) : null}
+          <Button size="sm" variant="ghost" onClick={onRunResearch}><SparklesIcon size={14} />Research</Button>
+        </div>
       </div>
       <AgentSessionSurface
         className="min-h-0 flex-1"
@@ -574,21 +583,16 @@ function buildFlowMessages({
             label: "Submit",
             icon: <SendIcon size={14} />,
             onSelect: () => void onSubmitTask(task)
-          },
-          {
-            id: `${task.id}:stuck`,
-            label: "I'm stuck",
-            variant: "secondary",
-            onSelect: () => void onSubmitTask(task, "I'm stuck.")
           }
         ]
       });
     });
     if (session.actions.length) {
+      const inlineActions = session.actions.filter((action) => !isFlowHeaderAction(action));
       parts.push({
         type: "actions",
         id: `${session.id}:actions`,
-        actions: session.actions.map((action, index) => ({
+        actions: inlineActions.map((action, index) => ({
           id: `${action.type}:${index}`,
           label: action.label,
           description: action.reason,
@@ -637,6 +641,10 @@ function buildFlowMessages({
       { id: `${session.id}:assistant`, role: "assistant", parts }
     ];
   });
+}
+
+function isFlowHeaderAction(action: ConstructFlowAction): boolean {
+  return action.label.toLowerCase().includes("reset");
 }
 
 function buildFlowAgentParts({
