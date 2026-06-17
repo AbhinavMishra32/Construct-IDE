@@ -1,5 +1,5 @@
 import { BrowserWindow } from "electron";
-import { resolveConstructAgentModel } from "./constructAgentModels";
+import { resolveConstructLlmModel } from "./constructAgentModels";
 
 export type CodeGhostStreamInput = {
   lineContent: string;
@@ -15,8 +15,8 @@ export type CodeGhostTraceEntry = {
   payload?: unknown;
 };
 
-function buildModelConfig() {
-  const model = resolveConstructAgentModel("Code Ghost explanation", "code-explain");
+async function buildModelConfig() {
+  const model = await resolveConstructLlmModel("Code Ghost explanation", "code-explain");
   if (!model.url) {
     throw new Error(`No base URL is configured for ${model.providerId}.`);
   }
@@ -69,7 +69,7 @@ export async function fetchCodeGhostExplanation(
   signal?: AbortSignal,
   onTrace?: (entry: CodeGhostTraceEntry) => void
 ): Promise<string> {
-  const config = buildModelConfig();
+  const config = await buildModelConfig();
   onTrace?.({
     title: "Resolved agent model",
     level: "debug",
@@ -85,7 +85,7 @@ export async function fetchCodeGhostExplanation(
   const response = await fetch(`${config.baseUrl}/chat/completions`, {
     method: "POST",
     headers: {
-      "Authorization": `Bearer ${config.apiKey}`,
+      ...(config.apiKey ? { "Authorization": `Bearer ${config.apiKey}` } : {}),
       "Content-Type": "application/json",
     },
     body: JSON.stringify({

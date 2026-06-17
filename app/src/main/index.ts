@@ -6,8 +6,10 @@ import { ConstructInteractService } from "./ai/ConstructInteractService";
 import { AgentLogService } from "./ai/AgentLogService";
 import { ConstructAuthoringReviewService } from "./ai/ConstructAuthoringReviewService";
 import { ConstructCodeGhostService } from "./ai/ConstructCodeGhostService";
+import { ConstructLitellmService } from "./ai/ConstructLitellmService";
 import { ConstructSelectionExplainService } from "./ai/ConstructSelectionExplainService";
 import { ConstructVerifierService } from "./ai/ConstructVerifierService";
+import { providerLogService } from "./ai/ProviderLogService";
 import { MainProcessLogBridge } from "./app/MainProcessLogBridge";
 import { ConstructWindowManager } from "./app/ConstructWindowManager";
 import {
@@ -19,7 +21,9 @@ import {
   type StoredSettings
 } from "./config/constructConfig";
 import { ConstructAgentIpcController } from "./ipc/ConstructAgentIpcController";
+import { ConstructFlowIpcController } from "./ipc/ConstructFlowIpcController";
 import { ConstructLearningIpcController } from "./ipc/ConstructLearningIpcController";
+import { ConstructLitellmIpcController } from "./ipc/ConstructLitellmIpcController";
 import { ConstructLspIpcController } from "./ipc/ConstructLspIpcController";
 import { ConstructProjectIpcController } from "./ipc/ConstructProjectIpcController";
 import { ConstructSettingsIpcController } from "./ipc/ConstructSettingsIpcController";
@@ -37,6 +41,8 @@ import {
 import { LegacyProjectDataMigrator } from "./projects/LegacyProjectDataMigrator";
 import type { StoredProject } from "./projects/ConstructProjectTypes";
 import { ConstructTerminalService } from "./terminal/ConstructTerminalService";
+import { ConstructFlowMemoryService } from "./flow/ConstructFlowMemoryService";
+import { ConstructFlowService } from "./flow/ConstructFlowService";
 
 let activeWebContents: Electron.WebContents | null = null;
 const logBridge = new MainProcessLogBridge({
@@ -54,6 +60,7 @@ function sendToRenderers(channel: string, payload: unknown): void {
 }
 
 const agentLogService = new AgentLogService((channel, payload) => sendToRenderers(channel, payload));
+const litellmService = new ConstructLitellmService();
 const observabilityService = new ConstructObservabilityService();
 const workspaceService = new ConstructProjectWorkspaceService(
   () => defaultWorkspaceParent(),
@@ -61,11 +68,19 @@ const workspaceService = new ConstructProjectWorkspaceService(
 );
 const gitService = new ConstructProjectGitService(workspaceService);
 const terminalService = new ConstructTerminalService((channel, payload) => sendToRenderers(channel, payload));
+const flowMemoryService = new ConstructFlowMemoryService(workspaceService);
 const constructInteractService = new ConstructInteractService({
   learningStore,
   latestTerminalOutput: (projectId) => terminalService.latestOutput(projectId),
+  workspace: workspaceService,
   logs: agentLogService,
   observability: observabilityService
+});
+const constructFlowService = new ConstructFlowService({
+  workspace: workspaceService,
+  flowMemory: flowMemoryService,
+  latestTerminalOutput: (projectId) => terminalService.latestOutput(projectId),
+  logs: agentLogService
 });
 const verifierService = new ConstructVerifierService({
   logs: agentLogService,
@@ -221,6 +236,21 @@ function installConstructProjectIpcHandlers(): void {
     getAppSourceRoot: () => path.resolve(app.getAppPath(), "src")
   }).register();
 
+  new ConstructFlowIpcController({
+    ipcMain,
+    readSettings,
+    readProjects,
+    writeProjects,
+    workspace: workspaceService,
+    flowMemory: flowMemoryService,
+    flow: constructFlowService,
+    workspacePathForProject,
+    setActiveWebContents: (webContents) => {
+      activeWebContents = webContents;
+    },
+    getAppSourceRoot: () => path.resolve(app.getAppPath(), "src")
+  }).register();
+
   new ConstructAgentIpcController({
     ipcMain,
     readProjects,
@@ -231,6 +261,14 @@ function installConstructProjectIpcHandlers(): void {
     selectionExplain: selectionExplainService,
     codeGhost: codeGhostService
   }).register();
+
+  new ConstructLitellmIpcController({
+    ipcMain,
+    litellm: litellmService
+  }).register(() => activeWebContents);
+
+  // Set up provider log service with web contents provider
+  providerLogService.setWebContentsProvider(() => activeWebContents);
 }
 
 
@@ -256,5 +294,6 @@ app.on("window-all-closed", () => {
 
 app.on("will-quit", () => {
   stopLspServer();
+  void litellmService.stop();
   void observabilityService.shutdown();
 });

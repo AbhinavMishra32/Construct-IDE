@@ -9,6 +9,14 @@ import type {
   LearningStatePatch,
   ProjectLearningState
 } from "../../shared/constructLearning";
+import type {
+  ConstructFlowAgentInput,
+  ConstructFlowAgentResult,
+  ConstructFlowMemoryRead,
+  ConstructFlowSessionEvent,
+  ConstructFlowTaskSubmission,
+  FlowMemoryFileName
+} from "../../shared/constructFlow";
 
 export type ConstructProgram = {
   spec: string;
@@ -328,6 +336,7 @@ export type CheckpointBlock = {
 };
 
 export type ProjectSummary = {
+  kind?: "tape" | "flow";
   id: string;
   title: string;
   description: string;
@@ -351,9 +360,14 @@ export type ProjectSummary = {
   verificationFailCount?: number;
   authoringFixCount?: number;
   completedAt?: string | null;
+  flowGoal?: string;
+  flowMemoryFileCount?: number;
+  flowSessionCount?: number;
+  flowLastActivityAt?: string | null;
 };
 
 export type ProjectRecord = ProjectSummary & {
+  kind?: "tape";
   source: string;
   originalSource?: string;
   authoringFixes?: AuthoringFixRecord[];
@@ -370,6 +384,33 @@ export type ProjectRecord = ProjectSummary & {
   completedAt: string | null;
 };
 
+export type FlowProjectRecord = ProjectSummary & {
+  kind: "flow";
+  sourcePath: string | null;
+  activeFilePath: string | null;
+  fileTreeExpanded: string[];
+  completedAt: string | null;
+  flow: {
+    goal: string;
+    stackPreference?: string;
+    autonomyPreference?: "guided" | "balanced" | "agentic";
+    permissionsPreference?: "ask" | "workspace" | "agentic";
+    memoryDirectory: ".construct/flow-memory";
+    threadId: string;
+    researchEnabled: boolean;
+    researchCompletedAt?: string | null;
+    sessions: import("../../shared/constructFlow").ConstructFlowSession[];
+    createdAt: string;
+    updatedAt: string;
+  };
+};
+
+export type AnyProjectRecord = ProjectRecord | FlowProjectRecord;
+
+export function isFlowProjectRecord(project: AnyProjectRecord | ProjectSummary | null | undefined): project is FlowProjectRecord {
+  return project?.kind === "flow";
+}
+
 export type AuthoringFixRecord = {
   id: string;
   title: string;
@@ -380,7 +421,7 @@ export type AuthoringFixRecord = {
   appliedAt: string;
 };
 
-export type AiProvider = "openai" | "openrouter";
+export type AiProvider = "openai" | "openrouter" | "github-copilot" | "opencode-zen" | "litellm";
 export type AiRuntime = "mastra" | "fxpnt";
 
 export type AiSettings = {
@@ -392,6 +433,14 @@ export type AiSettings = {
   openRouterApiKey: string;
   openRouterModel: string;
   openRouterBaseUrl: string;
+  liteLlmApiKey: string;
+  liteLlmModel: string;
+  liteLlmBaseUrl: string;
+  liteLlmManageServer: boolean;
+  opencodeZenApiKey: string;
+  opencodeZenBaseUrl: string;
+  opencodeZenModel: string;
+  githubCopilotModel: string;
   featureModels: Record<string, string>;
 };
 
@@ -401,12 +450,18 @@ export type AiFeatureSettings = {
   description: string;
   defaultOpenAiModel: string;
   defaultOpenRouterModel: string;
+  defaultOpenCodeZenModel: string;
+  defaultGithubCopilotModel: string;
+  defaultLiteLlmModel: string;
   model: string;
 };
 
 export type ModelCatalogEntry = {
   id: string;
   name: string;
+  providerId?: string | null;
+  providerName?: string | null;
+  subProvider?: string | null;
   description?: string | null;
   contextLength?: number | null;
   pricing?: string | null;
@@ -486,6 +541,15 @@ export type ConstructProjectsApi = {
     program: ConstructProgram;
     workspacePath: string;
   }): Promise<ProjectRecord>;
+  createFlowProject(input: {
+    title: string;
+    goal: string;
+    workspacePath?: string;
+    stackPreference?: string;
+    autonomyPreference?: "guided" | "balanced" | "agentic";
+    permissionsPreference?: "ask" | "workspace" | "agentic";
+    researchFirst?: boolean;
+  }): Promise<FlowProjectRecord>;
   openConstructFile(): Promise<{ path: string; source: string } | null>;
   selectWorkspaceDirectory(input?: {
     defaultPath?: string;
@@ -503,7 +567,7 @@ export type ConstructProjectsApi = {
   listAiFeatures(): Promise<AiFeatureSettings[]>;
   listModels(input: {
     provider: AiProvider;
-    apiKey: string;
+    apiKey?: string;
   }): Promise<ModelCatalogEntry[]>;
   getLearningState(): Promise<ConstructLearningState>;
   getProjectLearningState(projectId: string): Promise<ProjectLearningState>;
@@ -519,7 +583,7 @@ export type ConstructProjectsApi = {
   }): Promise<ConstructLearningState>;
   removeKnowledgeConcept(input: { projectId: string; conceptId: string }): Promise<ConstructLearningState>;
   listProjects(): Promise<ProjectSummary[]>;
-  openProject(id: string): Promise<ProjectRecord>;
+  openProject(id: string): Promise<AnyProjectRecord>;
   updateProject(input: {
     id: string;
     patch: Partial<
@@ -539,7 +603,7 @@ export type ConstructProjectsApi = {
         | "completedAt"
       >
     >;
-  }): Promise<ProjectRecord>;
+  }): Promise<AnyProjectRecord>;
   readProjectTape(projectId: string): Promise<{
     projectId: string;
     sourcePath: string | null;
@@ -573,6 +637,12 @@ export type ConstructProjectsApi = {
   }): Promise<VerificationResult>;
   runConstructInteract(input: Omit<ConstructInteractRuntimeInput, "learningState">): Promise<ConstructInteractClientResult>;
   onConstructInteractSessionEvent(callback: (event: ConstructInteractSessionEvent) => void): () => void;
+  runConstructFlowAgent(input: ConstructFlowAgentInput): Promise<ConstructFlowAgentResult>;
+  runConstructFlowResearch(input: { projectId: string }): Promise<ConstructFlowAgentResult>;
+  readFlowMemory(input: { projectId: string; files?: FlowMemoryFileName[] }): Promise<ConstructFlowMemoryRead[]>;
+  updateFlowMemory(input: { projectId: string; updates: Array<{ file: FlowMemoryFileName; content: string }> }): Promise<ConstructFlowMemoryRead[]>;
+  submitFlowTask(input: { projectId: string; taskId: string; note?: string }): Promise<ConstructFlowTaskSubmission>;
+  onConstructFlowSessionEvent(callback: (event: ConstructFlowSessionEvent) => void): () => void;
   reviewConstructAuthoring(input: {
     spec: string;
     projectView: unknown;
@@ -630,4 +700,22 @@ export type ConstructProjectsApi = {
   lspInstall(projectId: string): Promise<boolean>;
   lspStart(projectId: string): Promise<LspStartResult>;
   lspStop(): Promise<void>;
+  litellmStart(input: { port: number; openAiApiKey?: string; openRouterApiKey?: string }): Promise<LitellmState>;
+  litellmStop(): Promise<LitellmState>;
+  litellmStatus(): Promise<LitellmState>;
+  litellmCheckInstall(): Promise<boolean>;
+  litellmInstall(): Promise<boolean>;
+  onLitellmLog(callback: (payload: { level: string; message: string }) => void): () => void;
+  onLitellmStatusChange(callback: (payload: LitellmState) => void): () => void;
+  importOpencodeAuth(): Promise<string | null>;
+  onProviderLog(callback: (payload: { provider: string; message: string; level: string }) => void): () => void;
+};
+
+export type LitellmStatus = "stopped" | "starting" | "running" | "stopping" | "error";
+
+export type LitellmState = {
+  status: LitellmStatus;
+  port: number;
+  pid: number | null;
+  error: string | null;
 };

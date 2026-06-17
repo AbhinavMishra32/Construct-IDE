@@ -51,7 +51,7 @@ export function Dashboard({
         <header className="flex items-center justify-between gap-3">
           <div className="min-w-0">
             <h1 className="truncate text-2xl font-semibold tracking-tight">Projects</h1>
-            <p className="text-sm text-muted-foreground">{projects.length} local tapes</p>
+            <p className="text-sm text-muted-foreground">{projects.length} local project{projects.length === 1 ? "" : "s"}</p>
           </div>
           <div className="flex items-center gap-2">
             <Button size="small" variant="ghost" onClick={onRefresh} disabled={busy}>
@@ -76,7 +76,7 @@ export function Dashboard({
             <Card>
               <CardHeader>
                 <CardTitle>Continue</CardTitle>
-                <CardDescription>{nextProject ? formatProjectPosition(nextProject) : "No active tape"}</CardDescription>
+                <CardDescription>{nextProject ? formatProjectPosition(nextProject) : "No active project"}</CardDescription>
               </CardHeader>
               <CardContent>
                 {nextProject ? (
@@ -94,7 +94,7 @@ export function Dashboard({
                     <ArrowRight size={16} className="text-muted-foreground" />
                   </button>
                 ) : (
-                  <EmptyState icon={<BookOpen size={18} />} title="No local tapes yet" description="Create a project from a .construct tape to start building." />
+                  <EmptyState icon={<BookOpen size={18} />} title="No local projects yet" description="Create a Flow project or import a .construct tape to start building." />
                 )}
               </CardContent>
             </Card>
@@ -130,7 +130,7 @@ export function Dashboard({
             <Card>
               <CardHeader>
                 <CardTitle>Up next</CardTitle>
-                <CardDescription>{mostRecent.length ? "Recent tape queue" : "Nothing queued"}</CardDescription>
+                <CardDescription>{mostRecent.length ? "Recent project queue" : "Nothing queued"}</CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col gap-1">
                 {mostRecent.slice(0, 3).map((project) => (
@@ -158,7 +158,7 @@ export function Dashboard({
                   />
                 ))}
                 {completedProjects.length === 0 ? (
-                  <EmptyState icon={<Sparkles size={18} />} title="No completed tapes" description="Finished projects will settle here." />
+                  <EmptyState icon={<Sparkles size={18} />} title="No completed projects" description="Finished projects will settle here." />
                 ) : null}
               </CardContent>
             </Card>
@@ -198,7 +198,7 @@ function ProjectRow({
           <span className="block truncate text-sm font-medium">{project.title}</span>
           <span className="block truncate text-xs text-muted-foreground">{describeProjectRow(project)}</span>
         </span>
-        <Badge variant="secondary">{project.progress >= 100 || project.completedAt ? "Done" : `${project.progress}%`}</Badge>
+        <Badge variant="secondary">{project.kind === "flow" ? "Flow" : project.progress >= 100 || project.completedAt ? "Done" : `${project.progress}%`}</Badge>
       </button>
       <button
         className="grid size-8 place-items-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-foreground/8 hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
@@ -268,12 +268,18 @@ function describeProjectRow(project: ProjectSummary): string {
 }
 
 function describeNextWork(project: ProjectSummary): string {
+  if (project.kind === "flow") {
+    return project.flowGoal ? `Flow: ${project.flowGoal}` : "Flow workspace";
+  }
   const step = project.currentStepTitle ? `Step: ${project.currentStepTitle}` : "Next tape step";
   const block = project.currentBlockKind ? `${project.currentBlockKind}${project.currentBlockLabel ? ` · ${project.currentBlockLabel}` : ""}` : null;
   return block ? `${step} — ${block}` : step;
 }
 
 function formatProjectPosition(project: ProjectSummary): string {
+  if (project.kind === "flow") {
+    return `${project.flowSessionCount ?? 0} Flow session${(project.flowSessionCount ?? 0) === 1 ? "" : "s"}`;
+  }
   const step = typeof project.currentStepIndex === "number" && project.stepCount
     ? `step ${project.currentStepIndex + 1}/${project.stepCount}`
     : "step ready";

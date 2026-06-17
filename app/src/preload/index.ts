@@ -17,6 +17,8 @@ contextBridge.exposeInMainWorld("constructProjects", {
     ipcRenderer.invoke("construct:project:ensure", input),
   importProject: (input: unknown) =>
     ipcRenderer.invoke("construct:project:import", input),
+  createFlowProject: (input: unknown) =>
+    ipcRenderer.invoke("construct:flow:create", input),
   openConstructFile: () =>
     ipcRenderer.invoke("construct:dialog:open-construct-file"),
   selectWorkspaceDirectory: (input: unknown) =>
@@ -66,6 +68,21 @@ contextBridge.exposeInMainWorld("constructProjects", {
     ipcRenderer.invoke("construct:project:verify-recall", input),
   runConstructInteract: (input: unknown) =>
     ipcRenderer.invoke("construct:project:interact", input),
+  runConstructFlowAgent: (input: unknown) =>
+    ipcRenderer.invoke("construct:flow:run-agent", input),
+  runConstructFlowResearch: (input: unknown) =>
+    ipcRenderer.invoke("construct:flow:research", input),
+  readFlowMemory: (input: unknown) =>
+    ipcRenderer.invoke("construct:flow:memory-read", input),
+  updateFlowMemory: (input: unknown) =>
+    ipcRenderer.invoke("construct:flow:memory-update", input),
+  submitFlowTask: (input: unknown) =>
+    ipcRenderer.invoke("construct:flow:submit-task", input),
+  onConstructFlowSessionEvent: (callback: (event: unknown) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
+    ipcRenderer.on("construct:flow:session-event", listener);
+    return () => ipcRenderer.off("construct:flow:session-event", listener);
+  },
   onConstructInteractSessionEvent: (callback: (event: unknown) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
     ipcRenderer.on("construct:project:interact-session-event", listener);
@@ -165,5 +182,38 @@ contextBridge.exposeInMainWorld("constructProjects", {
   lspGetStatus: (projectId: string) => ipcRenderer.invoke("construct:lsp:get-status", projectId),
   lspInstall: (projectId: string) => ipcRenderer.invoke("construct:lsp:install", projectId),
   lspStart: (projectId: string) => ipcRenderer.invoke("construct:lsp:start-server", projectId),
-  lspStop: () => ipcRenderer.invoke("construct:lsp:stop-server")
+  lspStop: () => ipcRenderer.invoke("construct:lsp:stop-server"),
+  litellmStart: (input: { port: number; openAiApiKey?: string; openRouterApiKey?: string }) =>
+    ipcRenderer.invoke("construct:litellm:start", input),
+  litellmStop: () =>
+    ipcRenderer.invoke("construct:litellm:stop"),
+  litellmStatus: () =>
+    ipcRenderer.invoke("construct:litellm:status"),
+  litellmCheckInstall: () =>
+    ipcRenderer.invoke("construct:litellm:check-install"),
+  litellmInstall: () =>
+    ipcRenderer.invoke("construct:litellm:install"),
+  onLitellmLog: (callback: (payload: { level: string; message: string }) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: { level: string; message: string }) => {
+      callback(payload);
+    };
+    ipcRenderer.on("construct:litellm:log", listener);
+    return () => ipcRenderer.off("construct:litellm:log", listener);
+  },
+  onLitellmStatusChange: (callback: (payload: { status: string; port: number; pid: number | null; error: string | null }) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: any) => {
+      callback(payload);
+    };
+    ipcRenderer.on("construct:litellm:status-change", listener);
+    return () => ipcRenderer.off("construct:litellm:status-change", listener);
+  },
+  importOpencodeAuth: () =>
+    ipcRenderer.invoke("construct:settings:import-opencode-auth"),
+  onProviderLog: (callback: (payload: { provider: string; message: string; level: string }) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: { provider: string; message: string; level: string }) => {
+      callback(payload);
+    };
+    ipcRenderer.on("construct:provider:log", listener);
+    return () => ipcRenderer.off("construct:provider:log", listener);
+  }
 });

@@ -538,7 +538,7 @@ export function Workspace({
   }
 
   async function persistProject(patch: Parameters<typeof updateProject>[0]["patch"]) {
-    onProjectChange(await updateProject({ id: project.id, patch }));
+    onProjectChange(requireTapeProject(await updateProject({ id: project.id, patch })));
   }
 
   async function persistAssistance(
@@ -1302,7 +1302,7 @@ export function Workspace({
     }
 
     const position = nextPosition(project);
-    const nextProject = await updateProject({
+    const nextProject = requireTapeProject(await updateProject({
       id: project.id,
       patch: {
         ...position,
@@ -1311,7 +1311,7 @@ export function Workspace({
           [block.id]: true
         }
       }
-    });
+    }));
     onProjectChange(nextProject);
 
     const nextBlock = currentBlock(nextProject);
@@ -1994,6 +1994,13 @@ export function Workspace({
       />
     </AdaptiveSidecarLayout>
   );
+}
+
+function requireTapeProject(project: Awaited<ReturnType<typeof updateProject>>): ProjectRecord {
+  if (project.kind === "flow") {
+    throw new Error("Tape workspace received a Flow project update.");
+  }
+  return project;
 }
 
 function createInteractThreadId(): string {

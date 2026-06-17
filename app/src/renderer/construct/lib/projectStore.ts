@@ -1,13 +1,13 @@
 import { importProject, listProjects, openProject } from "./bridge";
 import { parseConstructSource } from "./parser";
-import type { ProjectRecord, ProjectSummary } from "../types";
+import type { AnyProjectRecord, ProjectRecord, ProjectSummary } from "../types";
 import type { AppliedConstructFix } from "../compiler/types";
 
 export async function bootstrapProjects(): Promise<ProjectSummary[]> {
   return listProjects();
 }
 
-export async function openSavedProject(id: string): Promise<ProjectRecord> {
+export async function openSavedProject(id: string): Promise<AnyProjectRecord> {
   return openProject(id);
 }
 

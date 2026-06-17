@@ -16,6 +16,14 @@ const settings: StoredAiSettings = {
   openRouterApiKey: "test-openrouter-key",
   openRouterModel: "deepseek/deepseek-chat",
   openRouterBaseUrl: "https://openrouter.ai/api/v1",
+  liteLlmApiKey: "test-litellm-key",
+  liteLlmModel: "openai/gpt-5-mini",
+  liteLlmBaseUrl: "http://localhost:4000/v1",
+  liteLlmManageServer: false,
+  opencodeZenApiKey: "",
+  opencodeZenBaseUrl: "https://opencode.ai/zen/v1",
+  opencodeZenModel: "gpt-5.1-codex",
+  githubCopilotModel: "github_copilot/gpt-4",
   featureModels: {
     "construct-interact": "deepseek/deepseek-v4-flash"
   }
@@ -51,5 +59,22 @@ test("OpenRouter selection never falls through to a stored OpenAI key", () => {
       openAiApiKey: "leftover-openai-key"
     }, "selection-explain"),
     null
+  );
+});
+
+test("proxy-backed providers resolve through LiteLLM model config", () => {
+  assert.deepEqual(
+    resolveConstructAgentModelFromSettings(
+      { ...settings, provider: "github-copilot", featureModels: {} },
+      "Construct Interact evaluation",
+      "construct-interact"
+    ),
+    {
+      providerId: "github-copilot",
+      modelId: "github_copilot/gpt-4",
+      id: "github_copilot/gpt-4",
+      url: "http://localhost:4000/v1",
+      apiKey: "test-litellm-key"
+    }
   );
 });

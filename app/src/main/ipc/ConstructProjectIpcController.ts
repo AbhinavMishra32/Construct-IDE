@@ -6,7 +6,7 @@ import type { IpcMain, WebContents } from "electron";
 
 import type { StoredSettings } from "../config/constructConfig";
 import { ConstructProjectGitService } from "../projects/ConstructProjectGitService";
-import type { ProjectSummary, StoredProject } from "../projects/ConstructProjectTypes";
+import { isFlowProject, isTapeProject, type ProjectSummary, type StoredProject } from "../projects/ConstructProjectTypes";
 import { ConstructProjectWorkspaceService } from "../projects/ConstructProjectWorkspaceService";
 
 export class ConstructProjectIpcController {
@@ -36,6 +36,9 @@ export class ConstructProjectIpcController {
 
       if (existingIndex >= 0) {
         const existing = projects[existingIndex];
+        if (isFlowProject(existing)) {
+          throw new Error(`Project "${input.program.id}" is a Flow project and cannot be replaced by a tape import.`);
+        }
         projects[existingIndex] = {
           ...existing,
           source: input.source,
@@ -58,6 +61,7 @@ export class ConstructProjectIpcController {
       }
 
       const project: StoredProject = {
+        kind: "tape",
         id: input.program.id,
         title: input.program.title,
         description: input.program.description,
@@ -96,6 +100,9 @@ export class ConstructProjectIpcController {
       const now = new Date().toISOString();
 
       if (existing) {
+        if (isFlowProject(existing)) {
+          throw new Error(`Project "${input.program.id}" is a Flow project and cannot be replaced by a tape.`);
+        }
         existing.source = input.source;
         existing.program = input.program;
         existing.title = input.program.title;
@@ -108,6 +115,7 @@ export class ConstructProjectIpcController {
       }
 
       const project: StoredProject = {
+        kind: "tape",
         id: input.program.id,
         title: input.program.title,
         description: input.program.description,
@@ -166,7 +174,7 @@ export class ConstructProjectIpcController {
             activeFilePath: project.activeFilePath,
             workspacePath: project.workspacePath
           });
-          project.activeFilePath = project.program.files[0]?.path ?? null;
+          project.activeFilePath = isTapeProject(project) ? project.program.files[0]?.path ?? null : null;
         }
       }
       await this.options.workspace.materializeInitialFiles(project);
@@ -175,11 +183,12 @@ export class ConstructProjectIpcController {
       console.log("[construct] open project resolved", {
         id: project.id,
         title: project.title,
-        stepCount: project.program.steps.length,
-        fileCount: project.program.files.length,
+        kind: project.kind ?? "tape",
+        stepCount: isTapeProject(project) ? project.program.steps.length : null,
+        fileCount: isTapeProject(project) ? project.program.files.length : null,
         activeFilePath: project.activeFilePath,
-        currentStepIndex: project.currentStepIndex,
-        currentBlockIndex: project.currentBlockIndex
+        currentStepIndex: isTapeProject(project) ? project.currentStepIndex : null,
+        currentBlockIndex: isTapeProject(project) ? project.currentBlockIndex : null
       });
       return project;
     });
@@ -203,6 +212,9 @@ export class ConstructProjectIpcController {
 
     ipcMain.handle("construct:project:read-tape", async (_event, projectId: string) => {
       const project = this.options.findProject(await this.options.readProjects(), projectId);
+      if (!isTapeProject(project)) {
+        throw new Error("Flow projects do not have a project tape.");
+      }
       const source = project.sourcePath && existsSync(project.sourcePath)
         ? await readFile(project.sourcePath, "utf8")
         : project.source;
@@ -216,6 +228,9 @@ export class ConstructProjectIpcController {
     ipcMain.handle("construct:project:update-tape", async (_event, input) => {
       const projects = await this.options.readProjects();
       const project = this.options.findProject(projects, input.projectId);
+      if (!isTapeProject(project)) {
+        throw new Error("Flow projects do not have a project tape.");
+      }
       if (input.program?.id !== project.id) {
         throw new Error(`Tape project id must remain "${project.id}".`);
       }

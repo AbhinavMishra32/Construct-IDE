@@ -46,24 +46,36 @@ import {
   listAiFeatures,
   listProjects,
   listModels,
+  importOpencodeAuth,
+  litellmCheckInstall,
+  litellmInstall,
+  litellmStart,
+  litellmStatus,
+  litellmStop,
   onAgentLog,
+  onLitellmStatusChange,
   selectWorkspaceDirectory,
   setThemeSource,
   setWorkspaceRoot,
   updateAiSettings,
   updateProject,
+  readFlowMemory,
   readProjectTape,
+  updateFlowMemory,
   updateProjectTape
 } from "./lib/bridge";
 import { parseConstructSource } from "./lib/parser";
+import { showProviderUpdateToast } from "./components/RequestNotifications";
 import type {
   AiFeatureSettings,
   AiSettings,
+  AnyProjectRecord,
   DeleteProjectCheck,
+  LitellmState,
   ModelCatalogEntry,
-  ProjectRecord,
   ProjectSummary
 } from "./types";
+import type { ConstructFlowMemoryRead, FlowMemoryFileName } from "../../shared/constructFlow";
 import type { ThemeMode } from "./theme";
 
 const defaultAiSettings: AiSettings = {
@@ -75,8 +87,59 @@ const defaultAiSettings: AiSettings = {
   openRouterApiKey: "",
   openRouterModel: "deepseek/deepseek-v4-flash",
   openRouterBaseUrl: "https://openrouter.ai/api/v1",
+  liteLlmApiKey: "",
+  liteLlmModel: "openai/gpt-5-mini",
+  liteLlmBaseUrl: "http://localhost:4000/v1",
+  liteLlmManageServer: false,
+  opencodeZenApiKey: "",
+  opencodeZenBaseUrl: "https://opencode.ai/zen/v1",
+  opencodeZenModel: "gpt-5.1-codex",
+  githubCopilotModel: "github_copilot/gpt-4",
   featureModels: {}
 };
+
+const flowMemoryFiles: FlowMemoryFileName[] = [
+  "research.md",
+  "project.md",
+  "path.md",
+  "learner.md"
+];
+
+function modelSettingsKeyForProvider(provider: AiSettings["provider"]): "openAiModel" | "openRouterModel" | "opencodeZenModel" | "githubCopilotModel" | "liteLlmModel" {
+  if (provider === "openrouter") return "openRouterModel";
+  if (provider === "opencode-zen") return "opencodeZenModel";
+  if (provider === "github-copilot") return "githubCopilotModel";
+  if (provider === "litellm") return "liteLlmModel";
+  return "openAiModel";
+}
+
+function defaultModelForFeature(provider: AiSettings["provider"], feature: AiFeatureSettings): string {
+  if (provider === "openrouter") return feature.defaultOpenRouterModel;
+  if (provider === "opencode-zen") return feature.defaultOpenCodeZenModel;
+  if (provider === "github-copilot") return feature.defaultGithubCopilotModel;
+  if (provider === "litellm") return feature.defaultLiteLlmModel;
+  return feature.defaultOpenAiModel;
+}
+
+const flowMemoryLabels: Record<FlowMemoryFileName, { title: string; description: string }> = {
+  "research.md": {
+    title: "Research",
+    description: "External docs, repo findings, and project-specific technical notes."
+  },
+  "project.md": {
+    title: "Project",
+    description: "Goal, architecture map, important files, commands, and constraints."
+  },
+  "path.md": {
+    title: "Path",
+    description: "Current direction, recent progress, likely next moves, blockers, and handoff notes."
+  },
+  "learner.md": {
+    title: "Learner",
+    description: "The learner's current strengths, weak spots, help level, and learning evidence."
+  }
+};
+
 export function ConstructSettingsSurface({
   activeItemId,
   projectId,
@@ -92,9 +155,10 @@ export function ConstructSettingsSurface({
   theme: ThemeMode;
   onThemeChange: (theme: ThemeMode) => void;
   onProjectsChange: (projects: ProjectSummary[]) => void;
-  onActiveProjectChange: (project: ProjectRecord | null | ((current: ProjectRecord | null) => ProjectRecord | null)) => void;
+  onActiveProjectChange: (project: AnyProjectRecord | null | ((current: AnyProjectRecord | null) => AnyProjectRecord | null)) => void;
 }) {
   const project = projectId ? projects.find((item) => item.id === projectId) : null;
+  const isFlowProject = project?.kind === "flow";
   const [workspaceRoot, setWorkspaceRootValue] = useState("");
   const [aiSettings, setAiSettings] = useState<AiSettings>(defaultAiSettings);
   const aiSettingsRef = useRef(aiSettings);
@@ -104,6 +168,7 @@ export function ConstructSettingsSurface({
   const [modelsBusy, setModelsBusy] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
   const [modelsError, setModelsError] = useState<string | null>(null);
+  const [litellmState, setLitellmState] = useState<LitellmState>({ status: "stopped", port: 4000, pid: null, error: null });
   const [projectTitle, setProjectTitle] = useState(project?.title ?? "");
   const [projectDescription, setProjectDescription] = useState(project?.description ?? "");
   const [busy, setBusy] = useState(false);
@@ -121,6 +186,25 @@ export function ConstructSettingsSurface({
   const deferredTapeSource = useDeferredValue(tapeSource);
   const tapeValidation = tapeLoaded ? validateConstructSource(deferredTapeSource) : null;
   const tapeErrors = tapeValidation?.diagnostics.filter((diagnostic) => diagnostic.severity === "error") ?? [];
+  const [flowMemory, setFlowMemory] = useState<ConstructFlowMemoryRead[]>([]);
+
+  function setAiSettingsDraft(update: AiSettings | ((current: AiSettings) => AiSettings)) {
+    setAiSettings((current) => {
+      const next = typeof update === "function" ? update(current) : update;
+      aiSettingsRef.current = next;
+      return next;
+    });
+  }
+  const [flowMemoryDrafts, setFlowMemoryDrafts] = useState<Record<FlowMemoryFileName, string>>({
+    "research.md": "",
+    "project.md": "",
+    "path.md": "",
+    "learner.md": ""
+  });
+  const [flowMemoryLoaded, setFlowMemoryLoaded] = useState(false);
+  const [flowMemoryBusy, setFlowMemoryBusy] = useState(false);
+  const [flowMemorySaving, setFlowMemorySaving] = useState<FlowMemoryFileName | null>(null);
+  const [flowMemoryError, setFlowMemoryError] = useState<string | null>(null);
 
   const [lspEnabled, setLspEnabled] = useState(() => {
     return window.localStorage.getItem("construct.lsp.enabled") !== "false";
@@ -260,7 +344,7 @@ export function ConstructSettingsSurface({
     void getSettings()
       .then((settings) => {
         setWorkspaceRootValue(settings.workspaceRoot);
-        setAiSettings({
+        setAiSettingsDraft({
           ...defaultAiSettings,
           ...(settings.ai ?? {})
         });
@@ -271,6 +355,11 @@ export function ConstructSettingsSurface({
   }, []);
 
   useEffect(() => {
+    if (aiSettings.provider === "opencode-zen" || aiSettings.provider === "github-copilot" || aiSettings.provider === "litellm") {
+      void refreshModels(aiSettings.provider);
+      return;
+    }
+
     const apiKey = aiSettings.provider === "openrouter"
       ? aiSettings.openRouterApiKey.trim()
       : aiSettings.openAiApiKey.trim();
@@ -287,6 +376,90 @@ export function ConstructSettingsSurface({
     setProjectTitle(project?.title ?? "");
     setProjectDescription(project?.description ?? "");
   }, [project?.description, project?.title]);
+
+  useEffect(() => {
+    void litellmStatus().then(setLitellmState).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = onLitellmStatusChange((state) => {
+      setLitellmState(state);
+    });
+    return unsubscribe;
+  }, []);
+
+  function extractPort(baseUrl: string): number {
+    try {
+      const url = new URL(baseUrl);
+      return Number(url.port) || 4000;
+    } catch {
+      return 4000;
+    }
+  }
+
+  async function handleLitellmStart() {
+    const port = extractPort(aiSettings.liteLlmBaseUrl);
+    const installed = await litellmCheckInstall();
+    if (!installed) {
+      const ok = window.confirm(
+        "litellm is not installed. Install it now via pip3? (requires Python 3)"
+      );
+      if (!ok) return;
+      const success = await litellmInstall();
+      if (!success) {
+        setLitellmState((prev) => ({ ...prev, status: "error", error: "Failed to install litellm. Try: pip3 install litellm" }));
+        return;
+      }
+    }
+    const state = await litellmStart({
+      port,
+      openAiApiKey: aiSettings.openAiApiKey || undefined,
+      openRouterApiKey: aiSettings.openRouterApiKey || undefined
+    });
+    setLitellmState(state);
+    if (state.status === "running") {
+      void refreshModels("litellm");
+    }
+  }
+
+  async function handleLitellmStop() {
+    const state = await litellmStop();
+    setLitellmState(state);
+  }
+
+  useEffect(() => {
+    if (activeItemId !== "project-flow-memory" || !projectId || !isFlowProject) {
+      setFlowMemoryLoaded(false);
+      setFlowMemoryError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setFlowMemoryBusy(true);
+    setFlowMemoryError(null);
+    void readFlowMemory({ projectId })
+      .then((entries) => {
+        if (cancelled) return;
+        const drafts = createFlowMemoryDrafts(entries);
+        setFlowMemory(entries);
+        setFlowMemoryDrafts(drafts);
+        setFlowMemoryLoaded(true);
+      })
+      .catch((caught) => {
+        if (!cancelled) {
+          setFlowMemoryError(caught instanceof Error ? caught.message : String(caught));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setFlowMemoryBusy(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeItemId, isFlowProject, projectId]);
 
   async function chooseRoot() {
     const directory = await selectWorkspaceDirectory({ defaultPath: workspaceRoot });
@@ -321,9 +494,20 @@ export function ConstructSettingsSurface({
   }
 
   async function refreshModels(provider = aiSettings.provider, apiKey?: string) {
-    const resolvedKey = (apiKey ?? (provider === "openrouter" ? aiSettings.openRouterApiKey : aiSettings.openAiApiKey)).trim();
-    if (!resolvedKey) {
-      setModelsError(`Enter your ${provider === "openrouter" ? "OpenRouter" : "OpenAI"} API key first.`);
+    const usesLiteLlm = provider === "github-copilot" || provider === "litellm";
+    const resolvedKey = (apiKey ?? (
+      provider === "openrouter" ? aiSettings.openRouterApiKey
+      : provider === "openai" ? aiSettings.openAiApiKey
+      : provider === "opencode-zen" ? aiSettings.opencodeZenApiKey
+      : aiSettings.liteLlmApiKey
+    )).trim();
+    if (!usesLiteLlm && !resolvedKey && provider !== "opencode-zen" && provider !== "openrouter" && provider !== "openai") {
+      setModelsError("Enter an API key first.");
+      setModelOptions([]);
+      return;
+    }
+    if (!usesLiteLlm && !resolvedKey && provider === "openai") {
+      setModelsError("Enter your OpenAI API key first.");
       setModelOptions([]);
       return;
     }
@@ -331,23 +515,28 @@ export function ConstructSettingsSurface({
     try {
       setModelsBusy(true);
       setModelsError(null);
+      if (usesLiteLlm) {
+        showProviderUpdateToast("running");
+      }
       const models = await listModels({ provider, apiKey: resolvedKey });
+      if (usesLiteLlm) {
+        showProviderUpdateToast("succeeded");
+      }
       setModelOptions(models);
-      setAiSettings((current) => {
-        if (provider === "openrouter") {
-          const nextModel = current.openRouterModel && models.some((model) => model.id === current.openRouterModel)
-            ? current.openRouterModel
-            : (models[0]?.id ?? current.openRouterModel);
-          return { ...current, openRouterModel: nextModel };
-        }
-
-        const nextModel = current.openAiModel && models.some((model) => model.id === current.openAiModel)
-          ? current.openAiModel
-          : (models[0]?.id ?? current.openAiModel);
-        return { ...current, openAiModel: nextModel };
+      setAiSettingsDraft((current) => {
+        const key = modelSettingsKeyForProvider(provider);
+        const currentModel = current[key];
+        const nextModel = currentModel && models.some((model) => model.id === currentModel)
+          ? currentModel
+          : (models[0]?.id ?? currentModel);
+        return { ...current, [key]: nextModel };
       });
     } catch (caught) {
-      setModelsError(caught instanceof Error ? caught.message : String(caught));
+      const message = caught instanceof Error ? caught.message : String(caught);
+      if (usesLiteLlm) {
+        showProviderUpdateToast("failed", message);
+      }
+      setModelsError(message);
       setModelOptions([]);
     } finally {
       setModelsBusy(false);
@@ -355,19 +544,17 @@ export function ConstructSettingsSurface({
   }
 
   function updateAiRuntime(runtime: AiSettings["runtime"]) {
-    setAiSettings((current) => ({ ...current, runtime }));
+    setAiSettingsDraft((current) => ({ ...current, runtime }));
   }
 
   function updateAiProvider(provider: AiSettings["provider"]) {
-    setAiSettings((current) => ({ ...current, provider }));
+    setAiSettingsDraft((current) => ({ ...current, provider }));
     setModelOptions([]);
     setModelsError(null);
     setAiFeatures((features) => features.map((feature) => {
       const saved = aiSettings.featureModels[feature.id]?.trim();
       if (saved) return feature;
-      const model = provider === "openrouter"
-        ? feature.defaultOpenRouterModel
-        : feature.defaultOpenAiModel;
+      const model = defaultModelForFeature(provider, feature);
       return { ...feature, model };
     }));
   }
@@ -377,7 +564,7 @@ export function ConstructSettingsSurface({
       setAiBusy(true);
       setModelsError(null);
       const settings = await updateAiSettings({ ai: aiSettingsRef.current });
-      setAiSettings({
+      setAiSettingsDraft({
         ...defaultAiSettings,
         ...(settings.ai ?? {})
       });
@@ -391,7 +578,7 @@ export function ConstructSettingsSurface({
   }
 
   function updateFeatureModel(featureId: string, model: string) {
-    setAiSettings((current) => ({
+    setAiSettingsDraft((current) => ({
       ...current,
       featureModels: {
         ...current.featureModels,
@@ -404,8 +591,8 @@ export function ConstructSettingsSurface({
   }
 
   function updateGlobalModel(model: string) {
-    setAiSettings((current) => {
-      const key = current.provider === "openrouter" ? "openRouterModel" : "openAiModel";
+    setAiSettingsDraft((current) => {
+      const key = modelSettingsKeyForProvider(current.provider);
       return {
         ...current,
         [key]: model,
@@ -414,7 +601,7 @@ export function ConstructSettingsSurface({
     });
     setAiFeatures((current) => current.map((feature) => ({
       ...feature,
-      model: model || feature.defaultOpenRouterModel
+      model: model || defaultModelForFeature(aiSettingsRef.current.provider, feature)
     })));
   }
 
@@ -482,7 +669,7 @@ export function ConstructSettingsSurface({
   }
 
   async function openTapeEditor() {
-    if (!projectId) return;
+    if (!projectId || isFlowProject) return;
     setTapeEditorOpen(true);
     setTapeBusy(true);
     setTapeError(null);
@@ -500,7 +687,7 @@ export function ConstructSettingsSurface({
   }
 
   async function saveTapeSource() {
-    if (!projectId) return;
+    if (!projectId || isFlowProject) return;
     const validation = validateConstructSource(tapeSource);
     if (!validation.valid) {
       setTapeError("Fix the tape errors before saving.");
@@ -537,6 +724,29 @@ export function ConstructSettingsSurface({
       setTapeError(caught instanceof Error ? caught.message : String(caught));
     } finally {
       setTapeBusy(false);
+    }
+  }
+
+  async function saveFlowMemoryFile(file: FlowMemoryFileName) {
+    if (!projectId || !isFlowProject) return;
+
+    try {
+      setFlowMemorySaving(file);
+      setFlowMemoryError(null);
+      const updatedEntries = await updateFlowMemory({
+        projectId,
+        updates: [{ file, content: flowMemoryDrafts[file] }]
+      });
+      setFlowMemory((current) => mergeFlowMemoryEntries(current, updatedEntries));
+      setFlowMemoryDrafts((current) => ({
+        ...current,
+        ...createFlowMemoryDrafts(updatedEntries, current)
+      }));
+      toast.success(`${flowMemoryLabels[file].title} memory saved`);
+    } catch (caught) {
+      setFlowMemoryError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setFlowMemorySaving(null);
     }
   }
 
@@ -659,7 +869,56 @@ export function ConstructSettingsSurface({
           </SettingsSection>
         ) : null}
 
-        {activeItemId === "project-advanced" ? (
+        {activeItemId === "project-flow-memory" && isFlowProject ? (
+          <SettingsSection title="Flow Memory">
+            <SettingsCard>
+              <SettingsRow
+                title="Memory directory"
+                description=".construct/flow-memory keeps Flow's durable context readable, editable, and source-control friendly."
+              />
+              {flowMemoryBusy && !flowMemoryLoaded ? (
+                <SettingsRow title="Loading memory" description="Reading the current Flow memory files." />
+              ) : null}
+              {flowMemoryFiles.map((file) => {
+                const entry = flowMemory.find((item) => item.file === file);
+                const metadata = flowMemoryLabels[file];
+                const changed = flowMemoryDrafts[file] !== (entry?.content ?? "");
+                return (
+                  <SettingsRow
+                    key={file}
+                    title={metadata.title}
+                    description={`${metadata.description}${entry?.updatedAt ? ` Last updated ${new Date(entry.updatedAt).toLocaleString()}.` : ""}`}
+                  >
+                    <div className="flex flex-col gap-2">
+                      <Textarea
+                        aria-label={`${metadata.title} memory`}
+                        className="min-h-40 resize-y font-mono text-xs leading-5"
+                        value={flowMemoryDrafts[file]}
+                        onChange={(event) => {
+                          setFlowMemoryDrafts((current) => ({ ...current, [file]: event.target.value }));
+                          setFlowMemoryError(null);
+                        }}
+                        spellCheck={false}
+                      />
+                      <div className="flex items-center justify-between gap-3">
+                        <code className="text-xs text-muted-foreground">{entry?.path ?? `.construct/flow-memory/${file}`}</code>
+                        <Button
+                          size="small"
+                          disabled={flowMemoryBusy || flowMemorySaving !== null || !changed}
+                          onClick={() => void saveFlowMemoryFile(file)}
+                        >
+                          {flowMemorySaving === file ? "Saving..." : "Save"}
+                        </Button>
+                      </div>
+                    </div>
+                  </SettingsRow>
+                );
+              })}
+            </SettingsCard>
+          </SettingsSection>
+        ) : null}
+
+        {activeItemId === "project-advanced" && !isFlowProject ? (
           <SettingsSection title="Advanced">
             <SettingsCard>
               <SettingsRow
@@ -681,6 +940,7 @@ export function ConstructSettingsSurface({
         ) : null}
 
         {error ? <Alert variant="destructive"><AlertTitle>Project settings error</AlertTitle><AlertDescription>{error}</AlertDescription></Alert> : null}
+        {flowMemoryError ? <Alert variant="destructive"><AlertTitle>Flow memory error</AlertTitle><AlertDescription>{flowMemoryError}</AlertDescription></Alert> : null}
         {deleteError ? <Alert variant="destructive"><AlertTitle>Could not delete project</AlertTitle><AlertDescription>{deleteError}</AlertDescription></Alert> : null}
 
         <ShadcnDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
@@ -841,15 +1101,40 @@ export function ConstructSettingsSurface({
         modelsError={modelsError}
         onRuntimeChange={updateAiRuntime}
         onProviderChange={updateAiProvider}
-        onOpenAiApiKeyChange={(openAiApiKey: string) => setAiSettings((current) => ({ ...current, openAiApiKey }))}
-        onOpenAiBaseUrlChange={(openAiBaseUrl: string) => setAiSettings((current) => ({ ...current, openAiBaseUrl }))}
-        onOpenRouterApiKeyChange={(openRouterApiKey: string) => setAiSettings((current) => ({ ...current, openRouterApiKey }))}
-        onOpenRouterBaseUrlChange={(openRouterBaseUrl: string) => setAiSettings((current) => ({ ...current, openRouterBaseUrl }))}
+        onOpenAiApiKeyChange={(openAiApiKey: string) => setAiSettingsDraft((current) => ({ ...current, openAiApiKey }))}
+        onOpenAiBaseUrlChange={(openAiBaseUrl: string) => setAiSettingsDraft((current) => ({ ...current, openAiBaseUrl }))}
+        onOpenRouterApiKeyChange={(openRouterApiKey: string) => setAiSettingsDraft((current) => ({ ...current, openRouterApiKey }))}
+        onOpenRouterBaseUrlChange={(openRouterBaseUrl: string) => setAiSettingsDraft((current) => ({ ...current, openRouterBaseUrl }))}
+        onLiteLlmApiKeyChange={(liteLlmApiKey: string) => setAiSettingsDraft((current) => ({ ...current, liteLlmApiKey }))}
+        onLiteLlmBaseUrlChange={(liteLlmBaseUrl: string) => setAiSettingsDraft((current) => ({ ...current, liteLlmBaseUrl }))}
+        onOpencodeZenApiKeyChange={(opencodeZenApiKey: string) => setAiSettingsDraft((current) => ({ ...current, opencodeZenApiKey }))}
+        onOpencodeZenBaseUrlChange={(opencodeZenBaseUrl: string) => setAiSettingsDraft((current) => ({ ...current, opencodeZenBaseUrl }))}
         onOpenRouterModelChange={updateGlobalModel}
         onOpenAiModelChange={updateGlobalModel}
+        onOpencodeZenModelChange={updateGlobalModel}
+        onGithubCopilotModelChange={updateGlobalModel}
+        onLiteLlmModelChange={updateGlobalModel}
         onRefreshModels={(provider) => { void refreshModels(provider); }}
         onFeatureModelChange={updateFeatureModel}
         onSave={() => { void saveAiConfiguration(); }}
+        onImportOpencodeAuth={async (): Promise<string | null> => {
+          try {
+            const apiKey = await importOpencodeAuth();
+            if (apiKey) {
+              setAiSettingsDraft((current) => ({ ...current, opencodeZenApiKey: apiKey }));
+              toast.success("OpenCode Zen API key imported from opencode CLI");
+            } else {
+              toast.error("No OpenCode API key found in opencode auth file.");
+            }
+            return apiKey;
+          } catch {
+            toast.error("Failed to import OpenCode API key.");
+            return null;
+          }
+        }}
+        litellmState={litellmState}
+        onLitellmStart={handleLitellmStart}
+        onLitellmStop={handleLitellmStop}
       />
 
       <SettingsSection title="About">
@@ -868,6 +1153,7 @@ export function ConstructSettingsSurface({
 
 export function buildSettingsSections(projects: ProjectSummary[], projectId?: string): SettingsNavSection[] {
   const project = projectId ? projects.find((item) => item.id === projectId) : null;
+  const isFlowProject = project?.kind === "flow";
   const sections: SettingsNavSection[] = [
     {
       id: "app",
@@ -901,16 +1187,60 @@ export function buildSettingsSections(projects: ProjectSummary[], projectId?: st
           icon: <PanelRight size={18} />,
           badge: `${project.progress}%`
         },
-        {
-          id: "project-advanced",
-          label: "Advanced",
-          icon: <GearSix size={18} weight="duotone" />
-        }
+        ...(isFlowProject
+          ? [
+              {
+                id: "project-flow-memory",
+                label: "Flow Memory",
+                icon: <FileCode size={18} weight="duotone" />
+              }
+            ]
+          : [
+              {
+                id: "project-advanced",
+                label: "Advanced",
+                icon: <GearSix size={18} weight="duotone" />
+              }
+            ])
       ]
     });
   }
 
   return sections;
+}
+
+function createFlowMemoryDrafts(
+  entries: ConstructFlowMemoryRead[],
+  base?: Record<FlowMemoryFileName, string>
+): Record<FlowMemoryFileName, string> {
+  const drafts: Record<FlowMemoryFileName, string> = base
+    ? { ...base }
+    : {
+        "research.md": "",
+        "project.md": "",
+        "path.md": "",
+        "learner.md": ""
+      };
+
+  for (const entry of entries) {
+    drafts[entry.file] = entry.content;
+  }
+
+  return drafts;
+}
+
+function mergeFlowMemoryEntries(
+  current: ConstructFlowMemoryRead[],
+  updated: ConstructFlowMemoryRead[]
+): ConstructFlowMemoryRead[] {
+  const byFile = new Map<FlowMemoryFileName, ConstructFlowMemoryRead>();
+  for (const entry of current) {
+    byFile.set(entry.file, entry);
+  }
+  for (const entry of updated) {
+    byFile.set(entry.file, entry);
+  }
+  return flowMemoryFiles.map((file) => byFile.get(file)).filter((entry): entry is ConstructFlowMemoryRead => Boolean(entry));
 }
 
 export function settingsTitle(itemId: string, projectId: string | undefined, projects: ProjectSummary[]) {

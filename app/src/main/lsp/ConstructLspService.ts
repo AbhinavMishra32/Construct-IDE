@@ -1,10 +1,10 @@
 import path from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 
 import type { WebContents } from "electron";
 
-import type { StoredProject } from "../projects/ConstructProjectTypes";
+import { isFlowProject, isTapeProject, type StoredProject } from "../projects/ConstructProjectTypes";
 import type { DebugProcessSnapshot } from "../terminal/ConstructTerminalService";
 
 export type LspLanguage = "typescript" | "python";
@@ -103,7 +103,8 @@ export class ConstructLspService {
     const startedLanguages: LspLanguage[] = [];
 
     if (languages.length === 0) {
-      console.log("[LSP] No supported language files found for project", { id: project.id });
+      const projectLabel = isFlowProject(project) ? "Flow project" : "project";
+      console.log(`[LSP] No supported language files found for ${projectLabel}`, { id: project.id });
     }
 
     for (const language of languages) {
@@ -301,10 +302,12 @@ export class ConstructLspService {
   private languagesForProject(project: StoredProject): LspLanguage[] {
     const languages = new Set<LspLanguage>();
 
-    for (const file of project.program.files ?? []) {
-      const language = this.languageForPath(file.path);
-      if (language) {
-        languages.add(language);
+    if (isTapeProject(project)) {
+      for (const file of project.program.files ?? []) {
+        const language = this.languageForPath(file.path);
+        if (language) {
+          languages.add(language);
+        }
       }
     }
 
@@ -315,7 +318,32 @@ export class ConstructLspService {
       }
     }
 
+    if (languages.size === 0) {
+      this.scanWorkspaceForLanguages(project.workspacePath, languages);
+    }
+
     return [...languages];
+  }
+
+  private scanWorkspaceForLanguages(workspacePath: string, languages: Set<LspLanguage>, depth = 0): void {
+    if (depth > 3 || !existsSync(workspacePath)) return;
+    try {
+      const entries = readdirSync(workspacePath, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.name === "node_modules" || entry.name === ".git" || entry.name.startsWith(".")) continue;
+        const fullPath = path.join(workspacePath, entry.name);
+        if (entry.isDirectory()) {
+          this.scanWorkspaceForLanguages(fullPath, languages, depth + 1);
+        } else if (entry.isFile()) {
+          const language = this.languageForPath(entry.name);
+          if (language) {
+            languages.add(language);
+          }
+        }
+      }
+    } catch {
+      // Ignore permission errors or broken symlinks
+    }
   }
 
   private emitLog(language: LspLanguage, level: "info" | "warn" | "error", text: string): void {

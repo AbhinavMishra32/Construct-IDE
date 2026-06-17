@@ -63,6 +63,17 @@ export type ConstructAgentRunEvent = {
   createdAt: string;
 };
 
+export type ConstructAgentContextWindow = {
+  providerId?: string;
+  modelId?: string;
+  usedTokens?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  maxTokens?: number;
+  source: "runtime" | "estimated";
+  updatedAt: string;
+};
+
 export type ConstructInteractAction =
   | {
       type: "go-to-step";

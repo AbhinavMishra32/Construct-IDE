@@ -1,8 +1,5 @@
-import { z } from "zod";
-
 import { createConstructAgentRuntime, type ConstructAgentTools, type ConstructAgentTraceEntry } from "./constructAgentRuntime";
 import type {
-  ConstructInteractAction,
   ConstructInteractResult,
   ConstructInteractRuntimeInput
 } from "../shared/constructLearning";
@@ -11,82 +8,6 @@ import { isCompleteLearnerFacingReply } from "./constructInteractReply";
 
 export const CONSTRUCT_INTERACT_AGENT_ID = "construct-interact-agent";
 export const CONSTRUCT_INTERACT_AGENT_NAME = "Construct Interact";
-
-const ConstructInteractActionSchema: z.ZodType<ConstructInteractAction> = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal("go-to-step"),
-    stepId: z.string().min(1),
-    label: z.string().min(1),
-    reason: z.string().min(1)
-  }),
-  z.object({
-    type: z.literal("open-concept"),
-    conceptId: z.string().min(1),
-    label: z.string().min(1),
-    reason: z.string().min(1)
-  }),
-  z.object({
-    type: z.literal("open-file"),
-    path: z.string().min(1),
-    anchor: z.string().optional(),
-    label: z.string().min(1),
-    reason: z.string().min(1)
-  }),
-  z.object({
-    type: z.literal("focus-code"),
-    path: z.string().min(1),
-    line: z.number().int().positive().optional(),
-    endLine: z.number().int().positive().optional(),
-    anchor: z.string().optional(),
-    label: z.string().min(1),
-    reason: z.string().min(1)
-  }),
-  z.object({
-    type: z.literal("focus-terminal"),
-    label: z.string().min(1),
-    reason: z.string().min(1)
-  }),
-  z.object({
-    type: z.literal("run-terminal-command"),
-    command: z.string().min(1),
-    cwd: z.string().optional(),
-    label: z.string().min(1),
-    reason: z.string().min(1)
-  }),
-]);
-
-const ConstructInteractResultBaseSchema = z.object({
-  requestedOutcome: z.enum([
-    "answer",
-    "clarify",
-    "navigate",
-    "create-dynamic-steps",
-    "edit-project",
-    "run-command"
-  ]),
-  reply: z.string().min(2).refine((value) => !looksInternalReplyLabel(value), {
-    message: "Reply must be learner-facing prose, not an internal label."
-  }).refine(isCompleteLearnerFacingReply, {
-    message: "Reply must be complete prose with balanced Markdown delimiters."
-  }),
-  actions: z.array(ConstructInteractActionSchema).max(6).default([])
-});
-
-function constructInteractResultSchema() {
-  return ConstructInteractResultBaseSchema.superRefine((value, context) => {
-    if (value.requestedOutcome === "clarify" && !value.reply.includes("?")) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["reply"],
-        message: "A clarify outcome must contain a learner-facing question."
-      });
-    }
-  });
-}
-
-function looksInternalReplyLabel(value: string): boolean {
-  return /^[a-z][a-z0-9]*(?:[_-][a-z0-9]+)+$/i.test(value.trim());
-}
 
 export async function runConstructInteract(
   input: ConstructInteractRuntimeInput,
@@ -98,7 +19,7 @@ export async function runConstructInteract(
   const canGenerateLiveSteps = supportsGeneratedLiveSteps(input.tapeSpec ?? "");
   const toolDriven = supportsConstructInteract(input.tapeSpec ?? "");
   const formalToolDrivenSpec = supportsToolDrivenInteract(input.tapeSpec ?? "");
-  const result = await runtime.generateStructured({
+  const result = await runtime.runAgentic({
     id: CONSTRUCT_INTERACT_AGENT_ID,
     featureId: "construct-interact",
     name: CONSTRUCT_INTERACT_AGENT_NAME,
@@ -109,22 +30,23 @@ export async function runConstructInteract(
       mode: input.mode ?? "lesson-check"
     }),
     prompt: buildConstructInteractPrompt(input, toolDriven),
-    schema: constructInteractResultSchema(),
     tools,
     maxSteps: 12,
     abortSignal: options?.abortSignal,
     maxRetries: 2,
     onTrace
   });
+  const reply = normalizeAgentReply(result.text);
   return {
-    ...result,
+    reply,
     status: "continue",
     confidence: "low",
     coveredConceptIds: [],
     missingConceptIds: [],
     assistanceLevel: "none",
     shouldAdvance: false,
-    actions: result.actions ?? []
+    actions: [],
+    durationMs: result.durationMs
   };
 }
 
@@ -143,24 +65,30 @@ export function buildConstructInteractInstructions({
       ? "You are Construct Interact, a general-purpose project agent inside Construct IDE."
       : "You are Construct Interact, an active learning agent inside Construct IDE.",
     "Complete the user's actual request. Do not substitute navigation, advice, or a promise for an action the available tools can perform.",
+    "Short commands like 'go', 'go ahead', 'send me to the next step', and 'debug' are action requests. Use tools and return the completed action or a concrete UI action; do not ask what they want when the project context already says it.",
     "Choose tools from the situation, not from a fixed checklist. Run independent reads together when possible and do not repeat a tool without a new reason.",
     "Finish tool work before returning. Never end with 'let me check', 'I will create', or similar future-tense filler.",
     "Match the response to the request. Do not add canned project introductions, capability menus, message-type classifications, or generic suggested topics.",
     "Never claim wording or project state without tool evidence. Preserve whether evidence came from a tape step, concept card, reference, workspace file, or terminal output.",
-    "The final reply must be complete learner-facing prose with balanced Markdown. The structured result contains only requestedOutcome, reply, and optional UI actions.",
-    "Do not place confidence, pass/fail status, assistance level, learning-state patches, or Dynamic Step JSON in the final structured result.",
+    "The final reply must be complete learner-facing prose with balanced Markdown.",
+    "Do not return JSON for UI actions. Use UI/action tools when a navigation, focus, file, terminal, or Dynamic Step action is needed.",
+    "Do not place confidence, pass/fail status, assistance level, learning-state patches, or Dynamic Step JSON in the final reply.",
     isGeneralMode
       ? "Do not assess ordinary project chat. If the user asks for file or terminal work, use the available workspace tools and return a relevant UI action."
       : "Call recordLearnerAssessment only when this turn genuinely evaluates learner understanding. That tool is the only place for confidence, pass/fail status, assistance level, concept coverage, or advancement.",
     canGenerateLiveSteps
-      ? "When the user asks for new or expanded learning steps, set requestedOutcome=create-dynamic-steps and create them with createDynamicStep. Do not return step content in the final object."
+      ? "When the user asks for new or expanded learning steps, create them with createDynamicStep. Do not return step content in the final reply."
       : "This tape cannot create Dynamic Steps. Use existing tape resources or explain the limitation without inventing an action.",
+    canGenerateLiveSteps
+      ? "When the user asks to edit or improve the next step, use editNextStep to create a compiler-validated adaptive next-step edit before replying."
+      : null,
     canGenerateLiveSteps
       ? "Before createDynamicStep, inspect the authored tape with getTapeOverview and the relevant getTapeStep/getTapeStepBlock or file tools. Match its actual structure and use any useful combination of explain, guide, interact, edit, recall, run, expect, and checkpoint blocks."
       : "Prefer grounded go-to-step, open-concept, open-file, focus-code, or terminal actions.",
     canGenerateLiveSteps
       ? "Write proposed Dynamic Steps as real .construct ::step source. Use parseDynamicStep or compileDynamicStep while drafting when useful; createDynamicStep performs the final production compiler validation."
       : null,
+    "If tools are needed, call them, observe their results, then continue reasoning and answer. Do not stop after a tool call unless the next expected event is user input.",
     formalToolDrivenSpec
       ? "This tape uses tape-0.4.2 agentic Interact; resource ids are discovery hints, not preloaded evidence."
       : "Apply the same agentic behavior to this compatible tape version."
@@ -188,13 +116,13 @@ export function buildConstructInteractPrompt(input: ConstructInteractRuntimeInpu
       [
         "Use read tools when you need authored tape, learner state, workspace, or terminal context.",
         "Use writeWorkspaceFile, appendWorkspaceFile, or createWorkspaceFolder only when the user clearly asks for a file/project change or the change is the obvious next step.",
-        "Return UI actions for concrete next moves: focus-code, open-file, go-to-step, open-concept, focus-terminal, or run-terminal-command.",
+      "Call UI action tools for concrete next moves: focus-code, open-file, go-to-step, open-concept, focus-terminal, or run-terminal-command.",
         "If you say a file changed, the file-writing tool must have succeeded in this run.",
         "If a terminal command should run, return run-terminal-command instead of only telling the user to run it.",
         "Keep the reply proportional to the request. Do not include a project introduction or capability list unless it directly answers the user."
       ].filter(Boolean).join("\n"),
       "",
-      "Return a concise project-facing reply and concrete UI actions."
+      "Return concise project-facing prose after any needed tool work."
     ].join("\n");
   }
 
@@ -207,7 +135,7 @@ export function buildConstructInteractPrompt(input: ConstructInteractRuntimeInpu
       "Learner message:",
       input.answer || "(empty answer)",
       "",
-      "Use tools when they help establish authored content, learner history, or the requested action. Record an assessment only when this is actually an evaluation. Return concise learner-facing prose and optional UI actions."
+      "Use tools when they help establish authored content, learner history, or the requested action. Record an assessment only when this is actually an evaluation. Return concise learner-facing prose after tool work."
     ].filter(Boolean).join("\n");
   }
 
@@ -240,6 +168,14 @@ export function buildConstructInteractPrompt(input: ConstructInteractRuntimeInpu
       "For requested Dynamic Steps, inspect the authored tape and create compiler-validated steps through createDynamicStep instead of returning step JSON."
     ].join("\n"),
     "",
-    "Return a concise learner-facing reply and optional structured UI actions."
+    "Return concise learner-facing prose after any needed tool work."
   ].filter(Boolean).join("\n");
+}
+
+function normalizeAgentReply(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return "I could not produce a response from the model, but the activity above shows the work completed.";
+  }
+  return isCompleteLearnerFacingReply(trimmed) ? trimmed : trimmed.replace(/[`*_~]+$/g, "").trim();
 }

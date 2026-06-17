@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { cp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 
 import type { StoredSettings } from "../config/constructConfig";
-import type { ProjectSummary, StoredProject, WorkspaceTreeNode } from "./ConstructProjectTypes";
+import { isFlowProject, isTapeProject, type ProjectSummary, type StoredProject, type StoredTapeProject, type WorkspaceTreeNode } from "./ConstructProjectTypes";
 
 const ignoredWorkspaceEntries = new Set([
   ".git",
@@ -63,6 +63,10 @@ export class ConstructProjectWorkspaceService {
   }
 
   calculateProgress(project: StoredProject): number {
+    if (isFlowProject(project)) {
+      return project.completedAt ? 100 : project.progress ?? 0;
+    }
+
     const blockCount = project.program.steps.reduce(
       (total, step) => total + step.blocks.length,
       0
@@ -98,6 +102,10 @@ export class ConstructProjectWorkspaceService {
 
   async materializeInitialFiles(project: StoredProject): Promise<void> {
     await mkdir(project.workspacePath, { recursive: true });
+    if (!isTapeProject(project)) {
+      return;
+    }
+
     const initialContentByPath = new Map(project.program.files.map((file) => [file.path, file.content]));
 
     for (const file of project.program.files) {
@@ -123,7 +131,7 @@ export class ConstructProjectWorkspaceService {
     await this.persistAuthoringArtifacts(project);
   }
 
-  async persistAuthoringArtifacts(project: StoredProject): Promise<void> {
+  async persistAuthoringArtifacts(project: StoredTapeProject): Promise<void> {
     const directory = this.safeProjectPath(project, ".construct");
     await mkdir(directory, { recursive: true });
     await writeFile(path.join(directory, "project.construct"), project.source, "utf8");
@@ -157,6 +165,39 @@ export class ConstructProjectWorkspaceService {
   }
 
   summarizeProject(project: StoredProject): ProjectSummary {
+    if (isFlowProject(project)) {
+      return {
+        kind: "flow",
+        id: project.id,
+        title: project.title,
+        description: project.description,
+        progress: project.progress,
+        lastOpenedAt: project.lastOpenedAt,
+        workspacePath: project.workspacePath,
+        sourcePath: project.sourcePath ?? null,
+        currentStepIndex: undefined,
+        currentBlockIndex: undefined,
+        currentStepTitle: null,
+        currentBlockKind: null,
+        currentBlockLabel: project.flow.goal,
+        activeFilePath: project.activeFilePath ?? null,
+        stepCount: undefined,
+        blockCount: undefined,
+        completedBlockCount: undefined,
+        fileCount: undefined,
+        conceptCount: undefined,
+        referenceCount: undefined,
+        verificationPassCount: 0,
+        verificationFailCount: 0,
+        authoringFixCount: 0,
+        completedAt: project.completedAt ?? null,
+        flowGoal: project.flow.goal,
+        flowMemoryFileCount: 4,
+        flowSessionCount: project.flow.sessions.length,
+        flowLastActivityAt: project.flow.updatedAt
+      };
+    }
+
     const currentStep = project.program.steps[project.currentStepIndex] ?? null;
     const currentBlock = currentStep?.blocks[project.currentBlockIndex] ?? null;
     const blockCount = project.program.steps.reduce((total, step) => total + step.blocks.length, 0);
@@ -164,6 +205,7 @@ export class ConstructProjectWorkspaceService {
     const verificationResults = Object.values(project.verificationResults ?? {});
 
     return {
+      kind: "tape",
       id: project.id,
       title: project.title,
       description: project.description,

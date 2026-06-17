@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 
 import type { ConstructDataPaths } from "../config/constructConfig";
-import type { StoredProject } from "./ConstructProjectTypes";
+import { isFlowProject, type StoredProject } from "./ConstructProjectTypes";
 
 export class ConstructProjectRepository {
   constructor(private readonly paths: ConstructDataPaths) {}
@@ -51,8 +51,26 @@ export class ConstructProjectRepository {
   }
 
   normalize(project: StoredProject): StoredProject {
+    if (isFlowProject(project)) {
+      return {
+        ...project,
+        kind: "flow",
+        activeFilePath: project.activeFilePath ?? null,
+        fileTreeExpanded: project.fileTreeExpanded ?? [],
+        completedAt: project.completedAt ?? null,
+        flow: {
+          ...project.flow,
+          memoryDirectory: ".construct/flow-memory",
+          researchCompletedAt: project.flow.researchCompletedAt ?? null,
+          sessions: project.flow.sessions ?? [],
+          updatedAt: project.flow.updatedAt ?? project.flow.createdAt ?? new Date().toISOString()
+        }
+      };
+    }
+
     return {
       ...project,
+      kind: project.kind ?? "tape",
       program: {
         ...project.program,
         references: project.program.references ?? [],

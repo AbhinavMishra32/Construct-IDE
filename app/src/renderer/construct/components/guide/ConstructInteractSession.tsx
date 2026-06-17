@@ -2,7 +2,6 @@ import { BookOpenIcon, FileCodeIcon, PathIcon, SparkleIcon } from "@phosphor-ico
 import { useRef, type ReactNode } from "react";
 
 import {
-  AgentRunTrace,
   AgentSessionComposer,
   AgentSessionSurface,
   type AgentRunTraceEntry,
@@ -143,50 +142,21 @@ function buildInteractMessages({
     const completedToolCalls = isLatestResult
       ? (result?.toolCalls ?? session.toolCalls ?? [])
       : (session.toolCalls ?? []);
-    const events = (isLiveSession ? (session.agentEvents ?? []) : completedEvents)
-      .filter((event) => event.type !== "message" && event.type !== "iteration");
+    const events = isLiveSession ? (session.agentEvents ?? []) : completedEvents;
     const toolCalls = isLiveSession ? (session.toolCalls ?? []) : completedToolCalls;
-    const traceEntries = buildAgentRunTraceEntries(events, toolCalls, isLiveSession);
-    const assistantParts: AgentSessionMessagePart[] = [];
-    const tracePart: AgentSessionMessagePart | null = traceEntries.length > 0 || isLiveSession
-      ? {
-          type: "text",
-          id: `${session.id}:agent-trace`,
-          content: (
-            <AgentRunTrace
-              state={isLiveSession ? "thinking" : "thought"}
-              entries={traceEntries}
-              durationMs={isLatestResult ? (result?.durationMs ?? session.durationMs) : session.durationMs}
-              defaultOpen={isLiveSession}
-            />
-          )
-        }
-      : null;
-
-    if (tracePart) {
-      assistantParts.push(tracePart);
-    }
-
-    if (session.reply.trim()) {
-      assistantParts.push({
-        type: "text",
-        id: `${session.id}:reply`,
-        content: (
-          <div className={isLiveSession ? "construct-interact-streaming-reply" : undefined} data-streaming={isLiveSession || undefined}>
-            <MarkdownBlock
-              className="space-y-2 text-[13px] leading-[1.65] [&_p]:leading-[1.65]"
-              content={session.reply}
-              theme={theme}
-              onOpenConcept={onOpenConcept}
-              onOpenFile={onOpenFile}
-            />
-          </div>
-        ),
-        meta: !isLiveSession && session.assessment
-          ? `${interactStatusLabel(session.assessment.status)} · ${session.assessment.confidence} confidence · ${session.assessment.assistanceLevel}`
-          : undefined
-      });
-    }
+    const assistantParts = buildAgentEventParts({
+      sessionId: session.id,
+      events,
+      toolCalls,
+      replyText: session.reply,
+      assessmentMeta: !isLiveSession && session.assessment
+        ? `${interactStatusLabel(session.assessment.status)} · ${session.assessment.confidence} confidence · ${session.assessment.assistanceLevel}`
+        : undefined,
+      isLiveSession,
+      theme,
+      onOpenConcept,
+      onOpenFile
+    });
 
     const resultSource = isLatestResult && result
       ? result
@@ -223,15 +193,14 @@ function buildInteractMessages({
         id: `${blockId}:pending-assistant`,
         role: "assistant",
         parts: [{
-          type: "text",
+          type: "activity",
           id: `${blockId}:agent-trace`,
-          content: (
-            <AgentRunTrace
-              state="thinking"
-              entries={[]}
-              defaultOpen
-            />
-          )
+          entry: {
+            id: `${blockId}:pending-agent`,
+            kind: "thought",
+            title: "Working",
+            status: "running"
+          }
         }]
       }
     );
@@ -240,39 +209,150 @@ function buildInteractMessages({
   return messages;
 }
 
-function buildAgentRunTraceEntries(
-  events: ConstructAgentRunEvent[],
-  toolCalls: ConstructInteractToolCallRecord[],
-  active = false
-): AgentRunTraceEntry[] {
-  const entries = events.filter((event) => event.type !== "iteration").map(runEventToTraceEntry);
-  const recordedToolCounts = new Map<string, number>();
-  for (const event of events) {
-    if (event.type === "tool") {
-      const name = event.toolName ?? event.title;
-      recordedToolCounts.set(name, (recordedToolCounts.get(name) ?? 0) + 1);
-    }
-  }
+function buildAgentEventParts({
+  sessionId,
+  events,
+  toolCalls,
+  replyText,
+  assessmentMeta,
+  isLiveSession,
+  theme,
+  onOpenConcept,
+  onOpenFile
+}: {
+  sessionId: string;
+  events: ConstructAgentRunEvent[];
+  toolCalls: ConstructInteractToolCallRecord[];
+  replyText: string;
+  assessmentMeta?: string;
+  isLiveSession: boolean;
+  theme: "light" | "dark" | "system";
+  onOpenConcept: (conceptId: string) => void;
+  onOpenFile: (reference: InlineFileRef) => void;
+}): AgentSessionMessagePart[] {
+  const parts: AgentSessionMessagePart[] = [];
+  const seenToolIds = new Set<string>();
+  const seenToolNames = new Map<string, number>();
+  let hasMessageEvent = false;
+  const fallbackText = splitProcessNarration(replyText);
+  const fallbackReasoning = !events.some((event) => event.type === "message")
+    ? splitReasoningSegments(fallbackText.process)
+    : [];
+  let fallbackReasoningIndex = 0;
+  const pushFallbackReasoning = () => {
+    const text = fallbackReasoning[fallbackReasoningIndex++];
+    if (!text) return;
+    parts.push(buildFallbackReasoningPart(sessionId, fallbackReasoningIndex, text));
+  };
 
-  for (const toolCall of toolCalls) {
-    const recordedCount = recordedToolCounts.get(toolCall.name) ?? 0;
-    if (recordedCount > 0) {
-      recordedToolCounts.set(toolCall.name, recordedCount - 1);
+  for (const event of events) {
+    if (event.type === "iteration") continue;
+    if (event.type === "message") {
+      if (!event.text?.trim()) continue;
+      hasMessageEvent = true;
+      parts.push({
+        type: "text",
+        id: `${sessionId}:message:${event.id}`,
+        content: (
+          <div className={isLiveSession && event.status === "running" ? "construct-interact-streaming-reply" : undefined} data-streaming={isLiveSession && event.status === "running" || undefined}>
+            <MarkdownBlock
+              className="space-y-2 text-[13px] leading-[1.65] [&_p]:leading-[1.65]"
+              content={event.text}
+              theme={theme}
+              onOpenConcept={onOpenConcept}
+              onOpenFile={onOpenFile}
+            />
+          </div>
+        )
+      });
       continue;
     }
-    entries.push(toolCallToTraceEntry(toolCall));
+    if (event.type === "reasoning" && event.status === "completed" && !event.text?.trim()) {
+      continue;
+    }
+    if (event.type === "reasoning") {
+      parts.push({
+        type: "activity",
+        id: `${sessionId}:reasoning:${event.id}`,
+        entry: runEventToTraceEntry(event),
+        defaultOpen: event.status === "running"
+      });
+      continue;
+    }
+    seenToolIds.add(event.id);
+    const toolName = event.toolName ?? event.title;
+    seenToolNames.set(toolName, (seenToolNames.get(toolName) ?? 0) + 1);
+    parts.push({
+      type: "activity",
+      id: `${sessionId}:tool:${event.id}`,
+      entry: runEventToTraceEntry(event),
+      defaultOpen: event.status === "running"
+    });
+    pushFallbackReasoning();
   }
-
-  if (active && !entries.some((entry) => entry.status === "running" || entry.status === "pending")) {
-    entries.push({
-      id: "construct-interact-live-tail",
-      kind: "thought",
-      title: "Continuing",
-      status: "running"
+  for (const toolCall of toolCalls) {
+    if (seenToolIds.has(toolCall.id)) continue;
+    const seenCount = seenToolNames.get(toolCall.name) ?? 0;
+    if (seenCount > 0) {
+      seenToolNames.set(toolCall.name, seenCount - 1);
+      continue;
+    }
+    parts.push({
+      type: "activity",
+      id: `${sessionId}:tool-call:${toolCall.id}`,
+      entry: toolCallToTraceEntry(toolCall)
+    });
+    pushFallbackReasoning();
+  }
+  while (fallbackReasoningIndex < fallbackReasoning.length) {
+    pushFallbackReasoning();
+  }
+  if (isLiveSession && !parts.some((part) => part.type === "activity" && part.entry.status === "running")) {
+    parts.push({
+      type: "activity",
+      id: `${sessionId}:live-tail`,
+      entry: {
+        id: `${sessionId}:live-tail`,
+        kind: "thought",
+        title: "Continuing",
+        status: "running"
+      }
     });
   }
+  if (!hasMessageEvent && fallbackText.answer) {
+    parts.push({
+      type: "text",
+      id: `${sessionId}:reply`,
+      content: (
+        <div className={isLiveSession ? "construct-interact-streaming-reply" : undefined} data-streaming={isLiveSession || undefined}>
+          <MarkdownBlock
+            className="space-y-2 text-[13px] leading-[1.65] [&_p]:leading-[1.65]"
+            content={fallbackText.answer}
+            theme={theme}
+            onOpenConcept={onOpenConcept}
+            onOpenFile={onOpenFile}
+          />
+        </div>
+      ),
+      meta: assessmentMeta
+    });
+  }
+  return parts;
+}
 
-  return entries;
+function buildFallbackReasoningPart(sessionId: string, index: number, text: string): AgentSessionMessagePart {
+  return {
+    type: "activity",
+    id: `${sessionId}:reasoning:fallback:${index}`,
+    defaultOpen: false,
+    entry: {
+      id: `${sessionId}:reasoning:fallback:${index}`,
+      kind: "thought",
+      title: "Reasoning",
+      status: "completed",
+      output: text
+    }
+  };
 }
 
 function runEventToTraceEntry(event: ConstructAgentRunEvent): AgentRunTraceEntry {
@@ -280,11 +360,15 @@ function runEventToTraceEntry(event: ConstructAgentRunEvent): AgentRunTraceEntry
     return {
       id: event.id,
       kind: "thought",
-      title: event.type === "reasoning" ? "Analyzing request" : event.title,
-      subtitle: event.type === "reasoning" && event.status === "completed" ? undefined : event.detail,
+      title: event.type === "reasoning" ? "Reasoning" : event.title,
+      subtitle: event.type === "reasoning" && event.text ? undefined : event.detail,
       status: traceStatus(event.status),
       input: event.type === "iteration" ? stringifyTraceValue(event.input) : undefined,
-      output: event.type === "iteration" ? sanitizeIterationOutput(event.outputPreview) : undefined
+      output: event.type === "reasoning"
+        ? event.text
+        : event.type === "iteration"
+          ? sanitizeIterationOutput(event.outputPreview)
+          : undefined
     };
   }
 
@@ -300,6 +384,34 @@ function runEventToTraceEntry(event: ConstructAgentRunEvent): AgentRunTraceEntry
     input: stringifyTraceValue(event.input),
     output: event.outputPreview
   };
+}
+
+function splitProcessNarration(text: string | undefined): { process?: string; answer?: string } {
+  const value = text?.trim();
+  if (!value) return {};
+  const processPattern = /(?:^|\n)(?=(?:#{1,4}\s+|\*\*|The project structure:|Here(?:'|’)s where|Here is where|What we have|Next step|So,? here|Now we can)\b)/i;
+  const match = value.match(processPattern);
+  if (!match?.index || match.index < 80) {
+    return { answer: value };
+  }
+  const process = value.slice(0, match.index).trim();
+  const answer = value.slice(match.index).trim();
+  return { process, answer: answer || value };
+}
+
+function splitReasoningSegments(text: string | undefined): string[] {
+  const value = text?.trim();
+  if (!value) return [];
+  const sentences = value
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+  if (sentences.length <= 2) return [value];
+  const segments: string[] = [];
+  for (let index = 0; index < sentences.length; index += 2) {
+    segments.push(sentences.slice(index, index + 2).join(" "));
+  }
+  return segments;
 }
 
 function toolCallToTraceEntry(toolCall: ConstructInteractToolCallRecord): AgentRunTraceEntry {
