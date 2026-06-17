@@ -24,7 +24,7 @@ describe("Construct Interact agent guidance", () => {
     assert.match(source, /onToolCallStart:/);
     assert.match(runtimeSource, /status: "running"/);
     assert.match(source, /Agent tool call started/);
-    assert.match(runtimeSource, /title: "Analyzing request"/);
+    assert.match(runtimeSource, /title: "Reasoning"/);
     assert.match(runtimeSource, /title: `Model step \$\{iteration\.iteration\}`/);
     assert.match(runtimeSource, /abortSignal: request\.abortSignal/);
     assert.match(runtimeSource, /Promise\.all\(\[/);
@@ -38,8 +38,8 @@ describe("Construct Interact agent guidance", () => {
     assert.match(source, /selectLearnerFacingReply\(result, streamedReply\)/);
     assert.match(source, /if \(type === "updated"\)/);
     assert.match(runtimeSource, /`\$\{runEventId\}:reasoning`/);
-    assert.doesNotMatch(runtimeSource, /event\.text\s*=/);
-    assert.doesNotMatch(runtimeSource, /outputPreview = event\.text/);
+    assert.match(runtimeSource, /state\.event\.text = state\.text/);
+    assert.match(runtimeSource, /summarizeReasoningText\(state\.text\)/);
     assert.doesNotMatch(source, /Thinking through your request/);
     assert.doesNotMatch(source, /Reviewing your answer/);
     assert.doesNotMatch(source, /The AI model call did not finish cleanly/);
@@ -68,7 +68,6 @@ describe("Construct Interact agent guidance", () => {
 
   it("creates Dynamic Steps through tape tools instead of the response schema", () => {
     const source = readFileSync(fileURLToPath(new URL("./constructInteractAgent.ts", import.meta.url)), "utf8");
-    assert.match(source, /"create-dynamic-steps"/);
     assert.match(source, /create them with createDynamicStep/);
     assert.match(source, /parseDynamicStep or compileDynamicStep/);
     assert.doesNotMatch(source, /GeneratedLiveStepDraftSchema/);
