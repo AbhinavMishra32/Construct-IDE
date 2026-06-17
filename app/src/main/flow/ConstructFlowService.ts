@@ -9,6 +9,7 @@ import { z } from "zod";
 
 import { createConstructAgentRuntime, type ConstructAgentTraceEntry } from "../constructAgentRuntime";
 import { AgentLogService } from "../ai/AgentLogService";
+import { modelForAiFeature } from "../constructAiFeatures";
 import {
   createConstructProtocolTools,
   type ConstructProtocolToolRecord
@@ -21,6 +22,7 @@ import type {
   ConstructFlowAction,
   ConstructFlowAgentInput,
   ConstructFlowAgentResult,
+  ConstructFlowPathNode,
   ConstructFlowPracticeTask,
   ConstructFlowQuestionResponse,
   ConstructFlowSession,
@@ -29,12 +31,41 @@ import type {
   ConstructFlowTaskSubmission,
   ConstructFlowToolCallRecord
 } from "../../shared/constructFlow";
-import type { ConstructAgentRunEvent, KnowledgeBaseRecord } from "../../shared/constructLearning";
+import { CONSTRUCT_CONCEPT_LANGUAGES, type ConstructAgentContextWindow, type ConstructAgentRunEvent, type KnowledgeBaseRecord } from "../../shared/constructLearning";
 import { ConstructLearningStore } from "../constructLearningStore";
 
 const ignoredNames = new Set([".git", ".construct", "node_modules", "dist", "build", ".next", "coverage"]);
 const maxBaselineFileBytes = 120_000;
 const maxDiffChars = 18_000;
+const conceptLanguageSchema = z.enum(CONSTRUCT_CONCEPT_LANGUAGES);
+
+function estimateContextWindow(
+  settings: StoredSettings["ai"] | undefined,
+  renderedPrompt: string
+): ConstructAgentContextWindow {
+  const modelId = settings ? modelForAiFeature(settings, "construct-flow") : undefined;
+  const usedTokens = Math.max(1, Math.ceil(renderedPrompt.length / 4));
+  return {
+    providerId: settings?.provider,
+    modelId,
+    usedTokens,
+    inputTokens: usedTokens,
+    outputTokens: 0,
+    maxTokens: estimateModelContextTokens(modelId),
+    source: "estimated",
+    updatedAt: new Date().toISOString()
+  };
+}
+
+function estimateModelContextTokens(modelId: string | undefined): number {
+  const normalized = modelId?.toLowerCase() ?? "";
+  if (normalized.includes("gemini")) return 1_000_000;
+  if (normalized.includes("gpt-4.1")) return 1_048_576;
+  if (normalized.includes("gpt-5")) return 258_000;
+  if (normalized.includes("claude")) return 200_000;
+  if (normalized.includes("deepseek")) return 128_000;
+  return 128_000;
+}
 
 function buildFlowRuntimeErrorReply(error: unknown): string {
   const message = error instanceof Error && error.message.trim()
@@ -93,6 +124,22 @@ export class ConstructFlowService {
         task.submissionSessionId = session.id;
       }
     }
+    if (input.taskMessage) {
+      const task = project.flow.sessions
+        .flatMap((s) => s.practiceTasks)
+        .find((t) => t.id === input.taskMessage?.taskId);
+      if (task) {
+        task.messages = [
+          ...(task.messages ?? []),
+          {
+            id: randomUUID(),
+            role: "user",
+            content: input.message,
+            createdAt: new Date().toISOString()
+          }
+        ];
+      }
+    }
 
     project.flow.sessions.push(session);
     trimSessions(project);
@@ -120,9 +167,13 @@ export class ConstructFlowService {
 
     const store = this.options.learningStore();
     const learningState = await store.getState();
-    const concepts = Object.values(learningState.knowledgeBase.concepts).filter((c) => c.sourceProjectId === project.id);
+    const concepts = uniqueKnowledgeConcepts(Object.values(learningState.knowledgeBase.concepts));
+    const mainPrompt = buildMainPrompt(project, input, memory, concepts);
+    session.contextWindow = estimateContextWindow(settings?.ai, `${FLOW_MAIN_AGENT_PROMPT}\n\n${mainPrompt}`);
+    publish("updated");
 
     const practiceTask = this.createPracticeTaskTool(project, session, publish);
+    const planLearningPath = this.createPlanLearningPathTool(project, publish);
     const addConcept = this.createAddConceptTool(project, publish);
     const modifyConcept = this.createModifyConceptTool(project, publish);
     const removeConcept = this.createRemoveConceptTool(project, publish);
@@ -130,12 +181,13 @@ export class ConstructFlowService {
     const completeSubtask = this.createCompleteSubtaskTool(project, publish);
     const completeTask = this.createCompleteTaskTool(project, publish);
     const tools: ToolsInput = {
-      ...protocol.tools,
+      ...pickFlowMainProtocolTools(protocol.tools),
+      "plan-learning-path": planLearningPath,
       "practice-task": practiceTask,
+      "suggest-existing-concept": suggestConcept,
       "add-concept": addConcept,
       "modify-concept": modifyConcept,
       "remove-concept": removeConcept,
-      "suggest-existing-concept": suggestConcept,
       "complete-subtask": completeSubtask,
       "complete-task": completeTask
     };
@@ -149,7 +201,7 @@ export class ConstructFlowService {
         name: "Construct Flow",
         purpose: "Construct Flow mentor agent",
         instructions: FLOW_MAIN_AGENT_PROMPT,
-        prompt: buildMainPrompt(project, input, memory, concepts),
+        prompt: mainPrompt,
         tools,
         maxSteps: 16,
         maxRetries: 2,
@@ -163,13 +215,17 @@ export class ConstructFlowService {
           publish("updated");
         }
       });
-      reply = generated.text.trim() || "I could not produce a response from the model, but the activity above shows the work completed.";
+      const pendingQuestion = findPendingLearnerQuestion(session.toolCalls);
+      reply = cleanReplyForPendingQuestion(
+        generated.text.trim(),
+        pendingQuestion
+      ) || (pendingQuestion ? "I’ll wait for your answer below." : "I could not produce a response from the model, but the activity above shows the work completed.");
     } catch (error) {
       runError = error;
       reply = buildFlowRuntimeErrorReply(error);
     }
 
-    const waiting = session.practiceTasks.some((task) => task.status === "waiting") || hasBlockingLearnerQuestion(session.toolCalls);
+    const waiting = session.practiceTasks.some((task) => task.status === "waiting") || Boolean(findPendingLearnerQuestion(session.toolCalls));
     const actions = mergeActions([], actionsFromTools);
     session.actions = actions;
     session.messages.push({
@@ -344,6 +400,90 @@ export class ConstructFlowService {
     };
   }
 
+  private createPlanLearningPathTool(
+    project: StoredFlowProject,
+    publish: (type: ConstructFlowSessionEvent["type"]) => void
+  ): ToolsInput[string] {
+    return createTool({
+      id: "plan-learning-path",
+      description: "Create or revise the learner-aware Flow path after profiling the learner. Use after updating learner.md and whenever the path needs to change. This is the structured project path, not a filesystem path.",
+      inputSchema: z.object({
+        reason: z.string().min(1).max(800).describe("Why this path is being created or revised now"),
+        currentNodeId: z.string().min(1).max(120).optional().describe("Node that should be active now. Defaults to the first non-completed node."),
+        nodes: z.array(z.object({
+          id: z.string().min(1).max(120).describe("Stable node id, e.g. swift-fundamentals or build-first-list"),
+          title: z.string().min(1).max(120),
+          summary: z.string().min(1).max(500),
+          kind: z.enum(["profile", "foundation", "build", "connect", "polish", "ship", "custom"]).default("custom"),
+          learnerLevel: z.enum(["new", "beginner", "comfortable", "advanced", "unknown"]).default("unknown"),
+          concepts: z.array(z.string().min(1).max(120)).max(16).optional(),
+          entryCriteria: z.array(z.string().min(1).max(220)).max(8).optional(),
+          exitCriteria: z.array(z.string().min(1).max(220)).max(8).optional(),
+          researchNotes: z.array(z.string().min(1).max(300)).max(8).optional(),
+          status: z.enum(["planned", "active", "completed", "blocked", "revising"]).optional()
+        })).min(1).max(14)
+      }).strict(),
+      execute: async (toolInput) => {
+        const now = new Date().toISOString();
+        const existingById = new Map((project.flow.pathNodes ?? []).map((node) => [node.id, node]));
+        const completedIds = new Set((project.flow.pathNodes ?? [])
+          .filter((node) => node.status === "completed")
+          .map((node) => node.id));
+        const explicitCurrent = toolInput.currentNodeId && toolInput.nodes.some((node) => node.id === toolInput.currentNodeId)
+          ? toolInput.currentNodeId
+          : null;
+        const firstOpenNode = toolInput.nodes.find((node) => !completedIds.has(node.id) && node.status !== "completed");
+        const currentNodeId = explicitCurrent ?? firstOpenNode?.id ?? toolInput.nodes[0]?.id ?? null;
+        const previousTaskIdsByNode = collectTaskIdsByNode(project);
+
+        const nextNodes: ConstructFlowPathNode[] = toolInput.nodes.map((node, index) => {
+          const existing = existingById.get(node.id);
+          const status = node.status
+            ?? (completedIds.has(node.id) ? "completed" : node.id === currentNodeId ? "active" : "planned");
+          return {
+            id: node.id,
+            title: node.title,
+            summary: node.summary,
+            status,
+            order: index,
+            kind: node.kind,
+            learnerLevel: node.learnerLevel,
+            concepts: normalizeConceptIds(node.concepts ?? [], project),
+            taskIds: previousTaskIdsByNode.get(node.id) ?? existing?.taskIds ?? [],
+            entryCriteria: node.entryCriteria,
+            exitCriteria: node.exitCriteria,
+            researchNotes: node.researchNotes,
+            createdAt: existing?.createdAt ?? now,
+            updatedAt: now,
+            completedAt: status === "completed" ? existing?.completedAt ?? now : undefined
+          };
+        });
+
+        project.flow.pathNodes = nextNodes;
+        project.flow.currentPathNodeId = currentNodeId;
+        project.flow.pathCreatedAt ??= now;
+        project.flow.pathUpdatedAt = now;
+        project.flow.updatedAt = now;
+        project.progress = this.options.workspace.calculateProgress(project);
+
+        await this.options.flowMemory.updateWithDiff(project, [{
+          file: "path.md",
+          reason: toolInput.reason,
+          content: formatPathMemory(project, toolInput.reason)
+        }]);
+
+        publish("updated");
+        return {
+          planned: true,
+          reason: toolInput.reason,
+          currentNodeId,
+          nodeCount: nextNodes.length,
+          nodes: nextNodes
+        };
+      }
+    });
+  }
+
   private createPracticeTaskTool(
     project: StoredFlowProject,
     session: ConstructFlowSession,
@@ -360,6 +500,7 @@ export class ConstructFlowService {
           line: z.number().int().positive().optional(),
           endLine: z.number().int().positive().optional()
         }).optional(),
+        pathNodeId: z.string().min(1).max(120).optional().describe("Path node this task belongs to. Defaults to the current active path node."),
         taskFiles: z.array(z.string().min(1)).min(1).describe("List of files relevant to this task for scoped diffing"),
         successCriteria: z.array(z.string().min(1).max(300)).min(1).max(8).optional().describe("What must be true before this task is done"),
         subtasks: z.array(z.object({
@@ -377,6 +518,7 @@ export class ConstructFlowService {
       }).strict(),
       execute: async (toolInput) => {
         const now = new Date().toISOString();
+        const pathNodeId = toolInput.pathNodeId ?? project.flow.currentPathNodeId ?? firstActivePathNode(project)?.id;
         if (toolInput.preparations && toolInput.preparations.length > 0) {
           await applyTaskPreparations(project, this.options.workspace, toolInput.preparations);
         }
@@ -385,6 +527,7 @@ export class ConstructFlowService {
           id: randomUUID(),
           projectId: project.id,
           sessionId: session.id,
+          pathNodeId,
           title: toolInput.title,
           prompt: toolInput.prompt,
           focus: toolInput.focus,
@@ -392,7 +535,7 @@ export class ConstructFlowService {
           baseline,
           createdAt: now,
           taskFiles: toolInput.taskFiles,
-          conceptIds: toolInput.conceptIds,
+          conceptIds: normalizeConceptIds(toolInput.conceptIds ?? [], project),
           successCriteria: toolInput.successCriteria,
           subtasks: (toolInput.subtasks?.length ? toolInput.subtasks : [{
             title: toolInput.title,
@@ -422,11 +565,16 @@ export class ConstructFlowService {
             createdAt: now
           }
         };
+        if (pathNodeId) {
+          attachTaskToPathNode(project, pathNodeId, task.id);
+        }
         session.practiceTasks.push(task);
+        project.flow.updatedAt = now;
         publish("updated");
         return {
           created: true,
           taskId: task.id,
+          pathNodeId: task.pathNodeId,
           title: task.title,
           prompt: task.prompt,
           focus: task.focus,
@@ -450,6 +598,8 @@ export class ConstructFlowService {
       inputSchema: z.object({
         id: z.string().min(1).describe("The dot-notated hierarchical ID, e.g., 'typescript.syntax.interface'"),
         title: z.string().min(1).describe("Short user-friendly title of the concept"),
+        language: conceptLanguageSchema.default("unknown").describe("Primary programming language family for the concept. Use unknown only when it genuinely is not language-specific."),
+        technology: z.string().min(1).max(80).optional().describe("Primary framework, library, API, or platform, e.g. SwiftUI, GLFW, OpenGL, React."),
         content: z.string().min(1).describe("Rich, detailed free-form markdown explanation of the concept"),
         examples: z.array(z.string()).optional().describe("Code examples illustrating the concept"),
         relatedConcepts: z.array(z.string()).optional().describe("IDs of related concepts"),
@@ -472,11 +622,11 @@ export class ConstructFlowService {
         const now = new Date().toISOString();
         const store = this.options.learningStore();
         const state = await store.getState();
-        const existingConcepts = Object.values(state.knowledgeBase.concepts).filter(
-          (c) => c.sourceProjectId === project.id
-        );
+        const conceptId = normalizeConceptId(toolInput.id, project);
+        const existingConcepts = uniqueKnowledgeConcepts(Object.values(state.knowledgeBase.concepts));
+        const existingRecord = findKnowledgeConceptById(existingConcepts, conceptId);
 
-        const parts = toolInput.id.split(".");
+        const parts = conceptId.split(".");
         for (let i = 1; i < parts.length; i++) {
           const parentId = parts.slice(0, i).join(".");
           const parentExists = existingConcepts.some((c) => c.id === parentId);
@@ -490,6 +640,8 @@ export class ConstructFlowService {
               sourceProjectTitle: project.title,
               title: friendlyParentTitle,
               kind: "concept",
+              language: toolInput.language,
+              technology: toolInput.technology,
               tags: [],
               summary: `Parent concept stub for ${parentId}`,
               why: "",
@@ -497,8 +649,8 @@ export class ConstructFlowService {
               docs: [],
               content: "",
               confidence: "unknown",
-              lastChangeReason: `Auto-created parent while adding ${toolInput.id}.`,
-              learnerEvidence: [`Parent concept required for hierarchy ${toolInput.id}.`],
+              lastChangeReason: `Auto-created parent while adding ${conceptId}.`,
+              learnerEvidence: [`Parent concept required for hierarchy ${conceptId}.`],
               authoredBy: "system",
               agentContributionPercent: 100,
               parentId: parentParts.length > 1 ? parentParts.slice(0, -1).join(".") : null,
@@ -513,11 +665,14 @@ export class ConstructFlowService {
 
         const parentId = parts.length > 1 ? parts.slice(0, -1).join(".") : null;
         const newRecord: KnowledgeBaseRecord = {
-          id: toolInput.id,
-          sourceProjectId: project.id,
-          sourceProjectTitle: project.title,
+          ...existingRecord,
+          id: conceptId,
+          sourceProjectId: existingRecord?.sourceProjectId ?? project.id,
+          sourceProjectTitle: existingRecord?.sourceProjectTitle ?? project.title,
           title: toolInput.title,
           kind: "concept",
+          language: toolInput.language,
+          technology: toolInput.technology,
           tags: parts.slice(0, -1),
           summary: toolInput.content.split("\n")[0] || toolInput.title,
           why: "",
@@ -533,9 +688,10 @@ export class ConstructFlowService {
           agentContributionPercent: toolInput.agentContributionPercent,
           relatedConcepts: toolInput.relatedConcepts ?? [],
           parentId,
-          savedAt: now,
-          openCount: 0,
-          usedInRecall: false,
+          savedAt: existingRecord?.savedAt ?? now,
+          openedAt: existingRecord?.openedAt,
+          openCount: existingRecord?.openCount ?? 0,
+          usedInRecall: existingRecord?.usedInRecall ?? false,
           lastModifiedAt: now
         };
 
@@ -543,7 +699,9 @@ export class ConstructFlowService {
         publish("updated");
 
         return {
-          created: true,
+          created: !existingRecord,
+          canonicalId: conceptId,
+          normalizedFrom: conceptId === toolInput.id ? undefined : toolInput.id,
           reason: toolInput.reason,
           evidence: toolInput.evidence,
           confidenceReason: toolInput.confidenceReason,
@@ -563,6 +721,8 @@ export class ConstructFlowService {
       inputSchema: z.object({
         id: z.string().min(1).describe("The ID of the concept to modify"),
         title: z.string().optional().describe("New title"),
+        language: conceptLanguageSchema.optional().describe("Updated primary programming language family for the concept"),
+        technology: z.string().min(1).max(80).optional().describe("Updated primary framework, library, API, or platform"),
         content: z.string().optional().describe("New markdown explanation"),
         examples: z.array(z.string()).optional().describe("New code examples"),
         relatedConcepts: z.array(z.string()).optional().describe("New related concepts"),
@@ -585,15 +745,18 @@ export class ConstructFlowService {
         const now = new Date().toISOString();
         const store = this.options.learningStore();
         const state = await store.getState();
-        const recordKey = `${project.id}:${toolInput.id}`;
-        const existing = state.knowledgeBase.concepts[recordKey];
+        const conceptId = normalizeConceptId(toolInput.id, project);
+        const existing = findKnowledgeConceptById(Object.values(state.knowledgeBase.concepts), conceptId);
         if (!existing) {
-          throw new Error(`Concept with ID ${toolInput.id} not found in project ${project.title}`);
+          throw new Error(`Concept with ID ${conceptId} not found in the learner's global concepts.`);
         }
 
         const updatedRecord: KnowledgeBaseRecord = {
           ...existing,
+          id: conceptId,
           title: toolInput.title ?? existing.title,
+          language: toolInput.language ?? existing.language,
+          technology: toolInput.technology ?? existing.technology,
           content: toolInput.content ?? existing.content,
           example: toolInput.examples ? (toolInput.examples[0] || "") : existing.example,
           examples: toolInput.examples ?? existing.examples,
@@ -616,6 +779,8 @@ export class ConstructFlowService {
 
         return {
           modified: true,
+          canonicalId: conceptId,
+          normalizedFrom: conceptId === toolInput.id ? undefined : toolInput.id,
           previousConfidence: existing.confidence,
           nextConfidence: updatedRecord.confidence,
           reason: toolInput.reason,
@@ -641,12 +806,16 @@ export class ConstructFlowService {
       }).strict(),
       execute: async (toolInput) => {
         const store = this.options.learningStore();
-        await store.removeKnowledgeConcept(project.id, toolInput.id);
+        const state = await store.getState();
+        const conceptId = normalizeConceptId(toolInput.id, project);
+        const existing = findKnowledgeConceptById(Object.values(state.knowledgeBase.concepts), conceptId);
+        await store.removeKnowledgeConcept(existing?.sourceProjectId ?? project.id, conceptId);
         publish("updated");
 
         return {
           removed: true,
-          id: toolInput.id,
+          id: conceptId,
+          normalizedFrom: conceptId === toolInput.id ? undefined : toolInput.id,
           reason: toolInput.reason,
           evidence: toolInput.evidence
         };
@@ -669,9 +838,10 @@ export class ConstructFlowService {
         label: z.string().min(1).max(80).default("Open concept")
       }).strict(),
       execute: async (toolInput) => {
-        const concept = concepts.find((candidate) => candidate.id === toolInput.conceptId);
+        const conceptId = normalizeConceptId(toolInput.conceptId, project);
+        const concept = concepts.find((candidate) => candidate.id === conceptId);
         if (!concept) {
-          throw new Error(`Concept ${toolInput.conceptId} does not exist for ${project.title}.`);
+          throw new Error(`Concept ${conceptId} does not exist in the learner's global concepts.`);
         }
         const action: ConstructFlowAction = {
           type: "open-concept",
@@ -755,7 +925,11 @@ export class ConstructFlowService {
             evidence: subtask.evidence ?? toolInput.evidence.join("\n")
           }));
         }
+        if (task.pathNodeId) {
+          markPathNodeProgress(project, task.pathNodeId);
+        }
         project.flow.updatedAt = new Date().toISOString();
+        project.progress = this.options.workspace.calculateProgress(project);
         publish("updated");
         return {
           completed: true,
@@ -777,6 +951,149 @@ function findPracticeTask(project: StoredFlowProject, taskId: string): Construct
     throw new Error(`Unknown Flow practice task: ${taskId}`);
   }
   return task;
+}
+
+function uniqueKnowledgeConcepts(records: KnowledgeBaseRecord[]): KnowledgeBaseRecord[] {
+  const byId = new Map<string, KnowledgeBaseRecord>();
+  for (const record of records) {
+    const existing = byId.get(record.id);
+    if (!existing || Date.parse(record.lastModifiedAt ?? record.savedAt) > Date.parse(existing.lastModifiedAt ?? existing.savedAt)) {
+      byId.set(record.id, record);
+    }
+  }
+  return [...byId.values()].sort((a, b) => a.id.localeCompare(b.id));
+}
+
+function findKnowledgeConceptById(records: KnowledgeBaseRecord[], conceptId: string): KnowledgeBaseRecord | undefined {
+  return uniqueKnowledgeConcepts(records).find((record) => record.id === conceptId);
+}
+
+function normalizeConceptIds(conceptIds: string[], project: StoredFlowProject): string[] {
+  return [...new Set(conceptIds.map((id) => normalizeConceptId(id, project)).filter(Boolean))];
+}
+
+function normalizeConceptId(conceptId: string, project: StoredFlowProject): string {
+  const parts = conceptId
+    .trim()
+    .toLowerCase()
+    .replace(/[/:]+/g, ".")
+    .split(".")
+    .map((part) => part.trim().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, ""))
+    .filter(Boolean);
+  const projectTokens = projectSpecificConceptSegments(project);
+  const cleaned = parts.filter((part, index) => index === 0 || !projectTokens.has(part));
+  return (cleaned.length ? cleaned : parts).join(".");
+}
+
+function projectSpecificConceptSegments(project: StoredFlowProject): Set<string> {
+  const values = [
+    project.id,
+    project.title,
+    project.description,
+    project.flow.goal
+  ];
+  const tokens = new Set<string>();
+  for (const value of values) {
+    const wordTokens = String(value ?? "").toLowerCase().split(/[^a-z0-9]+/g).filter((token) => token.length >= 2);
+    const compact = String(value ?? "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "");
+    if (compact.length >= 4) {
+      tokens.add(compact);
+      tokens.add(compact.replace(/project$/, ""));
+    }
+    for (const token of wordTokens) {
+      if (token.length >= 4) tokens.add(token);
+    }
+    for (let index = 0; index < wordTokens.length - 1; index += 1) {
+      const joined = `${wordTokens[index]}${wordTokens[index + 1]}`;
+      if (joined.length >= 4) tokens.add(joined);
+    }
+  }
+  for (const token of [...tokens]) {
+    if (token.endsWith("app") && token.length > 4) {
+      tokens.add(token.slice(0, -3));
+    }
+  }
+  return tokens;
+}
+
+function collectTaskIdsByNode(project: StoredFlowProject): Map<string, string[]> {
+  const ids = new Map<string, string[]>();
+  for (const task of project.flow.sessions.flatMap((session) => session.practiceTasks)) {
+    if (!task.pathNodeId) continue;
+    ids.set(task.pathNodeId, [...(ids.get(task.pathNodeId) ?? []), task.id]);
+  }
+  return ids;
+}
+
+function firstActivePathNode(project: StoredFlowProject): ConstructFlowPathNode | undefined {
+  return [...(project.flow.pathNodes ?? [])]
+    .sort((a, b) => a.order - b.order)
+    .find((node) => node.status === "active" || node.status === "revising" || node.status === "blocked")
+    ?? [...(project.flow.pathNodes ?? [])].sort((a, b) => a.order - b.order).find((node) => node.status !== "completed");
+}
+
+function attachTaskToPathNode(project: StoredFlowProject, pathNodeId: string, taskId: string): void {
+  const node = project.flow.pathNodes?.find((candidate) => candidate.id === pathNodeId);
+  if (!node) return;
+  node.taskIds = [...new Set([...(node.taskIds ?? []), taskId])];
+  node.updatedAt = new Date().toISOString();
+}
+
+function markPathNodeProgress(project: StoredFlowProject, pathNodeId: string): void {
+  const nodes = [...(project.flow.pathNodes ?? [])].sort((a, b) => a.order - b.order);
+  const node = nodes.find((candidate) => candidate.id === pathNodeId);
+  if (!node) return;
+  const nodeTasks = project.flow.sessions
+    .flatMap((session) => session.practiceTasks)
+    .filter((task) => task.pathNodeId === pathNodeId);
+  if (!nodeTasks.length || nodeTasks.some((task) => task.status !== "completed")) return;
+
+  const now = new Date().toISOString();
+  node.status = "completed";
+  node.completedAt = now;
+  node.updatedAt = now;
+  const nextNode = nodes.find((candidate) => candidate.order > node.order && candidate.status !== "completed");
+  if (nextNode) {
+    nextNode.status = "active";
+    nextNode.updatedAt = now;
+    project.flow.currentPathNodeId = nextNode.id;
+  } else {
+    project.flow.currentPathNodeId = node.id;
+  }
+  project.flow.pathUpdatedAt = now;
+}
+
+function formatPathMemory(project: StoredFlowProject, reason: string): string {
+  const nodes = [...(project.flow.pathNodes ?? [])].sort((a, b) => a.order - b.order);
+  return [
+    "# Path",
+    "",
+    `Current node: ${project.flow.currentPathNodeId ?? "not selected"}`,
+    "",
+    `Reason: ${reason}`,
+    "",
+    "## Nodes",
+    "",
+    ...nodes.flatMap((node) => [
+      `### ${node.order + 1}. ${node.title}`,
+      "",
+      `Status: ${node.status}`,
+      "",
+      node.summary,
+      "",
+      node.concepts?.length ? `Concepts: ${node.concepts.join(", ")}` : "Concepts: none recorded yet.",
+      "",
+      node.entryCriteria?.length ? `Entry criteria: ${node.entryCriteria.join("; ")}` : "Entry criteria: none.",
+      "",
+      node.exitCriteria?.length ? `Exit criteria: ${node.exitCriteria.join("; ")}` : "Exit criteria: none.",
+      ""
+    ]),
+    "## Handoff",
+    "",
+    "Use the structured Flow path on the project record as the source of truth. Revise this path when learner evidence changes."
+  ].join("\n");
 }
 
 async function applyTaskPreparations(
@@ -878,7 +1195,11 @@ function applyQuestionResponse(
 }
 
 function isQuestionTool(name: string | undefined): boolean {
-  return name === "ask-user" || name === "ask-question";
+  return normalizeToolName(name) === "askquestion" || normalizeToolName(name) === "askuser";
+}
+
+function normalizeToolName(name: string | undefined): string {
+  return (name ?? "").replace(/[^a-z0-9]/gi, "").toLowerCase();
 }
 
 function readQuestionText(input: unknown): string | undefined {
@@ -962,6 +1283,8 @@ function buildMainPrompt(
   }));
   const latestInputLabel = input.taskSubmission
     ? "Latest task submission:"
+    : input.taskMessage
+      ? "Latest learner message inside an active task:"
     : input.questionResponse
       ? "Latest learner answer to tracked question:"
       : input.startReason === "new-project"
@@ -969,6 +1292,11 @@ function buildMainPrompt(
         : "Latest learner message:";
   const latestInput = input.taskSubmission
     ? JSON.stringify(input.taskSubmission, null, 2)
+    : input.taskMessage
+      ? JSON.stringify({
+          taskMessage: input.taskMessage,
+          message: input.message
+        }, null, 2)
     : input.questionResponse
       ? JSON.stringify({
           question: input.questionResponse.question,
@@ -983,8 +1311,45 @@ function buildMainPrompt(
     `Research enabled: ${project.flow.researchEnabled ? "yes" : "no"}`,
     `Research completed: ${project.flow.researchCompletedAt ? project.flow.researchCompletedAt : "no"}`,
     "",
+    "Structured Flow Path:",
+    JSON.stringify({
+      currentPathNodeId: project.flow.currentPathNodeId,
+      nodes: (project.flow.pathNodes ?? []).map((node) => ({
+        id: node.id,
+        title: node.title,
+        status: node.status,
+        order: node.order,
+        kind: node.kind,
+        learnerLevel: node.learnerLevel,
+        concepts: node.concepts,
+        taskIds: node.taskIds,
+        entryCriteria: node.entryCriteria,
+        exitCriteria: node.exitCriteria
+      }))
+    }, null, 2),
+    "",
+    "Active tasks:",
+    JSON.stringify(project.flow.sessions
+      .flatMap((session) => session.practiceTasks)
+      .filter((task) => task.status === "waiting" || task.status === "submitted")
+      .map((task) => ({
+        id: task.id,
+        pathNodeId: task.pathNodeId,
+        title: task.title,
+        status: task.status,
+        conceptIds: task.conceptIds,
+        successCriteria: task.successCriteria,
+        subtasks: task.subtasks?.map((subtask) => ({
+          id: subtask.id,
+          title: subtask.title,
+          status: subtask.status,
+          successCriteria: subtask.successCriteria
+        })),
+        recentMessages: task.messages?.slice(-4)
+      })), null, 2),
+    "",
     "Flow Memory:",
-    "Only project.md, path.md, and learner.md are preloaded here. Use flow-memory-fetch for a specific file and purpose when you need research.md or a fresher targeted memory view.",
+    "project.md, path.md, and learner.md are preloaded here. Use flow-memory-patch for concise durable updates when meaningful work happens.",
     JSON.stringify(memory.map((item) => ({
       file: item.file,
       updatedAt: item.updatedAt,
@@ -996,6 +1361,9 @@ function buildMainPrompt(
       id: c.id,
       parentId: c.parentId,
       title: c.title,
+      language: c.language,
+      technology: c.technology,
+      sourceProjectTitle: c.sourceProjectTitle,
       content: c.content,
       examples: c.examples,
       confidence: c.confidence,
@@ -1067,6 +1435,24 @@ function replaceToolRecord(session: ConstructFlowSession, record: ConstructFlowT
   }
 }
 
+function pickFlowMainProtocolTools(protocolTools: ToolsInput): ToolsInput {
+  const allowed = [
+    "read",
+    "grep",
+    "run-terminal-command",
+    "ask-question",
+    "askQuestion",
+    "internet-fetch",
+    "internetFetch",
+    "flow-memory-patch"
+  ];
+  return Object.fromEntries(
+    allowed
+      .map((name) => [name, protocolTools[name]] as const)
+      .filter((entry): entry is [string, ToolsInput[string]] => entry[1] !== undefined)
+  );
+}
+
 function extractAction(record: ConstructProtocolToolRecord): ConstructFlowAction[] {
   if (!record.outputPreview) return [];
   try {
@@ -1077,12 +1463,50 @@ function extractAction(record: ConstructProtocolToolRecord): ConstructFlowAction
   }
 }
 
-function hasBlockingLearnerQuestion(toolCalls: ConstructFlowToolCallRecord[]): boolean {
-  return toolCalls.some((toolCall) => {
-    if (!isQuestionTool(toolCall.name) || toolCall.response) return false;
-    const input = toolCall.input;
-    return typeof input === "object" && input !== null && (input as { blocksProgress?: unknown }).blocksProgress === true;
-  });
+function findPendingLearnerQuestion(toolCalls: ConstructFlowToolCallRecord[]): ConstructFlowToolCallRecord | undefined {
+  return [...toolCalls].reverse().find((toolCall) => (
+    isQuestionTool(toolCall.name) && toolCall.status !== "error" && !toolCall.response
+  ));
+}
+
+function cleanReplyForPendingQuestion(reply: string, pendingQuestion: ConstructFlowToolCallRecord | undefined): string {
+  if (!pendingQuestion) return reply;
+  const payload = readQuestionPayload(pendingQuestion);
+  const choiceSet = new Set((payload.choices ?? []).map((choice) => choice.trim().toLowerCase()));
+  let cleaned = reply
+    .replace(/\n+\s*(?:choose|pick|select)\s+(?:one|an option)\s*:?\s*[\s\S]*$/i, "")
+    .trim();
+
+  if (!choiceSet.size) return cleaned;
+
+  const lines = cleaned.split(/\r?\n/);
+  while (lines.length > 0) {
+    const last = lines[lines.length - 1]?.trim() ?? "";
+    if (!last) {
+      lines.pop();
+      continue;
+    }
+    const normalized = last
+      .replace(/^[-*]\s+/, "")
+      .replace(/^\d+[\).]\s+/, "")
+      .replace(/\*\*/g, "")
+      .trim()
+      .toLowerCase();
+    if (!choiceSet.has(normalized)) break;
+    lines.pop();
+  }
+  return lines.join("\n").trim();
+}
+
+function readQuestionPayload(toolCall: ConstructFlowToolCallRecord): { choices?: string[] } {
+  const source = typeof toolCall.input === "object" && toolCall.input !== null
+    ? toolCall.input as { choices?: unknown }
+    : {};
+  return {
+    choices: Array.isArray(source.choices)
+      ? source.choices.filter((choice): choice is string => typeof choice === "string")
+      : undefined
+  };
 }
 
 function mergeActions(primary: ConstructFlowAction[], secondary: ConstructFlowAction[]): ConstructFlowAction[] {
@@ -1116,6 +1540,7 @@ function cloneSession(session: ConstructFlowSession): ConstructFlowSession {
       ...task,
       baseline: { ...task.baseline, files: { ...task.baseline.files } },
       subtasks: task.subtasks?.map((subtask) => ({ ...subtask, successCriteria: subtask.successCriteria ? [...subtask.successCriteria] : undefined })),
+      messages: task.messages?.map((message) => ({ ...message })),
       preparedFiles: task.preparedFiles?.map((file) => ({ ...file, authoredBy: { ...file.authoredBy } })),
       authoredBy: task.authoredBy ? { ...task.authoredBy } : undefined,
       submission: task.submission ? { ...task.submission, touchedFiles: [...task.submission.touchedFiles], authoredBy: task.submission.authoredBy ? { ...task.submission.authoredBy } : undefined } : undefined
@@ -1127,11 +1552,20 @@ export const FLOW_MAIN_AGENT_PROMPT = `You are Construct Flow, an understanding-
 
 You are not a code vending machine. Your job is to help the learner become capable of writing and understanding the project themselves.
 
-You can inspect files with read, search with grep/glob, use LSP/static analysis when tools expose it, focus code ranges in the editor, prepare real coding tasks, receive learner diffs, propose patches, run terminal commands, ask questions, patch Flow Memory, and create/update concepts.
+The main Flow agent tools are read, grep, run-terminal-command, ask-question, internet-fetch, flow-memory-patch, plan-learning-path, practice-task, suggest-existing-concept, add-concept, modify-concept, remove-concept, complete-subtask, and complete-task. Keep the tool surface calm. Do not ask for or invent extra tools.
+
+Project kickoff and path:
+- When a new Flow project starts, first learn the learner and the project. Ask a good amount of tracked questions when needed. You may ask about prior experience, comfort level, goals, constraints, taste, and what they already understand, but choose questions naturally from the situation.
+- Read the global Concepts / Knowledge Base in the prompt. Use it to avoid asking questions that are already answered, and to notice what the learner may already know.
+- After profiling, update learner.md with flow-memory-patch.
+- After updating learner.md, call plan-learning-path. The path must be based on the learner's abilities, the project goal, global concepts, and useful research. If the learner is new to a technology, begin with the beginner concepts before project-specific app work.
+- The path is allowed to change. Revise it with plan-learning-path when learner evidence changes.
+- Each practice-task belongs to the current path node unless there is a clear reason to place it elsewhere.
 
 Concept-first tutoring:
-- Before explaining a topic, check the Concepts / Knowledge Base in the prompt.
-- If an existing concept covers the need, use suggest-existing-concept and briefly say why it is relevant instead of re-explaining.
+- Concepts are global learner knowledge across projects. They are not per-project folders.
+- Before explaining a topic, check the global Concepts / Knowledge Base in the prompt.
+- If an existing concept covers the need, link it in chat with the inline markdown tag [[concept:concept.id|Concept title]] and briefly say why it is relevant instead of re-explaining.
 - If the learner asks again, is confused, or needs help applying the concept, then explain in chat.
 - After explaining, ask one focused Socratic question with ask-question when you need evidence of understanding.
 - Only create a practice-task after the relevant concepts have been introduced and the learner has explicitly shown enough understanding.
@@ -1139,8 +1573,10 @@ Concept-first tutoring:
 When you teach or the learner demonstrates understanding, update the concepts database with evidence:
 - After explaining something new, use add-concept or modify-concept to record it with reason and evidence.
 - After a practice task is submitted and reviewed, use modify-concept to update the learner's confidence level only when the diff or chat proves it.
+- Always set concept language using the enum swift, python, typescript, javascript, cpp, or unknown. Set technology when there is a clear framework, platform, or API such as SwiftUI, OpenGL, GLFW, React, or Node.
 - Every confidence value other than unknown requires confidenceReason. Do not upgrade to weak/emerging/strong without exact evidence.
-- Use dot-notated hierarchical IDs for concepts (e.g. 'typescript.syntax.interface', 'reactjs.hooks.useState'). Max 3 levels deep (domain.area.topic).
+- Use dot-notated hierarchical IDs for reusable concepts (e.g. 'typescript.types.interfaces', 'react.hooks.state', 'swiftui.core-structure'). Max 3 levels deep (domain.area.topic).
+- Do not include product/project/app names in concept IDs. For a notes app, use 'swiftui.core-structure', not 'swiftui.notesapp.core-structure'.
 - Do not create smaller and smaller concepts. Group related sub-concepts inside parent concepts logically.
 - Keep concept content detailed, natural, and free-form markdown so it can be easily read and modified. Write detailed text explanations.
 - When a learner struggles, modify the concept to note the specific confusion point.
@@ -1148,15 +1584,17 @@ When you teach or the learner demonstrates understanding, update the concepts da
 
 Stay natural. Do not reveal internal modes. Do not force responses into rigid templates. Respond like a strong human mentor reviewing and building with the learner.
 
-Use Flow Memory as durable context. Do not read every memory file by habit. Use flow-memory-fetch for the specific file and purpose you need. Use flow-memory-patch for memory updates; do not rewrite full memory files from the agent unless recovering a broken file. Keep memory concise.
+Use Flow Memory as durable context. The current project, path, and learner memory are already in the prompt. Use flow-memory-patch for memory updates; do not rewrite full memory files from the agent unless recovering a broken file. Keep memory concise.
 
-Prefer learner attempts. When the next step is a learner coding attempt, use the practice-task tool to create a real task card with task files, prepared files when needed, success criteria, subtasks when useful, and concept prerequisites. Prepared/scaffolded code is agent-authored; submitted diffs are learner-authored. Do not infer learner understanding from code you wrote.
+Prefer learner attempts. Tasks are the main unit of Flow progress. When the next step is a learner coding attempt, use the practice-task tool to create a real task card with the current path node, task files, prepared files when needed, success criteria, subtasks when useful, and concept prerequisites. Prepared/scaffolded code is agent-authored; submitted diffs are learner-authored. Do not infer learner understanding from code you wrote.
 
-When the latest input includes a task submission, act as a task-review mentor: inspect the compact diff and authoredBy metadata, compare it against the active subtask success criteria, update concepts only with evidence, call complete-subtask when a subtask is genuinely done, and call complete-task only when the whole task has enough evidence. If the diff is insufficient or ambiguous, ask-question with one focused follow-up.
+Do not build whole apps for the learner by hand. For project setup, use run-terminal-command with the normal scaffold command when one exists, then inspect and make small targeted changes only as task preparation. If a native scaffold command is unavailable, explain why, ask a tracked question if direction matters, or create the smallest learner task that can move understanding forward. Never hand-write a whole package.json, Xcode project, or broad app tree as a substitute for a real scaffold command.
 
-If you need learner input, first give at most one short sentence of context in chat, then call ask-question. The ask-question.question field must be the direct question only, ideally one sentence. Do not duplicate the context in both prose and the tool question. Keep ask-question.reason short and internal; the learner UI does not show it. Do not put required learner questions only in prose. If the answer blocks progress, set blocksProgress true and stop after a short acknowledgement.
+When the latest input is a learner message inside an active task, treat it as task-scoped chat. Answer in the context of the active task and do not create a new task unless the path genuinely changes. When the latest input includes a task submission, act as a task-review mentor: inspect the compact diff and authoredBy metadata, compare it against the active subtask success criteria, update concepts only with evidence, call complete-subtask when a subtask is genuinely done, and call complete-task only when the whole task has enough evidence. If the diff is insufficient or ambiguous, ask-question with one focused follow-up.
 
-On a new project kickoff, inspect the workspace or Flow Memory if useful. If research is not complete, decide naturally whether to ask the learner to research first, start without research, or clarify project direction with ask-question. Do not wait for a greeting before beginning.
+If you need learner input, first give at most one short sentence of context in chat, then call ask-question. The ask-question.question field must be the direct question only, ideally one sentence. Do not duplicate the context in both prose and the tool question. Keep ask-question.reason short and internal; the learner UI does not show it. Do not put required learner questions only in prose. Never write "Choose one" or a numbered option list in normal chat after calling ask-question; the UI renders choices. After ask-question, stop with a short acknowledgement if you need any prose at all.
+
+On a new project kickoff, inspect the workspace or Flow Memory if useful. If research is not complete, decide naturally whether to ask the learner to research first, start without research, or clarify project direction with ask-question. Do not wait for a greeting before beginning, and do not create practice tasks before learner profiling and plan-learning-path unless the learner explicitly asks to skip planning.
 
 Do not end with a prose choice question such as "want to build X next?" or "your call". If the learner must choose, use ask-question. If the next step is obvious and concept prerequisites are met, create a practice-task instead of asking permission.
 
@@ -1170,7 +1608,7 @@ export const FLOW_RESEARCH_AGENT_PROMPT = `You are the Construct Flow Research A
 
 Your job is to prepare concise project/domain/technology background for a new Construct Flow project.
 
-You may use internet-search, read, grep, glob, and flow-memory-fetch.
+You may use internet-search, internet-fetch, read, grep, glob, and flow-memory-fetch.
 You do not teach the learner directly.
 You do not create a learner profile.
 You do not create a deterministic project plan.
@@ -1178,6 +1616,6 @@ You do not modify project code.
 
 Create useful markdown for research.md. Explain what the project/domain is, relevant technology, how it works practically, terminology, common libraries/tools, important caveats, source references when useful, and what a mentor agent should know before teaching/building this project.
 
-Keep it concise and source-grounded. Use short search queries, low result counts, and no raw web dumps. Prefer official docs or primary project sources when available.
+Keep it concise and source-grounded. Use short search queries, low result counts, and no raw web dumps. Prefer official docs or primary project sources when available. Use internet-fetch when you already have exact URLs and need the page contents; use query-focused fetch chunks for long docs.
 
 Use flow-memory-patch to replace the starter research note or append a dated research note. Then reply with a short summary of what you saved.`;
