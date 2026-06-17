@@ -7,9 +7,9 @@ export type LogEntry = {
   structured?: AgentStructuredLogMeta;
 };
 
-export type SystemLogChannel = "lsp-server" | "lsp-protocol" | "main" | "renderer" | "terminal";
+export type SystemLogChannel = "lsp-server" | "lsp-protocol" | "main" | "renderer" | "terminal" | "litellm";
 
-export type AgentLogChannel = "verifier" | "authoring-review" | "selection-explain" | "interact" | "code-ghost";
+export type AgentLogChannel = "verifier" | "authoring-review" | "selection-explain" | "interact" | "flow" | "code-ghost";
 
 export type LogChannel = SystemLogChannel | AgentLogChannel;
 
@@ -18,6 +18,7 @@ export const AGENT_CHANNELS: Array<{ id: AgentLogChannel; label: string; descrip
   { id: "authoring-review", label: "Authoring Review", description: "Tape authoring review" },
   { id: "selection-explain", label: "Selection Explain", description: "Text selection explanation" },
   { id: "interact", label: "Interact", description: "Interactive Q&A" },
+  { id: "flow", label: "Flow", description: "Flow agent sessions" },
   { id: "code-ghost", label: "Code Ghost", description: "Code ghost completions" }
 ];
 
@@ -30,10 +31,12 @@ class LogStoreClass {
     main: [],
     renderer: [],
     terminal: [],
+    litellm: [],
     verifier: [],
     "authoring-review": [],
     "selection-explain": [],
     interact: [],
+    flow: [],
     "code-ghost": []
   };
 

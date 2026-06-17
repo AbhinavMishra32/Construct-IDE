@@ -22,7 +22,8 @@ const SYSTEM_CHANNELS: Array<{ id: OutputChannel; label: string }> = [
   { id: "lsp-protocol", label: "LSP protocol" },
   { id: "main", label: "Electron main" },
   { id: "renderer", label: "Renderer console" },
-  { id: "terminal", label: "Terminal" }
+  { id: "terminal", label: "Terminal" },
+  { id: "litellm", label: "LiteLLM" }
 ];
 
 function getChannelLabel(channel: OutputChannel): string {

@@ -1,6 +1,8 @@
 import type {
   ConstructProgram,
   ConstructProjectsApi,
+  AnyProjectRecord,
+  FlowProjectRecord,
   ProjectRecord,
   ProjectSummary,
   TerminalEvent,
@@ -57,6 +59,10 @@ export function importProject(input: Parameters<ConstructProjectsApi["importProj
   return api().importProject(input);
 }
 
+export function createFlowProject(input: Parameters<ConstructProjectsApi["createFlowProject"]>[0]): Promise<FlowProjectRecord> {
+  return api().createFlowProject(input);
+}
+
 export function openConstructFile(): Promise<{ path: string; source: string } | null> {
   return api().openConstructFile();
 }
@@ -87,7 +93,7 @@ export function listAiFeatures() {
 }
 
 export function listModels(input: Parameters<ConstructProjectsApi["listModels"]>[0]) {
-  return api().listModels(input);
+  return trackPromise("server.updateProvider", "Updating providers", api().listModels(input));
 }
 
 export function getLearningState() {
@@ -126,7 +132,7 @@ export function listProjects(): Promise<ProjectSummary[]> {
   return api().listProjects();
 }
 
-export function openProject(id: string): Promise<ProjectRecord> {
+export function openProject(id: string): Promise<AnyProjectRecord> {
   return api().openProject(id);
 }
 
@@ -204,6 +210,30 @@ export function verifyRecall(input: {
 
 export function runConstructInteract(input: Parameters<ConstructProjectsApi["runConstructInteract"]>[0]): Promise<ConstructInteractClientResult> {
   return trackPromise("interact", "Running Q&A", api().runConstructInteract(input));
+}
+
+export function runConstructFlowAgent(input: Parameters<ConstructProjectsApi["runConstructFlowAgent"]>[0]) {
+  return trackPromise("flow-agent", "Running Flow agent", api().runConstructFlowAgent(input));
+}
+
+export function runConstructFlowResearch(input: Parameters<ConstructProjectsApi["runConstructFlowResearch"]>[0]) {
+  return trackPromise("flow-research", "Running Flow research", api().runConstructFlowResearch(input));
+}
+
+export function readFlowMemory(input: Parameters<ConstructProjectsApi["readFlowMemory"]>[0]) {
+  return api().readFlowMemory(input);
+}
+
+export function updateFlowMemory(input: Parameters<ConstructProjectsApi["updateFlowMemory"]>[0]) {
+  return api().updateFlowMemory(input);
+}
+
+export function submitFlowTask(input: Parameters<ConstructProjectsApi["submitFlowTask"]>[0]) {
+  return api().submitFlowTask(input);
+}
+
+export function onConstructFlowSessionEvent(callback: Parameters<ConstructProjectsApi["onConstructFlowSessionEvent"]>[0]): () => void {
+  return api().onConstructFlowSessionEvent(callback);
 }
 
 export function onConstructInteractSessionEvent(callback: Parameters<ConstructProjectsApi["onConstructInteractSessionEvent"]>[0]): () => void {
@@ -305,4 +335,32 @@ export function debugProcesses(): ReturnType<ConstructProjectsApi["debugProcesse
 
 export function onVerifyLog(callback: (event: any) => void): () => void {
   return api().onVerifyLog(callback);
+}
+
+export function litellmStart(input: { port: number; openAiApiKey?: string; openRouterApiKey?: string }): Promise<import("../types").LitellmState> {
+  return api().litellmStart(input);
+}
+
+export function litellmStop(): Promise<import("../types").LitellmState> {
+  return api().litellmStop();
+}
+
+export function litellmStatus(): Promise<import("../types").LitellmState> {
+  return api().litellmStatus();
+}
+
+export function litellmCheckInstall(): Promise<boolean> {
+  return api().litellmCheckInstall();
+}
+
+export function litellmInstall(): Promise<boolean> {
+  return api().litellmInstall();
+}
+
+export function onLitellmLog(callback: (payload: { level: string; message: string }) => void): () => void {
+  return api().onLitellmLog(callback);
+}
+
+export function onLitellmStatusChange(callback: (payload: import("../types").LitellmState) => void): () => void {
+  return api().onLitellmStatusChange(callback);
 }

@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 
-import { onAgentLog } from "./bridge";
+import { onAgentLog, onLitellmLog } from "./bridge";
 import { logStore, type LogChannel } from "./logStore";
 
 export function useConstructLogBridge(): void {
@@ -35,10 +35,18 @@ export function useConstructLogBridge(): void {
       logStore.addLog(channel, payload.message, level, payload.structured);
     });
 
+    const unsubscribeLitellm = onLitellmLog((payload) => {
+      const level = payload.level === "error" || payload.level === "warn"
+        ? payload.level
+        : "info";
+      logStore.addLog("litellm", payload.message, level);
+    });
+
     return () => {
       unsubscribeLsp();
       unsubscribeMain();
       unsubscribeAgent();
+      unsubscribeLitellm();
     };
   }, []);
 }

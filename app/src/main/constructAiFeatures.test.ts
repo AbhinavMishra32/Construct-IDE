@@ -17,6 +17,15 @@ const baseSettings: StoredAiSettings = {
   openRouterApiKey: "",
   openRouterModel: "deepseek/deepseek-v4-flash",
   openRouterBaseUrl: "https://openrouter.ai/api/v1",
+  liteLlmApiKey: "",
+  liteLlmModel: "openai/gpt-5-mini",
+  liteLlmBaseUrl: "http://localhost:4000/v1",
+  liteLlmManageServer: false,
+  openCodeBaseUrl: "http://localhost:4096",
+  openCodePort: 4096,
+  openCodeManageServer: false,
+  openCodeModel: "opencode/openai/gpt-5",
+  githubCopilotModel: "github_copilot/gpt-4",
   featureModels: {}
 };
 
@@ -24,7 +33,7 @@ test("registered AI features expose user-facing metadata", () => {
   assert.ok(constructAiFeatures.length >= 4);
   assert.deepEqual(
     constructAiFeatures.map((feature) => feature.id),
-    ["construct-interact", "verification", "authoring-review", "selection-explain", "code-explain"]
+    ["construct-interact", "construct-flow", "verification", "authoring-review", "selection-explain", "code-explain"]
   );
   assert.ok(constructAiFeatures.every((feature) => feature.title && feature.description));
 });
@@ -35,6 +44,16 @@ test("feature models use provider defaults and saved per-feature overrides", () 
   assert.equal(
     modelForAiFeature({ ...baseSettings, provider: "openrouter" }, "verification"),
     "deepseek/deepseek-v4-flash"
+  );
+
+  assert.equal(
+    modelForAiFeature({ ...baseSettings, provider: "opencode" }, "verification"),
+    "opencode/openai/gpt-5"
+  );
+
+  assert.equal(
+    modelForAiFeature({ ...baseSettings, provider: "github-copilot" }, "verification"),
+    "github_copilot/gpt-4"
   );
 
   assert.equal(

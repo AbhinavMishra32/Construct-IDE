@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
-import { GitBranch, Loader2, Activity, Sun, Moon, Sparkles, CheckCircle2 } from "lucide-react";
+import { GitBranch, Loader2, Activity, Sun, Moon, Sparkles, CheckCircle2, Power } from "lucide-react";
 import { apiTracker, type ActiveCall } from "../lib/apiTracker";
+import { litellmStatus, onLitellmStatusChange } from "../lib/bridge";
+import type { LitellmState } from "../types";
 import type { ThemeMode } from "../theme";
 
 interface StatusBarProps {
@@ -14,6 +16,13 @@ export function StatusBar({ theme, onThemeChange }: StatusBarProps) {
   const [gitBranch, setGitBranch] = useState(apiTracker.getGitBranch());
   const [gitDirtyCount, setGitDirtyCount] = useState(apiTracker.getGitDirtyCount());
   const [lspStatus, setLspStatus] = useState(apiTracker.getLspStatus());
+  const [litellmStatusState, setLitellmStatusState] = useState<LitellmState | null>(null);
+
+  useEffect(() => {
+    void litellmStatus().then(setLitellmStatusState).catch(() => {});
+    const unsubscribe = onLitellmStatusChange(setLitellmStatusState);
+    return unsubscribe;
+  }, []);
 
   useEffect(() => {
     // Subscribe to apiTracker changes
@@ -36,9 +45,15 @@ export function StatusBar({ theme, onThemeChange }: StatusBarProps) {
   }, []);
 
   const provider = settings?.ai?.provider ?? "openai";
-  const modelRaw = provider === "openrouter" 
+  const modelRaw = provider === "openrouter"
     ? (settings?.ai?.openRouterModel ?? "deepseek/deepseek-v4-flash")
-    : (settings?.ai?.openAiModel ?? "gpt-5-mini");
+    : provider === "opencode"
+      ? (settings?.ai?.openCodeModel ?? "opencode/openai/gpt-5")
+      : provider === "github-copilot"
+        ? (settings?.ai?.githubCopilotModel ?? "github_copilot/gpt-4")
+        : provider === "litellm"
+          ? (settings?.ai?.liteLlmModel ?? "openai/gpt-5-mini")
+          : (settings?.ai?.openAiModel ?? "gpt-5-mini");
 
   const formatModelName = (name: string): string => {
     if (!name) return "";
@@ -57,7 +72,15 @@ export function StatusBar({ theme, onThemeChange }: StatusBarProps) {
   };
 
   const formattedModel = formatModelName(modelRaw);
-  const providerLabel = provider === "openrouter" ? "OpenRouter" : "OpenAI";
+  const providerLabel = provider === "openrouter"
+    ? "OpenRouter"
+    : provider === "opencode"
+      ? "OpenCode"
+      : provider === "github-copilot"
+        ? "GitHub Copilot"
+        : provider === "litellm"
+          ? "LiteLLM"
+          : "OpenAI";
   const obsEnabled = settings?.observability?.enabled ?? false;
 
   const handleThemeToggle = () => {
@@ -128,6 +151,19 @@ export function StatusBar({ theme, onThemeChange }: StatusBarProps) {
           <span className="text-[10px] font-mono bg-accent text-accent-foreground px-1 py-[1px] rounded">LSP</span>
           <span>{lspStatus ? lspStatus : "Active"}</span>
         </div>
+
+        {/* LiteLLM Server Status */}
+        {litellmStatusState && provider === "litellm" ? (
+          <div
+            className="flex items-center gap-1 px-1.5 h-full"
+            title={`LiteLLM server: ${litellmStatusState.status}${litellmStatusState.error ? ` — ${litellmStatusState.error}` : ""}`}
+          >
+            <Power size={11} className={litellmStatusState.status === "running" ? "text-emerald-500" : litellmStatusState.status === "error" ? "text-destructive" : "text-muted-foreground"} />
+            <span className="text-[10px] font-mono">
+              {litellmStatusState.status === "running" ? `:${litellmStatusState.port}` : litellmStatusState.status}
+            </span>
+          </div>
+        ) : null}
 
         {/* Model Identifier */}
         <div 

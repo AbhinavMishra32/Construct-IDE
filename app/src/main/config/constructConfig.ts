@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 
-export type AiProvider = "openai" | "openrouter";
+export type AiProvider = "openai" | "openrouter" | "github-copilot" | "opencode" | "litellm";
 export type ConstructAgentRuntimeId = "mastra" | "fxpnt";
 
 export type StoredAiSettings = {
@@ -15,6 +15,15 @@ export type StoredAiSettings = {
   openRouterApiKey: string;
   openRouterModel: string;
   openRouterBaseUrl: string;
+  liteLlmApiKey: string;
+  liteLlmModel: string;
+  liteLlmBaseUrl: string;
+  liteLlmManageServer: boolean;
+  openCodeBaseUrl: string;
+  openCodePort: number;
+  openCodeManageServer: boolean;
+  openCodeModel: string;
+  githubCopilotModel: string;
   featureModels: Record<string, string>;
 };
 
@@ -45,6 +54,9 @@ export type ConstructDataPaths = {
 
 const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
 const DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
+const DEFAULT_LITELLM_BASE_URL = "http://localhost:4000/v1";
+const DEFAULT_OPENCODE_BASE_URL = "http://localhost:4096";
+const DEFAULT_OPENCODE_PORT = 4096;
 let configuredDataPaths: ConstructDataPaths | null = null;
 
 export function createConstructDataPaths(userDataRoot: string): ConstructDataPaths {
@@ -124,13 +136,22 @@ export function normalizeSettings(
     releaseVersion: normalizeString(input?.releaseVersion, defaults.releaseVersion),
     ai: {
       runtime: inputAi.runtime === "fxpnt" ? "fxpnt" : "mastra",
-      provider: inputAi.provider === "openrouter" ? "openrouter" : "openai",
+      provider: normalizeAiProvider(inputAi.provider),
       openAiApiKey: normalizeString(inputAi.openAiApiKey, ""),
       openAiModel: normalizeString(inputAi.openAiModel, defaults.ai.openAiModel),
       openAiBaseUrl: normalizeBaseUrl(inputAi.openAiBaseUrl, defaults.ai.openAiBaseUrl),
       openRouterApiKey: normalizeString(inputAi.openRouterApiKey, ""),
       openRouterModel: normalizeString(inputAi.openRouterModel, defaults.ai.openRouterModel),
       openRouterBaseUrl: normalizeBaseUrl(inputAi.openRouterBaseUrl, defaults.ai.openRouterBaseUrl),
+      liteLlmApiKey: normalizeString(inputAi.liteLlmApiKey, ""),
+      liteLlmModel: normalizeString(inputAi.liteLlmModel, defaults.ai.liteLlmModel),
+      liteLlmBaseUrl: normalizeBaseUrl(inputAi.liteLlmBaseUrl, defaults.ai.liteLlmBaseUrl),
+      liteLlmManageServer: inputAi.liteLlmManageServer === true,
+      openCodeBaseUrl: normalizeBaseUrl(inputAi.openCodeBaseUrl, defaults.ai.openCodeBaseUrl),
+      openCodePort: normalizePort(inputAi.openCodePort, defaults.ai.openCodePort),
+      openCodeManageServer: inputAi.openCodeManageServer === true,
+      openCodeModel: normalizeString(inputAi.openCodeModel, defaults.ai.openCodeModel),
+      githubCopilotModel: normalizeString(inputAi.githubCopilotModel, defaults.ai.githubCopilotModel),
       featureModels: normalizeFeatureModels(inputAi.featureModels)
     },
     observability: {
@@ -153,6 +174,15 @@ function defaultAiSettings(): StoredAiSettings {
     openRouterApiKey: "",
     openRouterModel: "deepseek/deepseek-v4-flash",
     openRouterBaseUrl: DEFAULT_OPENROUTER_BASE_URL,
+    liteLlmApiKey: "",
+    liteLlmModel: "openai/gpt-5-mini",
+    liteLlmBaseUrl: DEFAULT_LITELLM_BASE_URL,
+    liteLlmManageServer: false,
+    openCodeBaseUrl: DEFAULT_OPENCODE_BASE_URL,
+    openCodePort: DEFAULT_OPENCODE_PORT,
+    openCodeManageServer: false,
+    openCodeModel: "opencode/openai/gpt-5",
+    githubCopilotModel: "github_copilot/gpt-4",
     featureModels: {}
   };
 }
@@ -211,6 +241,20 @@ function normalizeBaseUrl(value: unknown, fallback: string): string {
   return normalizeString(value, fallback).replace(/\/$/, "");
 }
 
+function normalizeAiProvider(value: unknown): AiProvider {
+  return value === "openrouter"
+    || value === "github-copilot"
+    || value === "opencode"
+    || value === "litellm"
+    ? value
+    : "openai";
+}
+
+function normalizePort(value: unknown, fallback: number): number {
+  const parsed = typeof value === "number" ? value : Number.parseInt(String(value ?? ""), 10);
+  return Number.isInteger(parsed) && parsed > 0 && parsed <= 65535 ? parsed : fallback;
+}
+
 function normalizeFeatureModels(input: unknown): Record<string, string> {
   if (!input || typeof input !== "object") {
     return {};
@@ -222,5 +266,3 @@ function normalizeFeatureModels(input: unknown): Record<string, string> {
       .map(([key, value]) => [key, value.trim()])
   );
 }
-
-
