@@ -28,6 +28,7 @@ test("sync agent settings use the configured Electron user-data path", async (t)
       ...settings.ai,
       provider: "openrouter",
       openRouterApiKey: "test-openrouter-key",
+      tavilyApiKey: "tvly-test-key",
       featureModels: {
         "construct-interact": "deepseek/deepseek-v4-flash"
       }
@@ -37,6 +38,7 @@ test("sync agent settings use the configured Electron user-data path", async (t)
   const resolved = readConstructAiSettingsSync();
   assert.equal(resolved.provider, "openrouter");
   assert.equal(resolved.openRouterApiKey, "test-openrouter-key");
+  assert.equal(resolved.tavilyApiKey, "tvly-test-key");
   assert.equal(resolved.featureModels["construct-interact"], "deepseek/deepseek-v4-flash");
 });
 
@@ -48,6 +50,7 @@ test("settings normalize OpenCode Zen provider options", () => {
   assert.equal(settings.ai.githubCopilotModel, "github_copilot/gpt-4");
   assert.equal(settings.ai.opencodeZenModel, "gpt-5.1-codex");
   assert.equal(settings.ai.opencodeZenBaseUrl, "https://opencode.ai/zen/v1");
+  assert.equal(settings.ai.tavilyApiKey, "");
 });
 
 test("settings preserve LiteLLM-backed provider selections", async (t) => {

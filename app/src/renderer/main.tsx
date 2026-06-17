@@ -4,7 +4,6 @@ import { Toaster } from "sonner";
 
 import "./index.css";
 import ConstructApp from "./construct/ConstructApplication";
-import { RequestNotifications } from "./construct/components/RequestNotifications";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { logStore } from "./construct/lib/logStore";
 
@@ -71,7 +70,6 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <TooltipProvider>
       <ConstructApp />
-      <RequestNotifications />
       <Toaster richColors position="bottom-right" toastOptions={{ className: "font-sans" }} />
     </TooltipProvider>
   </React.StrictMode>
