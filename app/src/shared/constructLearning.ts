@@ -346,6 +346,11 @@ export type KnowledgeBaseRecord = {
   examples?: string[];
   relatedConcepts?: string[];
   confidence?: "unknown" | "weak" | "emerging" | "strong";
+  lastChangeReason?: string;
+  learnerEvidence?: string[];
+  confidenceReason?: string;
+  authoredBy?: "learner" | "agent" | "mixed" | "system";
+  agentContributionPercent?: number;
   lastPracticedAt?: string;
   lastModifiedAt?: string;
 };

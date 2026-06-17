@@ -80,6 +80,17 @@ export class ConstructFlowIpcController {
           }
         });
         await this.options.writeProjects(projects);
+      } else {
+        await this.options.flow.runMainAgent(project, {
+          projectId: project.id,
+          startReason: "new-project",
+          message: "Start this new Flow project. Use the project goal and current workspace context to decide the next helpful mentor step."
+        }, (payload) => {
+          if (!event.sender.isDestroyed()) {
+            event.sender.send("construct:flow:session-event", payload);
+          }
+        });
+        await this.options.writeProjects(projects);
       }
 
       return project;
@@ -132,7 +143,12 @@ export class ConstructFlowIpcController {
     ipcMain.handle("construct:flow:submit-task", async (_event, input) => {
       const projects = await this.options.readProjects();
       const project = this.findFlowProject(projects, String(input?.projectId ?? ""));
-      const submission = await this.options.flow.submitPracticeTask(project, String(input?.taskId ?? ""), typeof input?.note === "string" ? input.note : undefined);
+      const submission = await this.options.flow.submitPracticeTask(
+        project,
+        String(input?.taskId ?? ""),
+        typeof input?.note === "string" ? input.note : undefined,
+        typeof input?.subtaskId === "string" ? input.subtaskId : undefined
+      );
       await this.options.writeProjects(projects);
       return submission;
     });

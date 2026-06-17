@@ -18,6 +18,7 @@ const execFileAsync = promisify(execFile);
 
 const MAX_TEXT_FILE_BYTES = 160_000;
 const MAX_RESULT_CHARS = 12_000;
+const MAX_MEMORY_RESULT_CHARS = 80_000;
 
 const ignoredNames = new Set([
   ".git",
@@ -40,6 +41,7 @@ export type ConstructProtocolToolsOptions = {
   workspace: ConstructProjectWorkspaceService;
   flowMemory?: ConstructFlowMemoryService;
   latestTerminalOutput?: string;
+  tavilyApiKey?: string;
   allowWorkspaceMutation?: boolean;
   allowTerminalCommands?: boolean;
   onToolCallStart?: ConstructProtocolToolCallSink;
@@ -75,7 +77,7 @@ export function createConstructProtocolTools(options: ConstructProtocolToolsOpti
         ...baseRecord,
         status: "completed",
         completedAt: new Date().toISOString(),
-        outputPreview: preview(resolved)
+        outputPreview: previewToolOutput(name, resolved)
       };
       toolCalls.push(record);
       options.onToolCall?.(record);
@@ -112,6 +114,29 @@ export function createConstructProtocolTools(options: ConstructProtocolToolsOpti
     }
   });
 
+  const flowMemoryFetch = createTool({
+    id: "flow-memory-fetch",
+    description: "Fetch targeted Flow Memory by purpose. Specify why you need memory and which files are relevant; avoid fetching all files by habit.",
+    inputSchema: z.object({
+      purpose: z.string().min(1).max(500),
+      files: z.array(z.enum(FLOW_MEMORY_FILES)).min(1).max(4),
+      currentStep: z.string().max(300).optional(),
+      projectPath: z.string().max(500).optional(),
+      taskId: z.string().max(120).optional()
+    }).strict(),
+    execute: async (toolInput) => {
+      const project = requireFlowProject(options.project);
+      const memory = requireFlowMemory(options.flowMemory);
+      return recordToolCall(
+        "flow-memory-fetch",
+        "Fetched Flow Memory",
+        toolInput.purpose,
+        memory.read(project, toolInput.files),
+        toolInput
+      );
+    }
+  });
+
   const flowMemoryEnsure = createTool({
     id: "flow-memory-ensure",
     description: "Create any missing Flow Memory markdown files. Use during Flow setup or recovery. Mutates only .construct/flow-memory.",
@@ -130,7 +155,7 @@ export function createConstructProtocolTools(options: ConstructProtocolToolsOpti
 
   const flowMemoryUpdate = createTool({
     id: "flow-memory-update",
-    description: "Rewrite one or more Flow Memory markdown files with concise human-readable updates. Mutates only .construct/flow-memory.",
+    description: "Manual full-save fallback for Flow Memory markdown files. Agent runs should prefer flow-memory-patch so changes are scoped and diffable.",
     inputSchema: z.object({
       updates: z.array(z.object({
         file: z.enum(FLOW_MEMORY_FILES),
@@ -144,10 +169,43 @@ export function createConstructProtocolTools(options: ConstructProtocolToolsOpti
         "flow-memory-update",
         "Updated Flow Memory",
         toolInput.updates.map((update) => update.file).join(", "),
-        memory.update(project, toolInput.updates.map((update) => ({
+        memory.updateWithDiff(project, toolInput.updates.map((update) => ({
           file: update.file,
           content: update.content
         }))),
+        toolInput
+      );
+    }
+  });
+
+  const flowMemoryPatch = createTool({
+    id: "flow-memory-patch",
+    description: "Patch selected Flow Memory files with append, prepend, or exact replacement. Use this instead of rewriting full memory files. Returns a diff for the UI.",
+    inputSchema: z.object({
+      patches: z.array(z.object({
+        file: z.enum(FLOW_MEMORY_FILES),
+        mode: z.enum(["append", "prepend", "replace"]),
+        content: z.string().min(1).max(4_000),
+        find: z.string().optional().describe("Required for replace mode; exact text to replace."),
+        reason: z.string().min(1).max(500)
+      }).superRefine((patch, ctx) => {
+        if (patch.mode === "replace" && !patch.find?.trim()) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["find"],
+            message: "Replace patches require exact find text."
+          });
+        }
+      })).min(1).max(6)
+    }).strict(),
+    execute: async (toolInput) => {
+      const project = requireFlowProject(options.project);
+      const memory = requireFlowMemory(options.flowMemory);
+      return recordToolCall(
+        "flow-memory-patch",
+        "Updated Flow Memory",
+        toolInput.patches.map((patch) => `${patch.file}: ${patch.reason}`).join("; "),
+        memory.patch(project, toolInput.patches),
         toolInput
       );
     }
@@ -198,6 +256,61 @@ export function createConstructProtocolTools(options: ConstructProtocolToolsOpti
       `Viewed ${toolInput.path}`,
       "Read project context",
       viewWorkspaceFile(options.project, options.workspace, toolInput.path, toolInput.startLine, toolInput.endLine),
+      toolInput
+    )
+  });
+
+  const read = createTool({
+    id: "read",
+    description: "Claude-Code-style bounded file read. Read a project file or line range; prefer ranges over full files.",
+    inputSchema: z.object({
+      path: z.string().min(1),
+      startLine: z.number().int().positive().optional(),
+      endLine: z.number().int().positive().optional()
+    }).strict(),
+    execute: async (toolInput) => recordToolCall(
+      "read",
+      `Read ${toolInput.path}`,
+      "Read bounded project context",
+      viewWorkspaceFile(options.project, options.workspace, toolInput.path, toolInput.startLine, toolInput.endLine),
+      toolInput
+    )
+  });
+
+  const glob = createTool({
+    id: "glob",
+    description: "Claude-Code-style file glob. Find files by glob pattern without reading their contents.",
+    inputSchema: z.object({
+      pattern: z.string().min(1).max(160),
+      limit: z.number().int().min(1).max(100).default(40)
+    }).strict(),
+    execute: async (toolInput) => recordToolCall(
+      "glob",
+      "Matched files",
+      toolInput.pattern,
+      globWorkspaceFiles(options.project, options.workspace, toolInput.pattern, toolInput.limit ?? 40),
+      toolInput
+    )
+  });
+
+  const grep = createTool({
+    id: "grep",
+    description: "Claude-Code-style ripgrep-like content search. Search text with optional path glob and compact snippets.",
+    inputSchema: z.object({
+      query: z.string().min(1).max(160),
+      pathGlob: z.string().max(160).optional(),
+      caseSensitive: z.boolean().default(false),
+      limit: z.number().int().min(1).max(80).default(30)
+    }).strict(),
+    execute: async (toolInput) => recordToolCall(
+      "grep",
+      "Searched content",
+      toolInput.pathGlob ? `${toolInput.query} in ${toolInput.pathGlob}` : toolInput.query,
+      grepWorkspaceContent(options.project, options.workspace, toolInput.query, {
+        limit: toolInput.limit ?? 30,
+        caseSensitive: toolInput.caseSensitive === true,
+        pathGlob: toolInput.pathGlob
+      }),
       toolInput
     )
   });
@@ -320,6 +433,26 @@ export function createConstructProtocolTools(options: ConstructProtocolToolsOpti
     )
   });
 
+  const write = createTool({
+    id: "write",
+    description: "Claude-Code-style file write. Create or rewrite a project file only when explicitly appropriate; prefer edit for existing files.",
+    inputSchema: z.object({
+      path: z.string().min(1),
+      content: z.string(),
+      reason: z.string().min(1)
+    }).strict(),
+    execute: async (toolInput) => recordToolCall(
+      "write",
+      `Wrote ${toolInput.path}`,
+      `${toolInput.reason} Authorship: agent-created content.`,
+      writeWorkspaceFile(options, toolInput.path, toolInput.content).then((result) => ({
+        ...result,
+        authoredBy: "agent"
+      })),
+      toolInput
+    )
+  });
+
   const editReplace = createTool({
     id: "edit-replace",
     description: "Replace one exact string in a project file. Mutates workspace only when one exact match is found.",
@@ -334,6 +467,27 @@ export function createConstructProtocolTools(options: ConstructProtocolToolsOpti
       `Edited ${toolInput.path}`,
       toolInput.reason,
       replaceInWorkspaceFile(options, toolInput.path, toolInput.find, toolInput.replace),
+      toolInput
+    )
+  });
+
+  const edit = createTool({
+    id: "edit",
+    description: "Claude-Code-style exact string edit. Replace one exact string in a project file; refuses ambiguous matches.",
+    inputSchema: z.object({
+      path: z.string().min(1),
+      find: z.string().min(1),
+      replace: z.string(),
+      reason: z.string().min(1)
+    }).strict(),
+    execute: async (toolInput) => recordToolCall(
+      "edit",
+      `Edited ${toolInput.path}`,
+      `${toolInput.reason} Authorship: agent edit.`,
+      replaceInWorkspaceFile(options, toolInput.path, toolInput.find, toolInput.replace).then((result) => ({
+        ...result,
+        authoredBy: "agent"
+      })),
       toolInput
     )
   });
@@ -364,23 +518,27 @@ export function createConstructProtocolTools(options: ConstructProtocolToolsOpti
     )
   });
 
-  const askUser = createTool({
-    id: "ask-user",
-    description: "Ask the learner a direct tracked question. This is mandatory whenever the agent needs an answer from the learner; do not ask required questions only in prose. Use for clarification, design choices, understanding checks, blockers, or approval. Does not itself wait in the backend.",
+  const createQuestionTool = (id: "ask-question" | "ask-user") => createTool({
+    id,
+    description: "Ask the learner a direct tracked question. The question field should be the short direct question only; put any brief setup in normal chat before the tool call. Reason is internal and should stay concise. This is mandatory whenever the agent needs an answer from the learner; do not ask required questions only in prose. Use for clarification, design choices, understanding checks, blockers, approvals, or Socratic checks. Does not itself wait in the backend.",
     inputSchema: z.object({
       question: z.string().min(1),
       reason: z.string().optional(),
       choices: z.array(z.string()).max(6).optional(),
+      allowOther: z.boolean().default(true),
+      allowSkip: z.boolean().default(true),
       blocksProgress: z.boolean().default(false)
     }).strict(),
     execute: async (toolInput) => recordToolCall(
-      "ask-user",
+      id,
       "Asked learner",
       toolInput.reason ?? "Learner input needed",
       toolInput,
       toolInput
     )
   });
+  const askQuestion = createQuestionTool("ask-question");
+  const askUser = createQuestionTool("ask-user");
 
   const internetSearch = createTool({
     id: "internet-search",
@@ -393,7 +551,7 @@ export function createConstructProtocolTools(options: ConstructProtocolToolsOpti
       "internet-search",
       "Searched web",
       toolInput.query,
-      searchInternet(toolInput.query, toolInput.limit ?? 4),
+      searchInternet(toolInput.query, toolInput.limit ?? 4, options.tavilyApiKey),
       toolInput
     )
   });
@@ -402,24 +560,32 @@ export function createConstructProtocolTools(options: ConstructProtocolToolsOpti
     findFiles,
     searchContent,
     view,
+    read,
+    glob,
+    grep,
     focusCode,
     openFile,
     focusTerminal,
     terminalLatest,
     workspaceDiff,
+    askQuestion,
     askUser,
     internetSearch
   };
 
   if (isFlowProject(options.project)) {
     tools.flowMemoryRead = flowMemoryRead;
+    tools.flowMemoryFetch = flowMemoryFetch;
     tools.flowMemoryEnsure = flowMemoryEnsure;
+    tools.flowMemoryPatch = flowMemoryPatch;
     tools.flowMemoryUpdate = flowMemoryUpdate;
   }
 
   if (options.allowWorkspaceMutation) {
     tools.editWriteFile = editWriteFile;
     tools.editReplace = editReplace;
+    tools.edit = edit;
+    tools.write = write;
   }
 
   if (options.allowTerminalCommands) {
@@ -488,6 +654,62 @@ async function searchWorkspaceContent(
         snippet: lines[index].trim().slice(0, 240)
       });
       if (results.length >= limit) break;
+    }
+  }
+
+  return results;
+}
+
+async function globWorkspaceFiles(
+  project: StoredProject,
+  workspace: ConstructProjectWorkspaceService,
+  pattern: string,
+  limit: number
+) {
+  const files = await listProjectFiles(project, workspace);
+  const matcher = globToRegExp(pattern);
+  return files
+    .filter((file) => matcher.test(file.path))
+    .slice(0, limit)
+    .map((file) => ({
+      path: file.path,
+      name: file.name,
+      hint: file.directory || "."
+    }));
+}
+
+async function grepWorkspaceContent(
+  project: StoredProject,
+  workspace: ConstructProjectWorkspaceService,
+  query: string,
+  options: {
+    limit: number;
+    caseSensitive: boolean;
+    pathGlob?: string;
+  }
+) {
+  const files = await listProjectFiles(project, workspace);
+  const pathMatcher = options.pathGlob ? globToRegExp(options.pathGlob) : null;
+  const needle = options.caseSensitive ? query : query.toLowerCase();
+  const results: Array<{ path: string; line: number; snippet: string }> = [];
+
+  for (const file of files) {
+    if (results.length >= options.limit) break;
+    if (pathMatcher && !pathMatcher.test(file.path)) continue;
+    const target = workspace.safeProjectPath(project, file.path);
+    const fileStat = await stat(target).catch(() => null);
+    if (!fileStat?.isFile() || fileStat.size > MAX_TEXT_FILE_BYTES) continue;
+    const content = await readFile(target, "utf8").catch(() => "");
+    const lines = content.split(/\r?\n/);
+    for (let index = 0; index < lines.length; index += 1) {
+      const haystack = options.caseSensitive ? lines[index] : lines[index].toLowerCase();
+      if (!haystack.includes(needle)) continue;
+      results.push({
+        path: file.path,
+        line: index + 1,
+        snippet: lines[index].trim().slice(0, 240)
+      });
+      if (results.length >= options.limit) break;
     }
   }
 
@@ -612,8 +834,42 @@ async function runCommand(
   };
 }
 
-async function searchInternet(query: string, limit: number) {
-  const url = `https://duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+async function searchInternet(query: string, limit: number, tavilyApiKey?: string) {
+  const boundedLimit = Math.min(Math.max(limit, 1), 6);
+  const boundedQuery = query.trim().slice(0, 380);
+  if (tavilyApiKey?.trim()) {
+    const response = await fetch("https://api.tavily.com/search", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        Authorization: `Bearer ${tavilyApiKey.trim()}`
+      },
+      body: JSON.stringify({
+        query: boundedQuery,
+        max_results: boundedLimit,
+        search_depth: "basic",
+        include_answer: false,
+        include_raw_content: false,
+        include_images: false
+      })
+    });
+    if (!response.ok) {
+      const detail = await response.text().catch(() => "");
+      throw new Error(`Tavily search failed (${response.status}): ${detail.slice(0, 500)}`);
+    }
+    const json = await response.json() as {
+      results?: Array<{ title?: string; url?: string; content?: string; score?: number }>;
+    };
+    return (json.results ?? []).slice(0, boundedLimit).map((result) => ({
+      title: result.title ?? result.url ?? "Untitled result",
+      url: result.url ?? "",
+      snippet: result.content ?? "",
+      score: result.score ?? null,
+      provider: "tavily"
+    }));
+  }
+
+  const url = `https://duckduckgo.com/html/?q=${encodeURIComponent(boundedQuery)}`;
   const response = await fetch(url, {
     headers: {
       "user-agent": "Construct Flow Research/1.0"
@@ -621,10 +877,11 @@ async function searchInternet(query: string, limit: number) {
   });
   const html = await response.text();
   const matches = [...html.matchAll(/<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<a[^>]+class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g)];
-  return matches.slice(0, limit).map((match) => ({
+  return matches.slice(0, boundedLimit).map((match) => ({
     title: stripHtml(match[2]),
     url: decodeDuckDuckGoUrl(match[1]),
-    snippet: stripHtml(match[3])
+    snippet: stripHtml(match[3]),
+    provider: "duckduckgo"
   }));
 }
 
@@ -675,6 +932,30 @@ function commandSafety(command: string): { allowed: true } | { allowed: false; r
   return { allowed: true };
 }
 
+function globToRegExp(pattern: string): RegExp {
+  const normalized = pattern.trim().replaceAll("\\", "/") || "**/*";
+  let expression = "";
+  for (let index = 0; index < normalized.length; index += 1) {
+    const char = normalized[index];
+    const next = normalized[index + 1];
+    if (char === "*" && next === "*") {
+      expression += ".*";
+      index += 1;
+    } else if (char === "*") {
+      expression += "[^/]*";
+    } else if (char === "?") {
+      expression += "[^/]";
+    } else {
+      expression += escapeRegExp(char);
+    }
+  }
+  return new RegExp(`^${expression}$`);
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function requireFlowProject(project: StoredProject): StoredFlowProject {
   if (!isFlowProject(project)) {
     throw new Error("This tool is available only for Flow projects.");
@@ -707,6 +988,42 @@ function stripHtml(value: string): string {
     .replace(/&amp;/g, "&")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function previewToolOutput(name: string, value: unknown): string {
+  if (name === "flow-memory-patch" || name === "flow-memory-update") {
+    return previewJson(value, MAX_MEMORY_RESULT_CHARS);
+  }
+  return preview(value);
+}
+
+function previewJson(value: unknown, maxChars: number): string {
+  try {
+    const rendered = JSON.stringify(value, null, 2);
+    if (rendered.length <= maxChars) {
+      return rendered;
+    }
+    if (Array.isArray(value)) {
+      return JSON.stringify(value.map((item) => truncateMemoryResult(item, Math.floor(maxChars / Math.max(value.length, 1)))), null, 2);
+    }
+    return JSON.stringify({ truncated: true, preview: rendered.slice(0, maxChars) }, null, 2);
+  } catch {
+    return String(value).slice(0, maxChars);
+  }
+}
+
+function truncateMemoryResult(value: unknown, maxChars: number): unknown {
+  if (typeof value !== "object" || value === null) {
+    return value;
+  }
+  const result: Record<string, unknown> = { ...(value as Record<string, unknown>), truncated: true };
+  for (const key of ["diff", "addedText", "removedText", "content"]) {
+    const field = result[key];
+    if (typeof field === "string" && field.length > maxChars) {
+      result[key] = `${field.slice(0, maxChars)}\n... [truncated]`;
+    }
+  }
+  return result;
 }
 
 function preview(value: unknown): string {

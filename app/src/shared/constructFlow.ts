@@ -20,12 +20,30 @@ export type ConstructFlowToolCallRecord = {
   reason: string;
   input?: unknown;
   outputPreview?: string;
+  response?: ConstructFlowQuestionResponse;
   status: "running" | "completed" | "error";
   createdAt: string;
   completedAt?: string;
 };
 
+export type ConstructFlowQuestionResponse = {
+  sessionId: string;
+  toolCallId: string;
+  question: string;
+  answer: string;
+  skipped?: boolean;
+  answeredAt: string;
+};
+
+export type ConstructFlowSessionOrigin = "user" | "system" | "question-response" | "task-submission";
+
 export type ConstructFlowAction =
+  | {
+      type: "open-concept";
+      conceptId: string;
+      label: string;
+      reason: string;
+    }
   | {
       type: "focus-code";
       path: string;
@@ -53,6 +71,23 @@ export type ConstructFlowAction =
       reason: string;
     };
 
+export type ConstructFlowPracticeSubtask = {
+  id: string;
+  title: string;
+  prompt: string;
+  status: "ready" | "active" | "submitted" | "completed";
+  successCriteria?: string[];
+  completedAt?: string;
+  evidence?: string;
+};
+
+export type ConstructFlowCodeAuthorship = {
+  actor: "learner" | "agent" | "system";
+  label: string;
+  reason: string;
+  createdAt: string;
+};
+
 export type ConstructFlowPracticeTask = {
   id: string;
   projectId: string;
@@ -64,7 +99,7 @@ export type ConstructFlowPracticeTask = {
     line?: number;
     endLine?: number;
   };
-  status: "waiting" | "submitted" | "cancelled";
+  status: "waiting" | "submitted" | "completed" | "cancelled";
   baseline: ConstructFlowTaskBaseline;
   createdAt: string;
   submittedAt?: string;
@@ -72,6 +107,14 @@ export type ConstructFlowPracticeTask = {
   submission?: ConstructFlowTaskSubmission;
   taskFiles?: string[];
   conceptIds?: string[];
+  successCriteria?: string[];
+  subtasks?: ConstructFlowPracticeSubtask[];
+  preparedFiles?: Array<{
+    path: string;
+    mode: "create" | "overwrite" | "replace";
+    authoredBy: ConstructFlowCodeAuthorship;
+  }>;
+  authoredBy?: ConstructFlowCodeAuthorship;
   submissionSessionId?: string;
 };
 
@@ -82,17 +125,32 @@ export type ConstructFlowTaskBaseline = {
 
 export type ConstructFlowTaskSubmission = {
   taskId: string;
+  subtaskId?: string;
   note?: string;
   touchedFiles: string[];
   compactDiff: string;
   nothingChanged: boolean;
   submittedAt: string;
+  authoredBy?: ConstructFlowCodeAuthorship;
+};
+
+export type ConstructFlowMemoryPatchResult = {
+  file: FlowMemoryFileName;
+  path: string;
+  reason: string;
+  mode: "append" | "prepend" | "replace";
+  diff: string;
+  updatedAt: string;
+  addedText: string;
+  removedText?: string;
 };
 
 export type ConstructFlowSession = {
   id: string;
   projectId: string;
   threadId: string;
+  origin?: ConstructFlowSessionOrigin;
+  questionResponse?: ConstructFlowQuestionResponse;
   messages: ConstructFlowMessage[];
   status: ConstructFlowRunStatus;
   toolCalls: ConstructFlowToolCallRecord[];
@@ -119,6 +177,8 @@ export type ConstructFlowAgentInput = {
   message: string;
   threadId?: string;
   taskSubmission?: ConstructFlowTaskSubmission;
+  questionResponse?: ConstructFlowQuestionResponse;
+  startReason?: "new-project";
   quickAction?: "continue" | "tried" | "stuck" | "run-tests" | "explain-selection" | "checkpoint";
 };
 
