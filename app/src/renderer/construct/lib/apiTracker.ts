@@ -4,6 +4,7 @@ export type ActiveCall = {
   id: string;
   key: string;
   label: string;
+  startedAt: number;
 };
 
 type ApiTrackerListener = () => void;
@@ -73,7 +74,7 @@ class ApiTrackerClass {
 
   start(key: string, label: string): string {
     const id = `${key}-${this.nextId++}`;
-    this.activeCalls.push({ id, key, label });
+    this.activeCalls.push({ id, key, label, startedAt: Date.now() });
     this.notify();
     return id;
   }
