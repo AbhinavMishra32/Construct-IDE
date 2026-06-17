@@ -39,7 +39,7 @@ export function DashboardSidebar({
           />
         ))}
         {visibleProjects.length === 0 ? (
-          <div className="px-3 py-2 text-sm text-muted-foreground">No active project yet. Open a tape to start building.</div>
+          <div className="px-3 py-2 text-sm text-muted-foreground">No active project yet. Open or create a project to start building.</div>
         ) : null}
       </div>
     </SidebarSection>
@@ -90,6 +90,9 @@ function DashboardSidebarProjectRow({
 }
 
 function formatDashboardProjectMeta(project: ProjectSummary) {
+  if (project.kind === "flow") {
+    return "Flow";
+  }
   if (project.progress >= 100 || project.completedAt) {
     return "Done";
   }

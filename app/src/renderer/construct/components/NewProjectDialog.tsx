@@ -7,6 +7,8 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  AgentActivityList,
+  AgentThinking,
   ShadcnDialog,
   ShadcnDialogContent,
   ShadcnDialogDescription,
@@ -15,16 +17,17 @@ import {
   ShadcnDialogTitle,
   Input,
 } from "@opaline/ui";
+import type { AgentActivityEntry } from "@opaline/ui";
 
 import { applyConstructPatch } from "../compiler/patches";
 import { validateConstructSource } from "../compiler/pipeline";
 import { parseConstructDocument } from "../compiler/parser";
 import type { ConstructFix, ConstructValidationResult } from "../compiler/types";
 import { runSemanticAuthoringReview, type AuthoringSuggestion } from "../compiler/semantic-review";
-import { getSettings, openConstructFile, selectWorkspaceDirectory } from "../lib/bridge";
+import { createFlowProject, getSettings, openConstructFile, selectWorkspaceDirectory } from "../lib/bridge";
 import { parseConstructSource } from "../lib/parser";
 import { createProjectFromConstructFile } from "../lib/projectStore";
-import type { ConstructProgram, ProjectRecord } from "../types";
+import type { AnyProjectRecord, ConstructProgram } from "../types";
 import { ValidationPanel, type ValidationStage } from "./project-create/ValidationPanel";
 
 type SelectedConstructFile = {
@@ -47,9 +50,15 @@ const initialStages: ValidationStage[] = [
 export function NewProjectDialog({ open, onOpenChange, onProjectCreated }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onProjectCreated: (project: ProjectRecord) => void;
+  onProjectCreated: (project: AnyProjectRecord) => void;
 }) {
   const [selectedFile, setSelectedFile] = useState<SelectedConstructFile | null>(null);
+  const [flowMode, setFlowMode] = useState(false);
+  const [flowTitle, setFlowTitle] = useState("");
+  const [flowGoal, setFlowGoal] = useState("");
+  const [flowStackPreference, setFlowStackPreference] = useState("");
+  const [flowResearchFirst, setFlowResearchFirst] = useState(true);
+  const [flowCreationStage, setFlowCreationStage] = useState<"idle" | "memory" | "research" | "opening">("idle");
   const [workspacePath, setWorkspacePath] = useState("");
   const [initializeGit, setInitializeGit] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -105,6 +114,37 @@ export function NewProjectDialog({ open, onOpenChange, onProjectCreated }: {
   async function chooseWorkspaceDirectory() {
     const directory = await selectWorkspaceDirectory({ defaultPath: workspacePath || undefined });
     if (directory) setWorkspacePath(directory);
+  }
+
+  async function createFlow() {
+    if (!flowTitle.trim() || !flowGoal.trim()) return;
+    try {
+      setBusy(true);
+      setError(null);
+      setFlowCreationStage("memory");
+      await visualBeat(220);
+      if (flowResearchFirst) {
+        setFlowCreationStage("research");
+      }
+      const project = await createFlowProject({
+        title: flowTitle.trim(),
+        goal: flowGoal.trim(),
+        workspacePath: workspacePath.trim() || undefined,
+        stackPreference: flowStackPreference.trim() || undefined,
+        researchFirst: flowResearchFirst,
+        autonomyPreference: "balanced",
+        permissionsPreference: "ask"
+      });
+      setFlowCreationStage("opening");
+      onProjectCreated(project);
+      onOpenChange(false);
+      reset();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setBusy(false);
+      setFlowCreationStage("idle");
+    }
   }
 
   function applyFix(fix: ConstructFix) {
@@ -176,6 +216,12 @@ export function NewProjectDialog({ open, onOpenChange, onProjectCreated }: {
 
   function reset() {
     setSelectedFile(null);
+    setFlowMode(false);
+    setFlowTitle("");
+    setFlowGoal("");
+    setFlowStackPreference("");
+    setFlowResearchFirst(true);
+    setFlowCreationStage("idle");
     setWorkspacePath("");
     setInitializeGit(true);
     setError(null);
@@ -192,33 +238,84 @@ export function NewProjectDialog({ open, onOpenChange, onProjectCreated }: {
         <ShadcnDialogHeader className="shrink-0">
           <span className="mb-1 flex size-9 items-center justify-center rounded-md bg-muted text-muted-foreground"><ProjectorScreenChart size={20} weight="duotone" /></span>
           <div>
-            <ShadcnDialogTitle>{selectedFile ? "Create project" : "New project"}</ShadcnDialogTitle>
-            <ShadcnDialogDescription>{selectedFile ? "Construct checks and safely repairs the tape before opening it." : "Import a .construct file, repair it safely, then materialize a real local workspace."}</ShadcnDialogDescription>
+            <ShadcnDialogTitle>{selectedFile ? "Create project" : flowMode ? "New Flow project" : "New project"}</ShadcnDialogTitle>
+            <ShadcnDialogDescription>{selectedFile ? "Construct checks and safely repairs the tape before opening it." : flowMode ? "Create a loose coding mentor workspace with Flow Memory and agent tools." : "Create a Flow workspace or import a .construct tape."}</ShadcnDialogDescription>
           </div>
         </ShadcnDialogHeader>
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto py-1 pr-1">
-          {!selectedFile ? (
+          {!selectedFile && !flowMode ? (
             <div className="grid gap-3 sm:grid-cols-2">
-              <Card className="opacity-50" size="sm" aria-disabled="true">
-                <CardHeader><span><MagicWand size={18} weight="duotone" /></span><CardTitle>Agent project</CardTitle><CardDescription>Generate a tape, then run the same compiler validation flow.</CardDescription></CardHeader>
+              <Card className="cursor-pointer transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40" size="sm" role="button" tabIndex={busy ? -1 : 0} onClick={() => { if (!busy) setFlowMode(true); }} onKeyDown={(event) => { if (!busy && (event.key === "Enter" || event.key === " ")) setFlowMode(true); }}>
+                <CardHeader><span><MagicWand size={18} weight="duotone" /></span><CardTitle>Construct Flow</CardTitle><CardDescription>Natural coding mentor workspace with Flow Memory, tool calls, and practice tasks.</CardDescription></CardHeader>
+                <CardContent><span className="text-xs font-medium text-primary">Create Flow project</span></CardContent>
               </Card>
               <Card className="cursor-pointer transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40" size="sm" role="button" tabIndex={busy ? -1 : 0} onClick={() => { if (!busy) void chooseConstructFile(); }} onKeyDown={(event) => { if (!busy && (event.key === "Enter" || event.key === " ")) void chooseConstructFile(); }}>
                 <CardHeader><span><FilePlus size={18} weight="duotone" /></span><CardTitle>Open .construct file</CardTitle><CardDescription>Read, repair, preview patches, and validate before opening.</CardDescription></CardHeader>
                 <CardContent><span className="text-xs font-medium text-primary">Choose file</span></CardContent>
               </Card>
             </div>
-          ) : rawEditing ? (
-            <div className="flex min-h-[420px] flex-col overflow-hidden rounded-lg border"><header className="flex items-start justify-between gap-4 border-b p-3"><div><strong className="block text-sm font-medium">Raw tape editor</strong><span className="text-xs text-muted-foreground">Advanced mode · edits are recompiled before the project can open.</span></div><code className="max-w-64 truncate rounded bg-muted px-2 py-1 font-mono text-[10px]">{selectedFile.path}</code></header><textarea className="min-h-0 flex-1 resize-none bg-background p-4 font-mono text-xs outline-none" spellCheck={false} value={rawSource} onChange={(event) => setRawSource(event.target.value)} /><footer className="flex justify-end gap-2 border-t p-3"><Button variant="secondary" onClick={() => setRawEditing(false)}>Cancel</Button><Button onClick={applyRawSource}>Revalidate source</Button></footer></div>
-          ) : (
+          ) : flowMode ? (
+            <div className="space-y-4">
+              <Card size="sm">
+                <CardContent className="space-y-4">
+                  <label className="space-y-2">
+                    <span className="text-sm font-medium">Title</span>
+                    <Input value={flowTitle} onChange={(event) => setFlowTitle(event.target.value)} placeholder="Passkeys from scratch" />
+                  </label>
+                  <label className="space-y-2">
+                    <span className="text-sm font-medium">Goal</span>
+                    <textarea
+                      className="min-h-24 w-full resize-none rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                      value={flowGoal}
+                      onChange={(event) => setFlowGoal(event.target.value)}
+                      placeholder="Build a small WebAuthn/passkey auth flow while understanding the TypeScript types."
+                    />
+                  </label>
+                  <label className="space-y-2">
+                    <span className="text-sm font-medium">Stack preference</span>
+                    <Input value={flowStackPreference} onChange={(event) => setFlowStackPreference(event.target.value)} placeholder="Next.js, TypeScript, Express, existing repo..." />
+                  </label>
+                  <label className="space-y-2">
+                    <span className="text-sm font-medium">Workspace folder</span>
+                    <div className="flex gap-2">
+                      <Input className="min-w-0 flex-1" value={workspacePath} onChange={(event) => setWorkspacePath(event.target.value)} placeholder="Leave empty to create in Construct workspaces" />
+                      <Button variant="secondary" type="button" onClick={() => void chooseWorkspaceDirectory()}><FolderOpen size={16} weight="duotone" />Browse</Button>
+                    </div>
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input className="size-4 rounded border" type="checkbox" checked={flowResearchFirst} onChange={(event) => setFlowResearchFirst(event.target.checked)} />
+                    <span>Research project/domain first</span>
+                  </label>
+                </CardContent>
+              </Card>
+              {busy && flowCreationStage !== "idle" ? (
+                <AgentThinking
+                  state="thinking"
+                  label={flowCreationLabel(flowCreationStage)}
+                  content={<AgentActivityList entries={flowCreationEntries(flowCreationStage, flowResearchFirst)} />}
+                />
+              ) : null}
+            </div>
+          ) : selectedFile && rawEditing ? (
+            <div className="flex min-h-[420px] flex-col overflow-hidden rounded-lg border"><header className="flex items-start justify-between gap-4 border-b p-3"><div><strong className="block text-sm font-medium">Raw tape editor</strong><span className="text-xs text-muted-foreground">Advanced mode - edits are recompiled before the project can open.</span></div><code className="max-w-64 truncate rounded bg-muted px-2 py-1 font-mono text-[10px]">{selectedFile.path}</code></header><textarea className="min-h-0 flex-1 resize-none bg-background p-4 font-mono text-xs outline-none" spellCheck={false} value={rawSource} onChange={(event) => setRawSource(event.target.value)} /><footer className="flex justify-end gap-2 border-t p-3"><Button variant="secondary" onClick={() => setRawEditing(false)}>Cancel</Button><Button onClick={applyRawSource}>Revalidate source</Button></footer></div>
+          ) : selectedFile ? (
             <>
               <div className="flex items-center gap-3 rounded-lg border bg-muted/30 p-3"><span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-background"><FilePlus size={16} /></span><div className="min-w-0 flex-1"><strong className="block truncate text-sm font-medium">{selectedFile.program?.title ?? fileNameStem(selectedFile.path)}</strong><small className="block truncate text-xs text-muted-foreground">{selectedFile.path}</small></div><code className="rounded bg-background px-2 py-1 font-mono text-[10px]">{selectedFile.validation.document.spec}</code></div>
               <ValidationPanel result={selectedFile.validation} stages={stages} semanticSuggestions={semanticSuggestions} authoringSuggestions={authoringSuggestions} reviewing={reviewing} onApplyFix={applyFix} onRunSemanticReview={() => void runSemanticReview()} onRawEdit={() => setRawEditing(true)} />
               {selectedFile.validation.valid ? <Card size="sm"><CardContent className="space-y-4"><label className="space-y-2"><span className="text-sm font-medium">Workspace folder</span><div className="flex gap-2"><Input className="min-w-0 flex-1" value={workspacePath} onChange={(event) => setWorkspacePath(event.target.value)} placeholder="Choose where project files will be saved" /><Button variant="secondary" type="button" onClick={() => void chooseWorkspaceDirectory()}><FolderOpen size={16} weight="duotone" />Browse</Button></div></label><label className="flex items-center gap-2 text-sm"><input className="size-4 rounded border" type="checkbox" checked={initializeGit} onChange={(event) => setInitializeGit(event.target.checked)} /><span className="flex items-center gap-2"><GitBranch size={16} weight="duotone" />Initialize a Git repository</span></label></CardContent></Card> : null}
             </>
+          ) : (
+            null
           )}
           {error ? <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{error}</div> : null}
         </div>
-        <ShadcnDialogFooter className="shrink-0"><Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>{selectedFile && !rawEditing ? <Button disabled={!selectedFile.validation.valid || !selectedFile.program || !workspacePath.trim() || busy} onClick={() => void createProject()}>{busy ? "Creating project…" : "Start project"}</Button> : null}</ShadcnDialogFooter>
+        <ShadcnDialogFooter className="shrink-0">
+          <Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
+          {flowMode ? (
+            <Button disabled={!flowTitle.trim() || !flowGoal.trim() || busy} onClick={() => void createFlow()}>{busy ? "Creating Flow..." : "Start Flow"}</Button>
+          ) : null}
+          {selectedFile && !rawEditing ? <Button disabled={!selectedFile.validation.valid || !selectedFile.program || !workspacePath.trim() || busy} onClick={() => void createProject()}>{busy ? "Creating project..." : "Start project"}</Button> : null}
+        </ShadcnDialogFooter>
       </ShadcnDialogContent>
     </ShadcnDialog>
   );
@@ -238,6 +335,35 @@ function finalizeStages(result: ConstructValidationResult): ValidationStage[] {
 
 function updateStage(stages: ValidationStage[], id: string, status: ValidationStage["status"], detail: string): ValidationStage[] {
   return stages.map((stage) => stage.id === id ? { ...stage, status, detail } : stage);
+}
+
+function flowCreationLabel(stage: "idle" | "memory" | "research" | "opening"): string {
+  if (stage === "research") return "Researching Flow project";
+  if (stage === "opening") return "Opening Flow workspace";
+  return "Creating Flow project";
+}
+
+function flowCreationEntries(stage: "idle" | "memory" | "research" | "opening", researchFirst: boolean): AgentActivityEntry[] {
+  return [
+    {
+      id: "memory",
+      title: "Create Flow Memory",
+      detail: "Ensuring research.md, project.md, path.md, and learner.md.",
+      status: stage === "memory" ? "active" : "complete"
+    },
+    {
+      id: "research",
+      title: "Run Flow Research Agent",
+      detail: researchFirst ? "Preparing concise project/domain background." : "Skipped by project setting.",
+      status: researchFirst ? (stage === "research" ? "active" : stage === "opening" ? "complete" : "pending") : "complete"
+    },
+    {
+      id: "opening",
+      title: "Open Flow workspace",
+      detail: "Preparing the natural mentor workspace.",
+      status: stage === "opening" ? "active" : "pending"
+    }
+  ];
 }
 
 function createLocalTeachingSuggestions(program: ConstructProgram, source: string): ConstructFix[] {
