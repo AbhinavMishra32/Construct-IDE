@@ -42,20 +42,25 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - name: Cache Turbo
+        uses: actions/cache@v4
         with:
-          node-version: 25
-          cache: pnpm
+          path: .turbo/cache
+          key: ${{ runner.os }}-turbo-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-
 
       - name: Install
         run: pnpm install --frozen-lockfile
 
       - name: Verify app
-        run: pnpm --filter @construct/app typecheck && pnpm --filter @construct/app test
+        run: pnpm turbo run typecheck test --filter=@construct/app
 
       - name: Generate icons
         run: node scripts/release/generate-icons.mjs
+
+      - name: Build app
+        run: pnpm turbo run build --filter=@construct/app
 
       - name: Calculate Release Tag
         id: release
@@ -101,7 +106,7 @@ jobs:
 
       - name: Package desktop
         working-directory: app
-        run: pnpm build && pnpm exec electron-builder --projectDir . --config electron-builder.yml ${{ matrix.target }}
+        run: pnpm exec electron-builder --projectDir . --config electron-builder.yml ${{ matrix.target }}
 
 
       - name: Upload package artifacts
@@ -109,16 +114,16 @@ jobs:
         with:
           name: construct-${{ matrix.platform }}
           path: |
-            app/release/**/*.dmg
-            app/release/**/*.zip
-            app/release/**/*.exe
-            app/release/**/*.msi
-            app/release/**/*.AppImage
-            app/release/**/*.deb
-            app/release/**/*.rpm
-            app/release/**/*.snap
-            app/release/**/*.pkg
-            app/release/**/*.tar.gz
+            app/release/*/*.dmg
+            app/release/*/*.zip
+            app/release/*/*.exe
+            app/release/*/*.msi
+            app/release/*/*.AppImage
+            app/release/*/*.deb
+            app/release/*/*.rpm
+            app/release/*/*.snap
+            app/release/*/*.pkg
+            app/release/*/*.tar.gz
           if-no-files-found: error
 
   publish:
@@ -183,7 +188,7 @@ jobs:
           fi
           
           # Find files recursively, deduplicating by basename to avoid 422 duplicate asset errors
-          FILES=$(find release-artifacts -type f | awk '!seen[$NF]++')
+          FILES=$(find release-artifacts -type f | awk -F/ '!seen[$NF]++')
           
           # Delete existing release first to avoid 404 errors on stale release uploads
           gh release delete "$TAG" --yes 2>/dev/null || true

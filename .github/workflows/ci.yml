@@ -26,6 +26,14 @@ jobs:
           node-version: 25
           cache: pnpm
 
+      - name: Cache Turbo
+        uses: actions/cache@v4
+        with:
+          path: .turbo/cache
+          key: ${{ runner.os }}-turbo-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-
+
       - name: Install
         run: pnpm install --frozen-lockfile
 
