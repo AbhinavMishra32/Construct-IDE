@@ -86,14 +86,17 @@ describe("Construct Interact Codex-style UI", () => {
   it("renders a compact expandable trace with distinct thought and tool rows", () => {
     const source = readFileSync(fileURLToPath(new URL("../../../../../opaline/packages/ui/src/agent-session/AgentRunTrace.tsx", import.meta.url)), "utf8");
     assert.match(source, /Working/);
-    assert.match(source, /Worked for/);
+    assert.match(source, /traceGroupLabel/);
+    assert.match(source, /Read file/);
+    assert.match(source, /Ran shell command/);
     assert.match(source, /animate-in fade-in-0 slide-in-from-top-1/);
     assert.match(source, /slide-in-from-left-1/);
     assert.match(source, /opaline-agent-thinking-shimmer/);
     assert.match(source, /data-slot="agent-run-trace-entry"/);
     assert.match(source, /TraceDetail label="Input"/);
     assert.match(source, /TraceDetail label="Result"/);
-    assert.match(source, /border-l border-border/);
+    const surface = readFileSync(fileURLToPath(new URL("../../../../../opaline/packages/ui/src/agent-session/AgentSessionSurface.tsx", import.meta.url)), "utf8");
+    assert.match(surface, /border-l border-border\/40/);
     assert.doesNotMatch(source, /Thought for/);
   });
 
@@ -106,9 +109,17 @@ describe("Construct Interact Codex-style UI", () => {
     assert.match(primitives, /<AgentRunTraceRow entry=\{part\.entry\}/);
     assert.match(flow, /buildFlowAgentParts/);
     assert.match(flow, /type: "activity"/);
-    assert.match(flow, /buildAskUserPart\(session\.id, event\.id, event\.input, event\.outputPreview, theme\)/);
+    assert.match(flow, /findActiveFlowQuestion\(mergedSessions\)/);
+    assert.match(flow, /<FlowQuestionComposer/);
+    assert.match(flow, /questionResponse/);
+    assert.match(flow, /markQuestionAnswered/);
+    assert.match(flow, /session\.origin === "question-response"/);
+    assert.match(flow, /Flow needs an answer/);
     assert.match(flow, /splitReasoningSegments\(fallbackText\.process\)/);
     assert.match(flow, /pushFallbackReasoning\(\)/);
+    assert.doesNotMatch(flow, /Answer to question:/);
+    assert.doesNotMatch(flow, /Skipped question:/);
+    assert.doesNotMatch(flow, /payload\.reason \?/);
     assert.doesNotMatch(flow, /<AgentRunTrace/);
   });
 
