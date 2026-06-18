@@ -552,8 +552,21 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
       lastPublishedAt: number;
     }>();
     let accumulatedText = "";
+    let reasoningSequence = 0;
+    let activeReasoningId: string | undefined;
+    let messageSequence = 0;
+    let activeMessageId: string | undefined;
     const pendingToolInputs = new Map<string, string>();
     const toolEvents = new Map<string, ConstructAgentRunEvent>();
+
+    const nextReasoningId = () => {
+      reasoningSequence += 1;
+      return reasoningSequence === 1 ? `${runEventId}:reasoning` : `${runEventId}:reasoning:${reasoningSequence}`;
+    };
+    const nextMessageId = () => {
+      messageSequence += 1;
+      return `${runEventId}:message:${messageSequence}`;
+    };
 
     const reader = stream.getReader();
     try {
@@ -569,15 +582,16 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
       };
 
       if (chunk.type === "reasoning-start") {
-        const id = chunkString(chunk, "id") ?? `${runEventId}:reasoning`;
+        const id = chunkString(chunk, "id") ?? nextReasoningId();
+        activeReasoningId = id;
         const event: ConstructAgentRunEvent = {
           id,
-          type: "reasoning",
-          status: "running",
-          title: "Reasoning",
-          detail: "Thinking",
-          createdAt: new Date().toISOString()
-        };
+	          type: "reasoning",
+	          status: "running",
+	          title: "Thinking",
+	          detail: "Thinking",
+	          createdAt: new Date().toISOString()
+	        };
         reasoning.set(id, {
           event,
           characterCount: 0,
@@ -595,17 +609,18 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
       }
 
       if (chunk.type === "reasoning-delta") {
-        const id = chunkString(chunk, "id") ?? `${runEventId}:reasoning`;
+        const id = chunkString(chunk, "id") ?? activeReasoningId ?? nextReasoningId();
+        activeReasoningId = id;
         const text = chunkString(chunk, "text") ?? "";
         const state = reasoning.get(id) ?? {
           event: {
             id,
-            type: "reasoning" as const,
-            status: "running" as const,
-            title: "Reasoning",
-            detail: "Thinking",
-            createdAt: new Date().toISOString()
-          },
+	            type: "reasoning" as const,
+	            status: "running" as const,
+	            title: "Thinking",
+	            detail: "Thinking",
+	            createdAt: new Date().toISOString()
+	          },
           characterCount: 0,
           text: "",
           lastPublishedAt: 0
@@ -636,7 +651,7 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
       }
 
       if (chunk.type === "reasoning-end") {
-        const id = chunkString(chunk, "id");
+        const id = chunkString(chunk, "id") ?? activeReasoningId;
         const state = id ? reasoning.get(id) : undefined;
         if (state) {
           state.event.status = "completed";
@@ -656,11 +671,15 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
             }
           });
         }
+        if (!chunkString(chunk, "id") || chunkString(chunk, "id") === activeReasoningId) {
+          activeReasoningId = undefined;
+        }
         continue;
       }
 
       if (chunk.type === "text-start") {
-        const id = chunkString(chunk, "id") ?? `${runEventId}:message`;
+        const id = chunkString(chunk, "id") ?? nextMessageId();
+        activeMessageId = id;
         messages.set(id, { text: "", lastPublishedAt: 0 });
         const event: ConstructAgentRunEvent = {
           id,
@@ -682,7 +701,8 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
       }
 
       if (chunk.type === "text-delta") {
-        const id = chunkString(chunk, "id") ?? `${runEventId}:message`;
+        const id = chunkString(chunk, "id") ?? activeMessageId ?? nextMessageId();
+        activeMessageId = id;
         const text = chunkString(chunk, "text") ?? "";
         const state = messages.get(id) ?? { text: "", lastPublishedAt: 0 };
         state.text += text;
@@ -711,7 +731,8 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
       }
 
       if (chunk.type === "text-end") {
-        const id = chunkString(chunk, "id") ?? `${runEventId}:message`;
+        const id = chunkString(chunk, "id") ?? activeMessageId;
+        if (!id) continue;
         const state = messages.get(id);
         if (state) {
           const event: ConstructAgentRunEvent = {
@@ -734,6 +755,9 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
               text: state.text
             }
           });
+        }
+        if (!chunkString(chunk, "id") || chunkString(chunk, "id") === activeMessageId) {
+          activeMessageId = undefined;
         }
         continue;
       }

@@ -26,6 +26,40 @@ export type ConstructFlowToolCallRecord = {
   completedAt?: string;
 };
 
+export type ConstructFlowTimelinePart =
+  | {
+      id: string;
+      kind: "reasoning";
+      status: "running" | "completed" | "error";
+      title: string;
+      detail?: string;
+      text?: string;
+      createdAt: string;
+      updatedAt?: string;
+    }
+  | {
+      id: string;
+      kind: "message";
+      status: "running" | "completed" | "error";
+      text: string;
+      createdAt: string;
+      updatedAt?: string;
+    }
+  | {
+      id: string;
+      kind: "tool";
+      toolCallId: string;
+      name: string;
+      title: string;
+      reason?: string;
+      status: "running" | "completed" | "error";
+      input?: unknown;
+      outputPreview?: string;
+      createdAt: string;
+      completedAt?: string;
+      updatedAt?: string;
+    };
+
 export type ConstructFlowQuestionResponse = {
   sessionId: string;
   toolCallId: string;
@@ -128,6 +162,7 @@ export type ConstructFlowPracticeTask = {
   submission?: ConstructFlowTaskSubmission;
   taskFiles?: string[];
   conceptIds?: string[];
+  introducedConceptIds?: string[];
   successCriteria?: string[];
   subtasks?: ConstructFlowPracticeSubtask[];
   messages?: Array<{
@@ -182,6 +217,7 @@ export type ConstructFlowSession = {
   status: ConstructFlowRunStatus;
   toolCalls: ConstructFlowToolCallRecord[];
   agentEvents: ConstructAgentRunEvent[];
+  timeline: ConstructFlowTimelinePart[];
   contextWindow?: ConstructAgentContextWindow;
   actions: ConstructFlowAction[];
   practiceTasks: ConstructFlowPracticeTask[];

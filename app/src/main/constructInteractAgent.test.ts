@@ -24,7 +24,7 @@ describe("Construct Interact agent guidance", () => {
     assert.match(source, /onToolCallStart:/);
     assert.match(runtimeSource, /status: "running"/);
     assert.match(source, /Agent tool call started/);
-    assert.match(runtimeSource, /title: "Reasoning"/);
+    assert.match(runtimeSource, /title: "Thinking"/);
     assert.match(runtimeSource, /title: `Model step \$\{iteration\.iteration\}`/);
     assert.match(runtimeSource, /abortSignal: request\.abortSignal/);
     assert.match(runtimeSource, /Promise\.all\(\[/);

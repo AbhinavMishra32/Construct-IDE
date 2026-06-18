@@ -83,6 +83,7 @@ describe("ConstructFlowService Concept and Task Tools", () => {
       status: "running",
       toolCalls: [],
       agentEvents: [],
+      timeline: [],
       actions: [],
       practiceTasks: [],
       createdAt: new Date().toISOString(),
@@ -129,6 +130,15 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     assert.equal(swiftResult.concept.id, "swiftui.core-structure");
     assert.equal(swiftResult.concept.language, "swift");
     assert.equal(swiftResult.concept.technology, "SwiftUI");
+
+    const fetchTool = (service as any).createFetchConceptsTool(project);
+    const fetchResult = await fetchTool.execute({
+      query: "SwiftUI core",
+      includeContent: true
+    });
+    const fetchedSwiftConcept = fetchResult.concepts.find((concept: any) => concept.id === "swiftui.core-structure");
+    assert.ok(fetchResult.count >= 1);
+    assert.equal(fetchedSwiftConcept?.content, "SwiftUI core structure covers App, state, and the first view tree.");
 
     // Verify parent stubs auto-created
     const state = await learningStore.getState();
@@ -221,12 +231,26 @@ describe("ConstructFlowService Concept and Task Tools", () => {
       status: "running",
       toolCalls: [],
       agentEvents: [],
+      timeline: [],
       actions: [],
       practiceTasks: [],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
     project.flow.sessions.push(session);
+
+    const addTool = (service as any).createAddConceptTool(project, () => {});
+    await addTool.execute({
+      id: "typescript.functions",
+      title: "TypeScript functions",
+      language: "typescript",
+      technology: "TypeScript",
+      content: "A TypeScript function names a reusable behavior, accepts typed inputs, and returns a typed result.",
+      examples: ["function greet(): string { return 'hello'; }"],
+      confidence: "unknown",
+      reason: "Introduce the function concept before assigning a function-writing task.",
+      evidence: ["The task test seeds this as introduced learner knowledge before practice."]
+    });
 
     // Pre-create another file that should not be in the baseline
     const ignoredFile = path.join(project.workspacePath, "ignored.ts");
@@ -273,10 +297,12 @@ describe("ConstructFlowService Concept and Task Tools", () => {
           mode: "create"
         }
       ],
+      introducedConceptIds: ["typescript.functions"],
       conceptIds: ["typescript.functions"]
     });
 
     assert.ok(taskResult.created);
+    assert.deepEqual(taskResult.introducedConceptIds, ["typescript.functions"]);
     assert.ok(existsSync(path.join(project.workspacePath, "src/greet.ts")));
 
     const task = session.practiceTasks[0];
@@ -284,6 +310,7 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     assert.equal(task.pathNodeId, "typescript-foundation");
     assert.deepEqual(project.flow.pathNodes?.[0]?.taskIds, [task.id]);
     assert.deepEqual(task.taskFiles, ["src/greet.ts"]);
+    assert.deepEqual(task.introducedConceptIds, ["typescript.functions"]);
     assert.equal(task.baseline.files["src/greet.ts"], "export function greet() {}");
     assert.equal(task.baseline.files["ignored.ts"], undefined);
     assert.equal(task.authoredBy?.actor, "agent");
@@ -468,5 +495,17 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     assert.match(source, /modelForAiFeature\(settings, "construct-flow"\)/);
     assert.match(source, /source: "estimated"/);
     assert.match(source, /estimateModelContextTokens/);
+  });
+
+  it("keeps Flow agent timeline and concept tools production-shaped", () => {
+    const source = readFileSync(new URL("./ConstructFlowService.ts", import.meta.url), "utf8");
+    assert.match(source, /const fetchConcepts = this\.createFetchConceptsTool\(project\);/);
+    assert.match(source, /"fetch-concepts": fetchConcepts/);
+    assert.match(source, /id: "fetch-concepts"/);
+    assert.match(source, /scoreConceptMatch/);
+    assert.match(source, /if \(event\.type === "tool" && isProtocolRecordedTool\(event\.toolName \?\? event\.title\)\) return null;/);
+    assert.match(source, /protocolRecordedToolNames/);
+    assert.match(source, /cleanReplyForPendingQuestion/);
+    assert.match(source, /Do not duplicate the context in both prose and the tool question/);
   });
 });

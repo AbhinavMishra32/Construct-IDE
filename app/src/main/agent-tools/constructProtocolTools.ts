@@ -53,6 +53,7 @@ export function createConstructProtocolTools(options: ConstructProtocolToolsOpti
   toolCalls: ConstructProtocolToolRecord[];
 } {
   const toolCalls: ConstructProtocolToolRecord[] = [];
+  let toolCallSequence = 0;
 
   const recordToolCall = async <T>(
     name: string,
@@ -61,8 +62,9 @@ export function createConstructProtocolTools(options: ConstructProtocolToolsOpti
     output: T | Promise<T>,
     input?: unknown
   ): Promise<T> => {
+    toolCallSequence += 1;
     const baseRecord: ConstructProtocolToolRecord = {
-      id: `${name}-${toolCalls.length + 1}`,
+      id: `${name}-${toolCallSequence}`,
       name,
       title,
       reason,
