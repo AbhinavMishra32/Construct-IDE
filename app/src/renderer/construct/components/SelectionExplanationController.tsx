@@ -11,6 +11,7 @@ import type { AgentActivityEntry } from "@opaline/ui";
 import { SelectionDropdown, SelectionDropdownItem } from "@/components/ui/selection-dropdown";
 import type { SelectionDropdownMode } from "@/components/ui/selection-dropdown";
 import { explainSelection, onSelectionExplanationLog } from "../lib/bridge";
+import type { InlineFileRef } from "../lib/inlineRefs";
 import { currentBlock } from "../lib/runtime";
 import {
   closestExplainableSurface,
@@ -39,6 +40,9 @@ export function SelectionExplanationController({
   const [activityExpanded, setActivityExpanded] = useState(true);
   const [copied, setCopied] = useState(false);
   const requestIdRef = useRef<string | null>(null);
+  const openInlineFile = useCallback((reference: InlineFileRef) => {
+    onOpenFile?.(reference.path);
+  }, [onOpenFile]);
 
   const acceptSelection = useCallback((next: ConstructSelectionContext) => {
     if (!next.text) return;
@@ -209,7 +213,7 @@ export function SelectionExplanationController({
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.22, ease: [0.2, 0.8, 0.2, 1] }}
               >
-                <MarkdownBlock content={result.explanation} theme={theme} />
+                <MarkdownBlock content={result.explanation} theme={theme} onOpenFile={openInlineFile} />
                 <AgentContextSources
                   sources={webSources.map((source) => ({ id: source.id, title: source.title, url: source.url, domain: source.domain }))}
                 />

@@ -73,7 +73,7 @@ export function MarkdownBlock({
               padding: "12px 14px",
               background: "transparent",
               borderRadius: 0,
-              fontSize: "12.5px",
+              fontSize: "10.5px",
               lineHeight: "1.6",
               overflowX: "auto"
             }}
@@ -151,7 +151,7 @@ export function MarkdownBlock({
     table({ className, ...props }) {
       return (
         <div className="my-3 overflow-x-auto rounded-lg border">
-          <table className={`w-full border-collapse text-left text-sm [&_td]:border-t [&_td]:px-3 [&_td]:py-2 [&_th]:bg-muted [&_th]:px-3 [&_th]:py-2 [&_th]:font-medium ${className ?? ""}`.trim()} {...props} />
+          <table className={`w-full border-collapse text-left text-[12px] [&_td]:border-t [&_td]:px-3 [&_td]:py-2 [&_th]:bg-muted [&_th]:px-3 [&_th]:py-2 [&_th]:font-medium ${className ?? ""}`.trim()} {...props} />
         </div>
       );
     },
@@ -169,7 +169,7 @@ export function MarkdownBlock({
   };
 
   return (
-    <div className={cn("space-y-3 text-sm leading-relaxed text-foreground [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:text-base [&_h2]:font-semibold [&_h3]:text-sm [&_h3]:font-semibold [&_p]:leading-relaxed [&_strong]:font-semibold", className)}>
+    <div className={cn("space-y-3 text-[12px] leading-relaxed text-foreground [&_h1]:text-[16px] [&_h1]:font-semibold [&_h2]:text-[14px] [&_h2]:font-semibold [&_h3]:text-[12px] [&_h3]:font-semibold [&_p]:leading-relaxed [&_strong]:font-semibold", className)}>
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
         {renderInlineRefsAsMarkdown(content)}
       </ReactMarkdown>

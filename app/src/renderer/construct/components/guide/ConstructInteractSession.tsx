@@ -275,7 +275,7 @@ function buildAgentEventParts({
         type: "activity",
         id: `${sessionId}:reasoning:${event.id}`,
         entry: runEventToTraceEntry(event),
-        defaultOpen: event.status === "running"
+        defaultOpen: false
       });
       continue;
     }
@@ -286,7 +286,7 @@ function buildAgentEventParts({
       type: "activity",
       id: `${sessionId}:tool:${event.id}`,
       entry: runEventToTraceEntry(event),
-      defaultOpen: event.status === "running"
+      defaultOpen: false
     });
     pushFallbackReasoning();
   }
