@@ -4,7 +4,9 @@ import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const workspaceSource = readFileSync(fileURLToPath(new URL("./Workspace.tsx", import.meta.url)), "utf8");
+const flowWorkspaceSource = readFileSync(fileURLToPath(new URL("./FlowWorkspace.tsx", import.meta.url)), "utf8");
 const appSource = readFileSync(fileURLToPath(new URL("../ConstructApplication.tsx", import.meta.url)), "utf8");
+const slotPanelSource = readFileSync(fileURLToPath(new URL("../../../../../opaline/packages/ui/src/slot-panel/SlotPanel.tsx", import.meta.url)), "utf8");
 
 describe("Workspace render stability", () => {
   it("uses stable empty arrays for optional project data read during render", () => {
@@ -27,6 +29,17 @@ describe("Workspace render stability", () => {
     const guideMemo = workspaceSource.match(/const guideTabContent = useMemo\([\s\S]*?\n  \), \[([^\]]*)\]\);/);
     assert.ok(guideMemo, "expected guide tab content memo dependency list");
     assert.doesNotMatch(guideMemo[1], /generatedLiveSteps/);
+  });
+
+  it("keeps controlled file tabs from correcting to stale tab state", () => {
+    assert.match(slotPanelSource, /const incomingTabIds = useMemo/);
+    assert.match(slotPanelSource, /if \(syncTabs && incomingTabIds\.has\(activeTabId\)\)/);
+    assert.match(slotPanelSource, /if \(id === activeTabId\)/);
+
+    assert.match(flowWorkspaceSource, /const openFileSequenceRef = useRef\(0\)/);
+    assert.match(flowWorkspaceSource, /projectActiveFilePathRef/);
+    assert.match(flowWorkspaceSource, /openFileSequenceRef\.current === sequence/);
+    assert.doesNotMatch(flowWorkspaceSource, /\[project\.activeFilePath, refreshTree\]/);
   });
 
   it("does not auto-advance after an agent response", () => {
