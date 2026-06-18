@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { collectInlineRefs, decodeInlineRefHref, parseInlineRef, renderInlineRefsAsMarkdown } from "./inlineRefs";
+import { collectInlineRefs, decodeInlineRefHref, parseInlineFileRef, parseInlineRef, renderInlineRefsAsMarkdown } from "./inlineRefs";
 
 describe("inline Construct references", () => {
   it("parses file lines, ranges, anchors, and explicit concepts", () => {
@@ -32,5 +32,19 @@ describe("inline Construct references", () => {
     assert.equal(references.length, 2);
     assert.equal(references[0]?.kind, "file");
     assert.equal(references[1]?.kind, "concept");
+  });
+
+  it("recognizes plain inline code file targets without treating prose as files", () => {
+    assert.deepEqual(parseInlineFileRef("src/flow/task.ts:7-9"), {
+      kind: "file",
+      path: "src/flow/task.ts",
+      label: "src/flow/task.ts",
+      line: 7,
+      endLine: 9,
+      anchor: undefined,
+      raw: "[[src/flow/task.ts:7-9]]"
+    });
+    assert.equal(parseInlineFileRef("open src/flow/task.ts"), null);
+    assert.equal(parseInlineFileRef("concept:cpp.render-loop"), null);
   });
 });

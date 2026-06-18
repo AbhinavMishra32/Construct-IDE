@@ -6,6 +6,7 @@ import {
   closeDocument,
   consumeDocumentReveal,
   createDocumentSession,
+  replaceDocumentPath,
   revealDocument,
 } from "./documentSession";
 
@@ -36,4 +37,17 @@ test("reveal requests are file scoped and consumed by id", () => {
   assert.equal(revealed.reveal?.path, "src/target.ts");
   assert.equal(consumeDocumentReveal(revealed, 999).reveal?.line, 9);
   assert.equal(consumeDocumentReveal(revealed, revealed.reveal!.id).reveal, null);
+});
+
+test("renaming a document preserves active state and deduplicates tabs", () => {
+  const session = revealDocument(
+    activateDocument(activateDocument(createDocumentSession("a.ts"), "b.ts"), "renamed.ts"),
+    { kind: "focus", path: "b.ts", line: 3 },
+  );
+
+  const renamed = replaceDocumentPath(session, "b.ts", "renamed.ts");
+
+  assert.equal(renamed.activePath, "renamed.ts");
+  assert.equal(renamed.reveal?.path, "renamed.ts");
+  assert.deepEqual(renamed.tabs, ["a.ts", "renamed.ts"]);
 });

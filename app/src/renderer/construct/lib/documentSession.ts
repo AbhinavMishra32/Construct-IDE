@@ -50,6 +50,28 @@ export function closeDocument(session: DocumentSession, rawPath: string): Docume
   };
 }
 
+export function replaceDocumentPath(session: DocumentSession, rawOldPath: string, rawNewPath: string): DocumentSession {
+  const oldPath = normalizeDocumentPath(rawOldPath);
+  const newPath = normalizeDocumentPath(rawNewPath);
+  if (!oldPath || !newPath || oldPath === newPath) return session;
+
+  const nextTabs = session.tabs.reduce<string[]>((tabs, tab) => {
+    const nextTab = tab === oldPath ? newPath : tab;
+    if (!tabs.includes(nextTab)) {
+      tabs.push(nextTab);
+    }
+    return tabs;
+  }, []);
+
+  return {
+    activePath: session.activePath === oldPath ? newPath : session.activePath,
+    reveal: session.reveal?.path === oldPath
+      ? { ...session.reveal, path: newPath }
+      : session.reveal,
+    tabs: nextTabs,
+  };
+}
+
 export function revealDocument(
   session: DocumentSession,
   target: Omit<DocumentReveal, "id" | "path"> & { path: string },

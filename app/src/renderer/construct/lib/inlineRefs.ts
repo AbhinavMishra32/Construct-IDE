@@ -38,8 +38,16 @@ export function parseInlineRef(rawTarget: string, rawLabel?: string, raw = `[[${
   return { kind: "concept", id, label: requestedLabel || id, raw };
 }
 
+export function parseInlineFileRef(rawTarget: string, rawLabel?: string): InlineFileRef | null {
+  const target = rawTarget.trim();
+  if (!target.startsWith("file:") && !looksLikeLegacyFileTarget(target)) return null;
+  const reference = parseInlineRef(target, rawLabel);
+  return reference.kind === "file" ? reference : null;
+}
+
 function looksLikeLegacyFileTarget(target: string): boolean {
   if (target.startsWith("docs:") || target.startsWith("concept:")) return false;
+  if (/\s/.test(target)) return false;
   return /(?:^|\/)[^/]+\.[a-zA-Z0-9]{1,8}(?::\d+(?:-\d+)?|#[a-zA-Z0-9_.-]+)?$/.test(target);
 }
 
