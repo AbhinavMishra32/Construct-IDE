@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { BookOpenIcon, BotIcon, CheckCircle2Icon, CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleIcon, Code2Icon, FileTextIcon, GaugeIcon, GitCompareIcon, HelpCircleIcon, ListChecksIcon, Loader2Icon, PencilIcon, PlusCircleIcon, RotateCcwIcon, SendIcon, SparklesIcon, Trash2Icon } from "lucide-react";
+import { BadgeCheckIcon, BookOpenIcon, BotIcon, BrainCircuitIcon, CheckCircle2Icon, CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleIcon, CpuIcon, FileTextIcon, GaugeIcon, GitCompareIcon, HelpCircleIcon, Layers3Icon, ListChecksIcon, Loader2Icon, PencilIcon, PlusCircleIcon, RotateCcwIcon, RouteIcon, SearchIcon, SendIcon, SparklesIcon, StarIcon, Trash2Icon, type LucideIcon } from "lucide-react";
 import {
   AdaptiveSidecarLayout,
   AgentSessionComposer,
@@ -27,6 +27,7 @@ import type {
   ConstructFlowQuestionResponse,
   ConstructFlowSession,
   ConstructFlowSessionEvent,
+  ConstructFlowTimelinePart,
   ConstructFlowToolCallRecord
 } from "../../../shared/constructFlow";
 import type { AiSettings, ConceptCard, FlowProjectRecord, ModelCatalogEntry, WorkspaceTreeNode } from "../types";
@@ -52,13 +53,27 @@ import { MarkdownBlock } from "./MarkdownBlock";
 import { KnowledgeCard } from "./KnowledgeCard";
 import { ConceptSummaryCard } from "./ConceptSummaryCard";
 import { iconForFile } from "./workspace/FileChooserContent";
-import { ProviderModelPicker } from "./settings/ProviderModelPicker";
+import type { InlineFileRef } from "../lib/inlineRefs";
+import { Badge } from "../../components/ui/badge";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger
+} from "../../components/ui/dropdown-menu";
+import { Input } from "../../components/ui/input";
+import { ScrollArea } from "../../components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../../components/ui/tooltip";
+import { cn } from "../../lib/utils";
 import {
   activateDocument,
   closeDocument,
   createDocumentSession,
-  normalizeDocumentPath
+  normalizeDocumentPath,
+  replaceDocumentPath
 } from "../lib/documentSession";
 
 export function FlowWorkspace({
@@ -101,11 +116,24 @@ export function FlowWorkspace({
   const [liveSession, setLiveSession] = useState<ConstructFlowSession | undefined>();
   const [pending, setPending] = useState(false);
   const [openConcept, setOpenConcept] = useState<ConceptCard | null>(null);
+  const activePathRef = useRef<string | null>(null);
+  const dirtyPathsRef = useRef<Record<string, boolean>>({});
+  const documentSessionRef = useRef(documentSession);
+  const fileContentsRef = useRef<Record<string, string>>({});
+  const openFileSequenceRef = useRef(0);
+  const projectActiveFilePathRef = useRef(project.activeFilePath);
+  const saveSequenceRef = useRef(0);
   const sessionsRef = useRef(sessions);
   sessionsRef.current = sessions;
   const activePath = documentSession.activePath;
   const content = activePath ? fileContents[activePath] ?? "" : "";
   const dirty = activePath ? dirtyPaths[activePath] === true : false;
+
+  activePathRef.current = activePath;
+  dirtyPathsRef.current = dirtyPaths;
+  documentSessionRef.current = documentSession;
+  fileContentsRef.current = fileContents;
+  projectActiveFilePathRef.current = project.activeFilePath;
 
   const refreshTree = useCallback(async () => {
     const next = await listFiles(project.id);
@@ -114,7 +142,13 @@ export function FlowWorkspace({
   }, [project.id]);
 
   useEffect(() => {
-    setDocumentSession(createDocumentSession(project.activeFilePath));
+    const nextSession = createDocumentSession(project.activeFilePath);
+    documentSessionRef.current = nextSession;
+    fileContentsRef.current = {};
+    dirtyPathsRef.current = {};
+    openFileSequenceRef.current += 1;
+    saveSequenceRef.current += 1;
+    setDocumentSession(nextSession);
     setFileContents({});
     setDirtyPaths({});
     setFocusRange(null);
@@ -123,101 +157,229 @@ export function FlowWorkspace({
     setOpenConcept(null);
   }, [project.id]);
 
-  const openFile = useCallback(async (path: string) => {
+  const openFile = useCallback(async (path: string, options: { persist?: boolean } = {}) => {
+    const normalizedPath = normalizeDocumentPath(path);
+    if (!normalizedPath) return false;
+
+    const sequence = openFileSequenceRef.current + 1;
+    openFileSequenceRef.current = sequence;
+    let nextContent = fileContentsRef.current[normalizedPath];
+    if (nextContent == null) {
+      try {
+        nextContent = (await readFile({ projectId: project.id, path: normalizedPath })).content;
+      } catch (error) {
+        console.error("[construct-flow] Could not open file", { path: normalizedPath, error });
+        return false;
+      }
+    }
+
+    if (openFileSequenceRef.current !== sequence) {
+      return false;
+    }
+
+    setFileContents((current) => {
+      const next = { ...current, [normalizedPath]: nextContent };
+      fileContentsRef.current = next;
+      return next;
+    });
+    setDirtyPaths((current) => {
+      if (current[normalizedPath]) return current;
+      const next = { ...current, [normalizedPath]: false };
+      dirtyPathsRef.current = next;
+      return next;
+    });
+    const nextSession = activateDocument(documentSessionRef.current, normalizedPath);
+    documentSessionRef.current = nextSession;
+    setDocumentSession(nextSession);
+    setFocusRange(null);
+    onFileOpened(normalizedPath);
+    if (options.persist !== false && projectActiveFilePathRef.current !== normalizedPath) {
+      const updated = await updateProject({ id: project.id, patch: { activeFilePath: normalizedPath } });
+      if (openFileSequenceRef.current === sequence && updated.kind === "flow") {
+        projectActiveFilePathRef.current = updated.activeFilePath;
+        onProjectChange(updated);
+      }
+    }
+    return true;
+  }, [onFileOpened, onProjectChange, project.id]);
+
+  const saveFile = useCallback(async (path = activePathRef.current) => {
+    const normalizedPath = path ? normalizeDocumentPath(path) : "";
+    if (!normalizedPath) return;
+    const sequence = saveSequenceRef.current + 1;
+    saveSequenceRef.current = sequence;
+    const contentToSave = fileContentsRef.current[normalizedPath] ?? "";
+    onSavingChange(true);
+    try {
+      await writeFile({ projectId: project.id, path: normalizedPath, content: contentToSave });
+      if (saveSequenceRef.current === sequence) {
+        setDirtyPaths((current) => {
+          if (fileContentsRef.current[normalizedPath] !== contentToSave) return current;
+          const next = { ...current, [normalizedPath]: false };
+          dirtyPathsRef.current = next;
+          return next;
+        });
+      }
+      await refreshTree();
+    } finally {
+      if (saveSequenceRef.current === sequence) {
+        onSavingChange(false);
+      }
+    }
+  }, [onSavingChange, project.id, refreshTree]);
+
+  const createFile = useCallback((path: string) => {
+    const normalizedPath = normalizeDocumentPath(path);
+    if (!normalizedPath) return;
+    onSavingChange(true);
+    void writeFile({ projectId: project.id, path: normalizedPath, content: "" })
+      .then(async () => {
+        setFileContents((current) => {
+          const next = { ...current, [normalizedPath]: "" };
+          fileContentsRef.current = next;
+          return next;
+        });
+        setDirtyPaths((current) => {
+          const next = { ...current, [normalizedPath]: false };
+          dirtyPathsRef.current = next;
+          return next;
+        });
+        await refreshTree();
+      })
+      .then(() => openFile(normalizedPath))
+      .finally(() => onSavingChange(false));
+  }, [onSavingChange, openFile, project.id, refreshTree]);
+
+  const persistActiveFilePath = useCallback(async (path: string | null) => {
+    const sequence = openFileSequenceRef.current + 1;
+    openFileSequenceRef.current = sequence;
+    const updated = await updateProject({ id: project.id, patch: { activeFilePath: path } });
+    if (openFileSequenceRef.current === sequence && updated.kind === "flow") {
+      projectActiveFilePathRef.current = updated.activeFilePath;
+      onProjectChange(updated);
+    }
+  }, [onProjectChange, project.id]);
+
+  const closeFileTab = useCallback((path: string) => {
     const normalizedPath = normalizeDocumentPath(path);
     if (!normalizedPath) return;
 
-    if (!dirtyPaths[normalizedPath]) {
-      const file = await readFile({ projectId: project.id, path: normalizedPath });
-      setFileContents((current) => ({ ...current, [normalizedPath]: file.content }));
-      setDirtyPaths((current) => ({ ...current, [normalizedPath]: false }));
-    }
+    openFileSequenceRef.current += 1;
+    const closedActivePath = documentSessionRef.current.activePath === normalizedPath;
+    const nextSession = closeDocument(documentSessionRef.current, normalizedPath);
+    const nextActivePath = nextSession.activePath;
+    documentSessionRef.current = nextSession;
+    setDocumentSession(nextSession);
+    setFileContents((current) => {
+      const next = { ...current };
+      delete next[normalizedPath];
+      fileContentsRef.current = next;
+      return next;
+    });
+    setDirtyPaths((current) => {
+      const next = { ...current };
+      delete next[normalizedPath];
+      dirtyPathsRef.current = next;
+      return next;
+    });
 
-    setDocumentSession((session) => activateDocument(session, normalizedPath));
-    setFocusRange(null);
-    onFileOpened(normalizedPath);
-    const updated = await updateProject({ id: project.id, patch: { activeFilePath: normalizedPath } });
-    if (updated.kind === "flow") {
-      onProjectChange(updated);
+    if (!closedActivePath) return;
+    if (nextActivePath) {
+      void openFile(nextActivePath);
+    } else {
+      setFocusRange(null);
+      void persistActiveFilePath(null);
     }
-  }, [dirtyPaths, onFileOpened, onProjectChange, project.id]);
+  }, [openFile, persistActiveFilePath]);
 
-  const saveFile = useCallback(async () => {
-    if (!activePath) return;
+  const deleteFileFn = useCallback(async (path: string) => {
+    const normalizedPath = normalizeDocumentPath(path);
+    if (!normalizedPath) return;
     onSavingChange(true);
     try {
-      await writeFile({ projectId: project.id, path: activePath, content: fileContents[activePath] ?? "" });
-      setDirtyPaths((current) => ({ ...current, [activePath]: false }));
+      await deleteFile({ projectId: project.id, path: normalizedPath });
+      closeFileTab(normalizedPath);
       await refreshTree();
     } finally {
       onSavingChange(false);
     }
-  }, [activePath, fileContents, onSavingChange, project.id, refreshTree]);
-
-  const createFile = useCallback((path: string) => {
-    void writeFile({ projectId: project.id, path, content: "" })
-      .then(() => refreshTree())
-      .then(() => openFile(path));
-  }, [openFile, project.id, refreshTree]);
-
-  const deleteFileFn = useCallback(async (path: string) => {
-    const normalizedPath = normalizeDocumentPath(path);
-    await deleteFile({ projectId: project.id, path: normalizedPath });
-    setDocumentSession((session) => closeDocument(session, normalizedPath));
-    setFileContents((current) => {
-      const next = { ...current };
-      delete next[normalizedPath];
-      return next;
-    });
-    setDirtyPaths((current) => {
-      const next = { ...current };
-      delete next[normalizedPath];
-      return next;
-    });
-    await refreshTree();
-  }, [project.id, refreshTree]);
+  }, [closeFileTab, onSavingChange, project.id, refreshTree]);
 
   const renameFileFn = useCallback(async (oldPath: string, newPath: string) => {
     const normalizedOldPath = normalizeDocumentPath(oldPath);
     const normalizedNewPath = normalizeDocumentPath(newPath);
-    await renameFile({ projectId: project.id, oldPath: normalizedOldPath, newPath: normalizedNewPath });
-    setDocumentSession((session) => ({
-      ...session,
-      activePath: session.activePath === normalizedOldPath ? normalizedNewPath : session.activePath,
-      tabs: session.tabs.map((tab) => tab === normalizedOldPath ? normalizedNewPath : tab),
-    }));
-    setFileContents((current) => {
-      if (!(normalizedOldPath in current)) return current;
-      const next = { ...current, [normalizedNewPath]: current[normalizedOldPath] };
-      delete next[normalizedOldPath];
-      return next;
-    });
-    setDirtyPaths((current) => {
-      if (!(normalizedOldPath in current)) return current;
-      const next = { ...current, [normalizedNewPath]: current[normalizedOldPath] };
-      delete next[normalizedOldPath];
-      return next;
-    });
-    await refreshTree();
-  }, [project.id, refreshTree]);
+    if (!normalizedOldPath || !normalizedNewPath || normalizedOldPath === normalizedNewPath) return;
+    onSavingChange(true);
+    try {
+      await renameFile({ projectId: project.id, oldPath: normalizedOldPath, newPath: normalizedNewPath });
+      const wasActive = documentSessionRef.current.activePath === normalizedOldPath;
+      const nextSession = replaceDocumentPath(documentSessionRef.current, normalizedOldPath, normalizedNewPath);
+      documentSessionRef.current = nextSession;
+      setDocumentSession(nextSession);
+      setFileContents((current) => {
+        if (!(normalizedOldPath in current)) return current;
+        const next = { ...current, [normalizedNewPath]: current[normalizedOldPath] };
+        delete next[normalizedOldPath];
+        fileContentsRef.current = next;
+        return next;
+      });
+      setDirtyPaths((current) => {
+        if (!(normalizedOldPath in current)) return current;
+        const next = { ...current, [normalizedNewPath]: current[normalizedOldPath] };
+        delete next[normalizedOldPath];
+        dirtyPathsRef.current = next;
+        return next;
+      });
+      if (wasActive) {
+        onFileOpened(normalizedNewPath);
+        void persistActiveFilePath(normalizedNewPath);
+      }
+      await refreshTree();
+    } finally {
+      onSavingChange(false);
+    }
+  }, [onFileOpened, onSavingChange, persistActiveFilePath, project.id, refreshTree]);
 
   const createFolderFn = useCallback(async (path: string) => {
-    await createFolder({ projectId: project.id, path });
-    await refreshTree();
-  }, [project.id, refreshTree]);
+    const normalizedPath = normalizeDocumentPath(path);
+    if (!normalizedPath) return;
+    onSavingChange(true);
+    try {
+      await createFolder({ projectId: project.id, path: normalizedPath });
+      await refreshTree();
+    } finally {
+      onSavingChange(false);
+    }
+  }, [onSavingChange, project.id, refreshTree]);
 
   const duplicateFileFn = useCallback(async (path: string, destPath: string) => {
-    await duplicateFile({ projectId: project.id, path, destPath });
-    await refreshTree();
-  }, [project.id, refreshTree]);
+    const normalizedPath = normalizeDocumentPath(path);
+    const normalizedDestPath = normalizeDocumentPath(destPath);
+    if (!normalizedPath || !normalizedDestPath) return;
+    onSavingChange(true);
+    try {
+      await duplicateFile({ projectId: project.id, path: normalizedPath, destPath: normalizedDestPath });
+      await refreshTree();
+    } finally {
+      onSavingChange(false);
+    }
+  }, [onSavingChange, project.id, refreshTree]);
 
   const openFileRef = useRef(openFile);
   openFileRef.current = openFile;
 
   const focusCode = useCallback((action: Extract<ConstructFlowAction, { type: "focus-code" | "open-file" }>) => {
-    void openFile(action.path).then(() => {
-      if (action.type === "focus-code" && action.line) {
+    void openFile(action.path).then((opened) => {
+      if (opened && action.type === "focus-code" && action.line) {
         setFocusRange({ line: action.line, endLine: action.endLine });
+      }
+    });
+  }, [openFile]);
+
+  const openInlineFile = useCallback((reference: InlineFileRef) => {
+    void openFile(reference.path).then((opened) => {
+      if (opened && reference.line) {
+        setFocusRange({ line: reference.line, endLine: reference.endLine });
       }
     });
   }, [openFile]);
@@ -277,13 +439,18 @@ export function FlowWorkspace({
   }, [project.id, runAgent]);
 
   useEffect(() => {
+    let cancelled = false;
     void refreshTree().then((nextTree) => {
+      if (cancelled || activePathRef.current) return;
       const initialPath = project.activeFilePath ?? firstFilePath(nextTree);
       if (initialPath) {
-        void openFileRef.current(initialPath);
+        void openFileRef.current(initialPath, { persist: project.activeFilePath == null });
       }
     });
-  }, [project.activeFilePath, refreshTree]);
+    return () => {
+      cancelled = true;
+    };
+  }, [project.id, refreshTree]);
 
   useEffect(() => {
     onTreeChange(tree, activePath, null, openFile, createFile, deleteFileFn, renameFileFn, createFolderFn, duplicateFileFn);
@@ -322,6 +489,7 @@ export function FlowWorkspace({
         onSubmitTask={submitTask}
         onOpenConceptDetails={(concept) => setOpenConcept(concept)}
         onOpenConceptById={openConceptById}
+        onOpenFile={openInlineFile}
         onResetChat={() => {
           setSessions([]);
           setLiveSession(undefined);
@@ -329,7 +497,7 @@ export function FlowWorkspace({
       />
     );
     return () => onGuidePanelChange(null);
-  }, [liveSession, onGuidePanelChange, openConceptById, pending, project, runAgent, sessions, submitTask, theme, setOpenConcept]);
+  }, [liveSession, onGuidePanelChange, openConceptById, openInlineFile, pending, project, runAgent, sessions, submitTask, theme, setOpenConcept]);
 
   useEffect(() => {
     onKnowledgePanelChange?.(null);
@@ -345,7 +513,7 @@ export function FlowWorkspace({
         theme={theme}
         onClose={() => setOpenConcept(null)}
         onOpenConcept={openConceptById}
-        onOpenFile={() => {}}
+        onOpenFile={openInlineFile}
         onSaveChange={() => {}}
       />
     </div>
@@ -372,19 +540,8 @@ export function FlowWorkspace({
   }, [activePath, openFile]);
 
   const handleTabClose = useCallback((tabId: string) => {
-    const normalizedPath = normalizeDocumentPath(tabId);
-    setDocumentSession((session) => closeDocument(session, normalizedPath));
-    setFileContents((current) => {
-      const next = { ...current };
-      delete next[normalizedPath];
-      return next;
-    });
-    setDirtyPaths((current) => {
-      const next = { ...current };
-      delete next[normalizedPath];
-      return next;
-    });
-  }, []);
+    closeFileTab(tabId);
+  }, [closeFileTab]);
 
   const editorOutlet = (
     <div className="relative grid h-full min-h-0 grid-cols-[minmax(0,1fr)] bg-background">
@@ -397,16 +554,26 @@ export function FlowWorkspace({
         editProgress={0}
         onFreeEdit={(next) => {
           if (!activePath) return;
-          setFileContents((current) => ({ ...current, [activePath]: next }));
-          setDirtyPaths((current) => ({ ...current, [activePath]: true }));
+          setFileContents((current) => {
+            const updated = { ...current, [activePath]: next };
+            fileContentsRef.current = updated;
+            return updated;
+          });
+          setDirtyPaths((current) => {
+            const updated = { ...current, [activePath]: true };
+            dirtyPathsRef.current = updated;
+            return updated;
+          });
         }}
         onGuidedProgress={() => undefined}
         onRevealLine={() => undefined}
-        onSave={saveFile}
+        onSave={() => void saveFile()}
         theme={theme}
         focusRange={focusRange}
         onOpenFileAndJump={(path, line) => {
-          void openFile(path).then(() => setFocusRange({ line }));
+          void openFile(path).then((opened) => {
+            if (opened) setFocusRange({ line });
+          });
         }}
       />
       {dirty ? (
@@ -567,6 +734,7 @@ function FlowAgentPanel({
   onSubmitTask,
   onOpenConceptDetails,
   onOpenConceptById,
+  onOpenFile,
   onResetChat
 }: {
   project: FlowProjectRecord;
@@ -579,6 +747,7 @@ function FlowAgentPanel({
   onSubmitTask: (task: ConstructFlowPracticeTask, note?: string, subtaskId?: string) => Promise<void>;
   onOpenConceptDetails: (concept: ConceptCard) => void;
   onOpenConceptById: (conceptId: string) => void;
+  onOpenFile: (reference: InlineFileRef) => void;
   onResetChat: () => void;
 }) {
   const [draft, setDraft] = useState("");
@@ -596,8 +765,9 @@ function FlowAgentPanel({
     conceptMutations,
     theme,
     onOpenConceptDetails,
-    onOpenConceptById
-  }), [conceptMutations, mergedSessions, theme, onOpenConceptDetails, onOpenConceptById]);
+    onOpenConceptById,
+    onOpenFile
+  }), [conceptMutations, mergedSessions, theme, onOpenConceptDetails, onOpenConceptById, onOpenFile]);
   const latestContextWindow = useMemo(() => findLatestContextWindow(mergedSessions), [mergedSessions]);
   const [aiSettings, setAiSettings] = useState<AiSettings | null>(null);
   const [modelOptions, setModelOptions] = useState<ModelCatalogEntry[]>([]);
@@ -705,6 +875,7 @@ function FlowAgentPanel({
           theme={theme}
           onOpenConcept={onOpenConceptDetails}
           onSubmitTask={onSubmitTask}
+          onOpenFile={onOpenFile}
         />
       ) : (
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -715,10 +886,11 @@ function FlowAgentPanel({
               theme={theme}
               pending={pending}
               onSubmitTask={onSubmitTask}
+              onOpenFile={onOpenFile}
             />
           ) : null}
           <AgentSessionSurface
-            className="min-h-0 flex-1 bg-transparent"
+            className="construct-flow-session min-h-0 flex-1 bg-transparent"
             messages={messages}
             emptyState={<div className="flex flex-col items-center gap-2 text-center"><BotIcon size={18} /><span>Ask Flow what to build or learn next.</span></div>}
             scrollKey={`${messages.length}:${liveSession?.updatedAt ?? "idle"}`}
@@ -796,13 +968,11 @@ function FlowComposerControls({
       {settings ? (
         <div className="flex min-w-0 items-center gap-1">
           {modelsBusy ? <Loader2Icon className="size-3.5 shrink-0 animate-spin text-muted-foreground" /> : null}
-          <ProviderModelPicker
+          <FlowModelDropdown
             provider={settings.provider}
             value={model}
             models={models}
             disabled={modelsBusy}
-            placeholder="Select model"
-            triggerTitle="Select model"
             onChange={onModelChange}
           />
           <Button
@@ -831,6 +1001,195 @@ function FlowComposerControls({
         </span>
       )}
     </div>
+  );
+}
+
+type ModelBrandKey =
+  | "openai"
+  | "anthropic"
+  | "google"
+  | "deepseek"
+  | "qwen"
+  | "mistral"
+  | "meta"
+  | "xai"
+  | "perplexity"
+  | "github-copilot"
+  | "openrouter"
+  | "opencode-zen"
+  | "litellm"
+  | "other";
+
+function FlowModelDropdown({
+  provider,
+  value,
+  models,
+  disabled,
+  onChange
+}: {
+  provider: AiSettings["provider"];
+  value: string;
+  models: ModelCatalogEntry[];
+  disabled?: boolean;
+  onChange: (model: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [brandFilter, setBrandFilter] = useState<ModelBrandKey | "all">("all");
+  const activeModel = models.find((model) => model.id === value) ?? null;
+  const activeBrand = modelBrandFor(activeModel, provider);
+  const activeMeta = modelBrandMeta(activeBrand);
+  const buckets = useMemo(() => bucketModelsByBrand(models, provider), [models, provider]);
+  const visibleBrandKeys = useMemo(() => sortModelBrands([...buckets.keys()]), [buckets]);
+  const filteredGroups = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    return visibleBrandKeys
+      .filter((brand) => brandFilter === "all" || brand === brandFilter)
+      .map((brand) => {
+        const brandModels = buckets.get(brand) ?? [];
+        const filteredModels = normalizedQuery
+          ? brandModels.filter((model) => modelMatchesQuery(model, normalizedQuery))
+          : brandModels;
+        return { brand, models: filteredModels };
+      })
+      .filter((group) => group.models.length > 0);
+  }, [brandFilter, buckets, query, visibleBrandKeys]);
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          className="h-7 min-w-0 max-w-[15rem] justify-between gap-2 rounded-full px-2 text-xs"
+          size="sm"
+          variant="secondary"
+          type="button"
+          disabled={disabled}
+          title="Select Flow model"
+        >
+          <span className="flex min-w-0 items-center gap-1.5">
+            <ModelBrandMark brand={activeBrand} />
+            <span className="truncate">{activeModel?.name || readableModelName(value) || "Select model"}</span>
+          </span>
+          <ChevronDownIcon size={13} className="shrink-0 text-muted-foreground" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="start"
+        className="w-[min(25rem,calc(100vw-2rem))] p-2"
+      >
+        <div className="flex flex-col gap-2">
+          <div className="flex min-w-0 items-center gap-2 rounded-[8px] border bg-background/70 px-2">
+            <SearchIcon size={14} className="shrink-0 text-muted-foreground" />
+            <Input
+              value={query}
+              placeholder="Search models"
+              className="h-8 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => event.stopPropagation()}
+            />
+          </div>
+
+          <div className="flex min-w-0 flex-wrap gap-1">
+            <button
+              type="button"
+              className={cn(
+                "inline-flex h-7 items-center gap-1 rounded-full border px-2 text-[11px] transition-colors",
+                brandFilter === "all" ? "bg-foreground text-background" : "bg-background text-muted-foreground hover:bg-muted hover:text-foreground"
+              )}
+              onClick={() => setBrandFilter("all")}
+            >
+              <Layers3Icon size={12} />
+              All
+            </button>
+            {visibleBrandKeys.map((brand) => {
+              const meta = modelBrandMeta(brand);
+              return (
+                <button
+                  key={brand}
+                  type="button"
+                  className={cn(
+                    "inline-flex h-7 min-w-0 items-center gap-1 rounded-full border px-2 text-[11px] transition-colors",
+                    brandFilter === brand ? "bg-foreground text-background" : "bg-background text-muted-foreground hover:bg-muted hover:text-foreground"
+                  )}
+                  onClick={() => setBrandFilter(brand)}
+                >
+                  <ModelBrandMark brand={brand} compact />
+                  <span className="truncate">{meta.label}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <DropdownMenuSeparator />
+
+          <ScrollArea className="h-[18rem] pr-2">
+            <div className="flex flex-col gap-2">
+              {filteredGroups.length ? (
+                filteredGroups.map((group) => {
+                  const meta = modelBrandMeta(group.brand);
+                  return (
+                    <DropdownMenuGroup key={group.brand}>
+                      <DropdownMenuLabel className="flex items-center gap-1.5 px-1 text-[11px]">
+                        <ModelBrandMark brand={group.brand} compact />
+                        {meta.label}
+                      </DropdownMenuLabel>
+                      <div className="flex flex-col gap-1">
+                        {group.models.map((model) => {
+                          const selected = model.id === value;
+                          return (
+                            <DropdownMenuItem
+                              key={model.id}
+                              className={cn(
+                                "min-h-11 items-start gap-2 rounded-[8px] px-2 py-2",
+                                selected && "bg-accent text-accent-foreground"
+                              )}
+                              onSelect={() => onChange(model.id)}
+                            >
+                              <ModelBrandMark brand={group.brand} />
+                              <span className="flex min-w-0 flex-1 flex-col gap-1">
+                                <span className="flex min-w-0 items-center gap-1.5">
+                                  <span className="truncate text-sm font-medium">{model.name || readableModelName(model.id)}</span>
+                                  {selected ? <CheckIcon size={13} className="shrink-0" /> : null}
+                                </span>
+                                <span className="flex min-w-0 flex-wrap items-center gap-1 text-[11px] text-muted-foreground group-focus/dropdown-menu-item:text-accent-foreground">
+                                  <span className="truncate font-mono">{model.id}</span>
+                                  {model.contextLength ? (
+                                    <Badge variant="outline" className="h-4 px-1 text-[10px]">
+                                      {formatTokens(model.contextLength)}
+                                    </Badge>
+                                  ) : null}
+                                  {model.pricing ? (
+                                    <Badge variant="secondary" className="h-4 px-1 text-[10px]">
+                                      {model.pricing}
+                                    </Badge>
+                                  ) : null}
+                                </span>
+                              </span>
+                            </DropdownMenuItem>
+                          );
+                        })}
+                      </div>
+                    </DropdownMenuGroup>
+                  );
+                })
+              ) : (
+                <div className="flex h-28 flex-col items-center justify-center gap-1 text-center text-xs text-muted-foreground">
+                  <SearchIcon size={16} />
+                  No models match this search.
+                </div>
+              )}
+            </div>
+          </ScrollArea>
+
+          <div className="flex items-center justify-between gap-2 border-t pt-2 text-[11px] text-muted-foreground">
+            <span className="min-w-0 truncate">{providerLabel(provider)} catalog</span>
+            <span className="inline-flex items-center gap-1">
+              <BadgeCheckIcon size={12} />
+              {activeMeta.label}
+            </span>
+          </div>
+        </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -872,7 +1231,8 @@ function FlowProjectDataPanel({
   concepts,
   theme,
   onOpenConcept,
-  onSubmitTask
+  onSubmitTask,
+  onOpenFile
 }: {
   project: FlowProjectRecord;
   pathNodes: ConstructFlowPathNode[];
@@ -882,6 +1242,7 @@ function FlowProjectDataPanel({
   theme: "light" | "dark" | "system";
   onOpenConcept: (concept: ConceptCard) => void;
   onSubmitTask: (task: ConstructFlowPracticeTask, note?: string, subtaskId?: string) => Promise<void>;
+  onOpenFile: (reference: InlineFileRef) => void;
 }) {
   const completedTasks = tasks.filter((task) => task.status === "completed").length;
   const currentNodeTasks = currentPathNode
@@ -935,7 +1296,7 @@ function FlowProjectDataPanel({
           {currentNodeTasks.length ? (
             <div className="flex flex-col gap-2">
               {currentNodeTasks.map((task) => (
-                <FlowTaskCard key={task.id} task={task} theme={theme} onSubmitTask={onSubmitTask} />
+                <FlowTaskCard key={task.id} task={task} theme={theme} onSubmitTask={onSubmitTask} onOpenFile={onOpenFile} />
               ))}
             </div>
           ) : (
@@ -970,7 +1331,7 @@ function FlowProjectDataPanel({
           </div>
           <div className="grid gap-1 text-xs text-muted-foreground">
             {["research.md", "project.md", "path.md", "learner.md"].map((file) => (
-              <div key={file} className="rounded-[7px] border bg-background/60 px-2 py-1.5 font-mono">{file}</div>
+              <FlowFileChip key={file} path={flowMemoryFilePath(file)} label={file} onOpenFile={onOpenFile} />
             ))}
           </div>
         </div>
@@ -1038,63 +1399,73 @@ function FloatingFlowTaskCard({
   node,
   theme,
   pending,
-  onSubmitTask
+  onSubmitTask,
+  onOpenFile
 }: {
   task: ConstructFlowPracticeTask;
   node?: ConstructFlowPathNode;
   theme: "light" | "dark" | "system";
   pending: boolean;
   onSubmitTask: (task: ConstructFlowPracticeTask, note?: string, subtaskId?: string) => Promise<void>;
+  onOpenFile: (reference: InlineFileRef) => void;
 }) {
   const [open, setOpen] = useState(false);
   const active = activeSubtask(task);
   const completedSubtasks = task.subtasks?.filter((subtask) => subtask.status === "completed").length ?? 0;
   const subtaskCount = task.subtasks?.length ?? 1;
+  const introducedConceptIds = taskIntroducedConceptIds(task);
 
   return (
-    <div className="pointer-events-none absolute left-3 right-3 top-3 z-10 flex justify-center">
+    <div className="shrink-0 border-b bg-background/95 px-3 py-2">
       <div
-        className="construct-floating-task-card pointer-events-auto w-full max-w-[58rem] rounded-[16px] border bg-card/88 text-xs shadow-lg ring-1 ring-border/45 backdrop-blur-xl"
+        className="construct-floating-task-card mx-auto w-full max-w-[46rem] rounded-[10px] border bg-card/96 text-xs shadow-sm"
         onMouseEnter={() => setOpen(true)}
         onMouseLeave={() => setOpen(false)}
       >
         <button
           type="button"
-          className="flex w-full items-center gap-3 px-3 py-2.5 text-left"
+          className="flex w-full items-center gap-2.5 px-3 py-2 text-left"
           aria-expanded={open}
           onClick={() => setOpen((current) => !current)}
         >
           <div className="min-w-0">
-            <span className="text-[10px] font-medium uppercase text-muted-foreground">{node?.title ?? "Current task"}</span>
-            <strong className="mt-0.5 block truncate text-sm">{task.title}</strong>
-            <span className="block truncate text-muted-foreground">{taskStatusLabel(task.status)}</span>
+            <span className="block truncate text-[10px] font-medium uppercase text-muted-foreground">{node?.title ?? "Current task"}</span>
+            <strong className="block truncate text-[13px] leading-5">{task.title}</strong>
           </div>
-          <span className="ml-auto shrink-0 rounded-full border bg-background/70 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-            {completedSubtasks}/{subtaskCount}
+          <span className="ml-auto flex shrink-0 items-center gap-2">
+            <span className="hidden max-w-40 truncate text-[11px] text-muted-foreground sm:inline">
+              {taskStatusLabel(task.status)}
+            </span>
+            <span className="rounded-full border bg-background/70 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+              {completedSubtasks}/{subtaskCount}
+            </span>
           </span>
           <ChevronDownIcon
             size={14}
-            className={`shrink-0 text-muted-foreground transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+            className={`shrink-0 text-muted-foreground transition-transform duration-500 ease-out ${open ? "rotate-180" : ""}`}
           />
         </button>
         <div className={`construct-floating-task-card__details ${open ? "is-open" : ""}`}>
-          <div className="flex flex-col gap-2 px-3 pb-3">
-          <MarkdownBlock content={active?.prompt || task.prompt} theme={theme} />
-          {task.successCriteria?.length ? (
-            <div className="rounded-[8px] bg-muted/30 p-2">
-              <span className="mb-1 block font-medium">Success criteria</span>
-              <ul className="flex flex-col gap-1 text-muted-foreground">
-                {task.successCriteria.map((item, index) => <li key={`${index}:${item}`}>- {item}</li>)}
-              </ul>
-            </div>
-          ) : null}
-          {task.taskFiles?.length ? (
-            <div className="flex flex-wrap gap-1">
-              {task.taskFiles.map((file) => (
-                <span key={file} className="rounded-[6px] border bg-background/70 px-2 py-0.5 font-mono text-[10px] text-muted-foreground">{file}</span>
-              ))}
-            </div>
-          ) : null}
+          <div className="flex flex-col gap-1.5 px-3 pb-2.5">
+            <MarkdownBlock content={active?.prompt || task.prompt} theme={theme} onOpenFile={onOpenFile} />
+            {introducedConceptIds.length ? (
+              <TaskConceptChips conceptIds={introducedConceptIds} compact />
+            ) : null}
+            {task.successCriteria?.length ? (
+              <div className="rounded-[8px] bg-muted/30 p-2">
+                <span className="mb-1 block font-medium">Success criteria</span>
+                <ul className="flex flex-col gap-1 text-muted-foreground">
+                  {task.successCriteria.map((item, index) => <li key={`${index}:${item}`}>- {item}</li>)}
+                </ul>
+              </div>
+            ) : null}
+            {task.taskFiles?.length ? (
+              <div className="flex flex-wrap gap-1">
+                {task.taskFiles.map((file) => (
+                  <FlowFileChip key={file} path={file} onOpenFile={onOpenFile} compact />
+                ))}
+              </div>
+            ) : null}
             <div className="flex items-center justify-between gap-3">
               <span className="min-w-0 truncate text-[11px] text-muted-foreground">
                 {active?.title ?? task.title}
@@ -1115,16 +1486,19 @@ function FlowTaskCard({
   task,
   theme,
   onSubmitTask,
+  onOpenFile,
   compact = false
 }: {
   task: ConstructFlowPracticeTask;
   theme: "light" | "dark" | "system";
   onSubmitTask: (task: ConstructFlowPracticeTask, note?: string, subtaskId?: string) => Promise<void>;
+  onOpenFile: (reference: InlineFileRef) => void;
   compact?: boolean;
 }) {
   const [note, setNote] = useState("");
   const active = activeSubtask(task);
   const canSubmit = task.status === "waiting" || task.status === "submitted";
+  const introducedConceptIds = taskIntroducedConceptIds(task);
   return (
     <div className="flex min-w-0 flex-col gap-3 rounded-[8px] border bg-muted/20 p-3 text-xs shadow-sm">
       <div className="flex items-start justify-between gap-2">
@@ -1136,19 +1510,12 @@ function FlowTaskCard({
           {task.subtasks?.length ?? 1} subtask{(task.subtasks?.length ?? 1) === 1 ? "" : "s"}
         </span>
       </div>
-      <MarkdownBlock content={active?.prompt || task.prompt} theme={theme} />
+      <MarkdownBlock content={active?.prompt || task.prompt} theme={theme} onOpenFile={onOpenFile} />
       {task.focus ? (
-        <span className="inline-flex items-center gap-1 text-muted-foreground">
-          <Code2Icon size={13} />
-          {task.focus.path}{task.focus.line ? `:${task.focus.line}` : ""}
-        </span>
+        <FlowFileChip path={task.focus.path} line={task.focus.line} endLine={task.focus.endLine} onOpenFile={onOpenFile} />
       ) : null}
-      {task.conceptIds?.length ? (
-        <div className="flex flex-wrap gap-1">
-          {task.conceptIds.map((conceptId) => (
-            <span key={conceptId} className="rounded-full border bg-background/70 px-2 py-0.5 font-mono text-[10px] text-muted-foreground">{conceptId}</span>
-          ))}
-        </div>
+      {introducedConceptIds.length ? (
+        <TaskConceptChips conceptIds={introducedConceptIds} />
       ) : null}
       {task.successCriteria?.length ? (
         <div className="rounded-[7px] border bg-background/60 p-2">
@@ -1172,14 +1539,18 @@ function FlowTaskCard({
       {task.taskFiles?.length && !compact ? (
         <div className="flex flex-wrap gap-1">
           {task.taskFiles.map((file) => (
-            <span key={file} className="rounded-[6px] border bg-background/70 px-2 py-0.5 font-mono text-[10px] text-muted-foreground">{file}</span>
+            <FlowFileChip key={file} path={file} onOpenFile={onOpenFile} compact />
           ))}
         </div>
       ) : null}
       {task.preparedFiles?.length && !compact ? (
         <div className="rounded-[7px] border bg-background/60 p-2 text-muted-foreground">
           <span className="mb-1 block font-semibold text-foreground">Prepared by Flow</span>
-          {task.preparedFiles.map((file) => <div key={file.path} className="font-mono text-[10px]">{file.mode}: {file.path}</div>)}
+          <div className="flex flex-col gap-1">
+            {task.preparedFiles.map((file) => (
+              <FlowFileChip key={file.path} path={file.path} label={`${file.mode}: ${file.path}`} onOpenFile={onOpenFile} />
+            ))}
+          </div>
         </div>
       ) : null}
       {canSubmit ? (
@@ -1209,6 +1580,94 @@ function taskStatusLabel(status: ConstructFlowPracticeTask["status"]): string {
   if (status === "submitted") return "Submitted for review";
   if (status === "cancelled") return "Cancelled";
   return "Waiting for learner work";
+}
+
+function taskIntroducedConceptIds(task: ConstructFlowPracticeTask): string[] {
+  return [...new Set([...(task.introducedConceptIds ?? []), ...(task.conceptIds ?? [])])];
+}
+
+function FlowFileChip({
+  path,
+  label,
+  line,
+  endLine,
+  onOpenFile,
+  compact = false
+}: {
+  path: string;
+  label?: string;
+  line?: number;
+  endLine?: number;
+  onOpenFile: (reference: InlineFileRef) => void;
+  compact?: boolean;
+}) {
+  const locator = formatFileReferenceLabel(path, line, endLine);
+  return (
+    <button
+      className={cn(
+        "inline-flex min-w-0 items-center gap-1.5 rounded-[6px] border bg-background/70 px-2 py-1 text-left font-mono text-[10px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35",
+        compact && "max-w-[14rem] py-0.5"
+      )}
+      title={locator}
+      type="button"
+      onClick={() => onOpenFile(createInlineFileReference(path, label ?? locator, line, endLine))}
+    >
+      <FileTextIcon size={12} className="shrink-0" />
+      <span className="min-w-0 truncate">{label ?? locator}</span>
+    </button>
+  );
+}
+
+function createInlineFileReference(path: string, label?: string, line?: number, endLine?: number): InlineFileRef {
+  const target = `file:${formatFileReferenceLabel(path, line, endLine)}`;
+  return {
+    kind: "file",
+    path,
+    label: label ?? formatFileReferenceLabel(path, line, endLine),
+    line,
+    endLine,
+    anchor: undefined,
+    raw: `[[${target}|${label ?? formatFileReferenceLabel(path, line, endLine)}]]`
+  };
+}
+
+function formatFileReferenceLabel(path: string, line?: number, endLine?: number): string {
+  if (!line) return path;
+  return `${path}:${line}${endLine ? `-${endLine}` : ""}`;
+}
+
+function flowMemoryFilePath(file: string): string {
+  return `.construct/flow-memory/${file}`;
+}
+
+function TaskConceptChips({
+  conceptIds,
+  compact = false
+}: {
+  conceptIds: string[];
+  compact?: boolean;
+}) {
+  return (
+    <div className="flex min-w-0 flex-col gap-1.5 rounded-[8px] border bg-background/55 p-2">
+      <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-foreground">
+        <BookOpenIcon size={13} />
+        Introduced before this task
+      </span>
+      <div className="flex flex-wrap gap-1">
+        {conceptIds.map((conceptId) => (
+          <span
+            key={conceptId}
+            className={cn(
+              "rounded-full border bg-background/70 px-2 py-0.5 font-mono text-[10px] text-muted-foreground",
+              compact && "max-w-[12rem] truncate"
+            )}
+          >
+            {conceptId}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function pathNodeStatusLabel(status: ConstructFlowPathNode["status"]): string {
@@ -1248,13 +1707,15 @@ function buildFlowMessages({
   conceptMutations,
   theme,
   onOpenConceptDetails,
-  onOpenConceptById
+  onOpenConceptById,
+  onOpenFile
 }: {
   sessions: ConstructFlowSession[];
   conceptMutations: ConceptMutation[];
   theme: "light" | "dark" | "system";
   onOpenConceptDetails: (concept: ConceptCard) => void;
   onOpenConceptById: (conceptId: string) => void;
+  onOpenFile: (reference: InlineFileRef) => void;
 }): AgentSessionMessage[] {
   return sessions.flatMap((session): AgentSessionMessage[] => {
     const user = session.messages.find((message) => message.role === "user");
@@ -1265,7 +1726,8 @@ function buildFlowMessages({
       conceptMutations,
       theme,
       onOpenConceptDetails,
-      onOpenConceptById
+      onOpenConceptById,
+      onOpenFile
     });
 
     const submittedTask = sessions
@@ -1321,7 +1783,8 @@ function buildFlowAgentParts({
   conceptMutations,
   theme,
   onOpenConceptDetails,
-  onOpenConceptById
+  onOpenConceptById,
+  onOpenFile
 }: {
   session: ConstructFlowSession;
   assistantContent?: string;
@@ -1329,120 +1792,72 @@ function buildFlowAgentParts({
   theme: "light" | "dark" | "system";
   onOpenConceptDetails: (concept: ConceptCard) => void;
   onOpenConceptById: (conceptId: string) => void;
+  onOpenFile: (reference: InlineFileRef) => void;
 }): AgentSessionMessagePart[] {
   const parts: AgentSessionMessagePart[] = [];
-  const seenToolIds = new Set<string>();
-  const seenToolNames = new Map<string, number>();
+  const toolCallsById = new Map(session.toolCalls.map((toolCall) => [toolCall.id, toolCall]));
+  const timeline = flowTimelineParts(session);
   let hasMessageEvent = false;
   const fallbackText = splitProcessNarration(assistantContent);
-  const fallbackReasoning = !session.agentEvents.some((event) => event.type === "message")
-    ? splitReasoningSegments(fallbackText.process)
-    : [];
-  let fallbackReasoningIndex = 0;
-  const pushFallbackReasoning = () => {
-    const text = fallbackReasoning[fallbackReasoningIndex++];
-    if (!text) return;
-    parts.push(buildFallbackReasoningPart(session.id, fallbackReasoningIndex, text));
-  };
+  const pendingQuestion = findPendingLearnerQuestion(session);
 
-  for (const event of session.agentEvents) {
-    if (event.type === "iteration") continue;
-    if (event.type === "message") {
+  for (const event of timeline) {
+    if (event.kind === "message") {
       if (!event.text?.trim()) continue;
+      if (isDuplicateQuestionProse(event.text, pendingQuestion)) continue;
       hasMessageEvent = true;
       parts.push({
         type: "text",
         id: `${session.id}:message:${event.id}`,
-        content: <MarkdownBlock content={event.text} theme={theme} onOpenConcept={onOpenConceptById} />
+        content: <MarkdownBlock content={event.text} theme={theme} onOpenConcept={onOpenConceptById} onOpenFile={onOpenFile} />
       });
       continue;
     }
-    if (event.type === "reasoning" && event.status === "completed" && !event.text?.trim()) {
+    if (event.kind === "reasoning" && event.status === "completed" && !event.text?.trim()) {
       continue;
     }
 
-    const toolName = event.toolName ?? event.title;
+    const toolName = event.kind === "tool" ? event.name : event.title;
     const isConcept = toolName?.includes("concept");
     const isMemoryPatch = toolName === "flow-memory-patch" || toolName === "flow-memory-update";
-    if (event.type === "tool" && isQuestionTool(toolName)) {
+    if (event.kind === "tool" && isQuestionTool(toolName)) {
+      const questionToolCall = toolCallsById.get(event.toolCallId);
+      if (questionToolCall?.response) {
+        parts.push(buildQuestionAnsweredPart(session.id, questionToolCall));
+      }
       continue;
     }
 
-    if (isConcept && event.type === "tool") {
-      seenToolIds.add(event.id);
-      seenToolNames.set(toolName, (seenToolNames.get(toolName) ?? 0) + 1);
+    if (isConcept && event.kind === "tool") {
       parts.push(buildConceptCardPart(session.id, event.id, toolName, event.input, event.outputPreview, event.status, theme, conceptMutations, onOpenConceptDetails));
-      pushFallbackReasoning();
       continue;
     }
 
-    if (isMemoryPatch && event.type === "tool") {
-      seenToolIds.add(event.id);
-      seenToolNames.set(toolName, (seenToolNames.get(toolName) ?? 0) + 1);
-      parts.push(buildMemoryUpdatedPart(session.id, event.id, event.input, event.outputPreview));
-      pushFallbackReasoning();
+    if (isMemoryPatch && event.kind === "tool") {
+      parts.push(buildMemoryUpdatedPart(session.id, event.id, event.input, event.outputPreview, onOpenFile));
       continue;
     }
 
-    const entry = flowEventToTraceEntry(event);
+    const entry = flowTimelinePartToTraceEntry(event);
     parts.push({
       type: "activity",
       id: `${session.id}:activity:${event.id}`,
       entry,
-      defaultOpen: event.status === "running"
+      onOpenFile: (path) => onOpenFile(createInlineFileReference(path)),
+      defaultOpen: false
     });
 
-    if (event.type === "tool") {
-      seenToolIds.add(event.id);
-      const toolName = event.toolName ?? event.title;
-      seenToolNames.set(toolName, (seenToolNames.get(toolName) ?? 0) + 1);
-      pushFallbackReasoning();
-    }
   }
 
-  for (const toolCall of session.toolCalls) {
-    if (seenToolIds.has(toolCall.id)) continue;
-    const seenCount = seenToolNames.get(toolCall.name) ?? 0;
-    if (seenCount > 0) {
-      seenToolNames.set(toolCall.name, seenCount - 1);
-      continue;
-    }
-
-    const isConcept = toolCall.name.includes("concept");
-    const isMemoryPatch = toolCall.name === "flow-memory-patch" || toolCall.name === "flow-memory-update";
-    if (isQuestionTool(toolCall.name)) {
-      if (toolCall.response) {
-        parts.push(buildQuestionAnsweredPart(session.id, toolCall));
-      }
-      continue;
-    }
-    if (isConcept) {
-      parts.push(buildConceptCardPart(session.id, toolCall.id, toolCall.name, toolCall.input, toolCall.outputPreview, toolCall.status, theme, conceptMutations, onOpenConceptDetails));
-      pushFallbackReasoning();
-      continue;
-    }
-    if (isMemoryPatch) {
-      parts.push(buildMemoryUpdatedPart(session.id, toolCall.id, toolCall.input, toolCall.outputPreview));
-      pushFallbackReasoning();
-      continue;
-    }
-
-    parts.push({
-      type: "activity",
-      id: `${session.id}:tool-call:${toolCall.id}`,
-      entry: toolCallToFlowTraceEntry(toolCall)
-    });
-    pushFallbackReasoning();
-  }
-
-  while (fallbackReasoningIndex < fallbackReasoning.length) {
-    pushFallbackReasoning();
+  if (timeline.length === 0 && !hasMessageEvent && fallbackText.process) {
+    parts.unshift(buildFallbackReasoningPart(session.id, 1, fallbackText.process));
   }
 
   if (session.status === "running" && !parts.some((part) => part.type === "activity" && part.entry.status === "running")) {
     parts.push({
       type: "activity",
       id: `${session.id}:activity:live-tail`,
+      onOpenFile: (path) => onOpenFile(createInlineFileReference(path)),
       entry: {
         id: `${session.id}:live-tail`,
         kind: "thought",
@@ -1452,11 +1867,11 @@ function buildFlowAgentParts({
     });
   }
 
-  if (!hasMessageEvent && fallbackText.answer) {
+  if (!hasMessageEvent && fallbackText.answer && !pendingQuestion) {
     parts.push({
       type: "text",
       id: `${session.id}:reply`,
-      content: <MarkdownBlock content={fallbackText.answer} theme={theme} onOpenConcept={onOpenConceptById} />
+      content: <MarkdownBlock content={fallbackText.answer} theme={theme} onOpenConcept={onOpenConceptById} onOpenFile={onOpenFile} />
     });
   }
 
@@ -1471,11 +1886,32 @@ function buildFallbackReasoningPart(sessionId: string, index: number, text: stri
     entry: {
       id: `${sessionId}:reasoning:fallback:${index}`,
       kind: "thought",
-      title: "Reasoning",
+      title: "Thinking",
       status: "completed",
       output: text
     }
   };
+}
+
+function findPendingLearnerQuestion(session: ConstructFlowSession): ConstructFlowToolCallRecord | undefined {
+  return [...session.toolCalls].reverse().find((toolCall) => (
+    isQuestionTool(toolCall.name) && toolCall.status !== "error" && !toolCall.response
+  ));
+}
+
+function isDuplicateQuestionProse(text: string, pendingQuestion: ConstructFlowToolCallRecord | undefined): boolean {
+  if (!pendingQuestion) return false;
+  const normalized = text.replace(/\s+/g, " ").trim();
+  if (!normalized) return false;
+  const payload = readAskUserPayload(pendingQuestion.input, pendingQuestion.outputPreview);
+  const normalizedLower = normalized.toLowerCase();
+  const questionLower = payload.question?.replace(/\s+/g, " ").trim().toLowerCase();
+  if (questionLower && normalizedLower.includes(questionLower)) return true;
+  if (/^\s*\d+[\).]\s+/m.test(text)) return true;
+  if (/(?:choose|pick|select)\s+(?:one|an option|from)/i.test(text)) return true;
+  if (/\?/.test(normalized) && normalized.length > 80) return true;
+  const choices = payload.choices ?? [];
+  return choices.length > 0 && choices.some((choice) => normalizedLower.includes(choice.toLowerCase()));
 }
 
 type FlowQuestionPayload = ReturnType<typeof readAskUserPayload>;
@@ -1757,18 +2193,21 @@ function buildConceptCardPart(
     type: "actions",
     id: `${sessionId}:concept:${eventId}`,
     content: (
-      <div className="flex w-full min-w-0 flex-col gap-3 rounded-[18px] bg-card/72 p-3 text-xs shadow-[0_6px_18px_color-mix(in_srgb,var(--foreground)_5%,transparent)] ring-1 ring-border/45">
-        <div className="flex items-center justify-between gap-2">
+      <div className="flex w-full max-w-[min(39rem,100%)] min-w-0 flex-col gap-1.5 py-1 text-xs">
+        <div className="mb-0.5 flex items-center justify-between gap-2">
           <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-medium ${meta.badgeClass}`}>
-            <meta.Icon size={12} />
+            {status === "running" ? <Loader2Icon size={12} className="animate-spin" /> : <meta.Icon size={12} />}
             {meta.label}
           </span>
           {payload.confidence && <ConfidenceBadge level={payload.confidence} />}
         </div>
 
-        {toolName !== "remove-concept" ? (
+        {status === "running" && toolName !== "remove-concept" ? (
+          <ConceptCreationPreview payload={payload} />
+        ) : toolName !== "remove-concept" ? (
           <ConceptSummaryCard
             concept={conceptCard}
+            compact
             variant="chat"
             actionLabel="Open"
             onOpen={() => onOpenConceptDetails(conceptCard)}
@@ -1781,45 +2220,133 @@ function buildConceptCardPart(
         )}
 
         {payload.normalizedFrom ? (
-          <span className="text-[11px] text-muted-foreground">
+          <span className="px-1 text-[11px] text-muted-foreground">
             Canonicalized from <span className="font-mono">{payload.normalizedFrom}</span>
           </span>
         ) : null}
 
         {kind ? <ConceptMutationTree mutations={allMutations} currentId={conceptId} currentKind={kind} /> : null}
 
-        {(conceptReason || payload.confidenceReason || payload.evidence.length) ? (
-          <div className="flex flex-col gap-2 rounded-[12px] bg-muted/25 px-3 py-2.5 text-muted-foreground">
-            {conceptReason ? (
-              <div>
-                <span className="mb-0.5 block text-[11px] font-semibold text-foreground">Reason</span>
-                <p className="leading-relaxed">{conceptReason}</p>
-              </div>
-            ) : null}
-            {payload.confidenceReason ? (
-              <div>
-                <span className="mb-0.5 block text-[11px] font-semibold text-foreground">Confidence evidence</span>
-                <p className="leading-relaxed">{payload.confidenceReason}</p>
-              </div>
-            ) : null}
-            {payload.evidence.length ? (
-              <div>
-                <span className="mb-0.5 block text-[11px] font-semibold text-foreground">Evidence</span>
-                <ul className="flex flex-col gap-1 leading-relaxed">
-                  {payload.evidence.map((item, index) => <li key={`${index}:${item}`}>- {item}</li>)}
-                </ul>
-              </div>
-            ) : null}
-          </div>
-        ) : null}
+        <ConceptEvidenceDisclosure
+          reason={conceptReason}
+          confidenceReason={payload.confidenceReason}
+          evidence={payload.evidence}
+        />
         {payload.authoredBy || payload.agentContributionPercent !== undefined ? (
-          <span className="text-[11px] text-muted-foreground">
+          <span className="px-1 text-[11px] text-muted-foreground">
             Authorship: {payload.authoredBy ?? "unknown"}{payload.agentContributionPercent !== undefined ? ` · agent ${payload.agentContributionPercent}%` : ""}
           </span>
         ) : null}
       </div>
     )
   };
+}
+
+function ConceptCreationPreview({ payload }: { payload: ConceptPayload }) {
+  const title = payload.title && payload.title !== "Concept"
+    ? payload.title
+    : payload.id
+      ? conceptTitleFromId(payload.id)
+      : "Preparing concept card";
+  const summary = payload.content?.split("\n").find((line) => line.trim()) ?? "Writing the explanation, examples, and evidence trail before this becomes learner memory.";
+  return (
+    <div className="flex min-w-0 flex-col gap-2 rounded-[12px] border border-dashed bg-background/55 p-3">
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="grid size-8 shrink-0 place-items-center rounded-[10px] bg-muted text-muted-foreground">
+          <Loader2Icon size={15} className="animate-spin" />
+        </span>
+        <div className="min-w-0">
+          <strong className="block truncate text-sm font-semibold">{title}</strong>
+          <span className="block truncate text-[11px] text-muted-foreground">
+            {payload.id ? payload.id : "Creating a reusable concept entry"}
+          </span>
+        </div>
+      </div>
+      <p className="line-clamp-2 text-xs leading-5 text-muted-foreground">{summary}</p>
+      <div className="flex flex-col gap-1.5" aria-hidden="true">
+        <span className="h-1.5 w-5/6 rounded-full bg-muted" />
+        <span className="h-1.5 w-2/3 rounded-full bg-muted/70" />
+      </div>
+    </div>
+  );
+}
+
+function ConceptEvidenceDisclosure({
+  reason,
+  confidenceReason,
+  evidence
+}: {
+  reason?: string;
+  confidenceReason?: string;
+  evidence: string[];
+}) {
+  if (!reason && !confidenceReason && evidence.length === 0) return null;
+  const preview = reason ?? confidenceReason ?? evidence[0] ?? "Evidence recorded";
+  return (
+    <ConceptAccordion
+      className="rounded-[7px] bg-transparent"
+      trigger={({
+        open
+      }) => (
+        <div className="flex items-center gap-2 rounded-[7px] px-1.5 py-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted/25">
+          <FileTextIcon size={13} className="shrink-0" />
+          <span className="shrink-0 text-foreground">Details</span>
+          <span className="min-w-0 flex-1 truncate">{preview}</span>
+          <ChevronDownIcon size={13} className={cn("shrink-0 transition-transform duration-300 ease-out", open && "rotate-180")} />
+        </div>
+      )}
+    >
+      <div className="flex flex-col gap-2 rounded-[7px] bg-muted/18 px-2.5 py-2 text-muted-foreground">
+        {reason ? (
+          <div>
+            <span className="mb-0.5 block text-[11px] font-semibold text-foreground">Reason</span>
+            <p className="leading-relaxed">{reason}</p>
+          </div>
+        ) : null}
+        {confidenceReason ? (
+          <div>
+            <span className="mb-0.5 block text-[11px] font-semibold text-foreground">Confidence evidence</span>
+            <p className="leading-relaxed">{confidenceReason}</p>
+          </div>
+        ) : null}
+        {evidence.length ? (
+          <div>
+            <span className="mb-0.5 block text-[11px] font-semibold text-foreground">Evidence</span>
+            <ul className="flex flex-col gap-1 leading-relaxed">
+              {evidence.map((item, index) => <li key={`${index}:${item}`}>- {item}</li>)}
+            </ul>
+          </div>
+        ) : null}
+      </div>
+    </ConceptAccordion>
+  );
+}
+
+function ConceptAccordion({
+  className,
+  trigger,
+  children
+}: {
+  className?: string;
+  trigger: (state: { open: boolean }) => ReactNode;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className={cn("overflow-hidden", className)}>
+      <button
+        type="button"
+        className="w-full text-left"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        {trigger({ open })}
+      </button>
+      <div className={cn("construct-flow-accordion__content", open && "is-open")}>
+        <div>{children}</div>
+      </div>
+    </div>
+  );
 }
 
 function ConceptMutationTree({
@@ -1833,22 +2360,34 @@ function ConceptMutationTree({
 }) {
   const roots = buildConceptTree(mutations);
   if (!roots.length && !currentId) return null;
+  const trail = currentId.split(".").filter(Boolean);
   return (
-    <div className="rounded-[12px] border bg-background/55 p-2.5">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <span className="text-[11px] font-semibold text-foreground">Concept tree</span>
+    <ConceptAccordion
+      className="rounded-[7px] bg-transparent"
+      trigger={({ open }) => (
+        <div className="flex items-center gap-2 rounded-[7px] px-1.5 py-1.5 text-[11px] transition-colors hover:bg-muted/25">
+        <RouteIcon size={13} className="shrink-0 text-muted-foreground" />
+        <span className="font-semibold text-foreground">Hierarchy</span>
+        <span className="min-w-0 flex-1 truncate font-mono text-muted-foreground">
+          {trail.length ? trail.join(" / ") : "concept"}
+        </span>
         {currentKind ? (
-          <span className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] ${conceptMutationMeta(currentKind).textClass}`}>
+          <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] ${conceptMutationMeta(currentKind).textClass}`}>
             {conceptMutationLabel(currentKind)}
           </span>
         ) : null}
-      </div>
-      <div className="flex flex-col gap-0.5 font-mono text-[11px]">
+          <ChevronDownIcon size={13} className={cn("shrink-0 text-muted-foreground transition-transform duration-300 ease-out", open && "rotate-180")} />
+        </div>
+      )}
+    >
+      <div className="max-h-32 overflow-y-auto rounded-[7px] bg-muted/18 p-1.5">
+        <div className="flex flex-col gap-0.5 font-mono text-[11px]">
         {roots.map((node) => (
           <ConceptTreeBranch key={node.id} node={node} currentId={currentId} depth={0} />
         ))}
+        </div>
       </div>
-    </div>
+    </ConceptAccordion>
   );
 }
 
@@ -1970,7 +2509,7 @@ function ensureCurrentMutation(
 function conceptMutationMeta(kind: ConceptMutationKind | null, status?: string) {
   if (kind === "added") {
     return {
-      label: status === "running" ? "Adding concept" : "Added concept",
+      label: status === "running" ? "Introducing concept" : "Introduced concept",
       Icon: PlusCircleIcon,
       badgeClass: "border-[color:var(--construct-success)]/35 bg-[color:var(--construct-success-soft)] text-[color:var(--construct-success)]",
       textClass: "text-[color:var(--construct-success)]",
@@ -2009,7 +2548,7 @@ function conceptMutationMeta(kind: ConceptMutationKind | null, status?: string) 
 }
 
 function conceptMutationLabel(kind: ConceptMutationKind): string {
-  if (kind === "added") return "added";
+  if (kind === "added") return "introduced";
   if (kind === "modified") return "modified";
   return "removed";
 }
@@ -2130,34 +2669,52 @@ function buildMemoryUpdatedPart(
   sessionId: string,
   eventId: string,
   input: unknown,
-  outputPreview: string | undefined
+  outputPreview: string | undefined,
+  onOpenFile: (reference: InlineFileRef) => void
 ): AgentSessionMessagePart {
   const results = readMemoryPatchResults(input, outputPreview);
   return {
     type: "actions",
     id: `${sessionId}:memory:${eventId}`,
-    content: <FlowMemoryUpdateCard results={results} />
+    content: <FlowMemoryUpdateCard results={results} onOpenFile={onOpenFile} />
   };
 }
 
-function FlowMemoryUpdateCard({ results }: { results: ConstructFlowMemoryPatchResult[] }) {
+function FlowMemoryUpdateCard({
+  results,
+  onOpenFile
+}: {
+  results: ConstructFlowMemoryPatchResult[];
+  onOpenFile: (reference: InlineFileRef) => void;
+}) {
   const [open, setOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState(results[0]?.file ?? "research.md");
   const selected = results.find((result) => result.file === selectedFile) ?? results[0];
   const fileLabel = results.length ? results.map((result) => result.file).join(", ") : "Flow Memory";
+  const openSelectedFile = () => {
+    if (selected) {
+      onOpenFile(createInlineFileReference(flowMemoryFilePath(selected.file), selected.file));
+    }
+  };
   return (
-    <div className="flex w-fit max-w-full min-w-0 items-center gap-2 rounded-[16px] bg-card/68 px-3 py-2 text-xs shadow-[0_4px_14px_color-mix(in_srgb,var(--foreground)_4%,transparent)] ring-1 ring-border/45 transition-[background-color,box-shadow] duration-150 hover:bg-card/82">
+    <div className="flex w-full max-w-[min(39rem,100%)] min-w-0 items-center gap-2 rounded-[8px] border border-border/65 bg-background/55 px-2.5 py-1.5 text-xs text-muted-foreground transition-colors duration-150 hover:bg-muted/20">
       <FileTextIcon size={15} className="shrink-0 text-muted-foreground" />
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-2">
-          <strong className="shrink-0 font-medium text-foreground">Memory updated</strong>
-          <span className="min-w-0 truncate text-muted-foreground">{fileLabel}</span>
+          <strong className="shrink-0 font-medium text-foreground/90">Memory updated</strong>
+          <button
+            className="min-w-0 truncate rounded-[6px] px-1 text-left font-mono text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35"
+            type="button"
+            onClick={openSelectedFile}
+          >
+            {fileLabel}
+          </button>
         </div>
         {results[0]?.reason && results[0].reason !== "Flow Memory changed." ? (
           <p className="mt-0.5 line-clamp-1 text-muted-foreground">{results[0].reason}</p>
         ) : null}
       </div>
-      <Button size="sm" variant="ghost" onClick={() => setOpen(true)}>
+      <Button className="h-7 shrink-0 px-2" size="sm" variant="ghost" onClick={() => setOpen(true)}>
         <GitCompareIcon size={14} />
         View diff
       </Button>
@@ -2182,6 +2739,14 @@ function FlowMemoryUpdateCard({ results }: { results: ConstructFlowMemoryPatchRe
                     {result.file}
                   </Button>
                 ))}
+              </div>
+            ) : null}
+            {selected ? (
+              <div className="flex justify-end">
+                <Button size="sm" variant="outline" onClick={openSelectedFile}>
+                  <FileTextIcon size={14} />
+                  Open {selected.file}
+                </Button>
               </div>
             ) : null}
             {selected ? (
@@ -2288,19 +2853,103 @@ function parseJsonObject(value: string | undefined): Record<string, unknown> | u
   }
 }
 
-function flowEventToTraceEntry(event: ConstructFlowSession["agentEvents"][number]): AgentRunTraceEntry {
-  const toolName = event.toolName ?? event.title;
-  const isConcept = toolName?.includes("concept");
-  let title = event.type === "reasoning" ? "Reasoning" : event.title;
-  let subtitle = event.type === "reasoning" && event.text ? undefined : event.detail;
+function flowTimelineParts(session: ConstructFlowSession): ConstructFlowTimelinePart[] {
+  if (session.timeline?.length) return session.timeline;
+  const parts = (session.agentEvents ?? []).flatMap((event): ConstructFlowTimelinePart[] => {
+    if (event.type === "iteration") return [];
+    if (event.type === "message") {
+      return [{
+        id: event.id,
+        kind: "message",
+        status: event.status,
+        text: event.text ?? "",
+        createdAt: event.createdAt
+      }];
+    }
+    if (event.type === "reasoning") {
+      return [{
+        id: event.id,
+        kind: "reasoning",
+        status: event.status,
+        title: event.title || "Thinking",
+        detail: event.detail,
+        text: event.text,
+        createdAt: event.createdAt
+      }];
+    }
+    return [{
+      id: event.id,
+      kind: "tool",
+      toolCallId: event.id,
+      name: event.toolName ?? event.title,
+      title: event.title,
+      reason: event.detail,
+      status: event.status,
+      input: event.input,
+      outputPreview: event.outputPreview,
+      createdAt: event.createdAt,
+      completedAt: event.status === "running" ? undefined : event.createdAt
+    }];
+  });
+  const seenToolIds = new Set(parts.flatMap((part) => part.kind === "tool" ? [part.toolCallId] : []));
+  for (const toolCall of session.toolCalls ?? []) {
+    if (seenToolIds.has(toolCall.id)) continue;
+    parts.push({
+      id: toolCall.id,
+      kind: "tool",
+      toolCallId: toolCall.id,
+      name: toolCall.name,
+      title: toolCall.title,
+      reason: toolCall.reason,
+      status: toolCall.status,
+      input: toolCall.input,
+      outputPreview: toolCall.outputPreview,
+      createdAt: toolCall.createdAt,
+      completedAt: toolCall.completedAt
+    });
+  }
+  return parts.sort(compareTimelineParts);
+}
 
-  if (isConcept && event.type === "tool") {
-    const inputObj = typeof event.input === "string" ? parseJsonObject(event.input) : (event.input as any || {});
-    const conceptId = inputObj.id ?? "";
-    const conceptTitle = inputObj.title ?? "";
+function compareTimelineParts(a: ConstructFlowTimelinePart, b: ConstructFlowTimelinePart): number {
+  return timelinePartSortTime(a) - timelinePartSortTime(b);
+}
+
+function timelinePartSortTime(part: ConstructFlowTimelinePart): number {
+  const raw = part.createdAt ?? part.updatedAt ?? ("completedAt" in part ? part.completedAt : undefined);
+  const timestamp = raw ? Date.parse(raw) : Number.NaN;
+  return Number.isFinite(timestamp) ? timestamp : Number.MAX_SAFE_INTEGER;
+}
+
+function flowTimelinePartToTraceEntry(event: ConstructFlowTimelinePart): AgentRunTraceEntry {
+  if (event.kind === "message") {
+    return {
+      id: event.id,
+      kind: "thought",
+      title: "Message",
+      status: event.status === "error" ? "error" : event.status === "running" ? "running" : "completed",
+      output: event.text
+    };
+  }
+
+  const toolName = event.kind === "tool" ? event.name : event.title;
+  const isConcept = event.kind === "tool" && toolName?.includes("concept");
+  let title = event.kind === "reasoning" ? "Thinking" : event.title;
+  let subtitle = event.kind === "reasoning" && event.text ? undefined : event.kind === "tool" ? event.reason : event.detail;
+
+  if (isConcept && event.kind === "tool") {
+    const inputObj = (
+      typeof event.input === "string"
+        ? parseJsonObject(event.input)
+        : event.input as Record<string, unknown> | undefined
+    ) ?? {};
+    const conceptId = typeof inputObj.id === "string" ? inputObj.id : "";
+    const conceptTitle = typeof inputObj.title === "string" ? inputObj.title : "";
 
     if (toolName === "add-concept") {
-      title = `Added concept "${conceptTitle || conceptId}"`;
+      title = event.status === "running"
+        ? `Introducing concept "${conceptTitle || conceptId || "new concept"}"`
+        : `Introduced concept "${conceptTitle || conceptId || "new concept"}"`;
     } else if (toolName === "modify-concept") {
       title = `Modified concept "${conceptTitle || conceptId}"`;
     } else if (toolName === "remove-concept") {
@@ -2311,13 +2960,13 @@ function flowEventToTraceEntry(event: ConstructFlowSession["agentEvents"][number
 
   return {
     id: event.id,
-    kind: event.type === "reasoning" ? "thought" : "tool",
+    kind: event.kind === "reasoning" ? "thought" : "tool",
     title,
     subtitle,
     status: event.status === "error" ? "error" : event.status === "running" ? "running" : "completed",
-    icon: event.type === "tool" ? classifyToolIcon(toolName) : undefined,
-    input: stringify(event.input),
-    output: event.type === "reasoning" ? event.text : event.outputPreview
+    icon: event.kind === "tool" ? classifyToolIcon(toolName) : undefined,
+    input: event.kind === "tool" ? stringify(event.input) : undefined,
+    output: event.kind === "reasoning" ? event.text : event.kind === "tool" ? event.outputPreview : undefined
   };
 }
 
@@ -2334,59 +2983,12 @@ function splitProcessNarration(text: string | undefined): { process?: string; an
   return { process, answer: answer || value };
 }
 
-function splitReasoningSegments(text: string | undefined): string[] {
-  const value = text?.trim();
-  if (!value) return [];
-  const sentences = value
-    .split(/(?<=[.!?])\s+/)
-    .map((sentence) => sentence.trim())
-    .filter(Boolean);
-  if (sentences.length <= 2) return [value];
-  const segments: string[] = [];
-  for (let index = 0; index < sentences.length; index += 2) {
-    segments.push(sentences.slice(index, index + 2).join(" "));
-  }
-  return segments;
-}
-
-function toolCallToFlowTraceEntry(toolCall: ConstructFlowToolCallRecord): AgentRunTraceEntry {
-  const isConcept = toolCall.name.includes("concept");
-  let title = toolCall.title;
-  let subtitle = toolCall.reason;
-
-  if (isConcept) {
-    const inputObj = typeof toolCall.input === "string" ? parseJsonObject(toolCall.input) : (toolCall.input as any || {});
-    const conceptId = inputObj.id ?? "";
-    const conceptTitle = inputObj.title ?? "";
-
-    if (toolCall.name === "add-concept") {
-      title = `Added concept "${conceptTitle || conceptId}"`;
-    } else if (toolCall.name === "modify-concept") {
-      title = `Modified concept "${conceptTitle || conceptId}"`;
-    } else if (toolCall.name === "remove-concept") {
-      title = `Removed concept "${conceptId}"`;
-    }
-    subtitle = conceptId;
-  }
-
-  return {
-    id: toolCall.id,
-    kind: "tool",
-    title,
-    subtitle,
-    status: toolCall.status,
-    icon: classifyToolIcon(toolCall.name),
-    input: stringify(toolCall.input),
-    output: toolCall.outputPreview
-  };
-}
-
 function classifyToolIcon(name: string): AgentRunTraceEntry["icon"] {
   if (name.includes("memory") || name.includes("concept")) return "memory";
-  if (name.includes("read")) return "read";
+  if (name.includes("read") || name === "view") return "read";
   if (name.includes("search") || name.includes("find")) return "search";
   if (name.includes("terminal") || name.includes("command")) return "terminal";
-  if (name.includes("file") || name.includes("edit") || name.includes("view") || name.includes("glob") || name.includes("list")) return "file";
+  if (name.includes("file") || name.includes("edit") || name.includes("write") || name.includes("glob") || name.includes("list")) return "file";
   return "tool";
 }
 
@@ -2476,6 +3078,127 @@ function providerLabel(provider: AiSettings["provider"]): string {
   if (provider === "github-copilot") return "GitHub Copilot";
   if (provider === "litellm") return "LiteLLM";
   return "OpenAI";
+}
+
+const modelBrandOrder: ModelBrandKey[] = [
+  "openai",
+  "anthropic",
+  "google",
+  "deepseek",
+  "qwen",
+  "mistral",
+  "meta",
+  "xai",
+  "perplexity",
+  "github-copilot",
+  "opencode-zen",
+  "openrouter",
+  "litellm",
+  "other"
+];
+
+function bucketModelsByBrand(
+  models: ModelCatalogEntry[],
+  provider: AiSettings["provider"]
+): Map<ModelBrandKey, ModelCatalogEntry[]> {
+  const buckets = new Map<ModelBrandKey, ModelCatalogEntry[]>();
+  for (const model of models) {
+    const brand = modelBrandFor(model, provider);
+    const bucket = buckets.get(brand) ?? [];
+    bucket.push(model);
+    buckets.set(brand, bucket);
+  }
+  return buckets;
+}
+
+function sortModelBrands(brands: ModelBrandKey[]): ModelBrandKey[] {
+  const order = new Map(modelBrandOrder.map((brand, index) => [brand, index]));
+  return brands.sort((a, b) => (order.get(a) ?? 999) - (order.get(b) ?? 999));
+}
+
+function modelBrandFor(model: ModelCatalogEntry | null, fallbackProvider: AiSettings["provider"]): ModelBrandKey {
+  const haystack = [
+    model?.id,
+    model?.name,
+    model?.providerId,
+    model?.providerName,
+    model?.subProvider,
+    fallbackProvider
+  ].filter(Boolean).join(" ").replace(/_/g, "-").toLowerCase();
+
+  if (haystack.includes("github-copilot")) return "github-copilot";
+  if (haystack.includes("claude") || haystack.includes("anthropic")) return "anthropic";
+  if (haystack.includes("gemini") || haystack.includes("google") || haystack.includes("vertex")) return "google";
+  if (haystack.includes("deepseek")) return "deepseek";
+  if (haystack.includes("qwen") || haystack.includes("dashscope") || haystack.includes("alibaba")) return "qwen";
+  if (haystack.includes("mistral") || haystack.includes("codestral")) return "mistral";
+  if (haystack.includes("llama") || haystack.includes("meta-")) return "meta";
+  if (haystack.includes("grok") || haystack.includes("xai") || haystack.includes("x-ai")) return "xai";
+  if (haystack.includes("perplexity") || haystack.includes("sonar")) return "perplexity";
+  if (haystack.includes("openai") || haystack.includes("gpt-") || haystack.includes("codex") || haystack.includes("o3") || haystack.includes("o4")) return "openai";
+  if (haystack.includes("opencode-zen")) return "opencode-zen";
+  if (haystack.includes("openrouter")) return "openrouter";
+  if (haystack.includes("litellm")) return "litellm";
+  return "other";
+}
+
+function modelMatchesQuery(model: ModelCatalogEntry, query: string): boolean {
+  const brand = modelBrandMeta(modelBrandFor(model, "litellm"));
+  return [
+    model.id,
+    model.name,
+    model.providerId,
+    model.providerName,
+    model.subProvider,
+    model.description,
+    brand.label,
+    brand.short
+  ].filter(Boolean).join(" ").toLowerCase().includes(query);
+}
+
+function modelBrandMeta(brand: ModelBrandKey): {
+  label: string;
+  short: string;
+  Icon: LucideIcon;
+  markClass: string;
+} {
+  if (brand === "anthropic") return { label: "Claude", short: "Cl", Icon: SparklesIcon, markClass: "bg-muted text-foreground" };
+  if (brand === "google") return { label: "Gemini", short: "Gm", Icon: StarIcon, markClass: "bg-primary/10 text-primary" };
+  if (brand === "deepseek") return { label: "DeepSeek", short: "Ds", Icon: SearchIcon, markClass: "bg-[color:var(--construct-success-soft)] text-[color:var(--construct-success)]" };
+  if (brand === "qwen") return { label: "Qwen", short: "Qw", Icon: CpuIcon, markClass: "bg-[color:var(--construct-warning-soft)] text-[color:var(--construct-warning)]" };
+  if (brand === "mistral") return { label: "Mistral", short: "Mi", Icon: RouteIcon, markClass: "bg-destructive/10 text-destructive" };
+  if (brand === "meta") return { label: "Llama", short: "Ll", Icon: Layers3Icon, markClass: "bg-accent text-accent-foreground" };
+  if (brand === "xai") return { label: "xAI", short: "xA", Icon: BrainCircuitIcon, markClass: "bg-foreground text-background" };
+  if (brand === "perplexity") return { label: "Perplexity", short: "Px", Icon: SearchIcon, markClass: "bg-secondary text-secondary-foreground" };
+  if (brand === "github-copilot") return { label: "Copilot", short: "Gh", Icon: BotIcon, markClass: "bg-primary/10 text-primary" };
+  if (brand === "openrouter") return { label: "OpenRouter", short: "Or", Icon: RouteIcon, markClass: "bg-secondary text-secondary-foreground" };
+  if (brand === "opencode-zen") return { label: "OpenCode Zen", short: "Oz", Icon: RouteIcon, markClass: "bg-[color:var(--construct-warning-soft)] text-[color:var(--construct-warning)]" };
+  if (brand === "litellm") return { label: "LiteLLM", short: "Lt", Icon: Layers3Icon, markClass: "bg-muted text-muted-foreground" };
+  if (brand === "other") return { label: "Other", short: "AI", Icon: BrainCircuitIcon, markClass: "bg-muted text-muted-foreground" };
+  return { label: "OpenAI", short: "GPT", Icon: BrainCircuitIcon, markClass: "bg-background text-foreground" };
+}
+
+function ModelBrandMark({
+  brand,
+  compact = false
+}: {
+  brand: ModelBrandKey;
+  compact?: boolean;
+}) {
+  const meta = modelBrandMeta(brand);
+  const Icon = meta.Icon;
+  return (
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center justify-center rounded-full ring-1 ring-border/70",
+        compact ? "size-5 text-[9px] font-semibold" : "size-7 text-[10px] font-semibold",
+        meta.markClass
+      )}
+      aria-hidden="true"
+    >
+      {compact ? meta.short.slice(0, 2) : <Icon size={14} />}
+    </span>
+  );
 }
 
 function formatTokens(value: number | undefined): string {

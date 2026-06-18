@@ -9,7 +9,9 @@
 
 .opaline-agent-thinking-shimmer {
   display: inline-flex;
-  background-image: linear-gradient(90deg, var(--muted-foreground) 0%, var(--muted-foreground) 40%, #fff 50%, var(--muted-foreground) 60%, var(--muted-foreground) 100%);
+  --opaline-thinking-base: color-mix(in srgb, var(--muted-foreground) 72%, transparent);
+  --opaline-thinking-glint: color-mix(in srgb, var(--foreground) 82%, var(--background));
+  background-image: linear-gradient(90deg, var(--opaline-thinking-base) 0%, var(--opaline-thinking-base) 40%, var(--opaline-thinking-glint) 50%, var(--opaline-thinking-base) 60%, var(--opaline-thinking-base) 100%);
   background-size: 250% 100%;
   background-clip: text;
   color: transparent;
@@ -250,7 +252,7 @@ html, body {
 
   .construct-floating-task-card {
     transform-origin: top center;
-    animation: construct-floating-task-in 220ms cubic-bezier(0.18, 0.9, 0.24, 1) both;
+    animation: construct-floating-task-in 360ms cubic-bezier(0.16, 0.88, 0.22, 1) both;
   }
 
   .construct-floating-task-card__details {
@@ -259,9 +261,9 @@ html, body {
     opacity: 0;
     transform: translateY(-0.25rem) scale(0.992);
     transition:
-      grid-template-rows 260ms cubic-bezier(0.18, 0.9, 0.24, 1),
-      opacity 180ms ease,
-      transform 260ms cubic-bezier(0.18, 0.9, 0.24, 1);
+      grid-template-rows 620ms cubic-bezier(0.16, 0.84, 0.22, 1),
+      opacity 420ms ease,
+      transform 620ms cubic-bezier(0.16, 0.84, 0.22, 1);
   }
 
   .construct-floating-task-card__details > * {
@@ -273,6 +275,75 @@ html, body {
     grid-template-rows: 1fr;
     opacity: 1;
     transform: translateY(0) scale(1);
+  }
+
+  .construct-flow-accordion__content {
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    transform: translateY(-0.125rem);
+    transition:
+      grid-template-rows 340ms cubic-bezier(0.16, 0.84, 0.22, 1),
+      opacity 240ms ease,
+      transform 340ms cubic-bezier(0.16, 0.84, 0.22, 1);
+  }
+
+  .construct-flow-accordion__content > * {
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .construct-flow-accordion__content.is-open {
+    grid-template-rows: 1fr;
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .construct-flow-session [data-component="agent-session-timeline"] {
+    padding-top: 0.75rem;
+  }
+
+  .construct-flow-session [data-slot="text-part-body"],
+  .construct-flow-session [data-slot="user-message-text"] {
+    font-size: 0.8125rem;
+    line-height: 1.55;
+  }
+
+  .construct-flow-session [data-slot="text-part-body"] .text-sm,
+  .construct-flow-session [data-slot="user-message-text"] .text-sm {
+    font-size: 0.8125rem;
+    line-height: 1.55;
+  }
+
+  .construct-flow-session [data-component="session-turn"] > [data-slot="session-turn-content"] > [data-slot="session-turn-message-container"] {
+    gap: 0.875rem;
+  }
+
+  .construct-flow-session [data-component="agent-session-actions"] {
+    padding-top: 0;
+  }
+
+  .construct-flow-session [data-component="agent-run-trace"] {
+    margin-block: 0.125rem;
+  }
+
+  .construct-flow-session [data-component="agent-run-trace"] > button {
+    padding-inline: 0.25rem;
+    color: color-mix(in srgb, var(--muted-foreground) 86%, transparent);
+  }
+
+  .construct-flow-session [data-slot="agent-run-trace-row-label"] {
+    font-weight: 400;
+    color: color-mix(in srgb, var(--muted-foreground) 86%, transparent);
+  }
+
+  .construct-flow-session .opaline-agent-thinking-shimmer[data-slot="agent-run-trace-row-label"] {
+    color: transparent;
+  }
+
+  .construct-flow-session [data-slot="agent-run-trace-row-title"],
+  .construct-flow-session [data-slot="agent-run-trace-row-subtitle"] {
+    color: var(--muted-foreground);
   }
 
   .construct-sidecar-accordion {
@@ -378,11 +449,13 @@ html, body {
     .opaline-overlay-spring[data-open],
     .opaline-overlay-spring[data-closed],
     .construct-floating-task-card,
-    .construct-sidecar-accordion__content {
+    .construct-sidecar-accordion__content,
+    .construct-flow-accordion__content {
       animation-duration: 1ms !important;
     }
 
-    .construct-floating-task-card__details {
+    .construct-floating-task-card__details,
+    .construct-flow-accordion__content {
       transition-duration: 1ms !important;
     }
   }
