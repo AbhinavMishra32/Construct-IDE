@@ -232,6 +232,10 @@ export function submitFlowTask(input: Parameters<ConstructProjectsApi["submitFlo
   return api().submitFlowTask(input);
 }
 
+export function rewindFlowSession(input: Parameters<ConstructProjectsApi["rewindFlowSession"]>[0]) {
+  return api().rewindFlowSession(input);
+}
+
 export function onConstructFlowSessionEvent(callback: Parameters<ConstructProjectsApi["onConstructFlowSessionEvent"]>[0]): () => void {
   return api().onConstructFlowSessionEvent(callback);
 }
@@ -371,4 +375,12 @@ export function importOpencodeAuth(): Promise<string | null> {
 
 export function onProviderLog(callback: (payload: { provider: string; message: string; level: string }) => void): () => void {
   return api().onProviderLog(callback);
+}
+
+export function closeProject(): Promise<void> {
+  return api().closeProject();
+}
+
+export function onFileChanged(callback: () => void): () => void {
+  return api().onFileChanged(callback);
 }

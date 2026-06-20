@@ -522,7 +522,7 @@ export function createConstructProtocolTools(options: ConstructProtocolToolsOpti
 
   const createQuestionTool = (id: "ask-question" | "askQuestion" | "ask-user" | "askUser") => createTool({
     id,
-    description: "Ask the learner a direct tracked question. The question field should be the short direct question only; put any brief setup in normal chat before the tool call. Reason is internal and should stay concise. This is mandatory whenever the agent needs an answer from the learner; do not ask required questions only in prose. Use for clarification, design choices, understanding checks, blockers, approvals, or Socratic checks. Questions pause the Flow session until answered unless the caller explicitly resumes later.",
+    description: "Ask the learner a direct tracked question when their answer is useful for learner modeling or required to choose the next step. The question field should be the short direct question only; put any brief setup in normal chat before the tool call. Reason is internal and should stay concise. Use for learner background, preferences, constraints, goals, confidence, clarification, design choices, blockers, or approvals. Do not use this for quizzes, recap prompts, or questions whose answer can be taught in chat or encoded in task guidance. Questions pause the Flow session until answered unless the caller explicitly resumes later.",
     inputSchema: z.object({
       question: z.string().min(1),
       reason: z.string().optional(),

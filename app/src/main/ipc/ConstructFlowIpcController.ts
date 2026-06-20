@@ -10,7 +10,12 @@ import { ConstructFlowService } from "../flow/ConstructFlowService";
 import type { StoredFlowProject, StoredProject } from "../projects/ConstructProjectTypes";
 import { isFlowProject } from "../projects/ConstructProjectTypes";
 import { ConstructProjectWorkspaceService } from "../projects/ConstructProjectWorkspaceService";
-import type { ConstructFlowAgentInput, FlowMemoryFileName } from "../../shared/constructFlow";
+import type {
+  ConstructFlowAgentInput,
+  ConstructFlowProjectSettings,
+  ConstructFlowRewindInput,
+  FlowMemoryFileName
+} from "../../shared/constructFlow";
 
 export class ConstructFlowIpcController {
   constructor(private readonly options: {
@@ -33,7 +38,10 @@ export class ConstructFlowIpcController {
       const projects = await this.options.readProjects();
       const settings = await this.options.readSettings();
       const now = new Date().toISOString();
-      const id = uniqueProjectId(slugify(String(input?.title ?? "flow-project")), projects);
+      const title = String(input?.title ?? "Flow Project").trim() || "Flow Project";
+      const goal = String(input?.goal ?? input?.description ?? "").trim() || "Build and understand this project.";
+      const projectSettings = normalizeProjectSettings(input?.projectSettings);
+      const id = uniqueProjectId(slugify(title), projects);
       const requestedWorkspace = typeof input?.workspacePath === "string" && input.workspacePath.trim()
         ? path.resolve(input.workspacePath)
         : this.options.workspacePathForProject(id);
@@ -43,8 +51,8 @@ export class ConstructFlowIpcController {
       const project: StoredFlowProject = {
         kind: "flow",
         id,
-        title: String(input?.title ?? "Flow Project").trim() || "Flow Project",
-        description: String(input?.goal ?? input?.description ?? "").trim() || "Construct Flow project",
+        title,
+        description: goal,
         progress: 0,
         lastOpenedAt: now,
         workspacePath,
@@ -53,13 +61,18 @@ export class ConstructFlowIpcController {
         fileTreeExpanded: [],
         completedAt: null,
         flow: {
-          goal: String(input?.goal ?? input?.description ?? "").trim() || "Build and understand this project.",
+          goal,
           stackPreference: typeof input?.stackPreference === "string" ? input.stackPreference : undefined,
-          autonomyPreference: input?.autonomyPreference === "guided" || input?.autonomyPreference === "agentic" ? input.autonomyPreference : "balanced",
-          permissionsPreference: input?.permissionsPreference === "agentic" || input?.permissionsPreference === "workspace" ? input.permissionsPreference : "ask",
+          autonomyPreference: input?.autonomyPreference === "guided" || input?.autonomyPreference === "agentic"
+            ? input.autonomyPreference
+            : "balanced",
+          permissionsPreference: input?.permissionsPreference === "agentic" || input?.permissionsPreference === "workspace"
+            ? input.permissionsPreference
+            : projectSettings.agentEdits,
+          projectSettings,
           memoryDirectory: ".construct/flow-memory",
           threadId: randomUUID(),
-          researchEnabled: input?.researchFirst !== false,
+          researchEnabled: typeof input?.researchFirst === "boolean" ? input.researchFirst : false,
           researchCompletedAt: null,
           pathNodes: [],
           currentPathNodeId: null,
@@ -78,17 +91,23 @@ export class ConstructFlowIpcController {
       this.options.setActiveWebContents(event.sender);
 
       if (project.flow.researchEnabled) {
-        await this.options.flow.runResearchAgent(project, (payload) => {
+        this.options.flow.runResearchAgent(project, (payload) => {
           if (!event.sender.isDestroyed()) {
             event.sender.send("construct:flow:session-event", payload);
           }
-        });
-        await this.options.writeProjects(projects);
+        }).then(async () => {
+          const allProjects = await this.options.readProjects();
+          const saved = allProjects.find((p) => p.id === project.id);
+          if (saved) {
+            Object.assign(saved, project);
+            await this.options.writeProjects(allProjects);
+          }
+        }).catch(() => {});
       } else {
         await this.options.flow.runMainAgent(project, {
           projectId: project.id,
           startReason: "new-project",
-          message: "Start this new Flow project. Use the project goal and current workspace context to decide the next helpful mentor step."
+          message: "Start this new Flow project. Use the project goal, project settings, and current workspace context to decide the next helpful mentor step."
         }, (payload) => {
           if (!event.sender.isDestroyed()) {
             event.sender.send("construct:flow:session-event", payload);
@@ -141,7 +160,7 @@ export class ConstructFlowIpcController {
         }
       });
       await this.options.writeProjects(projects);
-      return result;
+      return { ...result, project };
     });
 
     ipcMain.handle("construct:flow:submit-task", async (_event, input) => {
@@ -155,6 +174,39 @@ export class ConstructFlowIpcController {
       );
       await this.options.writeProjects(projects);
       return submission;
+    });
+
+    ipcMain.handle("construct:flow:rewind-session", async (_event, input: ConstructFlowRewindInput) => {
+      const projects = await this.options.readProjects();
+      const project = this.findFlowProject(projects, String(input?.projectId ?? ""));
+      const sessionId = String(input?.sessionId ?? "");
+      const index = project.flow.sessions.findIndex((session) => session.id === sessionId);
+      if (index < 0) {
+        throw new Error(`Unknown Flow session: ${sessionId}`);
+      }
+
+      const target = project.flow.sessions[index];
+      const userMessage = target.messages.find((message) => message.role === "user");
+      if (!userMessage || target.origin === "system" || target.origin === "task-submission") {
+        throw new Error("Only editable learner chat messages can be rewound.");
+      }
+
+      const removedTaskIds = new Set(
+        project.flow.sessions
+          .slice(index)
+          .flatMap((session) => session.practiceTasks)
+          .map((task) => task.id)
+      );
+      project.flow.sessions = project.flow.sessions.slice(0, index);
+      if (removedTaskIds.size > 0 && project.flow.pathNodes) {
+        project.flow.pathNodes = project.flow.pathNodes.map((node) => ({
+          ...node,
+          taskIds: node.taskIds?.filter((taskId) => !removedTaskIds.has(taskId))
+        }));
+      }
+      project.flow.updatedAt = new Date().toISOString();
+      await this.options.writeProjects(projects);
+      return project;
     });
   }
 
@@ -191,4 +243,37 @@ function slugify(value: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 64) || "flow-project";
+}
+
+const defaultFlowProjectSettings: ConstructFlowProjectSettings = {
+  projectType: "app",
+  codebaseState: "empty",
+  projectPhase: "build",
+  setupScope: "standard",
+  packageManager: "auto",
+  testStrategy: "unit",
+  docsLevel: "standard",
+  gitStrategy: "initialize",
+  agentEdits: "ask",
+  openWorkspace: true
+};
+
+function normalizeProjectSettings(input: unknown): ConstructFlowProjectSettings {
+  const value = input && typeof input === "object" ? input as Record<string, unknown> : {};
+  return {
+    projectType: readOption(value.projectType, ["app", "library", "cli", "agent", "research"], defaultFlowProjectSettings.projectType),
+    codebaseState: readOption(value.codebaseState, ["empty", "existing", "mixed"], defaultFlowProjectSettings.codebaseState),
+    projectPhase: readOption(value.projectPhase, ["explore", "build", "refactor", "ship"], defaultFlowProjectSettings.projectPhase),
+    setupScope: readOption(value.setupScope, ["minimal", "standard", "complete"], defaultFlowProjectSettings.setupScope),
+    packageManager: readOption(value.packageManager, ["auto", "pnpm", "npm", "yarn", "bun"], defaultFlowProjectSettings.packageManager),
+    testStrategy: readOption(value.testStrategy, ["none", "smoke", "unit", "full"], defaultFlowProjectSettings.testStrategy),
+    docsLevel: readOption(value.docsLevel, ["none", "brief", "standard", "detailed"], defaultFlowProjectSettings.docsLevel),
+    gitStrategy: readOption(value.gitStrategy, ["skip", "initialize", "existing"], defaultFlowProjectSettings.gitStrategy),
+    agentEdits: readOption(value.agentEdits, ["ask", "workspace", "agentic"], defaultFlowProjectSettings.agentEdits),
+    openWorkspace: typeof value.openWorkspace === "boolean" ? value.openWorkspace : defaultFlowProjectSettings.openWorkspace
+  };
+}
+
+function readOption<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
+  return typeof value === "string" && (allowed as readonly string[]).includes(value) ? value as T : fallback;
 }

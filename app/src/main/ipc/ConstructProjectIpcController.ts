@@ -1,5 +1,5 @@
 import path from "node:path";
-import { existsSync } from "node:fs";
+import { existsSync, watch, type FSWatcher } from "node:fs";
 import { cp, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 
 import type { IpcMain, WebContents } from "electron";
@@ -10,6 +10,9 @@ import { isFlowProject, isTapeProject, type ProjectSummary, type StoredProject }
 import { ConstructProjectWorkspaceService } from "../projects/ConstructProjectWorkspaceService";
 
 export class ConstructProjectIpcController {
+  private activeWatcher: FSWatcher | null = null;
+  private watchTimeout: NodeJS.Timeout | null = null;
+
   constructor(private readonly options: {
     ipcMain: IpcMain;
     readSettings: () => Promise<StoredSettings>;
@@ -23,6 +26,50 @@ export class ConstructProjectIpcController {
     setActiveWebContents: (webContents: WebContents) => void;
     getAppSourceRoot: () => string;
   }) {}
+
+  private setupWatcher(workspacePath: string, webContents: WebContents): void {
+    if (this.activeWatcher) {
+      try {
+        this.activeWatcher.close();
+      } catch (err) {
+        console.error("[watcher] error closing active watcher", err);
+      }
+      this.activeWatcher = null;
+    }
+    if (this.watchTimeout) {
+      clearTimeout(this.watchTimeout);
+      this.watchTimeout = null;
+    }
+
+    try {
+      this.activeWatcher = watch(workspacePath, { recursive: true }, (eventType, filename) => {
+        if (filename && (
+          filename.includes("node_modules") ||
+          filename.includes(".git") ||
+          filename.includes(".turbo") ||
+          filename.includes(".DS_Store")
+        )) {
+          return;
+        }
+
+        if (this.watchTimeout) {
+          clearTimeout(this.watchTimeout);
+        }
+        this.watchTimeout = setTimeout(() => {
+          try {
+            if (!webContents.isDestroyed()) {
+              webContents.send("construct:project:file-changed");
+            }
+          } catch (err) {
+            console.error("[watcher] error sending file-changed event", err);
+          }
+        }, 300);
+      });
+      console.log(`[watcher] started watching workspace: ${workspacePath}`);
+    } catch (err) {
+      console.error(`[watcher] failed to start watcher for workspace ${workspacePath}`, err);
+    }
+  }
 
   register(): void {
     const { ipcMain } = this.options;
@@ -190,7 +237,27 @@ export class ConstructProjectIpcController {
         currentStepIndex: isTapeProject(project) ? project.currentStepIndex : null,
         currentBlockIndex: isTapeProject(project) ? project.currentBlockIndex : null
       });
+
+      this.setupWatcher(project.workspacePath, _event.sender);
+
       return project;
+    });
+
+    ipcMain.handle("construct:project:close", async () => {
+      if (this.activeWatcher) {
+        try {
+          this.activeWatcher.close();
+          console.log("[watcher] stopped watching workspace");
+        } catch (err) {
+          console.error("[watcher] error closing watcher on project close", err);
+        }
+        this.activeWatcher = null;
+      }
+      if (this.watchTimeout) {
+        clearTimeout(this.watchTimeout);
+        this.watchTimeout = null;
+      }
+      return { success: true };
     });
 
     ipcMain.handle("construct:project:update", async (_event, input) => {

@@ -14,6 +14,7 @@ import type {
   ConstructFlowAgentInput,
   ConstructFlowAgentResult,
   ConstructFlowMemoryRead,
+  ConstructFlowRewindInput,
   ConstructFlowSessionEvent,
   ConstructFlowTaskSubmission,
   FlowMemoryFileName
@@ -144,6 +145,7 @@ export type ConceptCard = {
   id: string;
   title: string;
   kind: string;
+  parentId?: string | null;
   language?: ConstructConceptLanguage;
   technology?: string;
   tags: string[];
@@ -153,6 +155,26 @@ export type ConceptCard = {
   example: string;
   docs: ConceptDocsLink[];
   guides: GuideBlock[];
+  relatedConcepts?: string[];
+  confidence?: string;
+  confidenceReason?: string;
+  learnerEvidence?: string[];
+  lastChangeReason?: string;
+  authoredBy?: "learner" | "agent" | "mixed" | "system" | string;
+  agentContributionPercent?: number;
+  savedAt?: string;
+  lastModifiedAt?: string;
+  history?: Array<{
+    id: string;
+    kind: string;
+    reason: string;
+    evidence: string[];
+    confidence?: string;
+    confidenceReason?: string;
+    authoredBy?: string;
+    agentContributionPercent?: number;
+    createdAt: string;
+  }>;
 };
 
 export type SupportSection = {
@@ -398,6 +420,7 @@ export type FlowProjectRecord = ProjectSummary & {
     stackPreference?: string;
     autonomyPreference?: "guided" | "balanced" | "agentic";
     permissionsPreference?: "ask" | "workspace" | "agentic";
+    projectSettings?: import("../../shared/constructFlow").ConstructFlowProjectSettings;
     memoryDirectory: ".construct/flow-memory";
     threadId: string;
     researchEnabled: boolean;
@@ -413,6 +436,10 @@ export type FlowProjectRecord = ProjectSummary & {
 };
 
 export type AnyProjectRecord = ProjectRecord | FlowProjectRecord;
+
+export type ConstructFlowResearchResult = ConstructFlowAgentResult & {
+  project: FlowProjectRecord;
+};
 
 export function isFlowProjectRecord(project: AnyProjectRecord | ProjectSummary | null | undefined): project is FlowProjectRecord {
   return project?.kind === "flow";
@@ -452,6 +479,7 @@ export type AiSettings = {
   githubCopilotModel: string;
   tavilyApiKey: string;
   featureModels: Record<string, string>;
+  codeGhostEnabled: boolean;
 };
 
 export type AiFeatureSettings = {
@@ -559,6 +587,7 @@ export type ConstructProjectsApi = {
     autonomyPreference?: "guided" | "balanced" | "agentic";
     permissionsPreference?: "ask" | "workspace" | "agentic";
     researchFirst?: boolean;
+    projectSettings?: import("../../shared/constructFlow").ConstructFlowProjectSettings;
   }): Promise<FlowProjectRecord>;
   openConstructFile(): Promise<{ path: string; source: string } | null>;
   selectWorkspaceDirectory(input?: {
@@ -648,10 +677,11 @@ export type ConstructProjectsApi = {
   runConstructInteract(input: Omit<ConstructInteractRuntimeInput, "learningState">): Promise<ConstructInteractClientResult>;
   onConstructInteractSessionEvent(callback: (event: ConstructInteractSessionEvent) => void): () => void;
   runConstructFlowAgent(input: ConstructFlowAgentInput): Promise<ConstructFlowAgentResult>;
-  runConstructFlowResearch(input: { projectId: string }): Promise<ConstructFlowAgentResult>;
+  runConstructFlowResearch(input: { projectId: string }): Promise<ConstructFlowResearchResult>;
   readFlowMemory(input: { projectId: string; files?: FlowMemoryFileName[] }): Promise<ConstructFlowMemoryRead[]>;
   updateFlowMemory(input: { projectId: string; updates: Array<{ file: FlowMemoryFileName; content: string }> }): Promise<ConstructFlowMemoryRead[]>;
   submitFlowTask(input: { projectId: string; taskId: string; subtaskId?: string; note?: string }): Promise<ConstructFlowTaskSubmission>;
+  rewindFlowSession(input: ConstructFlowRewindInput): Promise<FlowProjectRecord>;
   onConstructFlowSessionEvent(callback: (event: ConstructFlowSessionEvent) => void): () => void;
   reviewConstructAuthoring(input: {
     spec: string;
@@ -719,6 +749,8 @@ export type ConstructProjectsApi = {
   onLitellmStatusChange(callback: (payload: LitellmState) => void): () => void;
   importOpencodeAuth(): Promise<string | null>;
   onProviderLog(callback: (payload: { provider: string; message: string; level: string }) => void): () => void;
+  onFileChanged(callback: () => void): () => void;
+  closeProject(): Promise<void>;
 };
 
 export type LitellmStatus = "stopped" | "starting" | "running" | "stopping" | "error";

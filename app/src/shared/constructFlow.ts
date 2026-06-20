@@ -91,6 +91,19 @@ export type ConstructFlowPathNode = {
   completedAt?: string;
 };
 
+export type ConstructFlowProjectSettings = {
+  projectType: "app" | "library" | "cli" | "agent" | "research";
+  codebaseState: "empty" | "existing" | "mixed";
+  projectPhase: "explore" | "build" | "refactor" | "ship";
+  setupScope: "minimal" | "standard" | "complete";
+  packageManager: "auto" | "pnpm" | "npm" | "yarn" | "bun";
+  testStrategy: "none" | "smoke" | "unit" | "full";
+  docsLevel: "none" | "brief" | "standard" | "detailed";
+  gitStrategy: "skip" | "initialize" | "existing";
+  agentEdits: "ask" | "workspace" | "agentic";
+  openWorkspace: boolean;
+};
+
 export type ConstructFlowAction =
   | {
       type: "open-concept";
@@ -262,6 +275,11 @@ export type ConstructFlowAgentInput = {
   questionResponse?: ConstructFlowQuestionResponse;
   startReason?: "new-project";
   quickAction?: "continue" | "tried" | "stuck" | "run-tests" | "explain-selection" | "checkpoint";
+};
+
+export type ConstructFlowRewindInput = {
+  projectId: string;
+  sessionId: string;
 };
 
 export type ConstructFlowAgentResult = {

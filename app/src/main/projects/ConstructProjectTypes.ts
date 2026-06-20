@@ -1,5 +1,10 @@
 import type { VerificationResult } from "../constructVerifierAgent";
-import type { ConstructFlowPathNode, ConstructFlowSession, FlowMemoryFileName } from "../../shared/constructFlow";
+import type {
+  ConstructFlowPathNode,
+  ConstructFlowProjectSettings,
+  ConstructFlowSession,
+  FlowMemoryFileName
+} from "../../shared/constructFlow";
 
 export type ConstructProjectKind = "tape" | "flow";
 
@@ -73,6 +78,7 @@ export type StoredFlowProject = StoredProjectBase & {
     stackPreference?: string;
     autonomyPreference?: "guided" | "balanced" | "agentic";
     permissionsPreference?: "ask" | "workspace" | "agentic";
+    projectSettings?: ConstructFlowProjectSettings;
     memoryDirectory: ".construct/flow-memory";
     threadId: string;
     researchEnabled: boolean;

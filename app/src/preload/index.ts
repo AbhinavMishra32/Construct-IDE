@@ -78,6 +78,8 @@ contextBridge.exposeInMainWorld("constructProjects", {
     ipcRenderer.invoke("construct:flow:memory-update", input),
   submitFlowTask: (input: unknown) =>
     ipcRenderer.invoke("construct:flow:submit-task", input),
+  rewindFlowSession: (input: unknown) =>
+    ipcRenderer.invoke("construct:flow:rewind-session", input),
   onConstructFlowSessionEvent: (callback: (event: unknown) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
     ipcRenderer.on("construct:flow:session-event", listener);
@@ -215,5 +217,13 @@ contextBridge.exposeInMainWorld("constructProjects", {
     };
     ipcRenderer.on("construct:provider:log", listener);
     return () => ipcRenderer.off("construct:provider:log", listener);
-  }
+  },
+  onFileChanged: (callback: () => void) => {
+    const listener = () => {
+      callback();
+    };
+    ipcRenderer.on("construct:project:file-changed", listener);
+    return () => ipcRenderer.off("construct:project:file-changed", listener);
+  },
+  closeProject: () => ipcRenderer.invoke("construct:project:close")
 });
