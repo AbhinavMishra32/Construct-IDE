@@ -129,10 +129,24 @@ export type ConstructFlowPracticeSubtask = {
   id: string;
   title: string;
   prompt: string;
-  status: "ready" | "active" | "submitted" | "completed";
+  status: "ready" | "active" | "submitted" | "needs-work" | "completed";
   successCriteria?: string[];
   completedAt?: string;
   evidence?: string;
+  reviewedAt?: string;
+  reviewNote?: string;
+  nextInstructions?: string;
+};
+
+export type ConstructFlowTaskGuidance = {
+  id: string;
+  title: string;
+  instruction: string;
+  path: string;
+  line?: number;
+  endLine?: number;
+  placeholder?: string;
+  subtaskId?: string;
 };
 
 export type ConstructFlowCodeAuthorship = {
@@ -165,6 +179,7 @@ export type ConstructFlowPracticeTask = {
   introducedConceptIds?: string[];
   successCriteria?: string[];
   subtasks?: ConstructFlowPracticeSubtask[];
+  guidance?: ConstructFlowTaskGuidance[];
   messages?: Array<{
     id: string;
     role: ConstructFlowMessageRole;

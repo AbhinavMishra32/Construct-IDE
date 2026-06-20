@@ -24,9 +24,11 @@ import type {
   ConstructFlowAgentResult,
   ConstructFlowPathNode,
   ConstructFlowPracticeTask,
+  ConstructFlowPracticeSubtask,
   ConstructFlowQuestionResponse,
   ConstructFlowSession,
   ConstructFlowSessionEvent,
+  ConstructFlowTaskGuidance,
   ConstructFlowTimelinePart,
   ConstructFlowTaskBaseline,
   ConstructFlowTaskSubmission,
@@ -182,6 +184,7 @@ export class ConstructFlowService {
     const removeConcept = this.createRemoveConceptTool(project, publish);
     const fetchConcepts = this.createFetchConceptsTool(project);
     const suggestConcept = this.createSuggestConceptTool(project, concepts, actionsFromTools, publish);
+    const reviewSubtask = this.createReviewSubtaskTool(project, publish);
     const completeSubtask = this.createCompleteSubtaskTool(project, publish);
     const completeTask = this.createCompleteTaskTool(project, publish);
     const tools: ToolsInput = {
@@ -193,6 +196,7 @@ export class ConstructFlowService {
       "add-concept": addConcept,
       "modify-concept": modifyConcept,
       "remove-concept": removeConcept,
+      "review-subtask": reviewSubtask,
       "complete-subtask": completeSubtask,
       "complete-task": completeTask
     };
@@ -519,7 +523,7 @@ export class ConstructFlowService {
   ): ToolsInput[string] {
     return createTool({
       id: "practice-task",
-      description: "Create a real learner coding task in the workspace only after the required concepts have been introduced. Prepare files, capture a baseline of relevant task files, focus code, and wait for the learner to submit.",
+      description: "Create a real learner coding task only after the required concepts have been introduced. Use guidance for structured work highlights instead of writing large TODO comment blocks into source files.",
       inputSchema: z.object({
         title: z.string().min(1).max(120),
         prompt: z.string().min(1).max(2_000),
@@ -542,6 +546,15 @@ export class ConstructFlowService {
           mode: z.enum(["create", "overwrite", "replace"]),
           find: z.string().optional()
         })).optional().describe("Files to prepare/scaffold for the learner"),
+        guidance: z.array(z.object({
+          title: z.string().min(1).max(120),
+          instruction: z.string().min(1).max(700),
+          path: z.string().min(1),
+          line: z.number().int().positive().optional(),
+          endLine: z.number().int().positive().optional(),
+          placeholder: z.string().max(240).optional(),
+          subtaskTitle: z.string().max(120).optional()
+        })).max(12).optional().describe("UI-only task work highlights. Prefer this over TODO comment blocks in prepared files."),
         introducedConceptIds: z.array(z.string().min(1)).min(1).describe("Concept IDs already introduced before this task. Required; if none exist yet, explain and record the concept before creating the task."),
         conceptIds: z.array(z.string().min(1)).optional().describe("Optional extra related concept IDs; introducedConceptIds is the required prerequisite set")
       }).strict(),
@@ -561,6 +574,17 @@ export class ConstructFlowService {
           await applyTaskPreparations(project, this.options.workspace, toolInput.preparations);
         }
         const baseline = await captureBaseline(project, this.options.workspace, toolInput.taskFiles);
+        const subtasks = (toolInput.subtasks?.length ? toolInput.subtasks : [{
+          title: toolInput.title,
+          prompt: toolInput.prompt,
+          successCriteria: toolInput.successCriteria
+        }]).map((subtask, index): ConstructFlowPracticeSubtask => ({
+          id: randomUUID(),
+          title: subtask.title,
+          prompt: subtask.prompt,
+          successCriteria: subtask.successCriteria,
+          status: index === 0 ? "active" : "ready"
+        }));
         const task: ConstructFlowPracticeTask = {
           id: randomUUID(),
           projectId: project.id,
@@ -576,17 +600,8 @@ export class ConstructFlowService {
           conceptIds: relatedConceptIds,
           introducedConceptIds,
           successCriteria: toolInput.successCriteria,
-          subtasks: (toolInput.subtasks?.length ? toolInput.subtasks : [{
-            title: toolInput.title,
-            prompt: toolInput.prompt,
-            successCriteria: toolInput.successCriteria
-          }]).map((subtask, index) => ({
-            id: randomUUID(),
-            title: subtask.title,
-            prompt: subtask.prompt,
-            successCriteria: subtask.successCriteria,
-            status: index === 0 ? "active" : "ready"
-          })),
+          subtasks,
+          guidance: normalizeTaskGuidance(toolInput.guidance ?? [], subtasks),
           preparedFiles: toolInput.preparations?.map((prep) => ({
             path: prep.path,
             mode: prep.mode,
@@ -965,6 +980,60 @@ export class ConstructFlowService {
     });
   }
 
+  private createReviewSubtaskTool(
+    project: StoredFlowProject,
+    publish: (type: ConstructFlowSessionEvent["type"]) => void
+  ): ToolsInput[string] {
+    return createTool({
+      id: "review-subtask",
+      description: "Review a learner subtask submission and mark it either done or needing more work with explicit evidence.",
+      inputSchema: z.object({
+        taskId: z.string().min(1),
+        subtaskId: z.string().min(1),
+        outcome: z.enum(["done", "needs-work"]),
+        evidence: z.string().min(1).max(1_000),
+        nextInstructions: z.string().max(1_000).optional()
+      }).strict(),
+      execute: async (toolInput) => {
+        const task = findPracticeTask(project, toolInput.taskId);
+        const subtask = findPracticeSubtask(task, toolInput.subtaskId);
+        const now = new Date().toISOString();
+
+        subtask.reviewedAt = now;
+        subtask.evidence = toolInput.evidence;
+        subtask.reviewNote = toolInput.evidence;
+        subtask.nextInstructions = toolInput.nextInstructions;
+
+        if (toolInput.outcome === "done") {
+          subtask.status = "completed";
+          subtask.completedAt = now;
+          const nextReady = task.subtasks?.find((candidate) => candidate.status === "ready" || candidate.status === "needs-work");
+          if (nextReady) {
+            nextReady.status = "active";
+            task.status = "waiting";
+          } else {
+            task.status = task.subtasks?.every((candidate) => candidate.status === "completed") ? "submitted" : "waiting";
+          }
+        } else {
+          subtask.status = "needs-work";
+          subtask.completedAt = undefined;
+          task.status = "waiting";
+        }
+
+        project.flow.updatedAt = now;
+        publish("updated");
+        return {
+          reviewed: true,
+          taskId: task.id,
+          subtaskId: subtask.id,
+          outcome: toolInput.outcome,
+          status: subtask.status,
+          nextInstructions: subtask.nextInstructions ?? null
+        };
+      }
+    });
+  }
+
   private createCompleteSubtaskTool(
     project: StoredFlowProject,
     publish: (type: ConstructFlowSessionEvent["type"]) => void
@@ -979,10 +1048,7 @@ export class ConstructFlowService {
       }).strict(),
       execute: async (toolInput) => {
         const task = findPracticeTask(project, toolInput.taskId);
-        const subtask = task.subtasks?.find((candidate) => candidate.id === toolInput.subtaskId);
-        if (!subtask) {
-          throw new Error(`Unknown Flow subtask: ${toolInput.subtaskId}`);
-        }
+        const subtask = findPracticeSubtask(task, toolInput.subtaskId);
         subtask.status = "completed";
         subtask.completedAt = new Date().toISOString();
         subtask.evidence = toolInput.evidence;
@@ -1053,6 +1119,14 @@ function findPracticeTask(project: StoredFlowProject, taskId: string): Construct
     throw new Error(`Unknown Flow practice task: ${taskId}`);
   }
   return task;
+}
+
+function findPracticeSubtask(task: ConstructFlowPracticeTask, subtaskId: string): ConstructFlowPracticeSubtask {
+  const subtask = task.subtasks?.find((candidate) => candidate.id === subtaskId);
+  if (!subtask) {
+    throw new Error(`Unknown Flow subtask: ${subtaskId}`);
+  }
+  return subtask;
 }
 
 function uniqueKnowledgeConcepts(records: KnowledgeBaseRecord[]): KnowledgeBaseRecord[] {
@@ -1142,6 +1216,37 @@ function serializeConceptForAgent(concept: KnowledgeBaseRecord, includeContent: 
 
 function normalizeConceptIds(conceptIds: string[], project: StoredFlowProject): string[] {
   return [...new Set(conceptIds.map((id) => normalizeConceptId(id, project)).filter(Boolean))];
+}
+
+function normalizeTaskGuidance(
+  guidance: Array<{
+    title: string;
+    instruction: string;
+    path: string;
+    line?: number;
+    endLine?: number;
+    placeholder?: string;
+    subtaskTitle?: string;
+  }>,
+  subtasks: ConstructFlowPracticeSubtask[]
+): ConstructFlowTaskGuidance[] {
+  return guidance.map((item) => {
+    const subtask = item.subtaskTitle
+      ? subtasks.find((candidate) => candidate.title.toLowerCase() === item.subtaskTitle?.toLowerCase())
+      : undefined;
+    const line = item.line && item.line > 0 ? Math.floor(item.line) : undefined;
+    const rawEndLine = item.endLine && item.endLine > 0 ? Math.floor(item.endLine) : undefined;
+    return {
+      id: randomUUID(),
+      title: item.title,
+      instruction: item.instruction,
+      path: item.path,
+      line,
+      endLine: line && rawEndLine ? Math.max(line, rawEndLine) : undefined,
+      placeholder: item.placeholder,
+      subtaskId: subtask?.id
+    };
+  });
 }
 
 function normalizeConceptId(conceptId: string, project: StoredFlowProject): string {
@@ -1516,8 +1621,12 @@ function buildMainPrompt(
           id: subtask.id,
           title: subtask.title,
           status: subtask.status,
-          successCriteria: subtask.successCriteria
+          successCriteria: subtask.successCriteria,
+          evidence: subtask.evidence,
+          reviewNote: subtask.reviewNote,
+          nextInstructions: subtask.nextInstructions
         })),
+        guidance: task.guidance,
         recentMessages: task.messages?.slice(-4)
       })), null, 2),
     "",
@@ -1777,6 +1886,8 @@ function readQuestionPayload(toolCall: ConstructFlowToolCallRecord): { choices?:
   };
 }
 
+
+
 function mergeActions(primary: ConstructFlowAction[], secondary: ConstructFlowAction[]): ConstructFlowAction[] {
   const seen = new Set<string>();
   return [...secondary, ...primary].filter((action) => {
@@ -1825,7 +1936,7 @@ export const FLOW_MAIN_AGENT_PROMPT = `You are Construct Flow, an understanding-
 You are not a code vending machine. Your job is to help the learner become capable of writing and understanding the project themselves.
 You are not a coding agent. You are a teaching system that uses real tasks to let the learner practice only after the needed ideas are introduced.
 
-The main Flow agent tools are read, grep, run-terminal-command, ask-question, internet-fetch, flow-memory-patch, plan-learning-path, practice-task, fetch-concepts, suggest-existing-concept, add-concept, modify-concept, remove-concept, complete-subtask, and complete-task. Keep the tool surface calm. Do not ask for or invent extra tools.
+The main Flow agent tools are read, grep, run-terminal-command, ask-question, internet-fetch, flow-memory-patch, plan-learning-path, practice-task, fetch-concepts, suggest-existing-concept, add-concept, modify-concept, remove-concept, review-subtask, complete-subtask, and complete-task. Keep the tool surface calm. Do not ask for or invent extra tools.
 
 Project kickoff and path:
 - When a new Flow project starts, first learn the learner and the project. Ask a good amount of tracked questions when needed. You may ask about prior experience, comfort level, goals, constraints, taste, and what they already understand, but choose questions naturally from the situation.
@@ -1864,7 +1975,12 @@ Stay natural. Do not reveal internal modes. Do not force responses into rigid te
 
 Use Flow Memory as durable context. The current project, path, and learner memory are already in the prompt. Use flow-memory-patch for memory updates; do not rewrite full memory files from the agent unless recovering a broken file. Keep memory concise.
 
-Prefer learner attempts. Tasks are the main unit of Flow progress. When the next step is a learner coding attempt, use the practice-task tool to create a real task card with the current path node, task files, prepared files when needed, success criteria, subtasks when useful, and introducedConceptIds. Prepared/scaffolded code is agent-authored; submitted diffs are learner-authored. Do not infer learner understanding from code you wrote.
+Prefer learner attempts. Tasks are the main unit of Flow progress. When the next step is a learner coding attempt, use the practice-task tool to create a real structured task with the current path node, task files, prepared files when needed, success criteria, subtasks when useful, guidance highlights, and introducedConceptIds. Prepared/scaffolded code is agent-authored; submitted diffs are learner-authored. Do not infer learner understanding from code you wrote.
+
+Task workspace guidance:
+- Do not put large TODO banners, assignment prose, or multi-line task comments into source files.
+- Use practice-task.guidance for file/line work areas, hover instructions, and placeholders. The UI renders those as task highlights and opens the right file/line.
+- Prepared files should contain only necessary scaffold code or tiny placeholder comments. Task explanation belongs in the task prompt, subtasks, successCriteria, and guidance fields.
 
 Code belongs inside tasks, not ordinary mentor replies. If code must be prepared by the agent, it must be small, scoped to introducedConceptIds, and clearly marked through preparations/authorship. If the learner has not been introduced to the concept behind a code change, do not write that code yet.
 
@@ -1876,7 +1992,7 @@ Clickable file protocol:
 
 Do not build whole apps for the learner by hand. For project setup, use run-terminal-command with the normal scaffold command when one exists, then inspect and make small targeted changes only as task preparation. If a native scaffold command is unavailable, explain why, ask a tracked question if direction matters, or create the smallest learner task that can move understanding forward. Never hand-write a whole package.json, Xcode project, or broad app tree as a substitute for a real scaffold command.
 
-When the latest input is a learner message inside an active task, treat it as task-scoped chat. Answer in the context of the active task and do not create a new task unless the path genuinely changes. When the latest input includes a task submission, act as a task-review mentor: inspect the compact diff and authoredBy metadata, compare it against the active subtask success criteria, update concepts only with evidence, call complete-subtask when a subtask is genuinely done, and call complete-task only when the whole task has enough evidence. If the diff is insufficient or ambiguous, ask-question with one focused follow-up.
+When the latest input is a learner message inside an active task, treat it as task-scoped chat. Answer in the context of the active task and do not create a new task unless the path genuinely changes. When the latest input includes a task submission, act as a task-review mentor: inspect the compact diff and authoredBy metadata, compare it against the active subtask success criteria, update concepts only with evidence, call review-subtask with outcome "done" when the submitted subtask passes, or outcome "needs-work" when it does not. Call complete-task only when the whole task has enough evidence. If the diff is insufficient or ambiguous, ask-question with one focused follow-up.
 
 If you need learner input, first give at most one short sentence of context in chat, then call ask-question. The ask-question.question field must be the direct question only, ideally one sentence. Do not duplicate the context in both prose and the tool question. Keep ask-question.reason short and internal; the learner UI does not show it. Do not put required learner questions only in prose. Never write "Choose one", a numbered option list, or the full question again in normal chat after calling ask-question; the UI renders choices. After ask-question, stop with a short acknowledgement if you need any prose at all.
 

@@ -290,6 +290,16 @@ describe("ConstructFlowService Concept and Task Tools", () => {
           successCriteria: ["The function returns 'hello'."]
         }
       ],
+      guidance: [
+        {
+          title: "Write the return value",
+          instruction: "Replace the empty greet body with a typed return value.",
+          path: "src/greet.ts",
+          line: 1,
+          placeholder: "return 'hello';",
+          subtaskTitle: "Return hello"
+        }
+      ],
       preparations: [
         {
           path: "src/greet.ts",
@@ -316,6 +326,9 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     assert.equal(task.authoredBy?.actor, "agent");
     assert.equal(task.preparedFiles?.[0]?.authoredBy.actor, "agent");
     assert.equal(task.subtasks?.[0]?.status, "active");
+    assert.equal(task.guidance?.[0]?.path, "src/greet.ts");
+    assert.equal(task.guidance?.[0]?.line, 1);
+    assert.equal(task.guidance?.[0]?.subtaskId, task.subtasks?.[0]?.id);
 
     // Modify file and submit task
     await writeFile(path.join(project.workspacePath, "src/greet.ts"), "export function greet() { return 'hello'; }", "utf8");
@@ -325,6 +338,25 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     assert.equal(submission.touchedFiles[0], "src/greet.ts");
     assert.ok(submission.compactDiff.includes("return 'hello';"));
     assert.equal(submission.authoredBy?.actor, "learner");
+
+    const reviewTool = (service as any).createReviewSubtaskTool(project, () => {});
+    await reviewTool.execute({
+      taskId: task.id,
+      subtaskId: task.subtasks?.[0]?.id,
+      outcome: "needs-work",
+      evidence: "The body returns hello, but the review asks for an explicit typed signature.",
+      nextInstructions: "Add the return type annotation before resubmitting."
+    });
+    assert.equal(task.subtasks?.[0]?.status, "needs-work");
+    assert.equal(task.subtasks?.[0]?.nextInstructions, "Add the return type annotation before resubmitting.");
+
+    await reviewTool.execute({
+      taskId: task.id,
+      subtaskId: task.subtasks?.[0]?.id,
+      outcome: "done",
+      evidence: "The learner provided the expected function body."
+    });
+    assert.equal(task.subtasks?.[0]?.status, "completed");
   });
 
   it("patches Flow Memory with scoped diffs", async () => {
@@ -502,10 +534,13 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     assert.match(source, /const fetchConcepts = this\.createFetchConceptsTool\(project\);/);
     assert.match(source, /"fetch-concepts": fetchConcepts/);
     assert.match(source, /id: "fetch-concepts"/);
+    assert.match(source, /"review-subtask": reviewSubtask/);
+    assert.match(source, /guidance.*UI-only task work highlights/s);
+    assert.match(source, /cleanReplyForPendingQuestion/);
     assert.match(source, /scoreConceptMatch/);
     assert.match(source, /if \(event\.type === "tool" && isProtocolRecordedTool\(event\.toolName \?\? event\.title\)\) return null;/);
     assert.match(source, /protocolRecordedToolNames/);
-    assert.match(source, /cleanReplyForPendingQuestion/);
+    assert.match(source, /findPendingLearnerQuestion/);
     assert.match(source, /Do not duplicate the context in both prose and the tool question/);
   });
 });
