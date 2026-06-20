@@ -572,6 +572,7 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
     let activeReasoningId: string | undefined;
     let messageSequence = 0;
     let activeMessageId: string | undefined;
+    let activeTextProviderId: string | undefined;
     let activeStreamPart: "reasoning" | "text" | "tool" | "object" | undefined;
     const pendingToolInputs = new Map<string, string>();
     const toolEvents = new Map<string, ConstructAgentRunEvent>();
@@ -584,18 +585,68 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
       messageSequence += 1;
       return `${runEventId}:message:${messageSequence}`;
     };
-    const closeTextSegment = () => {
+    const startTextSegment = (rawId: string | undefined) => {
+      const id = nextMessageId();
+      const createdAt = new Date().toISOString();
+      activeMessageId = id;
+      activeTextProviderId = rawId;
+      activeStreamPart = "text";
+      messages.set(id, { text: "", createdAt, lastPublishedAt: 0 });
+      const event: ConstructAgentRunEvent = {
+        id,
+        type: "message",
+        status: "running",
+        title: "Assistant response",
+        text: "",
+        createdAt
+      };
+      request.onTrace?.({
+        title: "Agent response started",
+        level: "debug",
+        detail: "",
+        event,
+        responseText: "",
+        payload: { type: "text-start", id, providerTextId: rawId }
+      });
+      return id;
+    };
+    const closeTextSegment = (reason: string) => {
+      const id = activeMessageId;
+      const state = id ? messages.get(id) : undefined;
+      if (id && state) {
+        const event: ConstructAgentRunEvent = {
+          id,
+          type: "message",
+          status: "completed",
+          title: "Assistant response",
+          text: state.text,
+          createdAt: state.createdAt
+        };
+        request.onTrace?.({
+          title: "Agent response completed",
+          level: "debug",
+          detail: `${state.text.length} response characters received`,
+          event,
+          responseText: state.text,
+          payload: {
+            type: reason,
+            id,
+            providerTextId: activeTextProviderId,
+            text: state.text
+          }
+        });
+      }
       activeMessageId = undefined;
+      activeTextProviderId = undefined;
       if (activeStreamPart === "text") {
         activeStreamPart = undefined;
       }
     };
     const messageIdForTextChunk = (rawId: string | undefined) => {
-      if (rawId) return streamScopedId("text", rawId);
-      if (!activeMessageId || activeStreamPart !== "text") {
-        activeMessageId = nextMessageId();
+      if (activeMessageId && activeStreamPart === "text") {
+        return activeMessageId;
       }
-      return activeMessageId;
+      return startTextSegment(rawId);
     };
 
     const reader = stream.getReader();
@@ -603,6 +654,7 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
       while (true) {
         const { done, value: rawChunk } = await reader.read();
         if (done) {
+          closeTextSegment("stream-end");
           break;
         }
       const chunk = rawChunk as {
@@ -612,7 +664,7 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
       };
 
       if (chunk.type === "reasoning-start") {
-        closeTextSegment();
+        closeTextSegment("reasoning-start");
         activeStreamPart = "reasoning";
         const id = streamScopedId("reasoning", chunkString(chunk, "id"), nextReasoningId());
         activeReasoningId = id;
@@ -641,7 +693,7 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
       }
 
       if (chunk.type === "reasoning-delta") {
-        closeTextSegment();
+        closeTextSegment("reasoning-delta");
         activeStreamPart = "reasoning";
         const rawId = chunkString(chunk, "id");
         const id = rawId ? streamScopedId("reasoning", rawId) : activeReasoningId ?? nextReasoningId();
@@ -686,7 +738,7 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
       }
 
       if (chunk.type === "reasoning-end") {
-        closeTextSegment();
+        closeTextSegment("reasoning-end");
         activeStreamPart = undefined;
         const rawId = chunkString(chunk, "id");
         const id = rawId ? streamScopedId("reasoning", rawId) : activeReasoningId;
@@ -717,26 +769,8 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
 
       if (chunk.type === "text-start") {
         const rawId = chunkString(chunk, "id");
-        const id = rawId ? streamScopedId("text", rawId) : nextMessageId();
-        activeMessageId = id;
-        activeStreamPart = "text";
-        messages.set(id, { text: "", createdAt: new Date().toISOString(), lastPublishedAt: 0 });
-        const event: ConstructAgentRunEvent = {
-          id,
-          type: "message",
-          status: "running",
-          title: "Assistant response",
-          text: "",
-          createdAt: new Date().toISOString()
-        };
-        request.onTrace?.({
-          title: "Agent response started",
-          level: "debug",
-          detail: "",
-          event,
-          responseText: "",
-          payload: { type: chunk.type, id }
-        });
+        closeTextSegment("text-start");
+        startTextSegment(rawId);
         continue;
       }
 
@@ -773,41 +807,12 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
       }
 
       if (chunk.type === "text-end") {
-        const rawId = chunkString(chunk, "id");
-        const id = rawId ? streamScopedId("text", rawId) : activeMessageId;
-        if (!id) continue;
-        const state = messages.get(id);
-        if (state) {
-          const event: ConstructAgentRunEvent = {
-            id,
-            type: "message",
-            status: "completed",
-            title: "Assistant response",
-            text: state.text,
-            createdAt: state.createdAt
-          };
-          request.onTrace?.({
-            title: "Agent response completed",
-            level: "debug",
-            detail: `${state.text.length} response characters received`,
-            event,
-            responseText: state.text,
-            payload: {
-              type: chunk.type,
-              id,
-              text: state.text
-            }
-          });
-        }
-        if (!rawId || id === activeMessageId) {
-          activeMessageId = undefined;
-        }
-        activeStreamPart = undefined;
+        closeTextSegment("text-end");
         continue;
       }
 
       if (chunk.type === "tool-call-input-streaming-start" || chunk.type === "tool-call-streaming-start" || chunk.type === "tool-input-start") {
-        closeTextSegment();
+        closeTextSegment("tool-input-start");
         activeStreamPart = "tool";
         const toolCallId = chunkString(chunk, "toolCallId") ?? chunkString(chunk, "id");
         if (toolCallId) {
@@ -830,7 +835,7 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
       }
 
       if (chunk.type === "tool-call-delta" || chunk.type === "tool-input-delta") {
-        closeTextSegment();
+        closeTextSegment("tool-input-delta");
         activeStreamPart = "tool";
         const toolCallId = chunkString(chunk, "toolCallId") ?? chunkString(chunk, "id");
         if (toolCallId) {
@@ -851,7 +856,7 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
       }
 
       if (chunk.type === "tool-call") {
-        closeTextSegment();
+        closeTextSegment("tool-call");
         activeStreamPart = "tool";
         const toolCallId = chunkString(chunk, "toolCallId") ?? chunkString(chunk, "id") ?? `${runEventId}:tool`;
         const toolName = chunkString(chunk, "toolName") ?? "tool";
@@ -871,7 +876,7 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
       }
 
       if (chunk.type === "tool-result" || chunk.type === "tool-error") {
-        closeTextSegment();
+        closeTextSegment("tool-result");
         activeStreamPart = "tool";
         const toolCallId = chunkString(chunk, "toolCallId") ?? chunkString(chunk, "id") ?? `${runEventId}:tool`;
         const toolName = chunkString(chunk, "toolName") ?? toolEvents.get(toolCallId)?.toolName ?? "tool";
@@ -896,7 +901,7 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
         ? (chunk.payload?.object as Partial<T> | undefined)
         : chunk.object;
       if ((chunk.type === "object" || chunk.type === "network-object") && partialObject) {
-        closeTextSegment();
+        closeTextSegment("object");
         activeStreamPart = "object";
         request.onTrace?.({
           title: "Structured response delta",

@@ -30,6 +30,11 @@ describe("Construct Interact agent guidance", () => {
     assert.match(runtimeSource, /Promise\.all\(\[/);
     assert.match(runtimeSource, /this\.observeStream\(output\.fullStream/);
     assert.match(runtimeSource, /responseText: state\.text/);
+    assert.match(runtimeSource, /const startTextSegment = \(rawId: string \| undefined\) => \{/);
+    assert.match(runtimeSource, /const id = nextMessageId\(\);/);
+    assert.match(runtimeSource, /providerTextId: rawId/);
+    assert.match(runtimeSource, /closeTextSegment\("reasoning-start"\)/);
+    assert.doesNotMatch(runtimeSource, /rawId \? streamScopedId\("text"/);
     assert.doesNotMatch(runtimeSource, /schema: request\.schema,\s*model/);
     assert.doesNotMatch(runtimeSource, /deferredWorkPromise/);
     assert.doesNotMatch(source, /completionGuard:/);
