@@ -94,7 +94,7 @@ export function EditorPane({
   onSave?: () => void;
   theme: "light" | "dark" | "system";
   pendingJump?: { line: number; column: number } | null;
-  focusRange?: { line: number; endLine?: number; column?: number } | null;
+  focusRange?: { line: number; endLine?: number; column?: number; hint?: string } | null;
   onJumpComplete?: () => void;
   onOpenFileAndJump?: (path: string, line: number, column: number) => void;
 }) {
@@ -413,6 +413,7 @@ export function EditorPane({
         ),
         options: {
           isWholeLine: true,
+          hoverMessage: focusRange.hint ? { value: focusRange.hint } : undefined,
           blockClassName: "construct-monaco-focus-block",
           blockDoesNotCollapse: true,
           blockPadding: [6, 0, 6, 0]

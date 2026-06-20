@@ -22,6 +22,7 @@ import type {
   ConstructFlowAction,
   ConstructFlowPathNode,
   ConstructFlowMemoryPatchResult,
+  ConstructFlowTaskGuidance,
   ConstructFlowPracticeSubtask,
   ConstructFlowPracticeTask,
   ConstructFlowQuestionResponse,
@@ -66,6 +67,7 @@ import {
 } from "../../components/ui/dropdown-menu";
 import { Input } from "../../components/ui/input";
 import { ScrollArea } from "../../components/ui/scroll-area";
+import { Textarea } from "../../components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../../components/ui/tooltip";
 import { cn } from "../../lib/utils";
 import {
@@ -111,7 +113,7 @@ export function FlowWorkspace({
   const [documentSession, setDocumentSession] = useState(() => createDocumentSession(project.activeFilePath));
   const [fileContents, setFileContents] = useState<Record<string, string>>({});
   const [dirtyPaths, setDirtyPaths] = useState<Record<string, boolean>>({});
-  const [focusRange, setFocusRange] = useState<{ line: number; endLine?: number } | null>(null);
+  const [focusRange, setFocusRange] = useState<{ line: number; endLine?: number; hint?: string } | null>(null);
   const [sessions, setSessions] = useState<ConstructFlowSession[]>(project.flow.sessions ?? []);
   const [liveSession, setLiveSession] = useState<ConstructFlowSession | undefined>();
   const [pending, setPending] = useState(false);
@@ -371,7 +373,7 @@ export function FlowWorkspace({
   const focusCode = useCallback((action: Extract<ConstructFlowAction, { type: "focus-code" | "open-file" }>) => {
     void openFile(action.path).then((opened) => {
       if (opened && action.type === "focus-code" && action.line) {
-        setFocusRange({ line: action.line, endLine: action.endLine });
+        setFocusRange({ line: action.line, endLine: action.endLine, hint: action.reason || action.label });
       }
     });
   }, [openFile]);
@@ -379,7 +381,7 @@ export function FlowWorkspace({
   const openInlineFile = useCallback((reference: InlineFileRef) => {
     void openFile(reference.path).then((opened) => {
       if (opened && reference.line) {
-        setFocusRange({ line: reference.line, endLine: reference.endLine });
+        setFocusRange({ line: reference.line, endLine: reference.endLine, hint: reference.label });
       }
     });
   }, [openFile]);
@@ -572,7 +574,7 @@ export function FlowWorkspace({
         focusRange={focusRange}
         onOpenFileAndJump={(path, line) => {
           void openFile(path).then((opened) => {
-            if (opened) setFocusRange({ line });
+            if (opened) setFocusRange({ line, hint: "Opened from Flow" });
           });
         }}
       />
@@ -840,6 +842,21 @@ function FlowAgentPanel({
     }
   }, [aiSettings]);
 
+  const updateReasoningEffort = useCallback(async (reasoningEffort: AiSettings["reasoningEffort"]) => {
+    if (!aiSettings) return;
+    const optimistic = { ...aiSettings, reasoningEffort };
+    setAiSettings(optimistic);
+    setModelsError(null);
+    try {
+      const settings = await updateAiSettings({ ai: { reasoningEffort } });
+      setAiSettings(settings.ai);
+    } catch (error) {
+      setModelsError(error instanceof Error ? error.message : String(error));
+      const settings = await getSettings();
+      setAiSettings(settings.ai);
+    }
+  }, [aiSettings]);
+
   useEffect(() => {
     setDraft("");
   }, [activeQuestion?.id]);
@@ -929,7 +946,9 @@ function FlowAgentPanel({
                       models={flowModelOptions}
                       modelsBusy={modelsBusy}
                       modelsError={modelsError}
+                      reasoningEffort={aiSettings?.reasoningEffort ?? "auto"}
                       onModelChange={updateFlowModel}
+                      onReasoningEffortChange={updateReasoningEffort}
                       onRefreshModels={() => void refreshModels()}
                     />
                   }
@@ -950,7 +969,9 @@ function FlowComposerControls({
   models,
   modelsBusy,
   modelsError,
+  reasoningEffort,
   onModelChange,
+  onReasoningEffortChange,
   onRefreshModels
 }: {
   contextWindow?: ConstructAgentContextWindow;
@@ -959,7 +980,9 @@ function FlowComposerControls({
   models: ModelCatalogEntry[];
   modelsBusy: boolean;
   modelsError: string | null;
+  reasoningEffort: AiSettings["reasoningEffort"];
   onModelChange: (model: string) => void;
+  onReasoningEffortChange: (effort: AiSettings["reasoningEffort"]) => void;
   onRefreshModels: () => void;
 }) {
   return (
@@ -974,6 +997,11 @@ function FlowComposerControls({
             models={models}
             disabled={modelsBusy}
             onChange={onModelChange}
+          />
+          <FlowReasoningEffortDropdown
+            value={reasoningEffort}
+            disabled={modelsBusy}
+            onChange={onReasoningEffortChange}
           />
           <Button
             className="h-7 rounded-full px-2"
@@ -1001,6 +1029,67 @@ function FlowComposerControls({
         </span>
       )}
     </div>
+  );
+}
+
+const reasoningEffortOptions: Array<{ value: AiSettings["reasoningEffort"]; label: string; short: string }> = [
+  { value: "auto", label: "Auto", short: "Auto" },
+  { value: "none", label: "None", short: "Off" },
+  { value: "low", label: "Low", short: "Low" },
+  { value: "medium", label: "Medium", short: "Med" },
+  { value: "high", label: "High", short: "High" }
+];
+
+function reasoningEffortMeta(value: AiSettings["reasoningEffort"]) {
+  return reasoningEffortOptions.find((option) => option.value === value) ?? reasoningEffortOptions[0];
+}
+
+function FlowReasoningEffortDropdown({
+  value,
+  disabled,
+  onChange
+}: {
+  value: AiSettings["reasoningEffort"];
+  disabled?: boolean;
+  onChange: (effort: AiSettings["reasoningEffort"]) => void;
+}) {
+  const active = reasoningEffortMeta(value);
+  return (
+    <DropdownMenu>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DropdownMenuTrigger asChild>
+            <Button
+              className="h-7 gap-1.5 rounded-full px-2 text-xs"
+              size="sm"
+              variant="secondary"
+              type="button"
+              disabled={disabled}
+              title="Thinking effort"
+            >
+              <BrainCircuitIcon size={13} />
+              <span className="hidden sm:inline">{active.short}</span>
+            </Button>
+          </DropdownMenuTrigger>
+        </TooltipTrigger>
+        <TooltipContent side="top">Thinking effort: {active.label}</TooltipContent>
+      </Tooltip>
+      <DropdownMenuContent align="start" className="w-44 p-1">
+        {reasoningEffortOptions.map((option) => (
+          <DropdownMenuItem
+            key={option.value}
+            className="flex items-center justify-between gap-2 rounded-[7px] text-xs"
+            onSelect={() => onChange(option.value)}
+          >
+            <span className="flex items-center gap-2">
+              <BrainCircuitIcon size={13} className="text-muted-foreground" />
+              {option.label}
+            </span>
+            {option.value === value ? <CheckIcon size={13} /> : null}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -1253,64 +1342,60 @@ function FlowProjectDataPanel({
     ? currentPathNode.concepts.map((conceptId) => conceptsById.get(conceptId) ?? buildInlineConceptPlaceholder(conceptId))
     : concepts;
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto p-3">
-      <section className="flex flex-col gap-4">
-        <div className="grid grid-cols-3 gap-2">
-          <FlowMetric label="Tasks" value={String(tasks.length)} />
-          <FlowMetric label="Done" value={String(completedTasks)} />
-          <FlowMetric label="Path" value={pathNodes.length ? `${pathNodes.filter((node) => node.status === "completed").length}/${pathNodes.length}` : "0"} />
-        </div>
-
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-2 text-sm font-semibold">
-            <ListChecksIcon size={15} />
-            <span>Path</span>
+    <div className="min-h-0 flex-1 overflow-y-auto">
+      <section className="flex flex-col gap-5 p-4">
+        <header className="flex flex-col gap-3 border-b pb-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Project map</p>
+              <h2 className="truncate text-lg font-semibold">{project.title}</h2>
+            </div>
+            <div className="flex shrink-0 items-center gap-1.5">
+              <Badge variant="secondary">{tasks.length} task{tasks.length === 1 ? "" : "s"}</Badge>
+              <Badge variant="outline">{completedTasks} done</Badge>
+              <Badge variant="outline">{pathNodes.length ? `${pathNodes.filter((node) => node.status === "completed").length}/${pathNodes.length}` : "0"} path</Badge>
+            </div>
           </div>
+          {currentPathNode ? (
+            <div className="grid gap-1 border-l-2 border-foreground/30 pl-3">
+              <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Current node</span>
+              <div className="flex items-center justify-between gap-3">
+                <strong className="min-w-0 truncate text-sm">{currentPathNode.title}</strong>
+                <Badge variant="outline">{pathNodeStatusLabel(currentPathNode.status)}</Badge>
+              </div>
+              <p className="text-xs leading-5 text-muted-foreground">{currentPathNode.summary}</p>
+            </div>
+          ) : null}
+        </header>
+
+        <section className="flex flex-col gap-2">
+          <SectionTitle icon={ListChecksIcon} title="Learning path" />
           {pathNodes.length ? (
-            <FlowPathTimeline nodes={pathNodes} currentNodeId={currentPathNode?.id ?? project.flow.currentPathNodeId ?? undefined} />
+            <FlowPathOutline nodes={pathNodes} currentNodeId={currentPathNode?.id ?? project.flow.currentPathNodeId ?? undefined} />
           ) : (
-            <div className="rounded-[8px] border border-dashed p-4 text-center text-xs text-muted-foreground">
+            <div className="border border-dashed p-4 text-center text-xs text-muted-foreground">
               Flow will build the learning path after learner profiling.
             </div>
           )}
-        </div>
+        </section>
 
-        {currentPathNode ? (
-          <div className="rounded-[8px] border bg-muted/20 p-3">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-[10px] font-medium uppercase text-muted-foreground">Current node</p>
-                <h3 className="truncate text-sm font-semibold">{currentPathNode.title}</h3>
-              </div>
-              <span className="rounded-full border bg-background/70 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">{pathNodeStatusLabel(currentPathNode.status)}</span>
-            </div>
-            <p className="mt-2 text-xs leading-5 text-muted-foreground">{currentPathNode.summary}</p>
-          </div>
-        ) : null}
-
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-2 text-sm font-semibold">
-            <ListChecksIcon size={15} />
-            <span>Tasks in this node</span>
-          </div>
+        <section className="flex flex-col gap-2">
+          <SectionTitle icon={ListChecksIcon} title="Tasks" />
           {currentNodeTasks.length ? (
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col border-y">
               {currentNodeTasks.map((task) => (
                 <FlowTaskCard key={task.id} task={task} theme={theme} onSubmitTask={onSubmitTask} onOpenFile={onOpenFile} />
               ))}
             </div>
           ) : (
-            <div className="rounded-[8px] border border-dashed p-4 text-center text-xs text-muted-foreground">
+            <div className="border border-dashed p-4 text-center text-xs text-muted-foreground">
               Tasks for the active node will appear here.
             </div>
           )}
-        </div>
+        </section>
 
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-2 text-sm font-semibold">
-            <BookOpenIcon size={15} />
-            <span>Concept history in this node</span>
-          </div>
+        <section className="flex flex-col gap-2">
+          <SectionTitle icon={BookOpenIcon} title="Concepts" />
           {currentConcepts.length ? (
             <div className="grid gap-2">
               {currentConcepts.map((concept) => (
@@ -1318,38 +1403,35 @@ function FlowProjectDataPanel({
               ))}
             </div>
           ) : (
-            <div className="rounded-[8px] border border-dashed p-4 text-center text-xs text-muted-foreground">
+            <div className="border border-dashed p-4 text-center text-xs text-muted-foreground">
               Concepts touched by this path node will appear here.
             </div>
           )}
-        </div>
+        </section>
 
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-2 text-sm font-semibold">
-            <FileTextIcon size={15} />
-            <span>Project memory</span>
-          </div>
-          <div className="grid gap-1 text-xs text-muted-foreground">
+        <section className="flex flex-col gap-2">
+          <SectionTitle icon={FileTextIcon} title="Project memory" />
+          <div className="flex flex-wrap gap-1 text-xs text-muted-foreground">
             {["research.md", "project.md", "path.md", "learner.md"].map((file) => (
               <FlowFileChip key={file} path={flowMemoryFilePath(file)} label={file} onOpenFile={onOpenFile} />
             ))}
           </div>
-        </div>
+        </section>
       </section>
     </div>
   );
 }
 
-function FlowMetric({ label, value }: { label: string; value: string }) {
+function SectionTitle({ icon: Icon, title }: { icon: LucideIcon; title: string }) {
   return (
-    <div className="rounded-[8px] border bg-muted/20 p-2">
-      <span className="block text-[10px] text-muted-foreground">{label}</span>
-      <strong className="text-lg">{value}</strong>
+    <div className="flex items-center gap-2 text-sm font-semibold">
+      <Icon size={15} />
+      <span>{title}</span>
     </div>
   );
 }
 
-function FlowPathTimeline({
+function FlowPathOutline({
   nodes,
   currentNodeId
 }: {
@@ -1357,32 +1439,30 @@ function FlowPathTimeline({
   currentNodeId?: string;
 }) {
   return (
-    <div className="min-w-0 overflow-x-auto rounded-[8px] border bg-background/60 p-3">
-      <div className="flex min-w-max items-stretch gap-2">
-        {nodes.map((node, index) => (
-          <div key={node.id} className="flex items-center gap-2">
-            <div
-              className={[
-                "flex w-48 shrink-0 flex-col gap-2 rounded-[8px] border p-3 text-left transition-[opacity,border-color,background-color]",
-                node.id === currentNodeId ? "bg-card text-foreground shadow-sm ring-1 ring-border/70" : "bg-muted/20 text-muted-foreground",
-                node.status === "completed" ? "border-[color:var(--construct-success)] bg-[color:var(--construct-success-soft)] text-foreground" : "",
-                node.status === "planned" ? "opacity-[0.58]" : ""
-              ].filter(Boolean).join(" ")}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <PathNodeIcon status={node.status} />
-                <span className="rounded-full bg-background/70 px-2 py-0.5 text-[10px] font-medium text-muted-foreground ring-1 ring-border/60">
-                  {index + 1}
-                </span>
-              </div>
-              <strong className="line-clamp-2 text-xs font-semibold">{node.title}</strong>
-              <span className="line-clamp-2 text-[11px] leading-4">{node.summary}</span>
+    <ol className="flex flex-col border-y">
+      {nodes.map((node, index) => (
+        <li
+          key={node.id}
+          className={cn(
+            "grid grid-cols-[1.75rem_minmax(0,1fr)_auto] items-start gap-2 border-b py-2.5 last:border-b-0",
+            node.id === currentNodeId ? "text-foreground" : "text-muted-foreground",
+            node.status === "planned" && "opacity-65"
+          )}
+        >
+          <span className="mt-0.5 flex items-center justify-center">
+            <PathNodeIcon status={node.status} />
+          </span>
+          <div className="min-w-0">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="text-[11px] tabular-nums text-muted-foreground">{index + 1}</span>
+              <strong className="truncate text-xs font-semibold">{node.title}</strong>
             </div>
-            {index < nodes.length - 1 ? <ChevronRightIcon className="shrink-0 text-muted-foreground" size={16} /> : null}
+            <p className="line-clamp-2 text-[11px] leading-4">{node.summary}</p>
           </div>
-        ))}
-      </div>
-    </div>
+          <Badge variant={node.id === currentNodeId ? "secondary" : "outline"}>{pathNodeStatusLabel(node.status)}</Badge>
+        </li>
+      ))}
+    </ol>
   );
 }
 
@@ -1499,80 +1579,177 @@ function FlowTaskCard({
   const active = activeSubtask(task);
   const canSubmit = task.status === "waiting" || task.status === "submitted";
   const introducedConceptIds = taskIntroducedConceptIds(task);
+  const guidance = taskGuidanceItems(task, active?.id);
   return (
-    <div className="flex min-w-0 flex-col gap-3 rounded-[8px] border bg-muted/20 p-3 text-xs shadow-sm">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <strong className="block truncate text-sm">{task.title}</strong>
-          <span className="text-muted-foreground">{taskStatusLabel(task.status)}</span>
+    <article className="grid min-w-0 gap-3 border-b py-4 text-xs last:border-b-0">
+      <aside className="min-w-0 border-b pb-3">
+        <div className="mb-3 min-w-0">
+          <div className="flex items-center justify-between gap-2">
+            <strong className="truncate text-sm">{task.title}</strong>
+            <Badge variant={task.status === "completed" ? "secondary" : "outline"}>{taskStatusLabel(task.status)}</Badge>
+          </div>
+          <p className="mt-1 line-clamp-2 text-[11px] leading-4 text-muted-foreground">{task.prompt}</p>
         </div>
-        <span className="rounded-full border bg-background/70 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-          {task.subtasks?.length ?? 1} subtask{(task.subtasks?.length ?? 1) === 1 ? "" : "s"}
-        </span>
-      </div>
-      <MarkdownBlock content={active?.prompt || task.prompt} theme={theme} onOpenFile={onOpenFile} />
-      {task.focus ? (
-        <FlowFileChip path={task.focus.path} line={task.focus.line} endLine={task.focus.endLine} onOpenFile={onOpenFile} />
-      ) : null}
-      {introducedConceptIds.length ? (
-        <TaskConceptChips conceptIds={introducedConceptIds} />
-      ) : null}
-      {task.successCriteria?.length ? (
-        <div className="rounded-[7px] border bg-background/60 p-2">
-          <span className="mb-1 block font-semibold">Success criteria</span>
-          <ul className="space-y-1 text-muted-foreground">
-            {task.successCriteria.map((item, index) => <li key={`${index}:${item}`}>- {item}</li>)}
-          </ul>
-        </div>
-      ) : null}
-      {task.subtasks?.length && !compact ? (
-        <div className="space-y-1">
-          {task.subtasks.map((subtask, index) => (
-            <div key={subtask.id} className="flex items-center gap-2 rounded-[7px] border bg-background/60 px-2 py-1.5">
-              <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-[6px] bg-muted text-[10px] font-semibold">{index + 1}</span>
-              <span className="min-w-0 flex-1 truncate">{subtask.title}</span>
-              <span className="text-[10px] text-muted-foreground">{subtask.status}</span>
-            </div>
-          ))}
-        </div>
-      ) : null}
-      {task.taskFiles?.length && !compact ? (
-        <div className="flex flex-wrap gap-1">
-          {task.taskFiles.map((file) => (
-            <FlowFileChip key={file} path={file} onOpenFile={onOpenFile} compact />
-          ))}
-        </div>
-      ) : null}
-      {task.preparedFiles?.length && !compact ? (
-        <div className="rounded-[7px] border bg-background/60 p-2 text-muted-foreground">
-          <span className="mb-1 block font-semibold text-foreground">Prepared by Flow</span>
-          <div className="flex flex-col gap-1">
-            {task.preparedFiles.map((file) => (
-              <FlowFileChip key={file.path} path={file.path} label={`${file.mode}: ${file.path}`} onOpenFile={onOpenFile} />
+
+        {task.subtasks?.length ? (
+          <ol className="grid gap-1 sm:grid-cols-3">
+            {task.subtasks.map((subtask, index) => (
+              <li
+                key={subtask.id}
+                className={cn(
+                  "grid grid-cols-[1.5rem_minmax(0,1fr)] gap-2 rounded-[7px] px-1.5 py-1.5",
+                  subtask.id === active?.id && "bg-muted/55 text-foreground",
+                  subtask.status === "completed" && "text-muted-foreground"
+                )}
+              >
+                <span className="inline-flex size-5 items-center justify-center rounded-[6px] bg-background text-[10px] font-semibold ring-1 ring-border/70">{index + 1}</span>
+                <span className="min-w-0">
+                  <span className="block truncate">{subtask.title}</span>
+                  <span className="text-[10px] text-muted-foreground">{subtaskStatusLabel(subtask.status)}</span>
+                </span>
+              </li>
             ))}
+          </ol>
+        ) : null}
+      </aside>
+
+      <div className="min-w-0">
+        <div className="flex flex-col gap-3">
+          <div>
+            <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Now</span>
+            <MarkdownBlock content={active?.nextInstructions || active?.prompt || task.prompt} theme={theme} onOpenFile={onOpenFile} />
           </div>
-        </div>
-      ) : null}
-      {canSubmit ? (
-        <div className="flex flex-col gap-2">
-          {!compact ? (
-            <textarea
-              className="min-h-16 resize-y rounded-[8px] border bg-background p-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-              value={note}
-              placeholder="Optional note for Flow before submitting..."
-              onChange={(event) => setNote(event.target.value)}
-            />
+
+          <TaskGuidanceList guidance={guidance} onOpenFile={onOpenFile} />
+
+          <div className="flex flex-wrap gap-1">
+            {task.taskFiles?.map((file) => (
+              <FlowFileChip key={file} path={file} onOpenFile={onOpenFile} compact />
+            ))}
+            {task.focus ? (
+              <FlowFileChip path={task.focus.path} line={task.focus.line} endLine={task.focus.endLine} onOpenFile={onOpenFile} compact />
+            ) : null}
+          </div>
+
+          {!compact && task.successCriteria?.length ? (
+            <div className="grid gap-1.5 border-t pt-3">
+              <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Done means</span>
+              <ul className="grid gap-1 text-muted-foreground">
+                {task.successCriteria.map((item, index) => <li key={`${index}:${item}`}>- {item}</li>)}
+              </ul>
+            </div>
           ) : null}
-          <div className="flex justify-end">
-            <Button size="sm" onClick={() => void onSubmitTask(task, note.trim() || undefined, active?.id)}>
-              <SendIcon size={14} />
-              Submit {active ? "subtask" : "task"}
-            </Button>
-          </div>
+
+          {introducedConceptIds.length ? <TaskConceptChips conceptIds={introducedConceptIds} compact /> : null}
+
+          {task.preparedFiles?.length && !compact ? (
+            <details className="group border-t pt-3">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground [&::-webkit-details-marker]:hidden">
+                Prepared by Flow
+                <ChevronDownIcon size={13} className="transition-transform group-open:rotate-180" />
+              </summary>
+              <div className="mt-2 flex flex-wrap gap-1">
+                {task.preparedFiles.map((file) => (
+                  <FlowFileChip key={file.path} path={file.path} label={`${file.mode}: ${file.path}`} onOpenFile={onOpenFile} compact />
+                ))}
+              </div>
+            </details>
+          ) : null}
+
+          {canSubmit ? (
+            <div className="grid gap-2 border-t pt-3">
+              {!compact ? (
+                <Textarea
+                  className="min-h-16 resize-y text-sm"
+                  value={note}
+                  placeholder="Optional note for Flow before submitting..."
+                  onChange={(event) => setNote(event.target.value)}
+                />
+              ) : null}
+              <div className="flex justify-end">
+                <Button size="sm" onClick={() => void onSubmitTask(task, note.trim() || undefined, active?.id)}>
+                  <SendIcon size={14} />
+                  Submit {active ? "subtask" : "task"}
+                </Button>
+              </div>
+            </div>
+          ) : null}
         </div>
-      ) : null}
+      </div>
+    </article>
+  );
+}
+
+function TaskGuidanceList({
+  guidance,
+  onOpenFile
+}: {
+  guidance: ConstructFlowTaskGuidance[];
+  onOpenFile: (reference: InlineFileRef) => void;
+}) {
+  if (!guidance.length) return null;
+
+  return (
+    <div className="grid gap-1.5 border-y py-3">
+      <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Work areas</span>
+      <div className="grid gap-1.5">
+        {guidance.map((item) => {
+          const locator = formatFileReferenceLabel(item.path, item.line, item.endLine);
+          const label = `${item.title}: ${item.instruction}`;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              className="grid min-w-0 gap-2 rounded-[7px] px-2 py-2 text-left transition-colors hover:bg-muted/55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35"
+              title={item.instruction}
+              onClick={() => onOpenFile(createInlineFileReference(item.path, label, item.line, item.endLine))}
+            >
+              <span className="min-w-0">
+                <span className="block truncate text-xs font-medium">{item.title}</span>
+                <span className="block text-[11px] leading-4 text-muted-foreground">{item.instruction}</span>
+                {item.placeholder ? (
+                  <span className="mt-1 block truncate font-mono text-[10px] text-muted-foreground/80">{item.placeholder}</span>
+                ) : null}
+              </span>
+              <span className="inline-flex h-6 w-fit max-w-full items-center gap-1 rounded-[6px] border bg-background px-2 font-mono text-[10px] text-muted-foreground">
+                <FileTextIcon size={12} className="shrink-0" />
+                <span className="truncate">{locator}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
+}
+
+function taskGuidanceItems(
+  task: ConstructFlowPracticeTask,
+  subtaskId?: string
+): ConstructFlowTaskGuidance[] {
+  const explicitGuidance = task.guidance ?? [];
+  const scopedGuidance = subtaskId
+    ? explicitGuidance.filter((item) => !item.subtaskId || item.subtaskId === subtaskId)
+    : explicitGuidance;
+  if (scopedGuidance.length) return scopedGuidance;
+
+  const active = subtaskId
+    ? task.subtasks?.find((subtask) => subtask.id === subtaskId)
+    : undefined;
+  const fallbackFiles = [...new Set([
+    ...(task.focus?.path ? [task.focus.path] : []),
+    ...(task.taskFiles ?? [])
+  ])];
+
+  return fallbackFiles.slice(0, 4).map((path, index) => ({
+    id: `${task.id}:fallback-guidance:${index}`,
+    title: index === 0 ? "Start here" : "Related file",
+    instruction: active?.nextInstructions || active?.prompt || task.prompt,
+    path,
+    line: index === 0 ? task.focus?.line : undefined,
+    endLine: index === 0 ? task.focus?.endLine : undefined,
+    subtaskId
+  }));
 }
 
 function taskStatusLabel(status: ConstructFlowPracticeTask["status"]): string {
@@ -1580,6 +1757,14 @@ function taskStatusLabel(status: ConstructFlowPracticeTask["status"]): string {
   if (status === "submitted") return "Submitted for review";
   if (status === "cancelled") return "Cancelled";
   return "Waiting for learner work";
+}
+
+function subtaskStatusLabel(status: ConstructFlowPracticeSubtask["status"]): string {
+  if (status === "completed") return "done";
+  if (status === "submitted") return "submitted";
+  if (status === "needs-work") return "needs work";
+  if (status === "active") return "active";
+  return "ready";
 }
 
 function taskIntroducedConceptIds(task: ConstructFlowPracticeTask): string[] {
@@ -1648,7 +1833,7 @@ function TaskConceptChips({
   compact?: boolean;
 }) {
   return (
-    <div className="flex min-w-0 flex-col gap-1.5 rounded-[8px] border bg-background/55 p-2">
+    <div className="flex min-w-0 flex-col gap-1.5 border-t pt-3">
       <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-foreground">
         <BookOpenIcon size={13} />
         Introduced before this task
@@ -1697,7 +1882,7 @@ function findActiveTaskForNode(
 }
 
 function activeSubtask(task: ConstructFlowPracticeTask): ConstructFlowPracticeSubtask | undefined {
-  return task.subtasks?.find((subtask) => subtask.status === "active" || subtask.status === "submitted")
+  return task.subtasks?.find((subtask) => subtask.status === "active" || subtask.status === "submitted" || subtask.status === "needs-work")
     ?? task.subtasks?.find((subtask) => subtask.status !== "completed")
     ?? task.subtasks?.[0];
 }

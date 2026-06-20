@@ -430,10 +430,12 @@ export type AuthoringFixRecord = {
 
 export type AiProvider = "openai" | "openrouter" | "github-copilot" | "opencode-zen" | "litellm";
 export type AiRuntime = "mastra" | "fxpnt";
+export type AiReasoningEffort = "auto" | "none" | "low" | "medium" | "high";
 
 export type AiSettings = {
   runtime: AiRuntime;
   provider: AiProvider;
+  reasoningEffort: AiReasoningEffort;
   openAiApiKey: string;
   openAiModel: string;
   openAiBaseUrl: string;

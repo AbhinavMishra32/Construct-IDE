@@ -81,6 +81,7 @@ import type { ThemeMode } from "./theme";
 const defaultAiSettings: AiSettings = {
   runtime: "mastra",
   provider: "openai",
+  reasoningEffort: "auto",
   openAiApiKey: "",
   openAiModel: "gpt-5-mini",
   openAiBaseUrl: "https://api.openai.com/v1",
@@ -1102,6 +1103,7 @@ export function ConstructSettingsSurface({
         modelsError={modelsError}
         onRuntimeChange={updateAiRuntime}
         onProviderChange={updateAiProvider}
+        onReasoningEffortChange={(reasoningEffort) => setAiSettingsDraft((current) => ({ ...current, reasoningEffort }))}
         onOpenAiApiKeyChange={(openAiApiKey: string) => setAiSettingsDraft((current) => ({ ...current, openAiApiKey }))}
         onOpenAiBaseUrlChange={(openAiBaseUrl: string) => setAiSettingsDraft((current) => ({ ...current, openAiBaseUrl }))}
         onOpenRouterApiKeyChange={(openRouterApiKey: string) => setAiSettingsDraft((current) => ({ ...current, openRouterApiKey }))}

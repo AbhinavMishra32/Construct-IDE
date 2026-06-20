@@ -69,6 +69,7 @@ export function ConstructAiSettingsSection({
   modelsError,
   onRuntimeChange,
   onProviderChange,
+  onReasoningEffortChange,
   onOpenAiApiKeyChange,
   onOpenAiBaseUrlChange,
   onOpenRouterApiKeyChange,
@@ -99,6 +100,7 @@ export function ConstructAiSettingsSection({
   modelsError: string | null;
   onRuntimeChange: (runtime: AiRuntime) => void;
   onProviderChange: (provider: AiProvider) => void;
+  onReasoningEffortChange: (effort: AiSettings["reasoningEffort"]) => void;
   onOpenAiApiKeyChange: (apiKey: string) => void;
   onOpenAiBaseUrlChange: (baseUrl: string) => void;
   onOpenRouterApiKeyChange: (apiKey: string) => void;
@@ -209,6 +211,24 @@ export function ConstructAiSettingsSection({
               <SelectItem value="opencode-zen">OpenCode Zen</SelectItem>
               <SelectItem value="github-copilot">GitHub Copilot</SelectItem>
               <SelectItem value="litellm">LiteLLM Proxy</SelectItem>
+            </SelectContent>
+          </Select>
+        </SettingsRow>
+
+        <SettingsRow title="Thinking effort" description="Controls reasoning effort for models and providers that support it. Auto leaves the provider default alone.">
+          <Select
+            value={settings.reasoningEffort}
+            onValueChange={(value) => onReasoningEffortChange(normalizeReasoningEffort(value ?? "auto"))}
+          >
+            <SelectTrigger className="h-8 w-44 text-xs">
+              <SelectValue placeholder="Select effort" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="auto">Auto</SelectItem>
+              <SelectItem value="none">None</SelectItem>
+              <SelectItem value="low">Low</SelectItem>
+              <SelectItem value="medium">Medium</SelectItem>
+              <SelectItem value="high">High</SelectItem>
             </SelectContent>
           </Select>
         </SettingsRow>
@@ -435,4 +455,14 @@ export function ConstructAiSettingsSection({
       </SettingsCard>
     </SettingsSection>
   );
+}
+
+function normalizeReasoningEffort(value: string): AiSettings["reasoningEffort"] {
+  return value === "none"
+    || value === "low"
+    || value === "medium"
+    || value === "high"
+    || value === "auto"
+    ? value
+    : "auto";
 }
