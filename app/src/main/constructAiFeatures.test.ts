@@ -11,6 +11,7 @@ import type { StoredAiSettings } from "./constructAiSettings";
 const baseSettings: StoredAiSettings = {
   runtime: "mastra",
   provider: "openai",
+  reasoningEffort: "auto",
   openAiApiKey: "",
   openAiModel: "gpt-5-mini",
   openAiBaseUrl: "https://api.openai.com/v1",

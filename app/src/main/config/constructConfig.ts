@@ -5,10 +5,12 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 
 export type AiProvider = "openai" | "openrouter" | "github-copilot" | "opencode-zen" | "litellm";
 export type ConstructAgentRuntimeId = "mastra" | "fxpnt";
+export type ConstructReasoningEffort = "auto" | "none" | "low" | "medium" | "high";
 
 export type StoredAiSettings = {
   runtime: ConstructAgentRuntimeId;
   provider: AiProvider;
+  reasoningEffort: ConstructReasoningEffort;
   openAiApiKey: string;
   openAiModel: string;
   openAiBaseUrl: string;
@@ -136,6 +138,7 @@ export function normalizeSettings(
     ai: {
       runtime: inputAi.runtime === "fxpnt" ? "fxpnt" : "mastra",
       provider: normalizeAiProvider(inputAi.provider),
+      reasoningEffort: normalizeReasoningEffort(inputAi.reasoningEffort, defaults.ai.reasoningEffort),
       openAiApiKey: normalizeString(inputAi.openAiApiKey, ""),
       openAiModel: normalizeString(inputAi.openAiModel, defaults.ai.openAiModel),
       openAiBaseUrl: normalizeBaseUrl(inputAi.openAiBaseUrl, defaults.ai.openAiBaseUrl),
@@ -167,6 +170,7 @@ function defaultAiSettings(): StoredAiSettings {
   return {
     runtime: "mastra",
     provider: "openai",
+    reasoningEffort: "auto",
     openAiApiKey: "",
     openAiModel: "gpt-5-mini",
     openAiBaseUrl: DEFAULT_OPENAI_BASE_URL,
@@ -238,6 +242,16 @@ function normalizeString(value: unknown, fallback: string): string {
 
 function normalizeBaseUrl(value: unknown, fallback: string): string {
   return normalizeString(value, fallback).replace(/\/$/, "");
+}
+
+function normalizeReasoningEffort(value: unknown, fallback: ConstructReasoningEffort): ConstructReasoningEffort {
+  return value === "none"
+    || value === "low"
+    || value === "medium"
+    || value === "high"
+    || value === "auto"
+    ? value
+    : fallback;
 }
 
 function normalizeAiProvider(value: unknown): AiProvider {

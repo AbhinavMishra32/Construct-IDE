@@ -27,6 +27,7 @@ test("sync agent settings use the configured Electron user-data path", async (t)
     ai: {
       ...settings.ai,
       provider: "openrouter",
+      reasoningEffort: "high",
       openRouterApiKey: "test-openrouter-key",
       tavilyApiKey: "tvly-test-key",
       featureModels: {
@@ -37,6 +38,7 @@ test("sync agent settings use the configured Electron user-data path", async (t)
 
   const resolved = readConstructAiSettingsSync();
   assert.equal(resolved.provider, "openrouter");
+  assert.equal(resolved.reasoningEffort, "high");
   assert.equal(resolved.openRouterApiKey, "test-openrouter-key");
   assert.equal(resolved.tavilyApiKey, "tvly-test-key");
   assert.equal(resolved.featureModels["construct-interact"], "deepseek/deepseek-v4-flash");
@@ -45,6 +47,7 @@ test("sync agent settings use the configured Electron user-data path", async (t)
 test("settings normalize OpenCode Zen provider options", () => {
   const settings = defaultConstructSettings(createConstructDataPaths("/tmp/construct-test"));
   assert.equal(settings.ai.provider, "openai");
+  assert.equal(settings.ai.reasoningEffort, "auto");
   assert.equal(settings.ai.liteLlmBaseUrl, "http://localhost:4000/v1");
   assert.equal(settings.ai.liteLlmModel, "openai/gpt-5-mini");
   assert.equal(settings.ai.githubCopilotModel, "github_copilot/gpt-4");

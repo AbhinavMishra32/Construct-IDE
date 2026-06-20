@@ -10,6 +10,7 @@ import type { StoredAiSettings } from "./constructAiSettings";
 const settings: StoredAiSettings = {
   runtime: "mastra",
   provider: "openrouter",
+  reasoningEffort: "auto",
   openAiApiKey: "",
   openAiModel: "gpt-5-mini",
   openAiBaseUrl: "https://api.openai.com/v1",
