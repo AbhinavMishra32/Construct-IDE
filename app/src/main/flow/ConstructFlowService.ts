@@ -1724,7 +1724,7 @@ function timelinePartFromRunEvent(event: ConstructAgentRunEvent): ConstructFlowT
   return {
     id: event.id,
     kind: "tool",
-    toolCallId: event.id,
+    toolCallId: event.toolCallId ?? event.id,
     name: event.toolName ?? event.title,
     title: event.title,
     reason: event.detail,

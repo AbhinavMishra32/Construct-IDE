@@ -62,6 +62,7 @@ export type ConstructAgentRunEvent = {
   text?: string;
   iteration?: number;
   toolName?: string;
+  toolCallId?: string;
   input?: unknown;
   outputPreview?: string;
   createdAt: string;
