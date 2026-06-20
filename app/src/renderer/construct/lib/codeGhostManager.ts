@@ -1,5 +1,6 @@
 import { monaco } from "../../monaco";
 import { startCodeGhostStream, onCodeGhostToken } from "./bridge";
+import { apiTracker } from "./apiTracker";
 
 let activeEditor: monaco.editor.IStandaloneCodeEditor | null = null;
 let widget: GhostWidget | null = null;
@@ -10,6 +11,7 @@ let disposeTokenListener: (() => void) | null = null;
 let editorDisposables: monaco.IDisposable[] = [];
 let scheduleTimer: ReturnType<typeof setTimeout> | null = null;
 let accumulatedText = "";
+let disposeApiTrackerSubscription: (() => void) | null = null;
 
 class GhostWidget implements monaco.editor.IContentWidget {
   domNode: HTMLDivElement;
@@ -72,6 +74,13 @@ class GhostWidget implements monaco.editor.IContentWidget {
 export function initializeCodeGhost(editor: monaco.editor.IStandaloneCodeEditor) {
   activeEditor = editor;
   cleanup();
+
+  disposeApiTrackerSubscription = apiTracker.subscribe(() => {
+    const settings = apiTracker.getSettings();
+    if (settings && settings.ai && settings.ai.codeGhostEnabled === false) {
+      hideWidget();
+    }
+  });
 
   if (!document.getElementById("code-ghost-styles")) {
     const style = document.createElement("style");
@@ -172,6 +181,13 @@ export function initializeCodeGhost(editor: monaco.editor.IStandaloneCodeEditor)
 function fetchExplanation(lineNumber: number) {
   const editor = activeEditor;
   if (!editor) return;
+
+  const settings = apiTracker.getSettings();
+  if (settings && settings.ai && settings.ai.codeGhostEnabled === false) {
+    hideWidget();
+    return;
+  }
+
   const model = editor.getModel();
   if (!model) return;
 
@@ -217,6 +233,7 @@ function hideWidget() {
 }
 
 function cleanup() {
+  if (disposeApiTrackerSubscription) { disposeApiTrackerSubscription(); disposeApiTrackerSubscription = null; }
   if (disposeTokenListener) { disposeTokenListener(); disposeTokenListener = null; }
   for (const d of editorDisposables) d.dispose();
   editorDisposables = [];

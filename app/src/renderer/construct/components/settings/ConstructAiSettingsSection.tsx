@@ -70,6 +70,7 @@ export function ConstructAiSettingsSection({
   onRuntimeChange,
   onProviderChange,
   onReasoningEffortChange,
+  onCodeGhostEnabledChange,
   onOpenAiApiKeyChange,
   onOpenAiBaseUrlChange,
   onOpenRouterApiKeyChange,
@@ -101,6 +102,7 @@ export function ConstructAiSettingsSection({
   onRuntimeChange: (runtime: AiRuntime) => void;
   onProviderChange: (provider: AiProvider) => void;
   onReasoningEffortChange: (effort: AiSettings["reasoningEffort"]) => void;
+  onCodeGhostEnabledChange: (enabled: boolean) => void;
   onOpenAiApiKeyChange: (apiKey: string) => void;
   onOpenAiBaseUrlChange: (baseUrl: string) => void;
   onOpenRouterApiKeyChange: (apiKey: string) => void;
@@ -231,6 +233,18 @@ export function ConstructAiSettingsSection({
               <SelectItem value="high">High</SelectItem>
             </SelectContent>
           </Select>
+        </SettingsRow>
+
+        <SettingsRow title="Enable Code Ghost" description="Turn on Code Ghost Agent / inline code explanations in the editor. If disabled, Construct won't request explanations or make API calls.">
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              className="size-4 rounded border border-muted-foreground bg-background text-primary focus:ring-1 focus:ring-ring focus:ring-offset-2"
+              checked={settings.codeGhostEnabled}
+              onChange={(event) => onCodeGhostEnabledChange(event.target.checked)}
+            />
+            <span className="text-xs text-muted-foreground">{settings.codeGhostEnabled ? "Enabled" : "Disabled"}</span>
+          </div>
         </SettingsRow>
 
         {/* Credentials — changes per provider */}

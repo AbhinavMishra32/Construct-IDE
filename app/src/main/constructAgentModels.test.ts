@@ -28,7 +28,8 @@ const settings: StoredAiSettings = {
   tavilyApiKey: "",
   featureModels: {
     "construct-interact": "deepseek/deepseek-v4-flash"
-  }
+  },
+  codeGhostEnabled: true
 };
 
 test("agent model resolution uses the selected OpenRouter credentials and feature model", () => {

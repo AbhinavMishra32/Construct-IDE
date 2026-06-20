@@ -174,13 +174,29 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
       "info"
     );
 
+    const internalAbort = new AbortController();
+    if (request.abortSignal) {
+      request.abortSignal.addEventListener("abort", () => internalAbort.abort());
+    }
+
+    const observed = { text: "" };
+    let completedSteps = 0;
+
     try {
       const output = await agent.stream(request.prompt, {
-        abortSignal: request.abortSignal,
+        abortSignal: internalAbort.signal,
         maxSteps: request.maxSteps ?? (hasTools ? 16 : 1),
         toolChoice: hasTools ? "auto" : undefined,
         providerOptions,
         onIterationComplete: (iteration) => {
+          completedSteps = iteration.iteration;
+          const hasHaltingTool = iteration.toolCalls.some((call) =>
+            ["ask-question", "askQuestion", "ask-user", "askUser", "practice-task"].includes(call.name)
+          );
+          if (hasHaltingTool) {
+            internalAbort.abort();
+          }
+
           const normalized: ConstructAgentIteration = {
             iteration: iteration.iteration,
             maxIterations: iteration.maxIterations,
@@ -230,8 +246,8 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
         }
       });
 
-      const [observed, steps, finishReason, totalUsage, mastraText] = await Promise.all([
-        this.observeStream(output.fullStream, request, runStartedAt, runEventId),
+      const [observedResult, steps, finishReason, totalUsage, mastraText] = await Promise.all([
+        this.observeStream(output.fullStream, request, runStartedAt, runEventId, observed),
         output.steps,
         output.finishReason,
         output.totalUsage.catch(() => undefined),
@@ -239,7 +255,7 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
       ]);
       let text = (typeof mastraText === "string" ? mastraText : "").trim();
       if (!text) {
-        text = observed.text.trim();
+        text = observedResult.text.trim();
       }
       const result: ConstructAgenticRunResult = {
         text,
@@ -261,6 +277,28 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
       );
       return result;
     } catch (error) {
+      if (internalAbort.signal.aborted && (!request.abortSignal || !request.abortSignal.aborted)) {
+        const text = observed.text.trim();
+        const result: ConstructAgenticRunResult = {
+          text,
+          stepCount: completedSteps,
+          finishReason: "suspended",
+          durationMs: Date.now() - runStartedAt
+        };
+        request.onTrace?.({
+          title: "Agent run suspended",
+          level: "debug",
+          detail: `Run suspended after ${result.stepCount} steps due to user question or task creation.`,
+          payload: result
+        });
+        emitProviderLog(
+          model.providerId,
+          `Agentic API call suspended: ${result.stepCount} step(s) | Duration: ${formatDuration(result.durationMs)} | Text length: ${text.length}`,
+          "info"
+        );
+        return result;
+      }
+
       request.onTrace?.({
         title: "Agent runtime error",
         level: "error",
@@ -554,11 +592,11 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
     stream: { getReader: () => { read: () => Promise<{ done?: boolean; value?: unknown }>; releaseLock?: () => void } },
     request: Pick<ConstructAgentRuntimeRequest<T>, "id" | "onTrace">,
     runStartedAt: number,
-    runEventId: string
+    runEventId: string,
+    observed?: { text: string }
   ): Promise<{ text: string }> {
     const reasoning = new Map<string, {
       event: ConstructAgentRunEvent;
-      providerReasoningId?: string;
       characterCount: number;
       text: string;
       lastPublishedAt: number;
@@ -571,10 +609,8 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
     let accumulatedText = "";
     let reasoningSequence = 0;
     let activeReasoningId: string | undefined;
-    const activeReasoningByProviderId = new Map<string, string>();
     let messageSequence = 0;
     let activeMessageId: string | undefined;
-    let activeTextProviderId: string | undefined;
     let activeStreamPart: "reasoning" | "text" | "tool" | "object" | undefined;
     const pendingToolInputs = new Map<string, string>();
     let toolSequence = 0;
@@ -584,31 +620,26 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
       completed: boolean;
     }>();
 
+    const nextEventOrdinal = () => {
+      globalEventOrdinal += 1;
+      return globalEventOrdinal;
+    };
     const nextReasoningId = () => {
       reasoningSequence += 1;
-      return reasoningSequence === 1 ? `${runEventId}:reasoning` : `${runEventId}:reasoning:${reasoningSequence}`;
+      return `${runEventId}:reasoning:${globalEventOrdinal + 1}:${reasoningSequence}`;
     };
     const nextMessageId = () => {
       messageSequence += 1;
-      return `${runEventId}:message:${messageSequence}`;
+      return `${runEventId}:message:${globalEventOrdinal + 1}:${messageSequence}`;
     };
     const nextToolEventId = () => {
       toolSequence += 1;
-      return `${runEventId}:tool:${toolSequence}`;
+      return `${runEventId}:tool:${globalEventOrdinal + 1}:${toolSequence}`;
     };
     const startReasoningSegment = (rawId: string | undefined) => {
-      const activeId = rawId ? activeReasoningByProviderId.get(rawId) : undefined;
-      if (activeId && reasoning.has(activeId)) {
-        activeReasoningId = activeId;
-        activeStreamPart = "reasoning";
-        return activeId;
-      }
-
+      void rawId;
       const id = nextReasoningId();
       activeReasoningId = id;
-      if (rawId) {
-        activeReasoningByProviderId.set(rawId, id);
-      }
       activeStreamPart = "reasoning";
       const event: ConstructAgentRunEvent = {
         id,
@@ -620,7 +651,6 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
       };
       reasoning.set(id, {
         event,
-        providerReasoningId: rawId,
         characterCount: 0,
         text: "",
         lastPublishedAt: Date.now()
@@ -630,22 +660,18 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
         level: "debug",
         detail: event.detail ?? "",
         event,
-        payload: { type: "reasoning-start", id, providerReasoningId: rawId }
+        payload: { type: "reasoning-start", id }
       });
       return id;
     };
-    const reasoningIdForDelta = (rawId: string | undefined) => {
-      if (rawId) {
-        const activeId = activeReasoningByProviderId.get(rawId);
-        if (activeId) return activeId;
-      }
+    const reasoningIdForDelta = (_rawId: string | undefined) => {
       if (activeReasoningId && reasoning.has(activeReasoningId)) {
         return activeReasoningId;
       }
-      return startReasoningSegment(rawId);
+      return startReasoningSegment(_rawId);
     };
-    const closeReasoningSegment = (reason: string, rawId?: string) => {
-      const id = rawId ? activeReasoningByProviderId.get(rawId) : activeReasoningId;
+    const closeReasoningSegment = (_reason: string, _rawId?: string) => {
+      const id = activeReasoningId;
       const state = id ? reasoning.get(id) : undefined;
       if (!id || !state) return;
       if (state.event.status === "running") {
@@ -654,21 +680,17 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
         if (state.text.trim()) {
           state.event.text = state.text;
         }
-        request.onTrace?.({
-          title: "Agent analysis completed",
-          level: "debug",
-          detail: state.event.detail,
-          event: state.event,
-          payload: {
-            type: reason,
+          request.onTrace?.({
+            title: "Agent analysis completed",
+            level: "debug",
+            detail: state.event.detail,
+            event: state.event,
+            payload: {
+              type: _reason,
             id,
-            providerReasoningId: state.providerReasoningId,
             characterCount: state.characterCount
           }
         });
-      }
-      if (state.providerReasoningId) {
-        activeReasoningByProviderId.delete(state.providerReasoningId);
       }
       if (id === activeReasoningId) {
         activeReasoningId = undefined;
@@ -702,10 +724,10 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
       return state;
     };
     const startTextSegment = (rawId: string | undefined) => {
+      void rawId;
       const id = nextMessageId();
       const createdAt = new Date().toISOString();
       activeMessageId = id;
-      activeTextProviderId = rawId;
       activeStreamPart = "text";
       messages.set(id, { text: "", createdAt, lastPublishedAt: 0 });
       const event: ConstructAgentRunEvent = {
@@ -722,7 +744,7 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
         detail: "",
         event,
         responseText: "",
-        payload: { type: "text-start", id, providerTextId: rawId }
+        payload: { type: "text-start", id }
       });
       return id;
     };
@@ -747,13 +769,11 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
           payload: {
             type: reason,
             id,
-            providerTextId: activeTextProviderId,
             text: state.text
           }
         });
       }
       activeMessageId = undefined;
-      activeTextProviderId = undefined;
       if (activeStreamPart === "text") {
         activeStreamPart = undefined;
       }
@@ -782,15 +802,8 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
 
       if (chunk.type === "reasoning-start") {
         closeTextSegment("reasoning-start");
-        const rawId = chunkString(chunk, "id");
-        const existingId = rawId ? activeReasoningByProviderId.get(rawId) : undefined;
-        if (existingId) {
-          activeReasoningId = existingId;
-          activeStreamPart = "reasoning";
-          continue;
-        }
         closeActiveReasoningSegment("reasoning-start");
-        startReasoningSegment(rawId);
+        startReasoningSegment(chunkString(chunk, "id"));
         continue;
       }
 
@@ -804,13 +817,12 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
         const state = reasoning.get(id) ?? {
           event: {
             id,
-	            type: "reasoning" as const,
-	            status: "running" as const,
-	            title: "Thinking",
-	            detail: "Thinking",
-	            createdAt: new Date().toISOString()
-	          },
-          providerReasoningId: rawId,
+            type: "reasoning" as const,
+            status: "running" as const,
+            title: "Thinking",
+            detail: "Thinking",
+            createdAt: new Date().toISOString()
+          },
           characterCount: 0,
           text: "",
           lastPublishedAt: 0
@@ -832,7 +844,6 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
             payload: {
               type: chunk.type,
               id,
-              providerReasoningId: state.providerReasoningId,
               characterCount: state.characterCount
             }
           });
@@ -866,6 +877,9 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
         const state = messages.get(id) ?? { text: "", createdAt: new Date().toISOString(), lastPublishedAt: 0 };
         state.text += text;
         accumulatedText += text;
+        if (observed) {
+          observed.text = accumulatedText;
+        }
         const now = Date.now();
         if (now - state.lastPublishedAt >= 50) {
           state.lastPublishedAt = now;
@@ -1032,6 +1046,7 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
 }
 
 let runEventSequence = 0;
+let globalEventOrdinal = 0;
 
 function outputEventId(agentId: string): string {
   runEventSequence += 1;

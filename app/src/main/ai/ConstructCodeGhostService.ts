@@ -1,6 +1,7 @@
 import type { WebContents } from "electron";
 
 import { sendCodeGhostStreamToRenderer } from "../constructCodeGhostAgent";
+import { resolveConstructAiSettings } from "../constructAiSettings";
 import { ConstructObservabilityService } from "../observability/ConstructObservabilityService";
 import { AgentLogService } from "./AgentLogService";
 import { ConstructLoggedAgentService } from "./ConstructLoggedAgentService";
@@ -17,6 +18,14 @@ export class ConstructCodeGhostService extends ConstructLoggedAgentService {
     if (!requestId || !lineNumber) {
       sender.send("construct:project:code-ghost:token", {
         requestId, lineNumber, token: "", done: true, error: "Invalid request"
+      });
+      return;
+    }
+
+    const settings = resolveConstructAiSettings();
+    if (settings.codeGhostEnabled === false) {
+      sender.send("construct:project:code-ghost:token", {
+        requestId, lineNumber, token: "", done: true, error: "Code Ghost is disabled"
       });
       return;
     }

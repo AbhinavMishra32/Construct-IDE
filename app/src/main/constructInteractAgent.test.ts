@@ -37,10 +37,9 @@ describe("Construct Interact agent guidance", () => {
     assert.match(runtimeSource, /responseText: state\.text/);
     assert.match(runtimeSource, /const startTextSegment = \(rawId: string \| undefined\) => \{/);
     assert.match(runtimeSource, /const id = nextMessageId\(\);/);
-    assert.match(runtimeSource, /providerTextId: rawId/);
     assert.match(runtimeSource, /closeTextSegment\("reasoning-start"\)/);
-    assert.match(runtimeSource, /activeReasoningByProviderId/);
-    assert.match(runtimeSource, /providerReasoningId: rawId/);
+    assert.match(runtimeSource, /closeActiveReasoningSegment\("reasoning-start"\)/);
+    assert.match(runtimeSource, /startReasoningSegment/);
     assert.match(runtimeSource, /id: nextToolEventId\(\)/);
     assert.doesNotMatch(runtimeSource, /streamScopedId/);
     assert.doesNotMatch(runtimeSource, /schema: request\.schema,\s*model/);
@@ -50,7 +49,7 @@ describe("Construct Interact agent guidance", () => {
     assert.match(source, /if \(runError \|\| mode === "general"\)/);
     assert.match(source, /selectLearnerFacingReply\(result, streamedReply\)/);
     assert.match(source, /if \(type === "updated"\)/);
-    assert.match(runtimeSource, /`\$\{runEventId\}:reasoning`/);
+    assert.match(runtimeSource, /nextEventOrdinal/);
     assert.match(runtimeSource, /state\.event\.text = state\.text/);
     assert.match(runtimeSource, /summarizeReasoningText\(state\.text\)/);
     assert.doesNotMatch(source, /Thinking through your request/);

@@ -27,6 +27,7 @@ export type StoredAiSettings = {
   githubCopilotModel: string;
   tavilyApiKey: string;
   featureModels: Record<string, string>;
+  codeGhostEnabled: boolean;
 };
 
 export type StoredObservabilitySettings = {
@@ -154,7 +155,8 @@ export function normalizeSettings(
       opencodeZenModel: normalizeString(inputAi.opencodeZenModel, defaults.ai.opencodeZenModel),
       githubCopilotModel: normalizeString(inputAi.githubCopilotModel, defaults.ai.githubCopilotModel),
       tavilyApiKey: normalizeString(inputAi.tavilyApiKey, ""),
-      featureModels: normalizeFeatureModels(inputAi.featureModels)
+      featureModels: normalizeFeatureModels(inputAi.featureModels),
+      codeGhostEnabled: inputAi.codeGhostEnabled !== false
     },
     observability: {
       enabled: inputObservability.enabled === true,
@@ -186,7 +188,8 @@ function defaultAiSettings(): StoredAiSettings {
     opencodeZenModel: "gpt-5.1-codex",
     githubCopilotModel: "github_copilot/gpt-4",
     tavilyApiKey: "",
-    featureModels: {}
+    featureModels: {},
+    codeGhostEnabled: true
   };
 }
 

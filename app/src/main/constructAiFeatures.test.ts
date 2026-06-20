@@ -27,7 +27,8 @@ const baseSettings: StoredAiSettings = {
   opencodeZenModel: "gpt-5.1-codex",
   githubCopilotModel: "github_copilot/gpt-4",
   tavilyApiKey: "",
-  featureModels: {}
+  featureModels: {},
+  codeGhostEnabled: true
 };
 
 test("registered AI features expose user-facing metadata", () => {
