@@ -37,7 +37,7 @@ export function LearningContextSurface() {
   const sessions = projects.flatMap((project) => project.constructInteractSessions);
   const recalls = projects.flatMap((project) => project.recallAttempts);
   const assistance = state.learner.assistanceEvents;
-  const weakConcepts = globalConcepts.filter((concept) => concept.confidence === "weak" || concept.confidence === "unknown");
+  const weakConcepts = globalConcepts.filter((concept) => ["unknown", "introduced", "confused", "fragile", "weak"].includes(concept.confidence));
 
   return (
     <div className="mx-auto flex w-full max-w-[980px] flex-col gap-5 p-4">
@@ -45,7 +45,7 @@ export function LearningContextSurface() {
         <div>
           <span className="text-xs font-medium text-muted-foreground">Local-first learner memory</span>
           <h1 className="mt-1 text-lg font-semibold tracking-tight">Context</h1>
-          <p className="mt-1 max-w-2xl text-[13px] text-muted-foreground">Inspect the local state Construct Interact, recall, Knowledge Base, and future sync will use.</p>
+          <p className="mt-1 max-w-2xl text-[13px] text-muted-foreground">Inspect the local state Construct Interact, recall, saved concepts, and future sync will use.</p>
         </div>
         <code className="rounded-full border bg-background/70 px-2 py-1 text-xs text-muted-foreground">{state.sync.mode} · {state.sync.deviceId.slice(0, 8)}</code>
       </header>
@@ -76,7 +76,7 @@ export function LearningContextSurface() {
           ))}
         </LearningPanel>
 
-        <LearningPanel title="Knowledge Base" meta={`${knowledge.length} saved`}>
+        <LearningPanel title="Saved concepts" meta={`${knowledge.length} saved`}>
           {knowledge.slice(0, 8).map((record) => (
             <LearningRow key={`${record.sourceProjectId}:${record.id}`} title={record.title} meta={`${record.sourceProjectTitle} · opened ${record.openCount} times`} />
           ))}

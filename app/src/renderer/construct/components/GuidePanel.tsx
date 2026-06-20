@@ -7,9 +7,7 @@ import {
   LightbulbIcon,
   PlayIcon,
   RotateCcwIcon,
-  SparklesIcon,
   TerminalIcon,
-  WandSparklesIcon,
   XCircleIcon
 } from "lucide-react";
 import { BookOpenIcon as PhosphorBookOpenIcon } from "@phosphor-icons/react";
@@ -187,7 +185,7 @@ export function GuidePanel({
                   onClick={onVerifyRecall}
                   disabled={verifyingId === block.verify.id || (block.mode === "reply" && !recallAnswer.trim())}
                 >
-                  <WandSparklesIcon size={15} />
+                  <CheckCircle2Icon size={15} />
                   {verifyingId === block.verify.id ? "Checking" : "Verify"}
                 </Button>
               ) : null}
@@ -580,7 +578,7 @@ function VerificationPanel({
     return (
       <div className="space-y-3 rounded-[8px] border bg-muted/25 p-3">
         <div className="flex items-center gap-2 text-sm font-medium">
-          <WandSparklesIcon size={15} className="animate-spin" />
+          <RotateCcwIcon size={15} className="animate-spin" />
           <span>Verifier run</span>
         </div>
         <VerificationLogList logs={visibleLogs} />
@@ -609,7 +607,7 @@ function VerificationPanel({
       {result.suggestion ? (
         <div className="border-t pt-3">
           <div className="flex items-center gap-1.5 text-muted-foreground">
-            <SparklesIcon size={13} />
+            <LightbulbIcon size={13} />
             <p className="text-xs font-medium">Next</p>
           </div>
           <p className="mt-1 text-sm">{result.suggestion}</p>

@@ -37,7 +37,10 @@ export function saveKnowledgeConcept(project: ProjectRecord, concept: ConceptCar
     savedAt: existing?.savedAt ?? now,
     openedAt: existing?.openedAt ?? existing?.lastOpenedAt,
     openCount: existing?.openCount ?? 0,
-    usedInRecall: existing?.usedInRecall === true || usedInRecall
+    usedInRecall: existing?.usedInRecall === true || usedInRecall,
+    confidence: normalizeConceptConfidence(concept.confidence),
+    authoredBy: normalizeConceptAuthor(concept.authoredBy),
+    history: normalizeConceptHistory(concept.history)
   };
 
   cache = [toSavedRecord(record), ...cache.filter((item) => !(item.id === concept.id && item.sourceProjectId === project.id))];
@@ -91,6 +94,49 @@ function toSavedRecord(record: KnowledgeBaseRecord): SavedKnowledgeRecord {
     firstSeenAt: record.savedAt,
     lastOpenedAt: record.openedAt ?? record.savedAt
   };
+}
+
+function normalizeConceptConfidence(value: string | undefined): KnowledgeBaseRecord["confidence"] {
+  if (
+    value === "unknown"
+    || value === "introduced"
+    || value === "confused"
+    || value === "fragile"
+    || value === "practicing"
+    || value === "applying"
+    || value === "solid"
+    || value === "fluent"
+    || value === "teaching"
+    || value === "weak"
+    || value === "emerging"
+    || value === "strong"
+  ) {
+    return value;
+  }
+  return undefined;
+}
+
+function normalizeConceptHistory(history: ConceptCard["history"]): KnowledgeBaseRecord["history"] {
+  return history?.map((event) => ({
+    ...event,
+    kind: normalizeHistoryKind(event.kind),
+    confidence: normalizeConceptConfidence(event.confidence),
+    authoredBy: normalizeConceptAuthor(event.authoredBy)
+  }));
+}
+
+function normalizeHistoryKind(value: string): NonNullable<KnowledgeBaseRecord["history"]>[number]["kind"] {
+  if (value === "introduced" || value === "modified" || value === "removed" || value === "practiced" || value === "opened" || value === "system") {
+    return value;
+  }
+  return "modified";
+}
+
+function normalizeConceptAuthor(value: string | undefined): KnowledgeBaseRecord["authoredBy"] {
+  if (value === "learner" || value === "agent" || value === "mixed" || value === "system") {
+    return value;
+  }
+  return undefined;
 }
 
 function notify() {

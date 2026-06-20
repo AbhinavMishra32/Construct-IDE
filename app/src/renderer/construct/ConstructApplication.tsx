@@ -1,7 +1,7 @@
 import { AppErrorBoundary } from "./AppErrorBoundary";
 import { ConstructSettingsSurface, buildSettingsSections, settingsTitle } from "./ConstructSettingsSurface";
 import { LearningContextSurface } from "./LearningContextSurface";
-import { HeaderBottomPanelIcon, HeaderGuidePanelIcon, SavingIndicator, SidebarLearningButton, SidebarSettingsButton } from "./ShellControls";
+import { HeaderBottomPanelIcon, HeaderGuidePanelIcon, SavingIndicator, SidebarConceptsButton, SidebarLearningButton, SidebarSettingsButton } from "./ShellControls";
 import { applyDocumentTheme, getInitialTheme, resolveActiveTheme, type ThemeMode } from "./theme";
 import { useConstructLogBridge } from "./lib/useConstructLogBridge";
 import { useProjectLspLifecycle } from "./lib/useProjectLspLifecycle";
@@ -18,15 +18,16 @@ import {
   FileTextIcon,
   FolderOpenIcon,
   HomeIcon,
+  ListChecksIcon,
   MoreHorizontalIcon,
   MessageCircleIcon,
   PanelRightIcon,
   Plus as PlusIcon,
+  SearchIcon,
   SettingsIcon,
   SidebarIcon,
   TerminalSquareIcon
 } from "lucide-react";
-import { Notebook } from "@phosphor-icons/react";
 
 import {
   AppShell,
@@ -64,7 +65,9 @@ import {
 } from "./lib/projectStore";
 import {
   setThemeSource,
-  updateProject
+  updateProject,
+  closeProject,
+  runConstructFlowResearch
 } from "./lib/bridge";
 import type { AnyProjectRecord, FlowProjectRecord, ProjectRecord, ProjectSummary, WorkspaceTreeNode } from "./types";
 import { isFlowProjectRecord } from "./types";
@@ -103,6 +106,7 @@ export default function ConstructApp() {
   const [isSaving, setIsSaving] = useState(false);
   const [rightPanel, setRightPanel] = useState<ReactNode | null>(null);
   const [sidebarKnowledgePanel, setSidebarKnowledgePanel] = useState<ReactNode | null>(null);
+  const [flowPanelView, setFlowPanelView] = useState<"chat" | "project">("chat");
   const [knowledgeBaseOpen, setKnowledgeBaseOpen] = useState(false);
   const [learningContextOpen, setLearningContextOpen] = useState(false);
   const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
@@ -126,6 +130,7 @@ export default function ConstructApp() {
     renameFile: ((oldPath: string, newPath: string) => Promise<void>) | null;
     createFolder: ((path: string) => Promise<void>) | null;
     duplicateFile: ((path: string, destPath: string) => Promise<void>) | null;
+    refreshTree: (() => Promise<void>) | null;
   }>({
     tree: [],
     activePath: null,
@@ -135,7 +140,8 @@ export default function ConstructApp() {
     deleteFile: null,
     renameFile: null,
     createFolder: null,
-    duplicateFile: null
+    duplicateFile: null,
+    refreshTree: null
   });
 
   useConstructLogBridge();
@@ -288,6 +294,14 @@ export default function ConstructApp() {
     setActiveProject(project);
   }, []);
 
+  const handleRunFlowResearch = useCallback(async (projectId: string) => {
+    const result = await runConstructFlowResearch({ projectId });
+    setActiveProject((current) => {
+      if (!isFlowProjectRecord(current) || current.id !== projectId) return current;
+      return result.project;
+    });
+  }, []);
+
   const runCommand = useCallback((command: string, cwd: string) => {
     setOpenBottomTabIds((current) => current.includes("terminal") ? current : [...current, "terminal"]);
     setActiveBottomTabId("terminal");
@@ -306,7 +320,8 @@ export default function ConstructApp() {
     deleteFileFn: (path: string) => Promise<void>,
     renameFileFn: (oldPath: string, newPath: string) => Promise<void>,
     createFolderFn: (path: string) => Promise<void>,
-    duplicateFileFn: (path: string, destPath: string) => Promise<void>
+    duplicateFileFn: (path: string, destPath: string) => Promise<void>,
+    refreshTreeFn: () => Promise<void>
   ) => {
     setTreeData({
       tree,
@@ -317,7 +332,8 @@ export default function ConstructApp() {
       deleteFile: deleteFileFn,
       renameFile: renameFileFn,
       createFolder: createFolderFn,
-      duplicateFile: duplicateFileFn
+      duplicateFile: duplicateFileFn,
+      refreshTree: refreshTreeFn
     });
   }, []);
 
@@ -327,9 +343,10 @@ export default function ConstructApp() {
     setLearningContextOpen(false);
     setRightPanel(null);
     setActiveProject(null);
-    setTreeData({ tree: [], activePath: null, relevantPath: null, openFile: null, createFile: null, deleteFile: null, renameFile: null, createFolder: null, duplicateFile: null });
+    setTreeData({ tree: [], activePath: null, relevantPath: null, openFile: null, createFile: null, deleteFile: null, renameFile: null, createFolder: null, duplicateFile: null, refreshTree: null });
     pushHistory({ id: "dashboard", title: "Projects", type: "dashboard" });
     void refresh();
+    void closeProject().catch(() => {});
   }, [pushHistory]);
 
   const openSettingsSurface = useCallback((itemId: string, projectId?: string) => {
@@ -347,10 +364,9 @@ export default function ConstructApp() {
 
   const openKnowledgeBase = useCallback(() => {
     setSettingsSurface(null);
-    setActiveProject(null);
     setLearningContextOpen(false);
     setKnowledgeBaseOpen(true);
-    pushHistory({ id: "knowledge-base", title: "Knowledge Base", type: "knowledge-base" });
+    pushHistory({ id: "knowledge-base", title: "Concepts", type: "knowledge-base" });
   }, [pushHistory]);
 
   const openLearningContext = useCallback(() => {
@@ -580,14 +596,13 @@ export default function ConstructApp() {
       setLearningContextOpen(false);
       setRightPanel(null);
       setActiveProject(null);
-      setTreeData({ tree: [], activePath: null, relevantPath: null, openFile: null, createFile: null, deleteFile: null, renameFile: null, createFolder: null, duplicateFile: null });
+      setTreeData({ tree: [], activePath: null, relevantPath: null, openFile: null, createFile: null, deleteFile: null, renameFile: null, createFolder: null, duplicateFile: null, refreshTree: null });
       finish();
       return;
     }
 
     if (entry.type === "knowledge-base") {
       setSettingsSurface(null);
-      setActiveProject(null);
       setLearningContextOpen(false);
       setKnowledgeBaseOpen(true);
       finish();
@@ -648,16 +663,18 @@ export default function ConstructApp() {
   ) : learningContextOpen ? (
     <LearningContextSurface />
   ) : knowledgeBaseOpen ? (
-    <KnowledgeBaseSurface onOpenProject={(projectId) => {
+    <KnowledgeBaseSurface activeProject={activeProject} theme={theme} onOpenProject={(projectId) => {
       setKnowledgeBaseOpen(false);
       void openProject(projectId);
     }} />
   ) : activeProject && isFlowProjectRecord(activeProject) ? (
       <FlowWorkspace
         project={activeProject}
+        activePanelView={flowPanelView}
         theme={theme}
         onGuidePanelChange={setRightPanel}
         onKnowledgePanelChange={setSidebarKnowledgePanel}
+        onPanelViewChange={setFlowPanelView}
         onProjectChange={handleFlowProjectChange}
         onRunCommand={runCommand}
         onFileOpened={handleFileOpened}
@@ -742,7 +759,11 @@ export default function ConstructApp() {
 
   const headerTitle = settingsSurface
     ? settingsTitle(settingsSurface.itemId, settingsSurface.projectId, projects)
-    : activeProject?.title ?? "Projects";
+    : knowledgeBaseOpen
+      ? "Concepts"
+      : learningContextOpen
+        ? "Context"
+        : activeProject?.title ?? "Projects";
 
   const copyText = useCallback((text: string | undefined) => {
     if (!text) return;
@@ -759,7 +780,9 @@ export default function ConstructApp() {
 
   const openRightWorkspacePanel = useCallback((shellState: AppShellState) => {
     if (!activeProject) return;
-    if (!isFlowProjectRecord(activeProject)) {
+    if (isFlowProjectRecord(activeProject)) {
+      setFlowPanelView("chat");
+    } else {
       handleRightSlotChange("guide");
     }
     shellState.setRightPanelOpen(true);
@@ -780,13 +803,17 @@ export default function ConstructApp() {
           collapsedSidebarTrigger={(state) => (
             <ConstructShellNavigationControls state={state} variant="collapsed" />
           )}
-          defaultBottomPanelOpen={Boolean(activeProject && !settingsSurface)}
-          defaultRightPanelOpen={Boolean(activeProject && !settingsSurface)}
+          defaultBottomPanelOpen={Boolean(activeProject && !settingsSurface && !knowledgeBaseOpen && !learningContextOpen)}
+          defaultRightPanelOpen={Boolean(activeProject && !settingsSurface && !knowledgeBaseOpen && !learningContextOpen)}
           headerTabs={[
             {
               id: settingsSurface
                 ? `settings-${settingsSurface.itemId}`
-                : activeProject?.id ?? "dashboard",
+                : knowledgeBaseOpen
+                  ? "concepts"
+                  : learningContextOpen
+                    ? "learner-context"
+                    : activeProject?.id ?? "dashboard",
               title: headerTitle,
               active: true
             }
@@ -812,24 +839,57 @@ export default function ConstructApp() {
           )}
           onNavigateHome={handleBack}
           headerActions={
-            activeProject && !settingsSurface
+            activeProject && !settingsSurface && !knowledgeBaseOpen && !learningContextOpen
               ? (state) => {
                   if (isFlowProjectRecord(activeProject)) {
                     return (
                       <>
                         <SavingIndicator isSaving={isSaving} />
-                        <div className="flex items-center gap-1" aria-label="Workspace panels">
+                        <div className="flex items-center gap-1" aria-label="Flow controls">
                           <AppShellHeaderToolButton
-                            data-active={state.isRightPanelOpen ? "true" : "false"}
-                            onClick={state.toggleRightPanel}
-                            aria-label="Toggle Flow agent"
+                            data-active={state.isRightPanelOpen && flowPanelView === "chat" ? "true" : "false"}
+                            onClick={() => {
+                              if (state.isRightPanelOpen && flowPanelView === "chat") {
+                                state.toggleRightPanel();
+                                return;
+                              }
+                              setFlowPanelView("chat");
+                              state.setRightPanelOpen(true);
+                            }}
+                            aria-label="Open Flow chat"
+                            title="Flow chat"
                           >
                             <MessageCircleIcon size={15} />
                           </AppShellHeaderToolButton>
                           <AppShellHeaderToolButton
+                            data-active={state.isRightPanelOpen && flowPanelView === "project" ? "true" : "false"}
+                            onClick={() => {
+                              if (state.isRightPanelOpen && flowPanelView === "project") {
+                                state.toggleRightPanel();
+                                return;
+                              }
+                              setFlowPanelView("project");
+                              state.setRightPanelOpen(true);
+                            }}
+                            aria-label="Open Flow project map"
+                            title="Project map"
+                          >
+                            <ListChecksIcon size={15} />
+                          </AppShellHeaderToolButton>
+                          {!activeProject.flow.researchCompletedAt ? (
+                            <AppShellHeaderToolButton
+                              onClick={() => void handleRunFlowResearch(activeProject.id)}
+                              aria-label="Run Flow research"
+                              title="Research"
+                            >
+                              <SearchIcon size={15} />
+                            </AppShellHeaderToolButton>
+                          ) : null}
+                          <AppShellHeaderToolButton
                             data-active={state.isBottomPanelOpen ? "true" : "false"}
                             onClick={state.toggleBottomPanel}
                             aria-label="Toggle terminal"
+                            title="Terminal"
                           >
                             <HeaderBottomPanelIcon open={state.isBottomPanelOpen} />
                           </AppShellHeaderToolButton>
@@ -944,7 +1004,11 @@ export default function ConstructApp() {
                 footer={
                   <>
                     <div className="flex flex-col gap-1">
-                      <SidebarLearningButton onClick={openLearningContext} />
+                      {isFlowProjectRecord(activeProject) ? (
+                        <SidebarConceptsButton onClick={openKnowledgeBase} />
+                      ) : (
+                        <SidebarLearningButton onClick={openLearningContext} />
+                      )}
                       <SidebarSettingsButton onClick={() => openSettingsSurface("workspace")} />
                     </div>
                   </>
@@ -963,6 +1027,7 @@ export default function ConstructApp() {
                         onRenameFile={treeData.renameFile ?? undefined}
                         onCreateFolder={treeData.createFolder ?? undefined}
                         onDuplicateFile={treeData.duplicateFile ?? undefined}
+                        onRefresh={treeData.refreshTree ?? undefined}
                       />
                     ) : null}
                   </div>
@@ -984,14 +1049,8 @@ export default function ConstructApp() {
                   {
                     id: "knowledge-base",
                     icon: <BookOpen size={18} />,
-                    label: "Knowledge Base",
+                    label: "Concepts",
                     onClick: openKnowledgeBase
-                  },
-                  {
-                    id: "learner-context",
-                    icon: <Notebook size={18} weight="duotone" />,
-                    label: "Context",
-                    onClick: openLearningContext
                   }
                 ]}
                 footer={<div className="flex flex-col gap-1"><SidebarSettingsButton onClick={() => openSettingsSurface("workspace")} /></div>}
@@ -1005,8 +1064,8 @@ export default function ConstructApp() {
             )
           }
           main={main}
-          rightPanel={activeProject && !settingsSurface ? rightPanel : null}
-          bottomPanel={activeProject && !settingsSurface ? (shellState) => (
+          rightPanel={activeProject && !settingsSurface && !knowledgeBaseOpen && !learningContextOpen ? rightPanel : null}
+          bottomPanel={activeProject && !settingsSurface && !knowledgeBaseOpen && !learningContextOpen ? (shellState) => (
               <BottomPanel
                 activeTabId={activeBottomTabId}
                 syncTabs

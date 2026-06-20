@@ -97,7 +97,8 @@ const defaultAiSettings: AiSettings = {
   opencodeZenModel: "gpt-5.1-codex",
   githubCopilotModel: "github_copilot/gpt-4",
   tavilyApiKey: "",
-  featureModels: {}
+  featureModels: {},
+  codeGhostEnabled: true
 };
 
 const flowMemoryFiles: FlowMemoryFileName[] = [
@@ -1104,6 +1105,7 @@ export function ConstructSettingsSurface({
         onRuntimeChange={updateAiRuntime}
         onProviderChange={updateAiProvider}
         onReasoningEffortChange={(reasoningEffort) => setAiSettingsDraft((current) => ({ ...current, reasoningEffort }))}
+        onCodeGhostEnabledChange={(codeGhostEnabled: boolean) => setAiSettingsDraft((current) => ({ ...current, codeGhostEnabled }))}
         onOpenAiApiKeyChange={(openAiApiKey: string) => setAiSettingsDraft((current) => ({ ...current, openAiApiKey }))}
         onOpenAiBaseUrlChange={(openAiBaseUrl: string) => setAiSettingsDraft((current) => ({ ...current, openAiBaseUrl }))}
         onOpenRouterApiKeyChange={(openRouterApiKey: string) => setAiSettingsDraft((current) => ({ ...current, openRouterApiKey }))}

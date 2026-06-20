@@ -1,4 +1,4 @@
-import { BookOpenIcon, FileCodeIcon, PathIcon, SparkleIcon } from "@phosphor-icons/react";
+import { BookOpenIcon, FileCodeIcon, PathIcon } from "@phosphor-icons/react";
 import { useRef, type ReactNode } from "react";
 
 import {
@@ -83,7 +83,7 @@ export function ConstructInteractSession({
         eyebrow={eyebrow}
         lead={
           <MarkdownBlock
-            className="space-y-2 text-[13px] leading-5 [&_p]:leading-5"
+            className="space-y-2 text-xs leading-[1.65] [&_p]:leading-[1.65]"
             content={prompt}
             theme={theme}
             onOpenConcept={onOpenConcept}
@@ -256,7 +256,7 @@ function buildAgentEventParts({
         content: (
           <div className={isLiveSession && event.status === "running" ? "construct-interact-streaming-reply" : undefined} data-streaming={isLiveSession && event.status === "running" || undefined}>
             <MarkdownBlock
-              className="space-y-2 text-[13px] leading-[1.65] [&_p]:leading-[1.65]"
+              className="space-y-2 text-xs leading-[1.65] [&_p]:leading-[1.65]"
               content={event.text}
               theme={theme}
               onOpenConcept={onOpenConcept}
@@ -326,7 +326,7 @@ function buildAgentEventParts({
       content: (
         <div className={isLiveSession ? "construct-interact-streaming-reply" : undefined} data-streaming={isLiveSession || undefined}>
           <MarkdownBlock
-            className="space-y-2 text-[13px] leading-[1.65] [&_p]:leading-[1.65]"
+            className="space-y-2 text-xs leading-[1.65] [&_p]:leading-[1.65]"
             content={fallbackText.answer}
             theme={theme}
             onOpenConcept={onOpenConcept}
@@ -576,7 +576,7 @@ function interactActionIcon(action: ConstructInteractAction) {
     case "go-to-step":
       return <PathIcon data-icon="inline-start" />;
     default:
-      return <SparkleIcon data-icon="inline-start" />;
+      return <BookOpenIcon data-icon="inline-start" />;
   }
 }
 
