@@ -1,6 +1,23 @@
+export const CONSTRUCT_CONCEPT_CONFIDENCE_LEVELS = [
+  "unknown",
+  "introduced",
+  "confused",
+  "fragile",
+  "practicing",
+  "applying",
+  "solid",
+  "fluent",
+  "teaching",
+  "weak",
+  "emerging",
+  "strong"
+] as const;
+
+export type ConstructConceptConfidence = typeof CONSTRUCT_CONCEPT_CONFIDENCE_LEVELS[number];
+
 export type ConceptUnderstanding = {
   conceptId: string;
-  confidence: "unknown" | "weak" | "emerging" | "strong";
+  confidence: ConstructConceptConfidence;
   lastEvidenceAt?: string;
   notes?: string;
   projectIds: string[];
@@ -352,7 +369,7 @@ export type KnowledgeBaseRecord = {
   content?: string;
   examples?: string[];
   relatedConcepts?: string[];
-  confidence?: "unknown" | "weak" | "emerging" | "strong";
+  confidence?: ConstructConceptConfidence;
   lastChangeReason?: string;
   learnerEvidence?: string[];
   confidenceReason?: string;
@@ -360,6 +377,17 @@ export type KnowledgeBaseRecord = {
   agentContributionPercent?: number;
   lastPracticedAt?: string;
   lastModifiedAt?: string;
+  history?: Array<{
+    id: string;
+    kind: "introduced" | "modified" | "removed" | "practiced" | "opened" | "system";
+    reason: string;
+    evidence: string[];
+    confidence?: ConstructConceptConfidence;
+    confidenceReason?: string;
+    authoredBy?: "learner" | "agent" | "mixed" | "system";
+    agentContributionPercent?: number;
+    createdAt: string;
+  }>;
 };
 
 export type ConceptEngagement = {

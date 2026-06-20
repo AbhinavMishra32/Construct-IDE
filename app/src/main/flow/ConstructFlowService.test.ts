@@ -100,7 +100,7 @@ describe("ConstructFlowService Concept and Task Tools", () => {
       technology: "TypeScript",
       content: "TypeScript interface defines shape.",
       examples: ["interface User { name: string; }"],
-      confidence: "emerging",
+      confidence: "introduced",
       reason: "The learner asked about TypeScript interface shape.",
       evidence: ["The learner connected interface syntax to object shape in chat."],
       confidenceReason: "They correctly described the interface as a shape contract."
@@ -152,7 +152,7 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     const modifyResult = await modifyTool.execute({
       id: "typescript.syntax.interface",
       content: "TypeScript interface updated.",
-      confidence: "strong",
+      confidence: "solid",
       reason: "The learner used the interface in a task without hints.",
       evidence: ["Submitted diff added an interface with the correct required property."],
       confidenceReason: "The learner independently applied the concept in code."
@@ -160,7 +160,7 @@ describe("ConstructFlowService Concept and Task Tools", () => {
 
     assert.ok(modifyResult.modified);
     assert.equal(modifyResult.concept.content, "TypeScript interface updated.");
-    assert.equal(modifyResult.concept.confidence, "strong");
+    assert.equal(modifyResult.concept.confidence, "solid");
     assert.equal(modifyResult.reason, "The learner used the interface in a task without hints.");
 
     // 3. Test remove-concept tool
@@ -330,6 +330,17 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     assert.equal(task.guidance?.[0]?.line, 1);
     assert.equal(task.guidance?.[0]?.subtaskId, task.subtasks?.[0]?.id);
 
+    const reviewTool = (service as any).createReviewSubtaskTool(project, () => {});
+    await assert.rejects(
+      () => reviewTool.execute({
+        taskId: task.id,
+        subtaskId: task.subtasks?.[0]?.id,
+        outcome: "done",
+        evidence: "Agent-created task setup is not learner evidence."
+      }),
+      /learner-authored task submission/
+    );
+
     // Modify file and submit task
     await writeFile(path.join(project.workspacePath, "src/greet.ts"), "export function greet() { return 'hello'; }", "utf8");
     const submission = await service.submitPracticeTask(project, task.id, "Done!");
@@ -339,7 +350,29 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     assert.ok(submission.compactDiff.includes("return 'hello';"));
     assert.equal(submission.authoredBy?.actor, "learner");
 
-    const reviewTool = (service as any).createReviewSubtaskTool(project, () => {});
+    const afterSubmission = new Date(Date.parse(submission.submittedAt) + 1000).toISOString();
+    session.toolCalls.push({
+      id: "agent-write-after-submission",
+      name: "write",
+      title: "Wrote src/greet.ts",
+      reason: "Synthetic agent edit after learner submission.",
+      input: { path: "src/greet.ts" },
+      outputPreview: JSON.stringify({ authoredBy: "agent" }),
+      status: "completed",
+      createdAt: afterSubmission,
+      completedAt: afterSubmission
+    });
+    await assert.rejects(
+      () => reviewTool.execute({
+        taskId: task.id,
+        subtaskId: task.subtasks?.[0]?.id,
+        outcome: "done",
+        evidence: "The current file passes after an agent write."
+      }),
+      /Flow edited task files after the learner submission/
+    );
+    session.toolCalls = session.toolCalls.filter((toolCall) => toolCall.id !== "agent-write-after-submission");
+
     await reviewTool.execute({
       taskId: task.id,
       subtaskId: task.subtasks?.[0]?.id,
@@ -349,6 +382,9 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     });
     assert.equal(task.subtasks?.[0]?.status, "needs-work");
     assert.equal(task.subtasks?.[0]?.nextInstructions, "Add the return type annotation before resubmitting.");
+
+    await writeFile(path.join(project.workspacePath, "src/greet.ts"), "export function greet(): string { return 'hello'; }", "utf8");
+    await service.submitPracticeTask(project, task.id, "Added the return type.", task.subtasks?.[0]?.id);
 
     await reviewTool.execute({
       taskId: task.id,
@@ -509,7 +545,10 @@ describe("ConstructFlowService Concept and Task Tools", () => {
       }
     });
     assert.equal(questionSession.origin, "question-response");
-    assert.deepEqual(questionSession.messages, []);
+    assert.equal(questionSession.messages.length, 1);
+    assert.equal(questionSession.messages[0].role, "user");
+    assert.match(questionSession.messages[0].content, /Which package manager should Flow use\?/);
+    assert.match(questionSession.messages[0].content, /npm/);
     assert.equal(questionSession.questionResponse.answer, "npm");
 
     const starterSession = (service as any).createSession(project, {

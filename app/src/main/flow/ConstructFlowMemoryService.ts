@@ -2,7 +2,10 @@ import path from "node:path";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 
-import type { ConstructFlowMemoryPatchResult, FlowMemoryFileName } from "../../shared/constructFlow";
+import type {
+  ConstructFlowMemoryPatchResult,
+  FlowMemoryFileName
+} from "../../shared/constructFlow";
 import type { StoredFlowProject } from "../projects/ConstructProjectTypes";
 import { ConstructProjectWorkspaceService } from "../projects/ConstructProjectWorkspaceService";
 
@@ -222,7 +225,7 @@ function starterContent(project: StoredFlowProject, file: FlowMemoryFileName): s
         "",
         `Goal: ${project.flow.goal}`,
         "",
-        project.flow.stackPreference ? `Stack preference: ${project.flow.stackPreference}` : "Stack preference: not specified yet.",
+        project.flow.stackPreference ? `Project context: ${project.flow.stackPreference}` : "Project context: not specified yet.",
         "",
         "Important files: not mapped yet.",
         "",
@@ -249,6 +252,10 @@ function starterContent(project: StoredFlowProject, file: FlowMemoryFileName): s
         "# Learner",
         "",
         "Learner style: not enough evidence yet.",
+        "",
+        "Preferences and constraints: none recorded yet.",
+        "",
+        "Autonomy and tooling preferences: balanced; no concrete evidence yet.",
         "",
         "Known concepts: none recorded yet.",
         "",

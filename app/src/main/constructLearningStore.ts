@@ -146,7 +146,7 @@ export class ConstructLearningStore {
     const values = projectId
       ? Object.values(ensureProjectState(state, projectId).conceptUnderstanding)
       : Object.values(state.learner.globalConceptUnderstanding);
-    return values.filter((concept) => concept.confidence === "weak" || concept.confidence === "unknown");
+    return values.filter((concept) => ["unknown", "introduced", "confused", "fragile", "weak"].includes(concept.confidence));
   }
 
   private async read(): Promise<ConstructLearningState> {

@@ -34,13 +34,25 @@ import type {
   ConstructFlowTaskSubmission,
   ConstructFlowToolCallRecord
 } from "../../shared/constructFlow";
-import { CONSTRUCT_CONCEPT_LANGUAGES, type ConstructAgentContextWindow, type ConstructAgentRunEvent, type KnowledgeBaseRecord } from "../../shared/constructLearning";
+import { CONSTRUCT_CONCEPT_LANGUAGES, type ConstructAgentContextWindow, type ConstructAgentRunEvent, type ConstructConceptConfidence, type KnowledgeBaseRecord } from "../../shared/constructLearning";
 import { ConstructLearningStore } from "../constructLearningStore";
 
 const ignoredNames = new Set([".git", ".construct", "node_modules", "dist", "build", ".next", "coverage"]);
 const maxBaselineFileBytes = 120_000;
 const maxDiffChars = 18_000;
 const conceptLanguageSchema = z.enum(CONSTRUCT_CONCEPT_LANGUAGES);
+const flowConceptConfidenceLevels = [
+  "unknown",
+  "introduced",
+  "confused",
+  "fragile",
+  "practicing",
+  "applying",
+  "solid",
+  "fluent",
+  "teaching"
+] as const satisfies readonly ConstructConceptConfidence[];
+const flowConceptConfidenceSchema = z.enum(flowConceptConfidenceLevels);
 
 function estimateContextWindow(
   settings: StoredSettings["ai"] | undefined,
@@ -101,12 +113,12 @@ export class ConstructFlowService {
     onSessionEvent?: ConstructFlowSessionEventSink
   ): Promise<ConstructFlowAgentResult> {
     await this.options.flowMemory.ensure(project);
-    const memory = await this.options.flowMemory.read(project, ["project.md", "path.md", "learner.md"]);
+    const memory = await this.options.flowMemory.read(project, ["project.md", "path.md", "learner.md", "research.md"]);
     const settings = await this.options.readSettings?.();
     const answeredSession = applyQuestionResponse(project, input.questionResponse);
     if (answeredSession) {
       onSessionEvent?.({
-        type: "updated",
+        type: "completed",
         projectId: project.id,
         session: cloneSession(answeredSession)
       });
@@ -185,7 +197,6 @@ export class ConstructFlowService {
     const fetchConcepts = this.createFetchConceptsTool(project);
     const suggestConcept = this.createSuggestConceptTool(project, concepts, actionsFromTools, publish);
     const reviewSubtask = this.createReviewSubtaskTool(project, publish);
-    const completeSubtask = this.createCompleteSubtaskTool(project, publish);
     const completeTask = this.createCompleteTaskTool(project, publish);
     const tools: ToolsInput = {
       ...pickFlowMainProtocolTools(protocol.tools),
@@ -197,7 +208,6 @@ export class ConstructFlowService {
       "modify-concept": modifyConcept,
       "remove-concept": removeConcept,
       "review-subtask": reviewSubtask,
-      "complete-subtask": completeSubtask,
       "complete-task": completeTask
     };
 
@@ -225,10 +235,15 @@ export class ConstructFlowService {
         }
       });
       const pendingQuestion = findPendingLearnerQuestion(session.toolCalls);
-      reply = cleanReplyForPendingQuestion(
-        generated.text.trim(),
-        pendingQuestion
-      ) || (pendingQuestion ? "I’ll wait for your answer below." : "I could not produce a response from the model, but the activity above shows the work completed.");
+      if (pendingQuestion) {
+        truncateSessionAfterPendingQuestion(session, pendingQuestion);
+      }
+      reply = pendingQuestion
+        ? "I’ll wait for your answer below."
+        : cleanReplyForPendingQuestion(
+            generated.text.trim(),
+            pendingQuestion
+          ) || "I could not produce a response from the model, but the activity above shows the work completed.";
     } catch (error) {
       runError = error;
       reply = buildFlowRuntimeErrorReply(error);
@@ -273,7 +288,7 @@ export class ConstructFlowService {
     await this.options.flowMemory.ensure(project);
     const input: ConstructFlowAgentInput = {
       projectId: project.id,
-      message: `Research this Flow project and update research.md. Project goal: ${project.flow.goal}${project.flow.stackPreference ? ` Stack preference: ${project.flow.stackPreference}` : ""}`,
+      message: `Research this Flow project and update research.md. Project goal: ${project.flow.goal}${project.flow.stackPreference ? ` Project context: ${project.flow.stackPreference}` : ""}`,
       quickAction: "continue",
       threadId: `${project.flow.threadId}:research`
     };
@@ -326,6 +341,11 @@ export class ConstructFlowService {
         }
       });
       reply = generated.text.trim() || "Research completed.";
+      const researchContent = buildResearchDocument(session, reply);
+      await this.options.flowMemory.update(project, [{
+        file: "research.md",
+        content: researchContent
+      }]);
     } catch (error) {
       reply = "Research failed before completion.";
       await this.options.flowMemory.update(project, [{
@@ -336,8 +356,12 @@ export class ConstructFlowService {
       session.errorMessage = error instanceof Error ? error.message : String(error);
     }
 
-    project.flow.researchCompletedAt = new Date().toISOString();
-    project.flow.updatedAt = new Date().toISOString();
+    const finishedAt = new Date().toISOString();
+    if (session.status !== "error") {
+      project.flow.researchEnabled = true;
+      project.flow.researchCompletedAt = finishedAt;
+    }
+    project.flow.updatedAt = finishedAt;
     session.messages.push({
       id: randomUUID(),
       role: "assistant",
@@ -404,16 +428,27 @@ export class ConstructFlowService {
         : input.startReason
           ? "system"
           : "user";
-    const messages = origin === "question-response" || origin === "system"
+    const messages = origin === "system"
       ? []
-      : [{
-          id: randomUUID(),
-          role: "user" as const,
-          content: input.taskSubmission
-            ? `${input.message}\n\nTask submission:\n${input.taskSubmission.compactDiff}${input.taskSubmission.note ? `\n\nLearner note: ${input.taskSubmission.note}` : ""}`
-            : input.message,
-          createdAt: now
-        }];
+      : origin === "question-response"
+        ? [{
+            id: randomUUID(),
+            role: "user" as const,
+            content: input.questionResponse?.skipped
+              ? `(skipped question) ${input.questionResponse?.question ?? ""}`
+              : input.questionResponse?.question
+                ? `${input.questionResponse.question}\n\n${input.questionResponse.answer ?? ""}`
+                : input.message,
+            createdAt: now
+          }]
+        : [{
+            id: randomUUID(),
+            role: "user" as const,
+            content: input.taskSubmission
+              ? `${input.message}\n\nTask submission:\n${input.taskSubmission.compactDiff}${input.taskSubmission.note ? `\n\nLearner note: ${input.taskSubmission.note}` : ""}`
+              : input.message,
+            createdAt: now
+          }];
     return {
       id: randomUUID(),
       projectId: project.id,
@@ -523,7 +558,7 @@ export class ConstructFlowService {
   ): ToolsInput[string] {
     return createTool({
       id: "practice-task",
-      description: "Create a real learner coding task only after the required concepts have been introduced. Use guidance for structured work highlights instead of writing large TODO comment blocks into source files.",
+      description: "Create one real learner coding task only after the required concepts have been introduced. This is Flow's normal write path for task setup: preparations are applied before the baseline is captured. This is a handoff point: after creating the task, summarize briefly and let the learner work. Do not use practice-task as a progress update, duplicate milestone marker, or setup narration. Do not keep trying to verify or rewrite the same scaffold after this tool succeeds. Use guidance for structured work highlights instead of writing large TODO comment blocks into source files.",
       inputSchema: z.object({
         title: z.string().min(1).max(120),
         prompt: z.string().min(1).max(2_000),
@@ -658,7 +693,7 @@ export class ConstructFlowService {
         content: z.string().min(1).describe("Rich, detailed free-form markdown explanation of the concept"),
         examples: z.array(z.string()).optional().describe("Code examples illustrating the concept"),
         relatedConcepts: z.array(z.string()).optional().describe("IDs of related concepts"),
-        confidence: z.enum(["unknown", "weak", "emerging", "strong"]).optional().default("unknown").describe("Learner's current confidence level with this concept"),
+        confidence: flowConceptConfidenceSchema.optional().default("unknown").describe("Learner's current evidence-backed learning state for this concept"),
         reason: z.string().min(1).max(700).describe("Exact reason this concept is being created now"),
         evidence: z.array(z.string().min(1).max(500)).min(1).max(8).describe("Concrete evidence from the learner, task diff, project, or conversation"),
         confidenceReason: z.string().max(700).optional().describe("Required when confidence is not unknown"),
@@ -719,6 +754,17 @@ export class ConstructFlowService {
         }
 
         const parentId = parts.length > 1 ? parts.slice(0, -1).join(".") : null;
+        const historyEntry = createConceptHistoryEntry({
+          kind: existingRecord ? "modified" : "introduced",
+          reason: toolInput.reason,
+          evidence: toolInput.evidence,
+          confidence: toolInput.confidence,
+          confidenceReason: toolInput.confidenceReason,
+          authoredBy: toolInput.authoredBy,
+          agentContributionPercent: toolInput.agentContributionPercent,
+          createdAt: now
+        });
+
         const newRecord: KnowledgeBaseRecord = {
           ...existingRecord,
           id: conceptId,
@@ -747,7 +793,8 @@ export class ConstructFlowService {
           openedAt: existingRecord?.openedAt,
           openCount: existingRecord?.openCount ?? 0,
           usedInRecall: existingRecord?.usedInRecall ?? false,
-          lastModifiedAt: now
+          lastModifiedAt: now,
+          history: appendConceptHistory(existingRecord?.history, historyEntry)
         };
 
         await store.saveKnowledgeConcept(newRecord);
@@ -782,7 +829,7 @@ export class ConstructFlowService {
         content: z.string().optional().describe("New markdown explanation"),
         examples: z.array(z.string()).optional().describe("New code examples"),
         relatedConcepts: z.array(z.string()).optional().describe("New related concepts"),
-        confidence: z.enum(["unknown", "weak", "emerging", "strong"]).optional().describe("Updated learner confidence level"),
+        confidence: flowConceptConfidenceSchema.optional().describe("Updated evidence-backed learner state for this concept"),
         reason: z.string().min(1).max(700).describe("Exact reason this concept is changing"),
         evidence: z.array(z.string().min(1).max(500)).min(1).max(8).describe("Concrete evidence that justifies this change"),
         confidenceReason: z.string().max(700).optional().describe("Required when confidence is provided"),
@@ -807,6 +854,17 @@ export class ConstructFlowService {
           throw new Error(`Concept with ID ${conceptId} not found in the learner's global concepts.`);
         }
 
+        const historyEntry = createConceptHistoryEntry({
+          kind: "modified",
+          reason: toolInput.reason,
+          evidence: toolInput.evidence,
+          confidence: toolInput.confidence ?? existing.confidence,
+          confidenceReason: toolInput.confidenceReason ?? existing.confidenceReason,
+          authoredBy: toolInput.authoredBy,
+          agentContributionPercent: toolInput.agentContributionPercent ?? existing.agentContributionPercent,
+          createdAt: now
+        });
+
         const updatedRecord: KnowledgeBaseRecord = {
           ...existing,
           id: conceptId,
@@ -823,7 +881,8 @@ export class ConstructFlowService {
           confidenceReason: toolInput.confidenceReason ?? existing.confidenceReason,
           authoredBy: toolInput.authoredBy,
           agentContributionPercent: toolInput.agentContributionPercent ?? existing.agentContributionPercent,
-          lastModifiedAt: now
+          lastModifiedAt: now,
+          history: appendConceptHistory(existing.history, historyEntry)
         };
 
         if (toolInput.content) {
@@ -986,7 +1045,7 @@ export class ConstructFlowService {
   ): ToolsInput[string] {
     return createTool({
       id: "review-subtask",
-      description: "Review a learner subtask submission and mark it either done or needing more work with explicit evidence.",
+      description: "Review a learner-authored subtask submission and mark it either done or needing more work with explicit evidence. Requires a current learner submission; agent-authored edits or verification commands are not learner evidence.",
       inputSchema: z.object({
         taskId: z.string().min(1),
         subtaskId: z.string().min(1),
@@ -997,6 +1056,20 @@ export class ConstructFlowService {
       execute: async (toolInput) => {
         const task = findPracticeTask(project, toolInput.taskId);
         const subtask = findPracticeSubtask(task, toolInput.subtaskId);
+        const submission = requireLearnerSubmission(task, "review a subtask");
+        if (task.status !== "submitted" || subtask.status !== "submitted") {
+          throw new Error("Cannot review a subtask until the learner submits that subtask.");
+        }
+        if (submission.subtaskId && submission.subtaskId !== subtask.id) {
+          throw new Error("Cannot review a different subtask from the latest learner submission.");
+        }
+        if (toolInput.outcome === "done" && submission.nothingChanged) {
+          throw new Error("Cannot mark a subtask done from a learner submission with no file changes.");
+        }
+        const agentEditedPaths = findAgentEditedTaskFilesAfterSubmission(project, task);
+        if (toolInput.outcome === "done" && agentEditedPaths.length > 0) {
+          throw new Error(`Cannot mark learner work done because Flow edited task files after the learner submission: ${agentEditedPaths.join(", ")}. Ask the learner to review and resubmit.`);
+        }
         const now = new Date().toISOString();
 
         subtask.reviewedAt = now;
@@ -1034,41 +1107,7 @@ export class ConstructFlowService {
     });
   }
 
-  private createCompleteSubtaskTool(
-    project: StoredFlowProject,
-    publish: (type: ConstructFlowSessionEvent["type"]) => void
-  ): ToolsInput[string] {
-    return createTool({
-      id: "complete-subtask",
-      description: "Mark a task subtask complete only after reviewing learner evidence or a submitted diff.",
-      inputSchema: z.object({
-        taskId: z.string().min(1),
-        subtaskId: z.string().min(1),
-        evidence: z.string().min(1).max(1_000)
-      }).strict(),
-      execute: async (toolInput) => {
-        const task = findPracticeTask(project, toolInput.taskId);
-        const subtask = findPracticeSubtask(task, toolInput.subtaskId);
-        subtask.status = "completed";
-        subtask.completedAt = new Date().toISOString();
-        subtask.evidence = toolInput.evidence;
 
-        const nextReady = task.subtasks?.find((candidate) => candidate.status === "ready");
-        if (nextReady) {
-          nextReady.status = "active";
-          task.status = "waiting";
-        }
-        publish("updated");
-        return {
-          completed: true,
-          taskId: task.id,
-          subtaskId: subtask.id,
-          evidence: toolInput.evidence,
-          nextSubtaskId: nextReady?.id ?? null
-        };
-      }
-    });
-  }
 
   private createCompleteTaskTool(
     project: StoredFlowProject,
@@ -1076,7 +1115,7 @@ export class ConstructFlowService {
   ): ToolsInput[string] {
     return createTool({
       id: "complete-task",
-      description: "Mark a full Flow task done only when every required concept and subtask has enough evidence.",
+      description: "Mark a full Flow task done only after a learner-authored submission and after every subtask has been reviewed as completed. Evidence must come from learner-authored submission metadata, not agent edits or terminal checks.",
       inputSchema: z.object({
         taskId: z.string().min(1),
         summary: z.string().min(1).max(1_200),
@@ -1084,6 +1123,21 @@ export class ConstructFlowService {
       }).strict(),
       execute: async (toolInput) => {
         const task = findPracticeTask(project, toolInput.taskId);
+        const submission = requireLearnerSubmission(task, "complete a task");
+        if (task.status !== "submitted") {
+          throw new Error("Cannot complete a task until the learner has submitted work and all subtasks have been reviewed.");
+        }
+        if (submission.nothingChanged) {
+          throw new Error("Cannot complete a task from a learner submission with no file changes.");
+        }
+        const agentEditedPaths = findAgentEditedTaskFilesAfterSubmission(project, task);
+        if (agentEditedPaths.length > 0) {
+          throw new Error(`Cannot complete learner task because Flow edited task files after the learner submission: ${agentEditedPaths.join(", ")}. Ask the learner to review and resubmit.`);
+        }
+        const incompleteSubtasks = task.subtasks?.filter((subtask) => subtask.status !== "completed") ?? [];
+        if (incompleteSubtasks.length > 0) {
+          throw new Error(`Cannot complete task before all subtasks are reviewed as done: ${incompleteSubtasks.map((subtask) => subtask.title).join(", ")}.`);
+        }
         task.status = "completed";
         if (task.subtasks) {
           task.subtasks = task.subtasks.map((subtask) => ({
@@ -1129,6 +1183,42 @@ function findPracticeSubtask(task: ConstructFlowPracticeTask, subtaskId: string)
   return subtask;
 }
 
+function requireLearnerSubmission(task: ConstructFlowPracticeTask, action: string): ConstructFlowTaskSubmission {
+  const submission = task.submission;
+  if (!submission || submission.authoredBy?.actor !== "learner") {
+    throw new Error(`Cannot ${action} without a learner-authored task submission. Agent-authored edits, scaffold repairs, and verification commands are support work, not learner completion evidence.`);
+  }
+  return submission;
+}
+
+function findAgentEditedTaskFilesAfterSubmission(project: StoredFlowProject, task: ConstructFlowPracticeTask): string[] {
+  const submittedAt = Date.parse(task.submission?.submittedAt ?? "");
+  if (!Number.isFinite(submittedAt)) return [];
+  const taskFiles = new Set(task.taskFiles ?? []);
+  const edited = new Set<string>();
+
+  for (const session of project.flow.sessions) {
+    for (const toolCall of session.toolCalls) {
+      const toolName = normalizeToolName(toolCall.name);
+      if (toolName !== "write" && toolName !== "edit") continue;
+      const completedAt = Date.parse(toolCall.completedAt ?? toolCall.createdAt);
+      if (!Number.isFinite(completedAt) || completedAt <= submittedAt) continue;
+      const path = readToolInputPath(toolCall.input);
+      if (!path) continue;
+      if (taskFiles.size > 0 && !taskFiles.has(path)) continue;
+      edited.add(path);
+    }
+  }
+
+  return [...edited].sort();
+}
+
+function readToolInputPath(input: unknown): string | undefined {
+  if (typeof input !== "object" || input === null) return undefined;
+  const path = (input as { path?: unknown }).path;
+  return typeof path === "string" && path.trim() ? path : undefined;
+}
+
 function uniqueKnowledgeConcepts(records: KnowledgeBaseRecord[]): KnowledgeBaseRecord[] {
   const byId = new Map<string, KnowledgeBaseRecord>();
   for (const record of records) {
@@ -1142,6 +1232,36 @@ function uniqueKnowledgeConcepts(records: KnowledgeBaseRecord[]): KnowledgeBaseR
 
 function findKnowledgeConceptById(records: KnowledgeBaseRecord[], conceptId: string): KnowledgeBaseRecord | undefined {
   return uniqueKnowledgeConcepts(records).find((record) => record.id === conceptId);
+}
+
+function createConceptHistoryEntry(input: {
+  kind: NonNullable<KnowledgeBaseRecord["history"]>[number]["kind"];
+  reason: string;
+  evidence: string[];
+  confidence?: ConstructConceptConfidence;
+  confidenceReason?: string;
+  authoredBy?: NonNullable<KnowledgeBaseRecord["history"]>[number]["authoredBy"];
+  agentContributionPercent?: number;
+  createdAt: string;
+}): NonNullable<KnowledgeBaseRecord["history"]>[number] {
+  return {
+    id: randomUUID(),
+    kind: input.kind,
+    reason: input.reason,
+    evidence: input.evidence,
+    confidence: input.confidence,
+    confidenceReason: input.confidenceReason,
+    authoredBy: input.authoredBy,
+    agentContributionPercent: input.agentContributionPercent,
+    createdAt: input.createdAt
+  };
+}
+
+function appendConceptHistory(
+  current: KnowledgeBaseRecord["history"],
+  entry: NonNullable<KnowledgeBaseRecord["history"]>[number]
+): NonNullable<KnowledgeBaseRecord["history"]> {
+  return [...(current ?? []), entry].slice(-30);
 }
 
 function scoreConceptMatch(concept: KnowledgeBaseRecord, normalizedQuery: string, terms: string[]): number {
@@ -1199,6 +1319,7 @@ function serializeConceptForAgent(concept: KnowledgeBaseRecord, includeContent: 
     authoredBy: concept.authoredBy,
     agentContributionPercent: concept.agentContributionPercent,
     relatedConcepts: concept.relatedConcepts,
+    history: concept.history,
     savedAt: concept.savedAt,
     lastModifiedAt: concept.lastModifiedAt
   };
@@ -1584,7 +1705,8 @@ function buildMainPrompt(
   return [
     `Project: ${project.title}`,
     `Goal: ${project.flow.goal}`,
-    project.flow.stackPreference ? `Stack preference: ${project.flow.stackPreference}` : null,
+    project.flow.stackPreference ? `Project context: ${project.flow.stackPreference}` : null,
+    project.flow.projectSettings ? `Project settings:\n${JSON.stringify(project.flow.projectSettings, null, 2)}` : null,
     `Research enabled: ${project.flow.researchEnabled ? "yes" : "no"}`,
     `Research completed: ${project.flow.researchCompletedAt ? project.flow.researchCompletedAt : "no"}`,
     "",
@@ -1631,14 +1753,14 @@ function buildMainPrompt(
       })), null, 2),
     "",
     "Flow Memory:",
-    "project.md, path.md, and learner.md are preloaded here. Use flow-memory-patch for concise durable updates when meaningful work happens.",
+    "project.md, path.md, and learner.md are preloaded here. research.md (if present) is also loaded for reference. Use flow-memory-patch for concise durable updates when meaningful work happens.",
     JSON.stringify(memory.map((item) => ({
       file: item.file,
       updatedAt: item.updatedAt,
       content: item.content.slice(0, 3_000)
     })), null, 2),
     "",
-    "Concepts / Knowledge Base:",
+    "Concepts:",
     JSON.stringify(concepts.map((c) => ({
       id: c.id,
       parentId: c.parentId,
@@ -1653,7 +1775,8 @@ function buildMainPrompt(
       learnerEvidence: c.learnerEvidence,
       lastChangeReason: c.lastChangeReason,
       authoredBy: c.authoredBy,
-      relatedConcepts: c.relatedConcepts
+      relatedConcepts: c.relatedConcepts,
+      history: c.history
     })), null, 2),
     "",
     "Recent Flow context:",
@@ -1666,11 +1789,23 @@ function buildMainPrompt(
   ].filter(Boolean).join("\n");
 }
 
+function buildResearchDocument(session: ConstructFlowSession, reply: string): string {
+  const date = new Date().toISOString().slice(0, 10);
+  const toolResults = session.timeline
+    .filter((p): p is Extract<ConstructFlowTimelinePart, { kind: "tool" }> =>
+      p.kind === "tool" && p.status === "completed" && Boolean(p.outputPreview)
+    )
+    .map((p) => `## Tool: ${p.name}${p.reason ? ` — ${p.reason}` : ""}\n${p.outputPreview}`)
+    .join("\n\n");
+  return `# Research — ${date}\n\n${reply}\n\n${toolResults ? `## Sources & Tool Results\n\n${toolResults}` : ""}`.trim();
+}
+
 function buildResearchPrompt(project: StoredFlowProject): string {
   return [
     `Project title: ${project.title}`,
     `Goal/description: ${project.flow.goal}`,
-    project.flow.stackPreference ? `Stack preference: ${project.flow.stackPreference}` : null,
+    project.flow.stackPreference ? `Project context: ${project.flow.stackPreference}` : null,
+    project.flow.projectSettings ? `Project settings:\n${JSON.stringify(project.flow.projectSettings, null, 2)}` : null,
     "",
     "Research the domain/technology only as much as useful, then return concise researchMarkdown for research.md."
   ].filter(Boolean).join("\n");
@@ -1800,11 +1935,15 @@ function pickFlowMainProtocolTools(protocolTools: ToolsInput): ToolsInput {
   const allowed = [
     "read",
     "grep",
+    "runTerminalCommand",
     "run-terminal-command",
+    "write",
+    "edit",
     "ask-question",
     "askQuestion",
     "internet-fetch",
     "internetFetch",
+    "flowMemoryPatch",
     "flow-memory-patch"
   ];
   return Object.fromEntries(
@@ -1818,6 +1957,8 @@ const protocolRecordedToolNames = new Set([
   "read",
   "grep",
   "runterminalcommand",
+  "write",
+  "edit",
   "askquestion",
   "internetfetch",
   "flowmemorypatch",
@@ -1844,6 +1985,32 @@ function findPendingLearnerQuestion(toolCalls: ConstructFlowToolCallRecord[]): C
   return [...toolCalls].reverse().find((toolCall) => (
     isQuestionTool(toolCall.name) && toolCall.status !== "error" && !toolCall.response
   ));
+}
+
+function truncateSessionAfterPendingQuestion(
+  session: ConstructFlowSession,
+  pendingQuestion: ConstructFlowToolCallRecord
+): void {
+  const toolIndex = session.toolCalls.findIndex((toolCall) => toolCall.id === pendingQuestion.id);
+  if (toolIndex >= 0) {
+    session.toolCalls = session.toolCalls.slice(0, toolIndex + 1);
+  }
+
+  const timelineIndex = session.timeline.findIndex((part) => (
+    part.kind === "tool" && (part.toolCallId === pendingQuestion.id || part.id === pendingQuestion.id)
+  ));
+  if (timelineIndex >= 0) {
+    session.timeline = session.timeline.slice(0, timelineIndex + 1);
+  }
+
+  const cutoff = Date.parse(pendingQuestion.completedAt ?? pendingQuestion.createdAt);
+  if (Number.isFinite(cutoff)) {
+    session.agentEvents = session.agentEvents.filter((event) => {
+      if (event.type === "tool" && event.toolCallId === pendingQuestion.id) return true;
+      const createdAt = Date.parse(event.createdAt);
+      return Number.isFinite(createdAt) && createdAt <= cutoff;
+    });
+  }
 }
 
 function cleanReplyForPendingQuestion(reply: string, pendingQuestion: ConstructFlowToolCallRecord | undefined): string {
@@ -1935,54 +2102,79 @@ export const FLOW_MAIN_AGENT_PROMPT = `You are Construct Flow, an understanding-
 
 You are not a code vending machine. Your job is to help the learner become capable of writing and understanding the project themselves.
 You are not a coding agent. You are a teaching system that uses real tasks to let the learner practice only after the needed ideas are introduced.
+CRITICAL PEDAGOGY RULE: You must NEVER use write/edit to write the actual implementation or solve the tasks for the learner. Even if the concept has been introduced and recorded, the learner must be the one who writes the code. You are strictly forbidden from writing or implementing the solution code yourself.
 
-The main Flow agent tools are read, grep, run-terminal-command, ask-question, internet-fetch, flow-memory-patch, plan-learning-path, practice-task, fetch-concepts, suggest-existing-concept, add-concept, modify-concept, remove-concept, review-subtask, complete-subtask, and complete-task. Keep the tool surface calm. Do not ask for or invent extra tools.
+The main Flow agent tools are read, grep, runTerminalCommand, write, edit, ask-question, internetFetch, flowMemoryPatch, plan-learning-path, practice-task, fetch-concepts, suggest-existing-concept, add-concept, modify-concept, remove-concept, review-subtask, and complete-task. Keep the tool surface calm. Do not ask for or invent extra tools.
+File mutation follows the Claude Code shape: write creates or overwrites a file; edit replaces one exact string in an existing file. These are the only normal file modification tools. Use them only to help the learner move through an introduced concept, repair tiny scaffold/setup blockers, update simple docs, or make clearly requested support edits. Do not use write/edit to implement code whose concept has not been introduced yet. Even after a concept is introduced, do not implement it; instead, create a practice task for the learner. If a code change needs an unintroduced concept, teach it first, record the concept, then create a learner task or make the smallest necessary support edit (such as an empty scaffold file/boilerplate) with clear authorship.
+Before using write/edit for a learning-acceleration support edit, ask the learner first with ask-question and wait for the answer. This includes edits because the learner is stuck, because a scaffold bug is blocking progress, or because the edit would make learning faster. The question must name the file, describe the exact change, explain why it would speed progress, and say what learning remains for the learner. Example shape: "Should I edit [[file:src/core/index.ts|src/core/index.ts]] to remove the broken export so you can focus on module barrels instead of setup friction? You will still implement the public API yourself." If the learner says no or skips, do not edit; teach or create a learner task instead. If the learner explicitly asks in the current message for a concrete file edit, that counts as consent for that requested edit only.
 
 Project kickoff and path:
 - When a new Flow project starts, first learn the learner and the project. Ask a good amount of tracked questions when needed. You may ask about prior experience, comfort level, goals, constraints, taste, and what they already understand, but choose questions naturally from the situation.
-- Read the global Concepts / Knowledge Base in the prompt. Use it to avoid asking questions that are already answered, and to notice what the learner may already know.
-- After profiling, update learner.md with flow-memory-patch.
-- After updating learner.md, call plan-learning-path. The path must be based on the learner's abilities, the project goal, global concepts, and useful research. If the learner is new to a technology, begin with the beginner concepts before project-specific app work.
+- Read the global Concepts in the prompt. Use it to avoid asking questions that are already answered, and to notice what the learner may already know.
+- Use ask-question for learner modeling when it would improve the path: background, preferences, constraints, confidence, what they want to do manually, and what they want handled by normal tooling.
+- After learner profiling or any meaningful learner answer, update learner.md with flow-memory-patch before creating or revising tasks.
+- After updating learner.md for kickoff, call plan-learning-path. The path must be based on the learner's abilities, the project goal, global concepts, and useful research. If the learner is new to a technology, begin with the beginner concepts before project-specific app work.
 - The path is allowed to change. Revise it with plan-learning-path when learner evidence changes.
 - Each practice-task belongs to the current path node unless there is a clear reason to place it elsewhere.
 
+Guided discovery:
+- Make building feel like discovery, not answer delivery. Start from first principles: what inputs exist, what output or behavior is wanted, what invariants must hold, what smaller step can be tested, and what the learner already knows.
+- When the learner is solving, debugging, or designing, help them generate the next move before revealing yours. Ask for their mental model, an English plan, a small example, a sketch of control flow, or pseudocode when that would naturally help. Do not force a fixed format; choose the lightest prompt that helps them think.
+- Prefer a ladder of hints: observation, constraint, smaller example, missing concept, then partial structure. Give the full solution only after the learner has attempted, asked directly for it, or the task would otherwise stall after meaningful guided attempts.
+- Do not end a teaching turn by dumping the completed algorithm, architecture, or code when the learner has not had a chance to form it. End with one focused next thinking move when discovery is still active.
+- Celebrate curiosity through the work itself: make the next question feel like opening a door, not taking a quiz. Avoid schooly recap checks. Ask questions that help the learner notice the shape of the solution.
+- If the learner proposes an approach, treat it as the primary material. Improve it, test it against edge cases, and only then fill in missing details.
+
 Concept-first tutoring:
 - Concepts are global learner knowledge across projects. They are not per-project folders.
-- Before explaining a topic, check the global Concepts / Knowledge Base in the prompt.
+- Before explaining a topic, check the global Concepts in the prompt.
 - Use fetch-concepts when you need exact concept content, examples, evidence, confidence, or related concepts. Use exact conceptIds when you know them and query search when you do not. Do not guess concept details from memory.
 - Before modifying or removing a concept, fetch it first unless the full current record is already visible in the prompt or current tool output.
 - If an existing concept covers the need, link it in chat with the inline markdown tag [[concept:concept.id|Concept title]] and briefly say why it is relevant instead of re-explaining.
 - If the learner asks again, is confused, or needs help applying the concept, then explain in chat.
-- After explaining, ask one focused Socratic question with ask-question when you need evidence of understanding.
-- Normal chat is for ideas, mental models, questions, and review. Do not put implementation code blocks or broad code snippets in normal chat.
+- Use ask-question when the learner's answer improves the learner model or is required to choose the next step. Do not use ask-question for comprehension quizzes, recap prompts, or questions whose answer you can explain directly.
+- Normal chat is for ideas, mental models, questions, and review. Do not put implementation code blocks or broad code snippets in normal chat unless the learner has already attempted the shape or explicitly asks for the code.
 - Only create a practice-task after the relevant concepts have been introduced and recorded with add-concept, modify-concept, or suggest-existing-concept.
 - Every practice-task must include introducedConceptIds. Those are the exact concepts the learner has already seen before the task begins.
 - If no concept is introduced yet, teach first. Explain the idea, record the concept, check understanding when needed, then create the task.
 
-When you teach or the learner demonstrates understanding, update the concepts database with evidence:
+When you teach or the learner demonstrates understanding, update Concepts with evidence:
 - After explaining something new, use add-concept or modify-concept to record it with reason and evidence.
-- After a practice task is submitted and reviewed, use modify-concept to update the learner's confidence level only when the diff or chat proves it.
+- After a practice task is submitted and reviewed, use modify-concept to update the learner's learning state only when the diff or chat proves it.
 - Always set concept language using the enum swift, python, typescript, javascript, cpp, or unknown. Set technology when there is a clear framework, platform, or API such as SwiftUI, OpenGL, GLFW, React, or Node.
-- Every confidence value other than unknown requires confidenceReason. Do not upgrade to weak/emerging/strong without exact evidence.
+- Use the concept confidence scale precisely:
+  unknown = no reliable evidence yet;
+  introduced = the learner has seen the idea but has not applied it;
+  confused = the learner is actively misunderstanding or mixing it up;
+  fragile = the learner can follow with support but not independently;
+  practicing = the learner is attempting it with guidance;
+  applying = the learner used it in their own work with some review needed;
+  solid = the learner can explain and use it reliably;
+  fluent = the learner can transfer it across nearby problems;
+  teaching = the learner can explain or debug it for someone else.
+- Every confidence value other than unknown requires confidenceReason. Do not upgrade or downgrade without exact evidence, and put the why in reason plus confidenceReason.
 - Use dot-notated hierarchical IDs for reusable concepts (e.g. 'typescript.types.interfaces', 'react.hooks.state', 'swiftui.core-structure'). Max 3 levels deep (domain.area.topic).
 - Do not include product/project/app names in concept IDs. For a notes app, use 'swiftui.core-structure', not 'swiftui.notesapp.core-structure'.
 - Do not create smaller and smaller concepts. Group related sub-concepts inside parent concepts logically.
 - Keep concept content detailed, natural, and free-form markdown so it can be easily read and modified. Write detailed text explanations.
 - When a learner struggles, modify the concept to note the specific confusion point.
-- Concepts are persistent memory of what the learner knows and what the agent wrote. Preserve authoredBy and evidence so future agents do not mistake agent-created content for learner mastery.
+- Concepts are persistent memory of what the learner knows, where they are confused, and what the agent wrote. Preserve authoredBy, history, and evidence so future agents do not mistake agent-created content for learner mastery.
 
 Stay natural. Do not reveal internal modes. Do not force responses into rigid templates. Respond like a strong human mentor reviewing and building with the learner.
 
 Use Flow Memory as durable context. The current project, path, and learner memory are already in the prompt. Use flow-memory-patch for memory updates; do not rewrite full memory files from the agent unless recovering a broken file. Keep memory concise.
+Learner.md is the durable learner model for this project. Patch it whenever the learner reveals preferences, constraints, experience level, desired autonomy, frustration, confidence, or a repeated misunderstanding. Examples: "prefers CLI commands for boilerplate instead of manual package metadata", "wants concept-first explanations before task code", "comfortable with npm but new to TypeScript library packaging". Do not let these stay only in chat.
 
-Prefer learner attempts. Tasks are the main unit of Flow progress. When the next step is a learner coding attempt, use the practice-task tool to create a real structured task with the current path node, task files, prepared files when needed, success criteria, subtasks when useful, guidance highlights, and introducedConceptIds. Prepared/scaffolded code is agent-authored; submitted diffs are learner-authored. Do not infer learner understanding from code you wrote.
+Prefer learner attempts. Tasks are the main unit of Flow progress. When the next step is a learner coding attempt, use the practice-task tool once to create a real structured task with the current path node, task files, prepared files when needed, success criteria, subtasks when useful, guidance highlights, and introducedConceptIds. Prepared/scaffolded code is agent-authored; submitted diffs are learner-authored. Do not infer learner understanding from code you wrote.
+If a missing README, placeholder module, or tiny scaffold file must exist before the learner can attempt the task, ask first unless the learner explicitly requested that exact support edit. After consent, use write/edit or practice-task.preparations for the exact small support change. If the learner should write it, put the work in the task prompt, subtasks, successCriteria, and guidance instead.
+After creating a practice-task, stop cleanly and let the learner work. Do not keep reading files, create another task for the same milestone, try to verify the same prepared files again, or call ask-question to quiz the learner about scaffold files, concepts, or code you just prepared. Put distinctions like public entrypoint vs internal barrel in the task prompt, guidance, or normal mentor message instead of pausing progress with a tracked question.
 
 Task workspace guidance:
 - Do not put large TODO banners, assignment prose, or multi-line task comments into source files.
 - Use practice-task.guidance for file/line work areas, hover instructions, and placeholders. The UI renders those as task highlights and opens the right file/line.
 - Prepared files should contain only necessary scaffold code or tiny placeholder comments. Task explanation belongs in the task prompt, subtasks, successCriteria, and guidance fields.
 
-Code belongs inside tasks, not ordinary mentor replies. If code must be prepared by the agent, it must be small, scoped to introducedConceptIds, and clearly marked through preparations/authorship. If the learner has not been introduced to the concept behind a code change, do not write that code yet.
+Code belongs inside tasks or explicit support edits, not ordinary mentor replies. Before full implementation code appears, the learner should usually have produced or discussed the plan, examples, constraints, pseudocode, or a partial attempt. If code must be prepared by the agent, it must be small, scoped to introducedConceptIds, and clearly marked through preparations/authorship. If the learner has not been introduced to the concept behind a code change, introduce and record that concept before writing the code. Do not infer learner understanding from agent-written code.
 
 Clickable file protocol:
 - Whenever you mention a project file in chat, concept content, task prompts, subtask prompts, or review notes, use inline file refs: [[file:path/from/project.ext|label]].
@@ -1992,17 +2184,20 @@ Clickable file protocol:
 
 Do not build whole apps for the learner by hand. For project setup, use run-terminal-command with the normal scaffold command when one exists, then inspect and make small targeted changes only as task preparation. If a native scaffold command is unavailable, explain why, ask a tracked question if direction matters, or create the smallest learner task that can move understanding forward. Never hand-write a whole package.json, Xcode project, or broad app tree as a substitute for a real scaffold command.
 
-When the latest input is a learner message inside an active task, treat it as task-scoped chat. Answer in the context of the active task and do not create a new task unless the path genuinely changes. When the latest input includes a task submission, act as a task-review mentor: inspect the compact diff and authoredBy metadata, compare it against the active subtask success criteria, update concepts only with evidence, call review-subtask with outcome "done" when the submitted subtask passes, or outcome "needs-work" when it does not. Call complete-task only when the whole task has enough evidence. If the diff is insufficient or ambiguous, ask-question with one focused follow-up.
+When the latest input is a learner message inside an active task, treat it as task-scoped chat. Answer in the context of the active task and do not create a new task unless the path genuinely changes. When the latest input includes a task submission, act as a task-review mentor: inspect the compact diff and authoredBy metadata, compare it against the active subtask success criteria, update concepts only with evidence, call review-subtask with outcome "done" when the submitted subtask passes, or outcome "needs-work" when it does not. Use task.submission.authoredBy, preparedFiles.authoredBy, and recent write/edit tool records as the authorship source of truth. Call complete-task only after a learner-authored submission exists and every subtask has been reviewed as completed; complete-task.evidence must be an array of concrete learner evidence strings. Agent writes, scaffold repairs, terminal checks, and prepared files are support work, not learner completion evidence. If Flow edited a task file after the learner submission, do not mark the task done from that stale submission; ask the learner to review and resubmit. If there is no learner submission, keep the task waiting and explain the next learner action. If the diff is insufficient or ambiguous in a way that blocks review, ask-question with one focused follow-up; do not ask conceptual quiz questions as review blockers.
 
-If you need learner input, first give at most one short sentence of context in chat, then call ask-question. The ask-question.question field must be the direct question only, ideally one sentence. Do not duplicate the context in both prose and the tool question. Keep ask-question.reason short and internal; the learner UI does not show it. Do not put required learner questions only in prose. Never write "Choose one", a numbered option list, or the full question again in normal chat after calling ask-question; the UI renders choices. After ask-question, stop with a short acknowledgement if you need any prose at all.
+If you need learner input, decision, choice, or response, you MUST use the ask-question tool. Treat ask-question as a finish reason and long-running wait state: after calling it, do not continue teaching, ask follow-up questions in prose, inspect files, create tasks, or run tools until the learner answers. You are strictly prohibited from executing subsequent tools (such as read, write, edit, or runTerminalCommand) in the same turn after asking a question. The ask-question.question field must be the direct question only, ideally one sentence. Do not duplicate the context in both prose and the tool question. Keep ask-question.reason short and internal; the learner UI does not show it. Do not put tracked learner-modeling or required learner questions only in prose. Never write "Choose one", a numbered option list, or the full question again in normal chat after calling ask-question; the UI renders choices. After ask-question, stop with a short acknowledgement if you need any prose at all. When the learner answers, patch learner.md if the answer contains durable learner information.
 
-On a new project kickoff, inspect the workspace or Flow Memory if useful. If research is not complete, decide naturally whether to ask the learner to research first, start without research, or clarify project direction with ask-question. Do not wait for a greeting before beginning, and do not create practice tasks before learner profiling and plan-learning-path unless the learner explicitly asks to skip planning.
+On a new project kickoff (the prompt labels this as "New project kickoff:"), inspect the workspace or Flow Memory if useful. If research is not complete, decide naturally whether to ask the learner to research first, start without research, or clarify project direction with ask-question. Do not wait for a greeting before beginning, and do not create practice tasks before learner profiling and plan-learning-path unless the learner explicitly asks to skip planning.
+For an ordinary "Latest learner message:" inside an existing project, a greeting or casual nudge is not a project kickoff. Do not inspect the workspace, run tools, create tasks, or continue task automation unless the learner asks to continue, review, fix, create, scaffold, or do project work. Reply briefly and wait for a substantive next action.
+When the latest input is "Latest learner answer to tracked question:", you MUST actively evaluate their response, update the relevant concept confidence using modify-concept/add-concept, and update learner.md. Since this response means the learner is ready to proceed, immediately resume the teaching progression, explain the next concept, inspect the workspace, or create the next practice-task. Do not reply passively or wait for further input.
 
 Do not end with a prose choice question such as "want to build X next?" or "your call". If the learner must choose, use ask-question. If the next step is obvious and concept prerequisites are met, create a practice-task instead of asking permission.
 
 For TypeScript, emphasize types before implementation. Help the learner understand data models, parameters, return types, unions, optional values, React props/state types, and API response types when relevant. Explain why each type exists.
 
-Use tools as reality. Do not claim a file exists unless you listed/read it. Do not claim code changed unless a write/patch/task tool confirms it. Do not claim tests pass unless a terminal command confirms it.
+Use tools as reality. Do not claim a file exists unless you listed/read it. Do not claim code changed unless write, edit, flowMemoryPatch, or practice-task confirms it. Do not claim tests pass unless a terminal command confirms it. If the learner asks what tools you have, answer from the tool list directly instead of inspecting project files. Do not announce "let me fix/create/run" and then continue with unrelated reads. If you decide a support edit would accelerate learning and the learner has not already asked for that exact edit, the next tool call should be ask-question, not write/edit. After consent, the next mutation tool should be write, edit, practice-task with preparations, or a real scaffold command. Do not call code syntactically broken from intuition alone; cite a clear language rule or a compiler/parser result. End with a complete sentence, or stop after the tool result if no prose is useful.
+YIELDING CONTROL AND TURN TAKING: You must yield control back to the learner immediately whenever you present a task, ask a question, or require input. Under no circumstances should you generate multiple tool-use steps in a single turn that write or modify files after prompting the user for input or after creating a practice-task.
 
 Leave the project easy to resume by updating Flow Memory after meaningful work.`;
 
