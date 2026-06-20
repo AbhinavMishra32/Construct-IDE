@@ -69,7 +69,8 @@ import {
   runConstructInteract,
   updateProject,
   verifyRecall,
-  writeFile
+  writeFile,
+  onFileChanged
 } from "../lib/bridge";
 import { currentBlock, emptyBlockAssistance, nextPosition } from "../lib/runtime";
 import {
@@ -141,7 +142,8 @@ export function Workspace({
     deleteFileFn: (path: string) => Promise<void>,
     renameFileFn: (oldPath: string, newPath: string) => Promise<void>,
     createFolderFn: (path: string) => Promise<void>,
-    duplicateFileFn: (path: string, destPath: string) => Promise<void>
+    duplicateFileFn: (path: string, destPath: string) => Promise<void>,
+    refreshTreeFn: () => Promise<void>
   ) => void;
   onSavingChange?: (saving: boolean) => void;
   activeRightSlotId: string;
@@ -447,6 +449,20 @@ export function Workspace({
 
   useEffect(() => {
     void refreshTree();
+
+    const handleFocus = () => {
+      void refreshTree();
+    };
+
+    window.addEventListener("focus", handleFocus);
+    const unsubscribe = onFileChanged(() => {
+      void refreshTree();
+    });
+
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      unsubscribe();
+    };
   }, [project.id]);
 
   useEffect(() => {
@@ -529,6 +545,9 @@ export function Workspace({
       },
       async (path: string, destPath: string) => {
         await duplicateWorkspaceFile(path, destPath);
+      },
+      async () => {
+        await refreshTree();
       }
     );
   }, [tree, activeFilePath, relevantPath, onTreeChange]);

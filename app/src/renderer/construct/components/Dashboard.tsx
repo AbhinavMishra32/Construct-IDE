@@ -7,7 +7,6 @@ import {
   Plus,
   RotateCcw,
   Settings,
-  Sparkles,
   TerminalSquare
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -85,7 +84,7 @@ export function Dashboard({
                     type="button"
                     onClick={() => onOpenProject(nextProject.id)}
                   >
-                    <IconTile><Sparkles size={18} /></IconTile>
+                    <IconTile><BookOpen size={18} /></IconTile>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-medium">{nextProject.title}</span>
                       <span className="block truncate text-xs text-muted-foreground">{describeNextWork(nextProject)}</span>
@@ -158,7 +157,7 @@ export function Dashboard({
                   />
                 ))}
                 {completedProjects.length === 0 ? (
-                  <EmptyState icon={<Sparkles size={18} />} title="No completed projects" description="Finished projects will settle here." />
+                  <EmptyState icon={<CheckCircle2 size={18} />} title="No completed projects" description="Finished projects will settle here." />
                 ) : null}
               </CardContent>
             </Card>

@@ -16,9 +16,14 @@ import {
   ShadcnDialogHeader,
   ShadcnDialogTitle,
   Input,
+  Switch,
+  Textarea,
 } from "@opaline/ui";
 import type { AgentActivityEntry } from "@opaline/ui";
 
+import type {
+  ConstructFlowProjectSettings
+} from "../../../shared/constructFlow";
 import { applyConstructPatch } from "../compiler/patches";
 import { validateConstructSource } from "../compiler/pipeline";
 import { parseConstructDocument } from "../compiler/parser";
@@ -28,6 +33,7 @@ import { createFlowProject, getSettings, openConstructFile, selectWorkspaceDirec
 import { parseConstructSource } from "../lib/parser";
 import { createProjectFromConstructFile } from "../lib/projectStore";
 import type { AnyProjectRecord, ConstructProgram } from "../types";
+import { cn } from "../../lib/utils";
 import { ValidationPanel, type ValidationStage } from "./project-create/ValidationPanel";
 
 type SelectedConstructFile = {
@@ -47,6 +53,19 @@ const initialStages: ValidationStage[] = [
   { id: "final", title: "Final validation", detail: "The runtime parser is the final project gate.", status: "pending" }
 ];
 
+const defaultFlowProjectSettings: ConstructFlowProjectSettings = {
+  projectType: "agent",
+  codebaseState: "empty",
+  projectPhase: "build",
+  setupScope: "standard",
+  packageManager: "auto",
+  testStrategy: "unit",
+  docsLevel: "standard",
+  gitStrategy: "initialize",
+  agentEdits: "ask",
+  openWorkspace: true
+};
+
 export function NewProjectDialog({ open, onOpenChange, onProjectCreated }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -58,7 +77,7 @@ export function NewProjectDialog({ open, onOpenChange, onProjectCreated }: {
   const [flowGoal, setFlowGoal] = useState("");
   const [flowStackPreference, setFlowStackPreference] = useState("");
   const [flowResearchFirst, setFlowResearchFirst] = useState(true);
-  const [flowCreationStage, setFlowCreationStage] = useState<"idle" | "memory" | "research" | "opening">("idle");
+  const [flowCreationStage, setFlowCreationStage] = useState<"idle" | "memory" | "opening">("idle");
   const [workspacePath, setWorkspacePath] = useState("");
   const [initializeGit, setInitializeGit] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -117,23 +136,23 @@ export function NewProjectDialog({ open, onOpenChange, onProjectCreated }: {
   }
 
   async function createFlow() {
-    if (!flowTitle.trim() || !flowGoal.trim()) return;
+    const goal = flowGoal.trim();
+    if (!goal) return;
     try {
       setBusy(true);
       setError(null);
       setFlowCreationStage("memory");
       await visualBeat(220);
-      if (flowResearchFirst) {
-        setFlowCreationStage("research");
-      }
+      const title = flowTitle.trim() || inferFlowTitle(goal);
       const project = await createFlowProject({
-        title: flowTitle.trim(),
-        goal: flowGoal.trim(),
+        title,
+        goal,
         workspacePath: workspacePath.trim() || undefined,
         stackPreference: flowStackPreference.trim() || undefined,
         researchFirst: flowResearchFirst,
         autonomyPreference: "balanced",
-        permissionsPreference: "ask"
+        permissionsPreference: defaultFlowProjectSettings.agentEdits,
+        projectSettings: defaultFlowProjectSettings
       });
       setFlowCreationStage("opening");
       onProjectCreated(project);
@@ -234,15 +253,24 @@ export function NewProjectDialog({ open, onOpenChange, onProjectCreated }: {
 
   return (
     <ShadcnDialog open={open} onOpenChange={(nextOpen) => { onOpenChange(nextOpen); if (!nextOpen) reset(); }}>
-      <ShadcnDialogContent className={`${rawEditing ? "max-w-4xl" : "max-w-2xl"} flex max-h-[88vh] flex-col overflow-hidden rounded-[10px]`}>
+      <ShadcnDialogContent
+        className={cn(
+          "flex flex-col overflow-hidden rounded-[10px]",
+          rawEditing
+            ? "h-[min(90vh,58rem)] w-[min(94vw,64rem)] max-w-none"
+            : flowMode
+              ? "h-[min(84vh,48rem)] w-[min(98vw,76rem)] max-w-none sm:max-w-none"
+              : "max-h-[88vh] max-w-2xl"
+        )}
+      >
         <ShadcnDialogHeader className="shrink-0">
           <span className="mb-1 flex size-8 items-center justify-center rounded-[8px] bg-muted text-muted-foreground"><ProjectorScreenChart size={18} weight="duotone" /></span>
           <div>
             <ShadcnDialogTitle>{selectedFile ? "Create project" : flowMode ? "New Flow project" : "New project"}</ShadcnDialogTitle>
-            <ShadcnDialogDescription>{selectedFile ? "Construct checks and safely repairs the tape before opening it." : flowMode ? "Create a loose coding mentor workspace with Flow Memory and agent tools." : "Create a Flow workspace or import a .construct tape."}</ShadcnDialogDescription>
+            <ShadcnDialogDescription>{selectedFile ? "Construct checks and safely repairs the tape before opening it." : flowMode ? "Set the project intent and startup controls." : "Create a Flow workspace or import a .construct tape."}</ShadcnDialogDescription>
           </div>
         </ShadcnDialogHeader>
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto py-1 pr-1">
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto py-1 pr-1">
           {!selectedFile && !flowMode ? (
             <div className="grid gap-3 sm:grid-cols-2">
               <Card className="cursor-pointer bg-card/70 shadow-none transition-colors hover:bg-muted/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40" size="sm" role="button" tabIndex={busy ? -1 : 0} onClick={() => { if (!busy) setFlowMode(true); }} onKeyDown={(event) => { if (!busy && (event.key === "Enter" || event.key === " ")) setFlowMode(true); }}>
@@ -255,44 +283,50 @@ export function NewProjectDialog({ open, onOpenChange, onProjectCreated }: {
               </Card>
             </div>
           ) : flowMode ? (
-            <div className="space-y-4">
-              <Card className="bg-card/70 shadow-none" size="sm">
-                <CardContent className="space-y-4">
-                  <label className="space-y-2">
-                    <span className="text-sm font-medium">Title</span>
-                    <Input value={flowTitle} onChange={(event) => setFlowTitle(event.target.value)} placeholder="Passkeys from scratch" />
-                  </label>
-                  <label className="space-y-2">
-                    <span className="text-sm font-medium">Goal</span>
-                    <textarea
-                      className="min-h-24 w-full resize-none rounded-[8px] border bg-background/70 px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-                      value={flowGoal}
-                      onChange={(event) => setFlowGoal(event.target.value)}
-                      placeholder="Build a small WebAuthn/passkey auth flow while understanding the TypeScript types."
-                    />
-                  </label>
-                  <label className="space-y-2">
-                    <span className="text-sm font-medium">Stack preference</span>
-                    <Input value={flowStackPreference} onChange={(event) => setFlowStackPreference(event.target.value)} placeholder="Next.js, TypeScript, Express, existing repo..." />
-                  </label>
-                  <label className="space-y-2">
-                    <span className="text-sm font-medium">Workspace folder</span>
-                    <div className="flex gap-2">
-                      <Input className="min-w-0 flex-1" value={workspacePath} onChange={(event) => setWorkspacePath(event.target.value)} placeholder="Leave empty to create in Construct workspaces" />
-                      <Button variant="secondary" type="button" onClick={() => void chooseWorkspaceDirectory()}><FolderOpen size={16} weight="duotone" />Browse</Button>
-                    </div>
-                  </label>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input className="size-4 rounded border" type="checkbox" checked={flowResearchFirst} onChange={(event) => setFlowResearchFirst(event.target.checked)} />
-                    <span>Research project/domain first</span>
-                  </label>
-                </CardContent>
-              </Card>
+            <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,0.65fr)]">
+              <div className="flex min-h-0 flex-col gap-4 rounded-[8px] border bg-card/70 p-4">
+                <label className="flex min-w-0 flex-col gap-2">
+                  <span className="text-sm font-medium">Title</span>
+                  <Input
+                    value={flowTitle}
+                    onChange={(event) => setFlowTitle(event.target.value)}
+                    placeholder={flowGoal.trim() ? inferFlowTitle(flowGoal) : "TypeScript Agent Framework"}
+                  />
+                </label>
+                <label className="flex min-h-0 flex-1 flex-col gap-2">
+                  <span className="text-sm font-medium">Project intent</span>
+                  <Textarea
+                    className="min-h-56 flex-1 resize-none"
+                    value={flowGoal}
+                    onChange={(event) => setFlowGoal(event.target.value)}
+                    placeholder="I am making a TypeScript agent framework from scratch."
+                  />
+                </label>
+              </div>
+              <div className="flex min-h-0 flex-col gap-4">
+                <div className="flex items-center justify-between gap-4 rounded-[8px] border bg-card/70 p-4">
+                  <div className="min-w-0">
+                    <h3 className="truncate text-sm font-semibold">Research</h3>
+                    <p className="text-xs text-muted-foreground">Let Flow research the project before the mentor starts.</p>
+                  </div>
+                  <Switch checked={flowResearchFirst} onCheckedChange={setFlowResearchFirst} />
+                </div>
+                <label className="flex min-h-0 flex-1 flex-col gap-2 rounded-[8px] border bg-card/70 p-4">
+                  <span className="text-sm font-medium">Extra context</span>
+                  <Textarea
+                    className="min-h-52 flex-1 resize-none"
+                    value={flowStackPreference}
+                    onChange={(event) => setFlowStackPreference(event.target.value)}
+                    placeholder="Use Next.js, keep it local-first, teach architecture before implementation, avoid a backend for now."
+                  />
+                </label>
+              </div>
               {busy && flowCreationStage !== "idle" ? (
                 <AgentThinking
+                  className="lg:col-span-2"
                   state="thinking"
                   label={flowCreationLabel(flowCreationStage)}
-                  content={<AgentActivityList entries={flowCreationEntries(flowCreationStage, flowResearchFirst)} />}
+                  content={<AgentActivityList entries={flowCreationEntries(flowCreationStage)} />}
                 />
               ) : null}
             </div>
@@ -312,13 +346,22 @@ export function NewProjectDialog({ open, onOpenChange, onProjectCreated }: {
         <ShadcnDialogFooter className="shrink-0">
           <Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
           {flowMode ? (
-            <Button disabled={!flowTitle.trim() || !flowGoal.trim() || busy} onClick={() => void createFlow()}>{busy ? "Creating Flow..." : "Start Flow"}</Button>
+            <Button disabled={!flowGoal.trim() || busy} onClick={() => void createFlow()}>{busy ? "Creating Flow..." : "Start Flow"}</Button>
           ) : null}
           {selectedFile && !rawEditing ? <Button disabled={!selectedFile.validation.valid || !selectedFile.program || !workspacePath.trim() || busy} onClick={() => void createProject()}>{busy ? "Creating project..." : "Start project"}</Button> : null}
         </ShadcnDialogFooter>
       </ShadcnDialogContent>
     </ShadcnDialog>
   );
+}
+
+function inferFlowTitle(goal: string): string {
+  const stripped = goal
+    .replace(/^i\s*(am|'m)?\s*(making|building|creating|working on)\s+/i, "")
+    .replace(/^a\s+/i, "")
+    .trim();
+  const words = stripped.split(/\s+/).filter(Boolean).slice(0, 7);
+  return words.length ? words.map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ") : "Flow Project";
 }
 
 function finalizeStages(result: ConstructValidationResult): ValidationStage[] {
@@ -337,13 +380,12 @@ function updateStage(stages: ValidationStage[], id: string, status: ValidationSt
   return stages.map((stage) => stage.id === id ? { ...stage, status, detail } : stage);
 }
 
-function flowCreationLabel(stage: "idle" | "memory" | "research" | "opening"): string {
-  if (stage === "research") return "Researching Flow project";
-  if (stage === "opening") return "Opening Flow workspace";
+function flowCreationLabel(stage: "idle" | "memory" | "opening"): string {
+  if (stage === "opening") return "Finishing Flow project";
   return "Creating Flow project";
 }
 
-function flowCreationEntries(stage: "idle" | "memory" | "research" | "opening", researchFirst: boolean): AgentActivityEntry[] {
+function flowCreationEntries(stage: "idle" | "memory" | "opening"): AgentActivityEntry[] {
   return [
     {
       id: "memory",
@@ -352,14 +394,8 @@ function flowCreationEntries(stage: "idle" | "memory" | "research" | "opening", 
       status: stage === "memory" ? "active" : "complete"
     },
     {
-      id: "research",
-      title: "Run Flow Research Agent",
-      detail: researchFirst ? "Preparing concise project/domain background." : "Skipped by project setting.",
-      status: researchFirst ? (stage === "research" ? "active" : stage === "opening" ? "complete" : "pending") : "complete"
-    },
-    {
       id: "opening",
-      title: "Open Flow workspace",
+      title: "Finish Flow project",
       detail: "Preparing the natural mentor workspace.",
       status: stage === "opening" ? "active" : "pending"
     }

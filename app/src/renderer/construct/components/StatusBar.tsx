@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { GitBranch, Loader2, Activity, Sun, Moon, Sparkles, CheckCircle2, Power } from "lucide-react";
+import { GitBranch, Loader2, Activity, Sun, Moon, Cpu, CheckCircle2, Power } from "lucide-react";
 import { apiTracker, type ActiveCall } from "../lib/apiTracker";
 import { litellmStatus, onLitellmStatusChange } from "../lib/bridge";
 import type { LitellmState } from "../types";
@@ -175,7 +175,7 @@ export function StatusBar({ theme, onThemeChange }: StatusBarProps) {
           className="flex h-full cursor-default items-center gap-1 rounded-[6px] px-1.5 transition-colors duration-150 hover:bg-accent hover:text-accent-foreground"
           title={`Active Provider: ${providerLabel}\nModel: ${modelRaw}`}
         >
-          <Sparkles size={11} className="text-amber-500 stroke-[2.5px]" />
+          <Cpu size={11} className="text-amber-500 stroke-[2.5px]" />
           <span>{providerLabel}: {formattedModel}</span>
         </div>
 

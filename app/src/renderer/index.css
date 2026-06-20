@@ -299,20 +299,94 @@ html, body {
     transform: translateY(0);
   }
 
-  .construct-flow-session [data-component="agent-session-timeline"] {
-    padding-top: 0.75rem;
+  /* ── Flow composer question / default crossfade transition ── */
+
+  .construct-flow-composer-transition {
+    position: relative;
   }
 
+  .construct-flow-composer-question-accordion {
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    transform: translateY(0.375rem) scale(0.995);
+    transition:
+      grid-template-rows 420ms cubic-bezier(0.16, 0.84, 0.22, 1),
+      opacity 320ms ease,
+      transform 420ms cubic-bezier(0.16, 0.84, 0.22, 1);
+  }
+
+  .construct-flow-composer-question-accordion > * {
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .construct-flow-composer-question-accordion.is-open > * {
+    overflow: visible;
+  }
+
+  .construct-flow-composer-question-accordion.is-open {
+    grid-template-rows: 1fr;
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  .construct-flow-composer-default {
+    transition:
+      opacity 420ms cubic-bezier(0.16, 0.84, 0.22, 1),
+      transform 420ms cubic-bezier(0.16, 0.84, 0.22, 1),
+      max-height 420ms cubic-bezier(0.16, 0.84, 0.22, 1);
+    opacity: 1;
+    transform: translateY(0);
+    max-height: 300px;
+    overflow: visible;
+  }
+
+  .construct-flow-composer-default.is-hidden {
+    opacity: 0;
+    transform: translateY(-0.25rem);
+    max-height: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  .construct-flow-composer {
+    max-width: min(46rem, calc(100% - 0.75rem)) !important;
+    border-radius: 1.25rem !important;
+  }
+
+  .construct-flow-composer textarea {
+    min-height: 3.25rem !important;
+    max-height: 7rem !important;
+    padding: 0.625rem 1rem 0.125rem !important;
+  }
+
+  .construct-flow-composer > div:last-child {
+    gap: 0.375rem;
+    padding: 0 0.375rem 0.375rem 0.5rem;
+  }
+
+  [data-component="agent-session-timeline"] [data-slot="text-part-body"],
+  [data-component="agent-session-timeline"] [data-slot="user-message-text"],
   .construct-flow-session [data-slot="text-part-body"],
   .construct-flow-session [data-slot="user-message-text"] {
-    font-size: 0.8125rem;
+    font-size: 0.75rem;
     line-height: 1.55;
   }
 
+  [data-component="agent-session-timeline"] [data-slot="text-part-body"] .text-sm,
+  [data-component="agent-session-timeline"] [data-slot="user-message-text"] .text-sm,
   .construct-flow-session [data-slot="text-part-body"] .text-sm,
   .construct-flow-session [data-slot="user-message-text"] .text-sm {
-    font-size: 0.8125rem;
+    font-size: 0.75rem;
     line-height: 1.55;
+  }
+
+  [data-component="agent-session-timeline"] textarea,
+  .construct-flow-session textarea,
+  .opaline-agent-session-compose textarea {
+    font-size: 0.75rem !important;
+    line-height: 1.5 !important;
   }
 
   .construct-flow-session [data-component="session-turn"] > [data-slot="session-turn-content"] > [data-slot="session-turn-message-container"] {
@@ -455,7 +529,9 @@ html, body {
     }
 
     .construct-floating-task-card__details,
-    .construct-flow-accordion__content {
+    .construct-flow-accordion__content,
+    .construct-flow-composer-question-accordion,
+    .construct-flow-composer-default {
       transition-duration: 1ms !important;
     }
   }

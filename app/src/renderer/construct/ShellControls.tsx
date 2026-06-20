@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { GearSix, Notebook } from "@phosphor-icons/react";
+import { BookOpenIcon } from "lucide-react";
 import { Button, Spinner } from "@opaline/ui";
 
 
@@ -48,6 +49,15 @@ export function SidebarLearningButton({ onClick }: { onClick: () => void }) {
     <Button className="w-full justify-start" onClick={onClick} variant="ghost">
       <Notebook data-icon="inline-start" weight="duotone" />
       <span>Context</span>
+    </Button>
+  );
+}
+
+export function SidebarConceptsButton({ onClick }: { onClick: () => void }) {
+  return (
+    <Button className="w-full justify-start" onClick={onClick} variant="ghost">
+      <BookOpenIcon data-icon="inline-start" />
+      <span>Concepts</span>
     </Button>
   );
 }

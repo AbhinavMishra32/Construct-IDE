@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, Code2, Copy, Globe2, Lightbulb, Sparkles } from "lucide-react";
+import { Check, Code2, Copy, Globe2, Lightbulb } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AgentActivityList,
@@ -123,7 +123,7 @@ export function SelectionExplanationController({
       title: entry.message,
       detail: entry.detail,
       status: logStatus(entry.status),
-      icon: entry.tool === "web" ? <Globe2 size={12} /> : entry.tool === "codebase" ? <Code2 size={12} /> : <Sparkles size={12} />
+      icon: entry.tool === "web" ? <Globe2 size={12} /> : entry.tool === "codebase" ? <Code2 size={12} /> : <Lightbulb size={12} />
     }));
   }, [logs, stage]);
 

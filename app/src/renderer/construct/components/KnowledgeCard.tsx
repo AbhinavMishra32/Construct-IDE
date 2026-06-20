@@ -31,7 +31,7 @@ export function KnowledgeCard({
 
   return (
     <section
-      className="opaline-overlay-shadow flex h-full min-h-0 w-full flex-col overflow-hidden rounded-[var(--opaline-radius-lg)] border border-border/80 bg-popover/92 text-sm text-popover-foreground backdrop-blur-xl backdrop-saturate-150"
+      className="opaline-overlay-shadow flex h-full min-h-0 w-full flex-col overflow-hidden rounded-[18px] border border-border/80 bg-popover/92 text-sm text-popover-foreground backdrop-blur-xl backdrop-saturate-150"
       data-construct-explainable="concept-card"
       data-construct-explainable-label={concept.title}
       data-saved={saved ? "true" : "false"}

@@ -1,6 +1,6 @@
 import { AgentActivityList, AgentSuggestion, AgentThinking, Button } from "@opaline/ui";
 import type { AgentActivityEntry } from "@opaline/ui";
-import { AlertCircle, FileCode2, Sparkles } from "lucide-react";
+import { AlertCircle, FileCode2, Lightbulb } from "lucide-react";
 
 import type { AuthoringSuggestion } from "../../compiler/semantic-review";
 import type { ConstructFix, ConstructValidationResult } from "../../compiler/types";
@@ -69,7 +69,7 @@ export function ValidationPanel({
 
       {suggestions.length > 0 || authoringSuggestions.length > 0 ? (
         <section className="space-y-2 border-t pt-3">
-          <header className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><Sparkles size={14} /><span>Optional suggestions</span></header>
+          <header className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><Lightbulb size={14} /><span>Optional suggestions</span></header>
           {suggestions.map((fix) => (
             <AgentSuggestion key={fix.id} title={fix.title} description={fix.description} onAction={() => onApplyFix(fix)} />
           ))}
@@ -79,7 +79,7 @@ export function ValidationPanel({
         </section>
       ) : result.valid ? (
         <button className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50" type="button" disabled={reviewing} onClick={onRunSemanticReview}>
-          <Sparkles size={13} />{reviewing ? "Reviewing teaching flow…" : "Review teaching flow"}
+          <Lightbulb size={13} />{reviewing ? "Reviewing teaching flow…" : "Review teaching flow"}
         </button>
       ) : null}
 

@@ -1,5 +1,5 @@
 import { AnimatePresence, motion, useDragControls } from "framer-motion";
-import { Expand, Sparkles, X } from "lucide-react";
+import { Expand, Lightbulb, X } from "lucide-react";
 import type { HTMLAttributes, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -134,7 +134,7 @@ export function SelectionDropdown({
               }}
             >
               <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
-                <Sparkles size={14} />
+                <Lightbulb size={14} />
               </span>
               <div className="min-w-0 flex-1">
                 {eyebrow ? (

@@ -18,6 +18,7 @@ import {
   FolderPen,
   Trash2,
   Clipboard,
+  RotateCw,
 } from "lucide-react";
 
 import type { WorkspaceTreeNode } from "../types";
@@ -80,6 +81,7 @@ export function FileTree({
   onRenameFile,
   onCreateFolder,
   onDuplicateFile,
+  onRefresh,
 }: {
   nodes: WorkspaceTreeNode[];
   activePath: string | null;
@@ -90,6 +92,7 @@ export function FileTree({
   onRenameFile?: (oldPath: string, newPath: string) => Promise<void>;
   onCreateFolder?: (path: string) => Promise<void>;
   onDuplicateFile?: (path: string, destPath: string) => Promise<void>;
+  onRefresh?: () => void;
 }) {
   const [expandedPaths, setExpandedPaths] = useState<Record<string, boolean>>({});
   const [copiedPath, setCopiedPath] = useState<string | null>(null);
@@ -453,6 +456,17 @@ export function FileTree({
       <div className="flex h-8 shrink-0 items-center justify-between border-b px-2.5">
         <span className="text-[13px] font-medium">Explorer</span>
         <div className="flex items-center gap-0.5">
+          {onRefresh ? (
+            <button
+              className="flex size-6 items-center justify-center rounded-[7px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              type="button"
+              onClick={onRefresh}
+              title="Refresh Explorer"
+              aria-label="Refresh Explorer"
+            >
+              <RotateCw size={13} className="text-muted-foreground hover:text-foreground transition-colors" />
+            </button>
+          ) : null}
           {onCreateFile ? (
             <button
               className="flex size-6 items-center justify-center rounded-[7px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
