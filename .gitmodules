@@ -1,3 +1,6 @@
 [submodule "opaline"]
 	path = opaline
 	url = https://github.com/AbhinavMishra32/open-shell.git
+[submodule "private/construct-cloud-backend"]
+	path = private/construct-cloud-backend
+	url = https://github.com/AbhinavMishra32/construct-cloud-backend.git
