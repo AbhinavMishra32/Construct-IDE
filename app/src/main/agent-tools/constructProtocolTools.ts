@@ -44,6 +44,7 @@ export type ConstructProtocolToolsOptions = {
   tavilyApiKey?: string;
   allowWorkspaceMutation?: boolean;
   allowTerminalCommands?: boolean;
+  terminalCommandMode?: "workspace" | "validation-only";
   onToolCallStart?: ConstructProtocolToolCallSink;
   onToolCall?: ConstructProtocolToolCallSink;
 };
@@ -904,7 +905,7 @@ async function runCommand(
   if (!options.allowTerminalCommands) {
     throw new Error("Terminal commands are not allowed for this agent run.");
   }
-  const safety = commandSafety(command);
+  const safety = commandSafety(command, options.terminalCommandMode ?? "workspace");
   if (!safety.allowed) {
     return {
       status: "blocked",
@@ -1156,9 +1157,21 @@ async function listProjectFiles(
   return files;
 }
 
-function commandSafety(command: string): { allowed: true } | { allowed: false; reason: string } {
+function commandSafety(
+  command: string,
+  mode: NonNullable<ConstructProtocolToolsOptions["terminalCommandMode"]>
+): { allowed: true } | { allowed: false; reason: string } {
   const normalized = command.trim().toLowerCase();
+  if (mode === "validation-only" && /(?:^|[;&|]\s*)(?:rm|unlink|mv|truncate|touch|mkdir|rmdir)\b/.test(normalized)) {
+    return { allowed: false, reason: "Validation terminal mode blocks commands that modify or delete workspace files." };
+  }
   const risky = [
+    /\brm\b/,
+    /\bunlink\b/,
+    /\bmv\b/,
+    /\btruncate\b/,
+    /\bgit\s+(?:reset|clean)\b/,
+    /\bgit\s+(?:checkout|restore)\s+--\b/,
     /\brm\s+-[^&|;]*r/,
     /\bsudo\b/,
     /\bchmod\s+-r\b/,
