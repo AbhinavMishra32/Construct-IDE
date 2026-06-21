@@ -2468,55 +2468,6 @@ function truncateModelText(value: string, maxChars: number): string {
   return `${trimmed.slice(0, maxChars).trimEnd()}\n[truncated ${trimmed.length - maxChars} chars]`;
 }
 
-function visibleFlowActivityForModel(session: ConstructFlowSession): string {
-  const lines: string[] = [];
-  if (session.contextCompaction?.status === "completed" && session.contextCompaction.summary) {
-    lines.push(`Visible compaction: summarized ${session.contextCompaction.summarizedMessageCount} older chat messages and preserved ${session.contextCompaction.preservedMessageCount} recent messages.`);
-  }
-  for (const toolCall of session.toolCalls) {
-    if (toolCall.name === "ask-question" || toolCall.name === "askQuestion") {
-      const question = readAskQuestionPayload(toolCall.input, toolCall.outputPreview).question || toolCall.title;
-      lines.push(toolCall.response
-        ? `Visible question answered: ${question}\nLearner answer: ${toolCall.response.answer}`
-        : `Visible question waiting: ${question}`);
-      continue;
-    }
-    if (toolCall.name === "practice-task") {
-      const input = typeof toolCall.input === "object" && toolCall.input !== null ? toolCall.input as Record<string, unknown> : {};
-      lines.push(`Visible practice task ${toolCall.status}: ${readStringValue(input.title) ?? toolCall.title}`);
-      continue;
-    }
-    if (toolCall.name === "add-concept" || toolCall.name === "modify-concept" || toolCall.name === "remove-concept" || toolCall.name === "suggest-existing-concept") {
-      const input = typeof toolCall.input === "object" && toolCall.input !== null ? toolCall.input as Record<string, unknown> : {};
-      lines.push(`Visible concept ${toolCall.status}: ${toolCall.name} ${readStringValue(input.id) ?? readStringValue(input.title) ?? toolCall.title}`);
-      continue;
-    }
-    if (toolCall.name === "flow-memory-patch" || toolCall.name === "flow-memory-update") {
-      lines.push(`Visible memory update ${toolCall.status}: ${toolCall.title}`);
-    }
-  }
-  return lines.length ? `Visible Flow transcript events:\n${lines.map((line) => `- ${line}`).join("\n")}` : "";
-}
-
-function readAskQuestionPayload(input: unknown, outputPreview?: string): { question?: string; choices?: string[] } {
-  let parsedOutput: Record<string, unknown> | undefined;
-  if (outputPreview) {
-    try {
-      const parsed = JSON.parse(outputPreview) as unknown;
-      if (typeof parsed === "object" && parsed !== null) {
-        parsedOutput = parsed as Record<string, unknown>;
-      }
-    } catch {
-      parsedOutput = undefined;
-    }
-  }
-  const source = parsedOutput ?? (typeof input === "object" && input !== null ? input as Record<string, unknown> : {});
-  return {
-    question: readStringValue(source.question),
-    choices: Array.isArray(source.choices) ? source.choices.filter((choice): choice is string => typeof choice === "string") : undefined
-  };
-}
-
 function readStringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
