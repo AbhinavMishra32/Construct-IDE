@@ -1,4 +1,4 @@
-import type { ConstructAgentContextWindow, ConstructAgentRunEvent } from "./constructLearning";
+import type { ConstructAgentContextWindow, ConstructAgentRunEvent, ConstructConceptLanguage } from "./constructLearning";
 
 export type FlowMemoryFileName = "research.md" | "project.md" | "path.md" | "learner.md";
 
@@ -174,6 +174,7 @@ export type ConstructFlowPracticeTask = {
   projectId: string;
   sessionId: string;
   pathNodeId?: string;
+  language?: ConstructConceptLanguage;
   title: string;
   prompt: string;
   focus?: {
@@ -190,6 +191,15 @@ export type ConstructFlowPracticeTask = {
   taskFiles?: string[];
   conceptIds?: string[];
   introducedConceptIds?: string[];
+  learnerReadiness?: Array<{
+    conceptId: string;
+    evidence: string;
+    source: "learner-chat" | "learner-task-submission" | "existing-concept-evidence";
+  }>;
+  safety?: {
+    level: "beginner-safe" | "host-safe" | "advanced-system-access";
+    rationale: string;
+  };
   successCriteria?: string[];
   subtasks?: ConstructFlowPracticeSubtask[];
   guidance?: ConstructFlowTaskGuidance[];

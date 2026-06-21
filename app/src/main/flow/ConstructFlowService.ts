@@ -35,7 +35,7 @@ import type {
   ConstructFlowTaskSubmission,
   ConstructFlowToolCallRecord
 } from "../../shared/constructFlow";
-import { CONSTRUCT_CONCEPT_LANGUAGES, type ConstructAgentContextWindow, type ConstructAgentRunEvent, type ConstructConceptConfidence, type KnowledgeBaseRecord } from "../../shared/constructLearning";
+import { CONSTRUCT_CONCEPT_LANGUAGES, type ConstructAgentContextWindow, type ConstructAgentRunEvent, type ConstructConceptConfidence, type ConstructConceptLanguage, type KnowledgeBaseRecord } from "../../shared/constructLearning";
 import { ConstructLearningStore } from "../constructLearningStore";
 
 const ignoredNames = new Set([".git", ".construct", "node_modules", "dist", "build", ".next", "coverage"]);
@@ -574,6 +574,7 @@ export class ConstructFlowService {
           line: z.number().int().positive().optional(),
           endLine: z.number().int().positive().optional()
         }).optional(),
+        language: conceptLanguageSchema.optional().describe("Primary language for this task. Use this to prevent stale tasks/concepts after language switches."),
         pathNodeId: z.string().min(1).max(120).optional().describe("Path node this task belongs to. Defaults to the current active path node."),
         taskFiles: z.array(z.string().min(1)).min(1).describe("List of files relevant to this task for scoped diffing"),
         successCriteria: z.array(z.string().min(1).max(300)).min(1).max(8).optional().describe("What must be true before this task is done"),
@@ -598,19 +599,43 @@ export class ConstructFlowService {
           subtaskTitle: z.string().max(120).optional()
         })).max(12).optional().describe("UI-only task work highlights. Prefer this over TODO comment blocks in prepared files."),
         introducedConceptIds: z.array(z.string().min(1)).min(1).describe("Concept IDs already introduced before this task. Required; if none exist yet, explain and record the concept before creating the task."),
-        conceptIds: z.array(z.string().min(1)).optional().describe("Optional extra related concept IDs; introducedConceptIds is the required prerequisite set")
+        conceptIds: z.array(z.string().min(1)).optional().describe("Optional extra related concept IDs; introducedConceptIds is the required prerequisite set"),
+        learnerReadiness: z.array(z.object({
+          conceptId: z.string().min(1).describe("Introduced concept this learner evidence supports"),
+          evidence: z.string().min(1).max(500).describe("Concrete learner-authored evidence, e.g. their explanation, plan, answer, or submitted diff"),
+          source: z.enum(["learner-chat", "learner-task-submission", "existing-concept-evidence"]).describe("Where the learner-authored evidence came from")
+        })).min(1).max(12).describe("Observable learner understanding or practice evidence collected before this task is created."),
+        safety: z.object({
+          level: z.enum(["beginner-safe", "host-safe", "advanced-system-access"]).default("beginner-safe"),
+          rationale: z.string().min(1).max(500)
+        }).optional().describe("Why this task is safe for the learner's machine and current level.")
       }).strict(),
       execute: async (toolInput) => {
         const now = new Date().toISOString();
         const pathNodeId = toolInput.pathNodeId ?? project.flow.currentPathNodeId ?? firstActivePathNode(project)?.id;
         const introducedConceptIds = normalizeConceptIds(toolInput.introducedConceptIds, project);
         const relatedConceptIds = normalizeConceptIds(toolInput.conceptIds ?? toolInput.introducedConceptIds, project);
+        const learnerReadiness = normalizeLearnerReadiness(toolInput.learnerReadiness, project);
         const store = this.options.learningStore();
         const state = await store.getState();
-        const knownConceptIds = new Set(uniqueKnowledgeConcepts(Object.values(state.knowledgeBase.concepts)).map((concept) => concept.id));
+        const knownConcepts = uniqueKnowledgeConcepts(Object.values(state.knowledgeBase.concepts));
+        const knownConceptIds = new Set(knownConcepts.map((concept) => concept.id));
+        const conceptRecords = introducedConceptIds
+          .map((conceptId) => findKnowledgeConceptById(knownConcepts, conceptId))
+          .filter((concept): concept is KnowledgeBaseRecord => Boolean(concept));
         const missingConceptIds = introducedConceptIds.filter((conceptId) => !knownConceptIds.has(conceptId));
         if (missingConceptIds.length > 0) {
           throw new Error(`Practice tasks require introduced concepts. Missing concept records: ${missingConceptIds.join(", ")}.`);
+        }
+        const taskLanguage = inferPracticeTaskLanguage(toolInput.language, toolInput, conceptRecords);
+        assertPracticeTaskIsLearnerSafe(toolInput);
+        assertPreparedFilesLeaveLearnerWork(toolInput);
+        assertTaskConceptReadiness(introducedConceptIds, conceptRecords, learnerReadiness);
+        assertTaskLanguageMatchesConcepts(taskLanguage, conceptRecords);
+        assertTaskLanguageMatchesPath(project, pathNodeId, taskLanguage, knownConcepts);
+        const cancelledStaleTaskIds = cancelStaleLanguageTasks(project, taskLanguage, knownConcepts, now);
+        if (cancelledStaleTaskIds.length > 0) {
+          project.flow.updatedAt = now;
         }
         if (toolInput.preparations && toolInput.preparations.length > 0) {
           await applyTaskPreparations(project, this.options.workspace, toolInput.preparations);
@@ -632,6 +657,7 @@ export class ConstructFlowService {
           projectId: project.id,
           sessionId: session.id,
           pathNodeId,
+          language: taskLanguage,
           title: toolInput.title,
           prompt: toolInput.prompt,
           focus: toolInput.focus,
@@ -641,6 +667,11 @@ export class ConstructFlowService {
           taskFiles: toolInput.taskFiles,
           conceptIds: relatedConceptIds,
           introducedConceptIds,
+          learnerReadiness,
+          safety: toolInput.safety ?? {
+            level: "beginner-safe",
+            rationale: "Task avoids privileged host access and leaves the learner with observable work."
+          },
           successCriteria: toolInput.successCriteria,
           subtasks,
           guidance: normalizeTaskGuidance(toolInput.guidance ?? [], subtasks),
@@ -677,6 +708,9 @@ export class ConstructFlowService {
           taskFiles: task.taskFiles,
           conceptIds: task.conceptIds,
           introducedConceptIds: task.introducedConceptIds,
+          learnerReadiness: task.learnerReadiness,
+          safety: task.safety,
+          cancelledStaleTaskIds,
           successCriteria: task.successCriteria,
           subtasks: task.subtasks,
           preparedFiles: task.preparedFiles
@@ -1498,8 +1532,208 @@ function serializeConceptForAgent(concept: KnowledgeBaseRecord, includeContent: 
   };
 }
 
+function normalizeLearnerReadiness(
+  readiness: Array<{ conceptId: string; evidence: string; source: "learner-chat" | "learner-task-submission" | "existing-concept-evidence" }>,
+  project: StoredFlowProject
+): NonNullable<ConstructFlowPracticeTask["learnerReadiness"]> {
+  return readiness.map((item) => ({
+    conceptId: normalizeConceptId(item.conceptId, project),
+    evidence: item.evidence.trim(),
+    source: item.source
+  }));
+}
+
 function normalizeConceptIds(conceptIds: string[], project: StoredFlowProject): string[] {
   return [...new Set(conceptIds.map((id) => normalizeConceptId(id, project)).filter(Boolean))];
+}
+
+function inferPracticeTaskLanguage(
+  explicitLanguage: ConstructConceptLanguage | undefined,
+  toolInput: {
+    title: string;
+    prompt: string;
+    taskFiles: string[];
+  },
+  conceptRecords: KnowledgeBaseRecord[]
+): ConstructConceptLanguage | undefined {
+  if (explicitLanguage && explicitLanguage !== "unknown") return explicitLanguage;
+  const fileLanguage = inferLanguageFromFiles(toolInput.taskFiles);
+  if (fileLanguage) return fileLanguage;
+  const textLanguage = inferLanguageFromText(`${toolInput.title}\n${toolInput.prompt}`);
+  if (textLanguage) return textLanguage;
+  const conceptLanguages = [...new Set(conceptRecords.map((concept) => concept.language).filter(isConcreteConceptLanguage))];
+  return conceptLanguages.length === 1 ? conceptLanguages[0] : explicitLanguage;
+}
+
+function inferLanguageFromFiles(files: string[]): ConstructConceptLanguage | undefined {
+  for (const file of files) {
+    const lower = file.toLowerCase();
+    if (/\.(cpp|cc|cxx|hpp|hh|hxx|h)$/.test(lower)) return "cpp";
+    if (lower.endsWith(".swift")) return "swift";
+    if (/\.(ts|tsx)$/.test(lower)) return "typescript";
+    if (/\.(js|jsx|mjs|cjs)$/.test(lower)) return "javascript";
+    if (lower.endsWith(".py")) return "python";
+  }
+  return undefined;
+}
+
+function inferLanguageFromText(text: string): ConstructConceptLanguage | undefined {
+  const lower = text.toLowerCase();
+  if (/\bc\+\+\b|\bcpp\b/.test(lower)) return "cpp";
+  if (/\bswift(ui)?\b/.test(lower)) return "swift";
+  if (/\btypescript\b|\btsx\b/.test(lower)) return "typescript";
+  if (/\bjavascript\b|\bjsx\b/.test(lower)) return "javascript";
+  if (/\bpython\b/.test(lower)) return "python";
+  return undefined;
+}
+
+function isConcreteConceptLanguage(language: ConstructConceptLanguage | undefined): language is Exclude<ConstructConceptLanguage, "unknown"> {
+  return Boolean(language && language !== "unknown");
+}
+
+function assertPracticeTaskIsLearnerSafe(toolInput: {
+  title: string;
+  prompt: string;
+  successCriteria?: string[];
+  subtasks?: Array<{ title: string; prompt: string; successCriteria?: string[] }>;
+  guidance?: Array<{ title: string; instruction: string; path: string; placeholder?: string }>;
+  preparations?: Array<{ path: string; content: string }>;
+}): void {
+  const surface = [
+    toolInput.title,
+    toolInput.prompt,
+    ...(toolInput.successCriteria ?? []),
+    ...(toolInput.subtasks ?? []).flatMap((subtask) => [subtask.title, subtask.prompt, ...(subtask.successCriteria ?? [])]),
+    ...(toolInput.guidance ?? []).flatMap((item) => [item.title, item.instruction, item.placeholder ?? "", item.path]),
+    ...(toolInput.preparations ?? []).flatMap((prep) => [prep.path, prep.content])
+  ].join("\n");
+
+  const blockedPatterns = [
+    /\/dev\/mem/i,
+    /\bsudo\b/i,
+    /\bphysical memory\b/i,
+    /\bhardware registers?\b/i,
+    /\bkernel extension\b/i,
+    /\bneural engine interfaces?\b/i,
+    /\bm2\b[\s\S]{0,80}\b(register|gpu|neural engine)\b/i
+  ];
+  const match = blockedPatterns.find((pattern) => pattern.test(surface));
+  if (match) {
+    throw new Error("Practice tasks cannot require privileged host access, /dev/mem, hardware registers, or M2 device interfaces. Teach with safe simulations and learner-owned exercises first.");
+  }
+}
+
+function assertPreparedFilesLeaveLearnerWork(toolInput: {
+  taskFiles: string[];
+  preparations?: Array<{ path: string; content: string; mode: "create" | "overwrite" | "replace" }>;
+}): void {
+  const taskFiles = new Set(toolInput.taskFiles);
+  const completeDemo = toolInput.preparations?.find((prep) => (
+    taskFiles.has(prep.path)
+    && /\.(cpp|cc|cxx)$/.test(prep.path.toLowerCase())
+    && /int\s+main\s*\(/.test(prep.content)
+    && /\bstd::cout\b/.test(prep.content)
+    && !/\b(todo|your turn|fill|implement|placeholder|exercise)\b/i.test(prep.content)
+  ));
+  if (completeDemo) {
+    throw new Error(`Prepared file ${completeDemo.path} looks like a complete read-and-run demo. Practice tasks must leave concrete learner-authored work, not just files to compile and observe.`);
+  }
+}
+
+function assertTaskConceptReadiness(
+  introducedConceptIds: string[],
+  conceptRecords: KnowledgeBaseRecord[],
+  learnerReadiness: NonNullable<ConstructFlowPracticeTask["learnerReadiness"]>
+): void {
+  const unknownConcepts = conceptRecords
+    .filter((concept) => !concept.confidence || concept.confidence === "unknown")
+    .map((concept) => concept.id);
+  if (unknownConcepts.length > 0) {
+    throw new Error(`Practice tasks require introduced concepts with explicit confidence, not unknown records: ${unknownConcepts.join(", ")}.`);
+  }
+
+  const missingReadiness = introducedConceptIds.filter((conceptId) => (
+    !learnerReadiness.some((item) => conceptReadinessCovers(item.conceptId, conceptId))
+  ));
+  if (missingReadiness.length > 0) {
+    throw new Error(`Practice tasks require observable learner understanding before task creation. Missing learnerReadiness evidence for: ${missingReadiness.join(", ")}.`);
+  }
+}
+
+function conceptReadinessCovers(readinessConceptId: string, requiredConceptId: string): boolean {
+  return readinessConceptId === requiredConceptId
+    || readinessConceptId === "all"
+    || requiredConceptId.startsWith(`${readinessConceptId}.`);
+}
+
+function assertTaskLanguageMatchesConcepts(
+  taskLanguage: ConstructConceptLanguage | undefined,
+  conceptRecords: KnowledgeBaseRecord[]
+): void {
+  if (!isConcreteConceptLanguage(taskLanguage)) return;
+  const mismatches = conceptRecords
+    .filter((concept) => isConcreteConceptLanguage(concept.language) && concept.language !== taskLanguage)
+    .map((concept) => `${concept.id} (${concept.language})`);
+  if (mismatches.length > 0) {
+    throw new Error(`Practice task language ${taskLanguage} does not match prerequisite concepts: ${mismatches.join(", ")}. Revise the path and teach the new language prerequisites first.`);
+  }
+}
+
+function assertTaskLanguageMatchesPath(
+  project: StoredFlowProject,
+  pathNodeId: string | undefined | null,
+  taskLanguage: ConstructConceptLanguage | undefined,
+  knownConcepts: KnowledgeBaseRecord[]
+): void {
+  if (!pathNodeId || !isConcreteConceptLanguage(taskLanguage)) return;
+  const node = project.flow.pathNodes?.find((candidate) => candidate.id === pathNodeId);
+  if (!node?.concepts?.length) return;
+  const nodeLanguages = [...new Set(node.concepts
+    .map((conceptId) => findKnowledgeConceptById(knownConcepts, normalizeConceptId(conceptId, project))?.language)
+    .filter(isConcreteConceptLanguage))];
+  const staleLanguages = nodeLanguages.filter((language) => language !== taskLanguage);
+  if (staleLanguages.length > 0) {
+    throw new Error(`Current path node ${pathNodeId} is still scoped to ${staleLanguages.join(", ")} concepts. Revise the learning path before creating a ${taskLanguage} task.`);
+  }
+}
+
+function cancelStaleLanguageTasks(
+  project: StoredFlowProject,
+  taskLanguage: ConstructConceptLanguage | undefined,
+  knownConcepts: KnowledgeBaseRecord[],
+  cancelledAt: string
+): string[] {
+  if (!isConcreteConceptLanguage(taskLanguage)) return [];
+  const cancelled: string[] = [];
+  for (const task of project.flow.sessions.flatMap((session) => session.practiceTasks)) {
+    if (task.status !== "waiting") continue;
+    const existingLanguage = task.language
+      ?? inferLanguageFromFiles(task.taskFiles ?? [])
+      ?? inferLanguageFromTaskConcepts(task, knownConcepts);
+    if (!isConcreteConceptLanguage(existingLanguage) || existingLanguage === taskLanguage) continue;
+    task.status = "cancelled";
+    task.messages = [
+      ...(task.messages ?? []),
+      {
+        id: randomUUID(),
+        role: "assistant",
+        content: `Cancelled because the learner switched from ${existingLanguage} to ${taskLanguage}; stale tasks should not remain active across language changes.`,
+        createdAt: cancelledAt
+      }
+    ];
+    cancelled.push(task.id);
+  }
+  return cancelled;
+}
+
+function inferLanguageFromTaskConcepts(
+  task: ConstructFlowPracticeTask,
+  knownConcepts: KnowledgeBaseRecord[]
+): ConstructConceptLanguage | undefined {
+  const languages = [...new Set((task.introducedConceptIds ?? task.conceptIds ?? [])
+    .map((conceptId) => findKnowledgeConceptById(knownConcepts, conceptId)?.language)
+    .filter(isConcreteConceptLanguage))];
+  return languages.length === 1 ? languages[0] : undefined;
 }
 
 function normalizeTaskGuidance(
@@ -1947,6 +2181,11 @@ function buildMainPrompt(
     "",
     latestInputLabel,
     latestInput,
+    input.questionResponse ? [
+      "",
+      "Question-response guard:",
+      "A tracked question answer is learner-model context only. It is not task completion evidence, does not mean a demo compiled or ran, and must not upgrade concept confidence unless the answer itself demonstrates understanding."
+    ].join("\n") : null,
     "",
     "Use tools when workspace reality matters. For UI actions, call the relevant action tool instead of returning JSON. Before explaining a topic, check whether Concepts already cover it; if exact concept details or evidence matter, use fetch-concepts before suggesting, explaining, or updating. Reply naturally after tool work."
   ].filter(Boolean).join("\n");
@@ -2232,11 +2471,15 @@ function truncateSessionAfterPendingQuestion(
 function cleanReplyForPendingQuestion(reply: string, pendingQuestion: ConstructFlowToolCallRecord | undefined): string {
   if (!pendingQuestion) return reply;
   const payload = readQuestionPayload(pendingQuestion);
+  const question = readQuestionText(pendingQuestion.input);
   const choiceSet = new Set((payload.choices ?? []).map((choice) => choice.trim().toLowerCase()));
   let cleaned = reply
     .replace(/\n+\s*(?:choose|pick|select)\s+(?:one|an option)\s*:?\s*[\s\S]*$/i, "")
     .trim();
 
+  if (question) {
+    cleaned = removeDuplicatedQuestionText(cleaned, question);
+  }
   if (!choiceSet.size) return cleaned;
 
   const lines = cleaned.split(/\r?\n/);
@@ -2256,6 +2499,30 @@ function cleanReplyForPendingQuestion(reply: string, pendingQuestion: ConstructF
     lines.pop();
   }
   return lines.join("\n").trim();
+}
+
+function removeDuplicatedQuestionText(reply: string, question: string): string {
+  const normalizedQuestion = normalizeQuestionForComparison(question);
+  const lines = reply.split(/\r?\n/);
+  return lines
+    .filter((line) => {
+      const normalizedLine = normalizeQuestionForComparison(line);
+      if (!normalizedLine) return true;
+      return normalizedLine !== normalizedQuestion && !normalizedLine.includes(normalizedQuestion);
+    })
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function normalizeQuestionForComparison(value: string): string {
+  return value
+    .replace(/\[\[[^\]|]+\|([^\]]+)\]\]/g, "$1")
+    .replace(/^[-*\d.)\s]+/, "")
+    .replace(/\*\*/g, "")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim()
+    .toLowerCase();
 }
 
 function readQuestionPayload(toolCall: ConstructFlowToolCallRecord): { choices?: string[] } {
@@ -2304,6 +2571,8 @@ function cloneSession(session: ConstructFlowSession): ConstructFlowSession {
       baseline: { ...task.baseline, files: { ...task.baseline.files } },
       conceptIds: task.conceptIds ? [...task.conceptIds] : undefined,
       introducedConceptIds: task.introducedConceptIds ? [...task.introducedConceptIds] : undefined,
+      learnerReadiness: task.learnerReadiness?.map((item) => ({ ...item })),
+      safety: task.safety ? { ...task.safety } : undefined,
       successCriteria: task.successCriteria ? [...task.successCriteria] : undefined,
       subtasks: task.subtasks?.map((subtask) => ({ ...subtask, successCriteria: subtask.successCriteria ? [...subtask.successCriteria] : undefined })),
       messages: task.messages?.map((message) => ({ ...message })),
@@ -2352,7 +2621,9 @@ Concept-first tutoring:
 - Normal chat is for ideas, mental models, questions, and review. Do not put implementation code blocks or broad code snippets in normal chat unless the learner has already attempted the shape or explicitly asks for the code.
 - Only create a practice-task after the relevant concepts have been introduced and recorded with add-concept, modify-concept, or suggest-existing-concept.
 - Every practice-task must include introducedConceptIds. Those are the exact concepts the learner has already seen before the task begins.
-- If no concept is introduced yet, teach first. Explain the idea, record the concept, check understanding when needed, then create the task.
+- Every practice-task must include learnerReadiness evidence for every introducedConceptId. This evidence must come from the learner's own chat answer, plan, explanation, or submitted diff. Agent-written demos, prepared files, terminal output, and "the demo ran" are not learner readiness.
+- If no concept is introduced yet, teach first. Explain the idea, record the concept, get observable learner understanding when needed, then create the task.
+- If the learner switches languages or says they do not know the current language, stop using stale tasks/path nodes from the old language. Patch learner.md, revise the path, teach the new language prerequisites, and only then create tasks in the new language.
 
 When you teach or the learner demonstrates understanding, update Concepts with evidence:
 - After explaining something new, use add-concept or modify-concept to record it with reason and evidence.
@@ -2384,6 +2655,7 @@ Learner.md is the durable learner model for this project. Patch it whenever the 
 Prefer learner attempts. Tasks are the main unit of Flow progress. When the next step is a learner coding attempt, use the practice-task tool once to create a real structured task with the current path node, task files, prepared files when needed, success criteria, subtasks when useful, guidance highlights, and introducedConceptIds. Prepared/scaffolded code is agent-authored; submitted diffs are learner-authored. Do not infer learner understanding from code you wrote.
 If a missing README, placeholder module, or tiny scaffold file must exist before the learner can attempt the task, ask first unless the learner explicitly requested that exact support edit. After consent, use write/edit or practice-task.preparations for the exact small support change. If the learner should write it, put the work in the task prompt, subtasks, successCriteria, and guidance instead.
 After creating a practice-task, stop cleanly and let the learner work. Do not keep reading files, create another task for the same milestone, try to verify the same prepared files again, or call ask-question to quiz the learner about scaffold files, concepts, or code you just prepared. Put distinctions like public entrypoint vs internal barrel in the task prompt, guidance, or normal mentor message instead of pausing progress with a tracked question.
+Never create beginner practice tasks that require sudo, /dev/mem, real hardware registers, kernel extensions, M2 GPU/Neural Engine interfaces, or other privileged host/device access. For low-level topics, use safe simulations, diagrams, tiny memory models, toy buffers, or pseudocode first. Do not create "pointer demo" tasks that are just complete agent-written files for the learner to compile and read; leave a concrete learner-authored gap and ask for their explanation or modification.
 
 Task workspace guidance:
 - Do not put large TODO banners, assignment prose, or multi-line task comments into source files.
@@ -2407,6 +2679,7 @@ If you need learner input, decision, choice, or response, you MUST use the ask-q
 On a new project kickoff (the prompt labels this as "New project kickoff:"), inspect the workspace or Flow Memory if useful. If research is not complete, decide naturally whether to ask the learner to research first, start without research, or clarify project direction with ask-question. Do not wait for a greeting before beginning, and do not create practice tasks before learner profiling and plan-learning-path unless the learner explicitly asks to skip planning.
 For an ordinary "Latest learner message:" inside an existing project, a greeting or casual nudge is not a project kickoff. Do not inspect the workspace, run tools, create tasks, or continue task automation unless the learner asks to continue, review, fix, create, scaffold, or do project work. Reply briefly and wait for a substantive next action.
 When the latest input is "Latest learner answer to tracked question:", you MUST actively evaluate their response, update the relevant concept confidence using modify-concept/add-concept, and update learner.md. Since this response means the learner is ready to proceed, immediately resume the teaching progression, explain the next concept, inspect the workspace, or create the next practice-task. Do not reply passively or wait for further input.
+Do not treat a tracked question answer as evidence that the learner completed an unrelated task, compiled a demo, or understood code that Flow wrote. Only task submissions and the learner's own explanation/practice can count as task or concept evidence.
 
 Do not end with a prose choice question such as "want to build X next?" or "your call". If the learner must choose, use ask-question. If the next step is obvious and concept prerequisites are met, create a practice-task instead of asking permission.
 

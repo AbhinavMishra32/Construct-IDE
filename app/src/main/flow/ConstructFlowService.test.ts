@@ -295,9 +295,10 @@ describe("ConstructFlowService Concept and Task Tools", () => {
       technology: "TypeScript",
       content: "A TypeScript function names a reusable behavior, accepts typed inputs, and returns a typed result.",
       examples: ["function greet(): string { return 'hello'; }"],
-      confidence: "unknown",
+      confidence: "introduced",
       reason: "Introduce the function concept before assigning a function-writing task.",
-      evidence: ["The task test seeds this as introduced learner knowledge before practice."]
+      evidence: ["The task test seeds this as introduced learner knowledge before practice."],
+      confidenceReason: "The learner has seen the function concept and answered what a return value means."
     });
 
     // Pre-create another file that should not be in the baseline
@@ -355,6 +356,15 @@ describe("ConstructFlowService Concept and Task Tools", () => {
           mode: "create"
         }
       ],
+      learnerReadiness: [{
+        conceptId: "typescript.functions",
+        evidence: "The learner explained that greet should return a string instead of printing.",
+        source: "learner-chat"
+      }],
+      safety: {
+        level: "beginner-safe",
+        rationale: "The task edits a tiny TypeScript file and requires no host privileges."
+      },
       introducedConceptIds: ["typescript.functions"],
       conceptIds: ["typescript.functions"]
     });
@@ -366,9 +376,12 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     const task = session.practiceTasks[0];
     assert.ok(task);
     assert.equal(task.pathNodeId, "typescript-foundation");
+    assert.equal(task.language, "typescript");
     assert.deepEqual(project.flow.pathNodes?.[0]?.taskIds, [task.id]);
     assert.deepEqual(task.taskFiles, ["src/greet.ts"]);
     assert.deepEqual(task.introducedConceptIds, ["typescript.functions"]);
+    assert.deepEqual(task.learnerReadiness?.map((item) => item.conceptId), ["typescript.functions"]);
+    assert.equal(task.safety?.level, "beginner-safe");
     assert.equal(task.baseline.files["src/greet.ts"], "export function greet() {}");
     assert.equal(task.baseline.files["ignored.ts"], undefined);
     assert.equal(task.authoredBy?.actor, "agent");
@@ -441,6 +454,320 @@ describe("ConstructFlowService Concept and Task Tools", () => {
       evidence: "The learner provided the expected function body."
     });
     assert.equal(task.subtasks?.[0]?.status, "completed");
+  });
+
+  it("blocks unsafe hardware tasks and complete read-and-run C++ demos", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "construct-flow-test-safe-task-"));
+    const learningStorePath = path.join(dir, "learning-state.json");
+    const workspaceRoot = path.join(dir, "workspaces");
+    await mkdir(workspaceRoot, { recursive: true });
+
+    const learningStore = new ConstructLearningStore(learningStorePath);
+    const workspace = new ConstructProjectWorkspaceService(
+      () => workspaceRoot,
+      () => dir
+    );
+    const flowMemory = new ConstructFlowMemoryService(workspace);
+    const logs = new AgentLogService(() => {});
+    const service = new ConstructFlowService({
+      workspace,
+      flowMemory,
+      latestTerminalOutput: () => "",
+      logs,
+      learningStore: () => learningStore
+    });
+
+    const project: StoredFlowProject = {
+      kind: "flow",
+      id: "safe-task-project",
+      title: "Safe Task Project",
+      description: "A safe task project",
+      progress: 0,
+      lastOpenedAt: new Date().toISOString(),
+      workspacePath: path.join(workspaceRoot, "safe-task-project"),
+      sourcePath: null,
+      activeFilePath: null,
+      fileTreeExpanded: [],
+      completedAt: null,
+      flow: {
+        goal: "Learn low-level C++ safely",
+        memoryDirectory: ".construct/flow-memory",
+        threadId: "test-thread",
+        researchEnabled: false,
+        researchCompletedAt: null,
+        sessions: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      }
+    };
+    await mkdir(project.workspacePath, { recursive: true });
+
+    const session: ConstructFlowSession = {
+      id: "safe-session",
+      projectId: project.id,
+      threadId: "thread-safe",
+      messages: [],
+      status: "running",
+      toolCalls: [],
+      agentEvents: [],
+      timeline: [],
+      actions: [],
+      practiceTasks: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    project.flow.sessions.push(session);
+
+    const addTool = (service as any).createAddConceptTool(project, () => {});
+    await addTool.execute({
+      id: "cpp.pointers",
+      title: "C++ pointers",
+      language: "cpp",
+      technology: "C++",
+      content: "A pointer stores an address and dereferencing follows that address to a value.",
+      confidence: "introduced",
+      reason: "Introduce pointers before any low-level C++ task.",
+      evidence: ["The learner said pointers are addresses that can be dereferenced."],
+      confidenceReason: "The learner gave a correct address/dereference explanation."
+    });
+    await addTool.execute({
+      id: "cpp.memory-mapping",
+      title: "Memory mapping",
+      language: "cpp",
+      technology: "C++",
+      content: "Memory mapping connects a file or safe buffer to an address range; real device memory needs extra care.",
+      confidence: "introduced",
+      reason: "Introduce memory mapping before simulated mmap practice.",
+      evidence: ["The learner distinguished safe simulated buffers from real device memory."],
+      confidenceReason: "The learner recognized that real hardware access is not beginner-safe."
+    });
+
+    const pathTool = (service as any).createPlanLearningPathTool(project, () => {});
+    await pathTool.execute({
+      reason: "Create a safe C++ foundation path.",
+      currentNodeId: "cpp-foundation",
+      nodes: [{
+        id: "cpp-foundation",
+        title: "C++ foundation",
+        summary: "Practice safe pointer and memory ideas before device access.",
+        kind: "foundation",
+        learnerLevel: "beginner",
+        concepts: ["cpp.pointers", "cpp.memory-mapping"],
+        status: "active"
+      }]
+    });
+
+    const taskTool = (service as any).createPracticeTaskTool(project, session, () => {});
+    const readiness = [
+      {
+        conceptId: "cpp.pointers",
+        evidence: "The learner explained that a pointer stores an address and * reads through it.",
+        source: "learner-chat"
+      },
+      {
+        conceptId: "cpp.memory-mapping",
+        evidence: "The learner explained that safe practice should use a toy buffer instead of real device memory.",
+        source: "learner-chat"
+      }
+    ];
+
+    await assert.rejects(
+      () => taskTool.execute({
+        title: "C++ Memory Mapping and Pointer Access",
+        prompt: "Open /dev/mem with sudo, mmap() a hardware register region, and inspect M2 GPU registers.",
+        language: "cpp",
+        taskFiles: ["src/memory_mapper.cpp"],
+        introducedConceptIds: ["cpp.pointers", "cpp.memory-mapping"],
+        learnerReadiness: readiness,
+        successCriteria: ["Program opens /dev/mem and prints register values."]
+      }),
+      /privileged host access/
+    );
+
+    await assert.rejects(
+      () => taskTool.execute({
+        title: "Pointer demo",
+        prompt: "Compile and run the prepared pointer demo.",
+        language: "cpp",
+        taskFiles: ["src/pointer_demo.cpp"],
+        introducedConceptIds: ["cpp.pointers"],
+        learnerReadiness: [readiness[0]],
+        successCriteria: ["Program prints pointer values."],
+        preparations: [{
+          path: "src/pointer_demo.cpp",
+          mode: "create",
+          content: "#include <iostream>\n\nint main() {\n  int x = 42;\n  int* ptr = &x;\n  std::cout << x << std::endl;\n  std::cout << ptr << std::endl;\n  std::cout << *ptr << std::endl;\n  return 0;\n}\n"
+        }]
+      }),
+      /complete read-and-run demo/
+    );
+  });
+
+  it("requires language-switch path revision and cancels stale waiting tasks", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "construct-flow-test-language-switch-"));
+    const learningStorePath = path.join(dir, "learning-state.json");
+    const workspaceRoot = path.join(dir, "workspaces");
+    await mkdir(workspaceRoot, { recursive: true });
+
+    const learningStore = new ConstructLearningStore(learningStorePath);
+    const workspace = new ConstructProjectWorkspaceService(
+      () => workspaceRoot,
+      () => dir
+    );
+    const flowMemory = new ConstructFlowMemoryService(workspace);
+    const logs = new AgentLogService(() => {});
+    const service = new ConstructFlowService({
+      workspace,
+      flowMemory,
+      latestTerminalOutput: () => "",
+      logs,
+      learningStore: () => learningStore
+    });
+
+    const project: StoredFlowProject = {
+      kind: "flow",
+      id: "language-switch-project",
+      title: "Language Switch Project",
+      description: "A language switch project",
+      progress: 0,
+      lastOpenedAt: new Date().toISOString(),
+      workspacePath: path.join(workspaceRoot, "language-switch-project"),
+      sourcePath: null,
+      activeFilePath: null,
+      fileTreeExpanded: [],
+      completedAt: null,
+      flow: {
+        goal: "Move from Swift to C++",
+        memoryDirectory: ".construct/flow-memory",
+        threadId: "test-thread",
+        researchEnabled: false,
+        researchCompletedAt: null,
+        sessions: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      }
+    };
+    await mkdir(project.workspacePath, { recursive: true });
+
+    const session: ConstructFlowSession = {
+      id: "language-session",
+      projectId: project.id,
+      threadId: "thread-language",
+      messages: [],
+      status: "running",
+      toolCalls: [],
+      agentEvents: [],
+      timeline: [],
+      actions: [],
+      practiceTasks: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    project.flow.sessions.push(session);
+
+    const addTool = (service as any).createAddConceptTool(project, () => {});
+    await addTool.execute({
+      id: "swift.basics.functions",
+      title: "Swift functions",
+      language: "swift",
+      technology: "Swift",
+      content: "Swift functions name a reusable behavior.",
+      confidence: "introduced",
+      reason: "Introduce Swift functions before a Swift task.",
+      evidence: ["The learner explained that a Swift function returns a value."],
+      confidenceReason: "The learner gave a simple function mental model."
+    });
+    await addTool.execute({
+      id: "cpp.basics.functions",
+      title: "C++ functions",
+      language: "cpp",
+      technology: "C++",
+      content: "C++ functions declare a return type, name, parameters, and body.",
+      confidence: "introduced",
+      reason: "Introduce C++ functions after the learner switched from Swift to C++.",
+      evidence: ["The learner said a C++ function needs a return type before its name."],
+      confidenceReason: "The learner identified the return type position in C++."
+    });
+
+    const pathTool = (service as any).createPlanLearningPathTool(project, () => {});
+    await pathTool.execute({
+      reason: "Start with Swift before the learner switches languages.",
+      currentNodeId: "swift-foundation",
+      nodes: [{
+        id: "swift-foundation",
+        title: "Swift foundation",
+        summary: "Swift basics before app work.",
+        kind: "foundation",
+        learnerLevel: "beginner",
+        concepts: ["swift.basics.functions"],
+        status: "active"
+      }]
+    });
+
+    const taskTool = (service as any).createPracticeTaskTool(project, session, () => {});
+    const swiftTask = await taskTool.execute({
+      title: "Swift return value",
+      prompt: "Write a Swift function that returns a title string.",
+      language: "swift",
+      taskFiles: ["Sources/App.swift"],
+      introducedConceptIds: ["swift.basics.functions"],
+      learnerReadiness: [{
+        conceptId: "swift.basics.functions",
+        evidence: "The learner explained that a function can return a value.",
+        source: "learner-chat"
+      }],
+      successCriteria: ["The learner-authored function returns a string."]
+    });
+
+    await assert.rejects(
+      () => taskTool.execute({
+        title: "C++ return value",
+        prompt: "Write a C++ function that returns a title string.",
+        language: "cpp",
+        taskFiles: ["src/main.cpp"],
+        introducedConceptIds: ["cpp.basics.functions"],
+        learnerReadiness: [{
+          conceptId: "cpp.basics.functions",
+          evidence: "The learner explained that C++ puts the return type before the function name.",
+          source: "learner-chat"
+        }],
+        successCriteria: ["The learner-authored function returns a std::string."]
+      }),
+      /Revise the learning path/
+    );
+
+    await pathTool.execute({
+      reason: "Learner switched from Swift to C++, so the active path must change before new tasks.",
+      currentNodeId: "cpp-foundation",
+      nodes: [{
+        id: "cpp-foundation",
+        title: "C++ foundation",
+        summary: "C++ basics before low-level exploration.",
+        kind: "foundation",
+        learnerLevel: "beginner",
+        concepts: ["cpp.basics.functions"],
+        status: "active"
+      }]
+    });
+
+    const cppTask = await taskTool.execute({
+      title: "C++ return value",
+      prompt: "Write a C++ function that returns a title string.",
+      language: "cpp",
+      taskFiles: ["src/main.cpp"],
+      introducedConceptIds: ["cpp.basics.functions"],
+      learnerReadiness: [{
+        conceptId: "cpp.basics.functions",
+        evidence: "The learner explained that C++ puts the return type before the function name.",
+        source: "learner-chat"
+      }],
+      successCriteria: ["The learner-authored function returns a std::string."]
+    });
+
+    assert.ok(cppTask.created);
+    assert.deepEqual(cppTask.cancelledStaleTaskIds, [swiftTask.taskId]);
+    assert.equal(session.practiceTasks.find((task) => task.id === swiftTask.taskId)?.status, "cancelled");
+    assert.equal(session.practiceTasks.find((task) => task.id === cppTask.taskId)?.status, "waiting");
   });
 
   it("patches Flow Memory with scoped diffs", async () => {
@@ -711,5 +1038,8 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     assert.match(source, /Treat research\.md as the new-project research handoff/);
     assert.match(source, /Do not ask the learner clarifying questions/);
     assert.match(source, /flow-memory-fetch, and flow-memory-patch/);
+    assert.match(source, /removeDuplicatedQuestionText/);
+    assert.match(source, /Question-response guard/);
+    assert.match(source, /learnerReadiness/);
   });
 });
