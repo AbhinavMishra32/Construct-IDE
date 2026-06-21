@@ -60,7 +60,8 @@ export function createConstructProtocolTools(options: ConstructProtocolToolsOpti
     title: string,
     reason: string,
     output: T | Promise<T>,
-    input?: unknown
+    input?: unknown,
+    statusForOutput?: (resolved: T) => ConstructProtocolToolRecord["status"] | undefined
   ): Promise<T> => {
     toolCallSequence += 1;
     const baseRecord: ConstructProtocolToolRecord = {
@@ -75,9 +76,10 @@ export function createConstructProtocolTools(options: ConstructProtocolToolsOpti
     options.onToolCallStart?.(baseRecord);
     try {
       const resolved = await output;
+      const status = statusForOutput?.(resolved) ?? "completed";
       const record: ConstructProtocolToolRecord = {
         ...baseRecord,
-        status: "completed",
+        status,
         completedAt: new Date().toISOString(),
         outputPreview: previewToolOutput(name, resolved)
       };
@@ -516,7 +518,8 @@ export function createConstructProtocolTools(options: ConstructProtocolToolsOpti
           reason: toolInput.reason ?? "Validate project state"
         }
       })),
-      toolInput
+      toolInput,
+      terminalToolStatus
     )
   });
 
@@ -1172,6 +1175,12 @@ function commandSafety(command: string): { allowed: true } | { allowed: false; r
     return { allowed: false, reason: "Package manager mutation requires explicit user approval." };
   }
   return { allowed: true };
+}
+
+function terminalToolStatus(result: unknown): ConstructProtocolToolRecord["status"] | undefined {
+  if (!result || typeof result !== "object") return undefined;
+  const status = (result as { status?: unknown }).status;
+  return status === "failed" || status === "blocked" ? "error" : undefined;
 }
 
 function globToRegExp(pattern: string): RegExp {
