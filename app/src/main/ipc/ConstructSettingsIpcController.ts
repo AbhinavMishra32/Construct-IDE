@@ -60,6 +60,17 @@ export class ConstructSettingsIpcController {
       });
     });
 
+    ipcMain.handle("construct:settings:update-app", async (_event, input) => {
+      const current = await this.options.readSettings();
+      return this.options.writeSettings({
+        ...current,
+        app: {
+          ...current.app,
+          ...(typeof input?.app === "object" && input.app ? input.app : {})
+        }
+      });
+    });
+
     ipcMain.handle("construct:settings:list-ai-features", async () => {
       return featureSettingsView((await this.options.readSettings()).ai);
     });

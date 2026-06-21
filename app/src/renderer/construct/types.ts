@@ -530,8 +530,13 @@ export type ObservabilitySettings = {
   batch: boolean;
 };
 
+export type AppSettings = {
+  showStatusBar: boolean;
+};
+
 export type ProjectSettings = {
   workspaceRoot: string;
+  app: AppSettings;
   ai: AiSettings;
   observability: ObservabilitySettings;
   releaseVersion: string;
@@ -619,6 +624,9 @@ export type ConstructProjectsApi = {
   }>;
   updateAiSettings(input: {
     ai: Partial<AiSettings>;
+  }): Promise<ProjectSettings>;
+  updateAppSettings(input: {
+    app: Partial<AppSettings>;
   }): Promise<ProjectSettings>;
   listAiFeatures(): Promise<AiFeatureSettings[]>;
   listModels(input: {

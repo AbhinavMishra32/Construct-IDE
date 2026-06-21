@@ -55,8 +55,8 @@ import {
   onAgentLog,
   onLitellmStatusChange,
   selectWorkspaceDirectory,
-  setThemeSource,
   setWorkspaceRoot,
+  updateAppSettings,
   updateAiSettings,
   updateProject,
   readFlowMemory,
@@ -148,7 +148,9 @@ export function ConstructSettingsSurface({
   projectId,
   projects,
   theme,
+  showStatusBar,
   onThemeChange,
+  onShowStatusBarChange,
   onProjectsChange,
   onActiveProjectChange
 }: {
@@ -156,7 +158,9 @@ export function ConstructSettingsSurface({
   projectId?: string;
   projects: ProjectSummary[];
   theme: ThemeMode;
+  showStatusBar: boolean;
   onThemeChange: (theme: ThemeMode) => void;
+  onShowStatusBarChange: (showStatusBar: boolean) => void;
   onProjectsChange: (projects: ProjectSummary[]) => void;
   onActiveProjectChange: (project: AnyProjectRecord | null | ((current: AnyProjectRecord | null) => AnyProjectRecord | null)) => void;
 }) {
@@ -175,6 +179,7 @@ export function ConstructSettingsSurface({
   const [projectTitle, setProjectTitle] = useState(project?.title ?? "");
   const [projectDescription, setProjectDescription] = useState(project?.description ?? "");
   const [busy, setBusy] = useState(false);
+  const [appBusy, setAppBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteCheck, setDeleteCheck] = useState<DeleteProjectCheck | null>(null);
@@ -347,6 +352,7 @@ export function ConstructSettingsSurface({
     void getSettings()
       .then((settings) => {
         setWorkspaceRootValue(settings.workspaceRoot);
+        onShowStatusBarChange(settings.app?.showStatusBar !== false);
         setAiSettingsDraft({
           ...defaultAiSettings,
           ...(settings.ai ?? {})
@@ -355,7 +361,7 @@ export function ConstructSettingsSurface({
       })
       .then((features) => setAiFeatures(features))
       .catch((caught) => setError(caught instanceof Error ? caught.message : String(caught)));
-  }, []);
+  }, [onShowStatusBarChange]);
 
   useEffect(() => {
     if (aiSettings.provider === "opencode-zen" || aiSettings.provider === "github-copilot" || aiSettings.provider === "litellm") {
@@ -493,6 +499,28 @@ export function ConstructSettingsSurface({
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function handleShowStatusBarChange(showStatusBarNext: boolean) {
+    const previous = showStatusBar;
+    onShowStatusBarChange(showStatusBarNext);
+
+    try {
+      setAppBusy(true);
+      setError(null);
+      const settings = await updateAppSettings({
+        app: {
+          showStatusBar: showStatusBarNext
+        }
+      });
+      onShowStatusBarChange(settings.app?.showStatusBar !== false);
+      toast.success(settings.app?.showStatusBar !== false ? "Status bar shown" : "Status bar hidden");
+    } catch (caught) {
+      onShowStatusBarChange(previous);
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setAppBusy(false);
     }
   }
 
@@ -774,8 +802,20 @@ export function ConstructSettingsSurface({
                 </Select>
               }
             />
+            <SettingsRow
+              title="Bottom status bar"
+              description="Show git, runtime, model, telemetry, and theme quick controls at the bottom of the window."
+              control={
+                <SettingsToggle
+                  checked={showStatusBar}
+                  disabled={appBusy}
+                  onCheckedChange={(checked) => void handleShowStatusBarChange(checked)}
+                />
+              }
+            />
           </SettingsCard>
         </SettingsSection>
+        {error ? <Alert variant="destructive"><AlertTitle>Appearance settings error</AlertTitle><AlertDescription>{error}</AlertDescription></Alert> : null}
       </SettingsPanel>
     );
   }

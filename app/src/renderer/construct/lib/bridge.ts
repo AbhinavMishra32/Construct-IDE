@@ -88,6 +88,13 @@ export function updateAiSettings(input: Parameters<ConstructProjectsApi["updateA
   });
 }
 
+export function updateAppSettings(input: Parameters<ConstructProjectsApi["updateAppSettings"]>[0]) {
+  return api().updateAppSettings(input).then((settings) => {
+    void apiTracker.refreshSettings();
+    return settings;
+  });
+}
+
 export function listAiFeatures() {
   return api().listAiFeatures();
 }

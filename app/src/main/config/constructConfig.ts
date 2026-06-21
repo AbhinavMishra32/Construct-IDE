@@ -38,9 +38,14 @@ export type StoredObservabilitySettings = {
   batch: boolean;
 };
 
+export type StoredAppSettings = {
+  showStatusBar: boolean;
+};
+
 export type StoredSettings = {
   workspaceRoot: string;
   releaseVersion: string;
+  app: StoredAppSettings;
   ai: StoredAiSettings;
   observability: StoredObservabilitySettings;
 };
@@ -120,6 +125,7 @@ export function defaultConstructSettings(paths = getElectronDataPaths()): Stored
   return {
     workspaceRoot: resolvedPaths.workspacesRoot,
     releaseVersion: process.env.npm_package_version?.trim() || "0.0.3",
+    app: defaultAppSettings(),
     ai: defaultAiSettings(),
     observability: defaultObservabilitySettings()
   };
@@ -130,12 +136,16 @@ export function normalizeSettings(
   paths = getElectronDataPaths()
 ): StoredSettings {
   const defaults = defaultConstructSettings(paths);
+  const inputApp = (input?.app ?? {}) as Partial<StoredAppSettings>;
   const inputAi = (input?.ai ?? {}) as Partial<StoredAiSettings>;
   const inputObservability = (input?.observability ?? {}) as Partial<StoredObservabilitySettings>;
 
   return {
     workspaceRoot: normalizeString(input?.workspaceRoot, defaults.workspaceRoot),
     releaseVersion: normalizeString(input?.releaseVersion, defaults.releaseVersion),
+    app: {
+      showStatusBar: inputApp.showStatusBar !== false
+    },
     ai: {
       runtime: inputAi.runtime === "fxpnt" ? "fxpnt" : "mastra",
       provider: normalizeAiProvider(inputAi.provider),
@@ -165,6 +175,12 @@ export function normalizeSettings(
       phoenixProjectName: normalizeString(inputObservability.phoenixProjectName, defaults.observability.phoenixProjectName),
       batch: inputObservability.batch !== false
     }
+  };
+}
+
+function defaultAppSettings(): StoredAppSettings {
+  return {
+    showStatusBar: true
   };
 }
 

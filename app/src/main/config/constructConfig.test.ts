@@ -8,7 +8,9 @@ import {
   configureConstructDataPaths,
   createConstructDataPaths,
   defaultConstructSettings,
+  normalizeSettings,
   readConstructAiSettingsSync,
+  readConstructSettings,
   writeConstructSettings
 } from "./constructConfig";
 
@@ -46,6 +48,7 @@ test("sync agent settings use the configured Electron user-data path", async (t)
 
 test("settings normalize OpenCode Zen provider options", () => {
   const settings = defaultConstructSettings(createConstructDataPaths("/tmp/construct-test"));
+  assert.equal(settings.app.showStatusBar, true);
   assert.equal(settings.ai.provider, "openai");
   assert.equal(settings.ai.reasoningEffort, "auto");
   assert.equal(settings.ai.liteLlmBaseUrl, "http://localhost:4000/v1");
@@ -54,6 +57,29 @@ test("settings normalize OpenCode Zen provider options", () => {
   assert.equal(settings.ai.opencodeZenModel, "gpt-5.1-codex");
   assert.equal(settings.ai.opencodeZenBaseUrl, "https://opencode.ai/zen/v1");
   assert.equal(settings.ai.tavilyApiKey, "");
+});
+
+test("settings normalize and persist app chrome options", async (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), "construct-config-"));
+  const paths = createConstructDataPaths(root);
+  t.after(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  const defaults = defaultConstructSettings(paths);
+  assert.equal(defaults.app.showStatusBar, true);
+  assert.equal(normalizeSettings({}, paths).app.showStatusBar, true);
+  assert.equal(normalizeSettings({ ...defaults, app: { showStatusBar: false } }, paths).app.showStatusBar, false);
+
+  await writeConstructSettings({
+    ...defaults,
+    app: {
+      showStatusBar: false
+    }
+  }, paths);
+
+  const resolved = await readConstructSettings(paths);
+  assert.equal(resolved.app.showStatusBar, false);
 });
 
 test("settings preserve LiteLLM-backed provider selections", async (t) => {

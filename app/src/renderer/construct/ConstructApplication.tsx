@@ -68,6 +68,7 @@ import {
 } from "./lib/projectStore";
 import {
   setThemeSource,
+  getSettings,
   updateProject,
   closeProject,
   runConstructFlowResearch
@@ -120,6 +121,7 @@ export default function ConstructApp() {
   const [activeBottomTabId, setActiveBottomTabId] = useState("terminal");
   const [openBottomTabIds, setOpenBottomTabIds] = useState<string[]>(["terminal", "logs"]);
   const [theme, setTheme] = useState<ThemeMode>(() => getInitialTheme());
+  const [showStatusBar, setShowStatusBar] = useState(true);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const terminalRef = useRef<TerminalPanelHandle | null>(null);
@@ -150,6 +152,24 @@ export default function ConstructApp() {
 
   useConstructLogBridge();
   useProjectLspLifecycle(activeProject);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void getSettings()
+      .then((settings) => {
+        if (!cancelled) {
+          setShowStatusBar(settings.app?.showStatusBar !== false);
+        }
+      })
+      .catch(() => {
+        // The Vite renderer can be opened without Electron preload during local smoke checks.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const { furthestUnlockedStepIndex, furthestUnlockedBlockIndex } = useMemo(() => {
     if (!activeProject) return { furthestUnlockedStepIndex: 0, furthestUnlockedBlockIndex: 0 };
@@ -657,15 +677,17 @@ export default function ConstructApp() {
   }, [history.current?.id]);
 
   const main = settingsSurface ? (
-    <ConstructSettingsSurface
-      activeItemId={settingsSurface.itemId}
-      projectId={settingsSurface.projectId}
-      projects={projects}
-      theme={theme}
-      onThemeChange={setTheme}
-      onProjectsChange={setProjects}
-      onActiveProjectChange={setActiveProject}
-    />
+      <ConstructSettingsSurface
+        activeItemId={settingsSurface.itemId}
+        projectId={settingsSurface.projectId}
+        projects={projects}
+        theme={theme}
+        showStatusBar={showStatusBar}
+        onThemeChange={setTheme}
+        onShowStatusBarChange={setShowStatusBar}
+        onProjectsChange={setProjects}
+        onActiveProjectChange={setActiveProject}
+      />
   ) : learningContextOpen ? (
     <LearningContextSurface />
   ) : knowledgeBaseOpen ? (
@@ -1174,7 +1196,7 @@ export default function ConstructApp() {
           />
         ) : null}
         </div>
-        <StatusBar theme={theme} onThemeChange={setTheme} />
+        {showStatusBar ? <StatusBar theme={theme} onThemeChange={setTheme} /> : null}
       </div>
       <NewProjectDialog
         open={isNewProjectOpen}

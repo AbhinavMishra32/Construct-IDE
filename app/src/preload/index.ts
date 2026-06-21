@@ -28,6 +28,8 @@ contextBridge.exposeInMainWorld("constructProjects", {
     ipcRenderer.invoke("construct:settings:set-workspace-root", input),
   updateAiSettings: (input: unknown) =>
     ipcRenderer.invoke("construct:settings:update-ai", input),
+  updateAppSettings: (input: unknown) =>
+    ipcRenderer.invoke("construct:settings:update-app", input),
   listAiFeatures: () =>
     ipcRenderer.invoke("construct:settings:list-ai-features"),
   listModels: (input: unknown) =>

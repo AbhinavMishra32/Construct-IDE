@@ -20,4 +20,19 @@ describe("Construct project advanced settings", () => {
     assert.match(controller, /await writeFile\(project\.sourcePath, project\.source/);
     assert.match(controller, /materializeInitialFiles\(project\)/);
   });
+
+  it("wires the bottom status bar preference through durable app settings", () => {
+    const source = readFileSync(fileURLToPath(new URL("./ConstructSettingsSurface.tsx", import.meta.url)), "utf8");
+    const app = readFileSync(fileURLToPath(new URL("./ConstructApplication.tsx", import.meta.url)), "utf8");
+    const preload = readFileSync(fileURLToPath(new URL("../../preload/index.ts", import.meta.url)), "utf8");
+    const controller = readFileSync(fileURLToPath(new URL("../../main/ipc/ConstructSettingsIpcController.ts", import.meta.url)), "utf8");
+
+    assert.match(source, /Bottom status bar/);
+    assert.match(source, /updateAppSettings\(\{\s*app:\s*\{\s*showStatusBar: showStatusBarNext/s);
+    assert.match(app, /getSettings\(\)\s*\.then\(\(settings\)/);
+    assert.match(app, /setShowStatusBar\(settings\.app\?\.showStatusBar !== false\)/);
+    assert.match(app, /\{showStatusBar \? <StatusBar theme=\{theme\} onThemeChange=\{setTheme\} \/> : null\}/);
+    assert.match(preload, /construct:settings:update-app/);
+    assert.match(controller, /ipcMain\.handle\("construct:settings:update-app"/);
+  });
 });
