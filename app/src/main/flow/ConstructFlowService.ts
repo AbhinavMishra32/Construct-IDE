@@ -44,6 +44,9 @@ const maxBaselineFileBytes = 120_000;
 const maxDiffChars = 18_000;
 const flowCompactionThreshold = 0.72;
 const flowCompactionRecentMessageCount = 10;
+const flowTranscriptMaxSessionChars = 8_000;
+const flowTranscriptMaxFieldChars = 1_200;
+const flowTranscriptMaxToolContentChars = 700;
 const conceptLanguageSchema = z.enum(CONSTRUCT_CONCEPT_LANGUAGES);
 const flowConceptConfidenceLevels = [
   "unknown",
@@ -2228,7 +2231,7 @@ function buildRawFlowModelMessages(project: StoredFlowProject): FlowModelMessage
         });
       }
     }
-    const visibleActivity = visibleFlowActivityForModel(session);
+    const visibleActivity = visibleFlowTranscriptForModel(session);
     const assistantMessages = session.messages.filter((message) => message.role === "assistant");
     for (const message of assistantMessages) {
       const content = [visibleActivity, message.content].filter((part) => part.trim()).join("\n\n");
@@ -2251,6 +2254,179 @@ function buildRawFlowModelMessages(project: StoredFlowProject): FlowModelMessage
     }
   }
   return messages;
+}
+
+function visibleFlowTranscriptForModel(session: ConstructFlowSession): string {
+  const lines: string[] = [];
+  const timeline = session.timeline.length
+    ? session.timeline
+    : session.toolCalls.map((toolCall) => timelinePartFromFlowToolRecord(toolCall));
+  for (const part of timeline) {
+    const rendered = timelinePartForModel(part);
+    if (rendered) {
+      lines.push(rendered);
+    }
+  }
+  const visibleToolIds = new Set(
+    timeline
+      .filter((part): part is Extract<ConstructFlowTimelinePart, { kind: "tool" }> => part.kind === "tool")
+      .map((part) => part.toolCallId)
+  );
+  for (const toolCall of session.toolCalls) {
+    if (visibleToolIds.has(toolCall.id)) continue;
+    const rendered = timelinePartForModel(timelinePartFromFlowToolRecord(toolCall));
+    if (rendered) {
+      lines.push(rendered);
+    }
+  }
+  if (!lines.length) return "";
+  return truncateModelText([
+    `Visible Flow turn transcript (${session.origin ?? "user"} session, ${session.status}):`,
+    ...lines.map((line) => `- ${line}`)
+  ].join("\n"), flowTranscriptMaxSessionChars);
+}
+
+function timelinePartFromFlowToolRecord(record: ConstructFlowToolCallRecord): Extract<ConstructFlowTimelinePart, { kind: "tool" }> {
+  return {
+    id: record.id,
+    kind: "tool",
+    toolCallId: record.id,
+    name: record.name,
+    title: record.title,
+    reason: record.reason,
+    status: record.status,
+    input: record.input,
+    outputPreview: record.outputPreview,
+    createdAt: record.createdAt,
+    completedAt: record.completedAt,
+    updatedAt: record.completedAt ?? record.createdAt
+  };
+}
+
+function timelinePartForModel(part: ConstructFlowTimelinePart): string | undefined {
+  if (part.kind === "message") {
+    const text = truncateModelText(part.text.trim(), flowTranscriptMaxFieldChars);
+    return text ? `Said (${part.status}): ${text}` : undefined;
+  }
+  if (part.kind === "reasoning") {
+    const text = truncateModelText((part.text || part.detail || part.title).trim(), flowTranscriptMaxFieldChars);
+    return text ? `Thought (${part.status}): ${text}` : undefined;
+  }
+  if (part.kind === "compaction") {
+    return [
+      `Context compaction ${part.status}: ${part.title}`,
+      part.detail ? `reason=${truncateModelText(part.detail, 400)}` : null,
+      typeof part.summarizedMessageCount === "number" ? `summarized=${part.summarizedMessageCount}` : null,
+      typeof part.preservedMessageCount === "number" ? `preserved=${part.preservedMessageCount}` : null,
+      part.summary ? `summary=${truncateModelText(part.summary, flowTranscriptMaxFieldChars)}` : null
+    ].filter(Boolean).join("; ");
+  }
+  return toolPartForModel(part);
+}
+
+function toolPartForModel(part: Extract<ConstructFlowTimelinePart, { kind: "tool" }>): string {
+  const input = summarizeToolInput(part.name, part.input);
+  const output = part.outputPreview ? truncateModelText(part.outputPreview, flowTranscriptMaxFieldChars) : undefined;
+  return [
+    `Tool ${part.name} ${part.status}: ${part.title}`,
+    part.reason ? `reason=${truncateModelText(part.reason, 400)}` : null,
+    input ? `input=${input}` : null,
+    output ? `output=${output}` : null
+  ].filter(Boolean).join("; ");
+}
+
+function summarizeToolInput(name: string, input: unknown): string | undefined {
+  if (typeof input !== "object" || input === null) {
+    return input === undefined ? undefined : truncateModelText(String(input), flowTranscriptMaxFieldChars);
+  }
+  const normalized = normalizeToolName(name);
+  const source = input as Record<string, unknown>;
+  if (normalized === "write" || normalized === "editwritefile") {
+    return stringifyModelObject({
+      path: source.path,
+      reason: source.reason,
+      contentPreview: summarizeTextField(source.content, flowTranscriptMaxToolContentChars)
+    });
+  }
+  if (normalized === "edit" || normalized === "editreplace") {
+    return stringifyModelObject({
+      path: source.path,
+      reason: source.reason,
+      findPreview: summarizeTextField(source.find, flowTranscriptMaxToolContentChars),
+      replacePreview: summarizeTextField(source.replace, flowTranscriptMaxToolContentChars)
+    });
+  }
+  if (normalized === "runterminalcommand") {
+    return stringifyModelObject({
+      command: source.command,
+      cwd: source.cwd,
+      label: source.label,
+      reason: source.reason
+    });
+  }
+  if (normalized === "askquestion" || normalized === "askuser") {
+    return stringifyModelObject({
+      question: source.question,
+      choices: source.choices,
+      blocksProgress: source.blocksProgress
+    });
+  }
+  if (normalized === "flowmemorypatch") {
+    const patches = Array.isArray(source.patches)
+      ? source.patches.map((patch) => summarizeFlowMemoryPatch(patch))
+      : undefined;
+    return stringifyModelObject({ patches });
+  }
+  if (normalized === "practicetask") {
+    return stringifyModelObject({
+      title: source.title,
+      pathNodeId: source.pathNodeId,
+      introducedConceptIds: source.introducedConceptIds,
+      learnerReadiness: source.learnerReadiness,
+      taskFiles: source.taskFiles,
+      promptPreview: summarizeTextField(source.prompt, flowTranscriptMaxToolContentChars)
+    });
+  }
+  return stringifyModelObject(pruneModelObject(source));
+}
+
+function summarizeFlowMemoryPatch(value: unknown): unknown {
+  if (typeof value !== "object" || value === null) return value;
+  const patch = value as Record<string, unknown>;
+  return {
+    file: patch.file,
+    mode: patch.mode,
+    reason: patch.reason,
+    contentPreview: summarizeTextField(patch.content, 500),
+    findPreview: summarizeTextField(patch.find, 500)
+  };
+}
+
+function pruneModelObject(value: unknown): unknown {
+  if (Array.isArray(value)) return value.slice(0, 12).map((item) => pruneModelObject(item));
+  if (typeof value === "string") return summarizeTextField(value, flowTranscriptMaxFieldChars);
+  if (typeof value !== "object" || value === null) return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .slice(0, 16)
+      .map(([key, item]) => [key, pruneModelObject(item)])
+  );
+}
+
+function summarizeTextField(value: unknown, maxChars: number): string | undefined {
+  if (typeof value !== "string") return undefined;
+  return truncateModelText(value, maxChars);
+}
+
+function stringifyModelObject(value: unknown): string | undefined {
+  const text = JSON.stringify(value, null, 2);
+  return text ? truncateModelText(text, flowTranscriptMaxFieldChars) : undefined;
+}
+
+function truncateModelText(value: string, maxChars: number): string {
+  const trimmed = value.trim();
+  if (trimmed.length <= maxChars) return trimmed;
+  return `${trimmed.slice(0, maxChars).trimEnd()}\n[truncated ${trimmed.length - maxChars} chars]`;
 }
 
 function visibleFlowActivityForModel(session: ConstructFlowSession): string {
