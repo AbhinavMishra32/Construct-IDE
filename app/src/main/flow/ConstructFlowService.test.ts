@@ -560,6 +560,85 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     assert.deepEqual(starterSession.messages, []);
   });
 
+  it("saves researched context to research.md instead of preserving a clarification pivot", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "construct-flow-test-research-handoff-"));
+    const workspaceRoot = path.join(dir, "workspaces");
+    await mkdir(workspaceRoot, { recursive: true });
+    const workspace = new ConstructProjectWorkspaceService(
+      () => workspaceRoot,
+      () => dir
+    );
+    const flowMemory = new ConstructFlowMemoryService(workspace);
+    const logs = new AgentLogService(() => {});
+    const learningStore = new ConstructLearningStore(path.join(dir, "learning-state.json"));
+    const service = new ConstructFlowService({
+      workspace,
+      flowMemory,
+      latestTerminalOutput: () => "",
+      logs,
+      learningStore: () => learningStore,
+      agentRuntime: () => ({
+        runAgentic: async (input: any) => {
+          input.onTrace({
+            title: "Fetched web page",
+            event: {
+              id: "research-source-1",
+              type: "tool",
+              status: "completed",
+              title: "Fetched web page",
+              detail: "DLSS technical overview",
+              toolName: "research-source",
+              outputPreview: "DLSS combines neural super-resolution, temporal accumulation, motion vectors, and anti-aliasing for real-time upscaling.",
+              createdAt: new Date().toISOString()
+            }
+          });
+          return {
+            text: "What does \"DLSS From Scratch\" mean to you? Are you looking to implement NVIDIA's AI upscaling algorithm on an NVIDIA GPU, or explore upscaling techniques on Apple Silicon/M2?"
+          };
+        }
+      }) as any
+    });
+    const project: StoredFlowProject = {
+      kind: "flow",
+      id: "research-project",
+      title: "DLSS From Scratch",
+      description: "A research handoff project",
+      progress: 0,
+      lastOpenedAt: new Date().toISOString(),
+      workspacePath: path.join(workspaceRoot, "research-project"),
+      sourcePath: null,
+      activeFilePath: null,
+      fileTreeExpanded: [],
+      completedAt: null,
+      flow: {
+        goal: "DLSS From scratch",
+        memoryDirectory: ".construct/flow-memory",
+        threadId: "research-thread",
+        researchEnabled: false,
+        researchCompletedAt: null,
+        sessions: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      }
+    };
+    await mkdir(project.workspacePath, { recursive: true });
+
+    const result = await service.runResearchAgent(project);
+    const researchMemory = await readFile(path.join(project.workspacePath, ".construct/flow-memory/research.md"), "utf8");
+
+    assert.match(result.reply, /Research saved to research\.md/);
+    assert.doesNotMatch(result.reply, /Are you looking to/);
+    assert.match(researchMemory, /Mentor Handoff/);
+    assert.match(researchMemory, /motion vectors/);
+    assert.doesNotMatch(researchMemory, /Are you looking to/);
+    assert.ok(project.flow.researchCompletedAt);
+    assert.ok(result.session.toolCalls.some((toolCall) => (
+      toolCall.name === "flow-memory-update" &&
+      toolCall.reason === "Saved research.md for mentor handoff" &&
+      toolCall.outputPreview?.includes("research.md")
+    )));
+  });
+
   it("records estimated context window metadata before Flow model runs", () => {
     const source = readFileSync(new URL("./ConstructFlowService.ts", import.meta.url), "utf8");
     assert.match(source, /session\.contextWindow = estimateContextWindow/);
@@ -581,5 +660,8 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     assert.match(source, /protocolRecordedToolNames/);
     assert.match(source, /findPendingLearnerQuestion/);
     assert.match(source, /Do not duplicate the context in both prose and the tool question/);
+    assert.match(source, /Treat research\.md as the new-project research handoff/);
+    assert.match(source, /Do not ask the learner clarifying questions/);
+    assert.match(source, /flow-memory-fetch, and flow-memory-patch/);
   });
 });
