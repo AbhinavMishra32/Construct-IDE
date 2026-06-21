@@ -473,11 +473,13 @@ export type AuthoringFixRecord = {
 };
 
 export type AiProvider = "openai" | "openrouter" | "github-copilot" | "opencode-zen" | "litellm";
+export type AiCallSource = "byok" | "construct-cloud";
 export type AiRuntime = "mastra" | "fxpnt";
 export type AiReasoningEffort = "auto" | "none" | "low" | "medium" | "high";
 
 export type AiSettings = {
   runtime: AiRuntime;
+  source: AiCallSource;
   provider: AiProvider;
   reasoningEffort: AiReasoningEffort;
   openAiApiKey: string;
@@ -494,6 +496,9 @@ export type AiSettings = {
   opencodeZenBaseUrl: string;
   opencodeZenModel: string;
   githubCopilotModel: string;
+  constructCloudBaseUrl: string;
+  constructCloudAccessToken: string;
+  constructCloudModel: string;
   tavilyApiKey: string;
   featureModels: Record<string, string>;
   codeGhostEnabled: boolean;
@@ -508,6 +513,7 @@ export type AiFeatureSettings = {
   defaultOpenCodeZenModel: string;
   defaultGithubCopilotModel: string;
   defaultLiteLlmModel: string;
+  defaultConstructCloudModel: string;
   model: string;
 };
 
@@ -530,8 +536,13 @@ export type ObservabilitySettings = {
   batch: boolean;
 };
 
+export type AppSettings = {
+  showStatusBar: boolean;
+};
+
 export type ProjectSettings = {
   workspaceRoot: string;
+  app: AppSettings;
   ai: AiSettings;
   observability: ObservabilitySettings;
   releaseVersion: string;
@@ -620,9 +631,12 @@ export type ConstructProjectsApi = {
   updateAiSettings(input: {
     ai: Partial<AiSettings>;
   }): Promise<ProjectSettings>;
+  updateAppSettings(input: {
+    app: Partial<AppSettings>;
+  }): Promise<ProjectSettings>;
   listAiFeatures(): Promise<AiFeatureSettings[]>;
   listModels(input: {
-    provider: AiProvider;
+    provider: AiProvider | "construct-cloud";
     apiKey?: string;
   }): Promise<ModelCatalogEntry[]>;
   getLearningState(): Promise<ConstructLearningState>;

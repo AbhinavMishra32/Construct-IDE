@@ -14,6 +14,32 @@ import { createConstructProtocolTools } from "../agent-tools/constructProtocolTo
 import type { StoredFlowProject } from "../projects/ConstructProjectTypes";
 import type { ConstructFlowSession } from "../../shared/constructFlow";
 
+function createFlowTestProject(workspaceRoot: string, id: string, goal = "Test Flow context"): StoredFlowProject {
+  return {
+    kind: "flow",
+    id,
+    title: id,
+    description: "A Flow test project",
+    progress: 0,
+    lastOpenedAt: new Date().toISOString(),
+    workspacePath: path.join(workspaceRoot, id),
+    sourcePath: null,
+    activeFilePath: null,
+    fileTreeExpanded: [],
+    completedAt: null,
+    flow: {
+      goal,
+      memoryDirectory: ".construct/flow-memory",
+      threadId: `${id}-thread`,
+      researchEnabled: false,
+      researchCompletedAt: null,
+      sessions: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }
+  };
+}
+
 describe("ConstructFlowService Concept and Task Tools", () => {
   it("executes add-concept, modify-concept, and remove-concept tools and verifies hierarchical behavior", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "construct-flow-test-"));
@@ -933,6 +959,500 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     });
     assert.equal(starterSession.origin, "system");
     assert.deepEqual(starterSession.messages, []);
+  });
+
+  it("sends the persisted Flow transcript as the model message array", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "construct-flow-test-message-array-"));
+    const workspaceRoot = path.join(dir, "workspaces");
+    await mkdir(workspaceRoot, { recursive: true });
+    const workspace = new ConstructProjectWorkspaceService(
+      () => workspaceRoot,
+      () => dir
+    );
+    const flowMemory = new ConstructFlowMemoryService(workspace);
+    const logs = new AgentLogService(() => {});
+    const learningStore = new ConstructLearningStore(path.join(dir, "learning-state.json"));
+    const calls: any[] = [];
+    const service = new ConstructFlowService({
+      workspace,
+      flowMemory,
+      latestTerminalOutput: () => "",
+      logs,
+      learningStore: () => learningStore,
+      agentRuntime: () => ({
+        runAgentic: async (input: any) => {
+          calls.push(input);
+          return { text: "We will keep teaching from the actual transcript.", stepCount: 1, finishReason: "stop", durationMs: 1 };
+        }
+      }) as any
+    });
+    const project = createFlowTestProject(workspaceRoot, "message-array-project");
+    await mkdir(project.workspacePath, { recursive: true });
+    project.flow.sessions.push({
+      id: "prior-session",
+      projectId: project.id,
+      threadId: "thread",
+      origin: "user",
+      messages: [
+        { id: "m1", role: "user", content: "I do not know Swift. I want C++ instead.", createdAt: new Date().toISOString() },
+        { id: "m2", role: "assistant", content: "Cool, we should slow down and teach C++ basics first.", createdAt: new Date().toISOString() }
+      ],
+      status: "completed",
+      toolCalls: [],
+      agentEvents: [],
+      timeline: [],
+      actions: [],
+      practiceTasks: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    });
+
+    const result = await service.runMainAgent(project, {
+      projectId: project.id,
+      message: "What is a pointer actually?",
+      quickAction: "continue"
+    });
+
+    assert.equal(calls.length, 1);
+    assert.ok(Array.isArray(calls[0].messages));
+    assert.deepEqual(calls[0].messages.map((message: any) => message.role), ["user", "assistant", "user"]);
+    assert.match(calls[0].messages[0].content, /I do not know Swift/);
+    assert.match(calls[0].messages[1].content, /teach C\+\+ basics/);
+    assert.match(calls[0].messages[2].content, /What is a pointer actually\?/);
+    assert.match(calls[0].instructions, /Structured Flow Path/);
+    assert.equal(calls[0].prompt, "What is a pointer actually?");
+    assert.ok((result.session.contextWindow?.systemPromptTokens ?? 0) > 0);
+    assert.ok((result.session.contextWindow?.chatTokens ?? 0) > 0);
+    assert.equal(result.session.contextWindow?.messageCount, 3);
+  });
+
+  it("replays visible setup tools and tracked question answers into the next model call", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "construct-flow-test-visible-transcript-"));
+    const workspaceRoot = path.join(dir, "workspaces");
+    await mkdir(workspaceRoot, { recursive: true });
+    const workspace = new ConstructProjectWorkspaceService(
+      () => workspaceRoot,
+      () => dir
+    );
+    const flowMemory = new ConstructFlowMemoryService(workspace);
+    const logs = new AgentLogService(() => {});
+    const learningStore = new ConstructLearningStore(path.join(dir, "learning-state.json"));
+    const calls: any[] = [];
+    const service = new ConstructFlowService({
+      workspace,
+      flowMemory,
+      latestTerminalOutput: () => "",
+      logs,
+      learningStore: () => learningStore,
+      agentRuntime: () => ({
+        runAgentic: async (input: any) => {
+          calls.push(input);
+          return { text: "Continuing with the approved install.", stepCount: 1, finishReason: "stop", durationMs: 1 };
+        }
+      }) as any
+    });
+    const project = createFlowTestProject(workspaceRoot, "visible-transcript-project", "Learn Mastra and React Ink");
+    await mkdir(project.workspacePath, { recursive: true });
+    const createdAt = new Date().toISOString();
+    project.flow.sessions.push({
+      id: "setup-session",
+      projectId: project.id,
+      threadId: "thread",
+      origin: "user",
+      messages: [
+        { id: "u1", role: "user", content: "hi! lets start", createdAt },
+        { id: "a1", role: "assistant", content: "I need approval before running npm install.", createdAt }
+      ],
+      status: "waiting",
+      toolCalls: [
+        {
+          id: "write-package",
+          name: "write",
+          title: "Wrote package.json",
+          reason: "Scaffold Mastra dependencies",
+          input: { path: "package.json", reason: "Create package manifest", content: "{\"dependencies\":{\"@mastra/core\":\"latest\",\"zod\":\"latest\"}}" },
+          outputPreview: "{\"path\":\"package.json\",\"bytes\":123,\"authoredBy\":\"agent\"}",
+          status: "completed",
+          createdAt,
+          completedAt: createdAt
+        },
+        {
+          id: "write-tsconfig",
+          name: "write",
+          title: "Wrote tsconfig.json",
+          reason: "Scaffold TypeScript config",
+          input: { path: "tsconfig.json", reason: "Create TypeScript config", content: "{\"compilerOptions\":{\"strict\":true}}" },
+          outputPreview: "{\"path\":\"tsconfig.json\",\"bytes\":88,\"authoredBy\":\"agent\"}",
+          status: "completed",
+          createdAt,
+          completedAt: createdAt
+        },
+        {
+          id: "install-command",
+          name: "run-terminal-command",
+          title: "Ran npm install",
+          reason: "Install Mastra and Zod dependencies",
+          input: { command: "npm install", label: "npm install", reason: "Install dependencies" },
+          outputPreview: "Package manager mutation requires explicit user approval.",
+          status: "error",
+          createdAt,
+          completedAt: createdAt
+        },
+        {
+          id: "ask-install",
+          name: "ask-question",
+          title: "Asked learner",
+          reason: "Package manager approval required",
+          input: {
+            question: "Should I run npm install to install Mastra and Zod dependencies?",
+            choices: ["yes", "no"],
+            blocksProgress: true
+          },
+          outputPreview: "{\"question\":\"Should I run npm install to install Mastra and Zod dependencies?\",\"choices\":[\"yes\",\"no\"]}",
+          status: "completed",
+          createdAt,
+          completedAt: createdAt
+        }
+      ],
+      agentEvents: [],
+      timeline: [
+        { id: "write-package", kind: "tool", toolCallId: "write-package", name: "write", title: "Wrote package.json", reason: "Scaffold Mastra dependencies", status: "completed", input: { path: "package.json", reason: "Create package manifest", content: "{\"dependencies\":{\"@mastra/core\":\"latest\",\"zod\":\"latest\"}}" }, outputPreview: "{\"path\":\"package.json\",\"bytes\":123,\"authoredBy\":\"agent\"}", createdAt, completedAt: createdAt },
+        { id: "write-tsconfig", kind: "tool", toolCallId: "write-tsconfig", name: "write", title: "Wrote tsconfig.json", reason: "Scaffold TypeScript config", status: "completed", input: { path: "tsconfig.json", reason: "Create TypeScript config", content: "{\"compilerOptions\":{\"strict\":true}}" }, outputPreview: "{\"path\":\"tsconfig.json\",\"bytes\":88,\"authoredBy\":\"agent\"}", createdAt, completedAt: createdAt },
+        { id: "install-command", kind: "tool", toolCallId: "install-command", name: "run-terminal-command", title: "Ran npm install", reason: "Install Mastra and Zod dependencies", status: "error", input: { command: "npm install", label: "npm install", reason: "Install dependencies" }, outputPreview: "Package manager mutation requires explicit user approval.", createdAt, completedAt: createdAt },
+        { id: "ask-install", kind: "tool", toolCallId: "ask-install", name: "ask-question", title: "Asked learner", reason: "Package manager approval required", status: "completed", input: { question: "Should I run npm install to install Mastra and Zod dependencies?", choices: ["yes", "no"], blocksProgress: true }, outputPreview: "{\"question\":\"Should I run npm install to install Mastra and Zod dependencies?\",\"choices\":[\"yes\",\"no\"]}", createdAt, completedAt: createdAt }
+      ],
+      actions: [],
+      practiceTasks: [],
+      createdAt,
+      updatedAt: createdAt
+    });
+
+    const result = await service.runMainAgent(project, {
+      projectId: project.id,
+      message: "Continue from the tracked question answer.",
+      questionResponse: {
+        sessionId: "setup-session",
+        toolCallId: "ask-install",
+        question: "Should I run npm install to install Mastra and Zod dependencies?",
+        answer: "yes",
+        answeredAt: new Date().toISOString()
+      },
+      quickAction: "continue"
+    });
+
+    assert.equal(calls.length, 1);
+    const renderedMessages = calls[0].messages.map((message: any) => `${message.role}:\n${message.content}`).join("\n\n");
+    assert.match(renderedMessages, /Visible Flow turn transcript/);
+    assert.match(renderedMessages, /Wrote package\.json/);
+    assert.match(renderedMessages, /Wrote tsconfig\.json/);
+    assert.match(renderedMessages, /npm install/);
+    assert.match(renderedMessages, /Package manager mutation requires explicit user approval/);
+    assert.match(renderedMessages, /Should I run npm install to install Mastra and Zod dependencies/);
+    assert.match(renderedMessages, /answer=yes/);
+    assert.match(renderedMessages, /Tracked Flow question answered/);
+    assert.match(renderedMessages, /Answer: yes/);
+    assert.doesNotMatch(calls[0].messages.at(-1).content, /^Continue from the tracked question answer\.$/);
+    assert.ok((result.session.contextWindow?.visibleTranscriptEventCount ?? 0) >= 4);
+    assert.ok((result.session.contextWindow?.visibleTranscriptTokens ?? 0) > 0);
+  });
+
+  it("reviews task submissions with non-mutating tools and treats blocked commands as recoverable evidence", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "construct-flow-test-review-policy-"));
+    const workspaceRoot = path.join(dir, "workspaces");
+    await mkdir(workspaceRoot, { recursive: true });
+    const workspace = new ConstructProjectWorkspaceService(
+      () => workspaceRoot,
+      () => dir
+    );
+    const flowMemory = new ConstructFlowMemoryService(workspace);
+    const logs = new AgentLogService(() => {});
+    const learningStore = new ConstructLearningStore(path.join(dir, "learning-state.json"));
+    const calls: any[] = [];
+    const commandResults: any[] = [];
+    const service = new ConstructFlowService({
+      workspace,
+      flowMemory,
+      latestTerminalOutput: () => "",
+      logs,
+      learningStore: () => learningStore,
+      agentRuntime: () => ({
+        runAgentic: async (input: any) => {
+          calls.push(input);
+          commandResults.push(await input.tools.runTerminalCommand.execute({
+            command: "rm agent.ts tools.ts && npx tsc --noEmit",
+            label: "Typecheck",
+            reason: "Validate learner submission"
+          }));
+          return { text: "", stepCount: 1, finishReason: "stop", durationMs: 1 };
+        }
+      }) as any
+    });
+    const project = createFlowTestProject(workspaceRoot, "review-policy-project", "Learn Mastra agents");
+    await mkdir(project.workspacePath, { recursive: true });
+    const agentPath = path.join(project.workspacePath, "agent.ts");
+    const toolsPath = path.join(project.workspacePath, "tools.ts");
+    const beforeAgent = "export const agent = null;\n";
+    const beforeTools = "export const tools = [];\n";
+    await writeFile(agentPath, beforeAgent, "utf8");
+    await writeFile(toolsPath, beforeTools, "utf8");
+
+    const createdAt = new Date().toISOString();
+    const session: ConstructFlowSession = {
+      id: "review-session",
+      projectId: project.id,
+      threadId: "thread-review",
+      origin: "user",
+      messages: [],
+      status: "completed",
+      toolCalls: [],
+      agentEvents: [],
+      timeline: [],
+      actions: [],
+      practiceTasks: [{
+        id: "mastra-task",
+        projectId: project.id,
+        sessionId: "review-session",
+        title: "Create the Mastra agent shell",
+        prompt: "Create a small agent and tool yourself.",
+        status: "waiting",
+        baseline: {
+          capturedAt: createdAt,
+          files: {
+            "agent.ts": beforeAgent,
+            "tools.ts": beforeTools
+          }
+        },
+        createdAt,
+        taskFiles: ["agent.ts", "tools.ts"],
+        introducedConceptIds: ["typescript.modules"],
+        conceptIds: ["typescript.modules"],
+        subtasks: [{
+          id: "agent-subtask",
+          title: "Wire the agent shell",
+          prompt: "Export the agent and tool from your own files.",
+          status: "active",
+          successCriteria: ["The learner-authored files contain the agent shell."]
+        }]
+      }],
+      createdAt,
+      updatedAt: createdAt
+    };
+    project.flow.sessions.push(session);
+    await writeFile(agentPath, "export const agent = { name: 'learner-agent' };\n", "utf8");
+    await writeFile(toolsPath, "export const tools = [{ id: 'weather' }];\n", "utf8");
+    const submission = await service.submitPracticeTask(project, "mastra-task", "I wrote the agent shell.", "agent-subtask");
+
+    const result = await service.runMainAgent(project, {
+      projectId: project.id,
+      message: "Review my practice task submission.",
+      taskSubmission: submission
+    });
+
+    assert.equal(calls.length, 1);
+    const toolNames = Object.keys(calls[0].tools);
+    assert.ok(toolNames.includes("read"));
+    assert.ok(toolNames.includes("grep"));
+    assert.ok(toolNames.includes("runTerminalCommand"));
+    assert.ok(toolNames.includes("review-subtask"));
+    assert.ok(toolNames.includes("complete-task"));
+    assert.ok(!toolNames.includes("write"));
+    assert.ok(!toolNames.includes("edit"));
+    assert.ok(!toolNames.includes("practice-task"));
+    assert.ok(!toolNames.includes("plan-learning-path"));
+    assert.match(calls[0].instructions, /Task-submission review mode/);
+    assert.match(calls[0].instructions, /workspaceMutation": "unavailable/);
+    assert.match(calls[0].instructions, /terminalCommands": "validation-only/);
+
+    assert.equal(commandResults[0].status, "blocked");
+    assert.match(commandResults[0].reason, /modify or delete workspace files/);
+    assert.ok(existsSync(agentPath));
+    assert.ok(existsSync(toolsPath));
+    assert.equal(result.session.status, "completed");
+    assert.match(result.reply, /validation command did not succeed/i);
+    assert.match(result.reply, /cannot mark the submitted work done/i);
+    assert.ok(result.session.toolCalls.some((toolCall) => (
+      toolCall.name === "run-terminal-command" &&
+      toolCall.status === "error" &&
+      toolCall.outputPreview?.includes("Validation terminal mode blocks")
+    )));
+  });
+
+  it("auto-compacts older Flow transcript messages and preserves the recent tail", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "construct-flow-test-auto-compact-"));
+    const workspaceRoot = path.join(dir, "workspaces");
+    await mkdir(workspaceRoot, { recursive: true });
+    const workspace = new ConstructProjectWorkspaceService(
+      () => workspaceRoot,
+      () => dir
+    );
+    const flowMemory = new ConstructFlowMemoryService(workspace);
+    const logs = new AgentLogService(() => {});
+    const learningStore = new ConstructLearningStore(path.join(dir, "learning-state.json"));
+    const calls: any[] = [];
+    const service = new ConstructFlowService({
+      workspace,
+      flowMemory,
+      latestTerminalOutput: () => "",
+      logs,
+      learningStore: () => learningStore,
+      agentRuntime: () => ({
+        runAgentic: async (input: any) => {
+          calls.push(input);
+          if (input.id === "construct-flow-context-compactor") {
+            return {
+              text: "The learner switched from Swift to C++, has not proven pointer understanding, and must be taught safely before any task.",
+              stepCount: 1,
+              finishReason: "stop",
+              durationMs: 1
+            };
+          }
+          return { text: "Continuing after compaction.", stepCount: 1, finishReason: "stop", durationMs: 1 };
+        }
+      }) as any
+    });
+    const project = createFlowTestProject(workspaceRoot, "auto-compact-project");
+    await mkdir(project.workspacePath, { recursive: true });
+    const largeText = "learner still needs concept-first teaching ".repeat(350);
+    for (let index = 0; index < 18; index += 1) {
+      project.flow.sessions.push({
+        id: `prior-${index}`,
+        projectId: project.id,
+        threadId: "thread",
+        origin: "user",
+        messages: [
+          { id: `u-${index}`, role: "user", content: `turn ${index}: ${largeText}`, createdAt: new Date().toISOString() },
+          { id: `a-${index}`, role: "assistant", content: `turn ${index}: teach first, no task yet. ${largeText}`, createdAt: new Date().toISOString() }
+        ],
+        status: "completed",
+        toolCalls: [],
+        agentEvents: [],
+        timeline: [],
+        actions: [],
+        practiceTasks: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+    }
+
+    const result = await service.runMainAgent(project, {
+      projectId: project.id,
+      message: "continue but do not forget I have not learned pointers",
+      quickAction: "continue"
+    });
+
+    assert.equal(calls[0].id, "construct-flow-context-compactor");
+    assert.equal(calls[1].id, "construct-flow-agent");
+    assert.match(calls[1].messages[0].content, /Compacted Flow context summary/);
+    assert.match(calls[1].messages[0].content, /has not proven pointer understanding/);
+    assert.match(calls[1].messages.at(-1).content, /do not forget I have not learned pointers/);
+    assert.ok(calls[1].messages.length < 18 * 2);
+    assert.equal(result.session.contextCompaction?.status, "completed");
+    assert.ok((result.session.contextCompaction?.summarizedMessageCount ?? 0) > 0);
+    assert.equal(result.session.contextWindow?.compaction?.status, "completed");
+    assert.ok(result.session.timeline.some((part) => part.kind === "compaction" && part.status === "completed"));
+  });
+
+  it("carries raw summarized ids forward across repeated Flow compactions", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "construct-flow-test-repeat-compact-"));
+    const workspaceRoot = path.join(dir, "workspaces");
+    await mkdir(workspaceRoot, { recursive: true });
+    const workspace = new ConstructProjectWorkspaceService(
+      () => workspaceRoot,
+      () => dir
+    );
+    const flowMemory = new ConstructFlowMemoryService(workspace);
+    const logs = new AgentLogService(() => {});
+    const learningStore = new ConstructLearningStore(path.join(dir, "learning-state.json"));
+    const calls: any[] = [];
+    const service = new ConstructFlowService({
+      workspace,
+      flowMemory,
+      latestTerminalOutput: () => "",
+      logs,
+      learningStore: () => learningStore,
+      agentRuntime: () => ({
+        runAgentic: async (input: any) => {
+          calls.push(input);
+          if (input.id === "construct-flow-context-compactor") {
+            return {
+              text: "Compacted summary preserves learner state without raw ancient transcript.",
+              stepCount: 1,
+              finishReason: "stop",
+              durationMs: 1
+            };
+          }
+          return { text: "Continuing after repeated compaction.", stepCount: 1, finishReason: "stop", durationMs: 1 };
+        }
+      }) as any
+    });
+    const project = createFlowTestProject(workspaceRoot, "repeat-compact-project");
+    await mkdir(project.workspacePath, { recursive: true });
+    const hugeText = "context needs compacting ".repeat(2500);
+    for (let index = 0; index < 18; index += 1) {
+      project.flow.sessions.push({
+        id: `ancient-${index}`,
+        projectId: project.id,
+        threadId: "thread",
+        origin: "user",
+        messages: [
+          { id: `u-${index}`, role: "user", content: `ancient raw turn ${index}: ${hugeText}`, createdAt: new Date().toISOString() },
+          { id: `a-${index}`, role: "assistant", content: `ancient raw answer ${index}: ${hugeText}`, createdAt: new Date().toISOString() }
+        ],
+        status: "completed",
+        toolCalls: [],
+        agentEvents: [],
+        timeline: [],
+        actions: [],
+        practiceTasks: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+    }
+
+    await service.runMainAgent(project, {
+      projectId: project.id,
+      message: "first compaction",
+      quickAction: "continue"
+    });
+
+    for (let index = 0; index < 3; index += 1) {
+      project.flow.sessions.push({
+        id: `fresh-${index}`,
+        projectId: project.id,
+        threadId: "thread",
+        origin: "user",
+        messages: [
+          { id: `fu-${index}`, role: "user", content: `fresh raw turn ${index}: ${hugeText}`, createdAt: new Date().toISOString() },
+          { id: `fa-${index}`, role: "assistant", content: `fresh raw answer ${index}: ${hugeText}`, createdAt: new Date().toISOString() }
+        ],
+        status: "completed",
+        toolCalls: [],
+        agentEvents: [],
+        timeline: [],
+        actions: [],
+        practiceTasks: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+    }
+
+    await service.runMainAgent(project, {
+      projectId: project.id,
+      message: "second compaction",
+      quickAction: "continue"
+    });
+    await service.runMainAgent(project, {
+      projectId: project.id,
+      message: "third call after repeated compaction",
+      quickAction: "continue"
+    });
+
+    assert.ok(calls.filter((call) => call.id === "construct-flow-context-compactor").length >= 2);
+    const lastMainCall = [...calls].reverse().find((call) => call.id === "construct-flow-agent");
+    const renderedMessages = lastMainCall.messages.map((message: any) => message.content).join("\n");
+    assert.doesNotMatch(renderedMessages, /ancient raw turn 0/);
+    assert.doesNotMatch(renderedMessages, /ancient raw answer 0/);
+    assert.match(renderedMessages, /Compacted Flow context summary/);
   });
 
   it("saves researched context to research.md instead of preserving a clarification pivot", async () => {

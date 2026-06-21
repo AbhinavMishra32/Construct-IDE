@@ -67,17 +67,6 @@
   }
 }
 
-@property --construct-concept-shimmer-angle {
-  syntax: "<angle>";
-  inherits: false;
-  initial-value: 0deg;
-}
-
-@keyframes construct-concept-card-shimmer {
-  from { --construct-concept-shimmer-angle: 0deg; }
-  to { --construct-concept-shimmer-angle: 360deg; }
-}
-
 .construct-interact-streaming-reply > div > p:last-child::after,
 .construct-interact-streaming-reply > div > h1:last-child::after,
 .construct-interact-streaming-reply > div > h2:last-child::after,
@@ -363,29 +352,69 @@ html, body {
 
   .construct-flow-composer {
     max-width: min(46rem, calc(100% - 0.75rem)) !important;
-    border-radius: 1.25rem !important;
+    border-radius: 1.5rem !important;
     background: color-mix(in srgb, var(--card) 96%, var(--background)) !important;
     box-shadow:
       0 14px 34px color-mix(in srgb, var(--foreground) 9%, transparent),
       0 0 0 1px color-mix(in srgb, var(--border) 82%, transparent) !important;
+    container-type: inline-size;
+    container-name: composer;
+  }
+
+  .dark .construct-flow-composer {
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--border) 82%, transparent) !important;
   }
 
   .construct-flow-composer textarea {
     min-height: 3.25rem !important;
     max-height: 7rem !important;
-    padding: 0.625rem 1rem 0.125rem !important;
+    padding: 0.75rem 1.25rem 0.25rem !important;
+    font-size: 14px !important;
+    line-height: 1.5 !important;
+    background: transparent !important;
   }
 
   .construct-flow-composer > div:last-child {
     gap: 0.375rem;
-    padding: 0 0.375rem 0.375rem 0.5rem;
+    padding: 0.25rem 0.5rem 0.5rem 0.625rem !important;
+  }
+
+  @container composer (max-width: 440px) {
+    .construct-flow-composer .composer-trigger-text {
+      display: none !important;
+    }
+  }
+
+  .construct-flow-composer .agent-composer-submit-btn {
+    width: 1.75rem !important;
+    height: 1.75rem !important;
+    min-width: 1.75rem !important;
+    padding: 0 !important;
+    background-color: color-mix(in srgb, var(--foreground) 60%, transparent) !important;
+    color: var(--background) !important;
+    opacity: 0.8;
+    transition: all 0.2s ease;
+  }
+
+  .construct-flow-composer .agent-composer-submit-btn:not(:disabled) {
+    background-color: var(--foreground) !important;
+    opacity: 1;
+  }
+
+  .construct-flow-composer .agent-composer-submit-btn:hover:not(:disabled) {
+    opacity: 0.9;
+    transform: scale(1.05);
+  }
+
+  .construct-flow-composer .agent-composer-submit-btn svg {
+    width: 0.9375rem !important;
+    height: 0.9375rem !important;
   }
 
   [data-component="agent-session-timeline"] [data-slot="text-part-body"],
   [data-component="agent-session-timeline"] [data-slot="user-message-text"],
   .construct-flow-session [data-slot="text-part-body"],
   .construct-flow-session [data-slot="user-message-text"] {
-    font-size: 0.75rem;
     line-height: 1.55;
   }
 
@@ -393,15 +422,22 @@ html, body {
   [data-component="agent-session-timeline"] [data-slot="user-message-text"] .text-sm,
   .construct-flow-session [data-slot="text-part-body"] .text-sm,
   .construct-flow-session [data-slot="user-message-text"] .text-sm {
-    font-size: 0.75rem;
     line-height: 1.55;
   }
 
   [data-component="agent-session-timeline"] textarea,
   .construct-flow-session textarea,
   .opaline-agent-session-compose textarea {
-    font-size: 0.75rem !important;
     line-height: 1.5 !important;
+  }
+
+  .construct-flow-session [data-component="agent-session-timeline"] {
+    padding-left: 0.75rem !important;
+    padding-right: 0.75rem !important;
+  }
+
+  .construct-flow-session [data-slot="session-turn-content"] {
+    max-width: min(46rem, calc(100% - 0.75rem)) !important;
   }
 
   .construct-flow-session [data-component="session-turn"] > [data-slot="session-turn-content"] > [data-slot="session-turn-message-container"] {
@@ -421,6 +457,51 @@ html, body {
     color: color-mix(in srgb, var(--foreground) 96%, transparent);
   }
 
+  .construct-flow-session [data-slot="session-turn-thinking"],
+  .construct-flow-session [data-slot="session-turn-thinking-heading"],
+  .construct-flow-session [data-component="agent-run-trace"] button,
+  .construct-flow-session [data-slot="agent-run-trace-row-label"],
+  .construct-flow-session [data-slot="agent-run-trace-row-title"],
+  .construct-flow-session [data-slot="agent-run-trace-row-subtitle"],
+  .construct-flow-session [data-slot="basic-tool-tool-title"],
+  .construct-flow-session [data-slot="basic-tool-tool-subtitle"],
+  .construct-flow-session [data-slot="basic-tool-tool-arg"],
+  .construct-flow-session [data-slot="context-tool-group-label"],
+  .construct-flow-session [data-slot="context-tool-group-title"],
+  .construct-flow-session [data-slot="context-tool-group-summary"],
+  .construct-flow-session [data-slot="context-tool-group-item"],
+  .construct-flow-session [data-slot="agent-run-trace-reasoning-text"],
+  .construct-flow-session [data-slot="text-part-meta"],
+  .construct-flow-session table,
+  .construct-flow-session .construct-concept-summary-card strong,
+  .construct-flow-session .construct-flow-event-card strong {
+    font-size: 13px !important;
+  }
+
+  .construct-flow-session .construct-concept-summary-card *[class*="text-[10px]"],
+  .construct-flow-session .construct-flow-event-card *[class*="text-[10px]"],
+  .construct-flow-session .construct-concept-summary-card *[class*="text-xs"],
+  .construct-flow-session .construct-flow-event-card *[class*="text-xs"] {
+    font-size: 11px !important;
+  }
+
+  .construct-flow-session [data-component="text-part"],
+  .construct-flow-session [data-slot="text-part-body"],
+  .construct-flow-session [data-slot="text-part-body"] p,
+  .construct-flow-session [data-slot="text-part-body"] h1,
+  .construct-flow-session [data-slot="text-part-body"] h2,
+  .construct-flow-session [data-slot="text-part-body"] h3,
+  .construct-flow-session [data-component="agent-run-trace"] {
+    padding-left: 0 !important;
+    margin-left: 0 !important;
+  }
+
+  .construct-flow-session [data-slot="session-turn-thinking"],
+  .construct-flow-session .construct-concept-summary-card,
+  .construct-flow-session .construct-flow-event-card {
+    margin-left: 0 !important;
+  }
+
   .construct-flow-event-card,
   .construct-concept-summary-card {
     position: relative;
@@ -428,9 +509,7 @@ html, body {
   }
 
   .construct-flow-event-card {
-    box-shadow:
-      0 1px 2px color-mix(in srgb, var(--foreground) 6%, transparent),
-      0 12px 28px color-mix(in srgb, var(--foreground) 5%, transparent);
+    box-shadow: 0 1px 2px color-mix(in srgb, var(--foreground) 4%, transparent);
   }
 
   .construct-flow-event-card > button:first-child {
@@ -440,36 +519,6 @@ html, body {
   .construct-flow-event-card > button:first-child:not(:last-child) {
     border-bottom-left-radius: 0;
     border-bottom-right-radius: 0;
-  }
-
-  .construct-flow-event-card[data-attention="true"]::after,
-  .construct-concept-summary-card[data-attention="true"]::after {
-    content: "";
-    position: absolute;
-    inset: -1px;
-    border-radius: inherit;
-    padding: 1px;
-    pointer-events: none;
-    background:
-      conic-gradient(
-        from var(--construct-concept-shimmer-angle),
-        transparent 0deg,
-        transparent 238deg,
-        color-mix(in srgb, var(--primary) 26%, transparent) 278deg,
-        color-mix(in srgb, var(--foreground) 18%, transparent) 300deg,
-        transparent 330deg,
-        transparent 360deg
-      );
-    mask:
-      linear-gradient(#000 0 0) content-box,
-      linear-gradient(#000 0 0);
-    mask-composite: exclude;
-    -webkit-mask:
-      linear-gradient(#000 0 0) content-box,
-      linear-gradient(#000 0 0);
-    -webkit-mask-composite: xor;
-    opacity: 0.9;
-    animation: construct-concept-card-shimmer 3.4s linear infinite;
   }
 
   .construct-flow-event-card[data-attention="true"],

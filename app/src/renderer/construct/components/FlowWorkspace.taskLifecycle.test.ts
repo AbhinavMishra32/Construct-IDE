@@ -9,8 +9,6 @@ describe("FlowWorkspace task lifecycle rendering", () => {
 
     assert.match(source, /const failed = !ready && status === "error"/);
     assert.match(source, /Task failed/);
-    assert.match(source, /failed \? "Failed" : "Creating"/);
-    assert.match(source, /failed \? <CircleAlertIcon size=\{12\} \/> : <Loader2Icon size=\{12\} className="animate-spin" \/>/);
-    assert.match(source, /tone=\{failed \? "danger" : "strong"\}/);
+    assert.match(source, /failed \?\s*\(?\s*<CircleAlertIcon size=\{14\} \/>\s*\)?\s*:\s*status === "running" \?\s*\(?\s*<Loader2Icon size=\{14\} className="animate-spin" \/>\s*\)?\s*:\s*\(?\s*<TerminalIcon size=\{14\} \/>\s*\)?/);
   });
 });

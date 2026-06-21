@@ -18,6 +18,10 @@ export function resolveConstructAgentModelFromSettings(
   purpose: string,
   featureId?: ConstructAiFeatureId
 ): ConstructAgentModel {
+  if (settings.source === "construct-cloud") {
+    return resolveConstructCloudModelFromSettings(settings, purpose, featureId);
+  }
+
   if (isLiteLlmBackedProvider(settings.provider)) {
     return resolveLiteLlmModelFromSettings(settings, purpose, featureId);
   }
@@ -74,13 +78,34 @@ export function resolveConstructOpenAiResponsesConfigFromSettings(
   settings: StoredAiSettings,
   featureId?: ConstructAiFeatureId
 ): { apiKey: string; baseUrl: string; model: string } | null {
-  if (settings.provider !== "openai") return null;
+  if (settings.source !== "byok" || settings.provider !== "openai") return null;
   const apiKey = settings.openAiApiKey;
   if (!apiKey) return null;
   return {
     apiKey,
     baseUrl: settings.openAiBaseUrl,
     model: featureId ? modelForAiFeature(settings, featureId) : (settings.openAiModel || "gpt-5-mini")
+  };
+}
+
+function resolveConstructCloudModelFromSettings(
+  settings: StoredAiSettings,
+  purpose: string,
+  featureId?: ConstructAiFeatureId
+): ConstructAgentModel {
+  const token = settings.constructCloudAccessToken.trim();
+  if (!token) {
+    throw new Error(`Construct Cloud access token is required for ${purpose}. Sign in or paste a desktop token in Settings.`);
+  }
+
+  const modelId = featureId ? modelForAiFeature(settings, featureId) : (settings.constructCloudModel || "deepseek/deepseek-v4-flash");
+
+  return {
+    providerId: "construct-cloud",
+    modelId,
+    id: modelId,
+    url: constructCloudApiBaseUrl(settings.constructCloudBaseUrl),
+    apiKey: token
   };
 }
 
@@ -110,4 +135,9 @@ function resolveLiteLlmModelFromSettings(
 function liteLlmModelForProvider(settings: StoredAiSettings): string {
   if (settings.provider === "github-copilot") return settings.githubCopilotModel?.trim() || "github_copilot/gpt-4";
   return settings.liteLlmModel?.trim() || "openai/gpt-5-mini";
+}
+
+function constructCloudApiBaseUrl(baseUrl: string): string {
+  const normalized = baseUrl.replace(/\/$/, "");
+  return normalized.endsWith("/v1") ? normalized : `${normalized}/v1`;
 }

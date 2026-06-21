@@ -10,6 +10,7 @@ import type { StoredAiSettings } from "./constructAiSettings";
 
 const baseSettings: StoredAiSettings = {
   runtime: "mastra",
+  source: "byok",
   provider: "openai",
   reasoningEffort: "auto",
   openAiApiKey: "",
@@ -26,6 +27,9 @@ const baseSettings: StoredAiSettings = {
   opencodeZenBaseUrl: "https://opencode.ai/zen/v1",
   opencodeZenModel: "gpt-5.1-codex",
   githubCopilotModel: "github_copilot/gpt-4",
+  constructCloudBaseUrl: "https://cloud.tryconstruct.cc",
+  constructCloudAccessToken: "",
+  constructCloudModel: "deepseek/deepseek-v4-flash",
   tavilyApiKey: "",
   featureModels: {},
   codeGhostEnabled: true
@@ -56,6 +60,15 @@ test("feature models use provider defaults and saved per-feature overrides", () 
   assert.equal(
     modelForAiFeature({ ...baseSettings, provider: "github-copilot" }, "verification"),
     "github_copilot/gpt-4"
+  );
+
+  assert.equal(
+    modelForAiFeature({
+      ...baseSettings,
+      source: "construct-cloud",
+      constructCloudModel: "anthropic/claude-sonnet-4"
+    }, "verification"),
+    "anthropic/claude-sonnet-4"
   );
 
   assert.equal(

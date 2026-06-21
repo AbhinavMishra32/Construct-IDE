@@ -55,8 +55,8 @@ import {
   onAgentLog,
   onLitellmStatusChange,
   selectWorkspaceDirectory,
-  setThemeSource,
   setWorkspaceRoot,
+  updateAppSettings,
   updateAiSettings,
   updateProject,
   readFlowMemory,
@@ -80,6 +80,7 @@ import type { ThemeMode } from "./theme";
 
 const defaultAiSettings: AiSettings = {
   runtime: "mastra",
+  source: "byok",
   provider: "openai",
   reasoningEffort: "auto",
   openAiApiKey: "",
@@ -96,6 +97,9 @@ const defaultAiSettings: AiSettings = {
   opencodeZenBaseUrl: "https://opencode.ai/zen/v1",
   opencodeZenModel: "gpt-5.1-codex",
   githubCopilotModel: "github_copilot/gpt-4",
+  constructCloudBaseUrl: "https://cloud.tryconstruct.cc",
+  constructCloudAccessToken: "",
+  constructCloudModel: "deepseek/deepseek-v4-flash",
   tavilyApiKey: "",
   featureModels: {},
   codeGhostEnabled: true
@@ -108,7 +112,10 @@ const flowMemoryFiles: FlowMemoryFileName[] = [
   "learner.md"
 ];
 
-function modelSettingsKeyForProvider(provider: AiSettings["provider"]): "openAiModel" | "openRouterModel" | "opencodeZenModel" | "githubCopilotModel" | "liteLlmModel" {
+type ModelLookupProvider = AiSettings["provider"] | "construct-cloud";
+
+function modelSettingsKeyForProvider(provider: ModelLookupProvider): "openAiModel" | "openRouterModel" | "opencodeZenModel" | "githubCopilotModel" | "liteLlmModel" | "constructCloudModel" {
+  if (provider === "construct-cloud") return "constructCloudModel";
   if (provider === "openrouter") return "openRouterModel";
   if (provider === "opencode-zen") return "opencodeZenModel";
   if (provider === "github-copilot") return "githubCopilotModel";
@@ -116,7 +123,8 @@ function modelSettingsKeyForProvider(provider: AiSettings["provider"]): "openAiM
   return "openAiModel";
 }
 
-function defaultModelForFeature(provider: AiSettings["provider"], feature: AiFeatureSettings): string {
+function defaultModelForFeature(provider: ModelLookupProvider, feature: AiFeatureSettings): string {
+  if (provider === "construct-cloud") return feature.defaultConstructCloudModel;
   if (provider === "openrouter") return feature.defaultOpenRouterModel;
   if (provider === "opencode-zen") return feature.defaultOpenCodeZenModel;
   if (provider === "github-copilot") return feature.defaultGithubCopilotModel;
@@ -148,7 +156,9 @@ export function ConstructSettingsSurface({
   projectId,
   projects,
   theme,
+  showStatusBar,
   onThemeChange,
+  onShowStatusBarChange,
   onProjectsChange,
   onActiveProjectChange
 }: {
@@ -156,7 +166,9 @@ export function ConstructSettingsSurface({
   projectId?: string;
   projects: ProjectSummary[];
   theme: ThemeMode;
+  showStatusBar: boolean;
   onThemeChange: (theme: ThemeMode) => void;
+  onShowStatusBarChange: (showStatusBar: boolean) => void;
   onProjectsChange: (projects: ProjectSummary[]) => void;
   onActiveProjectChange: (project: AnyProjectRecord | null | ((current: AnyProjectRecord | null) => AnyProjectRecord | null)) => void;
 }) {
@@ -175,6 +187,7 @@ export function ConstructSettingsSurface({
   const [projectTitle, setProjectTitle] = useState(project?.title ?? "");
   const [projectDescription, setProjectDescription] = useState(project?.description ?? "");
   const [busy, setBusy] = useState(false);
+  const [appBusy, setAppBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteCheck, setDeleteCheck] = useState<DeleteProjectCheck | null>(null);
@@ -347,6 +360,7 @@ export function ConstructSettingsSurface({
     void getSettings()
       .then((settings) => {
         setWorkspaceRootValue(settings.workspaceRoot);
+        onShowStatusBarChange(settings.app?.showStatusBar !== false);
         setAiSettingsDraft({
           ...defaultAiSettings,
           ...(settings.ai ?? {})
@@ -355,11 +369,11 @@ export function ConstructSettingsSurface({
       })
       .then((features) => setAiFeatures(features))
       .catch((caught) => setError(caught instanceof Error ? caught.message : String(caught)));
-  }, []);
+  }, [onShowStatusBarChange]);
 
   useEffect(() => {
     if (aiSettings.provider === "opencode-zen" || aiSettings.provider === "github-copilot" || aiSettings.provider === "litellm") {
-      void refreshModels(aiSettings.provider);
+      void refreshModels(aiSettings.source === "construct-cloud" ? "construct-cloud" : aiSettings.provider);
       return;
     }
 
@@ -496,10 +510,33 @@ export function ConstructSettingsSurface({
     }
   }
 
-  async function refreshModels(provider = aiSettings.provider, apiKey?: string) {
+  async function handleShowStatusBarChange(showStatusBarNext: boolean) {
+    const previous = showStatusBar;
+    onShowStatusBarChange(showStatusBarNext);
+
+    try {
+      setAppBusy(true);
+      setError(null);
+      const settings = await updateAppSettings({
+        app: {
+          showStatusBar: showStatusBarNext
+        }
+      });
+      onShowStatusBarChange(settings.app?.showStatusBar !== false);
+      toast.success(settings.app?.showStatusBar !== false ? "Status bar shown" : "Status bar hidden");
+    } catch (caught) {
+      onShowStatusBarChange(previous);
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setAppBusy(false);
+    }
+  }
+
+  async function refreshModels(provider: ModelLookupProvider = aiSettings.source === "construct-cloud" ? "construct-cloud" : aiSettings.provider, apiKey?: string) {
     const usesLiteLlm = provider === "github-copilot" || provider === "litellm";
     const resolvedKey = (apiKey ?? (
-      provider === "openrouter" ? aiSettings.openRouterApiKey
+      provider === "construct-cloud" ? aiSettings.constructCloudAccessToken
+      : provider === "openrouter" ? aiSettings.openRouterApiKey
       : provider === "openai" ? aiSettings.openAiApiKey
       : provider === "opencode-zen" ? aiSettings.opencodeZenApiKey
       : aiSettings.liteLlmApiKey
@@ -509,8 +546,8 @@ export function ConstructSettingsSurface({
       setModelOptions([]);
       return;
     }
-    if (!usesLiteLlm && !resolvedKey && provider === "openai") {
-      setModelsError("Enter your OpenAI API key first.");
+    if (!usesLiteLlm && !resolvedKey && (provider === "openai" || provider === "construct-cloud")) {
+      setModelsError(provider === "construct-cloud" ? "Enter your Construct Cloud desktop token first." : "Enter your OpenAI API key first.");
       setModelOptions([]);
       return;
     }
@@ -562,6 +599,18 @@ export function ConstructSettingsSurface({
     }));
   }
 
+  function updateAiSource(source: AiSettings["source"]) {
+    setAiSettingsDraft((current) => ({ ...current, source }));
+    setModelOptions([]);
+    setModelsError(null);
+    const provider = source === "construct-cloud" ? "construct-cloud" : aiSettingsRef.current.provider;
+    setAiFeatures((features) => features.map((feature) => {
+      const saved = aiSettingsRef.current.featureModels[feature.id]?.trim();
+      if (saved) return feature;
+      return { ...feature, model: defaultModelForFeature(provider, feature) };
+    }));
+  }
+
   async function saveAiConfiguration() {
     try {
       setAiBusy(true);
@@ -595,7 +644,7 @@ export function ConstructSettingsSurface({
 
   function updateGlobalModel(model: string) {
     setAiSettingsDraft((current) => {
-      const key = modelSettingsKeyForProvider(current.provider);
+      const key = modelSettingsKeyForProvider(current.source === "construct-cloud" ? "construct-cloud" : current.provider);
       return {
         ...current,
         [key]: model,
@@ -604,7 +653,7 @@ export function ConstructSettingsSurface({
     });
     setAiFeatures((current) => current.map((feature) => ({
       ...feature,
-      model: model || defaultModelForFeature(aiSettingsRef.current.provider, feature)
+      model: model || defaultModelForFeature(aiSettingsRef.current.source === "construct-cloud" ? "construct-cloud" : aiSettingsRef.current.provider, feature)
     })));
   }
 
@@ -774,8 +823,20 @@ export function ConstructSettingsSurface({
                 </Select>
               }
             />
+            <SettingsRow
+              title="Bottom status bar"
+              description="Show git, runtime, model, telemetry, and theme quick controls at the bottom of the window."
+              control={
+                <SettingsToggle
+                  checked={showStatusBar}
+                  disabled={appBusy}
+                  onCheckedChange={(checked) => void handleShowStatusBarChange(checked)}
+                />
+              }
+            />
           </SettingsCard>
         </SettingsSection>
+        {error ? <Alert variant="destructive"><AlertTitle>Appearance settings error</AlertTitle><AlertDescription>{error}</AlertDescription></Alert> : null}
       </SettingsPanel>
     );
   }
@@ -1103,6 +1164,7 @@ export function ConstructSettingsSurface({
         aiBusy={aiBusy}
         modelsError={modelsError}
         onRuntimeChange={updateAiRuntime}
+        onSourceChange={updateAiSource}
         onProviderChange={updateAiProvider}
         onReasoningEffortChange={(reasoningEffort) => setAiSettingsDraft((current) => ({ ...current, reasoningEffort }))}
         onCodeGhostEnabledChange={(codeGhostEnabled: boolean) => setAiSettingsDraft((current) => ({ ...current, codeGhostEnabled }))}
@@ -1115,11 +1177,14 @@ export function ConstructSettingsSurface({
         onOpencodeZenApiKeyChange={(opencodeZenApiKey: string) => setAiSettingsDraft((current) => ({ ...current, opencodeZenApiKey }))}
         onOpencodeZenBaseUrlChange={(opencodeZenBaseUrl: string) => setAiSettingsDraft((current) => ({ ...current, opencodeZenBaseUrl }))}
         onTavilyApiKeyChange={(tavilyApiKey: string) => setAiSettingsDraft((current) => ({ ...current, tavilyApiKey }))}
+        onConstructCloudBaseUrlChange={(constructCloudBaseUrl: string) => setAiSettingsDraft((current) => ({ ...current, constructCloudBaseUrl }))}
+        onConstructCloudAccessTokenChange={(constructCloudAccessToken: string) => setAiSettingsDraft((current) => ({ ...current, constructCloudAccessToken }))}
         onOpenRouterModelChange={updateGlobalModel}
         onOpenAiModelChange={updateGlobalModel}
         onOpencodeZenModelChange={updateGlobalModel}
         onGithubCopilotModelChange={updateGlobalModel}
         onLiteLlmModelChange={updateGlobalModel}
+        onConstructCloudModelChange={updateGlobalModel}
         onRefreshModels={(provider) => { void refreshModels(provider); }}
         onFeatureModelChange={updateFeatureModel}
         onSave={() => { void saveAiConfiguration(); }}

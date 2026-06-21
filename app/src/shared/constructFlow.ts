@@ -13,6 +13,23 @@ export type ConstructFlowMessage = {
   createdAt: string;
 };
 
+export type ConstructFlowContextCompaction = {
+  id: string;
+  status: "running" | "completed" | "error";
+  trigger: "auto";
+  reason: string;
+  startedAt: string;
+  completedAt?: string;
+  errorMessage?: string;
+  summary?: string;
+  beforeTokens: number;
+  afterTokens?: number;
+  summarizedMessageIds: string[];
+  preservedMessageIds: string[];
+  summarizedMessageCount: number;
+  preservedMessageCount: number;
+};
+
 export type ConstructFlowToolCallRecord = {
   id: string;
   name: string;
@@ -55,6 +72,21 @@ export type ConstructFlowTimelinePart =
       status: "running" | "completed" | "error";
       input?: unknown;
       outputPreview?: string;
+      createdAt: string;
+      completedAt?: string;
+      updatedAt?: string;
+    }
+  | {
+      id: string;
+      kind: "compaction";
+      status: "running" | "completed" | "error";
+      title: string;
+      detail?: string;
+      summary?: string;
+      beforeTokens?: number;
+      afterTokens?: number;
+      summarizedMessageCount?: number;
+      preservedMessageCount?: number;
       createdAt: string;
       completedAt?: string;
       updatedAt?: string;
@@ -256,6 +288,7 @@ export type ConstructFlowSession = {
   toolCalls: ConstructFlowToolCallRecord[];
   agentEvents: ConstructAgentRunEvent[];
   timeline: ConstructFlowTimelinePart[];
+  contextCompaction?: ConstructFlowContextCompaction;
   contextWindow?: ConstructAgentContextWindow;
   actions: ConstructFlowAction[];
   practiceTasks: ConstructFlowPracticeTask[];

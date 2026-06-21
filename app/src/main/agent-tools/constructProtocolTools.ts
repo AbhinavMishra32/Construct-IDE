@@ -44,6 +44,7 @@ export type ConstructProtocolToolsOptions = {
   tavilyApiKey?: string;
   allowWorkspaceMutation?: boolean;
   allowTerminalCommands?: boolean;
+  terminalCommandMode?: "workspace" | "validation-only";
   onToolCallStart?: ConstructProtocolToolCallSink;
   onToolCall?: ConstructProtocolToolCallSink;
 };
@@ -60,7 +61,8 @@ export function createConstructProtocolTools(options: ConstructProtocolToolsOpti
     title: string,
     reason: string,
     output: T | Promise<T>,
-    input?: unknown
+    input?: unknown,
+    statusForOutput?: (resolved: T) => ConstructProtocolToolRecord["status"] | undefined
   ): Promise<T> => {
     toolCallSequence += 1;
     const baseRecord: ConstructProtocolToolRecord = {
@@ -75,9 +77,10 @@ export function createConstructProtocolTools(options: ConstructProtocolToolsOpti
     options.onToolCallStart?.(baseRecord);
     try {
       const resolved = await output;
+      const status = statusForOutput?.(resolved) ?? "completed";
       const record: ConstructProtocolToolRecord = {
         ...baseRecord,
-        status: "completed",
+        status,
         completedAt: new Date().toISOString(),
         outputPreview: previewToolOutput(name, resolved)
       };
@@ -516,7 +519,8 @@ export function createConstructProtocolTools(options: ConstructProtocolToolsOpti
           reason: toolInput.reason ?? "Validate project state"
         }
       })),
-      toolInput
+      toolInput,
+      terminalToolStatus
     )
   });
 
@@ -901,7 +905,7 @@ async function runCommand(
   if (!options.allowTerminalCommands) {
     throw new Error("Terminal commands are not allowed for this agent run.");
   }
-  const safety = commandSafety(command);
+  const safety = commandSafety(command, options.terminalCommandMode ?? "workspace");
   if (!safety.allowed) {
     return {
       status: "blocked",
@@ -1153,9 +1157,21 @@ async function listProjectFiles(
   return files;
 }
 
-function commandSafety(command: string): { allowed: true } | { allowed: false; reason: string } {
+function commandSafety(
+  command: string,
+  mode: NonNullable<ConstructProtocolToolsOptions["terminalCommandMode"]>
+): { allowed: true } | { allowed: false; reason: string } {
   const normalized = command.trim().toLowerCase();
+  if (mode === "validation-only" && /(?:^|[;&|]\s*)(?:rm|unlink|mv|truncate|touch|mkdir|rmdir)\b/.test(normalized)) {
+    return { allowed: false, reason: "Validation terminal mode blocks commands that modify or delete workspace files." };
+  }
   const risky = [
+    /\brm\b/,
+    /\bunlink\b/,
+    /\bmv\b/,
+    /\btruncate\b/,
+    /\bgit\s+(?:reset|clean)\b/,
+    /\bgit\s+(?:checkout|restore)\s+--\b/,
     /\brm\s+-[^&|;]*r/,
     /\bsudo\b/,
     /\bchmod\s+-r\b/,
@@ -1172,6 +1188,12 @@ function commandSafety(command: string): { allowed: true } | { allowed: false; r
     return { allowed: false, reason: "Package manager mutation requires explicit user approval." };
   }
   return { allowed: true };
+}
+
+function terminalToolStatus(result: unknown): ConstructProtocolToolRecord["status"] | undefined {
+  if (!result || typeof result !== "object") return undefined;
+  const status = (result as { status?: unknown }).status;
+  return status === "failed" || status === "blocked" ? "error" : undefined;
 }
 
 function globToRegExp(pattern: string): RegExp {
