@@ -1,7 +1,8 @@
-import { BookOpenIcon, Code2Icon, ExternalLinkIcon } from "lucide-react";
+import { BookOpenIcon, Code2Icon, ExternalLinkIcon, ChevronRightIcon, LightbulbIcon, BrainCircuitIcon, RouteIcon, AtomIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
 import type { ConceptCard } from "../types";
+import { cn } from "../../lib/utils";
 
 type ConceptSummaryCardProps = {
   concept: ConceptCard;
@@ -12,6 +13,27 @@ type ConceptSummaryCardProps = {
   onOpen?: () => void;
 };
 
+function ConceptStatusChip({ label, tone }: { label: string; tone?: "added" | "modified" | "removed" }) {
+  const isAdded = label.toLowerCase().includes("introduc");
+  const isRemoved = label.toLowerCase().includes("remov");
+  const isModified = label.toLowerCase().includes("modif");
+
+  const toneClass =
+    tone === "added" ? "border-[color:var(--construct-success)]/35 bg-[color:var(--construct-success-soft)] text-[color:var(--construct-success)]" :
+    tone === "modified" ? "border-[color:var(--construct-warning)]/35 bg-[color:var(--construct-warning-soft)] text-[color:var(--construct-warning)]" :
+    tone === "removed" ? "border-destructive/30 bg-destructive/10 text-destructive" :
+    "border-border/80 bg-foreground text-background";
+
+  return (
+    <span className={cn(
+      "inline-flex max-w-full items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium border",
+      toneClass
+    )}>
+      <span className="truncate">{label}</span>
+    </span>
+  );
+}
+
 export function ConceptSummaryCard({
   concept,
   compact = false,
@@ -21,15 +43,60 @@ export function ConceptSummaryCard({
   onOpen
 }: ConceptSummaryCardProps) {
   const language = languageLabel(concept);
-  const showLanguageChip = variant !== "chat" || language !== "Concept";
+
+  if (variant === "chat") {
+    const isAdded = actionLabel.toLowerCase().includes("introduc") || actionLabel.toLowerCase().includes("added");
+    const isRemoved = actionLabel.toLowerCase().includes("remov");
+    const isModified = actionLabel.toLowerCase().includes("modif");
+
+    const statusText = isAdded ? "New" : isModified ? "Updated" : isRemoved ? "Removed" : "";
+    const statusColor = isAdded ? "text-[color:var(--construct-success)] font-medium" : isModified ? "text-[color:var(--construct-warning)] font-medium" : isRemoved ? "text-destructive font-medium" : "";
+
+    const iconClass = "border-border/70 bg-background/80 text-muted-foreground";
+
+    return (
+      <button
+        type="button"
+        className={cn(
+          "construct-concept-summary-card group flex w-full max-w-[32rem] min-w-0 items-center justify-between gap-2.5 rounded-[12px] border border-border/60 bg-muted/30 p-2.5 text-left text-foreground hover:bg-muted/65 active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 cursor-default"
+        )}
+        data-attention={attention ? "true" : "false"}
+        onClick={onOpen}
+      >
+        <div className="flex min-w-0 flex-1 items-center gap-2.5">
+          <span className={cn("grid size-8 shrink-0 place-items-center rounded-[8px] border shadow-sm group-hover:scale-95", iconClass)}>
+            <AtomIcon size={14} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="mb-0.5 flex min-w-0 items-center gap-1 text-[10px] text-muted-foreground font-medium">
+              <span>{language} Concept</span>
+              {statusText ? (
+                <>
+                  <span>·</span>
+                  <span className={statusColor}>{statusText}</span>
+                </>
+              ) : null}
+            </div>
+            <strong className="block truncate text-sm font-semibold text-foreground tracking-tight group-hover:text-foreground/90">
+              {concept.title}
+            </strong>
+          </div>
+        </div>
+        {onOpen ? (
+          <ChevronRightIcon size={15} className="shrink-0 text-muted-foreground/60 group-hover:translate-x-0.5 group-hover:text-foreground" />
+        ) : null}
+      </button>
+    );
+  }
+
+  const showLanguageChip = language !== "Concept";
   const summary = concept.summary || concept.guides[0]?.content || "A reusable concept in your learning memory.";
   const tagLine = concept.technology || (concept.tags.length ? concept.tags.slice(0, 3).join(" / ") : concept.id);
   const className = [
-    "construct-concept-summary-card group flex w-full min-w-0 flex-col gap-2 rounded-[16px] border border-border/85 bg-card/95 text-left text-foreground transition-[background-color,border-color,box-shadow,transform] duration-200",
+    "construct-concept-summary-card group flex w-full min-w-0 flex-col gap-2 rounded-[8px] border border-border/70 bg-card/82 text-left text-foreground transition-[background-color,border-color,box-shadow] duration-200",
     compact ? "p-2.5 shadow-sm" : "shadow-sm",
-    variant === "chat" ? "hover:border-border hover:bg-card hover:shadow-md active:translate-y-px" : "hover:border-border hover:bg-muted/20",
-    variant === "chat" && !compact ? "p-3" : "",
-    variant !== "chat" && !compact ? "p-2.5" : "",
+    "hover:border-border hover:bg-muted/20",
+    !compact ? "p-2.5" : "",
     onOpen ? "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45" : ""
   ].filter(Boolean).join(" ");
   const content = (

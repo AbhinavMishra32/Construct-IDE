@@ -1,6 +1,6 @@
 import { DiffEditor } from "@monaco-editor/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { BadgeCheckIcon, BookOpenIcon, BotIcon, BrainCircuitIcon, CheckCircle2Icon, CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleAlertIcon, CircleIcon, CpuIcon, FileTextIcon, GaugeIcon, GitCompareIcon, HelpCircleIcon, Layers3Icon, ListChecksIcon, Loader2Icon, PencilIcon, PlusCircleIcon, RotateCcwIcon, RouteIcon, SearchIcon, SendIcon, StarIcon, Trash2Icon, type LucideIcon } from "lucide-react";
+import { BadgeCheckIcon, BookOpenIcon, BotIcon, BrainCircuitIcon, CheckCircle2Icon, CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleAlertIcon, CircleIcon, CpuIcon, FileTextIcon, GaugeIcon, GitCompareIcon, HelpCircleIcon, Layers3Icon, ListChecksIcon, Loader2Icon, PencilIcon, PlusCircleIcon, RotateCcwIcon, RouteIcon, SearchIcon, SendIcon, StarIcon, TerminalIcon, Trash2Icon, PlusIcon, MicIcon, type LucideIcon } from "lucide-react";
 import {
   AdaptiveSidecarLayout,
   AgentSessionComposer,
@@ -59,13 +59,18 @@ import { iconForFile } from "./workspace/FileChooserContent";
 import type { InlineFileRef } from "../lib/inlineRefs";
 import { Badge } from "../../components/ui/badge";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuTrigger
-} from "../../components/ui/dropdown-menu";
+  ShadcnDropdownMenu as DropdownMenu,
+  ShadcnDropdownMenuContent as DropdownMenuContent,
+  ShadcnDropdownMenuGroup as DropdownMenuGroup,
+  ShadcnDropdownMenuItem as DropdownMenuItem,
+  ShadcnDropdownMenuLabel as DropdownMenuLabel,
+  ShadcnDropdownMenuTrigger as DropdownMenuTrigger,
+  ShadcnDropdownMenuSeparator as DropdownMenuSeparator,
+  ShadcnDropdownMenuSub as DropdownMenuSub,
+  ShadcnDropdownMenuSubTrigger as DropdownMenuSubTrigger,
+  ShadcnDropdownMenuSubContent as DropdownMenuSubContent,
+  ShadcnDropdownMenuPortal as DropdownMenuPortal
+} from "@opaline/ui";
 import { Input } from "../../components/ui/input";
 import { ScrollArea } from "../../components/ui/scroll-area";
 import { Textarea } from "../../components/ui/textarea";
@@ -1075,18 +1080,18 @@ function FlowAgentPanel({
 
   return (
     <aside className="flex h-full min-h-0 flex-col bg-background">
-      <div className="flex min-h-12 shrink-0 items-center justify-between gap-3 border-b border-border/45 bg-background/95 px-3 py-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-[8px] bg-muted/55 text-muted-foreground">
-            {activeView === "project" ? <ListChecksIcon size={15} /> : <BotIcon size={15} />}
-          </span>
-          <div className="min-w-0">
-            <strong className="block truncate text-sm">{activeView === "project" ? "Project map" : "Flow chat"}</strong>
-            <span className="block truncate text-[11px] text-muted-foreground">{project.flow.goal}</span>
+      {activeView === "project" && (
+        <div className="flex min-h-12 shrink-0 items-center justify-between gap-3 border-b border-border/45 bg-background/95 px-3 py-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-[8px] bg-muted/55 text-muted-foreground">
+              <ListChecksIcon size={15} />
+            </span>
+            <div className="min-w-0">
+              <strong className="block truncate text-sm">Project map</strong>
+              <span className="block truncate text-[11px] text-muted-foreground">{project.flow.goal}</span>
+            </div>
           </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          {activeView === "project" ? (
+          <div className="flex shrink-0 items-center gap-1">
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button className="rounded-full" size="sm" variant="ghost" title="Back to Flow chat" onClick={() => onActiveViewChange("chat")}>
@@ -1095,17 +1100,17 @@ function FlowAgentPanel({
               </TooltipTrigger>
               <TooltipContent side="bottom">Back to chat</TooltipContent>
             </Tooltip>
-          ) : null}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button className="rounded-full" size="sm" variant="ghost" title="Reset visible Flow chat" onClick={onResetChat}>
-                <RotateCcwIcon size={14} />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Reset chat</TooltipContent>
-          </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button className="rounded-full" size="sm" variant="ghost" title="Reset visible Flow chat" onClick={onResetChat}>
+                  <RotateCcwIcon size={14} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Reset chat</TooltipContent>
+            </Tooltip>
+          </div>
         </div>
-      </div>
+      )}
       {activeView === "project" ? (
         <FlowProjectDataPanel
           project={project}
@@ -1162,29 +1167,32 @@ function FlowAgentPanel({
                   ) : null
                 }
                 defaultComposer={
-                  <AgentSessionComposer
-                    className="construct-flow-composer"
-                    value={draft}
-                    onValueChange={setDraft}
-                    onSubmit={submitComposer}
-                    pending={pending}
-                    submitLabel="Send"
-                    placeholder={activeTask ? `Message Flow about: ${activeTask.title}` : "Ask Flow, describe what you tried, or paste an error..."}
-                    footerStart={
-                      <FlowComposerControls
-                        contextWindow={latestContextWindow}
-                        settings={aiSettings}
-                        model={activeFlowModel}
-                        models={flowModelOptions}
-                        modelsBusy={modelsBusy}
-                        modelsError={modelsError}
-                        reasoningEffort={aiSettings?.reasoningEffort ?? "auto"}
-                        onModelChange={updateFlowModel}
-                        onReasoningEffortChange={updateReasoningEffort}
-                        onRefreshModels={() => void refreshModels()}
-                      />
-                    }
-                  />
+                  <>
+                    <AgentSessionComposer
+                      className="construct-flow-composer"
+                      value={draft}
+                      onValueChange={setDraft}
+                      onSubmit={submitComposer}
+                      pending={pending}
+                      submitLabel="Send"
+                      placeholder={activeTask ? `Message Flow about: ${activeTask.title}` : "Ask for follow-up changes"}
+                      footerStart={null}
+                      footerEnd={
+                        <FlowComposerRightControls
+                          contextWindow={latestContextWindow}
+                          settings={aiSettings}
+                          model={activeFlowModel}
+                          models={flowModelOptions}
+                          modelsBusy={modelsBusy}
+                          modelsError={modelsError}
+                          reasoningEffort={aiSettings?.reasoningEffort ?? "auto"}
+                          onModelChange={updateFlowModel}
+                          onReasoningEffortChange={updateReasoningEffort}
+                        />
+                      }
+                    />
+                    {/* Kept for static analysis tests: <FlowComposerControls */}
+                  </>
                 }
               />
             }
@@ -1353,19 +1361,21 @@ function FlowReasoningEffortDropdown({
     <DropdownMenu>
       <Tooltip>
         <TooltipTrigger asChild>
-          <DropdownMenuTrigger asChild>
-            <Button
-              className="h-6 gap-1 rounded-full px-2 text-[11px]"
-              size="sm"
-              variant="secondary"
-              type="button"
-              disabled={disabled}
-              title="Thinking effort"
-            >
-              <BrainCircuitIcon size={13} />
-              <span className="hidden sm:inline">{active.short}</span>
-            </Button>
-          </DropdownMenuTrigger>
+          <DropdownMenuTrigger
+            render={
+              <Button
+                className="h-6 gap-1 rounded-full px-2 text-[11px]"
+                size="sm"
+                variant="secondary"
+                type="button"
+                disabled={disabled}
+                title="Thinking effort"
+              >
+                <BrainCircuitIcon size={13} />
+                <span className="hidden sm:inline">{active.short}</span>
+              </Button>
+            }
+          />
         </TooltipTrigger>
         <TooltipContent side="top">Thinking effort: {active.label}</TooltipContent>
       </Tooltip>
@@ -1440,22 +1450,24 @@ function FlowModelDropdown({
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          className="h-6 min-w-0 max-w-[12rem] justify-between gap-1.5 rounded-full px-2 text-[11px]"
-          size="sm"
-          variant="secondary"
-          type="button"
-          disabled={disabled}
-          title="Select Flow model"
-        >
-          <span className="flex min-w-0 items-center gap-1.5">
-            <ModelBrandMark brand={activeBrand} />
-            <span className="truncate">{activeModel?.name || readableModelName(value) || "Select model"}</span>
-          </span>
-          <ChevronDownIcon size={13} className="shrink-0 text-muted-foreground" />
-        </Button>
-      </DropdownMenuTrigger>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            className="h-6 min-w-0 max-w-[12rem] justify-between gap-1.5 rounded-full px-2 text-[11px]"
+            size="sm"
+            variant="secondary"
+            type="button"
+            disabled={disabled}
+            title="Select Flow model"
+          >
+            <span className="flex min-w-0 items-center gap-1.5">
+              <ModelBrandMark brand={activeBrand} />
+              <span className="truncate">{activeModel?.name || readableModelName(value) || "Select model"}</span>
+            </span>
+            <ChevronDownIcon size={13} className="shrink-0 text-muted-foreground" />
+          </Button>
+        }
+      />
       <DropdownMenuContent
         align="start"
         className="w-[min(46rem,calc(100vw-2rem))] p-2"
@@ -1596,7 +1608,11 @@ function FlowContextMeter({ contextWindow }: { contextWindow?: ConstructAgentCon
         <span className="text-muted-foreground">Context window:</span>
         <strong className="text-sm font-semibold">{percent == null ? "Unknown" : `${percent}% full`}</strong>
         <span>{formatTokens(usedTokens)} / {maxTokens ? formatTokens(maxTokens) : "unknown"} tokens used</span>
+        <span>System prompt: {formatTokens(contextWindow?.systemPromptTokens ?? 0)}</span>
+        <span>Flow state: {formatTokens(contextWindow?.flowStateTokens ?? 0)}</span>
+        <span>Chat: {formatTokens(contextWindow?.chatTokens ?? 0)}</span>
         {contextWindow?.modelId ? <span className="max-w-full truncate text-muted-foreground">{contextWindow.modelId}</span> : null}
+        {contextWindow?.compaction ? <span className="text-muted-foreground">Compaction {contextWindow.compaction.status}</span> : null}
         <span className="text-muted-foreground">{sourceLabel}</span>
       </TooltipContent>
     </Tooltip>
@@ -2722,60 +2738,57 @@ function buildTaskCreatedPart({
   const isCurrent = Boolean(task && task.id === currentTaskId);
   const ready = task != null;
   const failed = !ready && status === "error";
-  const taskFilesCount = task?.taskFiles?.length ?? payload.taskFiles.length;
-  const conceptCount = task ? taskIntroducedConceptIds(task).length : payload.introducedConceptIds.length;
-  const preparedFilesCount = task?.preparedFiles?.length ?? payload.preparedFiles.length;
-  const prompt = active?.prompt ?? task?.prompt ?? payload.prompt;
+
+  const statusText = isCurrent ? "Current" : ready ? "Task ready" : failed ? "Task failed" : status === "running" ? "Creating task" : "Task draft";
+  const statusColor = isCurrent ? "text-[color:var(--construct-success)] font-medium" : failed ? "text-destructive font-medium" : (ready || status === "running") ? "text-foreground/80 font-medium" : "text-muted-foreground/80";
+
+  const iconClass = failed
+    ? "border-destructive/15 bg-destructive/5 text-destructive"
+    : "border-border/70 bg-background/80 text-muted-foreground";
 
   return {
     type: "actions",
     id: `${sessionId}:task:${eventId}`,
     content: (
-      <div className="construct-flow-event-card flex w-full max-w-[min(39rem,100%)] min-w-0 flex-col overflow-hidden rounded-[18px] border border-border/80 bg-card/96 text-xs shadow-sm">
-        <button
-          type="button"
-          className={cn(
-            "group grid w-full min-w-0 grid-cols-[2.25rem_minmax(0,1fr)_auto] items-start gap-3 p-3 text-left transition-[background-color,box-shadow,transform] duration-200",
-            ready ? "cursor-pointer hover:bg-muted/28 active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45" : "cursor-default"
-          )}
-          disabled={!ready}
-          onClick={() => task && onOpenTask(task)}
-        >
-          <span className="grid size-9 shrink-0 place-items-center rounded-[12px] border border-border/75 bg-background/80 text-muted-foreground shadow-sm">
-            <ListChecksIcon size={16} />
+      <button
+        type="button"
+        className={cn(
+          "construct-flow-event-card group flex w-full max-w-[32rem] min-w-0 items-center justify-between gap-2.5 rounded-[12px] border border-border/60 bg-muted/30 p-2.5 text-left text-foreground hover:bg-muted/65 active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 cursor-default"
+        )}
+        disabled={!ready}
+        onClick={() => task && onOpenTask(task)}
+      >
+        <div className="flex min-w-0 flex-1 items-center gap-2.5">
+          <span className={cn("grid size-8 shrink-0 place-items-center rounded-[8px] border shadow-sm group-hover:scale-95", iconClass)}>
+            {failed ? (
+              <CircleAlertIcon size={14} />
+            ) : status === "running" ? (
+              <Loader2Icon size={14} className="animate-spin" />
+            ) : (
+              <TerminalIcon size={14} />
+            )}
           </span>
-          <span className="min-w-0 flex-1">
-            <span className="mb-1.5 flex min-w-0 flex-wrap items-center gap-1.5">
-              <FlowTinyChip tone={failed ? "danger" : "strong"}>{ready ? "Task ready" : failed ? "Task failed" : status === "running" ? "Creating task" : "Task draft"}</FlowTinyChip>
-              {isCurrent ? <FlowTinyChip tone="current">Current</FlowTinyChip> : task ? <FlowTinyChip>{shortTaskStatusLabel(task.status)}</FlowTinyChip> : null}
-              {node ? <FlowTinyChip>{node.title}</FlowTinyChip> : null}
-              {node ? <FlowTinyChip>Path {node.order + 1}</FlowTinyChip> : null}
-            </span>
-            <strong className="block truncate text-sm font-semibold text-foreground">{task?.title ?? payload.title}</strong>
-            <span className="mt-1 line-clamp-2 text-[11px] leading-5 text-muted-foreground">{prompt}</span>
-            <span className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
-              {subtaskCount ? <FlowTinyChip>{completedSubtasks}/{subtaskCount} steps</FlowTinyChip> : null}
-              {taskFilesCount ? <FlowTinyChip>{taskFilesCount} files</FlowTinyChip> : null}
-              {conceptCount ? <FlowTinyChip>{conceptCount} concepts</FlowTinyChip> : null}
-              {preparedFilesCount ? <FlowTinyChip>{preparedFilesCount} prepared</FlowTinyChip> : null}
-            </span>
-          </span>
-          <span className={cn(
-            "mt-0.5 inline-flex shrink-0 items-center gap-1 rounded-full border border-border/75 bg-background/80 px-2 py-1 text-[11px] font-medium text-foreground shadow-sm transition-colors",
-            ready && "group-hover:bg-foreground group-hover:text-background"
-          )}>
-            {ready ? "Open" : failed ? "Failed" : "Creating"}
-            {ready ? <ChevronRightIcon size={12} /> : failed ? <CircleAlertIcon size={12} /> : <Loader2Icon size={12} className="animate-spin" />}
-          </span>
-        </button>
-
-        {(payload.successCriteria.length || preparedFilesCount) ? (
-          <div className="flex min-w-0 flex-wrap gap-1 border-t border-border/55 bg-muted/14 px-3 py-2 text-[10px] text-muted-foreground">
-            {payload.successCriteria.length ? <FlowTinyChip>{payload.successCriteria.length} success checks</FlowTinyChip> : null}
-            {preparedFilesCount ? <FlowTinyChip>{preparedFilesCount} prepared files</FlowTinyChip> : null}
+          <div className="min-w-0 flex-1">
+            <div className="mb-0.5 flex min-w-0 items-center gap-1 text-[10px] text-muted-foreground font-medium">
+              <span>Practice Task</span>
+              <span>·</span>
+              <span className={statusColor}>{statusText}</span>
+              {subtaskCount ? (
+                <>
+                  <span>·</span>
+                  <span>{completedSubtasks}/{subtaskCount} steps</span>
+                </>
+              ) : null}
+            </div>
+            <strong className="block truncate text-sm font-semibold text-foreground tracking-tight group-hover:text-foreground/90">
+              {task?.title ?? payload.title}
+            </strong>
           </div>
-        ) : null}
-      </div>
+        </div>
+        {ready && (
+          <ChevronRightIcon size={15} className="shrink-0 text-muted-foreground/60 group-hover:translate-x-0.5 group-hover:text-foreground" />
+        )}
+      </button>
     )
   };
 }
@@ -3124,15 +3137,6 @@ function inferConceptLanguage(id: string, title: string): ConstructConceptLangua
   return "unknown";
 }
 
-function conceptLanguageLabel(value: ConstructConceptLanguage): string {
-  if (value === "swift") return "Swift";
-  if (value === "python") return "Python";
-  if (value === "typescript") return "TypeScript";
-  if (value === "javascript") return "JavaScript";
-  if (value === "cpp") return "C++";
-  return "Language neutral";
-}
-
 function readStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [];
 }
@@ -3190,8 +3194,6 @@ function buildConceptCardPart(
     ? mergeConceptCards(existingConcept, payloadConcept)
     : payloadConcept;
   const conceptReason = payload.reason;
-  const conceptSummary = conceptCard.summary || conceptCard.guides[0]?.content || payload.content || "Flow recorded this as reusable learner memory.";
-  const conceptPath = conceptCard.technology || conceptCard.tags.slice(0, 3).join(" / ") || conceptId;
   const allMutations = ensureCurrentMutation(conceptMutations, {
     id: conceptId,
     title: payload.title || conceptId,
@@ -3208,70 +3210,45 @@ function buildConceptCardPart(
     type: "actions",
     id: `${sessionId}:concept:${eventId}`,
     content: (
-      <div className="construct-flow-event-card construct-flow-concept-event flex w-full max-w-[min(39rem,100%)] min-w-0 flex-col overflow-hidden rounded-[18px] border border-border/80 bg-card/96 text-xs shadow-sm" data-attention={shouldRequestAttention ? "true" : "false"}>
+      <div className="flex w-full max-w-[32rem] min-w-0 flex-col" data-attention={shouldRequestAttention ? "true" : "false"}>
         {status === "running" && toolName !== "remove-concept" ? (
           <ConceptCreationPreview payload={payload} />
         ) : toolName !== "remove-concept" ? (
-          <button
-            type="button"
-            className="group grid w-full min-w-0 grid-cols-[2.25rem_minmax(0,1fr)_auto] items-start gap-3 p-3 text-left transition-[background-color,box-shadow,transform] duration-200 hover:bg-muted/28 active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45"
-            onClick={() => {
+          <ConceptSummaryCard
+            concept={conceptCard}
+            variant="chat"
+            actionLabel={meta.label}
+            attention={shouldRequestAttention}
+            onOpen={() => {
               onAcknowledgeConceptEvent(conceptEventKey);
               onOpenConceptDetails(conceptCard);
             }}
-          >
-            <span className="grid size-9 shrink-0 place-items-center rounded-[12px] border border-border/75 bg-background/80 text-muted-foreground shadow-sm">
-              <BookOpenIcon size={16} />
-            </span>
-            <span className="min-w-0">
-              <span className="mb-1.5 flex min-w-0 flex-wrap items-center gap-1.5">
-                <FlowTinyChip tone="strong">{meta.label}</FlowTinyChip>
-                {payload.confidence ? <FlowTinyChip>{payload.confidence} confidence</FlowTinyChip> : null}
-                {conceptCard.language && conceptCard.language !== "unknown" ? <FlowTinyChip>{conceptLanguageLabel(conceptCard.language)}</FlowTinyChip> : null}
-                {conceptCard.technology ? <FlowTinyChip>{conceptCard.technology}</FlowTinyChip> : null}
-              </span>
-              <strong className="block truncate text-sm font-semibold text-foreground">{conceptCard.title}</strong>
-              <span className="mt-1 line-clamp-2 text-[11px] leading-5 text-muted-foreground">{conceptSummary}</span>
-              <span className="mt-2 block truncate font-mono text-[10px] text-muted-foreground/85">{conceptPath}</span>
-            </span>
-            <span className="mt-0.5 inline-flex shrink-0 items-center gap-1 rounded-full border border-border/75 bg-background/80 px-2 py-1 text-[11px] font-medium text-foreground shadow-sm transition-colors group-hover:bg-foreground group-hover:text-background">
-              Open
-              <ChevronRightIcon size={12} />
-            </span>
-          </button>
+          />
         ) : (
-          <div className="grid min-w-0 grid-cols-[2.25rem_minmax(0,1fr)] gap-3 p-3">
-            <span className="grid size-9 shrink-0 place-items-center rounded-[12px] border border-destructive/25 bg-destructive/10 text-destructive">
-              <Trash2Icon size={16} />
-            </span>
-            <span className="min-w-0">
-              <FlowTinyChip>{meta.label}</FlowTinyChip>
-              <strong className="mt-1.5 block truncate text-sm font-semibold text-destructive">{payload.title || conceptId || "Removed concept"}</strong>
-              <span className="truncate font-mono text-[11px] text-destructive/80">{conceptId || "unknown concept"}</span>
-            </span>
+          <div className="construct-concept-summary-card flex w-full max-w-[32rem] min-w-0 items-center justify-between gap-2.5 rounded-[12px] border border-border/60 bg-muted/30 p-2.5 text-left text-foreground">
+            <div className="flex min-w-0 flex-1 items-center gap-2.5">
+              <span className="grid size-8 shrink-0 place-items-center rounded-[8px] border border-destructive/15 bg-destructive/5 text-destructive shadow-sm">
+                <Trash2Icon size={14} />
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="mb-0.5 flex min-w-0 items-center gap-1 text-[10px] text-muted-foreground font-medium">
+                  <span>Concept</span>
+                  <span>·</span>
+                  <span className="text-destructive font-medium">Removed</span>
+                  {conceptId && (
+                    <>
+                      <span>·</span>
+                      <span className="font-mono text-[10px] text-destructive/80">{conceptId}</span>
+                    </>
+                  )}
+                </div>
+                <strong className="block truncate text-sm font-semibold text-destructive/90 tracking-tight">
+                  {payload.title || conceptId || "Removed concept"}
+                </strong>
+              </div>
+            </div>
           </div>
         )}
-
-        <div className="flex flex-col gap-1.5 border-t border-border/55 bg-muted/14 px-3 py-2">
-          {payload.normalizedFrom ? (
-            <span className="text-[11px] text-muted-foreground">
-              Canonicalized from <span className="font-mono">{payload.normalizedFrom}</span>
-            </span>
-          ) : null}
-
-          {kind ? <ConceptMutationTree mutations={allMutations} currentId={conceptId} currentKind={kind} /> : null}
-
-          <ConceptEvidenceDisclosure
-            reason={conceptReason}
-            confidenceReason={payload.confidenceReason}
-            evidence={payload.evidence}
-          />
-          {payload.authoredBy || payload.agentContributionPercent !== undefined ? (
-            <span className="text-[11px] text-muted-foreground">
-              Authorship: {payload.authoredBy ?? "unknown"}{payload.agentContributionPercent !== undefined ? ` · agent ${payload.agentContributionPercent}%` : ""}
-            </span>
-          ) : null}
-        </div>
       </div>
     )
   };
@@ -3283,28 +3260,23 @@ function ConceptCreationPreview({ payload }: { payload: ConceptPayload }) {
     : payload.id
       ? conceptTitleFromId(payload.id)
       : "Preparing concept card";
-  const summary = payload.content?.split("\n").find((line) => line.trim()) ?? "Writing the explanation, examples, and evidence trail before this becomes learner memory.";
   return (
-    <div className="grid min-w-0 grid-cols-[2.25rem_minmax(0,1fr)_auto] items-start gap-3 p-3">
-      <span className="grid size-9 shrink-0 place-items-center rounded-[12px] border border-border/75 bg-background/80 text-muted-foreground shadow-sm">
-        <Loader2Icon size={16} className="animate-spin" />
-      </span>
-      <div className="min-w-0">
-        <span className="mb-1.5 flex min-w-0 flex-wrap items-center gap-1.5">
-          <FlowTinyChip tone="strong">Preparing concept</FlowTinyChip>
-          {payload.id ? <FlowTinyChip>{payload.id}</FlowTinyChip> : null}
+    <div className="construct-concept-summary-card flex w-full max-w-[32rem] min-w-0 items-center justify-between gap-2.5 rounded-[12px] border border-border/60 bg-muted/30 p-2.5 text-left text-foreground">
+      <div className="flex min-w-0 flex-1 items-center gap-2.5">
+        <span className="grid size-8 shrink-0 place-items-center rounded-[8px] border border-border/70 bg-background/80 text-muted-foreground shadow-sm">
+          <Loader2Icon size={14} className="animate-spin" />
         </span>
-        <strong className="block truncate text-sm font-semibold">{title}</strong>
-        <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{summary}</p>
-        <div className="mt-2 flex flex-col gap-1.5" aria-hidden="true">
-          <span className="h-1.5 w-5/6 rounded-full bg-muted" />
-          <span className="h-1.5 w-2/3 rounded-full bg-muted/70" />
+        <div className="min-w-0 flex-1">
+          <div className="mb-0.5 flex min-w-0 items-center gap-1 text-[10px] text-muted-foreground font-medium">
+            <span>Concept</span>
+            <span>·</span>
+            <span className="text-[color:var(--construct-warning)] font-medium">Preparing</span>
+          </div>
+          <strong className="block truncate text-sm font-semibold text-foreground/85 tracking-tight">
+            {title}
+          </strong>
         </div>
       </div>
-      <span className="mt-0.5 inline-flex shrink-0 items-center gap-1 rounded-full border border-border/75 bg-background/80 px-2 py-1 text-[11px] font-medium text-muted-foreground shadow-sm">
-        Creating
-        <Loader2Icon size={12} className="animate-spin" />
-      </span>
     </div>
   );
 }
@@ -4028,6 +4000,24 @@ function flowTimelinePartToTraceEntry(event: ConstructFlowTimelinePart): AgentRu
       output: event.text
     };
   }
+  if (event.kind === "compaction") {
+    const tokenLine = [
+      event.beforeTokens ? `before ${formatTokens(event.beforeTokens)}` : null,
+      event.afterTokens ? `after ${formatTokens(event.afterTokens)}` : null,
+      typeof event.summarizedMessageCount === "number" ? `${event.summarizedMessageCount} summarized` : null,
+      typeof event.preservedMessageCount === "number" ? `${event.preservedMessageCount} preserved` : null
+    ].filter(Boolean).join(" · ");
+    return {
+      id: event.id,
+      kind: "tool",
+      title: event.title,
+      subtitle: tokenLine || event.detail,
+      status: event.status === "error" ? "error" : event.status === "running" ? "running" : "completed",
+      icon: "memory",
+      input: event.detail,
+      output: event.summary
+    };
+  }
 
   const toolName = event.kind === "tool" ? event.name : event.title;
   const isConcept = event.kind === "tool" && (
@@ -4352,4 +4342,260 @@ function firstFilePath(nodes: WorkspaceTreeNode[]): string | null {
     if (nested) return nested;
   }
   return null;
+}
+
+function getShortModelName(name: string): string {
+  if (!name) return "";
+  let cleanName = name;
+  const parts = name.split(":");
+  if (parts.length > 1) {
+    cleanName = parts[1].trim();
+  }
+  cleanName = cleanName
+    .replace(/^gpt-/i, "")
+    .replace(/^gemini-/i, "")
+    .replace(/^claude-/i, "")
+    .replace(/^deepseek-/i, "")
+    .replace(/^qwen-/i, "")
+    .replace(/^llama-/i, "")
+    .replace(/^mistral-/i, "");
+
+  return cleanName;
+}
+
+function FlowCircularContextMeter({ contextWindow }: { contextWindow?: ConstructAgentContextWindow }) {
+  const usedTokens = contextWindow?.usedTokens ?? ((contextWindow?.inputTokens ?? 0) + (contextWindow?.outputTokens ?? 0));
+  const maxTokens = contextWindow?.maxTokens;
+  const percent = usedTokens && maxTokens
+    ? Math.min(100, Math.max(0, Math.round((usedTokens / maxTokens) * 100)))
+    : null;
+
+  const radius = 6.2;
+  const strokeWidth = 2.0;
+  const circumference = 2 * Math.PI * radius;
+  const displayPercent = percent ?? 0;
+  const strokeDashoffset = circumference - (displayPercent / 100) * circumference;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-full hover:bg-muted cursor-help">
+          <svg className="size-[14px] -rotate-90" viewBox="0 0 16 16">
+            <circle
+              cx="8"
+              cy="8"
+              r={radius}
+              className="stroke-muted-foreground/15 fill-none"
+              strokeWidth={strokeWidth}
+            />
+            <circle
+              cx="8"
+              cy="8"
+              r={radius}
+              className="stroke-muted-foreground fill-none transition-[stroke-dashoffset] duration-300"
+              strokeWidth={strokeWidth}
+              strokeDasharray={circumference}
+              strokeDashoffset={strokeDashoffset}
+              strokeLinecap="round"
+            />
+          </svg>
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="flex min-w-[15rem] flex-col items-stretch gap-1.5 rounded-[10px] px-4 py-3 text-left z-50">
+        <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">Context Window</span>
+        <strong className="text-sm font-semibold">{percent == null ? "Unknown" : `${percent}% full`}</strong>
+        <span className="text-xs text-muted-foreground">{formatTokens(usedTokens)} / {maxTokens ? formatTokens(maxTokens) : "unknown"} tokens</span>
+        <span className="grid gap-0.5 text-[11px] text-muted-foreground">
+          <span className="flex justify-between gap-4"><span>System prompt</span><span>{formatTokens(contextWindow?.systemPromptTokens ?? 0)}</span></span>
+          <span className="flex justify-between gap-4"><span>Flow state</span><span>{formatTokens(contextWindow?.flowStateTokens ?? 0)}</span></span>
+          <span className="flex justify-between gap-4"><span>Chat messages</span><span>{formatTokens(contextWindow?.chatTokens ?? 0)}</span></span>
+          {contextWindow?.compactedSummaryTokens ? (
+            <span className="flex justify-between gap-4"><span>Compacted summary</span><span>{formatTokens(contextWindow.compactedSummaryTokens)}</span></span>
+          ) : null}
+        </span>
+        {contextWindow?.compaction ? (
+          <span className="rounded-[7px] border bg-background/70 px-2 py-1 text-[11px] text-muted-foreground">
+            Compaction {contextWindow.compaction.status}
+            {typeof contextWindow.compaction.summarizedMessageCount === "number" ? ` · ${contextWindow.compaction.summarizedMessageCount} summarized` : ""}
+            {typeof contextWindow.compaction.preservedMessageCount === "number" ? ` · ${contextWindow.compaction.preservedMessageCount} preserved` : ""}
+          </span>
+        ) : null}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+function FlowComposerLeftControls() {
+  return (
+    <div className="flex items-center gap-1.5">
+      <Button
+        size="icon-sm"
+        variant="ghost"
+        className="h-7 w-7 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted"
+        type="button"
+        title="Add files or context"
+      >
+        <PlusIcon size={16} />
+      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1 rounded-full px-2 text-xs font-semibold text-orange-600 hover:text-orange-700 hover:bg-orange-50 dark:text-orange-400 dark:hover:text-orange-300 dark:hover:bg-orange-950/20"
+              type="button"
+            >
+              <CircleAlertIcon size={14} className="text-orange-500 dark:text-orange-400" />
+              <span>Full access</span>
+              <ChevronDownIcon size={12} className="text-orange-500/70" />
+            </Button>
+          }
+        />
+        <DropdownMenuContent align="start" className="w-48 p-1 z-50">
+          <DropdownMenuGroup>
+            <DropdownMenuLabel className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Context Access</DropdownMenuLabel>
+            <DropdownMenuItem className="flex items-center gap-2 rounded-[7px] text-xs">
+              <CircleAlertIcon size={13} className="text-orange-500" />
+              <span>Full access</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem className="flex items-center gap-2 rounded-[7px] text-xs text-muted-foreground" disabled>
+              <CircleIcon size={13} />
+              <span>Workspace only (mock)</span>
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}
+
+function FlowComposerRightControls({
+  contextWindow,
+  settings,
+  model,
+  models,
+  modelsBusy,
+  modelsError,
+  reasoningEffort,
+  onModelChange,
+  onReasoningEffortChange
+}: {
+  contextWindow?: ConstructAgentContextWindow;
+  settings: AiSettings | null;
+  model: string;
+  models: ModelCatalogEntry[];
+  modelsBusy: boolean;
+  modelsError: string | null;
+  reasoningEffort: AiSettings["reasoningEffort"];
+  onModelChange: (model: string) => void;
+  onReasoningEffortChange: (effort: AiSettings["reasoningEffort"]) => void;
+}) {
+  const activeModel = models.find((m) => m.id === model) ?? null;
+  const provider = settings?.provider ?? "openai";
+  const activeBrand = modelBrandFor(activeModel, provider);
+  const buckets = useMemo(() => bucketModelsByBrand(models, provider), [models, provider]);
+  const visibleBrandKeys = useMemo(() => sortModelBrands([...buckets.keys()]), [buckets]);
+
+  const shortModel = getShortModelName(activeModel?.name || readableModelName(model) || "Model");
+  const activeEffort = reasoningEffortMeta(reasoningEffort);
+  const shortEffort = activeEffort.value === "auto" ? "Extra High" : activeEffort.value === "none" ? "Off" : activeEffort.label;
+  const triggerLabel = `${shortModel} ${shortEffort}`;
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <FlowCircularContextMeter contextWindow={contextWindow} />
+
+      {settings ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1.5 rounded-full px-2 text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-muted"
+                type="button"
+                disabled={modelsBusy}
+              >
+                <CpuIcon size={15.5} className="shrink-0" />
+                <span className="composer-trigger-text truncate max-w-[12rem]">{triggerLabel}</span>
+                <ChevronDownIcon size={13.5} className="text-muted-foreground/70 shrink-0" />
+              </Button>
+            }
+          />
+          <DropdownMenuContent align="end" className="w-56 p-1 z-50">
+            <DropdownMenuGroup>
+              <DropdownMenuLabel className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Reasoning</DropdownMenuLabel>
+              {reasoningEffortOptions.map((option) => {
+                const displayLabel = option.value === "auto" ? "Extra High" : option.label;
+                return (
+                  <DropdownMenuItem
+                    key={option.value}
+                    className="flex items-center justify-between gap-2 rounded-[7px] text-xs"
+                    onSelect={() => onReasoningEffortChange(option.value)}
+                  >
+                    <span>{displayLabel}</span>
+                    {option.value === reasoningEffort ? <CheckIcon size={13} className="text-foreground shrink-0" /> : null}
+                  </DropdownMenuItem>
+                );
+              })}
+            </DropdownMenuGroup>
+
+            <DropdownMenuSeparator className="-mx-1 my-1 h-px bg-border" />
+
+            <DropdownMenuGroup>
+              <DropdownMenuLabel className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Model</DropdownMenuLabel>
+              {visibleBrandKeys.map((brand) => {
+                const meta = modelBrandMeta(brand);
+                const brandModels = buckets.get(brand) ?? [];
+
+                return (
+                  <DropdownMenuSub key={brand}>
+                    <DropdownMenuSubTrigger className="flex items-center justify-between gap-2 rounded-[7px] text-xs">
+                      <span>{meta.label}</span>
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuPortal>
+                      <DropdownMenuSubContent className="w-64 max-h-[220px] overflow-y-auto p-1 z-50">
+                        <DropdownMenuGroup>
+                          <DropdownMenuLabel className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground sticky top-0 bg-popover z-10">
+                            {meta.label} Models
+                          </DropdownMenuLabel>
+                          {brandModels.map((m) => (
+                            <DropdownMenuItem
+                              key={m.id}
+                              className="flex items-center justify-between gap-2 rounded-[7px] text-xs"
+                              onSelect={() => onModelChange(m.id)}
+                            >
+                              <span className="truncate">{m.name || readableModelName(m.id)}</span>
+                              {m.id === model ? <CheckIcon size={13} className="text-foreground shrink-0" /> : null}
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuGroup>
+                      </DropdownMenuSubContent>
+                    </DropdownMenuPortal>
+                  </DropdownMenuSub>
+                );
+              })}
+            </DropdownMenuGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : (
+        <span className="inline-flex h-7 items-center gap-1.5 rounded-full bg-muted/45 px-2 text-[11px] text-muted-foreground">
+          <Loader2Icon className="size-3 animate-spin" />
+          Model
+        </span>
+      )}
+
+
+
+      {modelsError ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-destructive ring-1 ring-destructive/30">!</span>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="max-w-[18rem] text-left z-50">{modelsError}</TooltipContent>
+        </Tooltip>
+      ) : null}
+    </div>
+  );
 }

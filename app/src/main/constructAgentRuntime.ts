@@ -14,6 +14,13 @@ import { finalizeDanglingToolRunEvents, iterationDetail, type ObservedToolEventS
 
 export type ConstructAgentTools = ToolsInput;
 
+export type ConstructAgentRuntimeMessage = {
+  role: "system" | "user" | "assistant";
+  content: string;
+};
+
+type ConstructAgentStreamInput = Parameters<Agent["stream"]>[0];
+
 export type ConstructAgentRuntimeRequest<T> = {
   id: string;
   featureId?: ConstructAiFeatureId;
@@ -21,6 +28,7 @@ export type ConstructAgentRuntimeRequest<T> = {
   purpose: string;
   instructions: string;
   prompt: string;
+  messages?: ConstructAgentRuntimeMessage[];
   schema: z.ZodType<T>;
   tools?: ConstructAgentTools;
   maxRetries?: number;
@@ -123,7 +131,8 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
       detail: request.prompt,
       payload: {
         prompt: request.prompt,
-        contextSummary: request.contextSummary
+        contextSummary: request.contextSummary,
+        messages: request.messages
       }
     });
 
@@ -171,7 +180,7 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
     const runEventId = outputEventId(request.id);
     emitProviderLog(
       model.providerId,
-      `Agentic API call started: ${request.purpose} | Model: ${model.modelId} | Tools: ${hasTools ? "yes" : "no"} | Prompt length: ${request.prompt.length} chars`,
+      `Agentic API call started: ${request.purpose} | Model: ${model.modelId} | Tools: ${hasTools ? "yes" : "no"} | Prompt length: ${renderRuntimeInputForLog(request).length} chars`,
       "info"
     );
 
@@ -184,19 +193,15 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
     let completedSteps = 0;
 
     try {
-      const output = await agent.stream(request.prompt, {
+      const streamInput = (request.messages ?? request.prompt) as ConstructAgentStreamInput;
+      const output = await agent.stream(streamInput, {
         abortSignal: internalAbort.signal,
         maxSteps: request.maxSteps ?? (hasTools ? 16 : 1),
         toolChoice: hasTools ? "auto" : undefined,
         providerOptions,
         onIterationComplete: (iteration) => {
           completedSteps = iteration.iteration;
-          const hasHaltingTool = iteration.toolCalls.some((call) =>
-            ["ask-question", "askQuestion", "ask-user", "askUser", "practice-task"].includes(call.name)
-          );
-          if (hasHaltingTool) {
-            internalAbort.abort();
-          }
+          // Halting is handled in observeStream on successful tool-result chunks
 
           const normalized: ConstructAgentIteration = {
             iteration: iteration.iteration,
@@ -248,7 +253,7 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
       });
 
       const [observedResult, steps, finishReason, totalUsage, mastraText] = await Promise.all([
-        this.observeStream(output.fullStream, request, runStartedAt, runEventId, observed),
+        this.observeStream(output.fullStream, request, runStartedAt, runEventId, observed, internalAbort),
         output.steps,
         output.finishReason,
         output.totalUsage.catch(() => undefined),
@@ -594,7 +599,8 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
     request: Pick<ConstructAgentRuntimeRequest<T>, "id" | "onTrace">,
     runStartedAt: number,
     runEventId: string,
-    observed?: { text: string }
+    observed?: { text: string },
+    abortController?: AbortController
   ): Promise<{ text: string }> {
     const reasoning = new Map<string, {
       event: ConstructAgentRunEvent;
@@ -806,7 +812,6 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
 
       if (chunk.type === "reasoning-start") {
         closeTextSegment("reasoning-start");
-        closeDanglingToolEvents("reasoning-start");
         closeActiveReasoningSegment("reasoning-start");
         startReasoningSegment(chunkString(chunk, "id"));
         continue;
@@ -814,7 +819,6 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
 
       if (chunk.type === "reasoning-delta") {
         closeTextSegment("reasoning-delta");
-        closeDanglingToolEvents("reasoning-delta");
         activeStreamPart = "reasoning";
         const rawId = chunkString(chunk, "id");
         const id = reasoningIdForDelta(rawId);
@@ -869,7 +873,6 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
         const rawId = chunkString(chunk, "id");
         closeActiveReasoningSegment("text-start");
         closeTextSegment("text-start");
-        closeDanglingToolEvents("text-start");
         startTextSegment(rawId);
         continue;
       }
@@ -877,7 +880,6 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
       if (chunk.type === "text-delta") {
         const rawId = chunkString(chunk, "id");
         closeActiveReasoningSegment("text-delta");
-        closeDanglingToolEvents("text-delta");
         const id = messageIdForTextChunk(rawId);
         activeMessageId = id;
         activeStreamPart = "text";
@@ -1037,6 +1039,12 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
           event,
           payload: { ...chunk, providerToolCallId, id: event.id }
         });
+        if (chunk.type === "tool-result" && abortController) {
+          const isHalting = ["ask-question", "askQuestion", "ask-user", "askUser", "practice-task"].includes(toolName);
+          if (isHalting) {
+            abortController.abort();
+          }
+        }
         continue;
       }
 
@@ -1046,7 +1054,6 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
       if ((chunk.type === "object" || chunk.type === "network-object") && partialObject) {
         closeTextSegment("object");
         closeActiveReasoningSegment("object");
-        closeDanglingToolEvents("object");
         activeStreamPart = "object";
         request.onTrace?.({
           title: "Structured response delta",
@@ -1193,6 +1200,13 @@ function stringifyForTrace(value: unknown): string {
   } catch {
     return String(value);
   }
+}
+
+function renderRuntimeInputForLog(request: ConstructAgenticRuntimeRequest): string {
+  if (!request.messages?.length) return request.prompt;
+  return request.messages
+    .map((message) => `${message.role}: ${message.content}`)
+    .join("\n\n");
 }
 
 function describeSchema(schema: z.ZodTypeAny): unknown {

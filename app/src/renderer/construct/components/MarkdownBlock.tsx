@@ -52,7 +52,7 @@ export function MarkdownBlock({
 
       if (isInlineLike) {
         return (
-          <code className="rounded border bg-muted px-1 py-0.5 font-mono text-[0.85em]" {...props}>
+          <code className="rounded border bg-muted px-1 py-0.5 font-mono text-[0.9em]" {...props}>
             {children}
           </code>
         );
@@ -73,7 +73,7 @@ export function MarkdownBlock({
               padding: "12px 14px",
               background: "transparent",
               borderRadius: 0,
-              fontSize: "10.5px",
+              fontSize: "12px",
               lineHeight: "1.6",
               overflowX: "auto"
             }}
@@ -169,7 +169,7 @@ export function MarkdownBlock({
   };
 
   return (
-    <div className={cn("space-y-3 text-[12px] leading-relaxed text-foreground [&_h1]:text-[16px] [&_h1]:font-semibold [&_h2]:text-[14px] [&_h2]:font-semibold [&_h3]:text-[12px] [&_h3]:font-semibold [&_p]:leading-relaxed [&_strong]:font-semibold", className)}>
+    <div className={cn("space-y-3 text-[13px] leading-relaxed text-foreground [&_h1]:text-[16px] [&_h1]:font-semibold [&_h2]:text-[14px] [&_h2]:font-semibold [&_h3]:text-[13px] [&_h3]:font-semibold [&_p]:leading-relaxed [&_strong]:font-semibold", className)}>
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
         {renderInlineRefsAsMarkdown(content)}
       </ReactMarkdown>

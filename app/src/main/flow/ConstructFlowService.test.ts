@@ -14,6 +14,32 @@ import { createConstructProtocolTools } from "../agent-tools/constructProtocolTo
 import type { StoredFlowProject } from "../projects/ConstructProjectTypes";
 import type { ConstructFlowSession } from "../../shared/constructFlow";
 
+function createFlowTestProject(workspaceRoot: string, id: string, goal = "Test Flow context"): StoredFlowProject {
+  return {
+    kind: "flow",
+    id,
+    title: id,
+    description: "A Flow test project",
+    progress: 0,
+    lastOpenedAt: new Date().toISOString(),
+    workspacePath: path.join(workspaceRoot, id),
+    sourcePath: null,
+    activeFilePath: null,
+    fileTreeExpanded: [],
+    completedAt: null,
+    flow: {
+      goal,
+      memoryDirectory: ".construct/flow-memory",
+      threadId: `${id}-thread`,
+      researchEnabled: false,
+      researchCompletedAt: null,
+      sessions: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }
+  };
+}
+
 describe("ConstructFlowService Concept and Task Tools", () => {
   it("executes add-concept, modify-concept, and remove-concept tools and verifies hierarchical behavior", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "construct-flow-test-"));
@@ -933,6 +959,146 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     });
     assert.equal(starterSession.origin, "system");
     assert.deepEqual(starterSession.messages, []);
+  });
+
+  it("sends the persisted Flow transcript as the model message array", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "construct-flow-test-message-array-"));
+    const workspaceRoot = path.join(dir, "workspaces");
+    await mkdir(workspaceRoot, { recursive: true });
+    const workspace = new ConstructProjectWorkspaceService(
+      () => workspaceRoot,
+      () => dir
+    );
+    const flowMemory = new ConstructFlowMemoryService(workspace);
+    const logs = new AgentLogService(() => {});
+    const learningStore = new ConstructLearningStore(path.join(dir, "learning-state.json"));
+    const calls: any[] = [];
+    const service = new ConstructFlowService({
+      workspace,
+      flowMemory,
+      latestTerminalOutput: () => "",
+      logs,
+      learningStore: () => learningStore,
+      agentRuntime: () => ({
+        runAgentic: async (input: any) => {
+          calls.push(input);
+          return { text: "We will keep teaching from the actual transcript.", stepCount: 1, finishReason: "stop", durationMs: 1 };
+        }
+      }) as any
+    });
+    const project = createFlowTestProject(workspaceRoot, "message-array-project");
+    await mkdir(project.workspacePath, { recursive: true });
+    project.flow.sessions.push({
+      id: "prior-session",
+      projectId: project.id,
+      threadId: "thread",
+      origin: "user",
+      messages: [
+        { id: "m1", role: "user", content: "I do not know Swift. I want C++ instead.", createdAt: new Date().toISOString() },
+        { id: "m2", role: "assistant", content: "Cool, we should slow down and teach C++ basics first.", createdAt: new Date().toISOString() }
+      ],
+      status: "completed",
+      toolCalls: [],
+      agentEvents: [],
+      timeline: [],
+      actions: [],
+      practiceTasks: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    });
+
+    const result = await service.runMainAgent(project, {
+      projectId: project.id,
+      message: "What is a pointer actually?",
+      quickAction: "continue"
+    });
+
+    assert.equal(calls.length, 1);
+    assert.ok(Array.isArray(calls[0].messages));
+    assert.deepEqual(calls[0].messages.map((message: any) => message.role), ["user", "assistant", "user"]);
+    assert.match(calls[0].messages[0].content, /I do not know Swift/);
+    assert.match(calls[0].messages[1].content, /teach C\+\+ basics/);
+    assert.match(calls[0].messages[2].content, /What is a pointer actually\?/);
+    assert.match(calls[0].instructions, /Structured Flow Path/);
+    assert.equal(calls[0].prompt, "What is a pointer actually?");
+    assert.ok((result.session.contextWindow?.systemPromptTokens ?? 0) > 0);
+    assert.ok((result.session.contextWindow?.chatTokens ?? 0) > 0);
+    assert.equal(result.session.contextWindow?.messageCount, 3);
+  });
+
+  it("auto-compacts older Flow transcript messages and preserves the recent tail", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "construct-flow-test-auto-compact-"));
+    const workspaceRoot = path.join(dir, "workspaces");
+    await mkdir(workspaceRoot, { recursive: true });
+    const workspace = new ConstructProjectWorkspaceService(
+      () => workspaceRoot,
+      () => dir
+    );
+    const flowMemory = new ConstructFlowMemoryService(workspace);
+    const logs = new AgentLogService(() => {});
+    const learningStore = new ConstructLearningStore(path.join(dir, "learning-state.json"));
+    const calls: any[] = [];
+    const service = new ConstructFlowService({
+      workspace,
+      flowMemory,
+      latestTerminalOutput: () => "",
+      logs,
+      learningStore: () => learningStore,
+      agentRuntime: () => ({
+        runAgentic: async (input: any) => {
+          calls.push(input);
+          if (input.id === "construct-flow-context-compactor") {
+            return {
+              text: "The learner switched from Swift to C++, has not proven pointer understanding, and must be taught safely before any task.",
+              stepCount: 1,
+              finishReason: "stop",
+              durationMs: 1
+            };
+          }
+          return { text: "Continuing after compaction.", stepCount: 1, finishReason: "stop", durationMs: 1 };
+        }
+      }) as any
+    });
+    const project = createFlowTestProject(workspaceRoot, "auto-compact-project");
+    await mkdir(project.workspacePath, { recursive: true });
+    const largeText = "learner still needs concept-first teaching ".repeat(350);
+    for (let index = 0; index < 18; index += 1) {
+      project.flow.sessions.push({
+        id: `prior-${index}`,
+        projectId: project.id,
+        threadId: "thread",
+        origin: "user",
+        messages: [
+          { id: `u-${index}`, role: "user", content: `turn ${index}: ${largeText}`, createdAt: new Date().toISOString() },
+          { id: `a-${index}`, role: "assistant", content: `turn ${index}: teach first, no task yet. ${largeText}`, createdAt: new Date().toISOString() }
+        ],
+        status: "completed",
+        toolCalls: [],
+        agentEvents: [],
+        timeline: [],
+        actions: [],
+        practiceTasks: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+    }
+
+    const result = await service.runMainAgent(project, {
+      projectId: project.id,
+      message: "continue but do not forget I have not learned pointers",
+      quickAction: "continue"
+    });
+
+    assert.equal(calls[0].id, "construct-flow-context-compactor");
+    assert.equal(calls[1].id, "construct-flow-agent");
+    assert.match(calls[1].messages[0].content, /Compacted Flow context summary/);
+    assert.match(calls[1].messages[0].content, /has not proven pointer understanding/);
+    assert.match(calls[1].messages.at(-1).content, /do not forget I have not learned pointers/);
+    assert.ok(calls[1].messages.length < 18 * 2);
+    assert.equal(result.session.contextCompaction?.status, "completed");
+    assert.ok((result.session.contextCompaction?.summarizedMessageCount ?? 0) > 0);
+    assert.equal(result.session.contextWindow?.compaction?.status, "completed");
+    assert.ok(result.session.timeline.some((part) => part.kind === "compaction" && part.status === "completed"));
   });
 
   it("saves researched context to research.md instead of preserving a clarification pivot", async () => {

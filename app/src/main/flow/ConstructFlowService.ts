@@ -7,7 +7,7 @@ import { createTool } from "@mastra/core/tools";
 import type { ToolsInput } from "@mastra/core/agent";
 import { z } from "zod";
 
-import { createConstructAgentRuntime, type ConstructAgentTraceEntry } from "../constructAgentRuntime";
+import { createConstructAgentRuntime, type ConstructAgentRuntimeMessage, type ConstructAgentTraceEntry } from "../constructAgentRuntime";
 import { AgentLogService } from "../ai/AgentLogService";
 import { modelForAiFeature } from "../constructAiFeatures";
 import {
@@ -22,6 +22,7 @@ import type {
   ConstructFlowAction,
   ConstructFlowAgentInput,
   ConstructFlowAgentResult,
+  ConstructFlowContextCompaction,
   ConstructFlowMemoryPatchResult,
   ConstructFlowPathNode,
   ConstructFlowPracticeTask,
@@ -41,6 +42,8 @@ import { ConstructLearningStore } from "../constructLearningStore";
 const ignoredNames = new Set([".git", ".construct", "node_modules", "dist", "build", ".next", "coverage"]);
 const maxBaselineFileBytes = 120_000;
 const maxDiffChars = 18_000;
+const flowCompactionThreshold = 0.72;
+const flowCompactionRecentMessageCount = 10;
 const conceptLanguageSchema = z.enum(CONSTRUCT_CONCEPT_LANGUAGES);
 const flowConceptConfidenceLevels = [
   "unknown",
@@ -55,21 +58,53 @@ const flowConceptConfidenceLevels = [
 ] as const satisfies readonly ConstructConceptConfidence[];
 const flowConceptConfidenceSchema = z.enum(flowConceptConfidenceLevels);
 
+type FlowModelMessage = ConstructAgentRuntimeMessage & {
+  id: string;
+  sessionId?: string;
+  source: "chat" | "summary";
+};
+
+function estimateTextTokens(text: string): number {
+  return Math.max(1, Math.ceil(text.length / 4));
+}
+
 function estimateContextWindow(
   settings: StoredSettings["ai"] | undefined,
-  renderedPrompt: string
+  input: {
+    systemPrompt: string;
+    flowStatePrompt: string;
+    messages: FlowModelMessage[];
+    compactedMessageCount?: number;
+    compaction?: ConstructAgentContextWindow["compaction"];
+  }
 ): ConstructAgentContextWindow {
   const modelId = settings ? modelForAiFeature(settings, "construct-flow") : undefined;
-  const usedTokens = Math.max(1, Math.ceil(renderedPrompt.length / 4));
+  const fullSystemPromptTokens = estimateTextTokens(input.systemPrompt);
+  const flowStateTokens = estimateTextTokens(input.flowStatePrompt);
+  const systemPromptTokens = Math.max(1, fullSystemPromptTokens - flowStateTokens);
+  const chatTokens = input.messages
+    .filter((message) => message.source === "chat")
+    .reduce((sum, message) => sum + estimateTextTokens(`${message.role}\n${message.content}`), 0);
+  const compactedSummaryTokens = input.messages
+    .filter((message) => message.source === "summary")
+    .reduce((sum, message) => sum + estimateTextTokens(`${message.role}\n${message.content}`), 0);
+  const usedTokens = fullSystemPromptTokens + chatTokens + compactedSummaryTokens;
   return {
     providerId: settings?.provider,
     modelId,
     usedTokens,
     inputTokens: usedTokens,
     outputTokens: 0,
+    systemPromptTokens,
+    chatTokens,
+    flowStateTokens,
+    compactedSummaryTokens,
+    messageCount: input.messages.length,
+    compactedMessageCount: input.compactedMessageCount ?? 0,
     maxTokens: estimateModelContextTokens(modelId),
     source: "estimated",
-    updatedAt: new Date().toISOString()
+    updatedAt: new Date().toISOString(),
+    compaction: input.compaction
   };
 }
 
@@ -187,9 +222,90 @@ export class ConstructFlowService {
     const store = this.options.learningStore();
     const learningState = await store.getState();
     const concepts = uniqueKnowledgeConcepts(Object.values(learningState.knowledgeBase.concepts));
-    const mainPrompt = buildMainPrompt(project, input, memory, concepts);
-    session.contextWindow = estimateContextWindow(settings?.ai, `${FLOW_MAIN_AGENT_PROMPT}\n\n${mainPrompt}`);
+    const flowStatePrompt = buildMainPrompt(project, input, memory, concepts);
+    let systemPrompt = buildFlowSystemPrompt(flowStatePrompt);
+    let modelMessages = buildFlowModelMessages(project);
+    let compactedMessageCount = latestCompletedCompaction(project)?.summarizedMessageCount ?? 0;
+    session.contextWindow = estimateContextWindow(settings?.ai, {
+      systemPrompt,
+      flowStatePrompt,
+      messages: modelMessages,
+      compactedMessageCount
+    });
     publish("updated");
+    if (shouldCompactFlowContext(session.contextWindow, modelMessages)) {
+      const selected = selectMessagesForCompaction(modelMessages);
+      if (selected) {
+        const compaction = createRunningContextCompaction(session.contextWindow, selected);
+        session.contextCompaction = compaction;
+        upsertTimelinePart(session.timeline, timelinePartFromCompaction(compaction));
+        session.contextWindow = estimateContextWindow(settings?.ai, {
+          systemPrompt,
+          flowStatePrompt,
+          messages: modelMessages,
+          compactedMessageCount,
+          compaction: {
+            status: "running",
+            reason: compaction.reason,
+            beforeTokens: compaction.beforeTokens,
+            summarizedMessageCount: compaction.summarizedMessageCount,
+            preservedMessageCount: compaction.preservedMessageCount,
+            updatedAt: compaction.startedAt
+          }
+        });
+        publish("updated");
+        try {
+          const summary = await this.compactFlowContext(project, selected, flowStatePrompt);
+          const completedAt = new Date().toISOString();
+          compaction.status = "completed";
+          compaction.completedAt = completedAt;
+          compaction.summary = summary;
+          modelMessages = buildCompactedModelMessages(summary, selected);
+          compactedMessageCount = selected.head.length;
+          systemPrompt = buildFlowSystemPrompt(flowStatePrompt);
+          const compactedWindow = estimateContextWindow(settings?.ai, {
+            systemPrompt,
+            flowStatePrompt,
+            messages: modelMessages,
+            compactedMessageCount,
+            compaction: {
+              status: "completed",
+              reason: compaction.reason,
+              beforeTokens: compaction.beforeTokens,
+              afterTokens: estimateMessagesTokens(modelMessages) + estimateTextTokens(systemPrompt),
+              summarizedMessageCount: compaction.summarizedMessageCount,
+              preservedMessageCount: compaction.preservedMessageCount,
+              updatedAt: completedAt
+            }
+          });
+          compaction.afterTokens = compactedWindow.usedTokens;
+          session.contextWindow = compactedWindow;
+          upsertTimelinePart(session.timeline, timelinePartFromCompaction(compaction));
+          publish("updated");
+        } catch (error) {
+          const completedAt = new Date().toISOString();
+          compaction.status = "error";
+          compaction.completedAt = completedAt;
+          compaction.errorMessage = error instanceof Error ? error.message : String(error);
+          session.contextWindow = estimateContextWindow(settings?.ai, {
+            systemPrompt,
+            flowStatePrompt,
+            messages: modelMessages,
+            compactedMessageCount,
+            compaction: {
+              status: "error",
+              reason: compaction.errorMessage,
+              beforeTokens: compaction.beforeTokens,
+              summarizedMessageCount: compaction.summarizedMessageCount,
+              preservedMessageCount: compaction.preservedMessageCount,
+              updatedAt: completedAt
+            }
+          });
+          upsertTimelinePart(session.timeline, timelinePartFromCompaction(compaction));
+          publish("updated");
+        }
+      }
+    }
 
     const practiceTask = this.createPracticeTaskTool(project, session, publish);
     const planLearningPath = this.createPlanLearningPathTool(project, publish);
@@ -221,8 +337,9 @@ export class ConstructFlowService {
         featureId: "construct-flow",
         name: "Construct Flow",
         purpose: "Construct Flow mentor agent",
-        instructions: FLOW_MAIN_AGENT_PROMPT,
-        prompt: mainPrompt,
+        instructions: systemPrompt,
+        prompt: input.message,
+        messages: modelMessages.map(({ role, content }) => ({ role, content })),
         tools,
         maxSteps: 16,
         maxRetries: 2,
@@ -424,6 +541,24 @@ export class ConstructFlowService {
     task.submission = submission;
     project.flow.updatedAt = submission.submittedAt;
     return submission;
+  }
+
+  private async compactFlowContext(
+    project: StoredFlowProject,
+    selected: FlowCompactionSelection,
+    flowStatePrompt: string
+  ): Promise<string> {
+    const generated = await (this.options.agentRuntime?.() ?? createConstructAgentRuntime()).runAgentic({
+      id: "construct-flow-context-compactor",
+      featureId: "construct-flow",
+      name: "Construct Flow Compactor",
+      purpose: "Construct Flow context compaction",
+      instructions: FLOW_CONTEXT_COMPACTION_PROMPT,
+      prompt: buildFlowCompactionPrompt(project, selected, flowStatePrompt),
+      maxSteps: 1,
+      maxRetries: 1
+    });
+    return normalizeCompactionSummary(generated.text);
   }
 
   private createSession(project: StoredFlowProject, input: ConstructFlowAgentInput): ConstructFlowSession {
@@ -668,9 +803,9 @@ export class ConstructFlowService {
           conceptIds: relatedConceptIds,
           introducedConceptIds,
           learnerReadiness,
-          safety: toolInput.safety ?? {
-            level: "beginner-safe",
-            rationale: "Task avoids privileged host access and leaves the learner with observable work."
+          safety: {
+            level: toolInput.safety?.level ?? "beginner-safe",
+            rationale: toolInput.safety?.rationale ?? "Task avoids privileged host access and leaves the learner with observable work."
           },
           successCriteria: toolInput.successCriteria,
           subtasks,
@@ -2052,6 +2187,230 @@ async function listTextFiles(
   return files;
 }
 
+type FlowCompactionSelection = {
+  head: FlowModelMessage[];
+  tail: FlowModelMessage[];
+  beforeTokens: number;
+};
+
+function buildFlowSystemPrompt(flowStatePrompt: string): string {
+  return `${FLOW_MAIN_AGENT_PROMPT}\n\n${flowStatePrompt}`;
+}
+
+function buildFlowModelMessages(project: StoredFlowProject): FlowModelMessage[] {
+  const messages = buildRawFlowModelMessages(project);
+  const compaction = latestCompletedCompaction(project);
+  if (!compaction?.summary) return messages;
+  const summarized = new Set(compaction.summarizedMessageIds);
+  const preserved = new Set(compaction.preservedMessageIds);
+  return [
+    {
+      id: `compaction:${compaction.id}`,
+      role: "assistant",
+      content: `Compacted Flow context summary:\n\n${compaction.summary}`,
+      source: "summary"
+    },
+    ...messages.filter((message) => preserved.has(message.id) || !summarized.has(message.id))
+  ];
+}
+
+function buildRawFlowModelMessages(project: StoredFlowProject): FlowModelMessage[] {
+  const messages: FlowModelMessage[] = [];
+  for (const session of project.flow.sessions) {
+    for (const message of session.messages) {
+      if (message.role === "user") {
+        messages.push({
+          id: `${session.id}:${message.id}`,
+          sessionId: session.id,
+          role: "user",
+          content: message.content,
+          source: "chat"
+        });
+      }
+    }
+    const visibleActivity = visibleFlowActivityForModel(session);
+    const assistantMessages = session.messages.filter((message) => message.role === "assistant");
+    for (const message of assistantMessages) {
+      const content = [visibleActivity, message.content].filter((part) => part.trim()).join("\n\n");
+      messages.push({
+        id: `${session.id}:${message.id}`,
+        sessionId: session.id,
+        role: "assistant",
+        content,
+        source: "chat"
+      });
+    }
+    if (!assistantMessages.length && visibleActivity) {
+      messages.push({
+        id: `${session.id}:visible-activity`,
+        sessionId: session.id,
+        role: "assistant",
+        content: visibleActivity,
+        source: "chat"
+      });
+    }
+  }
+  return messages;
+}
+
+function visibleFlowActivityForModel(session: ConstructFlowSession): string {
+  const lines: string[] = [];
+  if (session.contextCompaction?.status === "completed" && session.contextCompaction.summary) {
+    lines.push(`Visible compaction: summarized ${session.contextCompaction.summarizedMessageCount} older chat messages and preserved ${session.contextCompaction.preservedMessageCount} recent messages.`);
+  }
+  for (const toolCall of session.toolCalls) {
+    if (toolCall.name === "ask-question" || toolCall.name === "askQuestion") {
+      const question = readAskQuestionPayload(toolCall.input, toolCall.outputPreview).question || toolCall.title;
+      lines.push(toolCall.response
+        ? `Visible question answered: ${question}\nLearner answer: ${toolCall.response.answer}`
+        : `Visible question waiting: ${question}`);
+      continue;
+    }
+    if (toolCall.name === "practice-task") {
+      const input = typeof toolCall.input === "object" && toolCall.input !== null ? toolCall.input as Record<string, unknown> : {};
+      lines.push(`Visible practice task ${toolCall.status}: ${readStringValue(input.title) ?? toolCall.title}`);
+      continue;
+    }
+    if (toolCall.name === "add-concept" || toolCall.name === "modify-concept" || toolCall.name === "remove-concept" || toolCall.name === "suggest-existing-concept") {
+      const input = typeof toolCall.input === "object" && toolCall.input !== null ? toolCall.input as Record<string, unknown> : {};
+      lines.push(`Visible concept ${toolCall.status}: ${toolCall.name} ${readStringValue(input.id) ?? readStringValue(input.title) ?? toolCall.title}`);
+      continue;
+    }
+    if (toolCall.name === "flow-memory-patch" || toolCall.name === "flow-memory-update") {
+      lines.push(`Visible memory update ${toolCall.status}: ${toolCall.title}`);
+    }
+  }
+  return lines.length ? `Visible Flow transcript events:\n${lines.map((line) => `- ${line}`).join("\n")}` : "";
+}
+
+function readAskQuestionPayload(input: unknown, outputPreview?: string): { question?: string; choices?: string[] } {
+  let parsedOutput: Record<string, unknown> | undefined;
+  if (outputPreview) {
+    try {
+      const parsed = JSON.parse(outputPreview) as unknown;
+      if (typeof parsed === "object" && parsed !== null) {
+        parsedOutput = parsed as Record<string, unknown>;
+      }
+    } catch {
+      parsedOutput = undefined;
+    }
+  }
+  const source = parsedOutput ?? (typeof input === "object" && input !== null ? input as Record<string, unknown> : {});
+  return {
+    question: readStringValue(source.question),
+    choices: Array.isArray(source.choices) ? source.choices.filter((choice): choice is string => typeof choice === "string") : undefined
+  };
+}
+
+function readStringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function latestCompletedCompaction(project: StoredFlowProject): ConstructFlowContextCompaction | undefined {
+  return [...project.flow.sessions]
+    .reverse()
+    .map((session) => session.contextCompaction)
+    .find((compaction) => compaction?.status === "completed" && Boolean(compaction.summary));
+}
+
+function shouldCompactFlowContext(contextWindow: ConstructAgentContextWindow, messages: FlowModelMessage[]): boolean {
+  if (!contextWindow.maxTokens || !contextWindow.usedTokens) return false;
+  if (messages.length <= flowCompactionRecentMessageCount + 4) return false;
+  return contextWindow.usedTokens / contextWindow.maxTokens >= flowCompactionThreshold;
+}
+
+function selectMessagesForCompaction(messages: FlowModelMessage[]): FlowCompactionSelection | null {
+  if (messages.length <= flowCompactionRecentMessageCount + 4) return null;
+  const head = messages.slice(0, -flowCompactionRecentMessageCount);
+  const tail = messages.slice(-flowCompactionRecentMessageCount);
+  if (head.length < 4) return null;
+  return {
+    head,
+    tail,
+    beforeTokens: estimateMessagesTokens(messages)
+  };
+}
+
+function createRunningContextCompaction(
+  contextWindow: ConstructAgentContextWindow,
+  selected: FlowCompactionSelection
+): ConstructFlowContextCompaction {
+  const startedAt = new Date().toISOString();
+  return {
+    id: randomUUID(),
+    status: "running",
+    trigger: "auto",
+    reason: `Context reached ${contextWindow.maxTokens ? Math.round(((contextWindow.usedTokens ?? 0) / contextWindow.maxTokens) * 100) : "unknown"}% of the model window.`,
+    startedAt,
+    beforeTokens: contextWindow.usedTokens ?? selected.beforeTokens,
+    summarizedMessageIds: selected.head.map((message) => message.id),
+    preservedMessageIds: selected.tail.map((message) => message.id),
+    summarizedMessageCount: selected.head.length,
+    preservedMessageCount: selected.tail.length
+  };
+}
+
+function timelinePartFromCompaction(compaction: ConstructFlowContextCompaction): ConstructFlowTimelinePart {
+  return {
+    id: `compaction:${compaction.id}`,
+    kind: "compaction",
+    status: compaction.status,
+    title: compaction.status === "running" ? "Compacting chat history" : compaction.status === "error" ? "Chat compaction failed" : "Chat compacted",
+    detail: compaction.errorMessage ?? compaction.reason,
+    summary: compaction.summary,
+    beforeTokens: compaction.beforeTokens,
+    afterTokens: compaction.afterTokens,
+    summarizedMessageCount: compaction.summarizedMessageCount,
+    preservedMessageCount: compaction.preservedMessageCount,
+    createdAt: compaction.startedAt,
+    completedAt: compaction.completedAt,
+    updatedAt: compaction.completedAt ?? compaction.startedAt
+  };
+}
+
+function buildCompactedModelMessages(summary: string, selected: FlowCompactionSelection): FlowModelMessage[] {
+  return [
+    {
+      id: `summary:${randomUUID()}`,
+      role: "assistant",
+      content: `Compacted Flow context summary:\n\n${summary}`,
+      source: "summary"
+    },
+    ...selected.tail
+  ];
+}
+
+function estimateMessagesTokens(messages: FlowModelMessage[]): number {
+  return messages.reduce((sum, message) => sum + estimateTextTokens(`${message.role}\n${message.content}`), 0);
+}
+
+function buildFlowCompactionPrompt(
+  project: StoredFlowProject,
+  selected: FlowCompactionSelection,
+  flowStatePrompt: string
+): string {
+  return [
+    `Project: ${project.title}`,
+    `Goal: ${project.flow.goal}`,
+    "",
+    "Current Flow state that will be reloaded after compaction:",
+    flowStatePrompt,
+    "",
+    "Summarize the older visible chat transcript below. Preserve the learner model, unresolved questions, completed and waiting tasks, concepts introduced or modified, mistakes/confusions, decisions, files mentioned, and exact next teaching state. Do not invent task completion or learner understanding.",
+    "",
+    JSON.stringify(selected.head.map((message) => ({
+      id: message.id,
+      role: message.role,
+      content: message.content
+    })), null, 2)
+  ].join("\n");
+}
+
+function normalizeCompactionSummary(text: string): string {
+  const summary = text.trim();
+  return summary || "The earlier Flow conversation was compacted, but the compactor returned an empty summary. Continue from the preserved recent messages and durable Flow memory.";
+}
+
 function buildMainPrompt(
   project: StoredFlowProject,
   input: ConstructFlowAgentInput,
@@ -2549,9 +2908,7 @@ function mergeActions(primary: ConstructFlowAction[], secondary: ConstructFlowAc
 }
 
 function trimSessions(project: StoredFlowProject): void {
-  if (project.flow.sessions.length > 50) {
-    project.flow.sessions = project.flow.sessions.slice(-50);
-  }
+  void project;
 }
 
 function cloneSession(session: ConstructFlowSession): ConstructFlowSession {
@@ -2565,6 +2922,19 @@ function cloneSession(session: ConstructFlowSession): ConstructFlowSession {
     })),
     agentEvents: session.agentEvents.map((event) => ({ ...event })),
     timeline: (session.timeline ?? []).map((part) => ({ ...part })),
+    contextCompaction: session.contextCompaction
+      ? {
+          ...session.contextCompaction,
+          summarizedMessageIds: [...session.contextCompaction.summarizedMessageIds],
+          preservedMessageIds: [...session.contextCompaction.preservedMessageIds]
+        }
+      : undefined,
+    contextWindow: session.contextWindow
+      ? {
+          ...session.contextWindow,
+          compaction: session.contextWindow.compaction ? { ...session.contextWindow.compaction } : undefined
+        }
+      : undefined,
     actions: session.actions.map((action) => ({ ...action })),
     practiceTasks: session.practiceTasks.map((task) => ({
       ...task,
@@ -2689,6 +3059,21 @@ Use tools as reality. Do not claim a file exists unless you listed/read it. Do n
 YIELDING CONTROL AND TURN TAKING: You must yield control back to the learner immediately whenever you present a task, ask a question, or require input. Under no circumstances should you generate multiple tool-use steps in a single turn that write or modify files after prompting the user for input or after creating a practice-task.
 
 Leave the project easy to resume by updating Flow Memory after meaningful work.`;
+
+export const FLOW_CONTEXT_COMPACTION_PROMPT = `You are the Construct Flow context compactor.
+
+Summarize older visible Flow chat history so the mentor can continue without losing teaching state.
+The summary must be detailed enough to replace the older message prefix.
+Preserve:
+- learner background, preferences, confidence, and explicit frustrations;
+- concepts introduced, modified, confused, or still unproven;
+- tracked questions and the learner's answers;
+- active path node, waiting tasks, submissions, task messages, and review outcomes;
+- files, commands, research handoff assumptions, and next safe teaching step;
+- anything the mentor must not falsely assume, especially task completion or learner mastery.
+
+Do not write a generic recap. Do not mark a task complete unless the transcript proves learner-authored completion.
+Return markdown only.`;
 
 export const FLOW_RESEARCH_AGENT_PROMPT = `You are the Construct Flow Research Agent.
 

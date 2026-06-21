@@ -91,9 +91,24 @@ export type ConstructAgentContextWindow = {
   usedTokens?: number;
   inputTokens?: number;
   outputTokens?: number;
+  systemPromptTokens?: number;
+  chatTokens?: number;
+  flowStateTokens?: number;
+  compactedSummaryTokens?: number;
+  messageCount?: number;
+  compactedMessageCount?: number;
   maxTokens?: number;
   source: "runtime" | "estimated";
   updatedAt: string;
+  compaction?: {
+    status: "idle" | "needed" | "running" | "completed" | "error";
+    reason?: string;
+    beforeTokens?: number;
+    afterTokens?: number;
+    summarizedMessageCount?: number;
+    preservedMessageCount?: number;
+    updatedAt: string;
+  };
 };
 
 export type ConstructInteractAction =
