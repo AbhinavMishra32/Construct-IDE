@@ -39,6 +39,15 @@ The private backend uses Better Auth with:
 
 Razorpay can later update `user.plan`. Until then, maintainers can switch a user manually in Postgres and the usage limits change automatically.
 
+From a checkout with the private submodule initialized:
+
+```bash
+pnpm --dir private/construct-cloud-backend admin:set-plan user@example.com pro
+pnpm --dir private/construct-cloud-backend admin:set-plan user@example.com free
+```
+
+The helper only needs `DATABASE_URL`, so operators can change plans without exposing provider keys on the machine doing the admin work.
+
 ## Agentic Usage Limits
 
 Modern agent tools expose overlapping usage meters instead of a simple request count: a five-hour session window plus a longer weekly cap. Construct Cloud mirrors that shape.
