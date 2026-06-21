@@ -67,6 +67,7 @@ type FlowModelMessage = ConstructAgentRuntimeMessage & {
   source: "chat" | "summary";
   visibleTranscriptTokens?: number;
   visibleTranscriptEventCount?: number;
+  compactedRawMessageIds?: string[];
 };
 
 function estimateTextTokens(text: string): number {
@@ -2226,7 +2227,8 @@ function buildFlowModelMessages(project: StoredFlowProject): FlowModelMessage[] 
       id: `compaction:${compaction.id}`,
       role: "assistant",
       content: `Compacted Flow context summary:\n\n${compaction.summary}`,
-      source: "summary"
+      source: "summary",
+      compactedRawMessageIds: [...compaction.summarizedMessageIds]
     },
     ...messages.filter((message) => preserved.has(message.id) || !summarized.has(message.id))
   ];
@@ -2549,6 +2551,7 @@ function createRunningContextCompaction(
   selected: FlowCompactionSelection
 ): ConstructFlowContextCompaction {
   const startedAt = new Date().toISOString();
+  const summarizedMessageIds = summarizedMessageIdsForSelection(selected.head);
   return {
     id: randomUUID(),
     status: "running",
@@ -2556,11 +2559,19 @@ function createRunningContextCompaction(
     reason: `Context reached ${contextWindow.maxTokens ? Math.round(((contextWindow.usedTokens ?? 0) / contextWindow.maxTokens) * 100) : "unknown"}% of the model window.`,
     startedAt,
     beforeTokens: contextWindow.usedTokens ?? selected.beforeTokens,
-    summarizedMessageIds: selected.head.map((message) => message.id),
+    summarizedMessageIds,
     preservedMessageIds: selected.tail.map((message) => message.id),
-    summarizedMessageCount: selected.head.length,
+    summarizedMessageCount: summarizedMessageIds.length,
     preservedMessageCount: selected.tail.length
   };
+}
+
+function summarizedMessageIdsForSelection(messages: FlowModelMessage[]): string[] {
+  return [...new Set(messages.flatMap((message) => (
+    message.source === "summary"
+      ? message.compactedRawMessageIds ?? [message.id]
+      : [message.id]
+  )))];
 }
 
 function timelinePartFromCompaction(compaction: ConstructFlowContextCompaction): ConstructFlowTimelinePart {
@@ -2587,7 +2598,8 @@ function buildCompactedModelMessages(summary: string, selected: FlowCompactionSe
       id: `summary:${randomUUID()}`,
       role: "assistant",
       content: `Compacted Flow context summary:\n\n${summary}`,
-      source: "summary"
+      source: "summary",
+      compactedRawMessageIds: summarizedMessageIdsForSelection(selected.head)
     },
     ...selected.tail
   ];

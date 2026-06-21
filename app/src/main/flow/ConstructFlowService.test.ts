@@ -1231,6 +1231,109 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     assert.ok(result.session.timeline.some((part) => part.kind === "compaction" && part.status === "completed"));
   });
 
+  it("carries raw summarized ids forward across repeated Flow compactions", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "construct-flow-test-repeat-compact-"));
+    const workspaceRoot = path.join(dir, "workspaces");
+    await mkdir(workspaceRoot, { recursive: true });
+    const workspace = new ConstructProjectWorkspaceService(
+      () => workspaceRoot,
+      () => dir
+    );
+    const flowMemory = new ConstructFlowMemoryService(workspace);
+    const logs = new AgentLogService(() => {});
+    const learningStore = new ConstructLearningStore(path.join(dir, "learning-state.json"));
+    const calls: any[] = [];
+    const service = new ConstructFlowService({
+      workspace,
+      flowMemory,
+      latestTerminalOutput: () => "",
+      logs,
+      learningStore: () => learningStore,
+      agentRuntime: () => ({
+        runAgentic: async (input: any) => {
+          calls.push(input);
+          if (input.id === "construct-flow-context-compactor") {
+            return {
+              text: "Compacted summary preserves learner state without raw ancient transcript.",
+              stepCount: 1,
+              finishReason: "stop",
+              durationMs: 1
+            };
+          }
+          return { text: "Continuing after repeated compaction.", stepCount: 1, finishReason: "stop", durationMs: 1 };
+        }
+      }) as any
+    });
+    const project = createFlowTestProject(workspaceRoot, "repeat-compact-project");
+    await mkdir(project.workspacePath, { recursive: true });
+    const hugeText = "context needs compacting ".repeat(2500);
+    for (let index = 0; index < 18; index += 1) {
+      project.flow.sessions.push({
+        id: `ancient-${index}`,
+        projectId: project.id,
+        threadId: "thread",
+        origin: "user",
+        messages: [
+          { id: `u-${index}`, role: "user", content: `ancient raw turn ${index}: ${hugeText}`, createdAt: new Date().toISOString() },
+          { id: `a-${index}`, role: "assistant", content: `ancient raw answer ${index}: ${hugeText}`, createdAt: new Date().toISOString() }
+        ],
+        status: "completed",
+        toolCalls: [],
+        agentEvents: [],
+        timeline: [],
+        actions: [],
+        practiceTasks: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+    }
+
+    await service.runMainAgent(project, {
+      projectId: project.id,
+      message: "first compaction",
+      quickAction: "continue"
+    });
+
+    for (let index = 0; index < 3; index += 1) {
+      project.flow.sessions.push({
+        id: `fresh-${index}`,
+        projectId: project.id,
+        threadId: "thread",
+        origin: "user",
+        messages: [
+          { id: `fu-${index}`, role: "user", content: `fresh raw turn ${index}: ${hugeText}`, createdAt: new Date().toISOString() },
+          { id: `fa-${index}`, role: "assistant", content: `fresh raw answer ${index}: ${hugeText}`, createdAt: new Date().toISOString() }
+        ],
+        status: "completed",
+        toolCalls: [],
+        agentEvents: [],
+        timeline: [],
+        actions: [],
+        practiceTasks: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+    }
+
+    await service.runMainAgent(project, {
+      projectId: project.id,
+      message: "second compaction",
+      quickAction: "continue"
+    });
+    await service.runMainAgent(project, {
+      projectId: project.id,
+      message: "third call after repeated compaction",
+      quickAction: "continue"
+    });
+
+    assert.ok(calls.filter((call) => call.id === "construct-flow-context-compactor").length >= 2);
+    const lastMainCall = [...calls].reverse().find((call) => call.id === "construct-flow-agent");
+    const renderedMessages = lastMainCall.messages.map((message: any) => message.content).join("\n");
+    assert.doesNotMatch(renderedMessages, /ancient raw turn 0/);
+    assert.doesNotMatch(renderedMessages, /ancient raw answer 0/);
+    assert.match(renderedMessages, /Compacted Flow context summary/);
+  });
+
   it("saves researched context to research.md instead of preserving a clarification pivot", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "construct-flow-test-research-handoff-"));
     const workspaceRoot = path.join(dir, "workspaces");
