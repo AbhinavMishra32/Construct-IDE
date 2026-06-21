@@ -35,4 +35,26 @@ describe("Construct project advanced settings", () => {
     assert.match(preload, /construct:settings:update-app/);
     assert.match(controller, /ipcMain\.handle\("construct:settings:update-app"/);
   });
+
+  it("wires Construct Cloud account UI through durable AI settings", () => {
+    const source = readFileSync(fileURLToPath(new URL("./ConstructSettingsSurface.tsx", import.meta.url)), "utf8");
+    const aiSection = readFileSync(
+      fileURLToPath(new URL("./components/settings/ConstructAiSettingsSection.tsx", import.meta.url)),
+      "utf8",
+    );
+    const cloudPanel = readFileSync(
+      fileURLToPath(new URL("./components/settings/ConstructCloudAccountPanel.tsx", import.meta.url)),
+      "utf8",
+    );
+    const controller = readFileSync(fileURLToPath(new URL("../../main/ipc/ConstructSettingsIpcController.ts", import.meta.url)), "utf8");
+
+    assert.match(source, /onSourceChange=\{updateAiSource\}/);
+    assert.match(source, /onConstructCloudAccessTokenChange=\{\(constructCloudAccessToken: string\) => setAiSettingsDraft/);
+    assert.match(aiSection, /LLM calls/);
+    assert.match(aiSection, /ConstructCloudAccountPanel/);
+    assert.match(cloudPanel, /createAuthClient\(\{ baseURL: normalizedBaseUrl \}\)/);
+    assert.match(cloudPanel, /<Auth view=\{authView\} socialLayout="vertical" \/>/);
+    assert.match(cloudPanel, /api\/cloud\/tokens/);
+    assert.match(controller, /input\?\.provider === "construct-cloud"/);
+  });
 });
