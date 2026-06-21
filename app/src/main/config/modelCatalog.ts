@@ -1,5 +1,7 @@
 import type { AiProvider } from "./constructConfig";
 
+export type ModelLookupProvider = AiProvider | "construct-cloud";
+
 export type ModelCatalogEntry = {
   id: string;
   name: string;
@@ -42,13 +44,17 @@ type LiteLlmModelInfo = {
   };
 };
 
-const LITELLM_PROXY_PROVIDERS = new Set<AiProvider>(["github-copilot", "litellm"]);
+const LITELLM_PROXY_PROVIDERS = new Set<ModelLookupProvider>(["github-copilot", "litellm"]);
 
 export async function fetchProviderModels(input: {
-  provider: AiProvider;
+  provider: ModelLookupProvider;
   apiKey?: string;
   baseUrl: string;
 }): Promise<ModelCatalogEntry[]> {
+  if (input.provider === "construct-cloud") {
+    return fetchConstructCloudModels(input.apiKey, input.baseUrl);
+  }
+
   if (LITELLM_PROXY_PROVIDERS.has(input.provider)) {
     return fetchLiteLlmModels(input.provider, input.apiKey, input.baseUrl);
   }
@@ -64,6 +70,52 @@ export async function fetchProviderModels(input: {
   return input.provider === "openrouter"
     ? fetchOpenRouterModels(input.apiKey, input.baseUrl)
     : fetchOpenAiModels(input.apiKey, input.baseUrl);
+}
+
+async function fetchConstructCloudModels(apiKey: string | undefined, baseUrl: string): Promise<ModelCatalogEntry[]> {
+  const token = apiKey?.trim();
+  if (!token) {
+    throw new Error("Enter your Construct Cloud desktop token first.");
+  }
+
+  const response = await fetch(`${constructCloudApiBaseUrl(baseUrl)}/models`, {
+    headers: {
+      Authorization: `Bearer ${token}`
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`Construct Cloud model lookup failed (${response.status}).`);
+  }
+
+  const payload = await response.json() as {
+    data?: Array<{
+      id: string;
+      name?: string;
+      owned_by?: string;
+      description?: string;
+      context_length?: number;
+      pricing?: {
+        prompt?: string;
+        completion?: string;
+      };
+    }>;
+  };
+
+  return (payload.data ?? [])
+    .map((model) => ({
+      id: model.id,
+      name: model.name?.trim() || model.id,
+      providerId: "construct-cloud",
+      providerName: "Construct Cloud",
+      subProvider: model.owned_by ?? (model.id.includes("/") ? model.id.split("/")[0] : null),
+      description: model.description ?? null,
+      contextLength: model.context_length ?? null,
+      pricing: model.pricing
+        ? `Prompt ${model.pricing.prompt ?? "?"} - Completion ${model.pricing.completion ?? "?"}`
+        : null
+    }))
+    .sort((left, right) => left.name.localeCompare(right.name));
 }
 
 async function fetchOpenCodeZenModels(apiKey: string | undefined, baseUrl: string): Promise<ModelCatalogEntry[]> {
@@ -257,6 +309,11 @@ function buildAuthHeaders(apiKey: string | undefined): Record<string, string> {
 
 function stripV1Suffix(baseUrl: string): string {
   return baseUrl.endsWith("/v1") ? baseUrl.slice(0, -3) : baseUrl;
+}
+
+function constructCloudApiBaseUrl(baseUrl: string): string {
+  const normalized = baseUrl.replace(/\/$/, "");
+  return normalized.endsWith("/v1") ? normalized : `${normalized}/v1`;
 }
 
 function inferLiteLlmProviderId(modelId: string, upstreamProvider?: string | null): string {

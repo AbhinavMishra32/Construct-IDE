@@ -4,11 +4,13 @@ import { existsSync, readFileSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 
 export type AiProvider = "openai" | "openrouter" | "github-copilot" | "opencode-zen" | "litellm";
+export type AiCallSource = "byok" | "construct-cloud";
 export type ConstructAgentRuntimeId = "mastra" | "fxpnt";
 export type ConstructReasoningEffort = "auto" | "none" | "low" | "medium" | "high";
 
 export type StoredAiSettings = {
   runtime: ConstructAgentRuntimeId;
+  source: AiCallSource;
   provider: AiProvider;
   reasoningEffort: ConstructReasoningEffort;
   openAiApiKey: string;
@@ -25,6 +27,9 @@ export type StoredAiSettings = {
   opencodeZenBaseUrl: string;
   opencodeZenModel: string;
   githubCopilotModel: string;
+  constructCloudBaseUrl: string;
+  constructCloudAccessToken: string;
+  constructCloudModel: string;
   tavilyApiKey: string;
   featureModels: Record<string, string>;
   codeGhostEnabled: boolean;
@@ -64,6 +69,7 @@ const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
 const DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 const DEFAULT_LITELLM_BASE_URL = "http://localhost:4000/v1";
 const DEFAULT_OPENCODE_ZEN_BASE_URL = "https://opencode.ai/zen/v1";
+const DEFAULT_CONSTRUCT_CLOUD_BASE_URL = "https://cloud.tryconstruct.cc";
 let configuredDataPaths: ConstructDataPaths | null = null;
 
 export function createConstructDataPaths(userDataRoot: string): ConstructDataPaths {
@@ -148,6 +154,7 @@ export function normalizeSettings(
     },
     ai: {
       runtime: inputAi.runtime === "fxpnt" ? "fxpnt" : "mastra",
+      source: inputAi.source === "construct-cloud" ? "construct-cloud" : "byok",
       provider: normalizeAiProvider(inputAi.provider),
       reasoningEffort: normalizeReasoningEffort(inputAi.reasoningEffort, defaults.ai.reasoningEffort),
       openAiApiKey: normalizeString(inputAi.openAiApiKey, ""),
@@ -164,6 +171,9 @@ export function normalizeSettings(
       opencodeZenBaseUrl: normalizeBaseUrl(inputAi.opencodeZenBaseUrl, defaults.ai.opencodeZenBaseUrl),
       opencodeZenModel: normalizeString(inputAi.opencodeZenModel, defaults.ai.opencodeZenModel),
       githubCopilotModel: normalizeString(inputAi.githubCopilotModel, defaults.ai.githubCopilotModel),
+      constructCloudBaseUrl: normalizeBaseUrl(inputAi.constructCloudBaseUrl, defaults.ai.constructCloudBaseUrl),
+      constructCloudAccessToken: normalizeString(inputAi.constructCloudAccessToken, ""),
+      constructCloudModel: normalizeString(inputAi.constructCloudModel, defaults.ai.constructCloudModel),
       tavilyApiKey: normalizeString(inputAi.tavilyApiKey, ""),
       featureModels: normalizeFeatureModels(inputAi.featureModels),
       codeGhostEnabled: inputAi.codeGhostEnabled !== false
@@ -187,6 +197,7 @@ function defaultAppSettings(): StoredAppSettings {
 function defaultAiSettings(): StoredAiSettings {
   return {
     runtime: "mastra",
+    source: "byok",
     provider: "openai",
     reasoningEffort: "auto",
     openAiApiKey: "",
@@ -203,6 +214,9 @@ function defaultAiSettings(): StoredAiSettings {
     opencodeZenBaseUrl: DEFAULT_OPENCODE_ZEN_BASE_URL,
     opencodeZenModel: "gpt-5.1-codex",
     githubCopilotModel: "github_copilot/gpt-4",
+    constructCloudBaseUrl: DEFAULT_CONSTRUCT_CLOUD_BASE_URL,
+    constructCloudAccessToken: "",
+    constructCloudModel: "deepseek/deepseek-v4-flash",
     tavilyApiKey: "",
     featureModels: {},
     codeGhostEnabled: true

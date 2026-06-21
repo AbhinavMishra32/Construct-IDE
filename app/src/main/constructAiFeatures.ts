@@ -17,6 +17,7 @@ export type ConstructAiFeature = {
   defaultOpenCodeZenModel: string;
   defaultGithubCopilotModel: string;
   defaultLiteLlmModel: string;
+  defaultConstructCloudModel: string;
 };
 
 export const constructAiFeatures: ConstructAiFeature[] = [
@@ -28,7 +29,8 @@ export const constructAiFeatures: ConstructAiFeature[] = [
     defaultOpenRouterModel: "deepseek/deepseek-v4-flash",
     defaultOpenCodeZenModel: "gpt-5.1-codex",
     defaultGithubCopilotModel: "github_copilot/gpt-4",
-    defaultLiteLlmModel: "openai/gpt-5-mini"
+    defaultLiteLlmModel: "openai/gpt-5-mini",
+    defaultConstructCloudModel: "deepseek/deepseek-v4-flash"
   },
   {
     id: "construct-flow",
@@ -38,7 +40,8 @@ export const constructAiFeatures: ConstructAiFeature[] = [
     defaultOpenRouterModel: "deepseek/deepseek-v4-flash",
     defaultOpenCodeZenModel: "gpt-5.1-codex",
     defaultGithubCopilotModel: "github_copilot/gpt-4",
-    defaultLiteLlmModel: "openai/gpt-5-mini"
+    defaultLiteLlmModel: "openai/gpt-5-mini",
+    defaultConstructCloudModel: "deepseek/deepseek-v4-flash"
   },
   {
     id: "verification",
@@ -48,7 +51,8 @@ export const constructAiFeatures: ConstructAiFeature[] = [
     defaultOpenRouterModel: "deepseek/deepseek-v4-flash",
     defaultOpenCodeZenModel: "gpt-5.1-codex",
     defaultGithubCopilotModel: "github_copilot/gpt-4",
-    defaultLiteLlmModel: "openai/gpt-5-mini"
+    defaultLiteLlmModel: "openai/gpt-5-mini",
+    defaultConstructCloudModel: "deepseek/deepseek-v4-flash"
   },
   {
     id: "authoring-review",
@@ -58,7 +62,8 @@ export const constructAiFeatures: ConstructAiFeature[] = [
     defaultOpenRouterModel: "deepseek/deepseek-v4-flash",
     defaultOpenCodeZenModel: "gpt-5.1-codex",
     defaultGithubCopilotModel: "github_copilot/gpt-4",
-    defaultLiteLlmModel: "openai/gpt-5-mini"
+    defaultLiteLlmModel: "openai/gpt-5-mini",
+    defaultConstructCloudModel: "deepseek/deepseek-v4-flash"
   },
   {
     id: "selection-explain",
@@ -68,7 +73,8 @@ export const constructAiFeatures: ConstructAiFeature[] = [
     defaultOpenRouterModel: "deepseek/deepseek-v4-flash",
     defaultOpenCodeZenModel: "gpt-5.1-codex",
     defaultGithubCopilotModel: "github_copilot/gpt-4",
-    defaultLiteLlmModel: "openai/gpt-5-mini"
+    defaultLiteLlmModel: "openai/gpt-5-mini",
+    defaultConstructCloudModel: "deepseek/deepseek-v4-flash"
   },
   {
     id: "code-explain",
@@ -78,7 +84,8 @@ export const constructAiFeatures: ConstructAiFeature[] = [
     defaultOpenRouterModel: "deepseek/deepseek-v4-flash",
     defaultOpenCodeZenModel: "gpt-5.1-codex",
     defaultGithubCopilotModel: "github_copilot/gpt-4",
-    defaultLiteLlmModel: "openai/gpt-5-mini"
+    defaultLiteLlmModel: "openai/gpt-5-mini",
+    defaultConstructCloudModel: "deepseek/deepseek-v4-flash"
   }
 ];
 
@@ -90,6 +97,10 @@ export function modelForAiFeature(settings: StoredAiSettings, featureId: Constru
   const globalModel = globalModelForProvider(settings);
 
   if (globalModel) return globalModel;
+
+  if (settings.source === "construct-cloud") {
+    return feature?.defaultConstructCloudModel ?? settings.constructCloudModel;
+  }
 
   if (settings.provider === "openrouter") {
     return feature?.defaultOpenRouterModel ?? settings.openRouterModel;
@@ -118,6 +129,7 @@ export function featureSettingsView(settings: StoredAiSettings) {
 }
 
 export function globalModelForProvider(settings: StoredAiSettings): string {
+  if (settings.source === "construct-cloud") return settings.constructCloudModel?.trim() ?? "";
   if (settings.provider === "openrouter") return settings.openRouterModel?.trim() ?? "";
   if (settings.provider === "opencode-zen") return settings.opencodeZenModel?.trim() ?? "";
   if (settings.provider === "github-copilot") return settings.githubCopilotModel?.trim() ?? "";

@@ -92,13 +92,16 @@ export class ConstructSettingsIpcController {
         || input?.provider === "github-copilot"
         || input?.provider === "opencode-zen"
         || input?.provider === "litellm"
+        || input?.provider === "construct-cloud"
         ? input.provider
         : "openai";
       const apiKey = String(input?.apiKey ?? "").trim();
       const settings = await this.options.readSettings();
       const usesLiteLlm = provider === "github-copilot" || provider === "litellm";
 
-      const baseUrl = provider === "openrouter"
+      const baseUrl = provider === "construct-cloud"
+        ? settings.ai.constructCloudBaseUrl
+        : provider === "openrouter"
         ? settings.ai.openRouterBaseUrl
         : provider === "opencode-zen"
           ? settings.ai.opencodeZenBaseUrl
@@ -108,7 +111,11 @@ export class ConstructSettingsIpcController {
 
       return fetchProviderModels({
         provider,
-        apiKey: usesLiteLlm ? settings.ai.liteLlmApiKey : apiKey,
+        apiKey: provider === "construct-cloud"
+          ? (apiKey || settings.ai.constructCloudAccessToken)
+          : usesLiteLlm
+            ? settings.ai.liteLlmApiKey
+            : apiKey,
         baseUrl
       });
     });

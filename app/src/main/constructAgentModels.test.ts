@@ -9,6 +9,7 @@ import type { StoredAiSettings } from "./constructAiSettings";
 
 const settings: StoredAiSettings = {
   runtime: "mastra",
+  source: "byok",
   provider: "openrouter",
   reasoningEffort: "auto",
   openAiApiKey: "",
@@ -25,6 +26,9 @@ const settings: StoredAiSettings = {
   opencodeZenBaseUrl: "https://opencode.ai/zen/v1",
   opencodeZenModel: "gpt-5.1-codex",
   githubCopilotModel: "github_copilot/gpt-4",
+  constructCloudBaseUrl: "https://cloud.tryconstruct.cc",
+  constructCloudAccessToken: "",
+  constructCloudModel: "deepseek/deepseek-v4-flash",
   tavilyApiKey: "",
   featureModels: {
     "construct-interact": "deepseek/deepseek-v4-flash"
@@ -41,6 +45,46 @@ test("agent model resolution uses the selected OpenRouter credentials and featur
       url: "https://openrouter.ai/api/v1",
       apiKey: "test-openrouter-key"
     }
+  );
+});
+
+test("Construct Cloud source resolves through the hosted proxy with a desktop token", () => {
+  assert.deepEqual(
+    resolveConstructAgentModelFromSettings(
+      {
+        ...settings,
+        source: "construct-cloud",
+        constructCloudBaseUrl: "http://localhost:8787",
+        constructCloudAccessToken: "cct_test-token",
+        constructCloudModel: "anthropic/claude-sonnet-4",
+        featureModels: {}
+      },
+      "Construct Flow",
+      "construct-flow"
+    ),
+    {
+      providerId: "construct-cloud",
+      modelId: "anthropic/claude-sonnet-4",
+      id: "anthropic/claude-sonnet-4",
+      url: "http://localhost:8787/v1",
+      apiKey: "cct_test-token"
+    }
+  );
+});
+
+test("Construct Cloud source requires a desktop token", () => {
+  assert.throws(
+    () => resolveConstructAgentModelFromSettings(
+      {
+        ...settings,
+        source: "construct-cloud",
+        constructCloudAccessToken: "",
+        featureModels: {}
+      },
+      "Construct Flow",
+      "construct-flow"
+    ),
+    /Construct Cloud access token is required/
   );
 });
 

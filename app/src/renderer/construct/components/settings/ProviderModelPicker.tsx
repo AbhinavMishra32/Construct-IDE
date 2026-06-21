@@ -8,9 +8,10 @@ import { cn } from "../../../lib/utils";
 import type { AiProvider, ModelCatalogEntry } from "../../types";
 
 type Icon = (props: SVGProps<SVGSVGElement>) => ReactElement;
+type ModelProvider = AiProvider | "construct-cloud";
 
 type ProviderModelPickerProps = {
-  provider: AiProvider;
+  provider: ModelProvider;
   value: string;
   models: ModelCatalogEntry[];
   disabled?: boolean;
@@ -19,9 +20,10 @@ type ProviderModelPickerProps = {
   onChange: (model: string) => void;
 };
 
-const providerOrder: AiProvider[] = ["litellm", "opencode-zen", "github-copilot", "openrouter", "openai"];
+const providerOrder: ModelProvider[] = ["construct-cloud", "litellm", "opencode-zen", "github-copilot", "openrouter", "openai"];
 
-const providerMeta: Record<AiProvider, { label: string; icon: Icon }> = {
+const providerMeta: Record<ModelProvider, { label: string; icon: Icon }> = {
+  "construct-cloud": { label: "Construct Cloud", icon: ConstructCloudIcon },
   openai: { label: "OpenAI", icon: OpenAIIcon },
   openrouter: { label: "OpenRouter", icon: OpenRouterIcon },
   "github-copilot": { label: "GitHub Copilot", icon: GithubCopilotIcon },
@@ -40,7 +42,7 @@ export function ProviderModelPicker({
 }: ProviderModelPickerProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [selectedProvider, setSelectedProvider] = useState<AiProvider | "favorites">(() => provider);
+  const [selectedProvider, setSelectedProvider] = useState<ModelProvider | "favorites">(() => provider);
   const [favorites, setFavorites] = useState<string[]>(() => readFavorites());
   const activeModel = models.find((model) => model.id === value) ?? null;
   const providerBuckets = useMemo(() => bucketModels(models, provider), [models, provider]);
@@ -243,8 +245,8 @@ function RailButton({
   );
 }
 
-function bucketModels(models: ModelCatalogEntry[], activeProvider: AiProvider): Map<AiProvider, ModelCatalogEntry[]> {
-  const buckets = new Map<AiProvider, ModelCatalogEntry[]>();
+function bucketModels(models: ModelCatalogEntry[], activeProvider: ModelProvider): Map<ModelProvider, ModelCatalogEntry[]> {
+  const buckets = new Map<ModelProvider, ModelCatalogEntry[]>();
   for (const model of models) {
     const provider = providerFromModel(model, activeProvider);
     const bucket = buckets.get(provider) ?? [];
@@ -254,14 +256,15 @@ function bucketModels(models: ModelCatalogEntry[], activeProvider: AiProvider): 
   return buckets;
 }
 
-function providerFromModel(model: ModelCatalogEntry | null, fallback: AiProvider): AiProvider {
+function providerFromModel(model: ModelCatalogEntry | null, fallback: ModelProvider): ModelProvider {
   const providerId = model?.providerId?.replace(/_/g, "-").toLowerCase();
   const id = model?.id ?? "";
+  if (providerId === "construct-cloud") return "construct-cloud";
   if (providerId === "github-copilot" || id.startsWith("github_copilot/") || id.startsWith("github-copilot/")) return "github-copilot";
   if (providerId === "opencode-zen") return "opencode-zen";
   if (providerId === "openrouter" || id.startsWith("openrouter/")) return "openrouter";
   if (providerId === "openai" || id.startsWith("openai/")) return "openai";
-  return fallback === "github-copilot" || fallback === "opencode-zen" || fallback === "openrouter" || fallback === "openai"
+  return fallback === "construct-cloud" || fallback === "github-copilot" || fallback === "opencode-zen" || fallback === "openrouter" || fallback === "openai"
     ? fallback
     : "litellm";
 }
@@ -319,5 +322,9 @@ function OpenRouterIcon(props: SVGProps<SVGSVGElement>) {
 }
 
 function LiteLlmIcon(props: SVGProps<SVGSVGElement>) {
+  return <Bot {...props} />;
+}
+
+function ConstructCloudIcon(props: SVGProps<SVGSVGElement>) {
   return <Bot {...props} />;
 }

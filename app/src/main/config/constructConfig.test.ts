@@ -49,6 +49,7 @@ test("sync agent settings use the configured Electron user-data path", async (t)
 test("settings normalize OpenCode Zen provider options", () => {
   const settings = defaultConstructSettings(createConstructDataPaths("/tmp/construct-test"));
   assert.equal(settings.app.showStatusBar, true);
+  assert.equal(settings.ai.source, "byok");
   assert.equal(settings.ai.provider, "openai");
   assert.equal(settings.ai.reasoningEffort, "auto");
   assert.equal(settings.ai.liteLlmBaseUrl, "http://localhost:4000/v1");
@@ -56,7 +57,38 @@ test("settings normalize OpenCode Zen provider options", () => {
   assert.equal(settings.ai.githubCopilotModel, "github_copilot/gpt-4");
   assert.equal(settings.ai.opencodeZenModel, "gpt-5.1-codex");
   assert.equal(settings.ai.opencodeZenBaseUrl, "https://opencode.ai/zen/v1");
+  assert.equal(settings.ai.constructCloudBaseUrl, "https://cloud.tryconstruct.cc");
+  assert.equal(settings.ai.constructCloudAccessToken, "");
+  assert.equal(settings.ai.constructCloudModel, "deepseek/deepseek-v4-flash");
   assert.equal(settings.ai.tavilyApiKey, "");
+});
+
+test("settings normalize and persist Construct Cloud routing options", async (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), "construct-config-"));
+  const paths = createConstructDataPaths(root);
+  configureConstructDataPaths(paths);
+  t.after(() => {
+    configureConstructDataPaths(null);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  const settings = defaultConstructSettings(paths);
+  await writeConstructSettings({
+    ...settings,
+    ai: {
+      ...settings.ai,
+      source: "construct-cloud",
+      constructCloudBaseUrl: "http://localhost:8787/",
+      constructCloudAccessToken: "cct_test-token",
+      constructCloudModel: "anthropic/claude-sonnet-4"
+    }
+  }, paths);
+
+  const cloud = readConstructAiSettingsSync();
+  assert.equal(cloud.source, "construct-cloud");
+  assert.equal(cloud.constructCloudBaseUrl, "http://localhost:8787");
+  assert.equal(cloud.constructCloudAccessToken, "cct_test-token");
+  assert.equal(cloud.constructCloudModel, "anthropic/claude-sonnet-4");
 });
 
 test("settings normalize and persist app chrome options", async (t) => {

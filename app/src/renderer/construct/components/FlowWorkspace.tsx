@@ -4117,10 +4117,11 @@ function findLatestContextWindow(sessions: ConstructFlowSession[]): ConstructAge
 function flowFeatureModel(settings: AiSettings): string {
   const featureModel = settings.featureModels?.["construct-flow"]?.trim();
   if (featureModel) return featureModel;
-  return globalModelForProvider(settings) || defaultFlowModelForProvider(settings.provider);
+  return globalModelForProvider(settings) || defaultFlowModelForProvider(settings.source === "construct-cloud" ? "construct-cloud" : settings.provider);
 }
 
 function globalModelForProvider(settings: AiSettings): string {
+  if (settings.source === "construct-cloud") return settings.constructCloudModel.trim();
   if (settings.provider === "openrouter") return settings.openRouterModel.trim();
   if (settings.provider === "opencode-zen") return settings.opencodeZenModel.trim();
   if (settings.provider === "github-copilot") return settings.githubCopilotModel.trim();
@@ -4128,7 +4129,8 @@ function globalModelForProvider(settings: AiSettings): string {
   return settings.openAiModel.trim();
 }
 
-function defaultFlowModelForProvider(provider: AiSettings["provider"]): string {
+function defaultFlowModelForProvider(provider: AiSettings["provider"] | "construct-cloud"): string {
+  if (provider === "construct-cloud") return "deepseek/deepseek-v4-flash";
   if (provider === "openrouter") return "deepseek/deepseek-v4-flash";
   if (provider === "opencode-zen") return "gpt-5.1-codex";
   if (provider === "github-copilot") return "github_copilot/gpt-4";
@@ -4137,6 +4139,7 @@ function defaultFlowModelForProvider(provider: AiSettings["provider"]): string {
 }
 
 function apiKeyForProvider(settings: AiSettings): string | undefined {
+  if (settings.source === "construct-cloud") return settings.constructCloudAccessToken || undefined;
   if (settings.provider === "openai") return settings.openAiApiKey || undefined;
   if (settings.provider === "openrouter") return settings.openRouterApiKey || undefined;
   if (settings.provider === "opencode-zen") return settings.opencodeZenApiKey || undefined;

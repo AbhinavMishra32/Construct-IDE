@@ -15,6 +15,7 @@ import {
 
 import type { AiFeatureSettings, AiSettings, ModelCatalogEntry } from "../../types";
 import { ProviderModelPicker } from "./ProviderModelPicker";
+import { ConstructCloudAccountPanel } from "./ConstructCloudAccountPanel";
 
 const RECOMMENDED_OPENAI_MODELS = [
   { id: "gpt-5-mini", name: "GPT-5 Mini" },
@@ -57,8 +58,16 @@ const RECOMMENDED_LITELLM_MODELS = [
   { id: "github_copilot/gpt-4", name: "GPT-4", providerId: "github-copilot", providerName: "GitHub Copilot" }
 ];
 
+const RECOMMENDED_CONSTRUCT_CLOUD_MODELS = [
+  { id: "deepseek/deepseek-v4-flash", name: "DeepSeek V4 Flash", providerId: "construct-cloud", providerName: "Construct Cloud" },
+  { id: "anthropic/claude-sonnet-4", name: "Claude Sonnet 4", providerId: "construct-cloud", providerName: "Construct Cloud" },
+  { id: "openai/gpt-5-mini", name: "GPT-5 Mini", providerId: "construct-cloud", providerName: "Construct Cloud" }
+];
+
 type AiProvider = AiSettings["provider"];
+type AiSource = AiSettings["source"];
 type AiRuntime = AiSettings["runtime"];
+type ModelLookupProvider = AiProvider | "construct-cloud";
 
 export function ConstructAiSettingsSection({
   settings,
@@ -68,6 +77,7 @@ export function ConstructAiSettingsSection({
   aiBusy,
   modelsError,
   onRuntimeChange,
+  onSourceChange,
   onProviderChange,
   onReasoningEffortChange,
   onCodeGhostEnabledChange,
@@ -85,6 +95,9 @@ export function ConstructAiSettingsSection({
   onOpencodeZenBaseUrlChange,
   onOpencodeZenModelChange,
   onGithubCopilotModelChange,
+  onConstructCloudBaseUrlChange,
+  onConstructCloudAccessTokenChange,
+  onConstructCloudModelChange,
   onRefreshModels,
   onFeatureModelChange,
   onSave,
@@ -100,6 +113,7 @@ export function ConstructAiSettingsSection({
   aiBusy: boolean;
   modelsError: string | null;
   onRuntimeChange: (runtime: AiRuntime) => void;
+  onSourceChange: (source: AiSource) => void;
   onProviderChange: (provider: AiProvider) => void;
   onReasoningEffortChange: (effort: AiSettings["reasoningEffort"]) => void;
   onCodeGhostEnabledChange: (enabled: boolean) => void;
@@ -117,7 +131,10 @@ export function ConstructAiSettingsSection({
   onOpencodeZenBaseUrlChange: (baseUrl: string) => void;
   onOpencodeZenModelChange: (model: string) => void;
   onGithubCopilotModelChange: (model: string) => void;
-  onRefreshModels: (provider: AiProvider) => void;
+  onConstructCloudBaseUrlChange: (baseUrl: string) => void;
+  onConstructCloudAccessTokenChange: (accessToken: string) => void;
+  onConstructCloudModelChange: (model: string) => void;
+  onRefreshModels: (provider: ModelLookupProvider) => void;
   onFeatureModelChange: (featureId: string, model: string) => void;
   onSave: () => void;
   onImportOpencodeAuth?: () => Promise<string | null>;
@@ -128,9 +145,13 @@ export function ConstructAiSettingsSection({
   const [showBaseUrl, setShowBaseUrl] = useState(false);
   const [showFeatureModels, setShowFeatureModels] = useState(false);
 
+  const usesConstructCloud = settings.source === "construct-cloud";
   const usesLiteLlmProxy = settings.provider === "github-copilot" || settings.provider === "litellm";
+  const activeModelProvider: ModelLookupProvider = usesConstructCloud ? "construct-cloud" : settings.provider;
 
-  const recommended = settings.provider === "openrouter"
+  const recommended = usesConstructCloud
+    ? RECOMMENDED_CONSTRUCT_CLOUD_MODELS
+    : settings.provider === "openrouter"
     ? RECOMMENDED_OPENROUTER_MODELS
     : settings.provider === "opencode-zen"
       ? RECOMMENDED_OPENCODE_ZEN_MODELS
@@ -140,7 +161,9 @@ export function ConstructAiSettingsSection({
           ? RECOMMENDED_LITELLM_MODELS
       : RECOMMENDED_OPENAI_MODELS;
 
-  const globalModel = settings.provider === "openrouter"
+  const globalModel = usesConstructCloud
+    ? settings.constructCloudModel
+    : settings.provider === "openrouter"
     ? settings.openRouterModel
     : settings.provider === "opencode-zen"
       ? settings.opencodeZenModel
@@ -150,7 +173,9 @@ export function ConstructAiSettingsSection({
           ? settings.liteLlmModel
       : settings.openAiModel;
 
-  const onGlobalModelChange = settings.provider === "openrouter"
+  const onGlobalModelChange = usesConstructCloud
+    ? onConstructCloudModelChange
+    : settings.provider === "openrouter"
     ? onOpenRouterModelChange
     : settings.provider === "opencode-zen"
       ? onOpencodeZenModelChange
@@ -162,7 +187,9 @@ export function ConstructAiSettingsSection({
 
   const baseModels = modelOptions.length > 0 ? modelOptions : recommended;
 
-  const providerLabel = settings.provider === "openrouter"
+  const providerLabel = usesConstructCloud
+    ? "Construct Cloud"
+    : settings.provider === "openrouter"
     ? "OpenRouter"
     : settings.provider === "opencode-zen"
       ? "OpenCode Zen"
@@ -192,30 +219,47 @@ export function ConstructAiSettingsSection({
           </Select>
         </SettingsRow>
 
-        <SettingsRow title="AI Provider" description="Choose which provider to route AI requests through.">
+        <SettingsRow title="LLM calls" description="BYOK uses local keys. Construct Cloud uses your account and hosted usage limits.">
           <Select
-            value={settings.provider}
-            onValueChange={(value) => onProviderChange(
-              value === "openrouter"
-              || value === "github-copilot"
-              || value === "opencode-zen"
-              || value === "litellm"
-                ? value
-                : "openai"
-            )}
+            value={settings.source}
+            onValueChange={(value) => onSourceChange(value === "construct-cloud" ? "construct-cloud" : "byok")}
           >
             <SelectTrigger className="h-8 w-44 text-xs">
-              <SelectValue placeholder="Select provider" />
+              <SelectValue placeholder="Select source" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="openai">OpenAI</SelectItem>
-              <SelectItem value="openrouter">OpenRouter</SelectItem>
-              <SelectItem value="opencode-zen">OpenCode Zen</SelectItem>
-              <SelectItem value="github-copilot">GitHub Copilot</SelectItem>
-              <SelectItem value="litellm">LiteLLM Proxy</SelectItem>
+              <SelectItem value="byok">BYOK</SelectItem>
+              <SelectItem value="construct-cloud">Construct Cloud</SelectItem>
             </SelectContent>
           </Select>
         </SettingsRow>
+
+        {!usesConstructCloud ? (
+          <SettingsRow title="AI Provider" description="Choose which provider to route local BYOK requests through.">
+            <Select
+              value={settings.provider}
+              onValueChange={(value) => onProviderChange(
+                value === "openrouter"
+                || value === "github-copilot"
+                || value === "opencode-zen"
+                || value === "litellm"
+                  ? value
+                  : "openai"
+              )}
+            >
+              <SelectTrigger className="h-8 w-44 text-xs">
+                <SelectValue placeholder="Select provider" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="openai">OpenAI</SelectItem>
+                <SelectItem value="openrouter">OpenRouter</SelectItem>
+                <SelectItem value="opencode-zen">OpenCode Zen</SelectItem>
+                <SelectItem value="github-copilot">GitHub Copilot</SelectItem>
+                <SelectItem value="litellm">LiteLLM Proxy</SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingsRow>
+        ) : null}
 
         <SettingsRow title="Thinking effort" description="Controls reasoning effort for models and providers that support it. Auto leaves the provider default alone.">
           <Select
@@ -248,7 +292,17 @@ export function ConstructAiSettingsSection({
         </SettingsRow>
 
         {/* Credentials — changes per provider */}
-        {settings.provider === "openai" ? (
+        {usesConstructCloud ? (
+          <SettingsRow title="Construct Cloud account" description="Sign in with Better Auth, then mint a desktop token for hosted LLM calls.">
+            <ConstructCloudAccountPanel
+              baseUrl={settings.constructCloudBaseUrl}
+              accessToken={settings.constructCloudAccessToken}
+              disabled={aiBusy}
+              onBaseUrlChange={onConstructCloudBaseUrlChange}
+              onAccessTokenChange={onConstructCloudAccessTokenChange}
+            />
+          </SettingsRow>
+        ) : settings.provider === "openai" ? (
           <div>
             <SettingsRow title="API Key" description="Stored locally by Construct.">
               <Input
@@ -359,7 +413,7 @@ export function ConstructAiSettingsSection({
         ) : null}
 
         {/* Managed server — only for litellm */}
-        {settings.provider === "litellm" && onLitellmStart && onLitellmStop ? (
+        {!usesConstructCloud && settings.provider === "litellm" && onLitellmStart && onLitellmStop ? (
           <SettingsRow
             title="Managed server"
             description={litellmState?.status === "running" ? `Running on port ${litellmState.port} (PID ${litellmState.pid})` : "Start a local LiteLLM proxy that Construct manages."}
@@ -406,7 +460,7 @@ export function ConstructAiSettingsSection({
               variant="secondary"
               size="small"
               disabled={modelsBusy}
-              onClick={() => onRefreshModels(settings.provider)}
+              onClick={() => onRefreshModels(activeModelProvider)}
             >
               {modelsBusy ? "Loading..." : "Refresh"}
             </Button>
@@ -424,7 +478,7 @@ export function ConstructAiSettingsSection({
                 placeholder="model-id"
                 onChange={(e) => onGlobalModelChange(e.target.value)}
               />
-              <ProviderModelPicker provider={settings.provider} value={globalModel} models={baseModels} disabled={modelsBusy || baseModels.length === 0} onChange={onGlobalModelChange} />
+              <ProviderModelPicker provider={activeModelProvider} value={globalModel} models={baseModels} disabled={modelsBusy || baseModels.length === 0} onChange={onGlobalModelChange} />
             </div>
           }
         />
@@ -445,7 +499,7 @@ export function ConstructAiSettingsSection({
               description={feature.description}
               control={
                 <ProviderModelPicker
-                  provider={settings.provider}
+                  provider={activeModelProvider}
                   value={feature.model}
                   models={baseModels.some((m) => m.id === feature.model) || !feature.model ? baseModels : [{ id: feature.model, name: feature.model }, ...baseModels]}
                   disabled={modelsBusy}
