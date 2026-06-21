@@ -104,6 +104,9 @@ function summarizeStructuredPayload(payload: unknown): string {
     "projectId",
     "blockId",
     "tool",
+    "toolName",
+    "providerToolCallId",
+    "finishReason",
     "query",
     "message",
     "error"
@@ -152,10 +155,16 @@ function summarizeAgentTracePayload(record: Record<string, unknown>): string | u
   if (detailSource) {
     pushPart(parts, "tool", detailSource.toolName);
     pushPart(parts, "toolCallId", detailSource.toolCallId);
+    pushPart(parts, "providerToolCallId", detailSource.providerToolCallId);
     pushPart(parts, "text", detailSource.text);
     pushPart(parts, "delta", detailSource.argsTextDelta);
+    pushPart(parts, "inputLength", detailSource.inputLength);
   }
 
+  pushPart(parts, "type", record.type);
+  pushPart(parts, "tool", record.toolName);
+  pushPart(parts, "providerToolCallId", record.providerToolCallId);
+  pushPart(parts, "inputLength", record.inputLength);
   pushArrayCount(parts, "toolCalls", record.toolCalls);
   pushArrayCount(parts, "toolResults", record.toolResults);
   pushPart(parts, "isFinal", record.isFinal);

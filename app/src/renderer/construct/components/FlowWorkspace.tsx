@@ -1,6 +1,6 @@
 import { DiffEditor } from "@monaco-editor/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { BadgeCheckIcon, BookOpenIcon, BotIcon, BrainCircuitIcon, CheckCircle2Icon, CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleIcon, CpuIcon, FileTextIcon, GaugeIcon, GitCompareIcon, HelpCircleIcon, Layers3Icon, ListChecksIcon, Loader2Icon, PencilIcon, PlusCircleIcon, RotateCcwIcon, RouteIcon, SearchIcon, SendIcon, StarIcon, Trash2Icon, type LucideIcon } from "lucide-react";
+import { BadgeCheckIcon, BookOpenIcon, BotIcon, BrainCircuitIcon, CheckCircle2Icon, CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleAlertIcon, CircleIcon, CpuIcon, FileTextIcon, GaugeIcon, GitCompareIcon, HelpCircleIcon, Layers3Icon, ListChecksIcon, Loader2Icon, PencilIcon, PlusCircleIcon, RotateCcwIcon, RouteIcon, SearchIcon, SendIcon, StarIcon, Trash2Icon, type LucideIcon } from "lucide-react";
 import {
   AdaptiveSidecarLayout,
   AgentSessionComposer,
@@ -2721,6 +2721,7 @@ function buildTaskCreatedPart({
   const completedSubtasks = task?.subtasks?.filter((subtask) => subtask.status === "completed").length ?? 0;
   const isCurrent = Boolean(task && task.id === currentTaskId);
   const ready = task != null;
+  const failed = !ready && status === "error";
   const taskFilesCount = task?.taskFiles?.length ?? payload.taskFiles.length;
   const conceptCount = task ? taskIntroducedConceptIds(task).length : payload.introducedConceptIds.length;
   const preparedFilesCount = task?.preparedFiles?.length ?? payload.preparedFiles.length;
@@ -2745,7 +2746,7 @@ function buildTaskCreatedPart({
           </span>
           <span className="min-w-0 flex-1">
             <span className="mb-1.5 flex min-w-0 flex-wrap items-center gap-1.5">
-              <FlowTinyChip tone="strong">{ready ? "Task ready" : status === "running" ? "Creating task" : "Task draft"}</FlowTinyChip>
+              <FlowTinyChip tone={failed ? "danger" : "strong"}>{ready ? "Task ready" : failed ? "Task failed" : status === "running" ? "Creating task" : "Task draft"}</FlowTinyChip>
               {isCurrent ? <FlowTinyChip tone="current">Current</FlowTinyChip> : task ? <FlowTinyChip>{shortTaskStatusLabel(task.status)}</FlowTinyChip> : null}
               {node ? <FlowTinyChip>{node.title}</FlowTinyChip> : null}
               {node ? <FlowTinyChip>Path {node.order + 1}</FlowTinyChip> : null}
@@ -2763,8 +2764,8 @@ function buildTaskCreatedPart({
             "mt-0.5 inline-flex shrink-0 items-center gap-1 rounded-full border border-border/75 bg-background/80 px-2 py-1 text-[11px] font-medium text-foreground shadow-sm transition-colors",
             ready && "group-hover:bg-foreground group-hover:text-background"
           )}>
-            {ready ? "Open" : "Creating"}
-            {ready ? <ChevronRightIcon size={12} /> : <Loader2Icon size={12} className="animate-spin" />}
+            {ready ? "Open" : failed ? "Failed" : "Creating"}
+            {ready ? <ChevronRightIcon size={12} /> : failed ? <CircleAlertIcon size={12} /> : <Loader2Icon size={12} className="animate-spin" />}
           </span>
         </button>
 
@@ -2779,13 +2780,14 @@ function buildTaskCreatedPart({
   };
 }
 
-function FlowTinyChip({ children, tone }: { children: ReactNode; tone?: "current" | "strong" }) {
+function FlowTinyChip({ children, tone }: { children: ReactNode; tone?: "current" | "strong" | "danger" }) {
   return (
     <span
       className={cn(
         "inline-flex max-w-full items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium",
         tone === "current" && "border-[color:var(--construct-success)] bg-[color:var(--construct-success-soft)] text-[color:var(--construct-success)]",
         tone === "strong" && "border-border/80 bg-foreground text-background",
+        tone === "danger" && "border-destructive/35 bg-destructive/10 text-destructive",
         !tone && "border-border/70 bg-background/70 text-muted-foreground"
       )}
     >
