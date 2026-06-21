@@ -89,6 +89,33 @@ describe("ConstructFlowService Concept and Task Tools", () => {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
+    project.flow.pathNodes = [{
+      id: "typescript-foundation",
+      title: "TypeScript foundation",
+      summary: "Learn interfaces before the first typed task.",
+      status: "active",
+      order: 0,
+      concepts: ["typescript.syntax.interface"],
+      taskIds: ["task-1"],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }];
+    project.flow.currentPathNodeId = "typescript-foundation";
+    session.practiceTasks.push({
+      id: "task-1",
+      projectId: project.id,
+      sessionId: session.id,
+      pathNodeId: "typescript-foundation",
+      title: "Interface task",
+      prompt: "Write a small interface.",
+      status: "waiting",
+      baseline: { capturedAt: new Date().toISOString(), files: {} },
+      createdAt: new Date().toISOString(),
+      taskFiles: ["src/user.ts"],
+      conceptIds: ["typescript.syntax.interface"],
+      introducedConceptIds: ["typescript.syntax.interface"]
+    });
+    project.flow.sessions.push(session);
 
     // 1. Test add-concept tool
     // We get the tools from createAddConceptTool
@@ -103,7 +130,9 @@ describe("ConstructFlowService Concept and Task Tools", () => {
       confidence: "introduced",
       reason: "The learner asked about TypeScript interface shape.",
       evidence: ["The learner connected interface syntax to object shape in chat."],
-      confidenceReason: "They correctly described the interface as a shape contract."
+      confidenceReason: "They correctly described the interface as a shape contract.",
+      pathNodeId: "typescript-foundation",
+      taskId: "task-1"
     });
 
     assert.ok(addResult.created);
@@ -112,6 +141,13 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     assert.equal(addResult.concept.technology, "TypeScript");
     assert.equal(addResult.concept.parentId, "typescript.syntax");
     assert.equal(addResult.concept.confidenceReason, "They correctly described the interface as a shape contract.");
+    const introducedHistory = addResult.concept.history?.at(-1);
+    assert.equal(introducedHistory?.kind, "introduced");
+    assert.ok(introducedHistory?.changedFields?.includes("content"));
+    assert.equal(introducedHistory?.provenance?.projectId, project.id);
+    assert.equal(introducedHistory?.provenance?.pathNodeTitle, "TypeScript foundation");
+    assert.equal(introducedHistory?.provenance?.taskTitle, "Interface task");
+    assert.deepEqual(introducedHistory?.provenance?.taskFiles, ["src/user.ts"]);
 
     const swiftResult = await addTool.execute({
       id: "swiftui.notesapp.core-structure",
@@ -155,13 +191,25 @@ describe("ConstructFlowService Concept and Task Tools", () => {
       confidence: "solid",
       reason: "The learner used the interface in a task without hints.",
       evidence: ["Submitted diff added an interface with the correct required property."],
-      confidenceReason: "The learner independently applied the concept in code."
+      confidenceReason: "The learner independently applied the concept in code.",
+      taskId: "task-1"
     });
 
     assert.ok(modifyResult.modified);
     assert.equal(modifyResult.concept.content, "TypeScript interface updated.");
     assert.equal(modifyResult.concept.confidence, "solid");
     assert.equal(modifyResult.reason, "The learner used the interface in a task without hints.");
+    assert.deepEqual(modifyResult.concept.history?.map((event: any) => event.kind), ["introduced", "modified"]);
+    const modifiedHistory = modifyResult.concept.history?.at(-1);
+    assert.equal(modifiedHistory?.kind, "modified");
+    assert.ok(modifiedHistory?.changedFields?.includes("content"));
+    assert.ok(modifiedHistory?.changedFields?.includes("confidence"));
+    assert.equal(modifiedHistory?.provenance?.pathNodeTitle, "TypeScript foundation");
+    assert.equal(modifiedHistory?.provenance?.taskTitle, "Interface task");
+    const contentChange = modifiedHistory?.fieldChanges?.find((change: any) => change.field === "content");
+    assert.equal(contentChange?.before, "TypeScript interface defines shape.");
+    assert.equal(contentChange?.after, "TypeScript interface updated.");
+    assert.ok(modifyResult.fieldChanges?.some((change: any) => change.field === "confidence"));
 
     // 3. Test remove-concept tool
     const removeTool = (service as any).createRemoveConceptTool(project, () => {});

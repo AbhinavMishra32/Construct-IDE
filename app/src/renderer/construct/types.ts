@@ -169,6 +169,23 @@ export type ConceptCard = {
     kind: string;
     reason: string;
     evidence: string[];
+    changedFields?: string[];
+    fieldChanges?: Array<{
+      field: string;
+      before?: string;
+      after?: string;
+    }>;
+    provenance?: {
+      projectId: string;
+      projectTitle: string;
+      projectGoal?: string;
+      pathNodeId?: string;
+      pathNodeTitle?: string;
+      taskId?: string;
+      taskTitle?: string;
+      taskFiles?: string[];
+      focusPath?: string;
+    };
     confidence?: string;
     confidenceReason?: string;
     authoredBy?: string;

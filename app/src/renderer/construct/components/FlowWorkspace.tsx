@@ -3060,6 +3060,9 @@ function readConceptHistory(value: unknown): ConceptCard["history"] {
       kind: readString(record.kind) ?? "modified",
       reason,
       evidence: readStringArray(record.evidence),
+      changedFields: readStringArray(record.changedFields),
+      fieldChanges: readConceptFieldChanges(record.fieldChanges),
+      provenance: readConceptHistoryProvenance(record.provenance),
       confidence: readString(record.confidence),
       confidenceReason: readString(record.confidenceReason),
       authoredBy: readString(record.authoredBy),
@@ -3067,6 +3070,39 @@ function readConceptHistory(value: unknown): ConceptCard["history"] {
       createdAt
     }];
   });
+}
+
+function readConceptFieldChanges(value: unknown): NonNullable<NonNullable<ConceptCard["history"]>[number]["fieldChanges"]> | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const changes = value.flatMap((item): NonNullable<NonNullable<ConceptCard["history"]>[number]["fieldChanges"]> => {
+    const record = readRecord(item);
+    const field = readString(record.field);
+    if (!field) return [];
+    return [{
+      field,
+      before: readString(record.before),
+      after: readString(record.after)
+    }];
+  });
+  return changes.length ? changes : undefined;
+}
+
+function readConceptHistoryProvenance(value: unknown): NonNullable<NonNullable<ConceptCard["history"]>[number]["provenance"]> | undefined {
+  const record = readRecord(value);
+  const projectId = readString(record.projectId);
+  const projectTitle = readString(record.projectTitle);
+  if (!projectId || !projectTitle) return undefined;
+  return {
+    projectId,
+    projectTitle,
+    projectGoal: readString(record.projectGoal),
+    pathNodeId: readString(record.pathNodeId),
+    pathNodeTitle: readString(record.pathNodeTitle),
+    taskId: readString(record.taskId),
+    taskTitle: readString(record.taskTitle),
+    taskFiles: readStringArray(record.taskFiles),
+    focusPath: readString(record.focusPath)
+  };
 }
 
 function readConceptLanguage(value: unknown): ConstructConceptLanguage | undefined {

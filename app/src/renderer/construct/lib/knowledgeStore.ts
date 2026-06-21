@@ -120,6 +120,9 @@ function normalizeConceptHistory(history: ConceptCard["history"]): KnowledgeBase
   return history?.map((event) => ({
     ...event,
     kind: normalizeHistoryKind(event.kind),
+    changedFields: event.changedFields,
+    fieldChanges: event.fieldChanges,
+    provenance: event.provenance,
     confidence: normalizeConceptConfidence(event.confidence),
     authoredBy: normalizeConceptAuthor(event.authoredBy)
   }));
