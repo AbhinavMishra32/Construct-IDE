@@ -5,16 +5,15 @@
 <h1 align="center">Construct</h1>
 
 <p align="center">
-  <b>An IDE that teaches you to build.</b><br>
-  AI-native workspace where a coding mentor lives beside your editor,
-  <br>understands what you are learning, and helps you build real projects.
+  <b>An AI-native desktop IDE that teaches you to build.</b><br>
+  An interactive workspace where a coding mentor lives beside your editor,<br>
+  understands what you are learning, and guides you through real software development.
 </p>
 
 <p align="center">
   <a href="https://tryconstruct.cc"><b>Website</b></a> ·
   <a href="https://github.com/AbhinavMishra32/Construct-IDE/releases/latest"><b>Download</b></a> ·
-  <a href="docs/construct-flow-projects-implementation-brief.md"><b>Flow Projects Spec</b></a> ·
-  <a href="docs/tape-changelog.md"><b>Tape Changelog</b></a>
+  <a href="docs/construct-flow-projects-implementation-brief.md"><b>Architecture Spec</b></a>
 </p>
 
 <p align="center">
@@ -30,173 +29,124 @@
 
 Construct is an **AI-native desktop IDE** built for one reason: to help you learn by building real software.
 
-Unlike coding assistants that hand you solutions, Construct works like a great human mentor. It sits beside your editor, inspects your workspace, understands what you are building, and guides you through the decisions that matter. You write the code. Construct helps you *understand* why it works.
-
-Construct has two project kinds:
-
-- **Flow Projects** – natural, agent-guided coding workspace (the primary way to use Construct)
-- **Tapes** – authored, step-by-step lessons (legacy format, secondary)
+Unlike coding assistants that hand you copy-paste solutions, Construct works like a senior engineering mentor. It sits beside your editor, inspects your workspace, understands what you are building, and guides you through the decisions that matter. You write the code. Construct helps you understand *why* it works.
 
 ---
 
-## Flow Projects
+## Core Architecture: The Mentorship Loop
 
-Flow is Construct's flagship project kind: a **loose, natural, tool-call-native coding mentor workspace**. There is no rigid lesson engine, no step counter, no scripted sequence. The agent behaves like a senior engineer pair-programming with you.
+When you open a project, Construct runs two specialized agents:
 
-When you create a Flow project, **two AI agents** work in your corner:
+### 1. The Research Agent
+Runs once at project creation. It performs deep domain and stack research—searching the web, reading documentation, identifying terminology, finding common libraries, and flagging potential caveats. It saves everything into `research.md` so the mentor agent is never flying blind.
 
-### Flow Research Agent
-
-Runs once at project creation. It researches your project's domain and technology stack — web search, source reading, terminology, common libraries, caveats. It saves everything into `research.md` so the main mentor is never flying blind.
-
-It does not teach, modify code, or create a plan. It just makes sure the context is set.
-
-### Main Flow Agent
-
-The primary coding mentor. It has real workspace powers:
-
-- **Inspect files** – read, search, list, navigate any file in the project
-- **Run terminal commands** – execute tests, builds, linters, whatever the project needs
-- **Create practice tasks** – scaffold real code, capture a baseline, wait for you to attempt it, then receive a compact diff to review together
-- **Focus your editor** – open files and highlight exact ranges so you never hunt for the right line
-- **Run terminal commands** – test, build, lint, debug
-- **Ask questions** – interactive clarification when a decision is needed
-- **Internet search** – look up APIs, docs, libraries in real time
-- **LSP & static analysis** – work with your language server for type-aware guidance
-
-The system prompt is short and deliberate:
-
-> *"You are not a code vending machine. Your job is to help the learner become capable of writing and understanding the project themselves. Prefer learner attempts. When the next step is a coding attempt, use the practice-task tool to prepare a real place in the workspace."*
-
-### Flow Memory
-
-Flow projects persist durable context in four markdown files, visible and editable from the settings tab:
-
-| File | What it holds |
-|------|--------------|
-| `research.md` | Project/domain/technology background. Created by the Research Agent. |
-| `project.md` | Durable identity: stack, architecture decisions, important files, commands, conventions. |
-| `path.md` | Current direction: what you are working on, recently done, what comes next, blockers. |
-| `learner.md` | Your understanding: known concepts, weak spots, help level, learning evidence. |
-
-The agent reads and writes these files as you work, so context survives across sessions. Close the app, come back tomorrow — the agent remembers where you left off and what you already understand.
-
-### Practice Tasks
-
-The most important learning tool in Flow. When the agent wants you to write code:
-
-1. It scaffolds the task in real project files (or tells you where to work)
-2. It captures a **baseline** snapshot of the relevant files
-3. It hands you the workspace and waits
-4. You write code, run tests, iterate
-5. When you submit, the agent receives a **compact diff** — exactly what changed, nothing more
-6. It reviews your work, gives feedback, and updates Flow Memory
-
-This is the core learning loop: **attempt → diff → feedback → improve**. No copy-pasting solutions. No "watch me code" videos. You build it.
+### 2. The Mentor Agent
+The primary coding companion in your workspace. It possesses full access to project context and workspace tools:
+- 📂 **File Inspection** – Read, search, list, and navigate any file in your project.
+- 🐚 **Terminal Control** – Run tests, build projects, run linters, and debug errors.
+- 🎯 **Practice Scaffold** – Setup boilerplate tasks and wait for you to write the implementation.
+- 👁️ **Editor Focus** – Open files and highlight exact line ranges to direct your attention.
+- 🌐 **Web Search** – Query libraries, APIs, and documentation in real time.
 
 ---
 
-## Tapes
+## Construct Memory
 
-Tapes are Construct's original project format: **authored, deterministic lessons** written in a custom DSL (`.construct` files). A tape specifies workspace files, learning steps, concept cards, verification checkpoints, and git milestones.
+To maintain state and context across sessions, Construct persists durable metadata in four markdown files within your workspace directory (configurable via the Settings tab):
 
-Tapes are still fully supported and continue to receive compatibility guarantees. But the focus of active development is Flow Projects.
+| File | Description |
+| :--- | :--- |
+| `research.md` | Compiled domain and technology stack research. Created by the Research Agent. |
+| `project.md` | Durable project identity: tech stack, architecture decisions, conventions, and run commands. |
+| `path.md` | Current direction: active goals, completed tasks, next steps, and blockers. |
+| `learner.md` | Profile of your understanding: known concepts, weak spots, help level, and learning evidence. |
 
-Construct `0.2.1` supports every tape revision from `tape-0.1` through `tape-0.4.2`.
+As you work, the mentor reads and writes to these files. You can close the IDE, reopen it tomorrow, and the mentor will pick up exactly where you left off, remembering what you already understand.
 
-| Revision | Adds |
-|----------|------|
-| `tape-0.1` | Files, linear steps, explain, edit, run, expect, checkpoint |
-| `tape-0.2` | Focus anchors, references, supported recall, agent verification |
-| `tape-0.3` | Concept cards, richer support, git milestones, authoring lint |
-| `tape-0.3.1` | Canonical `guide.*` names and explicit inline references |
-| `tape-0.4` | Construct Interact, reply recall, learner memory, Knowledge Base |
-| `tape-0.4.1` | Validated generated live steps, actions, and run provenance |
-| `tape-0.4.2` | Agent-chosen tools, source-labelled resources, concept engagement, durable agent traces |
+---
+
+## Practice Tasks
+
+Practice Tasks are the core learning vehicle in Construct. When the mentor agent determines it is time for a coding exercise:
+
+```mermaid
+graph TD
+    A[Mentor Scaffolds Task] --> B[Capture Workspace Baseline]
+    B --> C[Learner Implements Solution]
+    C --> D[Learner Submits for Verification]
+    D --> E[Mentor Analyzes Compact Diff]
+    E --> F[Mentor Provides Feedback & Updates Memory]
+```
+
+1. **Scaffold**: The mentor sets up boilerplate code/tests or specifies exactly where you should work.
+2. **Baseline**: It captures a snapshot of relevant files.
+3. **Attempt**: You write code, test your solution, and iterate.
+4. **Diff & Review**: Upon submission, the mentor receives a compact diff of your changes. It reviews your code, provides actionable feedback, and updates your memory profiles.
 
 ---
 
 ## AI Providers
 
-Construct is provider-agnostic. Configure your preferred LLM backend in Settings and every agent feature uses it.
+Construct is provider-agnostic. Configure your preferred LLM backend in Settings, and all agent features will adapt.
 
-### Supported providers
+### Supported Providers
 
-| Provider | Key | Default model |
-|----------|-----|---------------|
+| Provider | Identifier | Default Model |
+| :--- | :--- | :--- |
 | **OpenAI** | `openai` | `gpt-5-mini` |
 | **OpenRouter** | `openrouter` | `deepseek/deepseek-v4-flash` |
 | **OpenCode Zen** | `opencode-zen` | `gpt-5.1-codex` |
 | **GitHub Copilot** | `github-copilot` | `github_copilot/gpt-4` |
 | **LiteLLM** | `litellm` | `openai/gpt-5-mini` |
 
-Each provider stores its own API key, model selection, and base URL independently. Switch between them at any time without losing configuration.
+> [!TIP]
+> You can target custom, self-hosted, or proxy endpoints by modifying the base URL settings for any provider.
 
-**OpenAI-compatible endpoints** — set a custom base URL for any provider (including self-hosted or proxy-compatible backends). The default for OpenAI is `https://api.openai.com/v1`, for OpenRouter it is `https://openrouter.ai/api/v1`.
-
-### Agent runtimes
+### Agent Runtimes
 
 Construct supports two agent runtimes, selectable in Settings:
+- **Mastra** (Default)
+- **Fxpnt**
 
-- **Mastra** — the default runtime. Used for all agent features unless changed.
-- **Fxpnt** — an alternative agent runtime.
+### Per-Feature Model Routing
 
-### Per-feature model routing
+Each AI-driven capability can be routed to a different model, optimizing for cost, latency, or capability:
 
-Every agent feature can use a **different model**. Configure a global default for the provider, then override per feature:
+| Feature ID | Target Service |
+| :--- | :--- |
+| `construct-flow` | Construct Mentor — the primary coding workspace mentor. |
+| `selection-explain` | Highlight explanation — answers queries about selected blocks. |
+| `code-explain` | Inline help — provides quick contextual details while reading or editing. |
 
-| Feature ID | What it powers |
-|------------|---------------|
-| `construct-flow` | Flow Projects — open-ended coding mentor |
-| `construct-interact` | Tape project conversational understanding checks |
-| `verification` | Checks learner code against tape rubric and evidence |
-| `selection-explain` | Explains highlighted code in project context |
-| `code-explain` | Inline code help while you read or edit |
-| `authoring-review` | Suggests tape structure and teaching improvements |
-
-Model resolution follows this chain (first match wins):
-
-1. **Feature-specific override** — model saved for that exact feature ID
-2. **Global provider model** — the model field on the selected provider
-3. **Built-in default** — the hardcoded default for that provider + feature combination
-
-This means you can run Flow on a powerful model like `deepseek/deepseek-v4-flash`, route `selection-explain` to a cheaper model like `gpt-5-mini`, and keep `verification` on the global default — all from the same Settings panel.
-
-### Observability
-
-Construct supports **OpenInference / Phoenix** tracing for agent observability. Enable it in Settings to capture agent runs, tool calls, and LLM interactions for debugging and analysis.
-
-### Privacy
-
-All API keys, credentials, and learning state are stored **locally** in the Construct config file on your machine. No telemetry, no external logging, no data exfiltration. The only outbound calls are the LLM API requests you configure.
+Model resolution follows a clear fallback chain:
+1. **Feature-specific override** (if set in settings)
+2. **Global provider model**
+3. **Hardcoded default** for the provider/feature combo
 
 ---
 
-## Download
+## Observability & Privacy
 
-Get the latest installers from [GitHub Releases](https://github.com/AbhinavMishra32/Construct-IDE/releases/latest).
-
-- **macOS**: `.dmg` and `.zip`
-- **Windows**: Installer, portable executable, `.zip`
-- **Linux**: `AppImage`, `.deb`, `.tar.gz`
+- 📊 **Phoenix Tracing**: Construct supports OpenInference/Phoenix tracing. Enable it in Settings to capture agent runs, tool calls, and LLM traces.
+- 🔒 **100% Local**: All API keys, settings, and learning memory files are stored locally on your machine. Construct does not collect telemetry or store code on external servers. The only outbound calls are the LLM APIs you configure.
 
 ---
 
-## Build from Source
+## Development
 
-**Requirements**
+### Requirements
+- **Node.js** 25+
+- **pnpm** 10+
 
-- Node.js 25+
-- pnpm 10+
-
+### Build & Run
 ```bash
+# Install dependencies
 pnpm install
+
+# Start Electron in development
 pnpm --filter @construct/app dev
-```
 
-Run repository checks:
-
-```bash
+# Run workspace validations
 pnpm verify
 ```
 
@@ -206,14 +156,13 @@ pnpm verify
 
 ```
 app/                         Desktop app (Electron + React + TypeScript)
-app/src/main/                Main process — agents, services, IPC, tools
-app/src/main/flow/           Flow agent service, Flow Memory service
-app/src/main/agent-tools/    Agent tool implementations (Flow protocol + tape)
-app/src/renderer/            Renderer — workspace UI, compiler, components
-app/src/renderer/construct/  Tape runtime, compiler, Flow workspace, dashboard
+├── src/main/                Main process — agents, configurations, and services
+│   ├── flow/                Construct core mentor service and Memory manager
+│   └── agent-tools/         Agent tool implementations (files, terminal, tasks)
+├── src/renderer/            Renderer process — UI interface, workspace layout
 opaline/packages/ui/         Shared desktop UI components
 website/                     tryconstruct.cc
-docs/                        Flow Projects spec, tape changelog, design docs
+docs/                        Technical specifications & design documents
 ```
 
 ---
