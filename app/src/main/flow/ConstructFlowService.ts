@@ -22,6 +22,7 @@ import type {
   ConstructFlowAction,
   ConstructFlowAgentInput,
   ConstructFlowAgentResult,
+  ConstructFlowMemoryPatchResult,
   ConstructFlowPathNode,
   ConstructFlowPracticeTask,
   ConstructFlowPracticeSubtask,
@@ -105,6 +106,7 @@ export class ConstructFlowService {
     logs: AgentLogService;
     learningStore: () => ConstructLearningStore;
     readSettings?: () => Promise<StoredSettings>;
+    agentRuntime?: () => ReturnType<typeof createConstructAgentRuntime>;
   }) {}
 
   async runMainAgent(
@@ -214,7 +216,7 @@ export class ConstructFlowService {
     let reply: string;
     let runError: unknown;
     try {
-      const generated = await createConstructAgentRuntime().runAgentic({
+      const generated = await (this.options.agentRuntime?.() ?? createConstructAgentRuntime()).runAgentic({
         id: "construct-flow-agent",
         featureId: "construct-flow",
         name: "Construct Flow",
@@ -325,7 +327,7 @@ export class ConstructFlowService {
 
     let reply: string;
     try {
-      const generated = await createConstructAgentRuntime().runAgentic({
+      const generated = await (this.options.agentRuntime?.() ?? createConstructAgentRuntime()).runAgentic({
         id: "construct-flow-research-agent",
         featureId: "construct-flow",
         name: "Construct Flow Research",
@@ -340,12 +342,17 @@ export class ConstructFlowService {
           publish("updated");
         }
       });
-      reply = generated.text.trim() || "Research completed.";
-      const researchContent = buildResearchDocument(session, reply);
-      await this.options.flowMemory.update(project, [{
-        file: "research.md",
-        content: researchContent
-      }]);
+      reply = sanitizeResearchReply(generated.text.trim() || "Research completed.");
+      if (!hasCompletedResearchMemoryWrite(session)) {
+        const researchContent = buildResearchDocument(session, reply);
+        const writeResults = await this.options.flowMemory.updateWithDiff(project, [{
+          file: "research.md",
+          content: researchContent,
+          reason: "Save researched project context for the mentor handoff."
+        }]);
+        recordHostResearchMemoryWrite(session, writeResults);
+        publish("updated");
+      }
     } catch (error) {
       reply = "Research failed before completion.";
       await this.options.flowMemory.update(project, [{
@@ -1753,7 +1760,7 @@ function buildMainPrompt(
       })), null, 2),
     "",
     "Flow Memory:",
-    "project.md, path.md, and learner.md are preloaded here. research.md (if present) is also loaded for reference. Use flow-memory-patch for concise durable updates when meaningful work happens.",
+    "project.md, path.md, learner.md, and research.md are preloaded here. Treat research.md as the new-project research handoff when it has content; continue from its assumptions instead of redoing research or asking redundant project-direction clarification. Use flow-memory-patch for concise durable updates when meaningful work happens.",
     JSON.stringify(memory.map((item) => ({
       file: item.file,
       updatedAt: item.updatedAt,
@@ -1797,7 +1804,60 @@ function buildResearchDocument(session: ConstructFlowSession, reply: string): st
     )
     .map((p) => `## Tool: ${p.name}${p.reason ? ` — ${p.reason}` : ""}\n${p.outputPreview}`)
     .join("\n\n");
-  return `# Research — ${date}\n\n${reply}\n\n${toolResults ? `## Sources & Tool Results\n\n${toolResults}` : ""}`.trim();
+  return `# Research — ${date}\n\n## Mentor Handoff\n\nUse these notes as project context before teaching, planning, or asking project-direction questions. If the goal has multiple valid interpretations, continue from the researched assumptions below and clarify later only when the learner's next step depends on it.\n\n## Research Summary\n\n${reply}\n\n${toolResults ? `## Sources & Tool Results\n\n${toolResults}` : ""}`.trim();
+}
+
+function sanitizeResearchReply(reply: string): string {
+  if (!isClarificationPivot(reply)) return reply;
+  return "Research saved to research.md. I captured the researched background and assumptions so the mentor can continue without redoing discovery.";
+}
+
+function isClarificationPivot(reply: string): boolean {
+  const normalized = reply.toLowerCase();
+  return (
+    normalized.includes("let me clarify") ||
+    normalized.includes("key question before we proceed") ||
+    (normalized.includes("what does") && normalized.includes("mean to you")) ||
+    normalized.includes("are you looking to")
+  );
+}
+
+function hasCompletedResearchMemoryWrite(session: ConstructFlowSession): boolean {
+  return session.toolCalls.some((toolCall) => {
+    if (toolCall.status !== "completed") return false;
+    const name = normalizeToolName(toolCall.name);
+    if (name !== "flowmemorypatch" && name !== "flowmemoryupdate") return false;
+    return toolCallReferencesResearchMemory(toolCall.input) || toolCallReferencesResearchMemory(toolCall.outputPreview);
+  });
+}
+
+function toolCallReferencesResearchMemory(value: unknown): boolean {
+  if (typeof value === "string") return value.includes("research.md");
+  if (!value || typeof value !== "object") return false;
+  if (Array.isArray(value)) return value.some((item) => toolCallReferencesResearchMemory(item));
+  return Object.values(value).some((item) => toolCallReferencesResearchMemory(item));
+}
+
+function recordHostResearchMemoryWrite(
+  session: ConstructFlowSession,
+  results: ConstructFlowMemoryPatchResult[]
+): void {
+  const timestamp = new Date().toISOString();
+  const record: ConstructFlowToolCallRecord = {
+    id: `flow-memory-update-${session.id}`,
+    name: "flow-memory-update",
+    title: "Updated Flow Memory",
+    reason: "Saved research.md for mentor handoff",
+    input: {
+      updates: [{ file: "research.md" }]
+    },
+    outputPreview: JSON.stringify(results, null, 2),
+    status: "completed",
+    createdAt: timestamp,
+    completedAt: timestamp
+  };
+  session.toolCalls.push(record);
+  upsertTimelinePart(session.timeline, timelinePartFromToolRecord(record, "completed"));
 }
 
 function buildResearchPrompt(project: StoredFlowProject): string {
@@ -2205,14 +2265,15 @@ export const FLOW_RESEARCH_AGENT_PROMPT = `You are the Construct Flow Research A
 
 Your job is to prepare concise project/domain/technology background for a new Construct Flow project.
 
-You may use internet-search, internet-fetch, read, grep, glob, and flow-memory-fetch.
+You may use internet-search, internet-fetch, read, grep, glob, flow-memory-fetch, and flow-memory-patch.
 You do not teach the learner directly.
 You do not create a learner profile.
 You do not create a deterministic project plan.
 You do not modify project code.
+Do not ask the learner clarifying questions. If the project goal is broad or ambiguous, preserve the researched interpretations, state the assumption that is most useful for a mentor handoff, and let the main mentor clarify later only when the next teaching step depends on it.
 
 Create useful markdown for research.md. Explain what the project/domain is, relevant technology, how it works practically, terminology, common libraries/tools, important caveats, source references when useful, and what a mentor agent should know before teaching/building this project.
 
 Keep it concise and source-grounded. Use short search queries, low result counts, and no raw web dumps. Prefer official docs or primary project sources when available. Use internet-fetch when you already have exact URLs and need the page contents; use query-focused fetch chunks for long docs.
 
-Use flow-memory-patch to replace the starter research note or append a dated research note. Then reply with a short summary of what you saved.`;
+Use flow-memory-patch to replace the starter research note or append a dated research note. Then reply with a short summary of what you saved, not a question.`;
