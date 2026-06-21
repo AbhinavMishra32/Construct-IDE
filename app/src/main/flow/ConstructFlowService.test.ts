@@ -1026,6 +1026,134 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     assert.equal(result.session.contextWindow?.messageCount, 3);
   });
 
+  it("replays visible setup tools and tracked question answers into the next model call", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "construct-flow-test-visible-transcript-"));
+    const workspaceRoot = path.join(dir, "workspaces");
+    await mkdir(workspaceRoot, { recursive: true });
+    const workspace = new ConstructProjectWorkspaceService(
+      () => workspaceRoot,
+      () => dir
+    );
+    const flowMemory = new ConstructFlowMemoryService(workspace);
+    const logs = new AgentLogService(() => {});
+    const learningStore = new ConstructLearningStore(path.join(dir, "learning-state.json"));
+    const calls: any[] = [];
+    const service = new ConstructFlowService({
+      workspace,
+      flowMemory,
+      latestTerminalOutput: () => "",
+      logs,
+      learningStore: () => learningStore,
+      agentRuntime: () => ({
+        runAgentic: async (input: any) => {
+          calls.push(input);
+          return { text: "Continuing with the approved install.", stepCount: 1, finishReason: "stop", durationMs: 1 };
+        }
+      }) as any
+    });
+    const project = createFlowTestProject(workspaceRoot, "visible-transcript-project", "Learn Mastra and React Ink");
+    await mkdir(project.workspacePath, { recursive: true });
+    const createdAt = new Date().toISOString();
+    project.flow.sessions.push({
+      id: "setup-session",
+      projectId: project.id,
+      threadId: "thread",
+      origin: "user",
+      messages: [
+        { id: "u1", role: "user", content: "hi! lets start", createdAt },
+        { id: "a1", role: "assistant", content: "I need approval before running npm install.", createdAt }
+      ],
+      status: "waiting",
+      toolCalls: [
+        {
+          id: "write-package",
+          name: "write",
+          title: "Wrote package.json",
+          reason: "Scaffold Mastra dependencies",
+          input: { path: "package.json", reason: "Create package manifest", content: "{\"dependencies\":{\"@mastra/core\":\"latest\",\"zod\":\"latest\"}}" },
+          outputPreview: "{\"path\":\"package.json\",\"bytes\":123,\"authoredBy\":\"agent\"}",
+          status: "completed",
+          createdAt,
+          completedAt: createdAt
+        },
+        {
+          id: "write-tsconfig",
+          name: "write",
+          title: "Wrote tsconfig.json",
+          reason: "Scaffold TypeScript config",
+          input: { path: "tsconfig.json", reason: "Create TypeScript config", content: "{\"compilerOptions\":{\"strict\":true}}" },
+          outputPreview: "{\"path\":\"tsconfig.json\",\"bytes\":88,\"authoredBy\":\"agent\"}",
+          status: "completed",
+          createdAt,
+          completedAt: createdAt
+        },
+        {
+          id: "install-command",
+          name: "run-terminal-command",
+          title: "Ran npm install",
+          reason: "Install Mastra and Zod dependencies",
+          input: { command: "npm install", label: "npm install", reason: "Install dependencies" },
+          outputPreview: "Package manager mutation requires explicit user approval.",
+          status: "error",
+          createdAt,
+          completedAt: createdAt
+        },
+        {
+          id: "ask-install",
+          name: "ask-question",
+          title: "Asked learner",
+          reason: "Package manager approval required",
+          input: {
+            question: "Should I run npm install to install Mastra and Zod dependencies?",
+            choices: ["yes", "no"],
+            blocksProgress: true
+          },
+          outputPreview: "{\"question\":\"Should I run npm install to install Mastra and Zod dependencies?\",\"choices\":[\"yes\",\"no\"]}",
+          status: "completed",
+          createdAt,
+          completedAt: createdAt
+        }
+      ],
+      agentEvents: [],
+      timeline: [
+        { id: "write-package", kind: "tool", toolCallId: "write-package", name: "write", title: "Wrote package.json", reason: "Scaffold Mastra dependencies", status: "completed", input: { path: "package.json", reason: "Create package manifest", content: "{\"dependencies\":{\"@mastra/core\":\"latest\",\"zod\":\"latest\"}}" }, outputPreview: "{\"path\":\"package.json\",\"bytes\":123,\"authoredBy\":\"agent\"}", createdAt, completedAt: createdAt },
+        { id: "write-tsconfig", kind: "tool", toolCallId: "write-tsconfig", name: "write", title: "Wrote tsconfig.json", reason: "Scaffold TypeScript config", status: "completed", input: { path: "tsconfig.json", reason: "Create TypeScript config", content: "{\"compilerOptions\":{\"strict\":true}}" }, outputPreview: "{\"path\":\"tsconfig.json\",\"bytes\":88,\"authoredBy\":\"agent\"}", createdAt, completedAt: createdAt },
+        { id: "install-command", kind: "tool", toolCallId: "install-command", name: "run-terminal-command", title: "Ran npm install", reason: "Install Mastra and Zod dependencies", status: "error", input: { command: "npm install", label: "npm install", reason: "Install dependencies" }, outputPreview: "Package manager mutation requires explicit user approval.", createdAt, completedAt: createdAt },
+        { id: "ask-install", kind: "tool", toolCallId: "ask-install", name: "ask-question", title: "Asked learner", reason: "Package manager approval required", status: "completed", input: { question: "Should I run npm install to install Mastra and Zod dependencies?", choices: ["yes", "no"], blocksProgress: true }, outputPreview: "{\"question\":\"Should I run npm install to install Mastra and Zod dependencies?\",\"choices\":[\"yes\",\"no\"]}", createdAt, completedAt: createdAt }
+      ],
+      actions: [],
+      practiceTasks: [],
+      createdAt,
+      updatedAt: createdAt
+    });
+
+    await service.runMainAgent(project, {
+      projectId: project.id,
+      message: "Continue from the tracked question answer.",
+      questionResponse: {
+        sessionId: "setup-session",
+        toolCallId: "ask-install",
+        question: "Should I run npm install to install Mastra and Zod dependencies?",
+        answer: "yes",
+        answeredAt: new Date().toISOString()
+      },
+      quickAction: "continue"
+    });
+
+    assert.equal(calls.length, 1);
+    const renderedMessages = calls[0].messages.map((message: any) => `${message.role}:\n${message.content}`).join("\n\n");
+    assert.match(renderedMessages, /Visible Flow turn transcript/);
+    assert.match(renderedMessages, /Wrote package\.json/);
+    assert.match(renderedMessages, /Wrote tsconfig\.json/);
+    assert.match(renderedMessages, /npm install/);
+    assert.match(renderedMessages, /Package manager mutation requires explicit user approval/);
+    assert.match(renderedMessages, /Should I run npm install to install Mastra and Zod dependencies/);
+    assert.match(renderedMessages, /answer=yes/);
+    assert.match(renderedMessages, /Tracked Flow question answered/);
+    assert.match(renderedMessages, /Answer: yes/);
+    assert.doesNotMatch(calls[0].messages.at(-1).content, /^Continue from the tracked question answer\.$/);
+  });
+
   it("auto-compacts older Flow transcript messages and preserves the recent tail", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "construct-flow-test-auto-compact-"));
     const workspaceRoot = path.join(dir, "workspaces");
