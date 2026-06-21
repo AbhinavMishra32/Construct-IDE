@@ -10,6 +10,7 @@ import { resolveConstructAiSettings } from "./constructAiSettings";
 import type { StoredAiSettings } from "./constructAiSettings";
 import type { ConstructAgentRunEvent } from "../shared/constructLearning";
 import { emitProviderLog } from "./ai/ProviderLogService";
+import { finalizeDanglingToolRunEvents, iterationDetail, type ObservedToolEventState } from "./constructAgentRuntimeStream";
 
 export type ConstructAgentTools = ToolsInput;
 
@@ -614,11 +615,7 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
     let activeStreamPart: "reasoning" | "text" | "tool" | "object" | undefined;
     const pendingToolInputs = new Map<string, string>();
     let toolSequence = 0;
-    const toolEvents = new Map<string, {
-      providerToolCallId: string;
-      event: ConstructAgentRunEvent;
-      completed: boolean;
-    }>();
+    const toolEvents = new Map<string, ObservedToolEventState>();
 
     const nextEventOrdinal = () => {
       globalEventOrdinal += 1;
@@ -723,6 +720,12 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
       toolEvents.set(providerToolCallId, state);
       return state;
     };
+    const closeDanglingToolEvents = (reason: string) => {
+      finalizeDanglingToolRunEvents(toolEvents, pendingToolInputs, reason, (entry) => request.onTrace?.(entry));
+      if (activeStreamPart === "tool") {
+        activeStreamPart = undefined;
+      }
+    };
     const startTextSegment = (rawId: string | undefined) => {
       void rawId;
       const id = nextMessageId();
@@ -792,6 +795,7 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
         if (done) {
           closeTextSegment("stream-end");
           closeActiveReasoningSegment("stream-end");
+          closeDanglingToolEvents("stream-end");
           break;
         }
       const chunk = rawChunk as {
@@ -802,6 +806,7 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
 
       if (chunk.type === "reasoning-start") {
         closeTextSegment("reasoning-start");
+        closeDanglingToolEvents("reasoning-start");
         closeActiveReasoningSegment("reasoning-start");
         startReasoningSegment(chunkString(chunk, "id"));
         continue;
@@ -809,6 +814,7 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
 
       if (chunk.type === "reasoning-delta") {
         closeTextSegment("reasoning-delta");
+        closeDanglingToolEvents("reasoning-delta");
         activeStreamPart = "reasoning";
         const rawId = chunkString(chunk, "id");
         const id = reasoningIdForDelta(rawId);
@@ -863,6 +869,7 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
         const rawId = chunkString(chunk, "id");
         closeActiveReasoningSegment("text-start");
         closeTextSegment("text-start");
+        closeDanglingToolEvents("text-start");
         startTextSegment(rawId);
         continue;
       }
@@ -870,6 +877,7 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
       if (chunk.type === "text-delta") {
         const rawId = chunkString(chunk, "id");
         closeActiveReasoningSegment("text-delta");
+        closeDanglingToolEvents("text-delta");
         const id = messageIdForTextChunk(rawId);
         activeMessageId = id;
         activeStreamPart = "text";
@@ -944,15 +952,26 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
         const providerToolCallId = chunkString(chunk, "toolCallId") ?? chunkString(chunk, "id");
         if (providerToolCallId) {
           pendingToolInputs.set(providerToolCallId, `${pendingToolInputs.get(providerToolCallId) ?? ""}${chunkString(chunk, "argsTextDelta") ?? chunkString(chunk, "delta") ?? ""}`);
+          const toolName = chunkString(chunk, "toolName") ?? toolEvents.get(providerToolCallId)?.event.toolName ?? "tool";
+          const state = ensureToolEvent(providerToolCallId, toolName, "Streaming input");
+          state.event = {
+            ...state.event,
+            status: "running",
+            title: toolName,
+            detail: "Streaming input",
+            toolName,
+            toolCallId: providerToolCallId
+          };
+          state.completed = false;
           request.onTrace?.({
             title: "Agent tool input streaming",
             level: "debug",
-            detail: chunkString(chunk, "toolName") ?? toolEvents.get(providerToolCallId)?.event.toolName ?? "tool",
+            detail: toolName,
             payload: {
               type: chunk.type,
               providerToolCallId,
-              id: toolEvents.get(providerToolCallId)?.event.id,
-              toolName: chunkString(chunk, "toolName"),
+              id: state.event.id,
+              toolName,
               inputLength: pendingToolInputs.get(providerToolCallId)?.length ?? 0
             }
           });
@@ -1027,6 +1046,7 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
       if ((chunk.type === "object" || chunk.type === "network-object") && partialObject) {
         closeTextSegment("object");
         closeActiveReasoningSegment("object");
+        closeDanglingToolEvents("object");
         activeStreamPart = "object";
         request.onTrace?.({
           title: "Structured response delta",
@@ -1051,19 +1071,6 @@ let globalEventOrdinal = 0;
 function outputEventId(agentId: string): string {
   runEventSequence += 1;
   return `${agentId}-${Date.now()}-${runEventSequence}`;
-}
-
-function iterationDetail(iteration: ConstructAgentIteration): string {
-  const toolCallCount = iteration.toolCalls.length;
-  const toolResultCount = iteration.toolResults.length;
-  if (toolCallCount > 0 || toolResultCount > 0) {
-    return [
-      toolCallCount > 0 ? `${toolCallCount} tool call${toolCallCount === 1 ? "" : "s"}` : null,
-      toolResultCount > 0 ? `${toolResultCount} result${toolResultCount === 1 ? "" : "s"}` : null,
-      iteration.isFinal ? "final step" : null
-    ].filter(Boolean).join(" · ");
-  }
-  return iteration.isFinal ? `Final step · ${iteration.finishReason}` : `Step ${iteration.iteration} · ${iteration.finishReason}`;
 }
 
 function stringField(payload: Record<string, unknown> | undefined, key: string): string | undefined {
