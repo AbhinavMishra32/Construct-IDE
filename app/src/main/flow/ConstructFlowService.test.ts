@@ -1156,6 +1156,127 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     assert.ok((result.session.contextWindow?.visibleTranscriptTokens ?? 0) > 0);
   });
 
+  it("reviews task submissions with non-mutating tools and treats blocked commands as recoverable evidence", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "construct-flow-test-review-policy-"));
+    const workspaceRoot = path.join(dir, "workspaces");
+    await mkdir(workspaceRoot, { recursive: true });
+    const workspace = new ConstructProjectWorkspaceService(
+      () => workspaceRoot,
+      () => dir
+    );
+    const flowMemory = new ConstructFlowMemoryService(workspace);
+    const logs = new AgentLogService(() => {});
+    const learningStore = new ConstructLearningStore(path.join(dir, "learning-state.json"));
+    const calls: any[] = [];
+    const commandResults: any[] = [];
+    const service = new ConstructFlowService({
+      workspace,
+      flowMemory,
+      latestTerminalOutput: () => "",
+      logs,
+      learningStore: () => learningStore,
+      agentRuntime: () => ({
+        runAgentic: async (input: any) => {
+          calls.push(input);
+          commandResults.push(await input.tools.runTerminalCommand.execute({
+            command: "rm agent.ts tools.ts && npx tsc --noEmit",
+            label: "Typecheck",
+            reason: "Validate learner submission"
+          }));
+          return { text: "", stepCount: 1, finishReason: "stop", durationMs: 1 };
+        }
+      }) as any
+    });
+    const project = createFlowTestProject(workspaceRoot, "review-policy-project", "Learn Mastra agents");
+    await mkdir(project.workspacePath, { recursive: true });
+    const agentPath = path.join(project.workspacePath, "agent.ts");
+    const toolsPath = path.join(project.workspacePath, "tools.ts");
+    const beforeAgent = "export const agent = null;\n";
+    const beforeTools = "export const tools = [];\n";
+    await writeFile(agentPath, beforeAgent, "utf8");
+    await writeFile(toolsPath, beforeTools, "utf8");
+
+    const createdAt = new Date().toISOString();
+    const session: ConstructFlowSession = {
+      id: "review-session",
+      projectId: project.id,
+      threadId: "thread-review",
+      origin: "user",
+      messages: [],
+      status: "completed",
+      toolCalls: [],
+      agentEvents: [],
+      timeline: [],
+      actions: [],
+      practiceTasks: [{
+        id: "mastra-task",
+        projectId: project.id,
+        sessionId: "review-session",
+        title: "Create the Mastra agent shell",
+        prompt: "Create a small agent and tool yourself.",
+        status: "waiting",
+        baseline: {
+          capturedAt: createdAt,
+          files: {
+            "agent.ts": beforeAgent,
+            "tools.ts": beforeTools
+          }
+        },
+        createdAt,
+        taskFiles: ["agent.ts", "tools.ts"],
+        introducedConceptIds: ["typescript.modules"],
+        conceptIds: ["typescript.modules"],
+        subtasks: [{
+          id: "agent-subtask",
+          title: "Wire the agent shell",
+          prompt: "Export the agent and tool from your own files.",
+          status: "active",
+          successCriteria: ["The learner-authored files contain the agent shell."]
+        }]
+      }],
+      createdAt,
+      updatedAt: createdAt
+    };
+    project.flow.sessions.push(session);
+    await writeFile(agentPath, "export const agent = { name: 'learner-agent' };\n", "utf8");
+    await writeFile(toolsPath, "export const tools = [{ id: 'weather' }];\n", "utf8");
+    const submission = await service.submitPracticeTask(project, "mastra-task", "I wrote the agent shell.", "agent-subtask");
+
+    const result = await service.runMainAgent(project, {
+      projectId: project.id,
+      message: "Review my practice task submission.",
+      taskSubmission: submission
+    });
+
+    assert.equal(calls.length, 1);
+    const toolNames = Object.keys(calls[0].tools);
+    assert.ok(toolNames.includes("read"));
+    assert.ok(toolNames.includes("grep"));
+    assert.ok(toolNames.includes("runTerminalCommand"));
+    assert.ok(toolNames.includes("review-subtask"));
+    assert.ok(toolNames.includes("complete-task"));
+    assert.ok(!toolNames.includes("write"));
+    assert.ok(!toolNames.includes("edit"));
+    assert.ok(!toolNames.includes("practice-task"));
+    assert.ok(!toolNames.includes("plan-learning-path"));
+    assert.match(calls[0].instructions, /Task-submission review mode/);
+    assert.match(calls[0].instructions, /workspaceMutation": "unavailable/);
+    assert.match(calls[0].instructions, /terminalCommands": "validation-only/);
+
+    assert.equal(commandResults[0].status, "blocked");
+    assert.match(commandResults[0].reason, /modify or delete workspace files/);
+    assert.ok(existsSync(agentPath));
+    assert.ok(existsSync(toolsPath));
+    assert.equal(result.session.status, "completed");
+    assert.match(result.reply, /validation command did not succeed/i);
+    assert.match(result.reply, /cannot mark the submitted work done/i);
+    assert.ok(result.session.toolCalls.some((toolCall) => (
+      toolCall.name === "run-terminal-command" &&
+      toolCall.status === "error" &&
+      toolCall.outputPreview?.includes("Validation terminal mode blocks")
+    )));
+  });
+
   it("auto-compacts older Flow transcript messages and preserves the recent tail", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "construct-flow-test-auto-compact-"));
     const workspaceRoot = path.join(dir, "workspaces");
