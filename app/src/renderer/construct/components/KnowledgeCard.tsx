@@ -155,11 +155,39 @@ export function KnowledgeCard({
                   <div className="min-w-0 border-l pl-3">
                     <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                       <strong className="capitalize text-foreground">{event.kind}</strong>
+                      {event.changedFields?.length ? <span className="rounded-full border px-1.5 py-0.5 text-[10px] text-muted-foreground">{event.changedFields.length} fields</span> : null}
                       {event.confidence ? <span className="rounded-full border px-1.5 py-0.5 text-[10px] text-muted-foreground">{confidenceLabel(event.confidence)}</span> : null}
                       {event.authoredBy ? <span className="rounded-full border px-1.5 py-0.5 text-[10px] text-muted-foreground">{event.authoredBy}</span> : null}
                     </div>
                     {event.reason ? <p className="mt-1 leading-relaxed text-muted-foreground">{event.reason}</p> : null}
                     {event.confidenceReason ? <p className="mt-1 leading-relaxed text-muted-foreground">{event.confidenceReason}</p> : null}
+                    {(event.provenance || event.fieldChanges?.length) ? (
+                      <details className="mt-2 rounded-[8px] border bg-muted/20 px-3 py-2">
+                        <summary className="cursor-pointer text-[11px] font-medium text-muted-foreground">Inspect change</summary>
+                        {event.provenance ? (
+                          <div className="mt-2 flex flex-col gap-1 text-[11px] text-muted-foreground">
+                            <p><strong className="text-foreground">Project:</strong> {event.provenance.projectTitle}</p>
+                            {event.provenance.pathNodeTitle || event.provenance.pathNodeId ? <p><strong className="text-foreground">Path:</strong> {event.provenance.pathNodeTitle ?? event.provenance.pathNodeId}</p> : null}
+                            {event.provenance.taskTitle || event.provenance.taskId ? <p><strong className="text-foreground">Task:</strong> {event.provenance.taskTitle ?? event.provenance.taskId}</p> : null}
+                            {event.provenance.focusPath ? <p><strong className="text-foreground">Focus:</strong> <code>{event.provenance.focusPath}</code></p> : null}
+                            {event.provenance.taskFiles?.length ? <p><strong className="text-foreground">Files:</strong> {event.provenance.taskFiles.join(", ")}</p> : null}
+                          </div>
+                        ) : null}
+                        {event.fieldChanges?.length ? (
+                          <div className="mt-2 flex flex-col gap-2">
+                            {event.fieldChanges.map((change) => (
+                              <div key={`${event.id}:${change.field}`} className="rounded-[6px] border bg-background/60 p-2">
+                                <div className="text-[11px] font-medium text-foreground">{fieldLabel(change.field)}</div>
+                                <div className="mt-1 grid gap-1 text-[11px] text-muted-foreground">
+                                  <AuditValue label="Before" value={change.before} />
+                                  <AuditValue label="After" value={change.after} />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+                      </details>
+                    ) : null}
                     {event.evidence.length ? (
                       <ul className="mt-1 flex flex-col gap-1 text-muted-foreground">
                         {event.evidence.map((item, index) => <li key={`${index}:${item}`}>- {item}</li>)}
@@ -203,6 +231,15 @@ function ConceptPill({ children }: { children: ReactNode }) {
     <span className="rounded-full border bg-muted/30 px-2 py-0.5 text-[11px] text-muted-foreground">
       {children}
     </span>
+  );
+}
+
+function AuditValue({ label, value }: { label: string; value?: string }) {
+  return (
+    <div>
+      <span className="block text-[10px] uppercase tracking-wide text-muted-foreground">{label}</span>
+      <pre className="mt-1 max-h-28 overflow-auto whitespace-pre-wrap rounded-[6px] bg-muted/50 p-2 font-mono text-[11px] leading-relaxed">{value ?? "not set"}</pre>
+    </div>
   );
 }
 
@@ -255,6 +292,8 @@ function buildFallbackHistory(concept: ConceptCard): NonNullable<ConceptCard["hi
     kind: concept.savedAt === concept.lastModifiedAt ? "introduced" : "modified",
     reason: concept.lastChangeReason ?? "Concept record changed.",
     evidence: concept.learnerEvidence ?? [],
+    changedFields: [],
+    fieldChanges: [],
     confidence: concept.confidence,
     confidenceReason: concept.confidenceReason,
     authoredBy: concept.authoredBy,
@@ -274,6 +313,10 @@ function conceptTitleFromId(id: string): string {
 
 function confidenceLabel(value: string): string {
   return value.replace(/-/g, " ");
+}
+
+function fieldLabel(value: string): string {
+  return value.replace(/([A-Z])/g, " $1").replace(/-/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function guideLabel(kind: string): string {

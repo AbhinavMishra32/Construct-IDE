@@ -382,6 +382,23 @@ export type KnowledgeBaseRecord = {
     kind: "introduced" | "modified" | "removed" | "practiced" | "opened" | "system";
     reason: string;
     evidence: string[];
+    changedFields?: string[];
+    fieldChanges?: Array<{
+      field: string;
+      before?: string;
+      after?: string;
+    }>;
+    provenance?: {
+      projectId: string;
+      projectTitle: string;
+      projectGoal?: string;
+      pathNodeId?: string;
+      pathNodeTitle?: string;
+      taskId?: string;
+      taskTitle?: string;
+      taskFiles?: string[];
+      focusPath?: string;
+    };
     confidence?: ConstructConceptConfidence;
     confidenceReason?: string;
     authoredBy?: "learner" | "agent" | "mixed" | "system";

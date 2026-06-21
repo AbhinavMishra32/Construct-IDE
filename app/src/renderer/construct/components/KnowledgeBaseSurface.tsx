@@ -165,11 +165,18 @@ function ConceptDetail({
   onOpenProject: (projectId: string) => void;
   onSelectRecord: (record: SavedKnowledgeRecord) => void;
 }) {
+  const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
   const relatedRecords = (record.relatedConcepts ?? [])
     .map((id) => records.find((candidate) => candidate.id === id))
     .filter((candidate): candidate is SavedKnowledgeRecord => Boolean(candidate));
   const history = record.history?.length ? record.history : fallbackHistory(record);
+  const orderedHistory = useMemo(() => history.slice().reverse(), [history]);
+  const selectedHistory = orderedHistory.find((event) => event.id === selectedHistoryId) ?? orderedHistory[0] ?? null;
   const content = record.content || record.summary;
+
+  useEffect(() => {
+    setSelectedHistoryId(null);
+  }, [record.id, record.sourceProjectId]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -255,28 +262,31 @@ function ConceptDetail({
           ) : null}
 
           <ConceptSection title="History">
-            <ol className="flex flex-col gap-4">
-              {history.slice().reverse().map((event) => (
-                <li key={event.id} className="grid grid-cols-[8rem_minmax(0,1fr)] gap-4 text-sm">
-                  <time className="pt-0.5 text-xs text-muted-foreground">{formatDate(event.createdAt)}</time>
-                  <div className="min-w-0 border-l pl-4">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <HistoryIcon size={14} className="text-muted-foreground" />
-                      <strong className="capitalize">{event.kind}</strong>
-                      {event.confidence ? <span className="rounded-full border px-1.5 py-0.5 text-[10px] text-muted-foreground">{confidenceLabel(event.confidence)}</span> : null}
-                      {event.authoredBy ? <span className="rounded-full border px-1.5 py-0.5 text-[10px] text-muted-foreground">{event.authoredBy}</span> : null}
-                    </div>
-                    {event.reason ? <p className="mt-1 leading-relaxed text-muted-foreground">{event.reason}</p> : null}
-                    {event.confidenceReason ? <p className="mt-1 leading-relaxed text-muted-foreground">{event.confidenceReason}</p> : null}
-                    {event.evidence.length ? (
-                      <ul className="mt-2 flex flex-col gap-1 text-xs text-muted-foreground">
-                        {event.evidence.map((item, index) => <li key={`${index}:${item}`}>- {item}</li>)}
-                      </ul>
-                    ) : null}
-                  </div>
-                </li>
-              ))}
-            </ol>
+            <div className="grid gap-4 lg:grid-cols-[minmax(16rem,22rem)_minmax(0,1fr)]">
+              <div className="flex flex-col gap-1.5">
+                {orderedHistory.map((event) => {
+                  const active = selectedHistory?.id === event.id;
+                  return (
+                    <button
+                      key={event.id}
+                      type="button"
+                      className={`flex min-w-0 items-start gap-3 rounded-[8px] border px-3 py-2 text-left text-sm hover:bg-muted ${active ? "border-foreground/25 bg-muted" : "bg-muted/10"}`}
+                      onClick={() => setSelectedHistoryId(event.id)}
+                    >
+                      <HistoryIcon size={14} className="mt-0.5 shrink-0 text-muted-foreground" />
+                      <span className="min-w-0 flex-1">
+                        <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+                          <strong className="capitalize">{event.kind}</strong>
+                          {event.changedFields?.length ? <span className="rounded-full border px-1.5 py-0.5 text-[10px] text-muted-foreground">{event.changedFields.length} fields</span> : null}
+                        </span>
+                        <time className="mt-1 block text-xs text-muted-foreground">{formatDate(event.createdAt)}</time>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              {selectedHistory ? <HistoryEventDetails event={selectedHistory} /> : null}
+            </div>
           </ConceptSection>
 
           {record.docs.length ? (
@@ -311,6 +321,61 @@ function ConceptStat({ label, value }: { label: string; value: string }) {
     <div className="min-w-0 rounded-[8px] border bg-muted/20 px-3 py-2">
       <span className="block text-[10px] uppercase tracking-wide text-muted-foreground">{label}</span>
       <strong className="mt-1 block truncate font-medium">{value}</strong>
+    </div>
+  );
+}
+
+function HistoryEventDetails({ event }: { event: NonNullable<ConceptCard["history"]>[number] }) {
+  return (
+    <div className="min-w-0 rounded-[8px] border bg-muted/10 p-4 text-sm">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <strong className="capitalize">{event.kind}</strong>
+        {event.confidence ? <span className="rounded-full border px-1.5 py-0.5 text-[10px] text-muted-foreground">{confidenceLabel(event.confidence)}</span> : null}
+        {event.authoredBy ? <span className="rounded-full border px-1.5 py-0.5 text-[10px] text-muted-foreground">{event.authoredBy}</span> : null}
+      </div>
+      {event.reason ? <p className="mt-2 leading-relaxed text-muted-foreground"><strong className="text-foreground">Why:</strong> {event.reason}</p> : null}
+      {event.confidenceReason ? <p className="mt-2 leading-relaxed text-muted-foreground"><strong className="text-foreground">Learning state:</strong> {event.confidenceReason}</p> : null}
+      {event.provenance ? (
+        <div className="mt-3 rounded-[8px] border bg-background/60 p-3 text-xs text-muted-foreground">
+          <p><strong className="text-foreground">Project:</strong> {event.provenance.projectTitle}</p>
+          {event.provenance.pathNodeTitle || event.provenance.pathNodeId ? <p className="mt-1"><strong className="text-foreground">Path:</strong> {event.provenance.pathNodeTitle ?? event.provenance.pathNodeId}</p> : null}
+          {event.provenance.taskTitle || event.provenance.taskId ? <p className="mt-1"><strong className="text-foreground">Task:</strong> {event.provenance.taskTitle ?? event.provenance.taskId}</p> : null}
+          {event.provenance.focusPath ? <p className="mt-1"><strong className="text-foreground">Focus:</strong> <code>{event.provenance.focusPath}</code></p> : null}
+          {event.provenance.taskFiles?.length ? <p className="mt-1"><strong className="text-foreground">Files:</strong> {event.provenance.taskFiles.join(", ")}</p> : null}
+        </div>
+      ) : null}
+      {event.fieldChanges?.length ? (
+        <div className="mt-3 flex flex-col gap-2">
+          {event.fieldChanges.map((change) => (
+            <div key={`${event.id}:${change.field}`} className="rounded-[8px] border bg-background/60 p-3 text-xs">
+              <div className="font-medium text-foreground">{fieldLabel(change.field)}</div>
+              <div className="mt-2 grid gap-2 md:grid-cols-2">
+                <AuditValue label="Before" value={change.before} />
+                <AuditValue label="After" value={change.after} />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : event.changedFields?.length ? (
+        <p className="mt-3 text-xs text-muted-foreground"><strong className="text-foreground">Changed fields:</strong> {event.changedFields.map(fieldLabel).join(", ")}</p>
+      ) : null}
+      {event.evidence.length ? (
+        <div className="mt-3">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Evidence</p>
+          <ul className="mt-1 flex flex-col gap-1 text-xs text-muted-foreground">
+            {event.evidence.map((item, index) => <li key={`${index}:${item}`}>- {item}</li>)}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function AuditValue({ label, value }: { label: string; value?: string }) {
+  return (
+    <div className="min-w-0">
+      <span className="block text-[10px] uppercase tracking-wide text-muted-foreground">{label}</span>
+      <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded-[6px] bg-muted/50 p-2 font-mono text-[11px] leading-relaxed text-muted-foreground">{value ?? "not set"}</pre>
     </div>
   );
 }
@@ -356,6 +421,12 @@ function fallbackHistory(record: SavedKnowledgeRecord): NonNullable<ConceptCard[
     kind: record.savedAt === record.lastModifiedAt ? "introduced" : "modified",
     reason: record.lastChangeReason ?? "Concept record saved.",
     evidence: record.learnerEvidence ?? [],
+    changedFields: [],
+    fieldChanges: [],
+    provenance: {
+      projectId: record.sourceProjectId,
+      projectTitle: record.sourceProjectTitle
+    },
     confidence: record.confidence,
     confidenceReason: record.confidenceReason,
     authoredBy: record.authoredBy,
@@ -366,6 +437,10 @@ function fallbackHistory(record: SavedKnowledgeRecord): NonNullable<ConceptCard[
 
 function confidenceLabel(value: string): string {
   return value.replace(/-/g, " ");
+}
+
+function fieldLabel(value: string): string {
+  return value.replace(/([A-Z])/g, " $1").replace(/-/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function formatDate(value: string): string {

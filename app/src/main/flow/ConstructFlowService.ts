@@ -705,7 +705,9 @@ export class ConstructFlowService {
         evidence: z.array(z.string().min(1).max(500)).min(1).max(8).describe("Concrete evidence from the learner, task diff, project, or conversation"),
         confidenceReason: z.string().max(700).optional().describe("Required when confidence is not unknown"),
         authoredBy: z.enum(["learner", "agent", "mixed", "system"]).default("agent"),
-        agentContributionPercent: z.number().min(0).max(100).optional()
+        agentContributionPercent: z.number().min(0).max(100).optional(),
+        pathNodeId: z.string().min(1).max(120).optional().describe("Path node whose teaching context introduced or changed this concept"),
+        taskId: z.string().min(1).max(120).optional().describe("Practice task whose evidence introduced or changed this concept")
       }).strict().superRefine((input, ctx) => {
         if (input.confidence && input.confidence !== "unknown" && !input.confidenceReason?.trim()) {
           ctx.addIssue({
@@ -756,21 +758,24 @@ export class ConstructFlowService {
               usedInRecall: false,
               lastModifiedAt: now
             };
+            const parentFieldChanges = conceptFieldChanges(undefined, parentStub, introducedConceptFields(parentStub));
+            parentStub.history = [createConceptHistoryEntry({
+              kind: "system",
+              reason: `Auto-created parent while adding ${conceptId}.`,
+              evidence: [`Parent concept required for hierarchy ${conceptId}.`],
+              changedFields: parentFieldChanges.map((change) => change.field),
+              fieldChanges: parentFieldChanges,
+              provenance: createConceptHistoryProvenance(project, parentId, toolInput.pathNodeId, toolInput.taskId),
+              authoredBy: "system",
+              agentContributionPercent: 100,
+              createdAt: now
+            })];
             await store.saveKnowledgeConcept(parentStub);
           }
         }
 
         const parentId = parts.length > 1 ? parts.slice(0, -1).join(".") : null;
-        const historyEntry = createConceptHistoryEntry({
-          kind: existingRecord ? "modified" : "introduced",
-          reason: toolInput.reason,
-          evidence: toolInput.evidence,
-          confidence: toolInput.confidence,
-          confidenceReason: toolInput.confidenceReason,
-          authoredBy: toolInput.authoredBy,
-          agentContributionPercent: toolInput.agentContributionPercent,
-          createdAt: now
-        });
+        const provenance = createConceptHistoryProvenance(project, conceptId, toolInput.pathNodeId, toolInput.taskId);
 
         const newRecord: KnowledgeBaseRecord = {
           ...existingRecord,
@@ -800,9 +805,23 @@ export class ConstructFlowService {
           openedAt: existingRecord?.openedAt,
           openCount: existingRecord?.openCount ?? 0,
           usedInRecall: existingRecord?.usedInRecall ?? false,
-          lastModifiedAt: now,
-          history: appendConceptHistory(existingRecord?.history, historyEntry)
+          lastModifiedAt: now
         };
+        const fieldChanges = conceptFieldChanges(existingRecord, newRecord, existingRecord ? conceptPatchFields(toolInput) : introducedConceptFields(newRecord));
+        const historyEntry = createConceptHistoryEntry({
+          kind: existingRecord ? "modified" : "introduced",
+          reason: toolInput.reason,
+          evidence: toolInput.evidence,
+          changedFields: fieldChanges.map((change) => change.field),
+          fieldChanges,
+          provenance,
+          confidence: toolInput.confidence,
+          confidenceReason: toolInput.confidenceReason,
+          authoredBy: toolInput.authoredBy,
+          agentContributionPercent: toolInput.agentContributionPercent,
+          createdAt: now
+        });
+        newRecord.history = appendConceptHistory(existingRecord?.history, historyEntry);
 
         await store.saveKnowledgeConcept(newRecord);
         publish("updated");
@@ -814,6 +833,9 @@ export class ConstructFlowService {
           normalizedFrom: conceptId === toolInput.id ? undefined : toolInput.id,
           reason: toolInput.reason,
           evidence: toolInput.evidence,
+          changedFields: historyEntry.changedFields,
+          fieldChanges: historyEntry.fieldChanges,
+          provenance: historyEntry.provenance,
           confidenceReason: toolInput.confidenceReason,
           concept: newRecord
         };
@@ -841,7 +863,9 @@ export class ConstructFlowService {
         evidence: z.array(z.string().min(1).max(500)).min(1).max(8).describe("Concrete evidence that justifies this change"),
         confidenceReason: z.string().max(700).optional().describe("Required when confidence is provided"),
         authoredBy: z.enum(["learner", "agent", "mixed", "system"]).default("agent"),
-        agentContributionPercent: z.number().min(0).max(100).optional()
+        agentContributionPercent: z.number().min(0).max(100).optional(),
+        pathNodeId: z.string().min(1).max(120).optional().describe("Path node whose teaching context changed this concept"),
+        taskId: z.string().min(1).max(120).optional().describe("Practice task whose evidence changed this concept")
       }).strict().superRefine((input, ctx) => {
         if (input.confidence && !input.confidenceReason?.trim()) {
           ctx.addIssue({
@@ -861,17 +885,6 @@ export class ConstructFlowService {
           throw new Error(`Concept with ID ${conceptId} not found in the learner's global concepts.`);
         }
 
-        const historyEntry = createConceptHistoryEntry({
-          kind: "modified",
-          reason: toolInput.reason,
-          evidence: toolInput.evidence,
-          confidence: toolInput.confidence ?? existing.confidence,
-          confidenceReason: toolInput.confidenceReason ?? existing.confidenceReason,
-          authoredBy: toolInput.authoredBy,
-          agentContributionPercent: toolInput.agentContributionPercent ?? existing.agentContributionPercent,
-          createdAt: now
-        });
-
         const updatedRecord: KnowledgeBaseRecord = {
           ...existing,
           id: conceptId,
@@ -888,13 +901,27 @@ export class ConstructFlowService {
           confidenceReason: toolInput.confidenceReason ?? existing.confidenceReason,
           authoredBy: toolInput.authoredBy,
           agentContributionPercent: toolInput.agentContributionPercent ?? existing.agentContributionPercent,
-          lastModifiedAt: now,
-          history: appendConceptHistory(existing.history, historyEntry)
+          lastModifiedAt: now
         };
 
         if (toolInput.content) {
           updatedRecord.summary = toolInput.content.split("\n")[0] || updatedRecord.title;
         }
+        const fieldChanges = conceptFieldChanges(existing, updatedRecord, conceptPatchFields(toolInput));
+        const historyEntry = createConceptHistoryEntry({
+          kind: "modified",
+          reason: toolInput.reason,
+          evidence: toolInput.evidence,
+          changedFields: fieldChanges.map((change) => change.field),
+          fieldChanges,
+          provenance: createConceptHistoryProvenance(project, conceptId, toolInput.pathNodeId, toolInput.taskId),
+          confidence: toolInput.confidence ?? existing.confidence,
+          confidenceReason: toolInput.confidenceReason ?? existing.confidenceReason,
+          authoredBy: toolInput.authoredBy,
+          agentContributionPercent: toolInput.agentContributionPercent ?? existing.agentContributionPercent,
+          createdAt: now
+        });
+        updatedRecord.history = appendConceptHistory(existing.history, historyEntry);
 
         await store.saveKnowledgeConcept(updatedRecord);
         publish("updated");
@@ -907,6 +934,9 @@ export class ConstructFlowService {
           nextConfidence: updatedRecord.confidence,
           reason: toolInput.reason,
           evidence: toolInput.evidence,
+          changedFields: historyEntry.changedFields,
+          fieldChanges: historyEntry.fieldChanges,
+          provenance: historyEntry.provenance,
           confidenceReason: toolInput.confidenceReason,
           concept: updatedRecord
         };
@@ -1241,21 +1271,31 @@ function findKnowledgeConceptById(records: KnowledgeBaseRecord[], conceptId: str
   return uniqueKnowledgeConcepts(records).find((record) => record.id === conceptId);
 }
 
+type ConceptHistoryEntry = NonNullable<KnowledgeBaseRecord["history"]>[number];
+type ConceptFieldChange = NonNullable<ConceptHistoryEntry["fieldChanges"]>[number];
+type ConceptHistoryProvenance = NonNullable<ConceptHistoryEntry["provenance"]>;
+
 function createConceptHistoryEntry(input: {
-  kind: NonNullable<KnowledgeBaseRecord["history"]>[number]["kind"];
+  kind: ConceptHistoryEntry["kind"];
   reason: string;
   evidence: string[];
+  changedFields?: string[];
+  fieldChanges?: ConceptFieldChange[];
+  provenance?: ConceptHistoryProvenance;
   confidence?: ConstructConceptConfidence;
   confidenceReason?: string;
-  authoredBy?: NonNullable<KnowledgeBaseRecord["history"]>[number]["authoredBy"];
+  authoredBy?: ConceptHistoryEntry["authoredBy"];
   agentContributionPercent?: number;
   createdAt: string;
-}): NonNullable<KnowledgeBaseRecord["history"]>[number] {
+}): ConceptHistoryEntry {
   return {
     id: randomUUID(),
     kind: input.kind,
     reason: input.reason,
     evidence: input.evidence,
+    changedFields: input.changedFields,
+    fieldChanges: input.fieldChanges,
+    provenance: input.provenance,
     confidence: input.confidence,
     confidenceReason: input.confidenceReason,
     authoredBy: input.authoredBy,
@@ -1266,9 +1306,125 @@ function createConceptHistoryEntry(input: {
 
 function appendConceptHistory(
   current: KnowledgeBaseRecord["history"],
-  entry: NonNullable<KnowledgeBaseRecord["history"]>[number]
+  entry: ConceptHistoryEntry
 ): NonNullable<KnowledgeBaseRecord["history"]> {
   return [...(current ?? []), entry].slice(-30);
+}
+
+function introducedConceptFields(record: KnowledgeBaseRecord): string[] {
+  return [
+    "title",
+    "language",
+    "technology",
+    "content",
+    "examples",
+    "relatedConcepts",
+    "confidence",
+    "confidenceReason",
+    "authoredBy",
+    "agentContributionPercent"
+  ].filter((field) => conceptAuditValue(record, field) !== undefined);
+}
+
+function conceptPatchFields(input: Record<string, unknown>): string[] {
+  const fields = [
+    "title",
+    "language",
+    "technology",
+    "content",
+    "examples",
+    "relatedConcepts",
+    "confidence",
+    "confidenceReason",
+    "authoredBy",
+    "agentContributionPercent"
+  ].filter((field) => input[field] !== undefined);
+  if (input.content !== undefined) fields.push("summary");
+  return [...new Set(fields)];
+}
+
+function conceptFieldChanges(
+  before: KnowledgeBaseRecord | undefined,
+  after: KnowledgeBaseRecord,
+  fields: string[]
+): ConceptFieldChange[] {
+  return fields.flatMap((field): ConceptFieldChange[] => {
+    const previousValue = before ? conceptAuditValue(before, field) : undefined;
+    const nextValue = conceptAuditValue(after, field);
+    if (auditValuesEqual(previousValue, nextValue)) return [];
+    return [{
+      field,
+      before: formatConceptAuditValue(previousValue),
+      after: formatConceptAuditValue(nextValue)
+    }];
+  });
+}
+
+function conceptAuditValue(record: KnowledgeBaseRecord, field: string): unknown {
+  if (field === "summary") return record.summary;
+  if (field === "title") return record.title;
+  if (field === "language") return record.language;
+  if (field === "technology") return record.technology;
+  if (field === "content") return record.content;
+  if (field === "examples") return record.examples;
+  if (field === "relatedConcepts") return record.relatedConcepts;
+  if (field === "confidence") return record.confidence;
+  if (field === "confidenceReason") return record.confidenceReason;
+  if (field === "authoredBy") return record.authoredBy;
+  if (field === "agentContributionPercent") return record.agentContributionPercent;
+  return undefined;
+}
+
+function auditValuesEqual(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+}
+
+function formatConceptAuditValue(value: unknown): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  const text = Array.isArray(value)
+    ? value.join("\n")
+    : typeof value === "string"
+      ? value
+      : String(value);
+  const normalized = text.trim();
+  if (!normalized) return undefined;
+  return normalized.length > 900 ? `${normalized.slice(0, 900)}...` : normalized;
+}
+
+function createConceptHistoryProvenance(
+  project: StoredFlowProject,
+  conceptId: string,
+  explicitPathNodeId?: string,
+  explicitTaskId?: string
+): ConceptHistoryProvenance {
+  const task = findConceptHistoryTask(project, conceptId, explicitTaskId);
+  const pathNodeId = explicitPathNodeId ?? task?.pathNodeId ?? project.flow.currentPathNodeId ?? firstActivePathNode(project)?.id;
+  const pathNode = pathNodeId ? project.flow.pathNodes?.find((candidate) => candidate.id === pathNodeId) : undefined;
+  return {
+    projectId: project.id,
+    projectTitle: project.title,
+    projectGoal: project.flow.goal,
+    pathNodeId,
+    pathNodeTitle: pathNode?.title,
+    taskId: task?.id ?? explicitTaskId,
+    taskTitle: task?.title,
+    taskFiles: task?.taskFiles?.slice(0, 12),
+    focusPath: task?.focus?.path
+  };
+}
+
+function findConceptHistoryTask(
+  project: StoredFlowProject,
+  conceptId: string,
+  explicitTaskId?: string
+): ConstructFlowPracticeTask | undefined {
+  const tasks = project.flow.sessions.flatMap((session) => session.practiceTasks);
+  if (explicitTaskId) {
+    return tasks.find((task) => task.id === explicitTaskId);
+  }
+  return tasks
+    .filter((task) => [...(task.conceptIds ?? []), ...(task.introducedConceptIds ?? [])].includes(conceptId))
+    .sort((a, b) => Date.parse(b.submittedAt ?? b.createdAt) - Date.parse(a.submittedAt ?? a.createdAt))[0];
 }
 
 function scoreConceptMatch(concept: KnowledgeBaseRecord, normalizedQuery: string, terms: string[]): number {
