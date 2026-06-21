@@ -70,6 +70,18 @@ type FlowModelMessage = ConstructAgentRuntimeMessage & {
   compactedRawMessageIds?: string[];
 };
 
+type FlowRunMode = "mentor" | "task-review";
+
+type FlowRunToolPolicy = {
+  mode: FlowRunMode;
+  allowWorkspaceMutation: boolean;
+  allowTerminalCommands: boolean;
+  terminalCommandMode: "workspace" | "validation-only";
+  protocolToolNames: string[];
+  flowToolNames: string[];
+  maxSteps: number;
+};
+
 function estimateTextTokens(text: string): number {
   return Math.max(1, Math.ceil(text.length / 4));
 }
@@ -162,6 +174,7 @@ export class ConstructFlowService {
     await this.options.flowMemory.ensure(project);
     const memory = await this.options.flowMemory.read(project, ["project.md", "path.md", "learner.md", "research.md"]);
     const settings = await this.options.readSettings?.();
+    const toolPolicy = flowToolPolicyForInput(input);
     const answeredSession = applyQuestionResponse(project, input.questionResponse);
     if (answeredSession) {
       onSessionEvent?.({
@@ -214,8 +227,9 @@ export class ConstructFlowService {
       flowMemory: this.options.flowMemory,
       latestTerminalOutput: this.options.latestTerminalOutput(project.id),
       tavilyApiKey: settings?.ai.tavilyApiKey,
-      allowWorkspaceMutation: true,
-      allowTerminalCommands: true,
+      allowWorkspaceMutation: toolPolicy.allowWorkspaceMutation,
+      allowTerminalCommands: toolPolicy.allowTerminalCommands,
+      terminalCommandMode: toolPolicy.terminalCommandMode,
       onToolCallStart: (record) => {
         session.toolCalls.push(toFlowToolRecord(record, "running"));
         upsertTimelinePart(session.timeline, timelinePartFromToolRecord(record, "running"));
@@ -326,8 +340,7 @@ export class ConstructFlowService {
     const suggestConcept = this.createSuggestConceptTool(project, concepts, actionsFromTools, publish);
     const reviewSubtask = this.createReviewSubtaskTool(project, publish);
     const completeTask = this.createCompleteTaskTool(project, publish);
-    const tools: ToolsInput = {
-      ...pickFlowMainProtocolTools(protocol.tools),
+    const flowTools: ToolsInput = {
       "plan-learning-path": planLearningPath,
       "practice-task": practiceTask,
       "suggest-existing-concept": suggestConcept,
@@ -337,6 +350,10 @@ export class ConstructFlowService {
       "remove-concept": removeConcept,
       "review-subtask": reviewSubtask,
       "complete-task": completeTask
+    };
+    const tools: ToolsInput = {
+      ...pickFlowMainProtocolTools(protocol.tools, toolPolicy),
+      ...pickFlowMainFlowTools(flowTools, toolPolicy)
     };
 
     let reply: string;
@@ -351,7 +368,7 @@ export class ConstructFlowService {
         prompt: input.message,
         messages: modelMessages.map(({ role, content }) => ({ role, content })),
         tools,
-        maxSteps: 16,
+        maxSteps: toolPolicy.maxSteps,
         maxRetries: 2,
         onTrace: (entry) => {
           applyTrace(session, entry);
@@ -2921,24 +2938,87 @@ function replaceToolRecord(session: ConstructFlowSession, record: ConstructFlowT
   }
 }
 
-function pickFlowMainProtocolTools(protocolTools: ToolsInput): ToolsInput {
-  const allowed = [
-    "read",
-    "grep",
-    "runTerminalCommand",
-    "run-terminal-command",
-    "write",
-    "edit",
-    "ask-question",
-    "askQuestion",
-    "internet-fetch",
-    "internetFetch",
-    "flowMemoryPatch",
-    "flow-memory-patch"
-  ];
+const mentorProtocolToolNames = [
+  "read",
+  "grep",
+  "runTerminalCommand",
+  "run-terminal-command",
+  "write",
+  "edit",
+  "ask-question",
+  "askQuestion",
+  "internet-fetch",
+  "internetFetch",
+  "flowMemoryPatch",
+  "flow-memory-patch"
+];
+
+const taskReviewProtocolToolNames = [
+  "read",
+  "grep",
+  "runTerminalCommand",
+  "run-terminal-command",
+  "ask-question",
+  "askQuestion",
+  "flowMemoryPatch",
+  "flow-memory-patch"
+];
+
+const mentorFlowToolNames = [
+  "plan-learning-path",
+  "practice-task",
+  "suggest-existing-concept",
+  "fetch-concepts",
+  "add-concept",
+  "modify-concept",
+  "remove-concept",
+  "review-subtask",
+  "complete-task"
+];
+
+const taskReviewFlowToolNames = [
+  "suggest-existing-concept",
+  "fetch-concepts",
+  "modify-concept",
+  "review-subtask",
+  "complete-task"
+];
+
+function flowToolPolicyForInput(input: ConstructFlowAgentInput): FlowRunToolPolicy {
+  if (input.taskSubmission) {
+    return {
+      mode: "task-review",
+      allowWorkspaceMutation: false,
+      allowTerminalCommands: true,
+      terminalCommandMode: "validation-only",
+      protocolToolNames: taskReviewProtocolToolNames,
+      flowToolNames: taskReviewFlowToolNames,
+      maxSteps: 10
+    };
+  }
+  return {
+    mode: "mentor",
+    allowWorkspaceMutation: true,
+    allowTerminalCommands: true,
+    terminalCommandMode: "workspace",
+    protocolToolNames: mentorProtocolToolNames,
+    flowToolNames: mentorFlowToolNames,
+    maxSteps: 16
+  };
+}
+
+function pickFlowMainProtocolTools(protocolTools: ToolsInput, policy: FlowRunToolPolicy): ToolsInput {
   return Object.fromEntries(
-    allowed
+    policy.protocolToolNames
       .map((name) => [name, protocolTools[name]] as const)
+      .filter((entry): entry is [string, ToolsInput[string]] => entry[1] !== undefined)
+  );
+}
+
+function pickFlowMainFlowTools(flowTools: ToolsInput, policy: FlowRunToolPolicy): ToolsInput {
+  return Object.fromEntries(
+    policy.flowToolNames
+      .map((name) => [name, flowTools[name]] as const)
       .filter((entry): entry is [string, ToolsInput[string]] => entry[1] !== undefined)
   );
 }
