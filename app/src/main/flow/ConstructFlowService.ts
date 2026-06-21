@@ -579,11 +579,7 @@ export class ConstructFlowService {
         ? [{
             id: randomUUID(),
             role: "user" as const,
-            content: input.questionResponse?.skipped
-              ? `(skipped question) ${input.questionResponse?.question ?? ""}`
-              : input.questionResponse?.question
-                ? `${input.questionResponse.question}\n\n${input.questionResponse.answer ?? ""}`
-                : input.message,
+            content: formatQuestionResponseMessage(input.questionResponse, input.message),
             createdAt: now
           }]
         : [{
@@ -2127,6 +2123,19 @@ function applyQuestionResponse(
   return session;
 }
 
+function formatQuestionResponseMessage(
+  response: ConstructFlowQuestionResponse | undefined,
+  fallbackMessage: string
+): string {
+  if (!response) return fallbackMessage;
+  return [
+    "Tracked Flow question answered.",
+    `Question: ${response.question || "Flow question"}`,
+    response.skipped ? "Answer: Skipped" : `Answer: ${response.answer || ""}`,
+    `Answered at: ${response.answeredAt}`
+  ].join("\n");
+}
+
 function isQuestionTool(name: string | undefined): boolean {
   return normalizeToolName(name) === "askquestion" || normalizeToolName(name) === "askuser";
 }
@@ -2258,11 +2267,13 @@ function buildRawFlowModelMessages(project: StoredFlowProject): FlowModelMessage
 
 function visibleFlowTranscriptForModel(session: ConstructFlowSession): string {
   const lines: string[] = [];
+  const toolResponses = new Map(session.toolCalls.map((toolCall) => [toolCall.id, toolCall.response] as const));
   const timeline = session.timeline.length
     ? session.timeline
     : session.toolCalls.map((toolCall) => timelinePartFromFlowToolRecord(toolCall));
   for (const part of timeline) {
-    const rendered = timelinePartForModel(part);
+    const response = part.kind === "tool" ? toolResponses.get(part.toolCallId) : undefined;
+    const rendered = timelinePartForModel(part, response);
     if (rendered) {
       lines.push(rendered);
     }
@@ -2274,7 +2285,7 @@ function visibleFlowTranscriptForModel(session: ConstructFlowSession): string {
   );
   for (const toolCall of session.toolCalls) {
     if (visibleToolIds.has(toolCall.id)) continue;
-    const rendered = timelinePartForModel(timelinePartFromFlowToolRecord(toolCall));
+    const rendered = timelinePartForModel(timelinePartFromFlowToolRecord(toolCall), toolCall.response);
     if (rendered) {
       lines.push(rendered);
     }
@@ -2303,7 +2314,7 @@ function timelinePartFromFlowToolRecord(record: ConstructFlowToolCallRecord): Ex
   };
 }
 
-function timelinePartForModel(part: ConstructFlowTimelinePart): string | undefined {
+function timelinePartForModel(part: ConstructFlowTimelinePart, response?: ConstructFlowQuestionResponse): string | undefined {
   if (part.kind === "message") {
     const text = truncateModelText(part.text.trim(), flowTranscriptMaxFieldChars);
     return text ? `Said (${part.status}): ${text}` : undefined;
@@ -2321,15 +2332,19 @@ function timelinePartForModel(part: ConstructFlowTimelinePart): string | undefin
       part.summary ? `summary=${truncateModelText(part.summary, flowTranscriptMaxFieldChars)}` : null
     ].filter(Boolean).join("; ");
   }
-  return toolPartForModel(part);
+  return toolPartForModel(part, response);
 }
 
-function toolPartForModel(part: Extract<ConstructFlowTimelinePart, { kind: "tool" }>): string {
+function toolPartForModel(part: Extract<ConstructFlowTimelinePart, { kind: "tool" }>, response?: ConstructFlowQuestionResponse): string {
   const input = summarizeToolInput(part.name, part.input);
   const output = part.outputPreview ? truncateModelText(part.outputPreview, flowTranscriptMaxFieldChars) : undefined;
+  const answer = response
+    ? `answer=${truncateModelText(response.skipped ? "Skipped" : response.answer, 500)}`
+    : undefined;
   return [
     `Tool ${part.name} ${part.status}: ${part.title}`,
     part.reason ? `reason=${truncateModelText(part.reason, 400)}` : null,
+    answer,
     input ? `input=${input}` : null,
     output ? `output=${output}` : null
   ].filter(Boolean).join("; ");
