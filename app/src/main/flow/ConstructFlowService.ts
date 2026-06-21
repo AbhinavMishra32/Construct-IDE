@@ -65,6 +65,8 @@ type FlowModelMessage = ConstructAgentRuntimeMessage & {
   id: string;
   sessionId?: string;
   source: "chat" | "summary";
+  visibleTranscriptTokens?: number;
+  visibleTranscriptEventCount?: number;
 };
 
 function estimateTextTokens(text: string): number {
@@ -91,6 +93,8 @@ function estimateContextWindow(
   const compactedSummaryTokens = input.messages
     .filter((message) => message.source === "summary")
     .reduce((sum, message) => sum + estimateTextTokens(`${message.role}\n${message.content}`), 0);
+  const visibleTranscriptTokens = input.messages.reduce((sum, message) => sum + (message.visibleTranscriptTokens ?? 0), 0);
+  const visibleTranscriptEventCount = input.messages.reduce((sum, message) => sum + (message.visibleTranscriptEventCount ?? 0), 0);
   const usedTokens = fullSystemPromptTokens + chatTokens + compactedSummaryTokens;
   return {
     providerId: settings?.provider,
@@ -104,6 +108,8 @@ function estimateContextWindow(
     compactedSummaryTokens,
     messageCount: input.messages.length,
     compactedMessageCount: input.compactedMessageCount ?? 0,
+    visibleTranscriptTokens,
+    visibleTranscriptEventCount,
     maxTokens: estimateModelContextTokens(modelId),
     source: "estimated",
     updatedAt: new Date().toISOString(),
@@ -2241,6 +2247,8 @@ function buildRawFlowModelMessages(project: StoredFlowProject): FlowModelMessage
       }
     }
     const visibleActivity = visibleFlowTranscriptForModel(session);
+    const visibleTranscriptTokens = visibleActivity ? estimateTextTokens(visibleActivity) : 0;
+    const visibleTranscriptEventCount = visibleActivity ? visibleFlowTranscriptEventCount(session) : 0;
     const assistantMessages = session.messages.filter((message) => message.role === "assistant");
     for (const message of assistantMessages) {
       const content = [visibleActivity, message.content].filter((part) => part.trim()).join("\n\n");
@@ -2249,7 +2257,9 @@ function buildRawFlowModelMessages(project: StoredFlowProject): FlowModelMessage
         sessionId: session.id,
         role: "assistant",
         content,
-        source: "chat"
+        source: "chat",
+        visibleTranscriptTokens,
+        visibleTranscriptEventCount
       });
     }
     if (!assistantMessages.length && visibleActivity) {
@@ -2258,11 +2268,23 @@ function buildRawFlowModelMessages(project: StoredFlowProject): FlowModelMessage
         sessionId: session.id,
         role: "assistant",
         content: visibleActivity,
-        source: "chat"
+        source: "chat",
+        visibleTranscriptTokens,
+        visibleTranscriptEventCount
       });
     }
   }
   return messages;
+}
+
+function visibleFlowTranscriptEventCount(session: ConstructFlowSession): number {
+  const timelineToolIds = new Set(
+    session.timeline
+      .filter((part): part is Extract<ConstructFlowTimelinePart, { kind: "tool" }> => part.kind === "tool")
+      .map((part) => part.toolCallId)
+  );
+  const extraToolCount = session.toolCalls.filter((toolCall) => !timelineToolIds.has(toolCall.id)).length;
+  return session.timeline.length + extraToolCount;
 }
 
 function visibleFlowTranscriptForModel(session: ConstructFlowSession): string {

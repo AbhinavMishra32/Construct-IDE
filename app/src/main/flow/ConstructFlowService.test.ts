@@ -1127,7 +1127,7 @@ describe("ConstructFlowService Concept and Task Tools", () => {
       updatedAt: createdAt
     });
 
-    await service.runMainAgent(project, {
+    const result = await service.runMainAgent(project, {
       projectId: project.id,
       message: "Continue from the tracked question answer.",
       questionResponse: {
@@ -1152,6 +1152,8 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     assert.match(renderedMessages, /Tracked Flow question answered/);
     assert.match(renderedMessages, /Answer: yes/);
     assert.doesNotMatch(calls[0].messages.at(-1).content, /^Continue from the tracked question answer\.$/);
+    assert.ok((result.session.contextWindow?.visibleTranscriptEventCount ?? 0) >= 4);
+    assert.ok((result.session.contextWindow?.visibleTranscriptTokens ?? 0) > 0);
   });
 
   it("auto-compacts older Flow transcript messages and preserves the recent tail", async () => {

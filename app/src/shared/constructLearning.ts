@@ -97,6 +97,8 @@ export type ConstructAgentContextWindow = {
   compactedSummaryTokens?: number;
   messageCount?: number;
   compactedMessageCount?: number;
+  visibleTranscriptTokens?: number;
+  visibleTranscriptEventCount?: number;
   maxTokens?: number;
   source: "runtime" | "estimated";
   updatedAt: string;

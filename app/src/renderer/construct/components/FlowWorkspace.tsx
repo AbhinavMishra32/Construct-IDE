@@ -1611,6 +1611,8 @@ function FlowContextMeter({ contextWindow }: { contextWindow?: ConstructAgentCon
         <span>System prompt: {formatTokens(contextWindow?.systemPromptTokens ?? 0)}</span>
         <span>Flow state: {formatTokens(contextWindow?.flowStateTokens ?? 0)}</span>
         <span>Chat: {formatTokens(contextWindow?.chatTokens ?? 0)}</span>
+        <span>Visible trace: {formatTokens(contextWindow?.visibleTranscriptTokens ?? 0)} tokens</span>
+        <span>Model messages: {contextWindow?.messageCount ?? 0} · visible events: {contextWindow?.visibleTranscriptEventCount ?? 0}</span>
         {contextWindow?.modelId ? <span className="max-w-full truncate text-muted-foreground">{contextWindow.modelId}</span> : null}
         {contextWindow?.compaction ? <span className="text-muted-foreground">Compaction {contextWindow.compaction.status}</span> : null}
         <span className="text-muted-foreground">{sourceLabel}</span>
@@ -4409,6 +4411,9 @@ function FlowCircularContextMeter({ contextWindow }: { contextWindow?: Construct
           <span className="flex justify-between gap-4"><span>System prompt</span><span>{formatTokens(contextWindow?.systemPromptTokens ?? 0)}</span></span>
           <span className="flex justify-between gap-4"><span>Flow state</span><span>{formatTokens(contextWindow?.flowStateTokens ?? 0)}</span></span>
           <span className="flex justify-between gap-4"><span>Chat messages</span><span>{formatTokens(contextWindow?.chatTokens ?? 0)}</span></span>
+          <span className="flex justify-between gap-4"><span>Visible trace</span><span>{formatTokens(contextWindow?.visibleTranscriptTokens ?? 0)}</span></span>
+          <span className="flex justify-between gap-4"><span>Model messages</span><span>{contextWindow?.messageCount ?? 0}</span></span>
+          <span className="flex justify-between gap-4"><span>Visible events</span><span>{contextWindow?.visibleTranscriptEventCount ?? 0}</span></span>
           {contextWindow?.compactedSummaryTokens ? (
             <span className="flex justify-between gap-4"><span>Compacted summary</span><span>{formatTokens(contextWindow.compactedSummaryTokens)}</span></span>
           ) : null}
