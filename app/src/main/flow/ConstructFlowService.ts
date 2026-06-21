@@ -246,7 +246,7 @@ export class ConstructFlowService {
     const store = this.options.learningStore();
     const learningState = await store.getState();
     const concepts = uniqueKnowledgeConcepts(Object.values(learningState.knowledgeBase.concepts));
-    const flowStatePrompt = buildMainPrompt(project, input, memory, concepts);
+    const flowStatePrompt = buildMainPrompt(project, input, memory, concepts, toolPolicy);
     let systemPrompt = buildFlowSystemPrompt(flowStatePrompt);
     let modelMessages = buildFlowModelMessages(project);
     let compactedMessageCount = latestCompletedCompaction(project)?.summarizedMessageCount ?? 0;
@@ -389,7 +389,7 @@ export class ConstructFlowService {
         : cleanReplyForPendingQuestion(
             generated.text.trim(),
             pendingQuestion
-          ) || "I could not produce a response from the model, but the activity above shows the work completed.";
+          ) || buildFlowEmptyReplyFallback(session, toolPolicy);
     } catch (error) {
       runError = error;
       reply = buildFlowRuntimeErrorReply(error);
@@ -2608,7 +2608,8 @@ function buildMainPrompt(
   project: StoredFlowProject,
   input: ConstructFlowAgentInput,
   memory: Array<{ file: string; content: string; updatedAt: string | null }>,
-  concepts: KnowledgeBaseRecord[]
+  concepts: KnowledgeBaseRecord[],
+  toolPolicy: FlowRunToolPolicy
 ): string {
   const recent = project.flow.sessions.slice(-6).map((session) => ({
     id: session.id,
@@ -2658,6 +2659,14 @@ function buildMainPrompt(
     project.flow.projectSettings ? `Project settings:\n${JSON.stringify(project.flow.projectSettings, null, 2)}` : null,
     `Research enabled: ${project.flow.researchEnabled ? "yes" : "no"}`,
     `Research completed: ${project.flow.researchCompletedAt ? project.flow.researchCompletedAt : "no"}`,
+    "",
+    "Current Flow run mode:",
+    JSON.stringify({
+      mode: toolPolicy.mode,
+      workspaceMutation: toolPolicy.allowWorkspaceMutation ? "available-with-mentor-guardrails" : "unavailable",
+      terminalCommands: toolPolicy.allowTerminalCommands ? toolPolicy.terminalCommandMode : "unavailable",
+      availableTools: availableFlowToolNames(toolPolicy)
+    }, null, 2),
     "",
     "Structured Flow Path:",
     JSON.stringify({
@@ -2737,6 +2746,15 @@ function buildMainPrompt(
       "",
       "Question-response guard:",
       "A tracked question answer is learner-model context only. It is not task completion evidence, does not mean a demo compiled or ran, and must not upgrade concept confidence unless the answer itself demonstrates understanding."
+    ].join("\n") : null,
+    input.taskSubmission ? [
+      "",
+      "Task-submission review mode:",
+      "The learner submitted work. Review it; do not repair it for them.",
+      "Workspace write/edit/practice-task/plan-learning-path tools are intentionally unavailable in this run.",
+      "Use the compact diff, task success criteria, read/grep, and validation-only terminal output as review evidence.",
+      "If validation fails, explain the failure as the next learner-facing correction and use review-subtask with needs-work when appropriate.",
+      "Do not delete, move, rewrite, or replace learner files while reviewing a submission."
     ].join("\n") : null,
     "",
     "Use tools when workspace reality matters. For UI actions, call the relevant action tool instead of returning JSON. Before explaining a topic, check whether Concepts already cover it; if exact concept details or evidence matter, use fetch-concepts before suggesting, explaining, or updating. Reply naturally after tool work."
@@ -3007,6 +3025,10 @@ function flowToolPolicyForInput(input: ConstructFlowAgentInput): FlowRunToolPoli
   };
 }
 
+function availableFlowToolNames(policy: FlowRunToolPolicy): string[] {
+  return [...new Set([...policy.protocolToolNames, ...policy.flowToolNames])];
+}
+
 function pickFlowMainProtocolTools(protocolTools: ToolsInput, policy: FlowRunToolPolicy): ToolsInput {
   return Object.fromEntries(
     policy.protocolToolNames
@@ -3116,6 +3138,64 @@ function cleanReplyForPendingQuestion(reply: string, pendingQuestion: ConstructF
   return lines.join("\n").trim();
 }
 
+function buildFlowEmptyReplyFallback(session: ConstructFlowSession, policy: FlowRunToolPolicy): string {
+  const failedTool = [...session.toolCalls].reverse().find((toolCall) => toolCall.status === "error");
+  if (!failedTool) {
+    return "I could not produce a response from the model, but the activity above shows the work completed.";
+  }
+
+  const summary = summarizeFailedFlowTool(failedTool);
+  if (normalizeToolName(failedTool.name) === "runterminalcommand") {
+    return [
+      policy.mode === "task-review"
+        ? "The validation command did not succeed, so I cannot mark the submitted work done from this evidence."
+        : "The command did not succeed, so I am stopping here instead of editing around it.",
+      summary ? "" : null,
+      summary || null,
+      "",
+      policy.mode === "task-review"
+        ? "Use that output as the next correction, update the learner-authored code, then resubmit the task."
+        : "Use the output above as the next debugging clue before continuing."
+    ].filter((line): line is string => line !== null).join("\n");
+  }
+
+  return [
+    "A Flow tool failed, so I am stopping at the failure boundary instead of continuing with assumptions.",
+    summary ? "" : null,
+    summary || null
+  ].filter((line): line is string => line !== null).join("\n");
+}
+
+function summarizeFailedFlowTool(toolCall: ConstructFlowToolCallRecord): string {
+  const parsed = parseToolOutputPreview(toolCall.outputPreview);
+  const status = parsed ? readStringValue(parsed.status) : undefined;
+  const reason = parsed ? readStringValue(parsed.reason) : undefined;
+  const command = parsed ? readStringValue(parsed.command) : undefined;
+  const stderr = parsed ? readStringValue(parsed.stderr) : undefined;
+  const stdout = parsed ? readStringValue(parsed.stdout) : undefined;
+  const fallback = toolCall.outputPreview?.trim();
+  return [
+    command ? `Command: ${command}` : `${toolCall.title}`,
+    status ? `Status: ${status}` : null,
+    reason ? `Reason: ${reason}` : null,
+    stderr ? `stderr: ${truncateModelText(stderr, 700)}` : null,
+    stdout && !stderr ? `stdout: ${truncateModelText(stdout, 700)}` : null,
+    !reason && !stderr && !stdout && fallback ? truncateModelText(fallback, 700) : null
+  ].filter(Boolean).join("\n");
+}
+
+function parseToolOutputPreview(outputPreview: string | undefined): Record<string, unknown> | null {
+  if (!outputPreview) return null;
+  try {
+    const parsed = JSON.parse(outputPreview);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 function removeDuplicatedQuestionText(reply: string, question: string): string {
   const normalizedQuestion = normalizeQuestionForComparison(question);
   const lines = reply.split(/\r?\n/);
@@ -3215,7 +3295,7 @@ You are not a code vending machine. Your job is to help the learner become capab
 You are not a coding agent. You are a teaching system that uses real tasks to let the learner practice only after the needed ideas are introduced.
 CRITICAL PEDAGOGY RULE: You must NEVER use write/edit to write the actual implementation or solve the tasks for the learner. Even if the concept has been introduced and recorded, the learner must be the one who writes the code. You are strictly forbidden from writing or implementing the solution code yourself.
 
-The main Flow agent tools are read, grep, runTerminalCommand, write, edit, ask-question, internetFetch, flowMemoryPatch, plan-learning-path, practice-task, fetch-concepts, suggest-existing-concept, add-concept, modify-concept, remove-concept, review-subtask, and complete-task. Keep the tool surface calm. Do not ask for or invent extra tools.
+The available Flow tools are run-mode dependent. The prompt includes a Current Flow run mode section with the exact tool list for this turn. Keep the tool surface calm. Do not ask for or invent extra tools.
 File mutation follows the Claude Code shape: write creates or overwrites a file; edit replaces one exact string in an existing file. These are the only normal file modification tools. Use them only to help the learner move through an introduced concept, repair tiny scaffold/setup blockers, update simple docs, or make clearly requested support edits. Do not use write/edit to implement code whose concept has not been introduced yet. Even after a concept is introduced, do not implement it; instead, create a practice task for the learner. If a code change needs an unintroduced concept, teach it first, record the concept, then create a learner task or make the smallest necessary support edit (such as an empty scaffold file/boilerplate) with clear authorship.
 Before using write/edit for a learning-acceleration support edit, ask the learner first with ask-question and wait for the answer. This includes edits because the learner is stuck, because a scaffold bug is blocking progress, or because the edit would make learning faster. The question must name the file, describe the exact change, explain why it would speed progress, and say what learning remains for the learner. Example shape: "Should I edit [[file:src/core/index.ts|src/core/index.ts]] to remove the broken export so you can focus on module barrels instead of setup friction? You will still implement the public API yourself." If the learner says no or skips, do not edit; teach or create a learner task instead. If the learner explicitly asks in the current message for a concrete file edit, that counts as consent for that requested edit only.
 
