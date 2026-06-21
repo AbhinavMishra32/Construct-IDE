@@ -79,6 +79,16 @@ import {
   replaceDocumentPath
 } from "../lib/documentSession";
 
+const FLOW_TASK_TAB_PREFIX = "flow-task:";
+
+function flowTaskTabId(taskId: string): string {
+  return `${FLOW_TASK_TAB_PREFIX}${taskId}`;
+}
+
+function taskIdFromFlowTab(tabId: string): string | null {
+  return tabId.startsWith(FLOW_TASK_TAB_PREFIX) ? tabId.slice(FLOW_TASK_TAB_PREFIX.length) : null;
+}
+
 export function FlowWorkspace({
   project,
   activePanelView,
@@ -117,6 +127,8 @@ export function FlowWorkspace({
 }) {
   const [tree, setTree] = useState<WorkspaceTreeNode[]>([]);
   const [documentSession, setDocumentSession] = useState(() => createDocumentSession(project.activeFilePath));
+  const [activeWorkspaceTabId, setActiveWorkspaceTabId] = useState<string | null>(() => project.activeFilePath ? normalizeDocumentPath(project.activeFilePath) : null);
+  const [openTaskTabIds, setOpenTaskTabIds] = useState<string[]>([]);
   const [fileContents, setFileContents] = useState<Record<string, string>>({});
   const [dirtyPaths, setDirtyPaths] = useState<Record<string, boolean>>({});
   const [focusRange, setFocusRange] = useState<{ line: number; endLine?: number; hint?: string } | null>(null);
@@ -157,6 +169,8 @@ export function FlowWorkspace({
     openFileSequenceRef.current += 1;
     saveSequenceRef.current += 1;
     setDocumentSession(nextSession);
+    setActiveWorkspaceTabId(nextSession.activePath);
+    setOpenTaskTabIds([]);
     setFileContents({});
     setDirtyPaths({});
     setFocusRange(null);
@@ -199,6 +213,7 @@ export function FlowWorkspace({
     const nextSession = activateDocument(documentSessionRef.current, normalizedPath);
     documentSessionRef.current = nextSession;
     setDocumentSession(nextSession);
+    setActiveWorkspaceTabId(normalizedPath);
     setFocusRange(null);
     onFileOpened(normalizedPath);
     if (options.persist !== false && projectActiveFilePathRef.current !== normalizedPath) {
@@ -295,6 +310,7 @@ export function FlowWorkspace({
     if (nextActivePath) {
       void openFile(nextActivePath);
     } else {
+      setActiveWorkspaceTabId(null);
       setFocusRange(null);
       void persistActiveFilePath(null);
     }
@@ -524,7 +540,16 @@ export function FlowWorkspace({
     return unsubscribe;
   }, [onProjectChange, project]);
 
-  const flowConcepts = useMemo(() => collectFlowConcepts(mergeSessions(sessions, liveSession)), [liveSession, sessions]);
+  const mergedFlowSessions = useMemo(() => mergeSessions(sessions, liveSession), [liveSession, sessions]);
+  const flowConcepts = useMemo(() => collectFlowConcepts(mergedFlowSessions), [mergedFlowSessions]);
+  const flowTasks = useMemo(() => mergedFlowSessions.flatMap((session) => session.practiceTasks), [mergedFlowSessions]);
+  const pathNodes = useMemo(() => [...(project.flow.pathNodes ?? [])].sort((a, b) => a.order - b.order), [project.flow.pathNodes]);
+  const currentPathNode = useMemo(() => currentFlowPathNode(pathNodes, project.flow.currentPathNodeId), [pathNodes, project.flow.currentPathNodeId]);
+  const currentTask = useMemo(() => findActiveTaskForNode(flowTasks, currentPathNode?.id), [currentPathNode?.id, flowTasks]);
+  const openTaskTab = useCallback((task: ConstructFlowPracticeTask) => {
+    setOpenTaskTabIds((current) => current.includes(task.id) ? current : [...current, task.id]);
+    setActiveWorkspaceTabId(flowTaskTabId(task.id));
+  }, []);
   const openConceptById = useCallback((conceptId: string) => {
     const concept = flowConcepts.find((candidate) => candidate.id === conceptId)
       ?? buildInlineConceptPlaceholder(conceptId);
@@ -545,6 +570,7 @@ export function FlowWorkspace({
         onSubmitTask={submitTask}
         onOpenConceptDetails={(concept) => setOpenConcept(concept)}
         onOpenConceptById={openConceptById}
+        onOpenTask={openTaskTab}
         onOpenFile={openInlineFile}
         onRewindUserMessage={rewindUserSession}
         onResetChat={() => {
@@ -554,7 +580,7 @@ export function FlowWorkspace({
       />
     );
     return () => onGuidePanelChange(null);
-  }, [activePanelView, liveSession, onGuidePanelChange, onPanelViewChange, openConceptById, openInlineFile, pending, project, rewindUserSession, runAgent, sessions, submitTask, theme, setOpenConcept]);
+  }, [activePanelView, liveSession, onGuidePanelChange, onPanelViewChange, openConceptById, openInlineFile, openTaskTab, pending, project, rewindUserSession, runAgent, sessions, submitTask, theme, setOpenConcept]);
 
   useEffect(() => {
     onKnowledgePanelChange?.(null);
@@ -577,31 +603,72 @@ export function FlowWorkspace({
     </div>
   ) : null;
 
-  const editorSlotTabs: SlotTab[] = useMemo(() => (
-    documentSession.tabs.map((tabPath) => {
+  const editorSlotTabs: SlotTab[] = useMemo(() => {
+    const fileTabs = documentSession.tabs.map((tabPath) => {
       const filename = tabPath.split("/").pop() || tabPath;
       return {
         id: tabPath,
         title: filename,
         icon: iconForFile(filename),
         closable: true,
-        active: tabPath === activePath,
+        active: tabPath === activeWorkspaceTabId,
         content: null,
       };
-    })
-  ), [activePath, documentSession.tabs]);
+    });
+    const taskTabs = openTaskTabIds.flatMap((taskId): SlotTab[] => {
+      const task = flowTasks.find((candidate) => candidate.id === taskId);
+      if (!task) return [];
+      return [{
+        id: flowTaskTabId(task.id),
+        title: task.title,
+        icon: <ListChecksIcon size={14} />,
+        closable: true,
+        active: flowTaskTabId(task.id) === activeWorkspaceTabId,
+        content: null
+      }];
+    });
+    return [...fileTabs, ...taskTabs];
+  }, [activeWorkspaceTabId, documentSession.tabs, flowTasks, openTaskTabIds]);
 
   const handleTabChange = useCallback((tabId: string) => {
-    if (tabId && tabId !== activePath) {
+    if (!tabId) return;
+    if (taskIdFromFlowTab(tabId)) {
+      setActiveWorkspaceTabId(tabId);
+      return;
+    }
+    if (tabId !== activePath) {
       void openFile(tabId);
+    } else {
+      setActiveWorkspaceTabId(tabId);
     }
   }, [activePath, openFile]);
 
   const handleTabClose = useCallback((tabId: string) => {
+    const taskId = taskIdFromFlowTab(tabId);
+    if (taskId) {
+      setOpenTaskTabIds((current) => current.filter((id) => id !== taskId));
+      return;
+    }
     closeFileTab(tabId);
   }, [closeFileTab]);
 
-  const editorOutlet = (
+  const activeTaskTabId = activeWorkspaceTabId ? taskIdFromFlowTab(activeWorkspaceTabId) : null;
+  const activeTaskTab = activeTaskTabId ? flowTasks.find((task) => task.id === activeTaskTabId) : undefined;
+  const activeTaskNode = activeTaskTab?.pathNodeId
+    ? pathNodes.find((node) => node.id === activeTaskTab.pathNodeId)
+    : undefined;
+  const activeTaskIsCurrent = Boolean(activeTaskTab && currentTask?.id === activeTaskTab.id);
+
+  const editorOutlet = activeTaskTab ? (
+    <FlowTaskDetailsTab
+      task={activeTaskTab}
+      node={activeTaskNode}
+      current={activeTaskIsCurrent}
+      theme={theme}
+      onSubmitTask={submitTask}
+      onOpenFile={openInlineFile}
+    />
+  ) : (
     <div className="relative grid h-full min-h-0 grid-cols-[minmax(0,1fr)] bg-background">
       <EditorPane
         path={activePath}
@@ -651,7 +718,7 @@ export function FlowWorkspace({
       sidecar={sidecar}
     >
       <SlotPanel
-        activeTabId={activePath ?? undefined}
+        activeTabId={activeWorkspaceTabId ?? activePath ?? undefined}
         tabs={editorSlotTabs}
         syncTabs
         outlet={editorOutlet}
@@ -843,6 +910,7 @@ function FlowAgentPanel({
   onSubmitTask,
   onOpenConceptDetails,
   onOpenConceptById,
+  onOpenTask,
   onOpenFile,
   onRewindUserMessage,
   onResetChat
@@ -858,12 +926,21 @@ function FlowAgentPanel({
   onSubmitTask: (task: ConstructFlowPracticeTask, note?: string, subtaskId?: string) => Promise<void>;
   onOpenConceptDetails: (concept: ConceptCard) => void;
   onOpenConceptById: (conceptId: string) => void;
+  onOpenTask: (task: ConstructFlowPracticeTask) => void;
   onOpenFile: (reference: InlineFileRef) => void;
   onRewindUserMessage: (sessionId: string) => Promise<void>;
   onResetChat: () => void;
 }) {
   const [draft, setDraft] = useState("");
   const [rewindingSessionId, setRewindingSessionId] = useState<string | null>(null);
+  const [acknowledgedConceptEventKeys, setAcknowledgedConceptEventKeys] = useState<Set<string>>(() => new Set());
+  const acknowledgeConceptEvent = useCallback((eventKey: string) => {
+    setAcknowledgedConceptEventKeys((current) => {
+      const next = new Set(current);
+      next.add(eventKey);
+      return next;
+    });
+  }, []);
   const mergedSessions = useMemo(() => mergeSessions(sessions, liveSession), [liveSession, sessions]);
   const flowConcepts = useMemo(() => collectFlowConcepts(mergedSessions), [mergedSessions]);
   const conceptMutations = useMemo(() => collectConceptMutations(mergedSessions), [mergedSessions]);
@@ -876,9 +953,15 @@ function FlowAgentPanel({
     sessions: mergedSessions,
     concepts: flowConcepts,
     conceptMutations,
+    tasks: flowTasks,
+    pathNodes,
+    currentTaskId: activeTask?.id,
+    acknowledgedConceptEventKeys,
     theme,
     onOpenConceptDetails,
     onOpenConceptById,
+    onAcknowledgeConceptEvent: acknowledgeConceptEvent,
+    onOpenTask,
     onOpenFile,
     onRewindUserMessage: async (sessionId, content) => {
       setRewindingSessionId(sessionId);
@@ -891,7 +974,7 @@ function FlowAgentPanel({
     },
     rewindingSessionId,
     pending
-  }), [conceptMutations, flowConcepts, mergedSessions, theme, onOpenConceptDetails, onOpenConceptById, onOpenFile, onRewindUserMessage, rewindingSessionId, pending]);
+  }), [acknowledgeConceptEvent, acknowledgedConceptEventKeys, activeTask?.id, conceptMutations, flowConcepts, flowTasks, mergedSessions, onOpenConceptById, onOpenConceptDetails, onOpenFile, onOpenTask, onRewindUserMessage, pathNodes, rewindingSessionId, pending, theme]);
   const latestContextWindow = useMemo(() => findLatestContextWindow(mergedSessions), [mergedSessions]);
   const [aiSettings, setAiSettings] = useState<AiSettings | null>(null);
   const [modelOptions, setModelOptions] = useState<ModelCatalogEntry[]>([]);
@@ -1032,6 +1115,7 @@ function FlowAgentPanel({
           concepts={flowConcepts}
           theme={theme}
           onOpenConcept={onOpenConceptDetails}
+          onOpenTask={onOpenTask}
           onSubmitTask={onSubmitTask}
           onOpenFile={onOpenFile}
         />
@@ -1043,6 +1127,7 @@ function FlowAgentPanel({
               node={currentPathNode}
               theme={theme}
               pending={pending}
+              onOpenTask={onOpenTask}
               onSubmitTask={onSubmitTask}
               onOpenFile={onOpenFile}
             />
@@ -1526,6 +1611,7 @@ function FlowProjectDataPanel({
   concepts,
   theme,
   onOpenConcept,
+  onOpenTask,
   onSubmitTask,
   onOpenFile
 }: {
@@ -1536,6 +1622,7 @@ function FlowProjectDataPanel({
   concepts: ConceptCard[];
   theme: "light" | "dark" | "system";
   onOpenConcept: (concept: ConceptCard) => void;
+  onOpenTask: (task: ConstructFlowPracticeTask) => void;
   onSubmitTask: (task: ConstructFlowPracticeTask, note?: string, subtaskId?: string) => Promise<void>;
   onOpenFile: (reference: InlineFileRef) => void;
 }) {
@@ -1590,7 +1677,7 @@ function FlowProjectDataPanel({
           {currentNodeTasks.length ? (
             <div className="flex flex-col border-y">
               {currentNodeTasks.map((task) => (
-                <FlowTaskCard key={task.id} task={task} theme={theme} onSubmitTask={onSubmitTask} onOpenFile={onOpenFile} />
+                <FlowTaskCard key={task.id} task={task} theme={theme} onOpenTask={onOpenTask} onSubmitTask={onSubmitTask} onOpenFile={onOpenFile} />
               ))}
             </div>
           ) : (
@@ -1680,11 +1767,64 @@ function PathNodeIcon({ status }: { status: ConstructFlowPathNode["status"] }) {
   return <CircleIcon size={16} className="text-muted-foreground" />;
 }
 
+function FlowTaskDetailsTab({
+  task,
+  node,
+  current,
+  theme,
+  onSubmitTask,
+  onOpenFile
+}: {
+  task: ConstructFlowPracticeTask;
+  node?: ConstructFlowPathNode;
+  current: boolean;
+  theme: "light" | "dark" | "system";
+  onSubmitTask: (task: ConstructFlowPracticeTask, note?: string, subtaskId?: string) => Promise<void>;
+  onOpenFile: (reference: InlineFileRef) => void;
+}) {
+  const completedSubtasks = task.subtasks?.filter((subtask) => subtask.status === "completed").length ?? 0;
+  const subtaskCount = task.subtasks?.length ?? 1;
+  const active = activeSubtask(task);
+
+  return (
+    <section className="h-full min-h-0 overflow-y-auto bg-background">
+      <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 p-5">
+        <header className="rounded-[18px] border border-border/85 bg-card/90 p-4 shadow-sm">
+          <div className="flex min-w-0 items-start gap-3">
+            <span className="grid size-10 shrink-0 place-items-center rounded-[14px] border bg-muted/45 text-muted-foreground shadow-sm">
+              <ListChecksIcon size={18} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="mb-2 flex min-w-0 flex-wrap items-center gap-1.5">
+                {current ? <FlowTinyChip tone="current">Current</FlowTinyChip> : <FlowTinyChip>{taskStatusLabel(task.status)}</FlowTinyChip>}
+                {node ? <FlowTinyChip>{node.title}</FlowTinyChip> : null}
+                {node ? <FlowTinyChip>Path {node.order + 1}</FlowTinyChip> : null}
+                <FlowTinyChip>{completedSubtasks}/{subtaskCount} subtasks</FlowTinyChip>
+                {task.taskFiles?.length ? <FlowTinyChip>{task.taskFiles.length} files</FlowTinyChip> : null}
+              </div>
+              <h2 className="truncate text-base font-semibold tracking-tight">{task.title}</h2>
+              <p className="mt-1 line-clamp-3 text-sm leading-6 text-muted-foreground">{active?.prompt ?? task.prompt}</p>
+            </div>
+          </div>
+        </header>
+
+        <FlowTaskCard
+          task={task}
+          theme={theme}
+          onSubmitTask={onSubmitTask}
+          onOpenFile={onOpenFile}
+        />
+      </div>
+    </section>
+  );
+}
+
 function FloatingFlowTaskCard({
   task,
   node,
   theme,
   pending,
+  onOpenTask,
   onSubmitTask,
   onOpenFile
 }: {
@@ -1692,6 +1832,7 @@ function FloatingFlowTaskCard({
   node?: ConstructFlowPathNode;
   theme: "light" | "dark" | "system";
   pending: boolean;
+  onOpenTask: (task: ConstructFlowPracticeTask) => void;
   onSubmitTask: (task: ConstructFlowPracticeTask, note?: string, subtaskId?: string) => Promise<void>;
   onOpenFile: (reference: InlineFileRef) => void;
 }) {
@@ -1759,10 +1900,16 @@ function FloatingFlowTaskCard({
               <span className="min-w-0 truncate text-[11px] text-muted-foreground">
                 {active?.title ?? task.title}
               </span>
-              <Button size="sm" onClick={() => void onSubmitTask(task, undefined, active?.id)} disabled={pending}>
-                <SendIcon size={14} />
-                Submit
-              </Button>
+              <span className="flex shrink-0 items-center gap-1.5">
+                <Button size="sm" variant="secondary" onClick={() => onOpenTask(task)}>
+                  <ListChecksIcon size={14} />
+                  Open
+                </Button>
+                <Button size="sm" onClick={() => void onSubmitTask(task, undefined, active?.id)} disabled={pending}>
+                  <SendIcon size={14} />
+                  Submit
+                </Button>
+              </span>
             </div>
           </div>
         </div>
@@ -1774,12 +1921,14 @@ function FloatingFlowTaskCard({
 function FlowTaskCard({
   task,
   theme,
+  onOpenTask,
   onSubmitTask,
   onOpenFile,
   compact = false
 }: {
   task: ConstructFlowPracticeTask;
   theme: "light" | "dark" | "system";
+  onOpenTask?: (task: ConstructFlowPracticeTask) => void;
   onSubmitTask: (task: ConstructFlowPracticeTask, note?: string, subtaskId?: string) => Promise<void>;
   onOpenFile: (reference: InlineFileRef) => void;
   compact?: boolean;
@@ -1795,7 +1944,15 @@ function FlowTaskCard({
         <div className="mb-3 min-w-0">
           <div className="flex items-center justify-between gap-2">
             <strong className="truncate text-sm">{task.title}</strong>
-            <Badge variant={task.status === "completed" ? "secondary" : "outline"}>{taskStatusLabel(task.status)}</Badge>
+            <span className="flex shrink-0 items-center gap-1.5">
+              <Badge variant={task.status === "completed" ? "secondary" : "outline"}>{taskStatusLabel(task.status)}</Badge>
+              {onOpenTask ? (
+                <Button size="sm" variant="ghost" onClick={() => onOpenTask(task)}>
+                  <ListChecksIcon size={13} />
+                  Open
+                </Button>
+              ) : null}
+            </span>
           </div>
           <p className="mt-1 line-clamp-2 text-[11px] leading-4 text-muted-foreground">{task.prompt}</p>
         </div>
@@ -2100,9 +2257,15 @@ function buildFlowMessages({
   sessions,
   concepts,
   conceptMutations,
+  tasks,
+  pathNodes,
+  currentTaskId,
+  acknowledgedConceptEventKeys,
   theme,
   onOpenConceptDetails,
   onOpenConceptById,
+  onAcknowledgeConceptEvent,
+  onOpenTask,
   onOpenFile,
   onRewindUserMessage,
   rewindingSessionId,
@@ -2111,9 +2274,15 @@ function buildFlowMessages({
   sessions: ConstructFlowSession[];
   concepts: ConceptCard[];
   conceptMutations: ConceptMutation[];
+  tasks: ConstructFlowPracticeTask[];
+  pathNodes: ConstructFlowPathNode[];
+  currentTaskId?: string;
+  acknowledgedConceptEventKeys: Set<string>;
   theme: "light" | "dark" | "system";
   onOpenConceptDetails: (concept: ConceptCard) => void;
   onOpenConceptById: (conceptId: string) => void;
+  onAcknowledgeConceptEvent: (eventKey: string) => void;
+  onOpenTask: (task: ConstructFlowPracticeTask) => void;
   onOpenFile: (reference: InlineFileRef) => void;
   onRewindUserMessage?: (sessionId: string, content: string) => Promise<void>;
   rewindingSessionId?: string | null;
@@ -2127,9 +2296,15 @@ function buildFlowMessages({
       assistantContent: assistant?.content,
       concepts,
       conceptMutations,
+      tasks,
+      pathNodes,
+      currentTaskId,
+      acknowledgedConceptEventKeys,
       theme,
       onOpenConceptDetails,
       onOpenConceptById,
+      onAcknowledgeConceptEvent,
+      onOpenTask,
       onOpenFile
     });
 
@@ -2227,18 +2402,30 @@ function buildFlowAgentParts({
   assistantContent,
   concepts,
   conceptMutations,
+  tasks,
+  pathNodes,
+  currentTaskId,
+  acknowledgedConceptEventKeys,
   theme,
   onOpenConceptDetails,
   onOpenConceptById,
+  onAcknowledgeConceptEvent,
+  onOpenTask,
   onOpenFile
 }: {
   session: ConstructFlowSession;
   assistantContent?: string;
   concepts: ConceptCard[];
   conceptMutations: ConceptMutation[];
+  tasks: ConstructFlowPracticeTask[];
+  pathNodes: ConstructFlowPathNode[];
+  currentTaskId?: string;
+  acknowledgedConceptEventKeys: Set<string>;
   theme: "light" | "dark" | "system";
   onOpenConceptDetails: (concept: ConceptCard) => void;
   onOpenConceptById: (conceptId: string) => void;
+  onAcknowledgeConceptEvent: (eventKey: string) => void;
+  onOpenTask: (task: ConstructFlowPracticeTask) => void;
   onOpenFile: (reference: InlineFileRef) => void;
 }): AgentSessionMessagePart[] {
   const parts: AgentSessionMessagePart[] = [];
@@ -2267,6 +2454,7 @@ function buildFlowAgentParts({
 
     const toolName = event.kind === "tool" ? event.name : event.title;
     const isConcept = toolName === "add-concept" || toolName === "modify-concept" || toolName === "remove-concept" || toolName === "suggest-existing-concept";
+    const isPracticeTask = toolName === "practice-task";
     const isMemoryPatch = toolName === "flow-memory-patch" || toolName === "flow-memory-update";
     if (event.kind === "tool" && isQuestionTool(toolName)) {
       const questionToolCall = toolCallsById.get(event.toolCallId);
@@ -2285,7 +2473,24 @@ function buildFlowAgentParts({
       if (payload.id) {
         renderedConceptKeys.add(mutationKey);
       }
-      parts.push(buildConceptCardPart(session.id, event.id, toolName, event.input, event.outputPreview, event.status, theme, conceptMutations, onOpenConceptDetails, concepts));
+      parts.push(buildConceptCardPart(session.id, event.id, toolName, event.input, event.outputPreview, event.status, theme, conceptMutations, acknowledgedConceptEventKeys, onAcknowledgeConceptEvent, onOpenConceptDetails, concepts));
+      continue;
+    }
+
+    if (isPracticeTask && event.kind === "tool") {
+      parts.push(buildTaskCreatedPart({
+        sessionId: session.id,
+        eventId: event.id,
+        input: event.input,
+        outputPreview: event.outputPreview,
+        status: event.status,
+        tasks,
+        pathNodes,
+        currentTaskId,
+        onOpenTask,
+        theme,
+        onOpenFile
+      }));
       continue;
     }
 
@@ -2472,20 +2677,223 @@ function buildQuestionAnsweredPart(
   };
 }
 
-function ConfidenceBadge({ level }: { level: string }) {
-  const normLevel = level ? level.toLowerCase() : "";
-  let statusColor = "bg-muted-foreground/45";
-  if (["solid", "fluent", "teaching", "strong"].includes(normLevel)) statusColor = "bg-[color:var(--construct-success)]";
-  else if (["practicing", "applying", "emerging"].includes(normLevel)) statusColor = "bg-[color:var(--construct-warning)]";
-  else if (["confused", "fragile", "weak"].includes(normLevel)) statusColor = "bg-destructive";
-  else if (normLevel === "introduced") statusColor = "bg-primary";
+type TaskToolPayload = {
+  taskId?: string;
+  title: string;
+  prompt: string;
+  pathNodeId?: string;
+  taskFiles: string[];
+  introducedConceptIds: string[];
+  successCriteria: string[];
+  subtasks: Array<{ id?: string; title: string; status?: ConstructFlowPracticeSubtask["status"] }>;
+  preparedFiles: string[];
+};
 
+function buildTaskCreatedPart({
+  sessionId,
+  eventId,
+  input,
+  outputPreview,
+  status,
+  tasks,
+  pathNodes,
+  currentTaskId,
+  onOpenTask
+}: {
+  sessionId: string;
+  eventId: string;
+  input: unknown;
+  outputPreview?: string;
+  status: string;
+  tasks: ConstructFlowPracticeTask[];
+  pathNodes: ConstructFlowPathNode[];
+  currentTaskId?: string;
+  onOpenTask: (task: ConstructFlowPracticeTask) => void;
+  theme: "light" | "dark" | "system";
+  onOpenFile: (reference: InlineFileRef) => void;
+}): AgentSessionMessagePart {
+  const payload = readTaskToolPayload(input, outputPreview);
+  const task = resolveTaskForToolPayload(payload, tasks, sessionId);
+  const nodeId = task?.pathNodeId ?? payload.pathNodeId;
+  const node = nodeId ? pathNodes.find((candidate) => candidate.id === nodeId) : undefined;
+  const active = task ? activeSubtask(task) : undefined;
+  const subtaskCount = task?.subtasks?.length ?? payload.subtasks.length;
+  const completedSubtasks = task?.subtasks?.filter((subtask) => subtask.status === "completed").length ?? 0;
+  const isCurrent = Boolean(task && task.id === currentTaskId);
+  const ready = task != null;
+  const taskFilesCount = task?.taskFiles?.length ?? payload.taskFiles.length;
+  const conceptCount = task ? taskIntroducedConceptIds(task).length : payload.introducedConceptIds.length;
+  const preparedFilesCount = task?.preparedFiles?.length ?? payload.preparedFiles.length;
+  const prompt = active?.prompt ?? task?.prompt ?? payload.prompt;
+
+  return {
+    type: "actions",
+    id: `${sessionId}:task:${eventId}`,
+    content: (
+      <div className="construct-flow-event-card flex w-full max-w-[min(39rem,100%)] min-w-0 flex-col overflow-hidden rounded-[18px] border border-border/80 bg-card/96 text-xs shadow-sm">
+        <button
+          type="button"
+          className={cn(
+            "group grid w-full min-w-0 grid-cols-[2.25rem_minmax(0,1fr)_auto] items-start gap-3 p-3 text-left transition-[background-color,box-shadow,transform] duration-200",
+            ready ? "cursor-pointer hover:bg-muted/28 active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45" : "cursor-default"
+          )}
+          disabled={!ready}
+          onClick={() => task && onOpenTask(task)}
+        >
+          <span className="grid size-9 shrink-0 place-items-center rounded-[12px] border border-border/75 bg-background/80 text-muted-foreground shadow-sm">
+            <ListChecksIcon size={16} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="mb-1.5 flex min-w-0 flex-wrap items-center gap-1.5">
+              <FlowTinyChip tone="strong">{ready ? "Task ready" : status === "running" ? "Creating task" : "Task draft"}</FlowTinyChip>
+              {isCurrent ? <FlowTinyChip tone="current">Current</FlowTinyChip> : task ? <FlowTinyChip>{shortTaskStatusLabel(task.status)}</FlowTinyChip> : null}
+              {node ? <FlowTinyChip>{node.title}</FlowTinyChip> : null}
+              {node ? <FlowTinyChip>Path {node.order + 1}</FlowTinyChip> : null}
+            </span>
+            <strong className="block truncate text-sm font-semibold text-foreground">{task?.title ?? payload.title}</strong>
+            <span className="mt-1 line-clamp-2 text-[11px] leading-5 text-muted-foreground">{prompt}</span>
+            <span className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
+              {subtaskCount ? <FlowTinyChip>{completedSubtasks}/{subtaskCount} steps</FlowTinyChip> : null}
+              {taskFilesCount ? <FlowTinyChip>{taskFilesCount} files</FlowTinyChip> : null}
+              {conceptCount ? <FlowTinyChip>{conceptCount} concepts</FlowTinyChip> : null}
+              {preparedFilesCount ? <FlowTinyChip>{preparedFilesCount} prepared</FlowTinyChip> : null}
+            </span>
+          </span>
+          <span className={cn(
+            "mt-0.5 inline-flex shrink-0 items-center gap-1 rounded-full border border-border/75 bg-background/80 px-2 py-1 text-[11px] font-medium text-foreground shadow-sm transition-colors",
+            ready && "group-hover:bg-foreground group-hover:text-background"
+          )}>
+            {ready ? "Open" : "Creating"}
+            {ready ? <ChevronRightIcon size={12} /> : <Loader2Icon size={12} className="animate-spin" />}
+          </span>
+        </button>
+
+        {(payload.successCriteria.length || preparedFilesCount) ? (
+          <div className="flex min-w-0 flex-wrap gap-1 border-t border-border/55 bg-muted/14 px-3 py-2 text-[10px] text-muted-foreground">
+            {payload.successCriteria.length ? <FlowTinyChip>{payload.successCriteria.length} success checks</FlowTinyChip> : null}
+            {preparedFilesCount ? <FlowTinyChip>{preparedFilesCount} prepared files</FlowTinyChip> : null}
+          </div>
+        ) : null}
+      </div>
+    )
+  };
+}
+
+function FlowTinyChip({ children, tone }: { children: ReactNode; tone?: "current" | "strong" }) {
   return (
-    <div className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] text-muted-foreground bg-background">
-      <span className={`size-1.5 rounded-full ${statusColor}`} aria-hidden="true" />
-      <span className="capitalize">{level} confidence</span>
-    </div>
+    <span
+      className={cn(
+        "inline-flex max-w-full items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium",
+        tone === "current" && "border-[color:var(--construct-success)] bg-[color:var(--construct-success-soft)] text-[color:var(--construct-success)]",
+        tone === "strong" && "border-border/80 bg-foreground text-background",
+        !tone && "border-border/70 bg-background/70 text-muted-foreground"
+      )}
+    >
+      <span className="truncate">{children}</span>
+    </span>
   );
+}
+
+function shortTaskStatusLabel(status: ConstructFlowPracticeTask["status"]): string {
+  if (status === "completed") return "Done";
+  if (status === "submitted") return "Submitted";
+  if (status === "cancelled") return "Cancelled";
+  return "Learner work";
+}
+
+function readTaskToolPayload(input: unknown, outputPreview?: string): TaskToolPayload {
+  const inputObj = readRecord(input);
+  const outputObj = parseJsonObject(outputPreview) ?? {};
+  const outputSubtasks = readTaskPreviewSubtasks(outputObj.subtasks);
+  const inputSubtasks = readTaskPreviewSubtasks(inputObj.subtasks);
+  const preparedFiles = readTaskPreparedFiles(outputObj.preparedFiles).length
+    ? readTaskPreparedFiles(outputObj.preparedFiles)
+    : readTaskPreparationPaths(inputObj.preparations);
+
+  return {
+    taskId: readString(outputObj.taskId) ?? readString(inputObj.taskId),
+    title: readString(outputObj.title) ?? readString(inputObj.title) ?? "Practice task",
+    prompt: readString(outputObj.prompt) ?? readString(inputObj.prompt) ?? "Flow is creating a structured learner task.",
+    pathNodeId: readString(outputObj.pathNodeId) ?? readString(inputObj.pathNodeId),
+    taskFiles: readStringArray(outputObj.taskFiles).length ? readStringArray(outputObj.taskFiles) : readStringArray(inputObj.taskFiles),
+    introducedConceptIds: readStringArray(outputObj.introducedConceptIds).length
+      ? readStringArray(outputObj.introducedConceptIds)
+      : readStringArray(inputObj.introducedConceptIds),
+    successCriteria: readStringArray(outputObj.successCriteria).length
+      ? readStringArray(outputObj.successCriteria)
+      : readStringArray(inputObj.successCriteria),
+    subtasks: outputSubtasks.length ? outputSubtasks : inputSubtasks,
+    preparedFiles
+  };
+}
+
+function resolveTaskForToolPayload(
+  payload: TaskToolPayload,
+  tasks: ConstructFlowPracticeTask[],
+  sessionId: string
+): ConstructFlowPracticeTask | undefined {
+  if (payload.taskId) {
+    const byId = tasks.find((task) => task.id === payload.taskId);
+    if (byId) return byId;
+  }
+  const normalizedTitle = normalizeMatchText(payload.title);
+  const sessionTasks = tasks.filter((task) => task.sessionId === sessionId);
+  const titleMatches = (candidates: ConstructFlowPracticeTask[]) => candidates.find((task) => (
+    normalizeMatchText(task.title) === normalizedTitle
+    || (normalizedTitle.length > 0 && normalizeMatchText(task.title).includes(normalizedTitle))
+    || (normalizeMatchText(task.title).length > 0 && normalizedTitle.includes(normalizeMatchText(task.title)))
+  ));
+  const pathMatches = (candidates: ConstructFlowPracticeTask[]) => payload.pathNodeId
+    ? candidates.filter((task) => task.pathNodeId === payload.pathNodeId)
+    : candidates;
+  const fileSet = new Set(payload.taskFiles.map(normalizeMatchText));
+  const fileMatches = (candidates: ConstructFlowPracticeTask[]) => candidates.find((task) => (
+    task.taskFiles?.some((file) => fileSet.has(normalizeMatchText(file)))
+  ));
+
+  return titleMatches(sessionTasks)
+    ?? titleMatches(pathMatches(tasks))
+    ?? fileMatches(sessionTasks)
+    ?? fileMatches(pathMatches(tasks))
+    ?? (sessionTasks.length === 1 ? sessionTasks[0] : undefined)
+    ?? titleMatches(tasks)
+    ?? [...pathMatches(tasks)].reverse()[0];
+}
+
+function normalizeMatchText(value: string | undefined): string {
+  return (value ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function readTaskPreviewSubtasks(value: unknown): TaskToolPayload["subtasks"] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item): TaskToolPayload["subtasks"] => {
+    const record = readRecord(item);
+    const title = readString(record.title);
+    if (!title) return [];
+    const rawStatus = readString(record.status);
+    const status = rawStatus === "ready" || rawStatus === "active" || rawStatus === "submitted" || rawStatus === "needs-work" || rawStatus === "completed"
+      ? rawStatus
+      : undefined;
+    return [{ id: readString(record.id), title, status }];
+  });
+}
+
+function readTaskPreparedFiles(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item): string[] => {
+    const record = readRecord(item);
+    const path = readString(record.path);
+    return path ? [path] : [];
+  });
+}
+
+function readTaskPreparationPaths(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item): string[] => {
+    const record = readRecord(item);
+    const path = readString(record.path);
+    return path ? [path] : [];
+  });
 }
 
 function readConceptPayload(input: unknown, outputPreview?: string): ConceptPayload {
@@ -2678,6 +3086,15 @@ function inferConceptLanguage(id: string, title: string): ConstructConceptLangua
   return "unknown";
 }
 
+function conceptLanguageLabel(value: ConstructConceptLanguage): string {
+  if (value === "swift") return "Swift";
+  if (value === "python") return "Python";
+  if (value === "typescript") return "TypeScript";
+  if (value === "javascript") return "JavaScript";
+  if (value === "cpp") return "C++";
+  return "Language neutral";
+}
+
 function readStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [];
 }
@@ -2720,6 +3137,8 @@ function buildConceptCardPart(
   status: string,
   _theme: "light" | "dark" | "system",
   conceptMutations: ConceptMutation[],
+  acknowledgedConceptEventKeys: Set<string>,
+  onAcknowledgeConceptEvent: (eventKey: string) => void,
   onOpenConceptDetails: (concept: ConceptCard) => void,
   concepts: ConceptCard[]
 ): AgentSessionMessagePart {
@@ -2733,61 +3152,88 @@ function buildConceptCardPart(
     ? mergeConceptCards(existingConcept, payloadConcept)
     : payloadConcept;
   const conceptReason = payload.reason;
+  const conceptSummary = conceptCard.summary || conceptCard.guides[0]?.content || payload.content || "Flow recorded this as reusable learner memory.";
+  const conceptPath = conceptCard.technology || conceptCard.tags.slice(0, 3).join(" / ") || conceptId;
   const allMutations = ensureCurrentMutation(conceptMutations, {
     id: conceptId,
     title: payload.title || conceptId,
     kind: kind ?? "modified",
     eventId
   }, kind);
+  const conceptEventKey = `${kind ?? toolName}:${conceptId || "unknown"}:${eventId}`;
+  const shouldRequestAttention = status !== "running"
+    && (kind === "added" || kind === "modified")
+    && Boolean(conceptId)
+    && !acknowledgedConceptEventKeys.has(conceptEventKey);
 
   return {
     type: "actions",
     id: `${sessionId}:concept:${eventId}`,
     content: (
-      <div className="flex w-full max-w-[min(39rem,100%)] min-w-0 flex-col gap-1.5 py-1 text-xs">
-        <div className="mb-0.5 flex items-center justify-between gap-2">
-          <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-medium ${meta.badgeClass}`}>
-            {status === "running" ? <Loader2Icon size={12} className="animate-spin" /> : <meta.Icon size={12} />}
-            {meta.label}
-          </span>
-          {payload.confidence && <ConfidenceBadge level={payload.confidence} />}
-        </div>
-
+      <div className="construct-flow-event-card construct-flow-concept-event flex w-full max-w-[min(39rem,100%)] min-w-0 flex-col overflow-hidden rounded-[18px] border border-border/80 bg-card/96 text-xs shadow-sm" data-attention={shouldRequestAttention ? "true" : "false"}>
         {status === "running" && toolName !== "remove-concept" ? (
           <ConceptCreationPreview payload={payload} />
         ) : toolName !== "remove-concept" ? (
-          <ConceptSummaryCard
-            concept={conceptCard}
-            compact
-            variant="chat"
-            actionLabel="Open"
-            onOpen={() => onOpenConceptDetails(conceptCard)}
-          />
+          <button
+            type="button"
+            className="group grid w-full min-w-0 grid-cols-[2.25rem_minmax(0,1fr)_auto] items-start gap-3 p-3 text-left transition-[background-color,box-shadow,transform] duration-200 hover:bg-muted/28 active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45"
+            onClick={() => {
+              onAcknowledgeConceptEvent(conceptEventKey);
+              onOpenConceptDetails(conceptCard);
+            }}
+          >
+            <span className="grid size-9 shrink-0 place-items-center rounded-[12px] border border-border/75 bg-background/80 text-muted-foreground shadow-sm">
+              <BookOpenIcon size={16} />
+            </span>
+            <span className="min-w-0">
+              <span className="mb-1.5 flex min-w-0 flex-wrap items-center gap-1.5">
+                <FlowTinyChip tone="strong">{meta.label}</FlowTinyChip>
+                {payload.confidence ? <FlowTinyChip>{payload.confidence} confidence</FlowTinyChip> : null}
+                {conceptCard.language && conceptCard.language !== "unknown" ? <FlowTinyChip>{conceptLanguageLabel(conceptCard.language)}</FlowTinyChip> : null}
+                {conceptCard.technology ? <FlowTinyChip>{conceptCard.technology}</FlowTinyChip> : null}
+              </span>
+              <strong className="block truncate text-sm font-semibold text-foreground">{conceptCard.title}</strong>
+              <span className="mt-1 line-clamp-2 text-[11px] leading-5 text-muted-foreground">{conceptSummary}</span>
+              <span className="mt-2 block truncate font-mono text-[10px] text-muted-foreground/85">{conceptPath}</span>
+            </span>
+            <span className="mt-0.5 inline-flex shrink-0 items-center gap-1 rounded-full border border-border/75 bg-background/80 px-2 py-1 text-[11px] font-medium text-foreground shadow-sm transition-colors group-hover:bg-foreground group-hover:text-background">
+              Open
+              <ChevronRightIcon size={12} />
+            </span>
+          </button>
         ) : (
-          <div className="flex min-w-0 flex-col gap-1 rounded-[14px] border border-destructive/20 bg-destructive/10 p-3">
-            <strong className="truncate text-sm font-semibold text-destructive">{payload.title || conceptId || "Removed concept"}</strong>
-            <span className="truncate font-mono text-[11px] text-destructive/80">{conceptId || "unknown concept"}</span>
+          <div className="grid min-w-0 grid-cols-[2.25rem_minmax(0,1fr)] gap-3 p-3">
+            <span className="grid size-9 shrink-0 place-items-center rounded-[12px] border border-destructive/25 bg-destructive/10 text-destructive">
+              <Trash2Icon size={16} />
+            </span>
+            <span className="min-w-0">
+              <FlowTinyChip>{meta.label}</FlowTinyChip>
+              <strong className="mt-1.5 block truncate text-sm font-semibold text-destructive">{payload.title || conceptId || "Removed concept"}</strong>
+              <span className="truncate font-mono text-[11px] text-destructive/80">{conceptId || "unknown concept"}</span>
+            </span>
           </div>
         )}
 
-        {payload.normalizedFrom ? (
-          <span className="px-1 text-[11px] text-muted-foreground">
-            Canonicalized from <span className="font-mono">{payload.normalizedFrom}</span>
-          </span>
-        ) : null}
+        <div className="flex flex-col gap-1.5 border-t border-border/55 bg-muted/14 px-3 py-2">
+          {payload.normalizedFrom ? (
+            <span className="text-[11px] text-muted-foreground">
+              Canonicalized from <span className="font-mono">{payload.normalizedFrom}</span>
+            </span>
+          ) : null}
 
-        {kind ? <ConceptMutationTree mutations={allMutations} currentId={conceptId} currentKind={kind} /> : null}
+          {kind ? <ConceptMutationTree mutations={allMutations} currentId={conceptId} currentKind={kind} /> : null}
 
-        <ConceptEvidenceDisclosure
-          reason={conceptReason}
-          confidenceReason={payload.confidenceReason}
-          evidence={payload.evidence}
-        />
-        {payload.authoredBy || payload.agentContributionPercent !== undefined ? (
-          <span className="px-1 text-[11px] text-muted-foreground">
-            Authorship: {payload.authoredBy ?? "unknown"}{payload.agentContributionPercent !== undefined ? ` · agent ${payload.agentContributionPercent}%` : ""}
-          </span>
-        ) : null}
+          <ConceptEvidenceDisclosure
+            reason={conceptReason}
+            confidenceReason={payload.confidenceReason}
+            evidence={payload.evidence}
+          />
+          {payload.authoredBy || payload.agentContributionPercent !== undefined ? (
+            <span className="text-[11px] text-muted-foreground">
+              Authorship: {payload.authoredBy ?? "unknown"}{payload.agentContributionPercent !== undefined ? ` · agent ${payload.agentContributionPercent}%` : ""}
+            </span>
+          ) : null}
+        </div>
       </div>
     )
   };
@@ -2801,23 +3247,26 @@ function ConceptCreationPreview({ payload }: { payload: ConceptPayload }) {
       : "Preparing concept card";
   const summary = payload.content?.split("\n").find((line) => line.trim()) ?? "Writing the explanation, examples, and evidence trail before this becomes learner memory.";
   return (
-    <div className="flex min-w-0 flex-col gap-2 rounded-[12px] border border-dashed bg-background/55 p-3">
-      <div className="flex min-w-0 items-center gap-2">
-        <span className="grid size-8 shrink-0 place-items-center rounded-[10px] bg-muted text-muted-foreground">
-          <Loader2Icon size={15} className="animate-spin" />
+    <div className="grid min-w-0 grid-cols-[2.25rem_minmax(0,1fr)_auto] items-start gap-3 p-3">
+      <span className="grid size-9 shrink-0 place-items-center rounded-[12px] border border-border/75 bg-background/80 text-muted-foreground shadow-sm">
+        <Loader2Icon size={16} className="animate-spin" />
+      </span>
+      <div className="min-w-0">
+        <span className="mb-1.5 flex min-w-0 flex-wrap items-center gap-1.5">
+          <FlowTinyChip tone="strong">Preparing concept</FlowTinyChip>
+          {payload.id ? <FlowTinyChip>{payload.id}</FlowTinyChip> : null}
         </span>
-        <div className="min-w-0">
-          <strong className="block truncate text-sm font-semibold">{title}</strong>
-          <span className="block truncate text-[11px] text-muted-foreground">
-            {payload.id ? payload.id : "Creating a reusable concept entry"}
-          </span>
+        <strong className="block truncate text-sm font-semibold">{title}</strong>
+        <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{summary}</p>
+        <div className="mt-2 flex flex-col gap-1.5" aria-hidden="true">
+          <span className="h-1.5 w-5/6 rounded-full bg-muted" />
+          <span className="h-1.5 w-2/3 rounded-full bg-muted/70" />
         </div>
       </div>
-      <p className="line-clamp-2 text-xs leading-5 text-muted-foreground">{summary}</p>
-      <div className="flex flex-col gap-1.5" aria-hidden="true">
-        <span className="h-1.5 w-5/6 rounded-full bg-muted" />
-        <span className="h-1.5 w-2/3 rounded-full bg-muted/70" />
-      </div>
+      <span className="mt-0.5 inline-flex shrink-0 items-center gap-1 rounded-full border border-border/75 bg-background/80 px-2 py-1 text-[11px] font-medium text-muted-foreground shadow-sm">
+        Creating
+        <Loader2Icon size={12} className="animate-spin" />
+      </span>
     </div>
   );
 }
@@ -2839,7 +3288,7 @@ function ConceptEvidenceDisclosure({
       trigger={({
         open
       }) => (
-        <div className="flex items-center gap-2 rounded-[7px] px-1.5 py-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted/25">
+        <div className="flex items-center gap-2 rounded-[9px] border border-border/60 bg-background/55 px-2 py-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:border-border hover:bg-muted/45">
           <FileTextIcon size={13} className="shrink-0" />
           <span className="shrink-0 text-foreground">Details</span>
           <span className="min-w-0 flex-1 truncate">{preview}</span>
@@ -2916,7 +3365,7 @@ function ConceptMutationTree({
     <ConceptAccordion
       className="rounded-[7px] bg-transparent"
       trigger={({ open }) => (
-        <div className="flex items-center gap-2 rounded-[7px] px-1.5 py-1.5 text-[11px] transition-colors hover:bg-muted/25">
+        <div className="flex items-center gap-2 rounded-[9px] border border-border/60 bg-background/55 px-2 py-1.5 text-[11px] transition-colors hover:border-border hover:bg-muted/45">
         <RouteIcon size={13} className="shrink-0 text-muted-foreground" />
         <span className="font-semibold text-foreground">Hierarchy</span>
         <span className="min-w-0 flex-1 truncate font-mono text-muted-foreground">

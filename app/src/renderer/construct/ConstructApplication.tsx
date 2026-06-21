@@ -21,6 +21,8 @@ import {
   ListChecksIcon,
   MoreHorizontalIcon,
   MessageCircleIcon,
+  MessageCircleOff as MessageCircleOffIcon,
+  Maximize2 as Maximize2Icon,
   PanelRightIcon,
   Plus as PlusIcon,
   SearchIcon,
@@ -59,6 +61,7 @@ import { FlowWorkspace } from "./components/FlowWorkspace";
 import { LogsPanel } from "./components/LogsPanel";
 import { KnowledgeBaseSurface } from "./components/KnowledgeBaseSurface";
 import { SelectionExplanationController } from "./components/SelectionExplanationController";
+import { Tabs, TabsList, TabsTrigger } from "../components/ui/tabs";
 import {
   bootstrapProjects,
   openSavedProject
@@ -107,6 +110,7 @@ export default function ConstructApp() {
   const [rightPanel, setRightPanel] = useState<ReactNode | null>(null);
   const [sidebarKnowledgePanel, setSidebarKnowledgePanel] = useState<ReactNode | null>(null);
   const [flowPanelView, setFlowPanelView] = useState<"chat" | "project">("chat");
+  const [inspectorExpanded, setInspectorExpanded] = useState(false);
   const [knowledgeBaseOpen, setKnowledgeBaseOpen] = useState(false);
   const [learningContextOpen, setLearningContextOpen] = useState(false);
   const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
@@ -556,6 +560,7 @@ export default function ConstructApp() {
         currentBlockIndex: isFlowProjectRecord(project) ? null : project.currentBlockIndex
       });
       setSettingsSurface(null);
+      setInspectorExpanded(false);
       setActiveProject(nextProject);
       const nextProjects = await bootstrapProjects();
       console.log("[construct] open project refreshed list", { count: nextProjects.length });
@@ -592,6 +597,7 @@ export default function ConstructApp() {
 
     if (entry.type === "dashboard") {
       setSettingsSurface(null);
+      setInspectorExpanded(false);
       setKnowledgeBaseOpen(false);
       setLearningContextOpen(false);
       setRightPanel(null);
@@ -805,6 +811,8 @@ export default function ConstructApp() {
           )}
           defaultBottomPanelOpen={Boolean(activeProject && !settingsSurface && !knowledgeBaseOpen && !learningContextOpen)}
           defaultRightPanelOpen={Boolean(activeProject && !settingsSurface && !knowledgeBaseOpen && !learningContextOpen)}
+          inspectorExpanded={inspectorExpanded}
+          onInspectorExpandedChange={setInspectorExpanded}
           headerTabs={[
             {
               id: settingsSurface
@@ -846,21 +854,36 @@ export default function ConstructApp() {
                       <>
                         <SavingIndicator isSaving={isSaving} />
                         <div className="flex items-center gap-1" aria-label="Flow controls">
-                          <AppShellHeaderToolButton
-                            data-active={state.isRightPanelOpen && flowPanelView === "chat" ? "true" : "false"}
-                            onClick={() => {
-                              if (state.isRightPanelOpen && flowPanelView === "chat") {
-                                state.toggleRightPanel();
-                                return;
+                          <Tabs
+                            value={!state.isRightPanelOpen || flowPanelView !== "chat" ? "hidden" : state.inspectorExpanded ? "expanded" : "normal"}
+                            onValueChange={(val) => {
+                              if (val === "hidden") {
+                                state.setRightPanelOpen(false);
+                                state.setInspectorExpanded(false);
+                              } else if (val === "normal") {
+                                setFlowPanelView("chat");
+                                state.setRightPanelOpen(true);
+                                state.setInspectorExpanded(false);
+                              } else if (val === "expanded") {
+                                setFlowPanelView("chat");
+                                state.setRightPanelOpen(true);
+                                state.setInspectorExpanded(true);
                               }
-                              setFlowPanelView("chat");
-                              state.setRightPanelOpen(true);
                             }}
-                            aria-label="Open Flow chat"
-                            title="Flow chat"
+                            className="h-7"
                           >
-                            <MessageCircleIcon size={15} />
-                          </AppShellHeaderToolButton>
+                            <TabsList className="h-7 gap-1 p-[2px] bg-muted/40">
+                              <TabsTrigger value="expanded" className="h-[22px] w-[26px] p-0" title="Expand chat">
+                                <Maximize2Icon size={13} />
+                              </TabsTrigger>
+                              <TabsTrigger value="normal" className="h-[22px] w-[26px] p-0" title="Normal chat">
+                                <MessageCircleIcon size={13} />
+                              </TabsTrigger>
+                              <TabsTrigger value="hidden" className="h-[22px] w-[26px] p-0" title="Hide chat">
+                                <MessageCircleOffIcon size={13} />
+                              </TabsTrigger>
+                            </TabsList>
+                          </Tabs>
                           <AppShellHeaderToolButton
                             data-active={state.isRightPanelOpen && flowPanelView === "project" ? "true" : "false"}
                             onClick={() => {

@@ -8,6 +8,7 @@ type ConceptSummaryCardProps = {
   compact?: boolean;
   variant?: "default" | "chat";
   actionLabel?: string;
+  attention?: boolean;
   onOpen?: () => void;
 };
 
@@ -16,36 +17,38 @@ export function ConceptSummaryCard({
   compact = false,
   variant = "default",
   actionLabel = "Open concept",
+  attention = false,
   onOpen
 }: ConceptSummaryCardProps) {
   const language = languageLabel(concept);
+  const showLanguageChip = variant !== "chat" || language !== "Concept";
   const summary = concept.summary || concept.guides[0]?.content || "A reusable concept in your learning memory.";
   const tagLine = concept.technology || (concept.tags.length ? concept.tags.slice(0, 3).join(" / ") : concept.id);
   const className = [
-    "group flex w-full min-w-0 flex-col gap-2 rounded-[8px] border border-border/70 bg-card/82 text-left text-foreground transition-[background-color,border-color,box-shadow] duration-200",
-    compact ? "p-2 shadow-none" : "shadow-sm",
-    variant === "chat" ? "hover:border-border hover:bg-card" : "hover:border-border hover:bg-muted/20",
+    "construct-concept-summary-card group flex w-full min-w-0 flex-col gap-2 rounded-[16px] border border-border/85 bg-card/95 text-left text-foreground transition-[background-color,border-color,box-shadow,transform] duration-200",
+    compact ? "p-2.5 shadow-sm" : "shadow-sm",
+    variant === "chat" ? "hover:border-border hover:bg-card hover:shadow-md active:translate-y-px" : "hover:border-border hover:bg-muted/20",
     variant === "chat" && !compact ? "p-3" : "",
     variant !== "chat" && !compact ? "p-2.5" : "",
-    onOpen ? "cursor-pointer hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45" : ""
+    onOpen ? "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45" : ""
   ].filter(Boolean).join(" ");
   const content = (
     <>
       <span className="flex min-w-0 items-start justify-between gap-3">
         <span className="flex min-w-0 items-start gap-2.5">
-          <span className={`${compact ? "size-7 rounded-[7px]" : "size-8 rounded-[8px]"} mt-0.5 grid shrink-0 place-items-center border bg-background text-muted-foreground`}>
+          <span className={`${compact ? "size-8 rounded-[10px]" : "size-8 rounded-[10px]"} mt-0.5 grid shrink-0 place-items-center border border-border/80 bg-background text-muted-foreground shadow-sm`}>
             <BookOpenIcon size={15} />
           </span>
           <span className="min-w-0">
             <span className="mb-1 flex min-w-0 flex-wrap items-center gap-1">
-              <ConceptChip icon={<Code2Icon size={11} />} label={language} />
+              {showLanguageChip ? <ConceptChip icon={<Code2Icon size={11} />} label={language} /> : null}
               {concept.technology ? <ConceptChip label={concept.technology} /> : null}
             </span>
             <strong className={`${compact ? "text-[13px]" : "text-sm"} block truncate font-semibold`}>{concept.title}</strong>
           </span>
         </span>
         {onOpen ? (
-          <span className="inline-flex shrink-0 items-center gap-1 rounded-full border bg-background/70 px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground transition-[background-color,color,border-color] group-hover:border-border group-hover:bg-muted group-hover:text-foreground">
+          <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border/80 bg-muted/55 px-1.5 py-0.5 text-[11px] font-medium text-foreground transition-[background-color,color,border-color] group-hover:bg-muted">
             {actionLabel}
             <ExternalLinkIcon size={12} />
           </span>
@@ -60,13 +63,13 @@ export function ConceptSummaryCard({
 
   if (onOpen) {
     return (
-      <button type="button" className={className} onClick={onOpen}>
+      <button type="button" className={className} data-attention={attention ? "true" : "false"} onClick={onOpen}>
         {content}
       </button>
     );
   }
 
-  return <div className={className}>{content}</div>;
+  return <div className={className} data-attention={attention ? "true" : "false"}>{content}</div>;
 }
 
 function ConceptChip({ icon, label }: { icon?: ReactNode; label: string }) {
