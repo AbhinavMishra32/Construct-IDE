@@ -154,6 +154,8 @@ describe("ConstructFlowService Concept and Task Tools", () => {
       content: "TypeScript interface defines shape.",
       examples: ["interface User { name: string; }"],
       confidence: "introduced",
+      masteryLevel: 1,
+      masteryReason: "The learner can identify that an interface describes an object shape, but has not practiced it independently.",
       reason: "The learner asked about TypeScript interface shape.",
       evidence: ["The learner connected interface syntax to object shape in chat."],
       confidenceReason: "They correctly described the interface as a shape contract.",
@@ -166,10 +168,15 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     assert.equal(addResult.concept.language, "typescript");
     assert.equal(addResult.concept.technology, "TypeScript");
     assert.equal(addResult.concept.parentId, "typescript.syntax");
+    assert.equal(addResult.concept.masteryLevel, 1);
+    assert.equal(addResult.concept.masteryText, "The learner can identify some parts or vocabulary, but still needs close explanation and examples.");
     assert.equal(addResult.concept.confidenceReason, "They correctly described the interface as a shape contract.");
     const introducedHistory = addResult.concept.history?.at(-1);
     assert.equal(introducedHistory?.kind, "introduced");
     assert.ok(introducedHistory?.changedFields?.includes("content"));
+    assert.ok(introducedHistory?.changedFields?.includes("masteryLevel"));
+    assert.equal(introducedHistory?.masteryLevel, 1);
+    assert.equal(introducedHistory?.masteryDirection, "increased");
     assert.equal(introducedHistory?.provenance?.projectId, project.id);
     assert.equal(introducedHistory?.provenance?.pathNodeTitle, "TypeScript foundation");
     assert.equal(introducedHistory?.provenance?.taskTitle, "Interface task");
@@ -192,6 +199,7 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     assert.equal(swiftResult.concept.id, "swiftui.core-structure");
     assert.equal(swiftResult.concept.language, "swift");
     assert.equal(swiftResult.concept.technology, "SwiftUI");
+    assert.equal(swiftResult.concept.masteryLevel, 0);
 
     const fetchTool = (service as any).createFetchConceptsTool(project);
     const fetchResult = await fetchTool.execute({
@@ -215,6 +223,8 @@ describe("ConstructFlowService Concept and Task Tools", () => {
       id: "typescript.syntax.interface",
       content: "TypeScript interface updated.",
       confidence: "solid",
+      masteryLevel: 4,
+      masteryReason: "The learner independently applied the interface shape in their submitted task.",
       reason: "The learner used the interface in a task without hints.",
       evidence: ["Submitted diff added an interface with the correct required property."],
       confidenceReason: "The learner independently applied the concept in code.",
@@ -224,18 +234,32 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     assert.ok(modifyResult.modified);
     assert.equal(modifyResult.concept.content, "TypeScript interface updated.");
     assert.equal(modifyResult.concept.confidence, "solid");
+    assert.equal(modifyResult.concept.masteryLevel, 4);
     assert.equal(modifyResult.reason, "The learner used the interface in a task without hints.");
     assert.deepEqual(modifyResult.concept.history?.map((event: any) => event.kind), ["introduced", "modified"]);
     const modifiedHistory = modifyResult.concept.history?.at(-1);
     assert.equal(modifiedHistory?.kind, "modified");
     assert.ok(modifiedHistory?.changedFields?.includes("content"));
     assert.ok(modifiedHistory?.changedFields?.includes("confidence"));
+    assert.ok(modifiedHistory?.changedFields?.includes("masteryLevel"));
+    assert.equal(modifiedHistory?.masteryLevel, 4);
+    assert.equal(modifiedHistory?.masteryDirection, "increased");
     assert.equal(modifiedHistory?.provenance?.pathNodeTitle, "TypeScript foundation");
     assert.equal(modifiedHistory?.provenance?.taskTitle, "Interface task");
     const contentChange = modifiedHistory?.fieldChanges?.find((change: any) => change.field === "content");
     assert.equal(contentChange?.before, "TypeScript interface defines shape.");
     assert.equal(contentChange?.after, "TypeScript interface updated.");
     assert.ok(modifyResult.fieldChanges?.some((change: any) => change.field === "confidence"));
+
+    const decreaseResult = await modifyTool.execute({
+      id: "typescript.syntax.interface",
+      masteryLevel: 2,
+      masteryReason: "The learner later mixed up interface declarations with runtime object creation.",
+      reason: "A follow-up answer showed the learner still needs guided practice.",
+      evidence: ["The learner said an interface creates an object at runtime."]
+    });
+    assert.equal(decreaseResult.concept.masteryLevel, 2);
+    assert.equal(decreaseResult.concept.history?.at(-1)?.masteryDirection, "decreased");
 
     // 3. Test remove-concept tool
     const removeTool = (service as any).createRemoveConceptTool(project, () => {});
@@ -322,6 +346,8 @@ describe("ConstructFlowService Concept and Task Tools", () => {
       content: "A TypeScript function names a reusable behavior, accepts typed inputs, and returns a typed result.",
       examples: ["function greet(): string { return 'hello'; }"],
       confidence: "introduced",
+      masteryLevel: 3,
+      masteryReason: "The learner can explain inputs, return values, and is ready for a scoped function task.",
       reason: "Introduce the function concept before assigning a function-writing task.",
       evidence: ["The task test seeds this as introduced learner knowledge before practice."],
       confidenceReason: "The learner has seen the function concept and answered what a return value means."
@@ -482,6 +508,147 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     assert.equal(task.subtasks?.[0]?.status, "completed");
   });
 
+  it("uses concept exercises before task readiness and gates tasks below mastery level 3", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "construct-flow-test-mastery-gate-"));
+    const learningStorePath = path.join(dir, "learning-state.json");
+    const workspaceRoot = path.join(dir, "workspaces");
+    await mkdir(workspaceRoot, { recursive: true });
+
+    const learningStore = new ConstructLearningStore(learningStorePath);
+    const workspace = new ConstructProjectWorkspaceService(
+      () => workspaceRoot,
+      () => dir
+    );
+    const flowMemory = new ConstructFlowMemoryService(workspace);
+    const logs = new AgentLogService(() => {});
+    const service = new ConstructFlowService({
+      workspace,
+      flowMemory,
+      latestTerminalOutput: () => "",
+      logs,
+      learningStore: () => learningStore
+    });
+
+    const project = createFlowTestProject(workspaceRoot, "mastery-gate-project", "Practice TypeScript map safely");
+    await mkdir(project.workspacePath, { recursive: true });
+    const session: ConstructFlowSession = {
+      id: "mastery-session",
+      projectId: project.id,
+      threadId: "thread-mastery",
+      messages: [],
+      status: "running",
+      toolCalls: [],
+      agentEvents: [],
+      timeline: [],
+      actions: [],
+      practiceTasks: [],
+      conceptExercises: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    project.flow.sessions.push(session);
+
+    const addTool = (service as any).createAddConceptTool(project, () => {});
+    await addTool.execute({
+      id: "typescript.arrays.map",
+      title: "Array map",
+      language: "typescript",
+      technology: "TypeScript",
+      content: "Array.map creates a new array by running a callback for every item. It does not mutate the original array.",
+      reason: "The learner has been introduced to map but has not answered any checks yet.",
+      evidence: ["Flow explained that map transforms each item and returns a new array."]
+    });
+
+    let state = await learningStore.getState();
+    assert.equal(state.knowledgeBase.concepts[`${project.id}:typescript.arrays.map`]?.masteryLevel, 0);
+
+    const exerciseTool = (service as any).createConceptExerciseTool(project, session, () => {});
+    const exerciseResult = await exerciseTool.execute({
+      conceptIds: ["typescript.arrays.map"],
+      title: "Explain map from a tiny input",
+      prompt: "If [1, 2].map(n => n * 10) runs, what array comes back and what happens to the original array?",
+      masteryGoalLevel: 2,
+      successCriteria: [
+        "Names the returned array",
+        "Says the original array is unchanged"
+      ],
+      expectedSignals: [
+        "Returned array is [10, 20]",
+        "Original array remains [1, 2]"
+      ],
+      reason: "The concept is below task readiness, so Flow should practice it before creating project work."
+    });
+
+    assert.ok(exerciseResult.created);
+    assert.equal(session.conceptExercises?.[0]?.status, "waiting");
+    assert.match(session.conceptExercises?.[0]?.sourceText ?? "", /Array\.map creates a new array/);
+
+    const reviewExerciseTool = (service as any).createReviewConceptExerciseTool(project, () => {});
+    await reviewExerciseTool.execute({
+      exerciseId: exerciseResult.exerciseId,
+      learnerAnswer: "It returns [10, 20], and [1, 2] stays the same because map makes a new array.",
+      outcome: "passed",
+      reviewNote: "The learner identified the output and non-mutating behavior.",
+      masteryUpdates: [{
+        conceptId: "typescript.arrays.map",
+        masteryLevel: 2,
+        masteryReason: "The learner answered a guided map exercise correctly from the concept text.",
+        evidence: "The learner said map returns [10, 20] and leaves [1, 2] unchanged."
+      }]
+    });
+
+    state = await learningStore.getState();
+    const conceptAfterExercise = state.knowledgeBase.concepts[`${project.id}:typescript.arrays.map`];
+    assert.equal(conceptAfterExercise?.masteryLevel, 2);
+    assert.equal(conceptAfterExercise?.history?.at(-1)?.kind, "practiced");
+    assert.equal(conceptAfterExercise?.history?.at(-1)?.masteryDirection, "increased");
+    assert.ok(conceptAfterExercise?.history?.at(-1)?.createdAt);
+
+    const taskTool = (service as any).createPracticeTaskTool(project, session, () => {});
+    await assert.rejects(
+      () => taskTool.execute({
+        title: "Use map",
+        prompt: "Use map to produce display names.",
+        language: "typescript",
+        taskFiles: ["src/map.ts"],
+        introducedConceptIds: ["typescript.arrays.map"],
+        learnerReadiness: [{
+          conceptId: "typescript.arrays.map",
+          evidence: "The learner answered the guided map exercise correctly.",
+          source: "learner-chat"
+        }],
+        successCriteria: ["The learner uses map to return a new array."]
+      }),
+      /Mastery Level 3/
+    );
+
+    const modifyTool = (service as any).createModifyConceptTool(project, () => {});
+    await modifyTool.execute({
+      id: "typescript.arrays.map",
+      masteryLevel: 3,
+      masteryReason: "The learner explained the callback, returned array, and original-array invariant in their own words.",
+      reason: "The learner demonstrated task readiness after a follow-up Socratic answer.",
+      evidence: ["The learner described map as item-by-item transformation that returns a new array without mutation."]
+    });
+
+    const taskResult = await taskTool.execute({
+      title: "Use map",
+      prompt: "Use map to produce display names.",
+      language: "typescript",
+      taskFiles: ["src/map.ts"],
+      introducedConceptIds: ["typescript.arrays.map"],
+      learnerReadiness: [{
+        conceptId: "typescript.arrays.map",
+        evidence: "The learner explained map's callback and non-mutating return behavior in their own words.",
+        source: "learner-chat"
+      }],
+      successCriteria: ["The learner uses map to return a new array."]
+    });
+
+    assert.ok(taskResult.created);
+    assert.equal(taskResult.requiredMasteryLevel, 3);
+  });
+
   it("blocks unsafe hardware tasks and complete read-and-run C++ demos", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "construct-flow-test-safe-task-"));
     const learningStorePath = path.join(dir, "learning-state.json");
@@ -552,6 +719,8 @@ describe("ConstructFlowService Concept and Task Tools", () => {
       technology: "C++",
       content: "A pointer stores an address and dereferencing follows that address to a value.",
       confidence: "introduced",
+      masteryLevel: 3,
+      masteryReason: "The learner can explain address storage and dereference in their own words.",
       reason: "Introduce pointers before any low-level C++ task.",
       evidence: ["The learner said pointers are addresses that can be dereferenced."],
       confidenceReason: "The learner gave a correct address/dereference explanation."
@@ -563,6 +732,8 @@ describe("ConstructFlowService Concept and Task Tools", () => {
       technology: "C++",
       content: "Memory mapping connects a file or safe buffer to an address range; real device memory needs extra care.",
       confidence: "introduced",
+      masteryLevel: 3,
+      masteryReason: "The learner can distinguish safe simulated buffers from real device memory.",
       reason: "Introduce memory mapping before simulated mmap practice.",
       evidence: ["The learner distinguished safe simulated buffers from real device memory."],
       confidenceReason: "The learner recognized that real hardware access is not beginner-safe."
@@ -699,6 +870,8 @@ describe("ConstructFlowService Concept and Task Tools", () => {
       technology: "Swift",
       content: "Swift functions name a reusable behavior.",
       confidence: "introduced",
+      masteryLevel: 3,
+      masteryReason: "The learner can explain a Swift function returning a value.",
       reason: "Introduce Swift functions before a Swift task.",
       evidence: ["The learner explained that a Swift function returns a value."],
       confidenceReason: "The learner gave a simple function mental model."
@@ -710,6 +883,8 @@ describe("ConstructFlowService Concept and Task Tools", () => {
       technology: "C++",
       content: "C++ functions declare a return type, name, parameters, and body.",
       confidence: "introduced",
+      masteryLevel: 3,
+      masteryReason: "The learner can place the C++ return type before the function name.",
       reason: "Introduce C++ functions after the learner switched from Swift to C++.",
       evidence: ["The learner said a C++ function needs a return type before its name."],
       confidenceReason: "The learner identified the return type position in C++."

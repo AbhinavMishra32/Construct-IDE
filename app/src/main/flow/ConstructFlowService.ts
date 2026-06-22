@@ -1971,7 +1971,8 @@ function masteryDirection(
 ): ConceptHistoryEntry["masteryDirection"] {
   const previousLevel = previous === undefined ? undefined : normalizeMasteryLevel(previous);
   const nextLevel = next === undefined ? undefined : normalizeMasteryLevel(next);
-  if (previousLevel === undefined || nextLevel === undefined || previousLevel === nextLevel) return "unchanged";
+  if (nextLevel === undefined || previousLevel === nextLevel) return "unchanged";
+  if (previousLevel === undefined) return nextLevel > 0 ? "increased" : "unchanged";
   return nextLevel > previousLevel ? "increased" : "decreased";
 }
 
