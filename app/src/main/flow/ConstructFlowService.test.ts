@@ -443,6 +443,23 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     assert.equal(task.guidance?.[0]?.line, 1);
     assert.equal(task.guidance?.[0]?.subtaskId, task.subtasks?.[0]?.id);
 
+    await assert.rejects(
+      () => taskTool.execute({
+        title: "Task 1 again",
+        prompt: "Implement greet function again",
+        language: "typescript",
+        taskFiles: ["src/greet.ts"],
+        introducedConceptIds: ["typescript.functions"],
+        learnerReadiness: [{
+          conceptId: "typescript.functions",
+          evidence: "The learner already had readiness for the current function task.",
+          source: "learner-chat"
+        }],
+        successCriteria: ["greet still returns a string"]
+      }),
+      /waiting Flow task already exists/
+    );
+
     const reviewTool = (service as any).createReviewSubtaskTool(project, () => {});
     await assert.rejects(
       () => reviewTool.execute({
@@ -1329,6 +1346,286 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     assert.doesNotMatch(calls[0].messages.at(-1).content, /^Continue from the tracked question answer\.$/);
     assert.ok((result.session.contextWindow?.visibleTranscriptEventCount ?? 0) >= 4);
     assert.ok((result.session.contextWindow?.visibleTranscriptTokens ?? 0) > 0);
+  });
+
+  it("preserves latest visible Flow tool state when long transcripts are clipped", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "construct-flow-test-visible-tail-"));
+    const workspaceRoot = path.join(dir, "workspaces");
+    await mkdir(workspaceRoot, { recursive: true });
+    const workspace = new ConstructProjectWorkspaceService(
+      () => workspaceRoot,
+      () => dir
+    );
+    const flowMemory = new ConstructFlowMemoryService(workspace);
+    const logs = new AgentLogService(() => {});
+    const learningStore = new ConstructLearningStore(path.join(dir, "learning-state.json"));
+    const calls: any[] = [];
+    const service = new ConstructFlowService({
+      workspace,
+      flowMemory,
+      latestTerminalOutput: () => "",
+      logs,
+      learningStore: () => learningStore,
+      agentRuntime: () => ({
+        runAgentic: async (input: any) => {
+          calls.push(input);
+          return { text: "Resuming the existing Tensor task.", stepCount: 1, finishReason: "stop", durationMs: 1 };
+        }
+      }) as any
+    });
+    const project = createFlowTestProject(workspaceRoot, "visible-tail-project", "Stable Diffusion from scratch in C++");
+    await mkdir(project.workspacePath, { recursive: true });
+    const createdAt = new Date().toISOString();
+    const oldText = "old setup context ".repeat(80);
+    project.flow.sessions.push({
+      id: "long-visible-session",
+      projectId: project.id,
+      threadId: "thread",
+      origin: "user",
+      messages: [
+        { id: "u1", role: "user", content: "hi", createdAt },
+        { id: "a1", role: "assistant", content: "I created the first Tensor task.", createdAt }
+      ],
+      status: "waiting",
+      toolCalls: [],
+      agentEvents: [],
+      timeline: [
+        ...Array.from({ length: 48 }, (_, index) => ({
+          id: `old-${index}`,
+          kind: "reasoning" as const,
+          status: "completed" as const,
+          title: `ancient reasoning marker ${index}`,
+          text: `ancient reasoning marker ${index}: ${oldText}`,
+          createdAt
+        })),
+        {
+          id: "tensor-task",
+          kind: "tool" as const,
+          toolCallId: "tensor-task",
+          name: "practice-task",
+          title: "Created practice task",
+          reason: "The learner reached Tensor readiness and needs one active task.",
+          status: "completed" as const,
+          input: {
+            title: "Final Tensor Practice Task",
+            pathNodeId: "cpp-tensors",
+            introducedConceptIds: ["cpp.tensor-operations"],
+            taskFiles: ["src/Tensor.h"],
+            prompt: "Continue the existing Tensor.h scaffold instead of creating a duplicate."
+          },
+          outputPreview: "{\"created\":true,\"title\":\"Final Tensor Practice Task\"}",
+          createdAt,
+          completedAt: createdAt
+        }
+      ],
+      actions: [],
+      practiceTasks: [],
+      createdAt,
+      updatedAt: createdAt
+    });
+
+    await service.runMainAgent(project, {
+      projectId: project.id,
+      message: "what happened?"
+    });
+
+    assert.equal(calls.length, 1);
+    const renderedMessages = calls[0].messages.map((message: any) => message.content).join("\n");
+    assert.match(renderedMessages, /\[truncated \d+ earlier chars\]/);
+    assert.doesNotMatch(renderedMessages, /ancient reasoning marker 0/);
+    assert.match(renderedMessages, /Final Tensor Practice Task/);
+    assert.match(renderedMessages, /src\/Tensor\.h/);
+  });
+
+  it("builds continuation state from active Flow sessions without quickAction", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "construct-flow-test-continuation-guard-"));
+    const workspaceRoot = path.join(dir, "workspaces");
+    await mkdir(workspaceRoot, { recursive: true });
+    const workspace = new ConstructProjectWorkspaceService(
+      () => workspaceRoot,
+      () => dir
+    );
+    const flowMemory = new ConstructFlowMemoryService(workspace);
+    const logs = new AgentLogService(() => {});
+    const learningStore = new ConstructLearningStore(path.join(dir, "learning-state.json"));
+    const calls: any[] = [];
+    const service = new ConstructFlowService({
+      workspace,
+      flowMemory,
+      latestTerminalOutput: () => "",
+      logs,
+      learningStore: () => learningStore,
+      agentRuntime: () => ({
+        runAgentic: async (input: any) => {
+          calls.push(input);
+          return { text: "Resume the active Tensor task.", stepCount: 1, finishReason: "stop", durationMs: 1 };
+        }
+      }) as any
+    });
+    const project = createFlowTestProject(workspaceRoot, "continuation-guard-project", "Stable Diffusion from scratch in C++");
+    await mkdir(project.workspacePath, { recursive: true });
+    project.flow.currentPathNodeId = "cpp-tensors";
+    project.flow.pathNodes = [{
+      id: "cpp-tensors",
+      title: "C++ tensor operations",
+      summary: "Understand tensor storage before building neural-network kernels.",
+      status: "active",
+      order: 0,
+      concepts: ["cpp.tensor-operations"],
+      taskIds: ["tensor-task"],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }];
+    const createdAt = new Date().toISOString();
+    project.flow.sessions.push({
+      id: "task-session",
+      projectId: project.id,
+      threadId: "thread",
+      origin: "user",
+      messages: [],
+      status: "waiting",
+      toolCalls: [],
+      agentEvents: [],
+      timeline: [],
+      actions: [],
+      practiceTasks: [{
+        id: "tensor-task",
+        projectId: project.id,
+        sessionId: "task-session",
+        pathNodeId: "cpp-tensors",
+        title: "Implement C++ Tensor Class for 4D Neural Network Operations",
+        prompt: "Implement the learner-owned pieces of Tensor.h.",
+        status: "waiting",
+        baseline: { capturedAt: createdAt, files: { "src/Tensor.h": "// scaffold" } },
+        createdAt,
+        taskFiles: ["src/Tensor.h"],
+        introducedConceptIds: ["cpp.tensor-operations"],
+        conceptIds: ["cpp.tensor-operations"],
+        requiredMasteryLevel: 3,
+        subtasks: [{
+          id: "tensor-indexing",
+          title: "Implement tensor indexing",
+          prompt: "Map batch/channel/height/width to a flat vector index.",
+          status: "active",
+          successCriteria: ["Indexing uses NCHW order."]
+        }]
+      }],
+      createdAt,
+      updatedAt: createdAt
+    });
+
+    await service.runMainAgent(project, {
+      projectId: project.id,
+      message: "where are we?"
+    });
+
+    assert.equal(calls.length, 1);
+    assert.match(calls[0].instructions, /Flow continuation state/);
+    assert.match(calls[0].instructions, /Continuation guard/);
+    assert.match(calls[0].instructions, /Implement C\+\+ Tensor Class/);
+    assert.match(calls[0].instructions, /Do not restart research/);
+    assert.match(calls[0].instructions, /do not call plan-learning-path, add-concept, or practice-task/i);
+  });
+
+  it("builds continuation state from interrupted previous runs without active tasks", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "construct-flow-test-interrupted-continuation-"));
+    const workspaceRoot = path.join(dir, "workspaces");
+    await mkdir(workspaceRoot, { recursive: true });
+    const workspace = new ConstructProjectWorkspaceService(
+      () => workspaceRoot,
+      () => dir
+    );
+    const flowMemory = new ConstructFlowMemoryService(workspace);
+    const logs = new AgentLogService(() => {});
+    const learningStore = new ConstructLearningStore(path.join(dir, "learning-state.json"));
+    const calls: any[] = [];
+    const service = new ConstructFlowService({
+      workspace,
+      flowMemory,
+      latestTerminalOutput: () => "",
+      logs,
+      learningStore: () => learningStore,
+      agentRuntime: () => ({
+        runAgentic: async (input: any) => {
+          calls.push(input);
+          return { text: "Continuing from the interrupted tool state.", stepCount: 1, finishReason: "stop", durationMs: 1 };
+        }
+      }) as any
+    });
+    const project = createFlowTestProject(workspaceRoot, "interrupted-continuation-project", "Learn tensors in C++");
+    await mkdir(project.workspacePath, { recursive: true });
+    const createdAt = new Date().toISOString();
+    project.flow.sessions.push({
+      id: "interrupted-session",
+      projectId: project.id,
+      threadId: "thread",
+      origin: "user",
+      messages: [
+        { id: "u1", role: "user", content: "Start the tensor lesson.", createdAt },
+        { id: "a1", role: "assistant", content: "I was creating the next Flow action when the model run stopped.", createdAt }
+      ],
+      status: "completed",
+      finishReason: "tripwire",
+      stepCount: 3,
+      toolCalls: [{
+        id: "missing-practice-task",
+        name: "practice-task",
+        title: "Create tensor practice",
+        reason: "The model attempted the next Flow action before the provider stopped.",
+        input: {
+          title: "Tensor storage check",
+          introducedConceptIds: ["cpp.tensor-storage"],
+          taskFiles: ["src/Tensor.h"]
+        },
+        outputPreview: "Flow did not receive a tool result for this call. The provider stopped before task creation could be confirmed.",
+        status: "error",
+        createdAt,
+        completedAt: createdAt
+      }],
+      agentEvents: [{
+        id: "iteration-tripwire",
+        type: "iteration",
+        status: "completed",
+        title: "Model step 3",
+        detail: "1 tool call · 1 missing result · final step · finish: tripwire",
+        iteration: 3,
+        outputPreview: "{\"finishReason\":\"tripwire\"}",
+        createdAt
+      }],
+      timeline: [{
+        id: "missing-practice-task",
+        kind: "tool",
+        toolCallId: "missing-practice-task",
+        name: "practice-task",
+        title: "Create tensor practice",
+        reason: "The model attempted the next Flow action before the provider stopped.",
+        status: "error",
+        input: {
+          title: "Tensor storage check",
+          introducedConceptIds: ["cpp.tensor-storage"],
+          taskFiles: ["src/Tensor.h"]
+        },
+        outputPreview: "Flow did not receive a tool result for this call. The provider stopped before task creation could be confirmed.",
+        createdAt,
+        completedAt: createdAt
+      }],
+      actions: [],
+      practiceTasks: [],
+      createdAt,
+      updatedAt: createdAt
+    });
+
+    await service.runMainAgent(project, {
+      projectId: project.id,
+      message: "where are we?"
+    });
+
+    assert.equal(calls.length, 1);
+    assert.match(calls[0].instructions, /Flow continuation state/);
+    assert.match(calls[0].instructions, /"finishReason": "tripwire"/);
+    assert.match(calls[0].instructions, /missing-practice-task/);
+    assert.match(calls[0].instructions, /retry only that missing action/);
+    assert.match(calls[0].instructions, /instead of redoing research, path planning, or concept introduction/);
   });
 
   it("reviews task submissions with non-mutating tools and treats blocked commands as recoverable evidence", async () => {

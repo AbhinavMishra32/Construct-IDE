@@ -259,7 +259,7 @@ export class ConstructFlowService {
     const store = this.options.learningStore();
     const learningState = await store.getState();
     const concepts = uniqueKnowledgeConcepts(Object.values(learningState.knowledgeBase.concepts));
-    const flowStatePrompt = buildMainPrompt(project, input, memory, concepts, toolPolicy);
+    const flowStatePrompt = buildMainPrompt(project, input, memory, concepts, toolPolicy, session.id);
     let systemPrompt = buildFlowSystemPrompt(flowStatePrompt);
     let modelMessages = buildFlowModelMessages(project);
     let compactedMessageCount = latestCompletedCompaction(project)?.summarizedMessageCount ?? 0;
@@ -375,6 +375,8 @@ export class ConstructFlowService {
 
     let reply: string;
     let runError: unknown;
+    let runFinishReason: string | undefined;
+    let runStepCount: number | undefined;
     try {
       const generated = await (this.options.agentRuntime?.() ?? createConstructAgentRuntime()).runAgentic({
         id: "construct-flow-agent",
@@ -397,6 +399,8 @@ export class ConstructFlowService {
           publish("updated");
         }
       });
+      runFinishReason = generated.finishReason;
+      runStepCount = generated.stepCount;
       const pendingQuestion = findPendingLearnerQuestion(session.toolCalls);
       if (pendingQuestion) {
         truncateSessionAfterPendingQuestion(session, pendingQuestion);
@@ -409,6 +413,7 @@ export class ConstructFlowService {
           ) || buildFlowEmptyReplyFallback(session, toolPolicy);
     } catch (error) {
       runError = error;
+      runFinishReason = "error";
       reply = buildFlowRuntimeErrorReply(error);
     }
 
@@ -432,6 +437,8 @@ export class ConstructFlowService {
       });
     }
     session.status = runError ? "error" : waiting ? "waiting" : "completed";
+    session.finishReason = runFinishReason;
+    session.stepCount = runStepCount;
     session.errorMessage = runError instanceof Error ? runError.message : undefined;
     project.flow.updatedAt = new Date().toISOString();
 
@@ -814,6 +821,14 @@ export class ConstructFlowService {
         const cancelledStaleTaskIds = cancelStaleLanguageTasks(project, taskLanguage, knownConcepts, now);
         if (cancelledStaleTaskIds.length > 0) {
           project.flow.updatedAt = now;
+        }
+        const blockingTask = findBlockingActivePracticeTask(project, {
+          pathNodeId,
+          introducedConceptIds,
+          taskFiles: toolInput.taskFiles
+        });
+        if (blockingTask) {
+          throw new Error(`A waiting Flow task already exists for this path node: "${blockingTask.title}" (${blockingTask.id}). Do not create another task; resume the existing task or ask the learner to submit or cancel it first.`);
         }
         if (toolInput.preparations && toolInput.preparations.length > 0) {
           await applyTaskPreparations(project, this.options.workspace, toolInput.preparations);
@@ -2319,6 +2334,30 @@ function inferLanguageFromTaskConcepts(
   return languages.length === 1 ? languages[0] : undefined;
 }
 
+function findBlockingActivePracticeTask(
+  project: StoredFlowProject,
+  input: {
+    pathNodeId?: string | null;
+    introducedConceptIds: string[];
+    taskFiles: string[];
+  }
+): ConstructFlowPracticeTask | undefined {
+  const conceptIds = new Set(input.introducedConceptIds);
+  const taskFiles = new Set(input.taskFiles);
+  return project.flow.sessions
+    .flatMap((session) => session.practiceTasks)
+    .find((task) => {
+      if (task.status !== "waiting" && task.status !== "submitted") return false;
+      if (input.pathNodeId && task.pathNodeId === input.pathNodeId) return true;
+      if ((task.taskFiles ?? []).some((file) => taskFiles.has(file))) return true;
+      return activeTaskConceptIds(task).some((conceptId) => conceptIds.has(conceptId));
+    });
+}
+
+function activeTaskConceptIds(task: ConstructFlowPracticeTask): string[] {
+  return [...new Set([...(task.introducedConceptIds ?? []), ...(task.conceptIds ?? [])])];
+}
+
 function normalizeTaskGuidance(
   guidance: Array<{
     title: string;
@@ -2757,7 +2796,7 @@ function visibleFlowTranscriptForModel(session: ConstructFlowSession): string {
     }
   }
   if (!lines.length) return "";
-  return truncateModelText([
+  return truncateModelTextTail([
     `Visible Flow turn transcript (${session.origin ?? "user"} session, ${session.status}):`,
     ...lines.map((line) => `- ${line}`)
   ].join("\n"), flowTranscriptMaxSessionChars);
@@ -2928,6 +2967,13 @@ function truncateModelText(value: string, maxChars: number): string {
   return `${trimmed.slice(0, maxChars).trimEnd()}\n[truncated ${trimmed.length - maxChars} chars]`;
 }
 
+function truncateModelTextTail(value: string, maxChars: number): string {
+  const trimmed = value.trim();
+  if (trimmed.length <= maxChars) return trimmed;
+  const omitted = trimmed.length - maxChars;
+  return `[truncated ${omitted} earlier chars]\n${trimmed.slice(-maxChars).trimStart()}`;
+}
+
 function readStringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
@@ -3047,12 +3093,186 @@ function normalizeCompactionSummary(text: string): string {
   return summary || "The earlier Flow conversation was compacted, but the compactor returned an empty summary. Continue from the preserved recent messages and durable Flow memory.";
 }
 
+function activeFlowPracticeTasks(project: StoredFlowProject): ConstructFlowPracticeTask[] {
+  return project.flow.sessions
+    .flatMap((session) => session.practiceTasks)
+    .filter((task) => task.status === "waiting" || task.status === "submitted");
+}
+
+function activeFlowConceptExercises(project: StoredFlowProject): ConstructFlowConceptExercise[] {
+  return project.flow.sessions
+    .flatMap((session) => session.conceptExercises ?? [])
+    .filter((exercise) => exercise.status === "waiting" || exercise.status === "answered");
+}
+
+function buildStoppedRunContinuationState(project: StoredFlowProject, currentSessionId: string): string | null {
+  const previous = latestContinuationSourceSession(project, currentSessionId);
+  if (!previous) return null;
+  return [
+    "Flow continuation state:",
+    "This is a continuation of an existing Flow run, not a fresh project kickoff. Continue from the stopped/interrupted state below before planning new work.",
+    "If the previous run stopped during a tool call, reconcile the latest tool state first: resume any created task/exercise/question; if the tool result is missing and no durable state exists, retry only that missing action with the same intent instead of redoing research, path planning, or concept introduction.",
+    JSON.stringify({
+      previousSession: {
+        id: previous.id,
+        origin: previous.origin,
+        status: previous.status,
+        finishReason: previous.finishReason ?? latestFinishReasonFromEvents(previous),
+        stepCount: previous.stepCount,
+        errorMessage: previous.errorMessage,
+        updatedAt: previous.updatedAt
+      },
+      activeTasks: previous.practiceTasks
+        .filter((task) => task.status === "waiting" || task.status === "submitted")
+        .map((task) => ({
+          id: task.id,
+          pathNodeId: task.pathNodeId,
+          title: task.title,
+          status: task.status,
+          introducedConceptIds: task.introducedConceptIds,
+          taskFiles: task.taskFiles,
+          activeSubtask: task.subtasks?.find((subtask) => subtask.status === "active" || subtask.status === "needs-work" || subtask.status === "submitted")
+        })),
+      activeExercises: (previous.conceptExercises ?? [])
+        .filter((exercise) => exercise.status === "waiting" || exercise.status === "answered")
+        .map((exercise) => ({
+          id: exercise.id,
+          title: exercise.title,
+          status: exercise.status,
+          conceptIds: exercise.conceptIds,
+          masteryGoalLevel: exercise.masteryGoalLevel
+        })),
+      recentTools: previous.toolCalls.slice(-8).map((tool) => ({
+        id: tool.id,
+        name: tool.name,
+        title: tool.title,
+        status: tool.status,
+        reason: tool.reason,
+        input: pruneModelObject(tool.input),
+        outputPreview: tool.outputPreview ? truncateModelText(tool.outputPreview, flowTranscriptMaxFieldChars) : undefined
+      })),
+      recentTimeline: previous.timeline.slice(-12).map((part) => continuationTimelinePart(part)),
+      lastMessages: previous.messages.slice(-2).map((message) => ({
+        role: message.role,
+        content: truncateModelText(message.content, flowTranscriptMaxFieldChars)
+      }))
+    }, null, 2)
+  ].join("\n");
+}
+
+function latestContinuationSourceSession(project: StoredFlowProject, currentSessionId: string): ConstructFlowSession | undefined {
+  return [...project.flow.sessions]
+    .filter((session) => session.id !== currentSessionId)
+    .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
+    .find((session) => isContinuationSourceSession(session));
+}
+
+function isContinuationSourceSession(session: ConstructFlowSession): boolean {
+  return session.status === "waiting"
+    || session.status === "error"
+    || hasActiveSessionWork(session)
+    || isInterruptedFinishReason(session.finishReason ?? latestFinishReasonFromEvents(session))
+    || hasInterruptedToolState(session);
+}
+
+function hasActiveSessionWork(session: ConstructFlowSession): boolean {
+  return session.practiceTasks.some((task) => task.status === "waiting" || task.status === "submitted")
+    || (session.conceptExercises ?? []).some((exercise) => exercise.status === "waiting" || exercise.status === "answered")
+    || Boolean(findPendingLearnerQuestion(session.toolCalls));
+}
+
+function isInterruptedFinishReason(finishReason: string | undefined): boolean {
+  if (!finishReason) return false;
+  return !["stop", "suspended"].includes(finishReason.toLowerCase());
+}
+
+function latestFinishReasonFromEvents(session: ConstructFlowSession): string | undefined {
+  return [...session.agentEvents]
+    .reverse()
+    .map((event) => finishReasonFromEvent(event))
+    .find((finishReason): finishReason is string => Boolean(finishReason));
+}
+
+function finishReasonFromEvent(event: ConstructAgentRunEvent): string | undefined {
+  const parsed = parseToolOutputPreview(event.outputPreview);
+  const fromOutput = parsed ? readStringValue(parsed.finishReason) : undefined;
+  if (fromOutput) return fromOutput;
+  const detailMatch = event.detail?.match(/\bfinish:\s*([a-z0-9_-]+)/i);
+  return detailMatch?.[1];
+}
+
+function hasInterruptedToolState(session: ConstructFlowSession): boolean {
+  return session.toolCalls.some((tool) => tool.status === "running")
+    || session.timeline.some((part) => part.kind === "tool" && part.status === "running");
+}
+
+function continuationTimelinePart(part: ConstructFlowTimelinePart): Record<string, unknown> {
+  if (part.kind === "tool") {
+    return {
+      kind: part.kind,
+      name: part.name,
+      title: part.title,
+      status: part.status,
+      reason: part.reason,
+      input: pruneModelObject(part.input),
+      outputPreview: part.outputPreview ? truncateModelText(part.outputPreview, flowTranscriptMaxFieldChars) : undefined
+    };
+  }
+  if (part.kind === "compaction") {
+    return {
+      kind: part.kind,
+      title: part.title,
+      status: part.status,
+      detail: part.detail,
+      summary: part.summary ? truncateModelText(part.summary, flowTranscriptMaxFieldChars) : undefined
+    };
+  }
+  return {
+    kind: part.kind,
+    title: "title" in part ? part.title : undefined,
+    status: part.status,
+    text: "text" in part && part.text ? truncateModelText(part.text, flowTranscriptMaxFieldChars) : undefined,
+    detail: "detail" in part && part.detail ? truncateModelText(part.detail, 400) : undefined
+  };
+}
+
+function buildContinuationGuard(project: StoredFlowProject): string | null {
+  const activeTasks = activeFlowPracticeTasks(project);
+  const activeExercises = activeFlowConceptExercises(project);
+  if (!activeTasks.length && !activeExercises.length) return null;
+  return [
+    "Continuation guard:",
+    "Existing active tasks/exercises are binding Flow state. Treat the learner's latest message as operating inside this active state unless they explicitly ask to cancel, replace, or replan it. Do not restart research, rewrite Flow Memory, re-plan the path, re-introduce existing concepts, or create duplicate practice tasks while active work is waiting.",
+    activeTasks.length ? `Waiting/submitted tasks:\n${JSON.stringify(activeTasks.map((task) => ({
+      id: task.id,
+      pathNodeId: task.pathNodeId,
+      title: task.title,
+      status: task.status,
+      conceptIds: task.conceptIds,
+      introducedConceptIds: task.introducedConceptIds,
+      requiredMasteryLevel: task.requiredMasteryLevel,
+      taskFiles: task.taskFiles,
+      activeSubtask: task.subtasks?.find((subtask) => subtask.status === "active" || subtask.status === "needs-work" || subtask.status === "submitted")
+    })), null, 2)}` : null,
+    activeExercises.length ? `Waiting/answered concept exercises:\n${JSON.stringify(activeExercises.map((exercise) => ({
+      id: exercise.id,
+      title: exercise.title,
+      status: exercise.status,
+      conceptIds: exercise.conceptIds,
+      masteryGoalLevel: exercise.masteryGoalLevel,
+      learnerAnswer: exercise.learnerAnswer
+    })), null, 2)}` : null,
+    "Resume the listed waiting item and give the learner the next concrete action from that item; do not call plan-learning-path, add-concept, or practice-task unless the active item is first resolved, cancelled, or explicitly replaced by the learner."
+  ].filter(Boolean).join("\n");
+}
+
 function buildMainPrompt(
   project: StoredFlowProject,
   input: ConstructFlowAgentInput,
   memory: Array<{ file: string; content: string; updatedAt: string | null }>,
   concepts: KnowledgeBaseRecord[],
-  toolPolicy: FlowRunToolPolicy
+  toolPolicy: FlowRunToolPolicy,
+  currentSessionId: string
 ): string {
   const recent = project.flow.sessions.slice(-6).map((session) => ({
     id: session.id,
@@ -3169,6 +3389,10 @@ function buildMainPrompt(
         learnerAnswer: exercise.learnerAnswer,
         reviewNote: exercise.reviewNote
       })), null, 2),
+    "",
+    buildContinuationGuard(project),
+    "",
+    buildStoppedRunContinuationState(project, currentSessionId),
     "",
     "Flow Memory:",
     "project.md, path.md, learner.md, and research.md are preloaded here. Treat research.md as the new-project research handoff when it has content; continue from its assumptions instead of redoing research or asking redundant project-direction clarification. Use flow-memory-patch for concise durable updates when meaningful work happens.",

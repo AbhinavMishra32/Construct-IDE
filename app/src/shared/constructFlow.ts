@@ -321,6 +321,8 @@ export type ConstructFlowSession = {
   createdAt: string;
   updatedAt: string;
   durationMs?: number;
+  stepCount?: number;
+  finishReason?: string;
   errorMessage?: string;
 };
 
