@@ -25,6 +25,7 @@ import type {
   ConstructFlowContextCompaction,
   ConstructFlowMemoryPatchResult,
   ConstructFlowPathNode,
+  ConstructFlowConceptExercise,
   ConstructFlowPracticeTask,
   ConstructFlowPracticeSubtask,
   ConstructFlowQuestionResponse,
@@ -36,7 +37,7 @@ import type {
   ConstructFlowTaskSubmission,
   ConstructFlowToolCallRecord
 } from "../../shared/constructFlow";
-import { CONSTRUCT_CONCEPT_LANGUAGES, type ConstructAgentContextWindow, type ConstructAgentRunEvent, type ConstructConceptConfidence, type ConstructConceptLanguage, type KnowledgeBaseRecord } from "../../shared/constructLearning";
+import { CONSTRUCT_CONCEPT_LANGUAGES, CONSTRUCT_CONCEPT_MASTERY_RUBRIC, conceptMasteryRubricForLevel, type ConstructAgentContextWindow, type ConstructAgentRunEvent, type ConstructConceptConfidence, type ConstructConceptLanguage, type ConstructConceptMasteryLevel, type KnowledgeBaseRecord } from "../../shared/constructLearning";
 import { ConstructLearningStore } from "../constructLearningStore";
 
 const ignoredNames = new Set([".git", ".construct", "node_modules", "dist", "build", ".next", "coverage"]);
@@ -60,6 +61,18 @@ const flowConceptConfidenceLevels = [
   "teaching"
 ] as const satisfies readonly ConstructConceptConfidence[];
 const flowConceptConfidenceSchema = z.enum(flowConceptConfidenceLevels);
+const flowConceptMasterySchema = z.union([
+  z.literal(0),
+  z.literal(1),
+  z.literal(2),
+  z.literal(3),
+  z.literal(4),
+  z.literal(5)
+]);
+const taskReadyMasteryLevel = 3 satisfies ConstructConceptMasteryLevel;
+const flowMasteryRubricDescription = CONSTRUCT_CONCEPT_MASTERY_RUBRIC
+  .map((entry) => `Level ${entry.level} (${entry.title}): ${entry.text}`)
+  .join(" ");
 
 type FlowModelMessage = ConstructAgentRuntimeMessage & {
   id: string;
@@ -338,11 +351,15 @@ export class ConstructFlowService {
     const removeConcept = this.createRemoveConceptTool(project, publish);
     const fetchConcepts = this.createFetchConceptsTool(project);
     const suggestConcept = this.createSuggestConceptTool(project, concepts, actionsFromTools, publish);
+    const conceptExercise = this.createConceptExerciseTool(project, session, publish);
+    const reviewConceptExercise = this.createReviewConceptExerciseTool(project, publish);
     const reviewSubtask = this.createReviewSubtaskTool(project, publish);
     const completeTask = this.createCompleteTaskTool(project, publish);
     const flowTools: ToolsInput = {
       "plan-learning-path": planLearningPath,
       "practice-task": practiceTask,
+      "concept-exercise": conceptExercise,
+      "review-concept-exercise": reviewConceptExercise,
       "suggest-existing-concept": suggestConcept,
       "fetch-concepts": fetchConcepts,
       "add-concept": addConcept,
@@ -627,6 +644,7 @@ export class ConstructFlowService {
       timeline: [],
       actions: [],
       practiceTasks: [],
+      conceptExercises: [],
       createdAt: now,
       updatedAt: now
     };
@@ -723,7 +741,7 @@ export class ConstructFlowService {
   ): ToolsInput[string] {
     return createTool({
       id: "practice-task",
-      description: "Create one real learner coding task only after the required concepts have been introduced. This is Flow's normal write path for task setup: preparations are applied before the baseline is captured. This is a handoff point: after creating the task, summarize briefly and let the learner work. Do not use practice-task as a progress update, duplicate milestone marker, or setup narration. Do not keep trying to verify or rewrite the same scaffold after this tool succeeds. Use guidance for structured work highlights instead of writing large TODO comment blocks into source files.",
+      description: `Create one real learner coding task only after every required concept is Mastery Level ${taskReadyMasteryLevel} or higher. Mastery scale: ${flowMasteryRubricDescription} If any required concept is below Level ${taskReadyMasteryLevel}, do not create a task; teach more, ask a Socratic question, or create a concept-exercise instead. This is Flow's normal write path for task setup: preparations are applied before the baseline is captured. This is a handoff point: after creating the task, summarize briefly and let the learner work. Do not use practice-task as a progress update, duplicate milestone marker, or setup narration. Do not keep trying to verify or rewrite the same scaffold after this tool succeeds. Use guidance for structured work highlights instead of writing large TODO comment blocks into source files.`,
       inputSchema: z.object({
         title: z.string().min(1).max(120),
         prompt: z.string().min(1).max(2_000),
@@ -756,8 +774,9 @@ export class ConstructFlowService {
           placeholder: z.string().max(240).optional(),
           subtaskTitle: z.string().max(120).optional()
         })).max(12).optional().describe("UI-only task work highlights. Prefer this over TODO comment blocks in prepared files."),
-        introducedConceptIds: z.array(z.string().min(1)).min(1).describe("Concept IDs already introduced before this task. Required; if none exist yet, explain and record the concept before creating the task."),
+        introducedConceptIds: z.array(z.string().min(1)).min(1).describe(`Concept IDs already taught and recorded at Mastery Level ${taskReadyMasteryLevel} or higher before this task. Required; if none exist yet, explain, record the concept, and use Socratic checks/exercises before creating the task.`),
         conceptIds: z.array(z.string().min(1)).optional().describe("Optional extra related concept IDs; introducedConceptIds is the required prerequisite set"),
+        requiredMasteryLevel: flowConceptMasterySchema.default(taskReadyMasteryLevel).describe(`Minimum Mastery level required for every introducedConceptId. Use ${taskReadyMasteryLevel} for normal tasks.`),
         learnerReadiness: z.array(z.object({
           conceptId: z.string().min(1).describe("Introduced concept this learner evidence supports"),
           evidence: z.string().min(1).max(500).describe("Concrete learner-authored evidence, e.g. their explanation, plan, answer, or submitted diff"),
@@ -773,6 +792,7 @@ export class ConstructFlowService {
         const pathNodeId = toolInput.pathNodeId ?? project.flow.currentPathNodeId ?? firstActivePathNode(project)?.id;
         const introducedConceptIds = normalizeConceptIds(toolInput.introducedConceptIds, project);
         const relatedConceptIds = normalizeConceptIds(toolInput.conceptIds ?? toolInput.introducedConceptIds, project);
+        const requiredMasteryLevel = toolInput.requiredMasteryLevel ?? taskReadyMasteryLevel;
         const learnerReadiness = normalizeLearnerReadiness(toolInput.learnerReadiness, project);
         const store = this.options.learningStore();
         const state = await store.getState();
@@ -788,7 +808,7 @@ export class ConstructFlowService {
         const taskLanguage = inferPracticeTaskLanguage(toolInput.language, toolInput, conceptRecords);
         assertPracticeTaskIsLearnerSafe(toolInput);
         assertPreparedFilesLeaveLearnerWork(toolInput);
-        assertTaskConceptReadiness(introducedConceptIds, conceptRecords, learnerReadiness);
+        assertTaskConceptReadiness(introducedConceptIds, conceptRecords, learnerReadiness, requiredMasteryLevel);
         assertTaskLanguageMatchesConcepts(taskLanguage, conceptRecords);
         assertTaskLanguageMatchesPath(project, pathNodeId, taskLanguage, knownConcepts);
         const cancelledStaleTaskIds = cancelStaleLanguageTasks(project, taskLanguage, knownConcepts, now);
@@ -825,6 +845,7 @@ export class ConstructFlowService {
           taskFiles: toolInput.taskFiles,
           conceptIds: relatedConceptIds,
           introducedConceptIds,
+          requiredMasteryLevel,
           learnerReadiness,
           safety: {
             level: toolInput.safety?.level ?? "beginner-safe",
@@ -866,6 +887,7 @@ export class ConstructFlowService {
           taskFiles: task.taskFiles,
           conceptIds: task.conceptIds,
           introducedConceptIds: task.introducedConceptIds,
+          requiredMasteryLevel: task.requiredMasteryLevel,
           learnerReadiness: task.learnerReadiness,
           safety: task.safety,
           cancelledStaleTaskIds,
@@ -883,7 +905,7 @@ export class ConstructFlowService {
   ): ToolsInput[string] {
     return createTool({
       id: "add-concept",
-      description: "Introduce a new concept with a dot-notated hierarchical ID, title, and content. Parent concepts will be auto-created if they do not exist.",
+      description: `Introduce a new concept with a dot-notated hierarchical ID, title, content, and evidence-backed Mastery level. Parent concepts will be auto-created if they do not exist. Mastery scale: ${flowMasteryRubricDescription} New concepts normally start at Level 0 unless the learner's own answer or exercise evidence proves a higher level.`,
       inputSchema: z.object({
         id: z.string().min(1).describe("The dot-notated hierarchical ID, e.g., 'typescript.syntax.interface'"),
         title: z.string().min(1).describe("Short user-friendly title of the concept"),
@@ -893,6 +915,9 @@ export class ConstructFlowService {
         examples: z.array(z.string()).optional().describe("Code examples illustrating the concept"),
         relatedConcepts: z.array(z.string()).optional().describe("IDs of related concepts"),
         confidence: flowConceptConfidenceSchema.optional().default("unknown").describe("Learner's current evidence-backed learning state for this concept"),
+        masteryLevel: flowConceptMasterySchema.default(0).describe(`Evidence-backed Mastery level for the learner. ${flowMasteryRubricDescription}`),
+        masteryText: z.string().max(900).optional().describe("Attached text for this exact Mastery level. Defaults to the rubric text for the selected level."),
+        masteryReason: z.string().max(700).optional().describe("Exact reason this Mastery level is correct. Required when masteryLevel is above 0."),
         reason: z.string().min(1).max(700).describe("Exact reason this concept is being created now"),
         evidence: z.array(z.string().min(1).max(500)).min(1).max(8).describe("Concrete evidence from the learner, task diff, project, or conversation"),
         confidenceReason: z.string().max(700).optional().describe("Required when confidence is not unknown"),
@@ -908,6 +933,13 @@ export class ConstructFlowService {
             message: "Concept confidence changes require an exact confidence reason."
           });
         }
+        if ((input.masteryLevel ?? 0) > 0 && !input.masteryReason?.trim()) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["masteryReason"],
+            message: "Concept mastery above Level 0 requires an exact mastery reason from learner evidence."
+          });
+        }
       }),
       execute: async (toolInput) => {
         const now = new Date().toISOString();
@@ -916,6 +948,9 @@ export class ConstructFlowService {
         const conceptId = normalizeConceptId(toolInput.id, project);
         const existingConcepts = uniqueKnowledgeConcepts(Object.values(state.knowledgeBase.concepts));
         const existingRecord = findKnowledgeConceptById(existingConcepts, conceptId);
+        const masteryLevel = normalizeMasteryLevel(toolInput.masteryLevel ?? masteryLevelFromConfidence(toolInput.confidence));
+        const masteryText = normalizeMasteryText(masteryLevel, toolInput.masteryText);
+        const masteryReason = normalizeMasteryReason(toolInput.masteryReason, masteryLevel);
 
         const parts = conceptId.split(".");
         for (let i = 1; i < parts.length; i++) {
@@ -940,6 +975,9 @@ export class ConstructFlowService {
               docs: [],
               content: "",
               confidence: "unknown",
+              masteryLevel: 0,
+              masteryText: conceptMasteryRubricForLevel(0).text,
+              masteryUpdatedAt: now,
               lastChangeReason: `Auto-created parent while adding ${conceptId}.`,
               learnerEvidence: [`Parent concept required for hierarchy ${conceptId}.`],
               authoredBy: "system",
@@ -958,6 +996,9 @@ export class ConstructFlowService {
               changedFields: parentFieldChanges.map((change) => change.field),
               fieldChanges: parentFieldChanges,
               provenance: createConceptHistoryProvenance(project, parentId, toolInput.pathNodeId, toolInput.taskId),
+              masteryLevel: 0,
+              masteryText: conceptMasteryRubricForLevel(0).text,
+              masteryDirection: "unchanged",
               authoredBy: "system",
               agentContributionPercent: 100,
               createdAt: now
@@ -986,6 +1027,11 @@ export class ConstructFlowService {
           docs: [],
           content: toolInput.content,
           confidence: toolInput.confidence,
+          masteryLevel,
+          masteryText,
+          masteryReason,
+          masteryEvidence: toolInput.evidence,
+          masteryUpdatedAt: now,
           lastChangeReason: toolInput.reason,
           learnerEvidence: toolInput.evidence,
           confidenceReason: toolInput.confidenceReason,
@@ -1009,6 +1055,10 @@ export class ConstructFlowService {
           provenance,
           confidence: toolInput.confidence,
           confidenceReason: toolInput.confidenceReason,
+          masteryLevel,
+          masteryText,
+          masteryReason,
+          masteryDirection: masteryDirection(existingRecord?.masteryLevel, masteryLevel),
           authoredBy: toolInput.authoredBy,
           agentContributionPercent: toolInput.agentContributionPercent,
           createdAt: now
@@ -1029,6 +1079,9 @@ export class ConstructFlowService {
           fieldChanges: historyEntry.fieldChanges,
           provenance: historyEntry.provenance,
           confidenceReason: toolInput.confidenceReason,
+          masteryLevel,
+          masteryText,
+          masteryReason,
           concept: newRecord
         };
       }
@@ -1041,7 +1094,7 @@ export class ConstructFlowService {
   ): ToolsInput[string] {
     return createTool({
       id: "modify-concept",
-      description: "Modify an existing concept. Only the fields provided in the patch will be updated.",
+      description: `Modify an existing concept. Only the fields provided in the patch will be updated. Use masteryLevel for evidence-backed Mastery changes, including decreases. Mastery scale: ${flowMasteryRubricDescription} Do not upgrade because the learner merely saw an explanation or because Flow wrote code; require learner answers, exercises, or learner-authored task diffs.`,
       inputSchema: z.object({
         id: z.string().min(1).describe("The ID of the concept to modify"),
         title: z.string().optional().describe("New title"),
@@ -1051,6 +1104,9 @@ export class ConstructFlowService {
         examples: z.array(z.string()).optional().describe("New code examples"),
         relatedConcepts: z.array(z.string()).optional().describe("New related concepts"),
         confidence: flowConceptConfidenceSchema.optional().describe("Updated evidence-backed learner state for this concept"),
+        masteryLevel: flowConceptMasterySchema.optional().describe(`Updated evidence-backed Mastery level. ${flowMasteryRubricDescription}`),
+        masteryText: z.string().max(900).optional().describe("Attached text for this exact Mastery level. Defaults to the rubric text for the selected level."),
+        masteryReason: z.string().max(700).optional().describe("Exact reason this Mastery level is correct. Required when masteryLevel is provided."),
         reason: z.string().min(1).max(700).describe("Exact reason this concept is changing"),
         evidence: z.array(z.string().min(1).max(500)).min(1).max(8).describe("Concrete evidence that justifies this change"),
         confidenceReason: z.string().max(700).optional().describe("Required when confidence is provided"),
@@ -1066,6 +1122,13 @@ export class ConstructFlowService {
             message: "Concept confidence changes require an exact confidence reason."
           });
         }
+        if (input.masteryLevel !== undefined && !input.masteryReason?.trim()) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["masteryReason"],
+            message: "Concept mastery changes require an exact mastery reason from learner evidence."
+          });
+        }
       }),
       execute: async (toolInput) => {
         const now = new Date().toISOString();
@@ -1076,6 +1139,17 @@ export class ConstructFlowService {
         if (!existing) {
           throw new Error(`Concept with ID ${conceptId} not found in the learner's global concepts.`);
         }
+        const existingMasteryLevel = masteryLevelForConcept(existing);
+        const nextMasteryLevel = toolInput.masteryLevel !== undefined
+          ? normalizeMasteryLevel(toolInput.masteryLevel)
+          : existingMasteryLevel;
+        const nextMasteryText = toolInput.masteryLevel !== undefined || toolInput.masteryText !== undefined
+          ? normalizeMasteryText(nextMasteryLevel, toolInput.masteryText)
+          : existing.masteryText ?? conceptMasteryRubricForLevel(nextMasteryLevel).text;
+        const nextMasteryReason = toolInput.masteryReason ?? existing.masteryReason;
+        const masteryChanged = toolInput.masteryLevel !== undefined
+          || toolInput.masteryText !== undefined
+          || toolInput.masteryReason !== undefined;
 
         const updatedRecord: KnowledgeBaseRecord = {
           ...existing,
@@ -1088,6 +1162,11 @@ export class ConstructFlowService {
           examples: toolInput.examples ?? existing.examples,
           relatedConcepts: toolInput.relatedConcepts ?? existing.relatedConcepts,
           confidence: toolInput.confidence ?? existing.confidence,
+          masteryLevel: nextMasteryLevel,
+          masteryText: nextMasteryText,
+          masteryReason: nextMasteryReason,
+          masteryEvidence: masteryChanged ? toolInput.evidence : existing.masteryEvidence,
+          masteryUpdatedAt: masteryChanged ? now : existing.masteryUpdatedAt,
           lastChangeReason: toolInput.reason,
           learnerEvidence: toolInput.evidence,
           confidenceReason: toolInput.confidenceReason ?? existing.confidenceReason,
@@ -1109,6 +1188,10 @@ export class ConstructFlowService {
           provenance: createConceptHistoryProvenance(project, conceptId, toolInput.pathNodeId, toolInput.taskId),
           confidence: toolInput.confidence ?? existing.confidence,
           confidenceReason: toolInput.confidenceReason ?? existing.confidenceReason,
+          masteryLevel: nextMasteryLevel,
+          masteryText: nextMasteryText,
+          masteryReason: nextMasteryReason,
+          masteryDirection: masteryChanged ? masteryDirection(existingMasteryLevel, nextMasteryLevel) : "unchanged",
           authoredBy: toolInput.authoredBy,
           agentContributionPercent: toolInput.agentContributionPercent ?? existing.agentContributionPercent,
           createdAt: now
@@ -1124,12 +1207,16 @@ export class ConstructFlowService {
           normalizedFrom: conceptId === toolInput.id ? undefined : toolInput.id,
           previousConfidence: existing.confidence,
           nextConfidence: updatedRecord.confidence,
+          previousMasteryLevel: existingMasteryLevel,
+          nextMasteryLevel: updatedRecord.masteryLevel,
           reason: toolInput.reason,
           evidence: toolInput.evidence,
           changedFields: historyEntry.changedFields,
           fieldChanges: historyEntry.fieldChanges,
           provenance: historyEntry.provenance,
           confidenceReason: toolInput.confidenceReason,
+          masteryText: updatedRecord.masteryText,
+          masteryReason: updatedRecord.masteryReason,
           concept: updatedRecord
         };
       }
@@ -1268,19 +1355,160 @@ export class ConstructFlowService {
     });
   }
 
+  private createConceptExerciseTool(
+    project: StoredFlowProject,
+    session: ConstructFlowSession,
+    publish: (type: ConstructFlowSessionEvent["type"]) => void
+  ): ToolsInput[string] {
+    return createTool({
+      id: "concept-exercise",
+      description: `Create a non-roadmap concept exercise when the learner needs practice before a project task. Exercises must be answerable directly from the concept content/sourceText and are appropriate for Mastery Levels 0-2. Mastery scale: ${flowMasteryRubricDescription} After creating an exercise, ask the learner for an answer with ask-question and stop.`,
+      inputSchema: z.object({
+        conceptIds: z.array(z.string().min(1)).min(1).max(6).describe("Concept IDs this exercise practices."),
+        title: z.string().min(1).max(120),
+        prompt: z.string().min(1).max(1_200).describe("The learner-facing exercise prompt. It must be answerable from the concept text/sourceText, not from hidden project context."),
+        masteryGoalLevel: flowConceptMasterySchema.default(2).describe("Target Mastery level this exercise can provide evidence for. Use 1-2 for early checks, 3 only when it proves task readiness."),
+        successCriteria: z.array(z.string().min(1).max(240)).min(1).max(6),
+        expectedSignals: z.array(z.string().min(1).max(240)).min(1).max(8).describe("What a good learner answer should notice."),
+        sourceText: z.string().max(2_000).optional().describe("Short excerpt or synthesis from concept content that makes the exercise self-contained."),
+        reason: z.string().min(1).max(700)
+      }).strict(),
+      execute: async (toolInput) => {
+        const now = new Date().toISOString();
+        const conceptIds = normalizeConceptIds(toolInput.conceptIds, project);
+        const store = this.options.learningStore();
+        const state = await store.getState();
+        const concepts = uniqueKnowledgeConcepts(Object.values(state.knowledgeBase.concepts));
+        const conceptRecords = conceptIds
+          .map((conceptId) => findKnowledgeConceptById(concepts, conceptId))
+          .filter((concept): concept is KnowledgeBaseRecord => Boolean(concept));
+        const missingConceptIds = conceptIds.filter((conceptId) => !conceptRecords.some((concept) => concept.id === conceptId));
+        if (missingConceptIds.length > 0) {
+          throw new Error(`Concept exercises require recorded concepts. Missing concept records: ${missingConceptIds.join(", ")}.`);
+        }
+        const sourceText = normalizeExerciseSourceText(toolInput.sourceText, conceptRecords);
+        if (!sourceText) {
+          throw new Error("Concept exercises must be answerable from the concept text. Add concept content first or provide sourceText.");
+        }
+        const exercise: ConstructFlowConceptExercise = {
+          id: randomUUID(),
+          projectId: project.id,
+          sessionId: session.id,
+          conceptIds,
+          title: toolInput.title,
+          prompt: toolInput.prompt,
+          status: "waiting",
+          masteryGoalLevel: toolInput.masteryGoalLevel,
+          successCriteria: toolInput.successCriteria,
+          expectedSignals: toolInput.expectedSignals,
+          sourceText,
+          createdAt: now
+        };
+        session.conceptExercises = [...(session.conceptExercises ?? []), exercise];
+        project.flow.updatedAt = now;
+        publish("updated");
+        return {
+          created: true,
+          exerciseId: exercise.id,
+          conceptIds: exercise.conceptIds,
+          title: exercise.title,
+          prompt: exercise.prompt,
+          masteryGoalLevel: exercise.masteryGoalLevel,
+          successCriteria: exercise.successCriteria,
+          expectedSignals: exercise.expectedSignals,
+          sourceText: exercise.sourceText,
+          reason: toolInput.reason
+        };
+      }
+    });
+  }
+
+  private createReviewConceptExerciseTool(
+    project: StoredFlowProject,
+    publish: (type: ConstructFlowSessionEvent["type"]) => void
+  ): ToolsInput[string] {
+    return createTool({
+      id: "review-concept-exercise",
+      description: `Review a learner answer to a concept-exercise and record whether it proves any Mastery movement. Use this before project tasks when a concept is below Level ${taskReadyMasteryLevel}. Mastery can increase, stay unchanged, or decrease; only update levels from the learner's answer evidence.`,
+      inputSchema: z.object({
+        exerciseId: z.string().min(1),
+        learnerAnswer: z.string().min(1).max(2_000),
+        outcome: z.enum(["passed", "partial", "missed"]),
+        reviewNote: z.string().min(1).max(1_000),
+        masteryUpdates: z.array(z.object({
+          conceptId: z.string().min(1),
+          masteryLevel: flowConceptMasterySchema,
+          masteryText: z.string().max(900).optional(),
+          masteryReason: z.string().min(1).max(700),
+          evidence: z.string().min(1).max(500)
+        })).max(6).optional().describe("Evidence-backed Mastery updates. Include only concepts whose level is genuinely proven by the learner answer.")
+      }).strict(),
+      execute: async (toolInput) => {
+        const exercise = findConceptExercise(project, toolInput.exerciseId);
+        if (exercise.status === "cancelled") {
+          throw new Error(`Cannot review cancelled concept exercise: ${exercise.id}`);
+        }
+        const now = new Date().toISOString();
+        exercise.status = "reviewed";
+        exercise.learnerAnswer = toolInput.learnerAnswer;
+        exercise.answeredAt ??= now;
+        exercise.reviewedAt = now;
+        exercise.reviewNote = toolInput.reviewNote;
+        exercise.masteryEvidence = (toolInput.masteryUpdates ?? []).map((update) => ({
+          conceptId: normalizeConceptId(update.conceptId, project),
+          evidence: update.evidence,
+          recommendedLevel: update.masteryLevel
+        }));
+
+        if (toolInput.masteryUpdates?.length) {
+          const store = this.options.learningStore();
+          for (const update of toolInput.masteryUpdates) {
+            await applyConceptMasteryUpdate(project, store, {
+              conceptId: update.conceptId,
+              masteryLevel: update.masteryLevel,
+              masteryText: update.masteryText,
+              masteryReason: update.masteryReason,
+              evidence: [update.evidence],
+              authoredBy: "learner",
+              agentContributionPercent: 0,
+              pathNodeId: project.flow.currentPathNodeId ?? undefined
+            }, now);
+          }
+        }
+
+        project.flow.updatedAt = now;
+        publish("updated");
+        return {
+          reviewed: true,
+          exerciseId: exercise.id,
+          outcome: toolInput.outcome,
+          reviewNote: exercise.reviewNote,
+          masteryEvidence: exercise.masteryEvidence
+        };
+      }
+    });
+  }
+
   private createReviewSubtaskTool(
     project: StoredFlowProject,
     publish: (type: ConstructFlowSessionEvent["type"]) => void
   ): ToolsInput[string] {
     return createTool({
       id: "review-subtask",
-      description: "Review a learner-authored subtask submission and mark it either done or needing more work with explicit evidence. Requires a current learner submission; agent-authored edits or verification commands are not learner evidence.",
+      description: `Review a learner-authored subtask submission and mark it either done or needing more work with explicit evidence. Requires a current learner submission; agent-authored edits or verification commands are not learner evidence. Optionally update concept Mastery only for concepts whose level is proven by the learner-authored diff or explanation. Mastery scale: ${flowMasteryRubricDescription}`,
       inputSchema: z.object({
         taskId: z.string().min(1),
         subtaskId: z.string().min(1),
         outcome: z.enum(["done", "needs-work"]),
         evidence: z.string().min(1).max(1_000),
-        nextInstructions: z.string().max(1_000).optional()
+        nextInstructions: z.string().max(1_000).optional(),
+        masteryUpdates: z.array(z.object({
+          conceptId: z.string().min(1),
+          masteryLevel: flowConceptMasterySchema,
+          masteryText: z.string().max(900).optional(),
+          masteryReason: z.string().min(1).max(700),
+          evidence: z.string().min(1).max(500)
+        })).max(8).optional().describe("Evidence-backed Mastery updates from this learner-authored subtask. Include only concepts genuinely proven by the submitted diff.")
       }).strict(),
       execute: async (toolInput) => {
         const task = findPracticeTask(project, toolInput.taskId);
@@ -1320,6 +1548,28 @@ export class ConstructFlowService {
           subtask.status = "needs-work";
           subtask.completedAt = undefined;
           task.status = "waiting";
+        }
+
+        if (toolInput.masteryUpdates?.length) {
+          const store = this.options.learningStore();
+          for (const update of toolInput.masteryUpdates) {
+            const conceptId = normalizeConceptId(update.conceptId, project);
+            const taskConceptIds = new Set([...(task.conceptIds ?? []), ...(task.introducedConceptIds ?? [])]);
+            if (!taskConceptIds.has(conceptId)) {
+              throw new Error(`Subtask review can only update Mastery for concepts attached to the task. ${conceptId} is not attached to task ${task.id}.`);
+            }
+            await applyConceptMasteryUpdate(project, store, {
+              conceptId,
+              masteryLevel: update.masteryLevel,
+              masteryText: update.masteryText,
+              masteryReason: update.masteryReason,
+              evidence: [update.evidence],
+              authoredBy: "learner",
+              agentContributionPercent: 0,
+              pathNodeId: task.pathNodeId,
+              taskId: task.id
+            }, now);
+          }
         }
 
         project.flow.updatedAt = now;
@@ -1412,6 +1662,16 @@ function findPracticeSubtask(task: ConstructFlowPracticeTask, subtaskId: string)
   return subtask;
 }
 
+function findConceptExercise(project: StoredFlowProject, exerciseId: string): ConstructFlowConceptExercise {
+  const exercise = project.flow.sessions
+    .flatMap((session) => session.conceptExercises ?? [])
+    .find((candidate) => candidate.id === exerciseId);
+  if (!exercise) {
+    throw new Error(`Unknown Flow concept exercise: ${exerciseId}`);
+  }
+  return exercise;
+}
+
 function requireLearnerSubmission(task: ConstructFlowPracticeTask, action: string): ConstructFlowTaskSubmission {
   const submission = task.submission;
   if (!submission || submission.authoredBy?.actor !== "learner") {
@@ -1467,6 +1727,68 @@ type ConceptHistoryEntry = NonNullable<KnowledgeBaseRecord["history"]>[number];
 type ConceptFieldChange = NonNullable<ConceptHistoryEntry["fieldChanges"]>[number];
 type ConceptHistoryProvenance = NonNullable<ConceptHistoryEntry["provenance"]>;
 
+type ConceptMasteryUpdate = {
+  conceptId: string;
+  masteryLevel: ConstructConceptMasteryLevel;
+  masteryText?: string;
+  masteryReason: string;
+  evidence: string[];
+  authoredBy: ConceptHistoryEntry["authoredBy"];
+  agentContributionPercent?: number;
+  pathNodeId?: string;
+  taskId?: string;
+};
+
+async function applyConceptMasteryUpdate(
+  project: StoredFlowProject,
+  store: ConstructLearningStore,
+  update: ConceptMasteryUpdate,
+  updatedAt: string
+): Promise<KnowledgeBaseRecord> {
+  const state = await store.getState();
+  const conceptId = normalizeConceptId(update.conceptId, project);
+  const existing = findKnowledgeConceptById(Object.values(state.knowledgeBase.concepts), conceptId);
+  if (!existing) {
+    throw new Error(`Concept with ID ${conceptId} not found in the learner's global concepts.`);
+  }
+  const previousMasteryLevel = masteryLevelForConcept(existing);
+  const masteryLevel = normalizeMasteryLevel(update.masteryLevel);
+  const masteryText = normalizeMasteryText(masteryLevel, update.masteryText);
+  const updatedRecord: KnowledgeBaseRecord = {
+    ...existing,
+    masteryLevel,
+    masteryText,
+    masteryReason: update.masteryReason,
+    masteryEvidence: update.evidence,
+    masteryUpdatedAt: updatedAt,
+    lastChangeReason: update.masteryReason,
+    learnerEvidence: update.evidence,
+    authoredBy: update.authoredBy,
+    agentContributionPercent: update.agentContributionPercent ?? existing.agentContributionPercent,
+    lastPracticedAt: updatedAt,
+    lastModifiedAt: updatedAt
+  };
+  const fieldChanges = conceptFieldChanges(existing, updatedRecord, ["masteryLevel", "masteryText", "masteryReason", "masteryEvidence", "learnerEvidence", "lastPracticedAt"]);
+  const historyEntry = createConceptHistoryEntry({
+    kind: "practiced",
+    reason: update.masteryReason,
+    evidence: update.evidence,
+    changedFields: fieldChanges.map((change) => change.field),
+    fieldChanges,
+    provenance: createConceptHistoryProvenance(project, conceptId, update.pathNodeId, update.taskId),
+    masteryLevel,
+    masteryText,
+    masteryReason: update.masteryReason,
+    masteryDirection: masteryDirection(previousMasteryLevel, masteryLevel),
+    authoredBy: update.authoredBy,
+    agentContributionPercent: update.agentContributionPercent,
+    createdAt: updatedAt
+  });
+  updatedRecord.history = appendConceptHistory(existing.history, historyEntry);
+  await store.saveKnowledgeConcept(updatedRecord);
+  return updatedRecord;
+}
+
 function createConceptHistoryEntry(input: {
   kind: ConceptHistoryEntry["kind"];
   reason: string;
@@ -1476,6 +1798,10 @@ function createConceptHistoryEntry(input: {
   provenance?: ConceptHistoryProvenance;
   confidence?: ConstructConceptConfidence;
   confidenceReason?: string;
+  masteryLevel?: ConstructConceptMasteryLevel;
+  masteryText?: string;
+  masteryReason?: string;
+  masteryDirection?: ConceptHistoryEntry["masteryDirection"];
   authoredBy?: ConceptHistoryEntry["authoredBy"];
   agentContributionPercent?: number;
   createdAt: string;
@@ -1490,6 +1816,10 @@ function createConceptHistoryEntry(input: {
     provenance: input.provenance,
     confidence: input.confidence,
     confidenceReason: input.confidenceReason,
+    masteryLevel: input.masteryLevel,
+    masteryText: input.masteryText,
+    masteryReason: input.masteryReason,
+    masteryDirection: input.masteryDirection,
     authoredBy: input.authoredBy,
     agentContributionPercent: input.agentContributionPercent,
     createdAt: input.createdAt
@@ -1513,6 +1843,10 @@ function introducedConceptFields(record: KnowledgeBaseRecord): string[] {
     "relatedConcepts",
     "confidence",
     "confidenceReason",
+    "masteryLevel",
+    "masteryText",
+    "masteryReason",
+    "masteryEvidence",
     "authoredBy",
     "agentContributionPercent"
   ].filter((field) => conceptAuditValue(record, field) !== undefined);
@@ -1528,6 +1862,10 @@ function conceptPatchFields(input: Record<string, unknown>): string[] {
     "relatedConcepts",
     "confidence",
     "confidenceReason",
+    "masteryLevel",
+    "masteryText",
+    "masteryReason",
+    "masteryEvidence",
     "authoredBy",
     "agentContributionPercent"
   ].filter((field) => input[field] !== undefined);
@@ -1562,6 +1900,12 @@ function conceptAuditValue(record: KnowledgeBaseRecord, field: string): unknown 
   if (field === "relatedConcepts") return record.relatedConcepts;
   if (field === "confidence") return record.confidence;
   if (field === "confidenceReason") return record.confidenceReason;
+  if (field === "masteryLevel") return record.masteryLevel;
+  if (field === "masteryText") return record.masteryText;
+  if (field === "masteryReason") return record.masteryReason;
+  if (field === "masteryEvidence") return record.masteryEvidence;
+  if (field === "lastPracticedAt") return record.lastPracticedAt;
+  if (field === "learnerEvidence") return record.learnerEvidence;
   if (field === "authoredBy") return record.authoredBy;
   if (field === "agentContributionPercent") return record.agentContributionPercent;
   return undefined;
@@ -1581,6 +1925,54 @@ function formatConceptAuditValue(value: unknown): string | undefined {
   const normalized = text.trim();
   if (!normalized) return undefined;
   return normalized.length > 900 ? `${normalized.slice(0, 900)}...` : normalized;
+}
+
+function normalizeMasteryLevel(value: unknown): ConstructConceptMasteryLevel {
+  if (value === 0 || value === 1 || value === 2 || value === 3 || value === 4 || value === 5) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const numeric = Number(value);
+    if (numeric === 0 || numeric === 1 || numeric === 2 || numeric === 3 || numeric === 4 || numeric === 5) {
+      return numeric;
+    }
+  }
+  return 0;
+}
+
+function normalizeMasteryText(level: ConstructConceptMasteryLevel, text: string | undefined): string {
+  const trimmed = text?.trim();
+  return trimmed || conceptMasteryRubricForLevel(level).text;
+}
+
+function normalizeMasteryReason(reason: string | undefined, level: ConstructConceptMasteryLevel): string | undefined {
+  const trimmed = reason?.trim();
+  if (trimmed) return trimmed;
+  return level === 0 ? "Concept introduced or refreshed; no learner-owned application evidence yet." : undefined;
+}
+
+function masteryLevelForConcept(concept: KnowledgeBaseRecord): ConstructConceptMasteryLevel {
+  if (concept.masteryLevel !== undefined) return normalizeMasteryLevel(concept.masteryLevel);
+  return masteryLevelFromConfidence(concept.confidence);
+}
+
+function masteryLevelFromConfidence(confidence: ConstructConceptConfidence | undefined): ConstructConceptMasteryLevel {
+  if (confidence === "applying") return 3;
+  if (confidence === "solid" || confidence === "strong") return 4;
+  if (confidence === "fluent" || confidence === "teaching") return 5;
+  if (confidence === "practicing" || confidence === "emerging") return 2;
+  if (confidence === "confused" || confidence === "fragile" || confidence === "weak") return 1;
+  return 0;
+}
+
+function masteryDirection(
+  previous: ConstructConceptMasteryLevel | number | undefined,
+  next: ConstructConceptMasteryLevel | number | undefined
+): ConceptHistoryEntry["masteryDirection"] {
+  const previousLevel = previous === undefined ? undefined : normalizeMasteryLevel(previous);
+  const nextLevel = next === undefined ? undefined : normalizeMasteryLevel(next);
+  if (previousLevel === undefined || nextLevel === undefined || previousLevel === nextLevel) return "unchanged";
+  return nextLevel > previousLevel ? "increased" : "decreased";
 }
 
 function createConceptHistoryProvenance(
@@ -1651,11 +2043,15 @@ function conceptSearchHaystack(concept: KnowledgeBaseRecord): string {
     concept.technology,
     concept.confidence,
     concept.confidenceReason,
+    concept.masteryLevel,
+    concept.masteryText,
+    concept.masteryReason,
     concept.lastChangeReason,
     ...(concept.tags ?? []),
     ...(concept.relatedConcepts ?? []),
     ...(concept.examples ?? []),
-    ...(concept.learnerEvidence ?? [])
+    ...(concept.learnerEvidence ?? []),
+    ...(concept.masteryEvidence ?? [])
   ].filter(Boolean).join("\n");
 }
 
@@ -1669,6 +2065,11 @@ function serializeConceptForAgent(concept: KnowledgeBaseRecord, includeContent: 
     summary: concept.summary,
     confidence: concept.confidence,
     confidenceReason: concept.confidenceReason,
+    masteryLevel: masteryLevelForConcept(concept),
+    masteryText: concept.masteryText ?? conceptMasteryRubricForLevel(masteryLevelForConcept(concept)).text,
+    masteryReason: concept.masteryReason,
+    masteryEvidence: concept.masteryEvidence,
+    masteryUpdatedAt: concept.masteryUpdatedAt,
     learnerEvidence: concept.learnerEvidence,
     lastChangeReason: concept.lastChangeReason,
     authoredBy: concept.authoredBy,
@@ -1688,6 +2089,20 @@ function serializeConceptForAgent(concept: KnowledgeBaseRecord, includeContent: 
     examples: concept.examples,
     docs: concept.docs
   };
+}
+
+function normalizeExerciseSourceText(sourceText: string | undefined, concepts: KnowledgeBaseRecord[]): string {
+  const explicit = sourceText?.trim();
+  if (explicit) return explicit;
+  return concepts
+    .map((concept) => [
+      `${concept.title} (${concept.id})`,
+      concept.content || concept.summary,
+      concept.examples?.length ? `Examples:\n${concept.examples.slice(0, 2).join("\n\n")}` : null
+    ].filter(Boolean).join("\n"))
+    .join("\n\n---\n\n")
+    .trim()
+    .slice(0, 2_000);
 }
 
 function normalizeLearnerReadiness(
@@ -1801,13 +2216,22 @@ function assertPreparedFilesLeaveLearnerWork(toolInput: {
 function assertTaskConceptReadiness(
   introducedConceptIds: string[],
   conceptRecords: KnowledgeBaseRecord[],
-  learnerReadiness: NonNullable<ConstructFlowPracticeTask["learnerReadiness"]>
+  learnerReadiness: NonNullable<ConstructFlowPracticeTask["learnerReadiness"]>,
+  requiredMasteryLevel: ConstructConceptMasteryLevel
 ): void {
-  const unknownConcepts = conceptRecords
-    .filter((concept) => !concept.confidence || concept.confidence === "unknown")
-    .map((concept) => concept.id);
-  if (unknownConcepts.length > 0) {
-    throw new Error(`Practice tasks require introduced concepts with explicit confidence, not unknown records: ${unknownConcepts.join(", ")}.`);
+  const unreadyConcepts = conceptRecords
+    .map((concept) => ({
+      id: concept.id,
+      level: masteryLevelForConcept(concept),
+      title: concept.title
+    }))
+    .filter((concept) => concept.level < requiredMasteryLevel);
+  if (unreadyConcepts.length > 0) {
+    throw new Error([
+      `Practice tasks require every introduced concept to be Mastery Level ${requiredMasteryLevel} or higher.`,
+      `Not ready: ${unreadyConcepts.map((concept) => `${concept.id} is Level ${concept.level}`).join(", ")}.`,
+      "Keep teaching with Socratic explanation, ask a tracked question, or create a concept-exercise until the learner demonstrates Level 3 readiness."
+    ].join(" "));
   }
 
   const missingReadiness = introducedConceptIds.filter((conceptId) => (
@@ -2438,9 +2862,27 @@ function summarizeToolInput(name: string, input: unknown): string | undefined {
       title: source.title,
       pathNodeId: source.pathNodeId,
       introducedConceptIds: source.introducedConceptIds,
+      requiredMasteryLevel: source.requiredMasteryLevel,
       learnerReadiness: source.learnerReadiness,
       taskFiles: source.taskFiles,
       promptPreview: summarizeTextField(source.prompt, flowTranscriptMaxToolContentChars)
+    });
+  }
+  if (normalized === "conceptexercise") {
+    return stringifyModelObject({
+      title: source.title,
+      conceptIds: source.conceptIds,
+      masteryGoalLevel: source.masteryGoalLevel,
+      successCriteria: source.successCriteria,
+      promptPreview: summarizeTextField(source.prompt, flowTranscriptMaxToolContentChars)
+    });
+  }
+  if (normalized === "reviewconceptexercise") {
+    return stringifyModelObject({
+      exerciseId: source.exerciseId,
+      outcome: source.outcome,
+      masteryUpdates: source.masteryUpdates,
+      answerPreview: summarizeTextField(source.learnerAnswer, flowTranscriptMaxToolContentChars)
     });
   }
   return stringifyModelObject(pruneModelObject(source));
@@ -2696,6 +3138,7 @@ function buildMainPrompt(
         status: task.status,
         conceptIds: task.conceptIds,
         introducedConceptIds: task.introducedConceptIds,
+        requiredMasteryLevel: task.requiredMasteryLevel,
         successCriteria: task.successCriteria,
         subtasks: task.subtasks?.map((subtask) => ({
           id: subtask.id,
@@ -2708,6 +3151,22 @@ function buildMainPrompt(
         })),
         guidance: task.guidance,
         recentMessages: task.messages?.slice(-4)
+      })), null, 2),
+    "",
+    "Active concept exercises:",
+    JSON.stringify(project.flow.sessions
+      .flatMap((session) => session.conceptExercises ?? [])
+      .filter((exercise) => exercise.status === "waiting" || exercise.status === "answered")
+      .map((exercise) => ({
+        id: exercise.id,
+        title: exercise.title,
+        status: exercise.status,
+        conceptIds: exercise.conceptIds,
+        masteryGoalLevel: exercise.masteryGoalLevel,
+        successCriteria: exercise.successCriteria,
+        expectedSignals: exercise.expectedSignals,
+        learnerAnswer: exercise.learnerAnswer,
+        reviewNote: exercise.reviewNote
       })), null, 2),
     "",
     "Flow Memory:",
@@ -2730,6 +3189,11 @@ function buildMainPrompt(
       examples: c.examples,
       confidence: c.confidence,
       confidenceReason: c.confidenceReason,
+      masteryLevel: masteryLevelForConcept(c),
+      masteryText: c.masteryText ?? conceptMasteryRubricForLevel(masteryLevelForConcept(c)).text,
+      masteryReason: c.masteryReason,
+      masteryEvidence: c.masteryEvidence,
+      masteryUpdatedAt: c.masteryUpdatedAt,
       learnerEvidence: c.learnerEvidence,
       lastChangeReason: c.lastChangeReason,
       authoredBy: c.authoredBy,
@@ -2745,7 +3209,7 @@ function buildMainPrompt(
     input.questionResponse ? [
       "",
       "Question-response guard:",
-      "A tracked question answer is learner-model context only. It is not task completion evidence, does not mean a demo compiled or ran, and must not upgrade concept confidence unless the answer itself demonstrates understanding."
+      "A tracked question answer is learner-model or concept-exercise context only. It is not task completion evidence, does not mean a demo compiled or ran, and must not upgrade Mastery unless the answer itself demonstrates the rubric level."
     ].join("\n") : null,
     input.taskSubmission ? [
       "",
@@ -2985,6 +3449,8 @@ const taskReviewProtocolToolNames = [
 const mentorFlowToolNames = [
   "plan-learning-path",
   "practice-task",
+  "concept-exercise",
+  "review-concept-exercise",
   "suggest-existing-concept",
   "fetch-concepts",
   "add-concept",
@@ -3285,6 +3751,13 @@ function cloneSession(session: ConstructFlowSession): ConstructFlowSession {
       preparedFiles: task.preparedFiles?.map((file) => ({ ...file, authoredBy: { ...file.authoredBy } })),
       authoredBy: task.authoredBy ? { ...task.authoredBy } : undefined,
       submission: task.submission ? { ...task.submission, touchedFiles: [...task.submission.touchedFiles], authoredBy: task.submission.authoredBy ? { ...task.submission.authoredBy } : undefined } : undefined
+    })),
+    conceptExercises: session.conceptExercises?.map((exercise) => ({
+      ...exercise,
+      conceptIds: [...exercise.conceptIds],
+      successCriteria: exercise.successCriteria ? [...exercise.successCriteria] : undefined,
+      expectedSignals: exercise.expectedSignals ? [...exercise.expectedSignals] : undefined,
+      masteryEvidence: exercise.masteryEvidence?.map((item) => ({ ...item }))
     }))
   };
 }
@@ -3321,31 +3794,31 @@ Concept-first tutoring:
 - Before explaining a topic, check the global Concepts in the prompt.
 - Use fetch-concepts when you need exact concept content, examples, evidence, confidence, or related concepts. Use exact conceptIds when you know them and query search when you do not. Do not guess concept details from memory.
 - Before modifying or removing a concept, fetch it first unless the full current record is already visible in the prompt or current tool output.
-- If an existing concept covers the need, link it in chat with the inline markdown tag [[concept:concept.id|Concept title]] and briefly say why it is relevant instead of re-explaining.
-- If the learner asks again, is confused, or needs help applying the concept, then explain in chat.
-- Use ask-question when the learner's answer improves the learner model or is required to choose the next step. Do not use ask-question for comprehension quizzes, recap prompts, or questions whose answer you can explain directly.
+- If an existing concept covers the need, link it in chat with the inline markdown tag [[concept:concept.id|Concept title]] and briefly say why it is relevant, then teach from it if the learner's Mastery is below the level needed for the next step.
+- Introducing a concept is only the start of the teaching journey. After add-concept/suggest-existing-concept, teach the concept with a small mental model, examples, contrasts, and Socratic checks. Do not jump straight from "introduced" to a project task.
+- Use ask-question for Socratic checks when the learner's answer is needed as Mastery evidence. Ask focused questions that reveal their model, not schooly recap prompts. After ask-question, stop and wait.
 - Normal chat is for ideas, mental models, questions, and review. Do not put implementation code blocks or broad code snippets in normal chat unless the learner has already attempted the shape or explicitly asks for the code.
-- Only create a practice-task after the relevant concepts have been introduced and recorded with add-concept, modify-concept, or suggest-existing-concept.
-- Every practice-task must include introducedConceptIds. Those are the exact concepts the learner has already seen before the task begins.
+- Only create a practice-task after every relevant concept is recorded at Mastery Level 3 or higher. If any required concept is Level 0, 1, or 2, the correct next move is more explanation, ask-question, or concept-exercise, not a task.
+- Every practice-task must include introducedConceptIds and requiredMasteryLevel. Those are the exact concepts and minimum Mastery level the task tests.
 - Every practice-task must include learnerReadiness evidence for every introducedConceptId. This evidence must come from the learner's own chat answer, plan, explanation, or submitted diff. Agent-written demos, prepared files, terminal output, and "the demo ran" are not learner readiness.
-- If no concept is introduced yet, teach first. Explain the idea, record the concept, get observable learner understanding when needed, then create the task.
+- concept-exercise is for practicing a concept before roadmap/project tasks. Exercises must be answerable from the concept text/sourceText directly and should usually target Mastery 1-3. After creating an exercise, use ask-question for the learner's answer and stop. When they answer, use review-concept-exercise and update only the concepts proven by that answer.
+- If no concept is introduced yet, teach first. Explain the idea, record the concept at Mastery Level 0 unless there is learner-owned evidence for more, get observable learner understanding with questions/exercises, then create the task only after Level 3 readiness.
 - If the learner switches languages or says they do not know the current language, stop using stale tasks/path nodes from the old language. Patch learner.md, revise the path, teach the new language prerequisites, and only then create tasks in the new language.
 
 When you teach or the learner demonstrates understanding, update Concepts with evidence:
-- After explaining something new, use add-concept or modify-concept to record it with reason and evidence.
-- After a practice task is submitted and reviewed, use modify-concept to update the learner's learning state only when the diff or chat proves it.
+- After explaining something new, use add-concept or modify-concept to record it at Mastery Level 0 unless the learner's own answer already proves a higher level. Explanation by itself does not raise Mastery.
+- Learner answers to Socratic questions and reviewed concept-exercises can raise, keep, or lower Mastery. Use review-concept-exercise or modify-concept only from the learner's answer evidence.
+- After a practice task is submitted and reviewed, update concept Mastery only when the learner-authored diff or explanation proves it. You may use review-subtask.masteryUpdates for concepts attached to that task, or modify-concept when a separate concept update is clearer.
 - Always set concept language using the enum swift, python, typescript, javascript, cpp, or unknown. Set technology when there is a clear framework, platform, or API such as SwiftUI, OpenGL, GLFW, React, or Node.
-- Use the concept confidence scale precisely:
-  unknown = no reliable evidence yet;
-  introduced = the learner has seen the idea but has not applied it;
-  confused = the learner is actively misunderstanding or mixing it up;
-  fragile = the learner can follow with support but not independently;
-  practicing = the learner is attempting it with guidance;
-  applying = the learner used it in their own work with some review needed;
-  solid = the learner can explain and use it reliably;
-  fluent = the learner can transfer it across nearby problems;
-  teaching = the learner can explain or debug it for someone else.
-- Every confidence value other than unknown requires confidenceReason. Do not upgrade or downgrade without exact evidence, and put the why in reason plus confidenceReason.
+- Use the Mastery scale precisely:
+  Level 0 = the learner has only been introduced to the name or has no reliable understanding yet;
+  Level 1 = the learner can identify some parts or vocabulary, but is still extremely new;
+  Level 2 = the learner can explain the basic idea with support and answer small guided checks;
+  Level 3 = the learner can reason about the concept in their own words and is ready for scoped tasks that test it;
+  Level 4 = the learner can use the concept in their own work with only light review;
+  Level 5 = the learner can transfer, debug, or teach the concept across nearby problems.
+- Every masteryLevel above 0 requires masteryReason. Do not upgrade or downgrade without exact learner-owned evidence, and put the why in reason plus masteryReason. It is valid to decrease Mastery when a learner answer or task diff reveals confusion.
+- Keep confidence only as compatibility metadata. Mastery is the source of truth for task readiness.
 - Use dot-notated hierarchical IDs for reusable concepts (e.g. 'typescript.types.interfaces', 'react.hooks.state', 'swiftui.core-structure'). Max 3 levels deep (domain.area.topic).
 - Do not include product/project/app names in concept IDs. For a notes app, use 'swiftui.core-structure', not 'swiftui.notesapp.core-structure'.
 - Do not create smaller and smaller concepts. Group related sub-concepts inside parent concepts logically.
@@ -3384,7 +3857,7 @@ If you need learner input, decision, choice, or response, you MUST use the ask-q
 
 On a new project kickoff (the prompt labels this as "New project kickoff:"), inspect the workspace or Flow Memory if useful. If research is not complete, decide naturally whether to ask the learner to research first, start without research, or clarify project direction with ask-question. Do not wait for a greeting before beginning, and do not create practice tasks before learner profiling and plan-learning-path unless the learner explicitly asks to skip planning.
 For an ordinary "Latest learner message:" inside an existing project, a greeting or casual nudge is not a project kickoff. Do not inspect the workspace, run tools, create tasks, or continue task automation unless the learner asks to continue, review, fix, create, scaffold, or do project work. Reply briefly and wait for a substantive next action.
-When the latest input is "Latest learner answer to tracked question:", you MUST actively evaluate their response, update the relevant concept confidence using modify-concept/add-concept, and update learner.md. Since this response means the learner is ready to proceed, immediately resume the teaching progression, explain the next concept, inspect the workspace, or create the next practice-task. Do not reply passively or wait for further input.
+When the latest input is "Latest learner answer to tracked question:", you MUST actively evaluate their response, update the relevant concept Mastery using review-concept-exercise or modify-concept when the answer proves a level change, and update learner.md. Since this response means the learner is ready to proceed, immediately resume the teaching progression, explain the next concept, create another concept-exercise, inspect the workspace, or create the next practice-task only if all required concepts are Level 3 or higher. Do not reply passively or wait for further input.
 Do not treat a tracked question answer as evidence that the learner completed an unrelated task, compiled a demo, or understood code that Flow wrote. Only task submissions and the learner's own explanation/practice can count as task or concept evidence.
 
 Do not end with a prose choice question such as "want to build X next?" or "your call". If the learner must choose, use ask-question. If the next step is obvious and concept prerequisites are met, create a practice-task instead of asking permission.
