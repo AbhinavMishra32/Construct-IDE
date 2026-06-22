@@ -18,9 +18,10 @@ import {
   type SlotTab
 } from "@opaline/ui";
 
-import type { ConstructAgentContextWindow, ConstructConceptLanguage } from "../../../shared/constructLearning";
+import { CONSTRUCT_CONCEPT_MASTERY_RUBRIC, conceptMasteryRubricForLevel, type ConstructAgentContextWindow, type ConstructConceptLanguage, type ConstructConceptMasteryLevel } from "../../../shared/constructLearning";
 import type {
   ConstructFlowAction,
+  ConstructFlowConceptExercise,
   ConstructFlowPathNode,
   ConstructFlowMemoryPatchResult,
   ConstructFlowTaskGuidance,
@@ -764,6 +765,11 @@ type ConceptPayload = {
   examples: string[];
   relatedConcepts?: string[];
   confidence?: string;
+  masteryLevel?: ConstructConceptMasteryLevel;
+  masteryText?: string;
+  masteryReason?: string;
+  masteryEvidence?: string[];
+  masteryUpdatedAt?: string;
   reason?: string;
   confidenceReason?: string;
   evidence: string[];
@@ -950,6 +956,7 @@ function FlowAgentPanel({
   const flowConcepts = useMemo(() => collectFlowConcepts(mergedSessions), [mergedSessions]);
   const conceptMutations = useMemo(() => collectConceptMutations(mergedSessions), [mergedSessions]);
   const flowTasks = useMemo(() => mergedSessions.flatMap((session) => session.practiceTasks), [mergedSessions]);
+  const flowExercises = useMemo(() => mergedSessions.flatMap((session) => session.conceptExercises ?? []), [mergedSessions]);
   const pathNodes = useMemo(() => [...(project.flow.pathNodes ?? [])].sort((a, b) => a.order - b.order), [project.flow.pathNodes]);
   const currentPathNode = useMemo(() => currentFlowPathNode(pathNodes, project.flow.currentPathNodeId), [pathNodes, project.flow.currentPathNodeId]);
   const activeTask = useMemo(() => findActiveTaskForNode(flowTasks, currentPathNode?.id), [currentPathNode?.id, flowTasks]);
@@ -1117,6 +1124,7 @@ function FlowAgentPanel({
           pathNodes={pathNodes}
           currentPathNode={currentPathNode}
           tasks={flowTasks}
+          exercises={flowExercises}
           concepts={flowConcepts}
           theme={theme}
           onOpenConcept={onOpenConceptDetails}
@@ -1626,6 +1634,7 @@ function FlowProjectDataPanel({
   pathNodes,
   currentPathNode,
   tasks,
+  exercises,
   concepts,
   theme,
   onOpenConcept,
@@ -1637,6 +1646,7 @@ function FlowProjectDataPanel({
   pathNodes: ConstructFlowPathNode[];
   currentPathNode?: ConstructFlowPathNode;
   tasks: ConstructFlowPracticeTask[];
+  exercises: ConstructFlowConceptExercise[];
   concepts: ConceptCard[];
   theme: "light" | "dark" | "system";
   onOpenConcept: (concept: ConceptCard) => void;
@@ -1652,6 +1662,8 @@ function FlowProjectDataPanel({
   const currentConcepts = currentPathNode?.concepts?.length
     ? currentPathNode.concepts.map((conceptId) => conceptsById.get(conceptId) ?? buildInlineConceptPlaceholder(conceptId))
     : concepts;
+  const [masteryOpen, setMasteryOpen] = useState(false);
+  const masteryReadyCount = currentConcepts.filter((concept) => conceptMasteryLevel(concept) >= 3).length;
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
       <section className="flex flex-col gap-5 p-4">
@@ -1706,6 +1718,33 @@ function FlowProjectDataPanel({
         </section>
 
         <section className="flex flex-col gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-auto w-full justify-between rounded-[8px] px-3 py-2 text-left"
+            onClick={() => setMasteryOpen(true)}
+          >
+            <span className="flex min-w-0 items-center gap-2">
+              <GaugeIcon data-icon="inline-start" />
+              <span className="min-w-0 truncate">Mastery</span>
+            </span>
+            <span className="flex shrink-0 items-center gap-1.5">
+              <Badge variant="secondary">L3+ {masteryReadyCount}/{currentConcepts.length}</Badge>
+              <ChevronRightIcon data-icon="inline-end" />
+            </span>
+          </Button>
+          <FlowMasteryDialog
+            open={masteryOpen}
+            onOpenChange={setMasteryOpen}
+            concepts={currentConcepts}
+            tasks={tasks}
+            exercises={exercises}
+            onOpenConcept={onOpenConcept}
+          />
+        </section>
+
+        <section className="flex flex-col gap-2">
           <SectionTitle icon={BookOpenIcon} title="Concepts" />
           {currentConcepts.length ? (
             <div className="grid gap-2">
@@ -1731,6 +1770,197 @@ function FlowProjectDataPanel({
       </section>
     </div>
   );
+}
+
+function FlowMasteryDialog({
+  open,
+  onOpenChange,
+  concepts,
+  tasks,
+  exercises,
+  onOpenConcept
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  concepts: ConceptCard[];
+  tasks: ConstructFlowPracticeTask[];
+  exercises: ConstructFlowConceptExercise[];
+  onOpenConcept: (concept: ConceptCard) => void;
+}) {
+  const rows = concepts
+    .map((concept) => buildMasteryRow(concept, tasks, exercises))
+    .sort((a, b) => a.level - b.level || a.concept.title.localeCompare(b.concept.title));
+  const readyCount = rows.filter((row) => row.level >= 3).length;
+  const average = rows.length
+    ? rows.reduce((sum, row) => sum + row.level, 0) / rows.length
+    : 0;
+
+  return (
+    <ShadcnDialog open={open} onOpenChange={onOpenChange}>
+      <ShadcnDialogContent className="flex h-[min(82vh,46rem)] w-[min(58rem,calc(100vw-2rem))] max-w-none flex-col overflow-hidden rounded-[10px] border border-border/70 bg-background p-0 shadow-2xl">
+        <ShadcnDialogHeader className="shrink-0 border-b px-4 py-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <ShadcnDialogTitle>Mastery</ShadcnDialogTitle>
+              <ShadcnDialogDescription className="mt-1 truncate text-xs">
+                Concept readiness and timestamped level changes
+              </ShadcnDialogDescription>
+            </div>
+            <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
+              <Badge variant="secondary">L3+ {readyCount}/{rows.length}</Badge>
+              <Badge variant="outline">Avg {average.toFixed(1)}</Badge>
+            </div>
+          </div>
+        </ShadcnDialogHeader>
+
+        <div className="grid shrink-0 grid-cols-6 border-b bg-muted/20 px-4 py-3">
+          {CONSTRUCT_CONCEPT_MASTERY_RUBRIC.map((level) => (
+            <div key={level.level} className="min-w-0 border-r px-2 last:border-r-0">
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-semibold">L{level.level}</span>
+                {level.taskReady ? <Badge variant="secondary">Task</Badge> : null}
+              </div>
+              <p className="mt-1 line-clamp-2 text-[10px] leading-4 text-muted-foreground">{level.title}</p>
+            </div>
+          ))}
+        </div>
+
+        <ScrollArea className="min-h-0 flex-1">
+          <div className="flex flex-col divide-y">
+            {rows.length ? rows.map((row) => (
+              <FlowMasteryRowView
+                key={row.concept.id}
+                row={row}
+                onOpenConcept={() => onOpenConcept(row.concept)}
+              />
+            )) : (
+              <div className="p-8 text-center text-sm text-muted-foreground">
+                No concept mastery has been recorded yet.
+              </div>
+            )}
+          </div>
+        </ScrollArea>
+      </ShadcnDialogContent>
+    </ShadcnDialog>
+  );
+}
+
+type FlowMasteryRow = {
+  concept: ConceptCard;
+  level: ConstructConceptMasteryLevel;
+  rubric: ReturnType<typeof conceptMasteryRubricForLevel>;
+  history: NonNullable<ConceptCard["history"]>;
+  taskCount: number;
+  exerciseCount: number;
+};
+
+function buildMasteryRow(
+  concept: ConceptCard,
+  tasks: ConstructFlowPracticeTask[],
+  exercises: ConstructFlowConceptExercise[]
+): FlowMasteryRow {
+  const level = conceptMasteryLevel(concept);
+  return {
+    concept,
+    level,
+    rubric: conceptMasteryRubricForLevel(level),
+    history: conceptMasteryHistory(concept),
+    taskCount: tasks.filter((task) => taskIntroducedConceptIds(task).includes(concept.id)).length,
+    exerciseCount: exercises.filter((exercise) => exercise.conceptIds.includes(concept.id)).length
+  };
+}
+
+function FlowMasteryRowView({
+  row,
+  onOpenConcept
+}: {
+  row: FlowMasteryRow;
+  onOpenConcept: () => void;
+}) {
+  const latest = row.history.at(-1);
+  return (
+    <div className="grid gap-3 px-4 py-3 md:grid-cols-[minmax(0,1fr)_minmax(18rem,1.1fr)]">
+      <div className="min-w-0">
+        <div className="flex min-w-0 items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex min-w-0 items-center gap-2">
+              <Badge variant={row.level >= 3 ? "secondary" : "outline"}>L{row.level}</Badge>
+              <strong className="truncate text-sm">{row.concept.title}</strong>
+            </div>
+            <p className="mt-1 truncate font-mono text-[10px] text-muted-foreground">{row.concept.id}</p>
+          </div>
+          <Button size="sm" variant="ghost" onClick={onOpenConcept}>Open</Button>
+        </div>
+        <p className="mt-2 text-xs leading-5 text-muted-foreground">{row.concept.masteryText ?? row.rubric.text}</p>
+        {row.concept.masteryReason || latest?.masteryReason ? (
+          <p className="mt-2 text-xs leading-5">{row.concept.masteryReason ?? latest?.masteryReason}</p>
+        ) : null}
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          <Badge variant="outline">{row.rubric.title}</Badge>
+          <Badge variant="outline">{row.taskCount} task{row.taskCount === 1 ? "" : "s"}</Badge>
+          <Badge variant="outline">{row.exerciseCount} exercise{row.exerciseCount === 1 ? "" : "s"}</Badge>
+        </div>
+      </div>
+
+      <div className="min-w-0 rounded-[8px] border bg-muted/15">
+        {row.history.length ? (
+          <div className="flex max-h-44 flex-col overflow-y-auto p-2">
+            {[...row.history].reverse().map((event) => (
+              <div key={event.id} className="grid gap-1 border-b py-2 last:border-b-0">
+                <div className="flex min-w-0 items-center justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <Badge variant={masteryDirectionBadgeVariant(event.masteryDirection)}>
+                      {event.masteryDirection ?? "recorded"}
+                    </Badge>
+                    {event.masteryLevel !== undefined ? <Badge variant="outline">L{event.masteryLevel}</Badge> : null}
+                  </div>
+                  <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+                    {formatMasteryTimestamp(event.createdAt)}
+                  </span>
+                </div>
+                <p className="text-xs leading-5 text-muted-foreground">{event.masteryReason ?? event.reason}</p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="p-3 text-xs text-muted-foreground">No level-change history yet.</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function conceptMasteryLevel(concept: ConceptCard): ConstructConceptMasteryLevel {
+  const explicit = readConceptMasteryLevel(concept.masteryLevel);
+  if (explicit !== undefined) return explicit;
+  if (concept.confidence === "applying") return 3;
+  if (concept.confidence === "solid" || concept.confidence === "strong") return 4;
+  if (concept.confidence === "fluent" || concept.confidence === "teaching") return 5;
+  if (concept.confidence === "practicing" || concept.confidence === "emerging") return 2;
+  if (concept.confidence === "confused" || concept.confidence === "fragile" || concept.confidence === "weak") return 1;
+  return 0;
+}
+
+function conceptMasteryHistory(concept: ConceptCard): NonNullable<ConceptCard["history"]> {
+  return (concept.history ?? []).filter((event) => (
+    event.masteryLevel !== undefined
+    || event.masteryDirection !== undefined
+    || event.changedFields?.some((field) => field.startsWith("mastery"))
+    || event.fieldChanges?.some((change) => change.field.startsWith("mastery"))
+  ));
+}
+
+function masteryDirectionBadgeVariant(direction: string | undefined): "secondary" | "destructive" | "outline" {
+  if (direction === "increased") return "secondary";
+  if (direction === "decreased") return "destructive";
+  return "outline";
+}
+
+function formatMasteryTimestamp(value: string | undefined): string {
+  if (!value) return "No timestamp";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString();
 }
 
 function SectionTitle({ icon: Icon, title }: { icon: LucideIcon; title: string }) {
@@ -2951,6 +3181,15 @@ function readConceptPayload(input: unknown, outputPreview?: string): ConceptPayl
       ? readStringArray(conceptObj.relatedConcepts)
       : readStringArray(inputObj.relatedConcepts),
     confidence: readString(conceptObj.confidence) ?? readString(outputObj.nextConfidence) ?? readString(inputObj.confidence),
+    masteryLevel: readConceptMasteryLevel(conceptObj.masteryLevel) ?? readConceptMasteryLevel(outputObj.nextMasteryLevel) ?? readConceptMasteryLevel(outputObj.masteryLevel) ?? readConceptMasteryLevel(inputObj.masteryLevel),
+    masteryText: readString(conceptObj.masteryText) ?? readString(outputObj.masteryText) ?? readString(inputObj.masteryText),
+    masteryReason: readString(conceptObj.masteryReason) ?? readString(outputObj.masteryReason) ?? readString(inputObj.masteryReason),
+    masteryEvidence: readStringArray(conceptObj.masteryEvidence).length
+      ? readStringArray(conceptObj.masteryEvidence)
+      : readStringArray(inputObj.masteryEvidence).length
+        ? readStringArray(inputObj.masteryEvidence)
+        : readStringArray(outputObj.masteryEvidence),
+    masteryUpdatedAt: readString(conceptObj.masteryUpdatedAt) ?? readString(outputObj.masteryUpdatedAt),
     reason: readString(outputObj.reason) ?? readString(inputObj.reason) ?? readString(conceptObj.lastChangeReason),
     confidenceReason: readString(outputObj.confidenceReason) ?? readString(inputObj.confidenceReason) ?? readString(conceptObj.confidenceReason),
     evidence,
@@ -2976,6 +3215,7 @@ function buildConceptCardFromInput(input: ConceptPayload | Record<string, unknow
   const evidence = readStringArray((input as Record<string, unknown>).evidence);
   const learnerEvidence = readStringArray((input as Record<string, unknown>).learnerEvidence);
   const reason = readString((input as Record<string, unknown>).reason);
+  const masteryLevel = readConceptMasteryLevel((input as Record<string, unknown>).masteryLevel);
   const guideContent = content || [
     reason ? `Reason: ${reason}` : null,
     evidence.length ? `Evidence:\n${evidence.map((item) => `- ${item}`).join("\n")}` : null,
@@ -3007,6 +3247,11 @@ function buildConceptCardFromInput(input: ConceptPayload | Record<string, unknow
     relatedConcepts: readStringArray((input as Record<string, unknown>).relatedConcepts),
     confidence: readString((input as Record<string, unknown>).confidence),
     confidenceReason: readString((input as Record<string, unknown>).confidenceReason),
+    masteryLevel,
+    masteryText: readString((input as Record<string, unknown>).masteryText) ?? (masteryLevel !== undefined ? conceptMasteryRubricForLevel(masteryLevel).text : undefined),
+    masteryReason: readString((input as Record<string, unknown>).masteryReason),
+    masteryEvidence: readStringArray((input as Record<string, unknown>).masteryEvidence),
+    masteryUpdatedAt: readString((input as Record<string, unknown>).masteryUpdatedAt),
     learnerEvidence,
     lastChangeReason: readString((input as Record<string, unknown>).lastChangeReason) ?? reason,
     authoredBy: readString((input as Record<string, unknown>).authoredBy),
@@ -3035,6 +3280,11 @@ function mergeConceptCards(base: ConceptCard, overlay: ConceptCard): ConceptCard
     relatedConcepts: overlay.relatedConcepts?.length ? overlay.relatedConcepts : base.relatedConcepts,
     confidence: overlay.confidence || base.confidence,
     confidenceReason: overlay.confidenceReason || base.confidenceReason,
+    masteryLevel: overlay.masteryLevel ?? base.masteryLevel,
+    masteryText: overlay.masteryText || base.masteryText,
+    masteryReason: overlay.masteryReason || base.masteryReason,
+    masteryEvidence: overlay.masteryEvidence?.length ? overlay.masteryEvidence : base.masteryEvidence,
+    masteryUpdatedAt: overlay.masteryUpdatedAt || base.masteryUpdatedAt,
     learnerEvidence: overlay.learnerEvidence?.length ? overlay.learnerEvidence : base.learnerEvidence,
     lastChangeReason: overlay.lastChangeReason || base.lastChangeReason,
     authoredBy: overlay.authoredBy || base.authoredBy,
@@ -3063,6 +3313,26 @@ function readNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
+function readConceptMasteryLevel(value: unknown): ConstructConceptMasteryLevel | undefined {
+  if (value === 0 || value === 1 || value === 2 || value === 3 || value === 4 || value === 5) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const numeric = Number(value);
+    if (numeric === 0 || numeric === 1 || numeric === 2 || numeric === 3 || numeric === 4 || numeric === 5) {
+      return numeric;
+    }
+  }
+  return undefined;
+}
+
+function readMasteryDirection(value: unknown): "increased" | "decreased" | "unchanged" | undefined {
+  if (value === "increased" || value === "decreased" || value === "unchanged") {
+    return value;
+  }
+  return undefined;
+}
+
 function readConceptHistory(value: unknown): ConceptCard["history"] {
   if (!Array.isArray(value)) return undefined;
   return value.flatMap((item): NonNullable<ConceptCard["history"]> => {
@@ -3082,6 +3352,10 @@ function readConceptHistory(value: unknown): ConceptCard["history"] {
       provenance: readConceptHistoryProvenance(record.provenance),
       confidence: readString(record.confidence),
       confidenceReason: readString(record.confidenceReason),
+      masteryLevel: readConceptMasteryLevel(record.masteryLevel),
+      masteryText: readString(record.masteryText),
+      masteryReason: readString(record.masteryReason),
+      masteryDirection: readMasteryDirection(record.masteryDirection),
       authoredBy: readString(record.authoredBy),
       agentContributionPercent: readNumber(record.agentContributionPercent),
       createdAt
