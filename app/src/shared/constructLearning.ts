@@ -15,9 +15,68 @@ export const CONSTRUCT_CONCEPT_CONFIDENCE_LEVELS = [
 
 export type ConstructConceptConfidence = typeof CONSTRUCT_CONCEPT_CONFIDENCE_LEVELS[number];
 
+export const CONSTRUCT_CONCEPT_MASTERY_LEVELS = [0, 1, 2, 3, 4, 5] as const;
+
+export type ConstructConceptMasteryLevel = typeof CONSTRUCT_CONCEPT_MASTERY_LEVELS[number];
+
+export type ConstructConceptMasteryRubric = {
+  level: ConstructConceptMasteryLevel;
+  title: string;
+  text: string;
+  taskReady: boolean;
+};
+
+export const CONSTRUCT_CONCEPT_MASTERY_RUBRIC: ConstructConceptMasteryRubric[] = [
+  {
+    level: 0,
+    title: "Unseen",
+    text: "The learner has only been introduced to the name or has no reliable understanding yet.",
+    taskReady: false
+  },
+  {
+    level: 1,
+    title: "Recognizes Pieces",
+    text: "The learner can identify some parts or vocabulary, but still needs close explanation and examples.",
+    taskReady: false
+  },
+  {
+    level: 2,
+    title: "Guided Understanding",
+    text: "The learner can explain the basic idea with support and answer small checks, but cannot apply it independently yet.",
+    taskReady: false
+  },
+  {
+    level: 3,
+    title: "Practice Ready",
+    text: "The learner can reason about the concept in their own words and is ready for scoped tasks that test it.",
+    taskReady: true
+  },
+  {
+    level: 4,
+    title: "Applies Reliably",
+    text: "The learner can use the concept in their own work with only light review or edge-case guidance.",
+    taskReady: true
+  },
+  {
+    level: 5,
+    title: "Transfers and Teaches",
+    text: "The learner can transfer, debug, and explain the concept across nearby problems without hand-holding.",
+    taskReady: true
+  }
+];
+
+export function conceptMasteryRubricForLevel(level: ConstructConceptMasteryLevel | number | undefined): ConstructConceptMasteryRubric {
+  const normalized = CONSTRUCT_CONCEPT_MASTERY_LEVELS.includes(level as ConstructConceptMasteryLevel)
+    ? level as ConstructConceptMasteryLevel
+    : 0;
+  return CONSTRUCT_CONCEPT_MASTERY_RUBRIC.find((entry) => entry.level === normalized) ?? CONSTRUCT_CONCEPT_MASTERY_RUBRIC[0];
+}
+
 export type ConceptUnderstanding = {
   conceptId: string;
   confidence: ConstructConceptConfidence;
+  masteryLevel?: ConstructConceptMasteryLevel;
+  masteryText?: string;
   lastEvidenceAt?: string;
   notes?: string;
   projectIds: string[];
@@ -390,6 +449,11 @@ export type KnowledgeBaseRecord = {
   lastChangeReason?: string;
   learnerEvidence?: string[];
   confidenceReason?: string;
+  masteryLevel?: ConstructConceptMasteryLevel;
+  masteryText?: string;
+  masteryReason?: string;
+  masteryEvidence?: string[];
+  masteryUpdatedAt?: string;
   authoredBy?: "learner" | "agent" | "mixed" | "system";
   agentContributionPercent?: number;
   lastPracticedAt?: string;
@@ -418,6 +482,10 @@ export type KnowledgeBaseRecord = {
     };
     confidence?: ConstructConceptConfidence;
     confidenceReason?: string;
+    masteryLevel?: ConstructConceptMasteryLevel;
+    masteryText?: string;
+    masteryReason?: string;
+    masteryDirection?: "increased" | "decreased" | "unchanged";
     authoredBy?: "learner" | "agent" | "mixed" | "system";
     agentContributionPercent?: number;
     createdAt: string;

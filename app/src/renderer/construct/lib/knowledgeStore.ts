@@ -1,4 +1,4 @@
-import type { ConstructLearningState, KnowledgeBaseRecord } from "../../../shared/constructLearning";
+import type { ConstructConceptMasteryLevel, ConstructLearningState, KnowledgeBaseRecord } from "../../../shared/constructLearning";
 import type { ConceptCard, ProjectRecord } from "../types";
 import {
   getLearningState,
@@ -39,6 +39,11 @@ export function saveKnowledgeConcept(project: ProjectRecord, concept: ConceptCar
     openCount: existing?.openCount ?? 0,
     usedInRecall: existing?.usedInRecall === true || usedInRecall,
     confidence: normalizeConceptConfidence(concept.confidence),
+    masteryLevel: normalizeConceptMasteryLevel(concept.masteryLevel),
+    masteryText: concept.masteryText,
+    masteryReason: concept.masteryReason,
+    masteryEvidence: concept.masteryEvidence,
+    masteryUpdatedAt: concept.masteryUpdatedAt,
     authoredBy: normalizeConceptAuthor(concept.authoredBy),
     history: normalizeConceptHistory(concept.history)
   };
@@ -124,6 +129,10 @@ function normalizeConceptHistory(history: ConceptCard["history"]): KnowledgeBase
     fieldChanges: event.fieldChanges,
     provenance: event.provenance,
     confidence: normalizeConceptConfidence(event.confidence),
+    masteryLevel: normalizeConceptMasteryLevel(event.masteryLevel),
+    masteryText: event.masteryText,
+    masteryReason: event.masteryReason,
+    masteryDirection: normalizeMasteryDirection(event.masteryDirection),
     authoredBy: normalizeConceptAuthor(event.authoredBy)
   }));
 }
@@ -137,6 +146,26 @@ function normalizeHistoryKind(value: string): NonNullable<KnowledgeBaseRecord["h
 
 function normalizeConceptAuthor(value: string | undefined): KnowledgeBaseRecord["authoredBy"] {
   if (value === "learner" || value === "agent" || value === "mixed" || value === "system") {
+    return value;
+  }
+  return undefined;
+}
+
+function normalizeConceptMasteryLevel(value: unknown): ConstructConceptMasteryLevel | undefined {
+  if (value === 0 || value === 1 || value === 2 || value === 3 || value === 4 || value === 5) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const numeric = Number(value);
+    if (numeric === 0 || numeric === 1 || numeric === 2 || numeric === 3 || numeric === 4 || numeric === 5) {
+      return numeric;
+    }
+  }
+  return undefined;
+}
+
+function normalizeMasteryDirection(value: unknown): NonNullable<NonNullable<KnowledgeBaseRecord["history"]>[number]["masteryDirection"]> | undefined {
+  if (value === "increased" || value === "decreased" || value === "unchanged") {
     return value;
   }
   return undefined;

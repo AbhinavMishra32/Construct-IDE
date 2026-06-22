@@ -1,4 +1,4 @@
-import type { ConstructAgentContextWindow, ConstructAgentRunEvent, ConstructConceptLanguage } from "./constructLearning";
+import type { ConstructAgentContextWindow, ConstructAgentRunEvent, ConstructConceptLanguage, ConstructConceptMasteryLevel } from "./constructLearning";
 
 export type FlowMemoryFileName = "research.md" | "project.md" | "path.md" | "learner.md";
 
@@ -201,6 +201,30 @@ export type ConstructFlowCodeAuthorship = {
   createdAt: string;
 };
 
+export type ConstructFlowConceptExercise = {
+  id: string;
+  projectId: string;
+  sessionId: string;
+  conceptIds: string[];
+  title: string;
+  prompt: string;
+  status: "waiting" | "answered" | "reviewed" | "cancelled";
+  masteryGoalLevel?: ConstructConceptMasteryLevel;
+  successCriteria?: string[];
+  expectedSignals?: string[];
+  sourceText?: string;
+  createdAt: string;
+  answeredAt?: string;
+  learnerAnswer?: string;
+  reviewedAt?: string;
+  reviewNote?: string;
+  masteryEvidence?: Array<{
+    conceptId: string;
+    evidence: string;
+    recommendedLevel?: ConstructConceptMasteryLevel;
+  }>;
+};
+
 export type ConstructFlowPracticeTask = {
   id: string;
   projectId: string;
@@ -223,6 +247,7 @@ export type ConstructFlowPracticeTask = {
   taskFiles?: string[];
   conceptIds?: string[];
   introducedConceptIds?: string[];
+  requiredMasteryLevel?: ConstructConceptMasteryLevel;
   learnerReadiness?: Array<{
     conceptId: string;
     evidence: string;
@@ -292,6 +317,7 @@ export type ConstructFlowSession = {
   contextWindow?: ConstructAgentContextWindow;
   actions: ConstructFlowAction[];
   practiceTasks: ConstructFlowPracticeTask[];
+  conceptExercises?: ConstructFlowConceptExercise[];
   createdAt: string;
   updatedAt: string;
   durationMs?: number;
