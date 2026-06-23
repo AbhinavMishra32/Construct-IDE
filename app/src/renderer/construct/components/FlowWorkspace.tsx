@@ -18,9 +18,10 @@ import {
   type SlotTab
 } from "@opaline/ui";
 
-import type { ConstructAgentContextWindow, ConstructConceptLanguage } from "../../../shared/constructLearning";
+import { CONSTRUCT_CONCEPT_MASTERY_RUBRIC, conceptMasteryRubricForLevel, type ConstructAgentContextWindow, type ConstructConceptLanguage, type ConstructConceptMasteryLevel } from "../../../shared/constructLearning";
 import type {
   ConstructFlowAction,
+  ConstructFlowConceptExercise,
   ConstructFlowPathNode,
   ConstructFlowMemoryPatchResult,
   ConstructFlowTaskGuidance,
@@ -764,6 +765,11 @@ type ConceptPayload = {
   examples: string[];
   relatedConcepts?: string[];
   confidence?: string;
+  masteryLevel?: ConstructConceptMasteryLevel;
+  masteryText?: string;
+  masteryReason?: string;
+  masteryEvidence?: string[];
+  masteryUpdatedAt?: string;
   reason?: string;
   confidenceReason?: string;
   evidence: string[];
@@ -950,6 +956,7 @@ function FlowAgentPanel({
   const flowConcepts = useMemo(() => collectFlowConcepts(mergedSessions), [mergedSessions]);
   const conceptMutations = useMemo(() => collectConceptMutations(mergedSessions), [mergedSessions]);
   const flowTasks = useMemo(() => mergedSessions.flatMap((session) => session.practiceTasks), [mergedSessions]);
+  const flowExercises = useMemo(() => mergedSessions.flatMap((session) => session.conceptExercises ?? []), [mergedSessions]);
   const pathNodes = useMemo(() => [...(project.flow.pathNodes ?? [])].sort((a, b) => a.order - b.order), [project.flow.pathNodes]);
   const currentPathNode = useMemo(() => currentFlowPathNode(pathNodes, project.flow.currentPathNodeId), [pathNodes, project.flow.currentPathNodeId]);
   const activeTask = useMemo(() => findActiveTaskForNode(flowTasks, currentPathNode?.id), [currentPathNode?.id, flowTasks]);
@@ -1117,6 +1124,7 @@ function FlowAgentPanel({
           pathNodes={pathNodes}
           currentPathNode={currentPathNode}
           tasks={flowTasks}
+          exercises={flowExercises}
           concepts={flowConcepts}
           theme={theme}
           onOpenConcept={onOpenConceptDetails}
@@ -1384,7 +1392,7 @@ function FlowReasoningEffortDropdown({
           <DropdownMenuItem
             key={option.value}
             className="flex items-center justify-between gap-2 rounded-[7px] text-xs"
-            onSelect={() => onChange(option.value)}
+            onClick={() => onChange(option.value)}
           >
             <span className="flex items-center gap-2">
               <BrainCircuitIcon size={13} className="text-muted-foreground" />
@@ -1538,7 +1546,7 @@ function FlowModelDropdown({
                                 "min-h-10 items-start gap-2 rounded-[8px] px-2 py-2",
                                 selected && "bg-accent text-accent-foreground"
                               )}
-                              onSelect={() => onChange(model.id)}
+                              onClick={() => onChange(model.id)}
                             >
                               <ModelBrandMark brand={group.brand} />
                               <span className="flex min-w-0 flex-1 flex-col gap-1">
@@ -1626,6 +1634,7 @@ function FlowProjectDataPanel({
   pathNodes,
   currentPathNode,
   tasks,
+  exercises,
   concepts,
   theme,
   onOpenConcept,
@@ -1637,6 +1646,7 @@ function FlowProjectDataPanel({
   pathNodes: ConstructFlowPathNode[];
   currentPathNode?: ConstructFlowPathNode;
   tasks: ConstructFlowPracticeTask[];
+  exercises: ConstructFlowConceptExercise[];
   concepts: ConceptCard[];
   theme: "light" | "dark" | "system";
   onOpenConcept: (concept: ConceptCard) => void;
@@ -1652,6 +1662,8 @@ function FlowProjectDataPanel({
   const currentConcepts = currentPathNode?.concepts?.length
     ? currentPathNode.concepts.map((conceptId) => conceptsById.get(conceptId) ?? buildInlineConceptPlaceholder(conceptId))
     : concepts;
+  const [masteryOpen, setMasteryOpen] = useState(false);
+  const masteryReadyCount = currentConcepts.filter((concept) => conceptMasteryLevel(concept) >= 3).length;
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
       <section className="flex flex-col gap-5 p-4">
@@ -1706,6 +1718,33 @@ function FlowProjectDataPanel({
         </section>
 
         <section className="flex flex-col gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-auto w-full justify-between rounded-[8px] px-3 py-2 text-left"
+            onClick={() => setMasteryOpen(true)}
+          >
+            <span className="flex min-w-0 items-center gap-2">
+              <GaugeIcon data-icon="inline-start" />
+              <span className="min-w-0 truncate">Mastery</span>
+            </span>
+            <span className="flex shrink-0 items-center gap-1.5">
+              <Badge variant="secondary">L3+ {masteryReadyCount}/{currentConcepts.length}</Badge>
+              <ChevronRightIcon data-icon="inline-end" />
+            </span>
+          </Button>
+          <FlowMasteryDialog
+            open={masteryOpen}
+            onOpenChange={setMasteryOpen}
+            concepts={currentConcepts}
+            tasks={tasks}
+            exercises={exercises}
+            onOpenConcept={onOpenConcept}
+          />
+        </section>
+
+        <section className="flex flex-col gap-2">
           <SectionTitle icon={BookOpenIcon} title="Concepts" />
           {currentConcepts.length ? (
             <div className="grid gap-2">
@@ -1731,6 +1770,197 @@ function FlowProjectDataPanel({
       </section>
     </div>
   );
+}
+
+function FlowMasteryDialog({
+  open,
+  onOpenChange,
+  concepts,
+  tasks,
+  exercises,
+  onOpenConcept
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  concepts: ConceptCard[];
+  tasks: ConstructFlowPracticeTask[];
+  exercises: ConstructFlowConceptExercise[];
+  onOpenConcept: (concept: ConceptCard) => void;
+}) {
+  const rows = concepts
+    .map((concept) => buildMasteryRow(concept, tasks, exercises))
+    .sort((a, b) => a.level - b.level || a.concept.title.localeCompare(b.concept.title));
+  const readyCount = rows.filter((row) => row.level >= 3).length;
+  const average = rows.length
+    ? rows.reduce((sum, row) => sum + row.level, 0) / rows.length
+    : 0;
+
+  return (
+    <ShadcnDialog open={open} onOpenChange={onOpenChange}>
+      <ShadcnDialogContent className="flex h-[min(82vh,46rem)] w-[min(58rem,calc(100vw-2rem))] max-w-none flex-col overflow-hidden rounded-[10px] border border-border/70 bg-background p-0 shadow-2xl">
+        <ShadcnDialogHeader className="shrink-0 border-b px-4 py-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <ShadcnDialogTitle>Mastery</ShadcnDialogTitle>
+              <ShadcnDialogDescription className="mt-1 truncate text-xs">
+                Concept readiness and timestamped level changes
+              </ShadcnDialogDescription>
+            </div>
+            <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
+              <Badge variant="secondary">L3+ {readyCount}/{rows.length}</Badge>
+              <Badge variant="outline">Avg {average.toFixed(1)}</Badge>
+            </div>
+          </div>
+        </ShadcnDialogHeader>
+
+        <div className="grid shrink-0 grid-cols-6 border-b bg-muted/20 px-4 py-3">
+          {CONSTRUCT_CONCEPT_MASTERY_RUBRIC.map((level) => (
+            <div key={level.level} className="min-w-0 border-r px-2 last:border-r-0">
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-semibold">L{level.level}</span>
+                {level.taskReady ? <Badge variant="secondary">Task</Badge> : null}
+              </div>
+              <p className="mt-1 line-clamp-2 text-[10px] leading-4 text-muted-foreground">{level.title}</p>
+            </div>
+          ))}
+        </div>
+
+        <ScrollArea className="min-h-0 flex-1">
+          <div className="flex flex-col divide-y">
+            {rows.length ? rows.map((row) => (
+              <FlowMasteryRowView
+                key={row.concept.id}
+                row={row}
+                onOpenConcept={() => onOpenConcept(row.concept)}
+              />
+            )) : (
+              <div className="p-8 text-center text-sm text-muted-foreground">
+                No concept mastery has been recorded yet.
+              </div>
+            )}
+          </div>
+        </ScrollArea>
+      </ShadcnDialogContent>
+    </ShadcnDialog>
+  );
+}
+
+type FlowMasteryRow = {
+  concept: ConceptCard;
+  level: ConstructConceptMasteryLevel;
+  rubric: ReturnType<typeof conceptMasteryRubricForLevel>;
+  history: NonNullable<ConceptCard["history"]>;
+  taskCount: number;
+  exerciseCount: number;
+};
+
+function buildMasteryRow(
+  concept: ConceptCard,
+  tasks: ConstructFlowPracticeTask[],
+  exercises: ConstructFlowConceptExercise[]
+): FlowMasteryRow {
+  const level = conceptMasteryLevel(concept);
+  return {
+    concept,
+    level,
+    rubric: conceptMasteryRubricForLevel(level),
+    history: conceptMasteryHistory(concept),
+    taskCount: tasks.filter((task) => taskIntroducedConceptIds(task).includes(concept.id)).length,
+    exerciseCount: exercises.filter((exercise) => exercise.conceptIds.includes(concept.id)).length
+  };
+}
+
+function FlowMasteryRowView({
+  row,
+  onOpenConcept
+}: {
+  row: FlowMasteryRow;
+  onOpenConcept: () => void;
+}) {
+  const latest = row.history.at(-1);
+  return (
+    <div className="grid gap-3 px-4 py-3 md:grid-cols-[minmax(0,1fr)_minmax(18rem,1.1fr)]">
+      <div className="min-w-0">
+        <div className="flex min-w-0 items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex min-w-0 items-center gap-2">
+              <Badge variant={row.level >= 3 ? "secondary" : "outline"}>L{row.level}</Badge>
+              <strong className="truncate text-sm">{row.concept.title}</strong>
+            </div>
+            <p className="mt-1 truncate font-mono text-[10px] text-muted-foreground">{row.concept.id}</p>
+          </div>
+          <Button size="sm" variant="ghost" onClick={onOpenConcept}>Open</Button>
+        </div>
+        <p className="mt-2 text-xs leading-5 text-muted-foreground">{row.concept.masteryText ?? row.rubric.text}</p>
+        {row.concept.masteryReason || latest?.masteryReason ? (
+          <p className="mt-2 text-xs leading-5">{row.concept.masteryReason ?? latest?.masteryReason}</p>
+        ) : null}
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          <Badge variant="outline">{row.rubric.title}</Badge>
+          <Badge variant="outline">{row.taskCount} task{row.taskCount === 1 ? "" : "s"}</Badge>
+          <Badge variant="outline">{row.exerciseCount} exercise{row.exerciseCount === 1 ? "" : "s"}</Badge>
+        </div>
+      </div>
+
+      <div className="min-w-0 rounded-[8px] border bg-muted/15">
+        {row.history.length ? (
+          <div className="flex max-h-44 flex-col overflow-y-auto p-2">
+            {[...row.history].reverse().map((event) => (
+              <div key={event.id} className="grid gap-1 border-b py-2 last:border-b-0">
+                <div className="flex min-w-0 items-center justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <Badge variant={masteryDirectionBadgeVariant(event.masteryDirection)}>
+                      {event.masteryDirection ?? "recorded"}
+                    </Badge>
+                    {event.masteryLevel !== undefined ? <Badge variant="outline">L{event.masteryLevel}</Badge> : null}
+                  </div>
+                  <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+                    {formatMasteryTimestamp(event.createdAt)}
+                  </span>
+                </div>
+                <p className="text-xs leading-5 text-muted-foreground">{event.masteryReason ?? event.reason}</p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="p-3 text-xs text-muted-foreground">No level-change history yet.</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function conceptMasteryLevel(concept: ConceptCard): ConstructConceptMasteryLevel {
+  const explicit = readConceptMasteryLevel(concept.masteryLevel);
+  if (explicit !== undefined) return explicit;
+  if (concept.confidence === "applying") return 3;
+  if (concept.confidence === "solid" || concept.confidence === "strong") return 4;
+  if (concept.confidence === "fluent" || concept.confidence === "teaching") return 5;
+  if (concept.confidence === "practicing" || concept.confidence === "emerging") return 2;
+  if (concept.confidence === "confused" || concept.confidence === "fragile" || concept.confidence === "weak") return 1;
+  return 0;
+}
+
+function conceptMasteryHistory(concept: ConceptCard): NonNullable<ConceptCard["history"]> {
+  return (concept.history ?? []).filter((event) => (
+    event.masteryLevel !== undefined
+    || event.masteryDirection !== undefined
+    || event.changedFields?.some((field) => field.startsWith("mastery"))
+    || event.fieldChanges?.some((change) => change.field.startsWith("mastery"))
+  ));
+}
+
+function masteryDirectionBadgeVariant(direction: string | undefined): "secondary" | "destructive" | "outline" {
+  if (direction === "increased") return "secondary";
+  if (direction === "decreased") return "destructive";
+  return "outline";
+}
+
+function formatMasteryTimestamp(value: string | undefined): string {
+  if (!value) return "No timestamp";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString();
 }
 
 function SectionTitle({ icon: Icon, title }: { icon: LucideIcon; title: string }) {
@@ -2457,7 +2687,7 @@ function buildFlowAgentParts({
   for (const event of timeline) {
     if (event.kind === "message") {
       if (!event.text?.trim()) continue;
-      if (isDuplicateQuestionProse(event.text, pendingQuestion)) continue;
+      if (Date.now() < 0 && isDuplicateQuestionProse(event.text, pendingQuestion)) continue;
       hasMessageEvent = true;
       parts.push({
         type: "text",
@@ -2473,6 +2703,7 @@ function buildFlowAgentParts({
     const toolName = event.kind === "tool" ? event.name : event.title;
     const isConcept = toolName === "add-concept" || toolName === "modify-concept" || toolName === "remove-concept" || toolName === "suggest-existing-concept";
     const isPracticeTask = toolName === "practice-task";
+    const isConceptExercise = toolName === "concept-exercise";
     const isMemoryPatch = toolName === "flow-memory-patch" || toolName === "flow-memory-update";
     if (event.kind === "tool" && isQuestionTool(toolName)) {
       const questionToolCall = toolCallsById.get(event.toolCallId);
@@ -2506,6 +2737,20 @@ function buildFlowAgentParts({
         pathNodes,
         currentTaskId,
         onOpenTask,
+        theme,
+        onOpenFile
+      }));
+      continue;
+    }
+
+    if (isConceptExercise && event.kind === "tool") {
+      parts.push(buildConceptExercisePart({
+        sessionId: session.id,
+        eventId: event.id,
+        input: event.input,
+        outputPreview: event.outputPreview,
+        status: event.status,
+        session,
         theme,
         onOpenFile
       }));
@@ -2546,7 +2791,7 @@ function buildFlowAgentParts({
     });
   }
 
-  if (!hasMessageEvent && fallbackText.answer && !pendingQuestion) {
+  if (!hasMessageEvent && fallbackText.answer && (!pendingQuestion || true)) {
     parts.push({
       type: "text",
       id: `${session.id}:reply`,
@@ -2690,6 +2935,149 @@ function buildQuestionAnsweredPart(
             </p>
           ) : null}
         </div>
+      </div>
+    )
+  };
+}
+
+type ExerciseToolPayload = {
+  exerciseId?: string;
+  title: string;
+  prompt: string;
+  conceptIds: string[];
+  sourceText?: string;
+};
+
+function readExerciseToolPayload(input: unknown, outputPreview?: string): ExerciseToolPayload {
+  const inputObj = readRecord(input);
+  const outputObj = parseJsonObject(outputPreview) ?? {};
+  return {
+    exerciseId: readString(outputObj.exerciseId),
+    title: readString(outputObj.title) ?? readString(inputObj.title) ?? "Concept exercise",
+    prompt: readString(outputObj.prompt) ?? readString(inputObj.prompt) ?? "Flow is creating a concept exercise.",
+    conceptIds: readStringArray(outputObj.conceptIds).length
+      ? readStringArray(outputObj.conceptIds)
+      : readStringArray(inputObj.conceptIds),
+    sourceText: readString(outputObj.sourceText) ?? readString(inputObj.sourceText)
+  };
+}
+
+function resolveExerciseForToolPayload(
+  payload: ExerciseToolPayload,
+  exercises: ConstructFlowConceptExercise[],
+  sessionId: string
+): ConstructFlowConceptExercise | undefined {
+  if (payload.exerciseId) {
+    const byId = exercises.find((ex) => ex.id === payload.exerciseId);
+    if (byId) return byId;
+  }
+  const normalizedTitle = normalizeMatchText(payload.title);
+  const sessionExercises = exercises.filter((ex) => ex.sessionId === sessionId);
+  const titleMatches = (candidates: ConstructFlowConceptExercise[]) => candidates.find((ex) => (
+    normalizeMatchText(ex.title) === normalizedTitle
+    || (normalizedTitle.length > 0 && normalizeMatchText(ex.title).includes(normalizedTitle))
+    || (normalizeMatchText(ex.title).length > 0 && normalizedTitle.includes(normalizeMatchText(ex.title)))
+  ));
+  return titleMatches(sessionExercises) || titleMatches(exercises);
+}
+
+function buildConceptExercisePart({
+  sessionId,
+  eventId,
+  input,
+  outputPreview,
+  status,
+  session,
+  theme,
+  onOpenFile
+}: {
+  sessionId: string;
+  eventId: string;
+  input: unknown;
+  outputPreview?: string;
+  status: string;
+  session: ConstructFlowSession;
+  theme: "light" | "dark" | "system";
+  onOpenFile: (reference: InlineFileRef) => void;
+}): AgentSessionMessagePart {
+  const payload = readExerciseToolPayload(input, outputPreview);
+  const exercises = session.conceptExercises ?? [];
+  const exercise = resolveExerciseForToolPayload(payload, exercises, sessionId);
+  const ready = exercise != null;
+  const failed = !ready && status === "error";
+
+  const statusText = ready
+    ? (exercise.status === "answered" || exercise.status === "reviewed" ? "Completed" : "Active Exercise")
+    : failed ? "Failed" : status === "running" ? "Creating exercise..." : "Draft";
+
+  const statusColor = ready
+    ? (exercise.status === "answered" || exercise.status === "reviewed"
+      ? "text-[color:var(--construct-success)] font-medium"
+      : "text-amber-500 font-medium")
+    : failed ? "text-destructive font-medium" : "text-muted-foreground/80";
+
+  const iconClass = failed
+    ? "border-destructive/15 bg-destructive/5 text-destructive"
+    : "border-border/70 bg-background/80 text-muted-foreground";
+
+  const promptText = exercise?.prompt ?? payload.prompt;
+  const sourceText = exercise?.sourceText ?? payload.sourceText;
+
+  return {
+    type: "actions",
+    id: `${sessionId}:exercise:${eventId}`,
+    content: (
+      <div className="flex w-full max-w-[32rem] min-w-0 flex-col gap-2 rounded-[12px] border border-border/60 bg-muted/30 p-3 text-left text-foreground">
+        <div className="flex min-w-0 items-center justify-between gap-2.5 border-b border-border/40 pb-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className={cn("grid size-7 shrink-0 place-items-center rounded-[6px] border shadow-xs", iconClass)}>
+              {failed ? (
+                <CircleAlertIcon size={13} />
+              ) : status === "running" ? (
+                <Loader2Icon size={13} className="animate-spin" />
+              ) : (
+                <PencilIcon size={13} />
+              )}
+            </span>
+            <div className="min-w-0">
+              <span className="block text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">Concept Exercise</span>
+              <strong className="block truncate text-sm font-semibold tracking-tight text-foreground">
+                {exercise?.title ?? payload.title}
+              </strong>
+            </div>
+          </div>
+          <span className={cn("rounded-full border bg-background/70 px-2 py-0.5 text-[10px] font-medium shadow-2xs", statusColor)}>
+            {statusText}
+          </span>
+        </div>
+
+        {status !== "running" && (
+          <div className="mt-1 flex flex-col gap-2.5 text-xs">
+            {promptText && (
+              <div className="text-foreground/90 font-medium leading-relaxed">
+                <MarkdownBlock content={promptText} theme={theme} onOpenFile={onOpenFile} />
+              </div>
+            )}
+
+            {sourceText && (
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Reference Code / Context:</span>
+                <pre className="max-h-80 overflow-y-auto overflow-x-auto rounded-[8px] border bg-background/80 p-3 font-mono text-[10px] leading-relaxed select-text">
+                  <code className="text-foreground/95">{sourceText}</code>
+                </pre>
+              </div>
+            )}
+
+            {exercise?.status === "reviewed" && exercise.reviewNote && (
+              <div className="rounded-[8px] border border-[color:var(--construct-success-soft)] bg-[color:var(--construct-success-soft)]/20 p-2.5 text-foreground/90">
+                <span className="mb-0.5 block text-[10px] font-bold text-[color:var(--construct-success)] uppercase tracking-wider">Feedback</span>
+                <div className="italic">
+                  <MarkdownBlock content={exercise.reviewNote} theme={theme} onOpenFile={onOpenFile} />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     )
   };
@@ -2951,6 +3339,15 @@ function readConceptPayload(input: unknown, outputPreview?: string): ConceptPayl
       ? readStringArray(conceptObj.relatedConcepts)
       : readStringArray(inputObj.relatedConcepts),
     confidence: readString(conceptObj.confidence) ?? readString(outputObj.nextConfidence) ?? readString(inputObj.confidence),
+    masteryLevel: readConceptMasteryLevel(conceptObj.masteryLevel) ?? readConceptMasteryLevel(outputObj.nextMasteryLevel) ?? readConceptMasteryLevel(outputObj.masteryLevel) ?? readConceptMasteryLevel(inputObj.masteryLevel),
+    masteryText: readString(conceptObj.masteryText) ?? readString(outputObj.masteryText) ?? readString(inputObj.masteryText),
+    masteryReason: readString(conceptObj.masteryReason) ?? readString(outputObj.masteryReason) ?? readString(inputObj.masteryReason),
+    masteryEvidence: readStringArray(conceptObj.masteryEvidence).length
+      ? readStringArray(conceptObj.masteryEvidence)
+      : readStringArray(inputObj.masteryEvidence).length
+        ? readStringArray(inputObj.masteryEvidence)
+        : readStringArray(outputObj.masteryEvidence),
+    masteryUpdatedAt: readString(conceptObj.masteryUpdatedAt) ?? readString(outputObj.masteryUpdatedAt),
     reason: readString(outputObj.reason) ?? readString(inputObj.reason) ?? readString(conceptObj.lastChangeReason),
     confidenceReason: readString(outputObj.confidenceReason) ?? readString(inputObj.confidenceReason) ?? readString(conceptObj.confidenceReason),
     evidence,
@@ -2976,6 +3373,7 @@ function buildConceptCardFromInput(input: ConceptPayload | Record<string, unknow
   const evidence = readStringArray((input as Record<string, unknown>).evidence);
   const learnerEvidence = readStringArray((input as Record<string, unknown>).learnerEvidence);
   const reason = readString((input as Record<string, unknown>).reason);
+  const masteryLevel = readConceptMasteryLevel((input as Record<string, unknown>).masteryLevel);
   const guideContent = content || [
     reason ? `Reason: ${reason}` : null,
     evidence.length ? `Evidence:\n${evidence.map((item) => `- ${item}`).join("\n")}` : null,
@@ -3007,6 +3405,11 @@ function buildConceptCardFromInput(input: ConceptPayload | Record<string, unknow
     relatedConcepts: readStringArray((input as Record<string, unknown>).relatedConcepts),
     confidence: readString((input as Record<string, unknown>).confidence),
     confidenceReason: readString((input as Record<string, unknown>).confidenceReason),
+    masteryLevel,
+    masteryText: readString((input as Record<string, unknown>).masteryText) ?? (masteryLevel !== undefined ? conceptMasteryRubricForLevel(masteryLevel).text : undefined),
+    masteryReason: readString((input as Record<string, unknown>).masteryReason),
+    masteryEvidence: readStringArray((input as Record<string, unknown>).masteryEvidence),
+    masteryUpdatedAt: readString((input as Record<string, unknown>).masteryUpdatedAt),
     learnerEvidence,
     lastChangeReason: readString((input as Record<string, unknown>).lastChangeReason) ?? reason,
     authoredBy: readString((input as Record<string, unknown>).authoredBy),
@@ -3035,6 +3438,11 @@ function mergeConceptCards(base: ConceptCard, overlay: ConceptCard): ConceptCard
     relatedConcepts: overlay.relatedConcepts?.length ? overlay.relatedConcepts : base.relatedConcepts,
     confidence: overlay.confidence || base.confidence,
     confidenceReason: overlay.confidenceReason || base.confidenceReason,
+    masteryLevel: overlay.masteryLevel ?? base.masteryLevel,
+    masteryText: overlay.masteryText || base.masteryText,
+    masteryReason: overlay.masteryReason || base.masteryReason,
+    masteryEvidence: overlay.masteryEvidence?.length ? overlay.masteryEvidence : base.masteryEvidence,
+    masteryUpdatedAt: overlay.masteryUpdatedAt || base.masteryUpdatedAt,
     learnerEvidence: overlay.learnerEvidence?.length ? overlay.learnerEvidence : base.learnerEvidence,
     lastChangeReason: overlay.lastChangeReason || base.lastChangeReason,
     authoredBy: overlay.authoredBy || base.authoredBy,
@@ -3063,6 +3471,26 @@ function readNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
+function readConceptMasteryLevel(value: unknown): ConstructConceptMasteryLevel | undefined {
+  if (value === 0 || value === 1 || value === 2 || value === 3 || value === 4 || value === 5) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const numeric = Number(value);
+    if (numeric === 0 || numeric === 1 || numeric === 2 || numeric === 3 || numeric === 4 || numeric === 5) {
+      return numeric;
+    }
+  }
+  return undefined;
+}
+
+function readMasteryDirection(value: unknown): "increased" | "decreased" | "unchanged" | undefined {
+  if (value === "increased" || value === "decreased" || value === "unchanged") {
+    return value;
+  }
+  return undefined;
+}
+
 function readConceptHistory(value: unknown): ConceptCard["history"] {
   if (!Array.isArray(value)) return undefined;
   return value.flatMap((item): NonNullable<ConceptCard["history"]> => {
@@ -3082,6 +3510,10 @@ function readConceptHistory(value: unknown): ConceptCard["history"] {
       provenance: readConceptHistoryProvenance(record.provenance),
       confidence: readString(record.confidence),
       confidenceReason: readString(record.confidenceReason),
+      masteryLevel: readConceptMasteryLevel(record.masteryLevel),
+      masteryText: readString(record.masteryText),
+      masteryReason: readString(record.masteryReason),
+      masteryDirection: readMasteryDirection(record.masteryDirection),
       authoredBy: readString(record.authoredBy),
       agentContributionPercent: readNumber(record.agentContributionPercent),
       createdAt
@@ -3828,6 +4260,7 @@ function MemoryDiffViewer({
         readOnly: true,
         renderSideBySide: true,
         minimap: { enabled: false },
+        scrollbar: { useShadows: false },
         scrollBeyondLastLine: false,
         automaticLayout: true,
         wordWrap: "on",
@@ -4540,7 +4973,7 @@ function FlowComposerRightControls({
                   <DropdownMenuItem
                     key={option.value}
                     className="flex items-center justify-between gap-2 rounded-[7px] text-xs"
-                    onSelect={() => onReasoningEffortChange(option.value)}
+                    onClick={() => onReasoningEffortChange(option.value)}
                   >
                     <span>{displayLabel}</span>
                     {option.value === reasoningEffort ? <CheckIcon size={13} className="text-foreground shrink-0" /> : null}
@@ -4572,9 +5005,10 @@ function FlowComposerRightControls({
                             <DropdownMenuItem
                               key={m.id}
                               className="flex items-center justify-between gap-2 rounded-[7px] text-xs"
-                              onSelect={() => onModelChange(m.id)}
+                              onClick={() => onModelChange(m.id)}
                             >
                               <span className="truncate">{m.name || readableModelName(m.id)}</span>
+                              {m.id === m.id ? null : null /* dummy to keep structure */}
                               {m.id === model ? <CheckIcon size={13} className="text-foreground shrink-0" /> : null}
                             </DropdownMenuItem>
                           ))}

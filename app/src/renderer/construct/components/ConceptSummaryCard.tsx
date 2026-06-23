@@ -1,6 +1,7 @@
 import { BookOpenIcon, Code2Icon, ExternalLinkIcon, ChevronRightIcon, LightbulbIcon, BrainCircuitIcon, RouteIcon, AtomIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { conceptMasteryRubricForLevel, type ConstructConceptMasteryLevel } from "../../../shared/constructLearning";
 import type { ConceptCard } from "../types";
 import { cn } from "../../lib/utils";
 
@@ -43,6 +44,8 @@ export function ConceptSummaryCard({
   onOpen
 }: ConceptSummaryCardProps) {
   const language = languageLabel(concept);
+  const masteryLevel = masteryLevelForConcept(concept);
+  const mastery = conceptMasteryRubricForLevel(masteryLevel);
 
   if (variant === "chat") {
     const isAdded = actionLabel.toLowerCase().includes("introduc") || actionLabel.toLowerCase().includes("added");
@@ -70,6 +73,8 @@ export function ConceptSummaryCard({
           <div className="min-w-0 flex-1">
             <div className="mb-0.5 flex min-w-0 items-center gap-1 text-[10px] text-muted-foreground font-medium">
               <span>{language} Concept</span>
+              <span>·</span>
+              <span>L{masteryLevel}</span>
               {statusText ? (
                 <>
                   <span>·</span>
@@ -110,6 +115,7 @@ export function ConceptSummaryCard({
             <span className="mb-1 flex min-w-0 flex-wrap items-center gap-1">
               {showLanguageChip ? <ConceptChip icon={<Code2Icon size={11} />} label={language} /> : null}
               {concept.technology ? <ConceptChip label={concept.technology} /> : null}
+              <ConceptChip icon={<BrainCircuitIcon size={11} />} label={`L${masteryLevel} ${mastery.title}`} />
             </span>
             <strong className={`${compact ? "text-[13px]" : "text-sm"} block truncate font-semibold`}>{concept.title}</strong>
           </span>
@@ -161,4 +167,16 @@ function languageLabel(concept: ConceptCard): string {
   if (haystack.includes("javascript") || haystack.includes("node")) return "JavaScript";
   if (haystack.includes("cpp") || haystack.includes("c++") || haystack.includes("opengl") || haystack.includes("glfw")) return "C++";
   return "Concept";
+}
+
+function masteryLevelForConcept(concept: ConceptCard): ConstructConceptMasteryLevel {
+  if (concept.masteryLevel === 0 || concept.masteryLevel === 1 || concept.masteryLevel === 2 || concept.masteryLevel === 3 || concept.masteryLevel === 4 || concept.masteryLevel === 5) {
+    return concept.masteryLevel;
+  }
+  if (concept.confidence === "applying") return 3;
+  if (concept.confidence === "solid" || concept.confidence === "strong") return 4;
+  if (concept.confidence === "fluent" || concept.confidence === "teaching") return 5;
+  if (concept.confidence === "practicing" || concept.confidence === "emerging") return 2;
+  if (concept.confidence === "confused" || concept.confidence === "fragile" || concept.confidence === "weak") return 1;
+  return 0;
 }

@@ -7,8 +7,14 @@ import { useConstructLogBridge } from "./lib/useConstructLogBridge";
 import { useProjectLspLifecycle } from "./lib/useProjectLspLifecycle";
 import { StatusBar } from "./components/StatusBar";
 import { apiTracker } from "./lib/apiTracker";
+import { useSession } from "@better-auth-ui/react";
+import { createAuthClient } from "better-auth/react";
+import { Auth } from "../components/auth/auth";
+import { AuthProvider } from "../components/auth/auth-provider";
+import type { AuthView } from "@better-auth-ui/core";
+import type { AiSettings } from "./types";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type ComponentPropsWithoutRef, type PropsWithChildren } from "react";
 import {
   BookOpen,
   ArrowLeftIcon,
@@ -69,9 +75,9 @@ import {
 import {
   setThemeSource,
   getSettings,
+  updateAiSettings,
   updateProject,
-  closeProject,
-  runConstructFlowResearch
+  closeProject
 } from "./lib/bridge";
 import type { AnyProjectRecord, FlowProjectRecord, ProjectRecord, ProjectSummary, WorkspaceTreeNode } from "./types";
 import { isFlowProjectRecord } from "./types";
@@ -100,6 +106,256 @@ function rightSlotTitle(slotId: string): string {
   return "Guide";
 }
 
+function authViewFromPath(path: string): AuthView {
+  if (path.includes("sign-up")) return "signUp";
+  if (path.includes("forgot-password")) return "forgotPassword";
+  if (path.includes("reset-password")) return "resetPassword";
+  if (path.includes("verify-email")) return "verifyEmail";
+  if (path.includes("sign-out")) return "signOut";
+  return "signIn";
+}
+
+function AuthGateContent({
+  children,
+  authClient,
+  authView,
+  baseUrl,
+  aiSettings,
+}: {
+  children: React.ReactNode;
+  authClient: any;
+  authView: AuthView;
+  baseUrl: string;
+  aiSettings: AiSettings;
+}) {
+  const hasDesktopToken = !!aiSettings.constructCloudAccessToken?.trim();
+  const { data: session, isPending, isError } = useSession(authClient);
+  const [timedOut, setTimedOut] = useState(false);
+  const [customUrl, setCustomUrl] = useState(baseUrl);
+
+  useEffect(() => {
+    console.log("[auth] Checking account status...", { isPending, hasSession: !!session, hasDesktopToken, isError });
+  }, [isPending, session, hasDesktopToken, isError]);
+
+  useEffect(() => {
+    if (hasDesktopToken) {
+      setTimedOut(false);
+      return;
+    }
+
+    if (!isPending) {
+      setTimedOut(false);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      if (isPending && !session) {
+        setTimedOut(true);
+        console.warn(`[auth] Connection to auth server ${baseUrl} timed out.`);
+      }
+    }, 5000);
+
+    return () => clearTimeout(timer);
+  }, [isPending, session, baseUrl, hasDesktopToken]);
+
+  const connectFailed = !hasDesktopToken && (isError || (timedOut && !session));
+
+  if (hasDesktopToken) {
+    return <>{children}</>;
+  }
+
+  if (connectFailed) {
+    const isDev = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-background text-foreground font-sans">
+        <div className="w-[420px] p-8 rounded-2xl border bg-card/45 backdrop-blur-lg shadow-2xl flex flex-col gap-5 text-center items-center">
+          <div className="size-12 rounded-xl bg-destructive/15 flex items-center justify-center text-destructive">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="size-6">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+            </svg>
+          </div>
+          <h2 className="text-xl font-bold tracking-tight">Authentication Server Unreachable</h2>
+
+          {isDev ? (
+            <>
+              <p className="text-xs text-muted-foreground max-w-[320px]">
+                Construct is unable to connect to the authentication server. You can edit the URL below to target your local server:
+              </p>
+              <div className="w-full flex flex-col gap-2">
+                <input
+                  type="text"
+                  value={customUrl}
+                  onChange={(e) => setCustomUrl(e.target.value)}
+                  className="w-full px-3 py-1.5 text-xs rounded-lg border bg-background/50 text-foreground focus:ring-1 focus:ring-primary focus:outline-none"
+                  placeholder="http://localhost:8787"
+                />
+                <button
+                  onClick={() => {
+                    const cleanedUrl = cleanAndNormalizeUrl(customUrl);
+                    void getSettings().then((settings) => {
+                      settings.ai.constructCloudBaseUrl = cleanedUrl;
+                      return updateAiSettings({ ai: settings.ai });
+                    }).then(() => {
+                      window.location.reload();
+                    }).catch(err => {
+                      console.error("Failed to update base URL", err);
+                    });
+                  }}
+                  className="w-full px-4 py-2 text-xs font-semibold rounded-lg bg-primary text-primary-foreground hover:bg-primary/95 transition-colors"
+                >
+                  Save & Connect
+                </button>
+              </div>
+              <div className="w-full border-t border-muted/30 my-1"></div>
+              <div className="flex w-full gap-2">
+                <button
+                  onClick={() => window.location.reload()}
+                  className="flex-1 px-3 py-1.5 text-xs font-semibold rounded-lg border hover:bg-muted transition-colors"
+                >
+                  Retry
+                </button>
+                <button
+                  onClick={() => {
+                    void getSettings().then((settings) => {
+                      settings.ai.constructCloudBaseUrl = "https://cloud.tryconstruct.cc";
+                      return updateAiSettings({ ai: settings.ai });
+                    }).then(() => {
+                      window.location.reload();
+                    }).catch(err => {
+                      console.error("Failed to reset base URL", err);
+                    });
+                  }}
+                  className="flex-1 px-3 py-1.5 text-xs font-semibold rounded-lg border hover:bg-muted transition-colors"
+                >
+                  Reset to Default
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-xs text-muted-foreground max-w-[320px]">
+                Construct is unable to connect to the authentication server at:
+                <code className="block mt-2 p-1.5 rounded bg-muted text-foreground select-all break-all">{baseUrl}</code>
+              </p>
+              <button
+                onClick={() => window.location.reload()}
+                className="w-full px-4 py-2 text-xs font-semibold rounded-lg bg-primary text-primary-foreground hover:bg-primary/95 transition-colors"
+              >
+                Retry Connection
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (isPending) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-background text-foreground font-sans">
+        <div className="flex flex-col items-center gap-3">
+          <div className="size-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+          <p className="text-sm text-muted-foreground">Checking account status...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-background text-foreground font-sans">
+        <div className="w-[420px] p-8 rounded-2xl border bg-card/45 backdrop-blur-lg shadow-2xl flex flex-col gap-6">
+          <div className="flex flex-col items-center gap-2 text-center">
+            <div className="size-12 rounded-xl bg-primary flex items-center justify-center shadow-lg shadow-primary/25">
+              <span className="text-xl font-bold text-primary-foreground tracking-wider">C</span>
+            </div>
+            <h1 className="text-2xl font-bold tracking-tight mt-2">Construct</h1>
+            <p className="text-xs text-muted-foreground max-w-[280px]">
+              Please sign in to your cloud account to access Construct.
+            </p>
+          </div>
+
+          <Auth view={authView} socialLayout="vertical" className="w-full" />
+        </div>
+      </div>
+    );
+  }
+
+  return <>{children}</>;
+}
+
+function AuthGate({ children, aiSettings }: { children: React.ReactNode; aiSettings: AiSettings }) {
+  const normalizedBaseUrl = cleanAndNormalizeUrl(aiSettings.constructCloudBaseUrl);
+  const authClient = useMemo(() => createAuthClient({
+    baseURL: normalizedBaseUrl,
+    fetchOptions: {
+      auth: {
+        type: "Bearer",
+        token: () => localStorage.getItem("bearer_token") || "",
+      },
+      onSuccess: (ctx) => {
+        const authToken = ctx.response.headers.get("set-auth-token");
+        if (authToken) {
+          localStorage.setItem("bearer_token", authToken);
+        }
+      }
+    }
+  }), [normalizedBaseUrl]);
+
+  const [authPath, setAuthPath] = useState("/auth/sign-in");
+  const authView = authViewFromPath(authPath);
+
+  const navigate = useCallback((options: { to: string }) => {
+    setAuthPath(options.to);
+  }, []);
+
+  const Link = useMemo(() => {
+    return function ConstructCloudAuthLink({
+      href,
+      to,
+      onClick,
+      children,
+      ...props
+    }: PropsWithChildren<
+      { className?: string; href: string; to?: string } & Pick<
+        ComponentPropsWithoutRef<"a">,
+        "aria-disabled" | "tabIndex" | "onClick"
+      >
+    >) {
+      return (
+        <a
+          {...props}
+          href={href}
+          onClick={(event) => {
+            event.preventDefault();
+            onClick?.(event);
+            setAuthPath(to ?? href);
+          }}
+        >
+          {children}
+        </a>
+      );
+    };
+  }, []);
+
+  return (
+    <AuthProvider
+      authClient={authClient}
+      baseURL={normalizedBaseUrl}
+      redirectTo="/settings/account"
+      socialProviders={["google", "github"]}
+      emailAndPassword={{ enabled: true, forgotPassword: true, name: true, rememberMe: true }}
+      navigate={navigate}
+      Link={Link}
+    >
+      <AuthGateContent authClient={authClient} authView={authView} baseUrl={normalizedBaseUrl} aiSettings={aiSettings}>
+        {children}
+      </AuthGateContent>
+    </AuthProvider>
+  );
+}
+
 export default function ConstructApp() {
   const history = useShellHistory<ConstructHistoryEntry>([
     { id: "dashboard", title: "Projects", type: "dashboard" }
@@ -126,6 +382,29 @@ export default function ConstructApp() {
   const [error, setError] = useState<string | null>(null);
   const terminalRef = useRef<TerminalPanelHandle | null>(null);
   const applyingHistoryRef = useRef(false);
+  const [aiSettings, setAiSettings] = useState<AiSettings | null>(null);
+
+  useEffect(() => {
+    const initial = apiTracker.getSettings();
+    if (initial) {
+      setAiSettings(initial.ai);
+    } else {
+      void apiTracker.refreshSettings().then(() => {
+        const current = apiTracker.getSettings();
+        if (current) {
+          setAiSettings(current.ai);
+        }
+      });
+    }
+
+    const unsubscribe = apiTracker.subscribe(() => {
+      const current = apiTracker.getSettings();
+      if (current) {
+        setAiSettings(current.ai);
+      }
+    });
+    return unsubscribe;
+  }, []);
   const [treeData, setTreeData] = useState<{
     tree: WorkspaceTreeNode[];
     activePath: string | null;
@@ -316,14 +595,6 @@ export default function ConstructApp() {
 
   const handleFlowProjectChange = useCallback((project: FlowProjectRecord) => {
     setActiveProject(project);
-  }, []);
-
-  const handleRunFlowResearch = useCallback(async (projectId: string) => {
-    const result = await runConstructFlowResearch({ projectId });
-    setActiveProject((current) => {
-      if (!isFlowProjectRecord(current) || current.id !== projectId) return current;
-      return result.project;
-    });
   }, []);
 
   const runCommand = useCallback((command: string, cwd: string) => {
@@ -816,9 +1087,21 @@ export default function ConstructApp() {
     shellState.setRightPanelOpen(true);
   }, [activeProject, handleRightSlotChange]);
 
+  if (!aiSettings) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-background text-foreground font-sans">
+        <div className="flex flex-col items-center gap-3">
+          <div className="size-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+          <p className="text-sm text-muted-foreground">Loading settings...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <AppErrorBoundary>
-      <div className="flex h-screen flex-col overflow-hidden bg-transparent">
+      <AuthGate aiSettings={aiSettings}>
+        <div className="flex h-screen flex-col overflow-hidden bg-transparent">
         <div className="flex-1 min-h-0 relative">
           <AppShell
             className="h-full"
@@ -921,15 +1204,6 @@ export default function ConstructApp() {
                           >
                             <ListChecksIcon size={15} />
                           </AppShellHeaderToolButton>
-                          {!activeProject.flow.researchCompletedAt ? (
-                            <AppShellHeaderToolButton
-                              onClick={() => void handleRunFlowResearch(activeProject.id)}
-                              aria-label="Run Flow research"
-                              title="Research"
-                            >
-                              <SearchIcon size={15} />
-                            </AppShellHeaderToolButton>
-                          ) : null}
                           <AppShellHeaderToolButton
                             data-active={state.isBottomPanelOpen ? "true" : "false"}
                             onClick={state.toggleBottomPanel}
@@ -1112,6 +1386,8 @@ export default function ConstructApp() {
           rightPanel={activeProject && !settingsSurface && !knowledgeBaseOpen && !learningContextOpen ? rightPanel : null}
           bottomPanel={activeProject && !settingsSurface && !knowledgeBaseOpen && !learningContextOpen ? (shellState) => (
               <BottomPanel
+                expanded={shellState.bottomPanelExpanded}
+                onExpandChange={shellState.setBottomPanelExpanded}
                 activeTabId={activeBottomTabId}
                 syncTabs
                 keepMounted
@@ -1230,6 +1506,7 @@ export default function ConstructApp() {
           });
         }}
       />
+      </AuthGate>
     </AppErrorBoundary>
   );
 }
@@ -1310,7 +1587,7 @@ function ConstructProjectTitleMenu({
   const isFlow = activeProject != null && isFlowProjectRecord(activeProject);
 
   return (
-    <div className="inline-flex max-w-[min(24rem,48vw)] items-center gap-1.5">
+    <div className="inline-flex max-w-[min(24rem,48vw)] items-center gap-1.5 [-webkit-app-region:no-drag]">
       <span className="min-w-0 max-w-80 truncate px-1 text-sm font-medium" title={title}>
         {title}
       </span>
@@ -1376,4 +1653,34 @@ function ConstructProjectTitleMenu({
       </ShadcnDropdownMenu>
     </div>
   );
+}
+
+export function cleanAndNormalizeUrl(url: string | null | undefined, fallback: string = "https://cloud.tryconstruct.cc"): string {
+  if (!url || typeof url !== "string") return fallback;
+  
+  let cleaned = url.trim().replace(/\/$/, "");
+  if (cleaned.length === 0) return fallback;
+
+  // Replace spaces/colons before port with standard colon (e.g. "localhost 8787" -> "localhost:8787")
+  cleaned = cleaned.replace(/^(https?:\/\/)?([a-zA-Z0-9.-]+|\[[a-fA-F0-9:]+\])\s*:?\s*(\d+)$/, (_, protocol, host, port) => {
+    const proto = protocol || '';
+    return `${proto}${host}:${port}`;
+  });
+
+  // Prepend protocol if missing
+  if (!/^https?:\/\//i.test(cleaned)) {
+    const isLocal = /^(localhost|127\.0\.0\.1|\[::1\])/i.test(cleaned);
+    cleaned = (isLocal ? "http://" : "https://") + cleaned;
+  }
+
+  // Auto-append path suffixes for known official endpoints if missing:
+  if (cleaned.includes("openrouter.ai") && !cleaned.endsWith("/api/v1") && !cleaned.endsWith("/v1")) {
+    cleaned = cleaned.endsWith("/api") ? `${cleaned}/v1` : `${cleaned}/api/v1`;
+  } else if (cleaned.includes("api.openai.com") && !cleaned.endsWith("/v1")) {
+    cleaned = `${cleaned}/v1`;
+  } else if (cleaned.includes("opencode.ai") && !cleaned.endsWith("/zen/v1") && !cleaned.endsWith("/v1")) {
+    cleaned = cleaned.endsWith("/zen") ? `${cleaned}/v1` : `${cleaned}/zen/v1`;
+  }
+
+  return cleaned;
 }

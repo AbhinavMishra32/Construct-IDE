@@ -274,7 +274,33 @@ function normalizeString(value: unknown, fallback: string): string {
 }
 
 function normalizeBaseUrl(value: unknown, fallback: string): string {
-  return normalizeString(value, fallback).replace(/\/$/, "");
+  const strValue = typeof value === "string" ? value : "";
+  if (!strValue.trim()) return fallback;
+
+  let cleaned = strValue.trim().replace(/\/$/, "");
+
+  // Replace spaces/colons before port with standard colon (e.g. "localhost 8787" -> "localhost:8787")
+  cleaned = cleaned.replace(/^(https?:\/\/)?([a-zA-Z0-9.-]+|\[[a-fA-F0-9:]+\])\s*:?\s*(\d+)$/, (_, protocol, host, port) => {
+    const proto = protocol || '';
+    return `${proto}${host}:${port}`;
+  });
+
+  // Prepend protocol if missing
+  if (!/^https?:\/\//i.test(cleaned)) {
+    const isLocal = /^(localhost|127\.0\.0\.1|\[::1\])/i.test(cleaned);
+    cleaned = (isLocal ? "http://" : "https://") + cleaned;
+  }
+
+  // Auto-append path suffixes for known official endpoints if missing:
+  if (cleaned.includes("openrouter.ai") && !cleaned.endsWith("/api/v1") && !cleaned.endsWith("/v1")) {
+    cleaned = cleaned.endsWith("/api") ? `${cleaned}/v1` : `${cleaned}/api/v1`;
+  } else if (cleaned.includes("api.openai.com") && !cleaned.endsWith("/v1")) {
+    cleaned = `${cleaned}/v1`;
+  } else if (cleaned.includes("opencode.ai") && !cleaned.endsWith("/zen/v1") && !cleaned.endsWith("/v1")) {
+    cleaned = cleaned.endsWith("/zen") ? `${cleaned}/v1` : `${cleaned}/zen/v1`;
+  }
+
+  return cleaned;
 }
 
 function normalizeReasoningEffort(value: unknown, fallback: ConstructReasoningEffort): ConstructReasoningEffort {

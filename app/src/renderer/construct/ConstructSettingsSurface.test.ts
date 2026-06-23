@@ -52,8 +52,8 @@ describe("Construct project advanced settings", () => {
     assert.match(source, /onConstructCloudAccessTokenChange=\{\(constructCloudAccessToken: string\) => setAiSettingsDraft/);
     assert.match(aiSection, /LLM calls/);
     assert.match(aiSection, /ConstructCloudAccountPanel/);
-    assert.match(cloudPanel, /createAuthClient\(\{ baseURL: normalizedBaseUrl \}\)/);
-    assert.match(cloudPanel, /<Auth view=\{authView\} socialLayout="vertical" \/>/);
+    assert.match(cloudPanel, /createAuthClient\(\{[\s\S]*?baseURL: normalizedBaseUrl/);
+    assert.match(cloudPanel, /authClient\.signOut\(\)/);
     assert.match(cloudPanel, /api\/cloud\/tokens/);
     assert.match(controller, /input\?\.provider === "construct-cloud"/);
   });

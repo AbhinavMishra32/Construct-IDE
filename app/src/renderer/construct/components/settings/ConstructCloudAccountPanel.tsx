@@ -6,6 +6,7 @@ import { Button, Input } from "@opaline/ui";
 
 import { Auth } from "../../../components/auth/auth";
 import { AuthProvider } from "../../../components/auth/auth-provider";
+import { cleanAndNormalizeUrl } from "../../ConstructApplication";
 
 type ConstructCloudAccountPanelProps = {
   baseUrl: string;
@@ -46,7 +47,21 @@ export function ConstructCloudAccountPanel({
   onAccessTokenChange
 }: ConstructCloudAccountPanelProps) {
   const normalizedBaseUrl = normalizeCloudBaseUrl(baseUrl);
-  const authClient = useMemo(() => createAuthClient({ baseURL: normalizedBaseUrl }), [normalizedBaseUrl]);
+  const authClient = useMemo(() => createAuthClient({
+    baseURL: normalizedBaseUrl,
+    fetchOptions: {
+      auth: {
+        type: "Bearer",
+        token: () => localStorage.getItem("bearer_token") || "",
+      },
+      onSuccess: (ctx) => {
+        const authToken = ctx.response.headers.get("set-auth-token");
+        if (authToken) {
+          localStorage.setItem("bearer_token", authToken);
+        }
+      }
+    }
+  }), [normalizedBaseUrl]);
   const [authPath, setAuthPath] = useState("/auth/sign-in");
   const authView = authViewFromPath(authPath);
 
@@ -110,10 +125,7 @@ export function ConstructCloudAccountPanel({
         navigate={navigate}
         Link={Link}
       >
-        <div className="grid gap-3 lg:grid-cols-[minmax(17rem,22rem)_minmax(0,1fr)]">
-          <div className="min-w-0">
-            <Auth view={authView} socialLayout="vertical" />
-          </div>
+        <div className="w-full">
           <ConstructCloudTokenPanel
             baseUrl={normalizedBaseUrl}
             accessToken={accessToken}
@@ -152,7 +164,16 @@ function ConstructCloudTokenPanel({
     }
 
     let cancelled = false;
-    void fetch(`${baseUrl}/api/me`, { credentials: "include" })
+    const token = localStorage.getItem("bearer_token");
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    void fetch(`${baseUrl}/api/me`, {
+      credentials: "include",
+      headers
+    })
       .then(async (response) => {
         if (!response.ok) throw new Error(`Account lookup failed (${response.status}).`);
         return await response.json() as CloudUsageResponse;
@@ -173,10 +194,15 @@ function ConstructCloudTokenPanel({
     try {
       setBusy(true);
       setStatus(null);
+      const token = localStorage.getItem("bearer_token");
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
       const response = await fetch(`${baseUrl}/api/cloud/tokens`, {
         method: "POST",
         credentials: "include",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ name: "Construct Desktop" })
       });
       if (!response.ok) {
@@ -224,6 +250,18 @@ function ConstructCloudTokenPanel({
             Clear token
           </Button>
         ) : null}
+        <Button
+          size="small"
+          variant="secondary"
+          disabled={disabled || busy}
+          onClick={async () => {
+            localStorage.removeItem("bearer_token");
+            await authClient.signOut();
+            window.location.reload();
+          }}
+        >
+          Sign Out
+        </Button>
       </div>
 
       {status ? <div className="text-xs text-muted-foreground">{status}</div> : null}
@@ -257,7 +295,7 @@ function authViewFromPath(path: string): AuthView {
 }
 
 function normalizeCloudBaseUrl(baseUrl: string): string {
-  return (baseUrl.trim() || "https://cloud.tryconstruct.cc").replace(/\/$/, "");
+  return cleanAndNormalizeUrl(baseUrl);
 }
 
 function formatSeconds(seconds: number): string {

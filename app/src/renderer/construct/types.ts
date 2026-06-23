@@ -1,5 +1,6 @@
 import type {
   ConstructConceptLanguage,
+  ConstructConceptMasteryLevel,
   ConceptUnderstanding,
   ConstructInteractResult,
   ConstructInteractRuntimeInput,
@@ -158,6 +159,11 @@ export type ConceptCard = {
   relatedConcepts?: string[];
   confidence?: string;
   confidenceReason?: string;
+  masteryLevel?: ConstructConceptMasteryLevel;
+  masteryText?: string;
+  masteryReason?: string;
+  masteryEvidence?: string[];
+  masteryUpdatedAt?: string;
   learnerEvidence?: string[];
   lastChangeReason?: string;
   authoredBy?: "learner" | "agent" | "mixed" | "system" | string;
@@ -188,6 +194,10 @@ export type ConceptCard = {
     };
     confidence?: string;
     confidenceReason?: string;
+    masteryLevel?: ConstructConceptMasteryLevel;
+    masteryText?: string;
+    masteryReason?: string;
+    masteryDirection?: "increased" | "decreased" | "unchanged";
     authoredBy?: string;
     agentContributionPercent?: number;
     createdAt: string;

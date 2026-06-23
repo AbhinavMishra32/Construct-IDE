@@ -1,9 +1,9 @@
-import { BookOpenIcon, ChevronRightIcon, ExternalLinkIcon, FileTextIcon, FolderIcon, GitBranchIcon, HistoryIcon, SearchIcon } from "lucide-react";
+import { BookOpenIcon, ChevronRightIcon, ExternalLinkIcon, FileTextIcon, FolderIcon, GitBranchIcon, HistoryIcon, SearchIcon, Trash2Icon } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Button, ShadcnScrollArea } from "@opaline/ui";
 
 import { MarkdownBlock } from "./MarkdownBlock";
-import { readKnowledgeRecords, subscribeKnowledgeRecords, type SavedKnowledgeRecord } from "../lib/knowledgeStore";
+import { readKnowledgeRecords, subscribeKnowledgeRecords, removeKnowledgeConcept, type SavedKnowledgeRecord } from "../lib/knowledgeStore";
 import type { AnyProjectRecord, ConceptCard } from "../types";
 import { isFlowProjectRecord } from "../types";
 
@@ -192,9 +192,24 @@ function ConceptDetail({
             <h2 className="truncate text-xl font-semibold tracking-tight">{record.title}</h2>
             <p className="mt-1 truncate font-mono text-xs text-muted-foreground">{record.id}</p>
           </div>
-          <Button className="shrink-0" size="sm" variant="outline" onClick={() => onOpenProject(record.sourceProjectId)}>
-            Open project
-          </Button>
+          <div className="flex shrink-0 items-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => onOpenProject(record.sourceProjectId)}>
+              Open project
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-destructive hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30"
+              onClick={() => {
+                if (window.confirm(`Delete concept "${record.title}"? This cannot be undone.`)) {
+                  removeKnowledgeConcept(record.sourceProjectId, record.id);
+                }
+              }}
+            >
+              <Trash2Icon size={14} className="mr-1.5" />
+              Delete
+            </Button>
+          </div>
         </div>
       </div>
 
