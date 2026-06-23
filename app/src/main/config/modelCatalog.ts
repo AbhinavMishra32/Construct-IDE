@@ -122,7 +122,12 @@ async function fetchOpenCodeZenModels(apiKey: string | undefined, baseUrl: strin
   const headers: Record<string, string> = {};
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
 
-  const response = await fetch(`${baseUrl.replace(/\/$/, "")}/models`, { headers });
+  let url = baseUrl.replace(/\/$/, "");
+  if (url.includes("opencode.ai") && !url.endsWith("/zen/v1") && !url.endsWith("/v1")) {
+    url = url.endsWith("/zen") ? `${url}/v1` : `${url}/zen/v1`;
+  }
+
+  const response = await fetch(`${url}/models`, { headers });
 
   if (response.status === 401) {
     return RECOMMENDED_OPENCODE_ZEN_MODELS;
@@ -148,7 +153,11 @@ async function fetchOpenCodeZenModels(apiKey: string | undefined, baseUrl: strin
 }
 
 async function fetchOpenAiModels(apiKey: string, baseUrl: string): Promise<ModelCatalogEntry[]> {
-  const response = await fetch(`${baseUrl.replace(/\/$/, "")}/models`, {
+  let url = baseUrl.replace(/\/$/, "");
+  if (url.includes("api.openai.com") && !url.endsWith("/v1")) {
+    url = `${url}/v1`;
+  }
+  const response = await fetch(`${url}/models`, {
     headers: {
       Authorization: `Bearer ${apiKey}`
     }
@@ -174,7 +183,11 @@ async function fetchOpenAiModels(apiKey: string, baseUrl: string): Promise<Model
 }
 
 async function fetchOpenRouterModels(apiKey: string, baseUrl: string): Promise<ModelCatalogEntry[]> {
-  const response = await fetch(`${baseUrl.replace(/\/$/, "")}/models`, {
+  let url = baseUrl.replace(/\/$/, "");
+  if (url.includes("openrouter.ai") && !url.endsWith("/api/v1") && !url.endsWith("/v1")) {
+    url = url.endsWith("/api") ? `${url}/v1` : `${url}/api/v1`;
+  }
+  const response = await fetch(`${url}/models`, {
     headers: {
       Authorization: `Bearer ${apiKey}`
     }

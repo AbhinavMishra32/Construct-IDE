@@ -441,6 +441,7 @@ export function EditorPane({
             options={{
               automaticLayout: true,
               contextmenu: false,
+              scrollbar: { useShadows: false },
               cursorBlinking: "smooth",
               cursorStyle: "line",
               cursorWidth: 2,

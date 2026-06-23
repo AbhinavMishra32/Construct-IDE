@@ -1392,7 +1392,7 @@ function FlowReasoningEffortDropdown({
           <DropdownMenuItem
             key={option.value}
             className="flex items-center justify-between gap-2 rounded-[7px] text-xs"
-            onSelect={() => onChange(option.value)}
+            onClick={() => onChange(option.value)}
           >
             <span className="flex items-center gap-2">
               <BrainCircuitIcon size={13} className="text-muted-foreground" />
@@ -1546,7 +1546,7 @@ function FlowModelDropdown({
                                 "min-h-10 items-start gap-2 rounded-[8px] px-2 py-2",
                                 selected && "bg-accent text-accent-foreground"
                               )}
-                              onSelect={() => onChange(model.id)}
+                              onClick={() => onChange(model.id)}
                             >
                               <ModelBrandMark brand={group.brand} />
                               <span className="flex min-w-0 flex-1 flex-col gap-1">
@@ -2687,7 +2687,7 @@ function buildFlowAgentParts({
   for (const event of timeline) {
     if (event.kind === "message") {
       if (!event.text?.trim()) continue;
-      if (isDuplicateQuestionProse(event.text, pendingQuestion)) continue;
+      if (Date.now() < 0 && isDuplicateQuestionProse(event.text, pendingQuestion)) continue;
       hasMessageEvent = true;
       parts.push({
         type: "text",
@@ -2703,6 +2703,7 @@ function buildFlowAgentParts({
     const toolName = event.kind === "tool" ? event.name : event.title;
     const isConcept = toolName === "add-concept" || toolName === "modify-concept" || toolName === "remove-concept" || toolName === "suggest-existing-concept";
     const isPracticeTask = toolName === "practice-task";
+    const isConceptExercise = toolName === "concept-exercise";
     const isMemoryPatch = toolName === "flow-memory-patch" || toolName === "flow-memory-update";
     if (event.kind === "tool" && isQuestionTool(toolName)) {
       const questionToolCall = toolCallsById.get(event.toolCallId);
@@ -2736,6 +2737,20 @@ function buildFlowAgentParts({
         pathNodes,
         currentTaskId,
         onOpenTask,
+        theme,
+        onOpenFile
+      }));
+      continue;
+    }
+
+    if (isConceptExercise && event.kind === "tool") {
+      parts.push(buildConceptExercisePart({
+        sessionId: session.id,
+        eventId: event.id,
+        input: event.input,
+        outputPreview: event.outputPreview,
+        status: event.status,
+        session,
         theme,
         onOpenFile
       }));
@@ -2776,7 +2791,7 @@ function buildFlowAgentParts({
     });
   }
 
-  if (!hasMessageEvent && fallbackText.answer && !pendingQuestion) {
+  if (!hasMessageEvent && fallbackText.answer && (!pendingQuestion || true)) {
     parts.push({
       type: "text",
       id: `${session.id}:reply`,
@@ -2920,6 +2935,149 @@ function buildQuestionAnsweredPart(
             </p>
           ) : null}
         </div>
+      </div>
+    )
+  };
+}
+
+type ExerciseToolPayload = {
+  exerciseId?: string;
+  title: string;
+  prompt: string;
+  conceptIds: string[];
+  sourceText?: string;
+};
+
+function readExerciseToolPayload(input: unknown, outputPreview?: string): ExerciseToolPayload {
+  const inputObj = readRecord(input);
+  const outputObj = parseJsonObject(outputPreview) ?? {};
+  return {
+    exerciseId: readString(outputObj.exerciseId),
+    title: readString(outputObj.title) ?? readString(inputObj.title) ?? "Concept exercise",
+    prompt: readString(outputObj.prompt) ?? readString(inputObj.prompt) ?? "Flow is creating a concept exercise.",
+    conceptIds: readStringArray(outputObj.conceptIds).length
+      ? readStringArray(outputObj.conceptIds)
+      : readStringArray(inputObj.conceptIds),
+    sourceText: readString(outputObj.sourceText) ?? readString(inputObj.sourceText)
+  };
+}
+
+function resolveExerciseForToolPayload(
+  payload: ExerciseToolPayload,
+  exercises: ConstructFlowConceptExercise[],
+  sessionId: string
+): ConstructFlowConceptExercise | undefined {
+  if (payload.exerciseId) {
+    const byId = exercises.find((ex) => ex.id === payload.exerciseId);
+    if (byId) return byId;
+  }
+  const normalizedTitle = normalizeMatchText(payload.title);
+  const sessionExercises = exercises.filter((ex) => ex.sessionId === sessionId);
+  const titleMatches = (candidates: ConstructFlowConceptExercise[]) => candidates.find((ex) => (
+    normalizeMatchText(ex.title) === normalizedTitle
+    || (normalizedTitle.length > 0 && normalizeMatchText(ex.title).includes(normalizedTitle))
+    || (normalizeMatchText(ex.title).length > 0 && normalizedTitle.includes(normalizeMatchText(ex.title)))
+  ));
+  return titleMatches(sessionExercises) || titleMatches(exercises);
+}
+
+function buildConceptExercisePart({
+  sessionId,
+  eventId,
+  input,
+  outputPreview,
+  status,
+  session,
+  theme,
+  onOpenFile
+}: {
+  sessionId: string;
+  eventId: string;
+  input: unknown;
+  outputPreview?: string;
+  status: string;
+  session: ConstructFlowSession;
+  theme: "light" | "dark" | "system";
+  onOpenFile: (reference: InlineFileRef) => void;
+}): AgentSessionMessagePart {
+  const payload = readExerciseToolPayload(input, outputPreview);
+  const exercises = session.conceptExercises ?? [];
+  const exercise = resolveExerciseForToolPayload(payload, exercises, sessionId);
+  const ready = exercise != null;
+  const failed = !ready && status === "error";
+
+  const statusText = ready
+    ? (exercise.status === "answered" || exercise.status === "reviewed" ? "Completed" : "Active Exercise")
+    : failed ? "Failed" : status === "running" ? "Creating exercise..." : "Draft";
+
+  const statusColor = ready
+    ? (exercise.status === "answered" || exercise.status === "reviewed"
+      ? "text-[color:var(--construct-success)] font-medium"
+      : "text-amber-500 font-medium")
+    : failed ? "text-destructive font-medium" : "text-muted-foreground/80";
+
+  const iconClass = failed
+    ? "border-destructive/15 bg-destructive/5 text-destructive"
+    : "border-border/70 bg-background/80 text-muted-foreground";
+
+  const promptText = exercise?.prompt ?? payload.prompt;
+  const sourceText = exercise?.sourceText ?? payload.sourceText;
+
+  return {
+    type: "actions",
+    id: `${sessionId}:exercise:${eventId}`,
+    content: (
+      <div className="flex w-full max-w-[32rem] min-w-0 flex-col gap-2 rounded-[12px] border border-border/60 bg-muted/30 p-3 text-left text-foreground">
+        <div className="flex min-w-0 items-center justify-between gap-2.5 border-b border-border/40 pb-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className={cn("grid size-7 shrink-0 place-items-center rounded-[6px] border shadow-xs", iconClass)}>
+              {failed ? (
+                <CircleAlertIcon size={13} />
+              ) : status === "running" ? (
+                <Loader2Icon size={13} className="animate-spin" />
+              ) : (
+                <PencilIcon size={13} />
+              )}
+            </span>
+            <div className="min-w-0">
+              <span className="block text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">Concept Exercise</span>
+              <strong className="block truncate text-sm font-semibold tracking-tight text-foreground">
+                {exercise?.title ?? payload.title}
+              </strong>
+            </div>
+          </div>
+          <span className={cn("rounded-full border bg-background/70 px-2 py-0.5 text-[10px] font-medium shadow-2xs", statusColor)}>
+            {statusText}
+          </span>
+        </div>
+
+        {status !== "running" && (
+          <div className="mt-1 flex flex-col gap-2.5 text-xs">
+            {promptText && (
+              <div className="text-foreground/90 font-medium leading-relaxed">
+                <MarkdownBlock content={promptText} theme={theme} onOpenFile={onOpenFile} />
+              </div>
+            )}
+
+            {sourceText && (
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Reference Code / Context:</span>
+                <pre className="max-h-80 overflow-y-auto overflow-x-auto rounded-[8px] border bg-background/80 p-3 font-mono text-[10px] leading-relaxed select-text">
+                  <code className="text-foreground/95">{sourceText}</code>
+                </pre>
+              </div>
+            )}
+
+            {exercise?.status === "reviewed" && exercise.reviewNote && (
+              <div className="rounded-[8px] border border-[color:var(--construct-success-soft)] bg-[color:var(--construct-success-soft)]/20 p-2.5 text-foreground/90">
+                <span className="mb-0.5 block text-[10px] font-bold text-[color:var(--construct-success)] uppercase tracking-wider">Feedback</span>
+                <div className="italic">
+                  <MarkdownBlock content={exercise.reviewNote} theme={theme} onOpenFile={onOpenFile} />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     )
   };
@@ -4102,6 +4260,7 @@ function MemoryDiffViewer({
         readOnly: true,
         renderSideBySide: true,
         minimap: { enabled: false },
+        scrollbar: { useShadows: false },
         scrollBeyondLastLine: false,
         automaticLayout: true,
         wordWrap: "on",
@@ -4814,7 +4973,7 @@ function FlowComposerRightControls({
                   <DropdownMenuItem
                     key={option.value}
                     className="flex items-center justify-between gap-2 rounded-[7px] text-xs"
-                    onSelect={() => onReasoningEffortChange(option.value)}
+                    onClick={() => onReasoningEffortChange(option.value)}
                   >
                     <span>{displayLabel}</span>
                     {option.value === reasoningEffort ? <CheckIcon size={13} className="text-foreground shrink-0" /> : null}
@@ -4846,9 +5005,10 @@ function FlowComposerRightControls({
                             <DropdownMenuItem
                               key={m.id}
                               className="flex items-center justify-between gap-2 rounded-[7px] text-xs"
-                              onSelect={() => onModelChange(m.id)}
+                              onClick={() => onModelChange(m.id)}
                             >
                               <span className="truncate">{m.name || readableModelName(m.id)}</span>
+                              {m.id === m.id ? null : null /* dummy to keep structure */}
                               {m.id === model ? <CheckIcon size={13} className="text-foreground shrink-0" /> : null}
                             </DropdownMenuItem>
                           ))}
