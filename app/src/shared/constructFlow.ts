@@ -1,4 +1,4 @@
-import type { ConstructAgentContextWindow, ConstructAgentRunEvent, ConstructConceptLanguage, ConstructConceptMasteryLevel } from "./constructLearning";
+import type { ConstructAgentContextWindow, ConstructAgentRunEvent, ConstructCitationSource, ConstructConceptLanguage, ConstructConceptMasteryLevel } from "./constructLearning";
 
 export type FlowMemoryFileName = "research.md" | "project.md" | "path.md" | "learner.md";
 
@@ -313,6 +313,7 @@ export type ConstructFlowSession = {
   toolCalls: ConstructFlowToolCallRecord[];
   agentEvents: ConstructAgentRunEvent[];
   timeline: ConstructFlowTimelinePart[];
+  citations?: ConstructCitationSource[];
   contextCompaction?: ConstructFlowContextCompaction;
   contextWindow?: ConstructAgentContextWindow;
   actions: ConstructFlowAction[];

@@ -62,6 +62,7 @@ test("settings normalize OpenCode Zen provider options", () => {
   assert.equal(settings.ai.constructCloudModel, "deepseek/deepseek-v4-flash");
   assert.equal(settings.ai.tavilyApiKey, "");
   assert.equal(settings.ai.conceptFirewallEnabled, true);
+  assert.equal(settings.ai.flowSourceGroundingEnabled, true);
 });
 
 test("settings normalize and persist Construct Cloud routing options", async (t) => {
@@ -90,6 +91,29 @@ test("settings normalize and persist Construct Cloud routing options", async (t)
   assert.equal(cloud.constructCloudBaseUrl, "http://localhost:8787");
   assert.equal(cloud.constructCloudAccessToken, "cct_test-token");
   assert.equal(cloud.constructCloudModel, "anthropic/claude-sonnet-4");
+});
+
+test("settings normalize and persist source-grounded Flow preference", async (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), "construct-config-"));
+  const paths = createConstructDataPaths(root);
+  configureConstructDataPaths(paths);
+  t.after(() => {
+    configureConstructDataPaths(null);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  const settings = defaultConstructSettings(paths);
+  await writeConstructSettings({
+    ...settings,
+    ai: {
+      ...settings.ai,
+      flowSourceGroundingEnabled: false
+    }
+  }, paths);
+
+  const persisted = readConstructAiSettingsSync();
+  assert.equal(normalizeSettings({}, paths).ai.flowSourceGroundingEnabled, true);
+  assert.equal(persisted.flowSourceGroundingEnabled, false);
 });
 
 test("settings normalize and persist app chrome options", async (t) => {

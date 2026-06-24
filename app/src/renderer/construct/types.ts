@@ -7,6 +7,7 @@ import type {
   ConstructInteractSessionEvent,
   ConstructInteractSession,
   ConstructLearningState,
+  ConstructCitationSource,
   KnowledgeBaseRecord,
   LearningStatePatch,
   ProjectLearningState
@@ -151,6 +152,7 @@ export type ConceptCard = {
   technology?: string;
   tags: string[];
   summary: string;
+  sources?: ConstructCitationSource[];
   content?: string;
   why: string;
   commonMistake?: string;
@@ -514,6 +516,7 @@ export type AiSettings = {
   featureModels: Record<string, string>;
   codeGhostEnabled: boolean;
   conceptFirewallEnabled: boolean;
+  flowSourceGroundingEnabled: boolean;
 };
 
 export type AiFeatureSettings = {

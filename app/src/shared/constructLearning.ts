@@ -480,6 +480,17 @@ export type AssistanceEventRecord = {
   createdAt: string;
 };
 
+export type ConstructCitationSource = {
+  id: string;
+  title: string;
+  url: string;
+  provider?: string;
+  publisher?: string;
+  snippet?: string;
+  quote?: string;
+  accessedAt?: string;
+};
+
 export type KnowledgeBaseRecord = {
   id: string;
   sourceProjectId: string;
@@ -493,6 +504,7 @@ export type KnowledgeBaseRecord = {
   why: string;
   example?: string;
   docs: Array<{ title: string; url: string; why?: string }>;
+  sources?: ConstructCitationSource[];
   savedAt: string;
   openedAt?: string;
   openCount: number;

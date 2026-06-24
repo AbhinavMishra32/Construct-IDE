@@ -103,7 +103,8 @@ const defaultAiSettings: AiSettings = {
   tavilyApiKey: "",
   featureModels: {},
   codeGhostEnabled: true,
-  conceptFirewallEnabled: true
+  conceptFirewallEnabled: true,
+  flowSourceGroundingEnabled: true
 };
 
 const flowMemoryFiles: FlowMemoryFileName[] = [
@@ -1170,6 +1171,7 @@ export function ConstructSettingsSurface({
         onReasoningEffortChange={(reasoningEffort) => setAiSettingsDraft((current) => ({ ...current, reasoningEffort }))}
         onCodeGhostEnabledChange={(codeGhostEnabled: boolean) => setAiSettingsDraft((current) => ({ ...current, codeGhostEnabled }))}
         onConceptFirewallEnabledChange={(conceptFirewallEnabled: boolean) => setAiSettingsDraft((current) => ({ ...current, conceptFirewallEnabled }))}
+        onFlowSourceGroundingEnabledChange={(flowSourceGroundingEnabled: boolean) => setAiSettingsDraft((current) => ({ ...current, flowSourceGroundingEnabled }))}
         onOpenAiApiKeyChange={(openAiApiKey: string) => setAiSettingsDraft((current) => ({ ...current, openAiApiKey }))}
         onOpenAiBaseUrlChange={(openAiBaseUrl: string) => setAiSettingsDraft((current) => ({ ...current, openAiBaseUrl }))}
         onOpenRouterApiKeyChange={(openRouterApiKey: string) => setAiSettingsDraft((current) => ({ ...current, openRouterApiKey }))}

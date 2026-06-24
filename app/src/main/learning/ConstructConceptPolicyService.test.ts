@@ -315,7 +315,8 @@ describe("ConstructConceptPolicyService", () => {
           tavilyApiKey: "",
           featureModels: {},
           codeGhostEnabled: true,
-          conceptFirewallEnabled: false
+          conceptFirewallEnabled: false,
+          flowSourceGroundingEnabled: true
         },
         observability: {
           enabled: false,

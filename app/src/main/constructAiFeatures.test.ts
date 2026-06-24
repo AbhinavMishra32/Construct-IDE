@@ -33,7 +33,8 @@ const baseSettings: StoredAiSettings = {
   tavilyApiKey: "",
   featureModels: {},
   codeGhostEnabled: true,
-  conceptFirewallEnabled: true
+  conceptFirewallEnabled: true,
+  flowSourceGroundingEnabled: true
 };
 
 test("registered AI features expose user-facing metadata", () => {

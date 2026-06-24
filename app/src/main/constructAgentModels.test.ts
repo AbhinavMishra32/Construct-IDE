@@ -34,7 +34,8 @@ const settings: StoredAiSettings = {
     "construct-interact": "deepseek/deepseek-v4-flash"
   },
   codeGhostEnabled: true,
-  conceptFirewallEnabled: true
+  conceptFirewallEnabled: true,
+  flowSourceGroundingEnabled: true
 };
 
 test("agent model resolution uses the selected OpenRouter credentials and feature model", () => {

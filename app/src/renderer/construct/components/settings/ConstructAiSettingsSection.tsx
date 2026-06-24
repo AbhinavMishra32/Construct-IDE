@@ -82,6 +82,7 @@ export function ConstructAiSettingsSection({
   onReasoningEffortChange,
   onCodeGhostEnabledChange,
   onConceptFirewallEnabledChange,
+  onFlowSourceGroundingEnabledChange,
   onOpenAiApiKeyChange,
   onOpenAiBaseUrlChange,
   onOpenRouterApiKeyChange,
@@ -119,6 +120,7 @@ export function ConstructAiSettingsSection({
   onReasoningEffortChange: (effort: AiSettings["reasoningEffort"]) => void;
   onCodeGhostEnabledChange: (enabled: boolean) => void;
   onConceptFirewallEnabledChange?: (enabled: boolean) => void;
+  onFlowSourceGroundingEnabledChange?: (enabled: boolean) => void;
   onOpenAiApiKeyChange: (apiKey: string) => void;
   onOpenAiBaseUrlChange: (baseUrl: string) => void;
   onOpenRouterApiKeyChange: (apiKey: string) => void;
@@ -302,6 +304,18 @@ export function ConstructAiSettingsSection({
               onChange={(event) => onConceptFirewallEnabledChange?.(event.target.checked)}
             />
             <span className="text-xs text-muted-foreground">{settings.conceptFirewallEnabled !== false ? "Enabled" : "Disabled"}</span>
+          </div>
+        </SettingsRow>
+
+        <SettingsRow title="Source-grounded Flow" description="Allow Flow to search and fetch public docs/articles, then attach citation pills to chat answers and Concepts. Turn this off to prevent web research during Flow mentoring.">
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              className="size-4 rounded border border-muted-foreground bg-background text-primary focus:ring-1 focus:ring-ring focus:ring-offset-2"
+              checked={settings.flowSourceGroundingEnabled !== false}
+              onChange={(event) => onFlowSourceGroundingEnabledChange?.(event.target.checked)}
+            />
+            <span className="text-xs text-muted-foreground">{settings.flowSourceGroundingEnabled !== false ? "Enabled" : "Disabled"}</span>
           </div>
         </SettingsRow>
 

@@ -34,6 +34,7 @@ export type StoredAiSettings = {
   featureModels: Record<string, string>;
   codeGhostEnabled: boolean;
   conceptFirewallEnabled: boolean;
+  flowSourceGroundingEnabled: boolean;
 };
 
 export type StoredObservabilitySettings = {
@@ -178,7 +179,8 @@ export function normalizeSettings(
       tavilyApiKey: normalizeString(inputAi.tavilyApiKey, ""),
       featureModels: normalizeFeatureModels(inputAi.featureModels),
       codeGhostEnabled: inputAi.codeGhostEnabled !== false,
-      conceptFirewallEnabled: inputAi.conceptFirewallEnabled !== false
+      conceptFirewallEnabled: inputAi.conceptFirewallEnabled !== false,
+      flowSourceGroundingEnabled: inputAi.flowSourceGroundingEnabled !== false
     },
     observability: {
       enabled: inputObservability.enabled === true,
@@ -222,7 +224,8 @@ function defaultAiSettings(): StoredAiSettings {
     tavilyApiKey: "",
     featureModels: {},
     codeGhostEnabled: true,
-    conceptFirewallEnabled: true
+    conceptFirewallEnabled: true,
+    flowSourceGroundingEnabled: true
   };
 }
 
