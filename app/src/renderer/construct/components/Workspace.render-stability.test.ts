@@ -71,7 +71,7 @@ describe("Workspace render stability", () => {
     assert.match(appSource, /pendingImmersiveFlowProjectIdsRef\.current\.delete\(nextProject\.id\)/);
     assert.match(appSource, /setInspectorExpanded\(shouldStartImmersive\);/);
     assert.match(appSource, /const handleFlowLayoutRequest = useCallback\(\(request: FlowLayoutRequest\)/);
-    assert.match(appSource, /if \(request\.kind === "maximized-chat"\)[\s\S]*setInspectorExpanded\(true\);[\s\S]*setSidebarOpen\(true\);/);
+    assert.match(appSource, /if \(request\.kind === "maximized-chat"\)[\s\S]*setInspectorExpanded\(true\);[\s\S]*setSidebarOpen\(request\.reason !== "project-created"\);/);
     assert.match(appSource, /setInspectorExpanded\(false\);\s*setSidebarOpen\(true\);/);
     assert.match(appSource, /chatMode=\{rightPanelOpen && inspectorExpanded && flowPanelView === "chat" \? "maximized" : "panel"\}/);
     assert.match(appSource, /onLayoutRequest=\{handleFlowLayoutRequest\}/);

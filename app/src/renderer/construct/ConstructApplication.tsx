@@ -859,7 +859,7 @@ export default function ConstructApp() {
       const shouldStartImmersive = isFlowProjectRecord(nextProject) && pendingImmersiveFlowProjectIdsRef.current.delete(nextProject.id);
       setInspectorExpanded(shouldStartImmersive);
       if (shouldStartImmersive) {
-        setSidebarOpen(true);
+        setSidebarOpen(false);
       }
       setActiveProject(nextProject);
       const nextProjects = await bootstrapProjects();
@@ -907,7 +907,7 @@ export default function ConstructApp() {
     setRightPanelOpen(true);
     if (request.kind === "maximized-chat") {
       setInspectorExpanded(true);
-      setSidebarOpen(true);
+      setSidebarOpen(request.reason !== "project-created");
       return;
     }
     setInspectorExpanded(false);
