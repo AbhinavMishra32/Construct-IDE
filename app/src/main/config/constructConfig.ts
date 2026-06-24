@@ -33,6 +33,7 @@ export type StoredAiSettings = {
   tavilyApiKey: string;
   featureModels: Record<string, string>;
   codeGhostEnabled: boolean;
+  conceptFirewallEnabled: boolean;
 };
 
 export type StoredObservabilitySettings = {
@@ -176,7 +177,8 @@ export function normalizeSettings(
       constructCloudModel: normalizeString(inputAi.constructCloudModel, defaults.ai.constructCloudModel),
       tavilyApiKey: normalizeString(inputAi.tavilyApiKey, ""),
       featureModels: normalizeFeatureModels(inputAi.featureModels),
-      codeGhostEnabled: inputAi.codeGhostEnabled !== false
+      codeGhostEnabled: inputAi.codeGhostEnabled !== false,
+      conceptFirewallEnabled: inputAi.conceptFirewallEnabled !== false
     },
     observability: {
       enabled: inputObservability.enabled === true,
@@ -219,7 +221,8 @@ function defaultAiSettings(): StoredAiSettings {
     constructCloudModel: "deepseek/deepseek-v4-flash",
     tavilyApiKey: "",
     featureModels: {},
-    codeGhostEnabled: true
+    codeGhostEnabled: true,
+    conceptFirewallEnabled: true
   };
 }
 

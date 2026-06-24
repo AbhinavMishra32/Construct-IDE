@@ -8,6 +8,8 @@ import {
   knowledgeKey,
   type AssistanceEventRecord,
   type ConceptUnderstanding,
+  type ConstructConceptArtifactAudit,
+  type ConstructConceptProjectEvent,
   type ConstructInteractSession,
   type ConstructLearningState,
   type KnowledgeBaseRecord,
@@ -20,7 +22,7 @@ export class ConstructLearningStore {
   constructor(private readonly filePath: string) {}
 
   async getState(): Promise<ConstructLearningState> {
-    return this.read();
+    return decorateConceptProjects(await this.read());
   }
 
   async getGlobalLearnerState() {
@@ -84,6 +86,63 @@ export class ConstructLearningStore {
     });
   }
 
+  async recordConceptProjectEvent(event: ConstructConceptProjectEvent): Promise<ConstructLearningState> {
+    return this.applyPatch({ conceptProjectEvent: event });
+  }
+
+  async recordConceptArtifactAudit(audit: ConstructConceptArtifactAudit): Promise<ConstructLearningState> {
+    return this.applyPatch({ conceptArtifactAudit: audit });
+  }
+
+  async getProjectConceptRecords(projectId: string): Promise<KnowledgeBaseRecord[]> {
+    const state = await this.read();
+    const project = ensureProjectState(state, projectId);
+    const records = latestKnowledgeRecords(Object.values(state.knowledgeBase.concepts));
+    return Object.keys(project.conceptRelations ?? {})
+      .map((conceptId) => records.get(conceptId))
+      .filter((record): record is KnowledgeBaseRecord => Boolean(record))
+      .map((record) => ({
+        ...record,
+        masteryLevel: project.conceptRelations?.[record.id]?.masteryLevel ?? record.masteryLevel,
+        projects: conceptProjectRelations(state, record.id),
+        projectEvents: conceptProjectEvents(state, record.id)
+      }))
+      .sort((left, right) => left.id.localeCompare(right.id));
+  }
+
+  async getConceptProjectRelations(conceptId: string) {
+    const state = await this.read();
+    return conceptProjectRelations(state, conceptId);
+  }
+
+  async migrateLegacyProjectConcepts(projectId: string, projectTitle: string): Promise<ConstructLearningState> {
+    const state = await this.read();
+    const project = ensureProjectState(state, projectId);
+    project.conceptRelations ??= {};
+    const records = latestKnowledgeRecords(Object.values(state.knowledgeBase.concepts));
+    let changed = false;
+    for (const record of records.values()) {
+      if (record.sourceProjectId !== projectId || project.conceptRelations[record.id]?.introducedAt) continue;
+      const createdAt = record.savedAt || new Date().toISOString();
+      const event: ConstructConceptProjectEvent = {
+        id: randomUUID(),
+        projectId,
+        projectTitle,
+        conceptId: record.id,
+        kind: "introduced",
+        masteryLevel: normalizeMasteryLevel(record.masteryLevel),
+        reason: "Migrated existing project concept into the project-scoped concept ledger.",
+        evidence: record.learnerEvidence?.length ? record.learnerEvidence : [record.summary || record.title],
+        artifactKind: "teaching",
+        createdAt
+      };
+      applyLearningPatch(state, { conceptProjectEvent: event });
+      changed = true;
+    }
+    if (changed) await this.write(state);
+    return state;
+  }
+
   async openKnowledgeConcept(record: KnowledgeBaseRecord): Promise<ConstructLearningState> {
     return this.recordConceptOpen({
       projectId: record.sourceProjectId,
@@ -139,6 +198,10 @@ export class ConstructLearningStore {
         conceptId
       }
     });
+  }
+
+  async removeProjectConcept(projectId: string, conceptId: string): Promise<ConstructLearningState> {
+    return this.applyPatch({ removeProjectConcept: { projectId, conceptId } });
   }
 
   async getWeakConcepts(projectId?: string): Promise<ConceptUnderstanding[]> {
@@ -230,8 +293,47 @@ export function applyLearningPatch(state: ConstructLearningState, patch: Learnin
     state.knowledgeBase.concepts[knowledgeKey(patch.knowledgeConcept.sourceProjectId, patch.knowledgeConcept.id)] = patch.knowledgeConcept;
   }
 
+  if (patch.conceptProjectEvent) {
+    const event = patch.conceptProjectEvent;
+    const project = ensureProjectState(state, event.projectId);
+    project.conceptEvents ??= [];
+    project.conceptRelations ??= {};
+    if (!project.conceptEvents.some((candidate) => candidate.id === event.id)) {
+      project.conceptEvents.push(event);
+    }
+    const current = project.conceptRelations[event.conceptId];
+    const introducedAt = current?.introducedAt
+      ?? (event.kind === "introduced" ? event.createdAt : undefined);
+    project.conceptRelations[event.conceptId] = {
+      projectId: event.projectId,
+      projectTitle: event.projectTitle,
+      conceptId: event.conceptId,
+      introducedAt,
+      firstReferencedAt: current?.firstReferencedAt ?? event.createdAt,
+      lastReferencedAt: event.createdAt,
+      masteryLevel: event.masteryLevel ?? current?.masteryLevel ?? 0,
+      lastEventKind: event.kind,
+      eventIds: [...new Set([...(current?.eventIds ?? []), event.id])].slice(-200)
+    };
+  }
+
+  if (patch.conceptArtifactAudit) {
+    const audit = patch.conceptArtifactAudit;
+    const project = ensureProjectState(state, audit.projectId);
+    project.artifactAudits ??= [];
+    if (!project.artifactAudits.some((candidate) => candidate.id === audit.id)) {
+      project.artifactAudits.push(audit);
+      project.artifactAudits = project.artifactAudits.slice(-500);
+    }
+  }
+
   if (patch.removeKnowledgeConcept) {
     delete state.knowledgeBase.concepts[knowledgeKey(patch.removeKnowledgeConcept.projectId, patch.removeKnowledgeConcept.conceptId)];
+  }
+
+  if (patch.removeProjectConcept) {
+    const project = ensureProjectState(state, patch.removeProjectConcept.projectId);
+    delete project.conceptRelations?.[patch.removeProjectConcept.conceptId];
   }
 
   if (patch.projectPosition) {
@@ -307,6 +409,9 @@ function normalizeLearningState(input: Partial<ConstructLearningState>): Constru
         projectId,
         {
           ...project,
+          conceptRelations: project.conceptRelations ?? {},
+          conceptEvents: project.conceptEvents ?? [],
+          artifactAudits: project.artifactAudits ?? [],
           conceptEngagement: project.conceptEngagement ?? {},
           generatedLiveSteps: project.generatedLiveSteps ?? [],
           generatedLiveStepRuns: project.generatedLiveStepRuns ?? []
@@ -328,6 +433,9 @@ function ensureProjectState(state: ConstructLearningState, projectId: string): P
   state.projects[projectId] ??= {
     projectId,
     conceptUnderstanding: {},
+    conceptRelations: {},
+    conceptEvents: [],
+    artifactAudits: [],
     constructInteractSessions: [],
     recallAttempts: [],
     assistanceEvents: [],
@@ -339,7 +447,43 @@ function ensureProjectState(state: ConstructLearningState, projectId: string): P
   state.projects[projectId].generatedLiveSteps ??= [];
   state.projects[projectId].generatedLiveStepRuns ??= [];
   state.projects[projectId].conceptEngagement ??= {};
+  state.projects[projectId].conceptRelations ??= {};
+  state.projects[projectId].conceptEvents ??= [];
+  state.projects[projectId].artifactAudits ??= [];
   return state.projects[projectId];
+}
+
+function latestKnowledgeRecords(records: KnowledgeBaseRecord[]): Map<string, KnowledgeBaseRecord> {
+  const latest = new Map<string, KnowledgeBaseRecord>();
+  for (const record of records) {
+    const current = latest.get(record.id);
+    if (!current || Date.parse(record.lastModifiedAt ?? record.savedAt) >= Date.parse(current.lastModifiedAt ?? current.savedAt)) {
+      latest.set(record.id, record);
+    }
+  }
+  return latest;
+}
+
+function conceptProjectRelations(state: ConstructLearningState, conceptId: string) {
+  return Object.values(state.projects)
+    .map((project) => project.conceptRelations?.[conceptId])
+    .filter((relation): relation is NonNullable<typeof relation> => Boolean(relation))
+    .sort((left, right) => Date.parse(right.lastReferencedAt) - Date.parse(left.lastReferencedAt));
+}
+
+function decorateConceptProjects(state: ConstructLearningState): ConstructLearningState {
+  for (const record of Object.values(state.knowledgeBase.concepts)) {
+    record.projects = conceptProjectRelations(state, record.id);
+    record.projectEvents = conceptProjectEvents(state, record.id);
+  }
+  return state;
+}
+
+function conceptProjectEvents(state: ConstructLearningState, conceptId: string) {
+  return Object.values(state.projects)
+    .flatMap((project) => project.conceptEvents ?? [])
+    .filter((event) => event.conceptId === conceptId)
+    .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
 }
 
 function mergeConcept(
@@ -372,4 +516,9 @@ function understandingPatch(
     entries[conceptId] = { conceptId, confidence: "weak", lastEvidenceAt: at, projectIds: [projectId] };
   }
   return entries;
+}
+
+function normalizeMasteryLevel(value: unknown): 0 | 1 | 2 | 3 | 4 | 5 {
+  if (value === 1 || value === 2 || value === 3 || value === 4 || value === 5) return value;
+  return 0;
 }

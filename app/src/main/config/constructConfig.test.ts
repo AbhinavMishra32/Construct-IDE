@@ -61,6 +61,7 @@ test("settings normalize OpenCode Zen provider options", () => {
   assert.equal(settings.ai.constructCloudAccessToken, "");
   assert.equal(settings.ai.constructCloudModel, "deepseek/deepseek-v4-flash");
   assert.equal(settings.ai.tavilyApiKey, "");
+  assert.equal(settings.ai.conceptFirewallEnabled, true);
 });
 
 test("settings normalize and persist Construct Cloud routing options", async (t) => {

@@ -82,6 +82,62 @@ export type ConceptUnderstanding = {
   projectIds: string[];
 };
 
+export const CONSTRUCT_CONCEPT_PROJECT_EVENT_KINDS = [
+  "introduced",
+  "referenced",
+  "practiced",
+  "assessed",
+  "leveled-up",
+  "leveled-down",
+  "task-used",
+  "write-used",
+  "blocked"
+] as const;
+
+export type ConstructConceptProjectEventKind = typeof CONSTRUCT_CONCEPT_PROJECT_EVENT_KINDS[number];
+
+export type ConstructConceptProjectEvent = {
+  id: string;
+  projectId: string;
+  projectTitle: string;
+  conceptId: string;
+  kind: ConstructConceptProjectEventKind;
+  previousMasteryLevel?: ConstructConceptMasteryLevel;
+  masteryLevel?: ConstructConceptMasteryLevel;
+  reason: string;
+  evidence: string[];
+  artifactKind?: "teaching" | "task" | "assessment" | "file-write" | "file-edit" | "scaffold" | "next-step";
+  artifactRef?: string;
+  pathNodeId?: string;
+  taskId?: string;
+  createdAt: string;
+};
+
+export type ConstructProjectConceptRelation = {
+  projectId: string;
+  projectTitle: string;
+  conceptId: string;
+  introducedAt?: string;
+  firstReferencedAt: string;
+  lastReferencedAt: string;
+  masteryLevel: ConstructConceptMasteryLevel;
+  lastEventKind: ConstructConceptProjectEventKind;
+  eventIds: string[];
+};
+
+export type ConstructConceptArtifactAudit = {
+  id: string;
+  projectId: string;
+  artifactKind: "teaching" | "task" | "assessment" | "file-write" | "file-edit" | "scaffold" | "next-step";
+  artifactRef?: string;
+  declaredConceptIds: string[];
+  matchedConceptIds: string[];
+  blockedCapabilities: string[];
+  status: "allowed" | "blocked";
+  reason: string;
+  createdAt: string;
+};
+
 export const CONSTRUCT_CONCEPT_LANGUAGES = ["swift", "python", "typescript", "javascript", "cpp", "unknown"] as const;
 
 export type ConstructConceptLanguage = typeof CONSTRUCT_CONCEPT_LANGUAGES[number];
@@ -458,6 +514,8 @@ export type KnowledgeBaseRecord = {
   agentContributionPercent?: number;
   lastPracticedAt?: string;
   lastModifiedAt?: string;
+  projects?: ConstructProjectConceptRelation[];
+  projectEvents?: ConstructConceptProjectEvent[];
   history?: Array<{
     id: string;
     kind: "introduced" | "modified" | "removed" | "practiced" | "opened" | "system";
@@ -502,6 +560,9 @@ export type ConceptEngagement = {
 export type ProjectLearningState = {
   projectId: string;
   conceptUnderstanding: Record<string, ConceptUnderstanding>;
+  conceptRelations?: Record<string, ConstructProjectConceptRelation>;
+  conceptEvents?: ConstructConceptProjectEvent[];
+  artifactAudits?: ConstructConceptArtifactAudit[];
   constructInteractSessions: ConstructInteractSession[];
   recallAttempts: RecallAttemptRecord[];
   assistanceEvents: AssistanceEventRecord[];
@@ -569,7 +630,13 @@ export type LearningStatePatch = {
     openedAt: string;
   };
   knowledgeConcept?: KnowledgeBaseRecord;
+  conceptProjectEvent?: ConstructConceptProjectEvent;
+  conceptArtifactAudit?: ConstructConceptArtifactAudit;
   removeKnowledgeConcept?: {
+    projectId: string;
+    conceptId: string;
+  };
+  removeProjectConcept?: {
     projectId: string;
     conceptId: string;
   };

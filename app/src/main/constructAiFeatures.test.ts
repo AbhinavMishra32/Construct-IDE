@@ -32,7 +32,8 @@ const baseSettings: StoredAiSettings = {
   constructCloudModel: "deepseek/deepseek-v4-flash",
   tavilyApiKey: "",
   featureModels: {},
-  codeGhostEnabled: true
+  codeGhostEnabled: true,
+  conceptFirewallEnabled: true
 };
 
 test("registered AI features expose user-facing metadata", () => {
