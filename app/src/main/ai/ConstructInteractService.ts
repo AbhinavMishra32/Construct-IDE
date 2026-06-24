@@ -221,6 +221,17 @@ export class ConstructInteractService {
         if (abortController.signal.aborted) {
           return;
         }
+        if (entry.event?.type === "tool") {
+          const toolEvent = entry.event;
+          const level = toolEvent.status === "error" ? "error" : "info";
+          this.options.logs.toolCall(
+            toolEvent.toolName ?? "tool",
+            toolEvent.status,
+            toolEvent.input,
+            toolEvent.outputPreview,
+            level
+          );
+        }
         if (entry.responseText !== undefined) {
           streamedReply = entry.responseText;
           if (isLearnerFacingReply(streamedReply)) {

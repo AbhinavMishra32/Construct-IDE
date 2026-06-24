@@ -11,7 +11,7 @@ export type ProviderLogChannel = "openai" | "openrouter" | "opencode-zen" | "lit
 
 export type SystemLogChannel = "lsp-server" | "lsp-protocol" | "main" | "renderer" | "terminal" | ProviderLogChannel;
 
-export type AgentLogChannel = "verifier" | "authoring-review" | "selection-explain" | "interact" | "flow" | "code-ghost";
+export type AgentLogChannel = "verifier" | "authoring-review" | "selection-explain" | "interact" | "flow" | "code-ghost" | "tools";
 
 export type LogChannel = SystemLogChannel | AgentLogChannel;
 
@@ -29,7 +29,8 @@ export const AGENT_CHANNELS: Array<{ id: AgentLogChannel; label: string; descrip
   { id: "selection-explain", label: "Selection Explain", description: "Text selection explanation" },
   { id: "interact", label: "Interact", description: "Interactive Q&A" },
   { id: "flow", label: "Flow", description: "Flow agent sessions" },
-  { id: "code-ghost", label: "Code Ghost", description: "Code ghost completions" }
+  { id: "code-ghost", label: "Code Ghost", description: "Code ghost completions" },
+  { id: "tools", label: "Tools", description: "Tool calls input and output logs" }
 ];
 
 export type LogGroupId = "ai" | "agents" | "lsp" | "system" | "terminal" | "debug";
@@ -98,7 +99,8 @@ class LogStoreClass {
     "selection-explain": [],
     interact: [],
     flow: [],
-    "code-ghost": []
+    "code-ghost": [],
+    tools: []
   };
 
   private listeners = new Set<LogListener>();

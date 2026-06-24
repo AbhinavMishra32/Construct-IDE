@@ -1,4 +1,4 @@
-export type AgentLogChannel = "verifier" | "authoring-review" | "selection-explain" | "interact" | "flow" | "code-ghost";
+export type AgentLogChannel = "verifier" | "authoring-review" | "selection-explain" | "interact" | "flow" | "code-ghost" | "tools";
 export type AgentLogLevel = "info" | "warn" | "error" | "debug";
 
 export type AgentStructuredLogPayload = {
@@ -51,6 +51,23 @@ export class AgentLogService {
         preview: summarizeStructuredPayload(payload),
         raw,
         payload,
+      }
+    });
+  }
+
+  toolCall(name: string, status: string, input: unknown, output: unknown, level: AgentLogLevel = "info"): void {
+    const raw = formatAgentPayload({ name, status, input, output });
+    this.publish("construct:project:agent-log", {
+      agent: "tools",
+      message: `Tool: ${name} (${status})`,
+      level,
+      timestamp: new Date().toISOString(),
+      structured: {
+        kind: "structured",
+        title: `Tool: ${name} (${status})`,
+        preview: `Tool ${name} ${status}`,
+        raw,
+        payload: { name, status, input, output }
       }
     });
   }

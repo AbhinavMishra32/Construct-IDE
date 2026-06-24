@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Braces } from "lucide-react";
+import { Braces, ChevronDown, ChevronRight } from "lucide-react";
 import {
   logStore,
   LOG_GROUPS,
@@ -136,6 +136,105 @@ function DebugProcesses({ processes }: { processes: DebugProcessSnapshot[] }) {
     </div>
   );
 }
+
+interface StructuredLogItemProps {
+  log: LogEntry;
+  isToolsChannel: boolean;
+}
+
+const StructuredLogItem: React.FC<StructuredLogItemProps> = ({ log, isToolsChannel }) => {
+  const [expanded, setExpanded] = useState(false);
+
+  const timestamp = formatTimestamp(log.timestamp);
+  const structured = log.structured?.kind === "structured" ? log.structured : null;
+  const title = structured?.title || log.message;
+
+  // Extract tool info if possible
+  const payloadObj = structured?.payload as any;
+  const isToolPayload = payloadObj && typeof payloadObj === "object" && (
+    "input" in payloadObj || "output" in payloadObj || "name" in payloadObj
+  );
+
+  return (
+    <div className="flex flex-col border-b border-border/20 py-1.5 font-mono">
+      <div
+        className="flex items-center gap-2 cursor-pointer select-none px-2 py-1 rounded transition-colors hover:bg-muted/40"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <span className="text-[10.5px] text-muted-foreground select-none shrink-0">
+          [{timestamp}]
+        </span>
+        <span className={`text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded shrink-0 ${
+          log.level === "error" ? "bg-destructive/15 text-destructive border border-destructive/20" :
+          log.level === "warn" ? "bg-amber-500/15 text-amber-500 border border-amber-500/20" :
+          "bg-muted text-muted-foreground border border-border/40"
+        }`}>
+          {log.level}
+        </span>
+        <span className="text-xs font-semibold text-foreground truncate flex-1 pl-1">
+          {title}
+        </span>
+        <span className="text-muted-foreground shrink-0 pl-2">
+          {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        </span>
+      </div>
+
+      {expanded && (
+        <div className="mt-1.5 ml-8 mr-2 p-3 bg-muted/45 rounded-lg border border-border/50 space-y-3 font-mono text-[11.5px] overflow-hidden">
+          {isToolsChannel && isToolPayload ? (
+            <div className="space-y-3">
+              {payloadObj.name && (
+                <div className="flex items-baseline gap-2">
+                  <span className="text-muted-foreground font-semibold shrink-0">Tool Name:</span>
+                  <code className="text-emerald-500 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded text-[11px] border border-emerald-500/20">{payloadObj.name}</code>
+                </div>
+              )}
+              {payloadObj.status && (
+                <div className="flex items-baseline gap-2">
+                  <span className="text-muted-foreground font-semibold shrink-0">Status:</span>
+                  <span className={`font-semibold text-[11px] px-1.5 py-0.5 rounded border ${
+                    payloadObj.status === "error"
+                      ? "bg-destructive/10 text-destructive border-destructive/20"
+                      : "bg-emerald-600/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
+                  }`}>
+                    {payloadObj.status}
+                  </span>
+                </div>
+              )}
+              {payloadObj.input !== undefined && (
+                <div className="space-y-1">
+                  <span className="text-muted-foreground font-semibold block">Input Parameters:</span>
+                  <pre className="p-2.5 bg-background/70 rounded-md border border-border/40 overflow-x-auto text-[11px] leading-relaxed max-w-full whitespace-pre-wrap break-all max-h-[300px] overflow-y-auto font-mono">
+                    {typeof payloadObj.input === "object"
+                      ? JSON.stringify(payloadObj.input, null, 2)
+                      : String(payloadObj.input)}
+                  </pre>
+                </div>
+              )}
+              {payloadObj.output !== undefined && (
+                <div className="space-y-1">
+                  <span className="text-muted-foreground font-semibold block">Output / Result:</span>
+                  <pre className="p-2.5 bg-background/70 rounded-md border border-border/40 overflow-x-auto text-[11px] leading-relaxed max-w-full whitespace-pre-wrap break-all max-h-[400px] overflow-y-auto font-mono">
+                    {typeof payloadObj.output === "object"
+                      ? JSON.stringify(payloadObj.output, null, 2)
+                      : String(payloadObj.output)}
+                  </pre>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-1">
+              <span className="text-muted-foreground font-semibold block">Payload Details:</span>
+              <pre className="p-2.5 bg-background/70 rounded-md border border-border/40 overflow-x-auto text-[11px] leading-relaxed max-w-full whitespace-pre-wrap break-all max-h-[400px] overflow-y-auto font-mono">
+                {structured?.raw || JSON.stringify(structured?.payload || log.message, null, 2)}
+              </pre>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
 
 export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ theme }) => {
   const [activeGroup, setActiveGroup] = useState<LogGroupId>("ai");
@@ -351,16 +450,27 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
               No logs available in this channel.
             </div>
           ) : (
-            logs.map((log, index) => (
-              <div key={index} className="flex items-start rounded px-1 py-px font-mono hover:bg-muted/50">
-                <span className="mr-3 flex-shrink-0 text-xs font-light text-muted-foreground select-none">
-                  [{formatTimestamp(log.timestamp)}]
-                </span>
-                <span className={`whitespace-pre-wrap break-all font-mono ${getLevelColor(log.level)}`}>
-                  {formatLogMessage(log, activeGroup === "agents" && jsonOnly)}
-                </span>
-              </div>
-            ))
+            logs.map((log, index) => {
+              if (log.structured?.kind === "structured") {
+                return (
+                  <StructuredLogItem
+                    key={index}
+                    log={log}
+                    isToolsChannel={channel === "tools"}
+                  />
+                );
+              }
+              return (
+                <div key={index} className="flex items-start rounded px-1 py-px font-mono hover:bg-muted/50">
+                  <span className="mr-3 flex-shrink-0 text-xs font-light text-muted-foreground select-none">
+                    [{formatTimestamp(log.timestamp)}]
+                  </span>
+                  <span className={`whitespace-pre-wrap break-all font-mono ${getLevelColor(log.level)}`}>
+                    {formatLogMessage(log, activeGroup === "agents" && jsonOnly)}
+                  </span>
+                </div>
+              );
+            })
           )}
           <div ref={bottomRef} aria-hidden="true" />
         </div>
