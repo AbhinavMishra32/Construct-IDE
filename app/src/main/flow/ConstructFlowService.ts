@@ -274,6 +274,7 @@ export class ConstructFlowService {
     publish("started");
 
     const actionsFromTools: ConstructFlowAction[] = [];
+    const conceptFirewallReviews = new Map<string, string>();
     const protocol = createConstructProtocolTools({
       project,
       workspace: this.options.workspace,
@@ -285,6 +286,18 @@ export class ConstructFlowService {
       allowTerminalCommands: toolPolicy.allowTerminalCommands,
       terminalCommandMode: toolPolicy.terminalCommandMode,
       authorizeWorkspaceMutation: async (mutation) => {
+        const fingerprint = conceptFirewallMutationFingerprint(mutation);
+        const reviewId = mutation.conceptFirewallReviewId?.trim();
+        if (reviewId) {
+          const reviewedFingerprint = conceptFirewallReviews.get(reviewId);
+          if (!reviewedFingerprint) {
+            throw new Error(`Concept firewall review id "${reviewId}" is not available in this Flow run. Omit the id to audit this mutation once.`);
+          }
+          if (reviewedFingerprint !== fingerprint) {
+            throw new Error(`Concept firewall review id "${reviewId}" belongs to a different mutation. Retry the exact same path, content, reason, and conceptIds, or omit the id for a new audit.`);
+          }
+          return;
+        }
         const decision = await this.conceptPolicy().authorize({
           project,
           artifactKind: mutation.kind,
@@ -292,6 +305,10 @@ export class ConstructFlowService {
           content: mutation.content,
           declaredConceptIds: mutation.conceptIds
         });
+        if (!decision.allowed) {
+          conceptFirewallReviews.set(decision.auditId, fingerprint);
+          throw new Error(buildConceptFirewallMutationBlockedMessage(decision));
+        }
         assertConceptPolicyAllowed(decision);
       },
       onToolCallStart: (record) => {
@@ -4060,6 +4077,38 @@ function availableFlowToolNames(policy: FlowRunToolPolicy): string[] {
   return [...new Set([...policy.protocolToolNames, ...policy.flowToolNames])];
 }
 
+function conceptFirewallMutationFingerprint(input: {
+  kind: "file-write" | "file-edit";
+  path: string;
+  content: string;
+  conceptIds: string[];
+  reason: string;
+}): string {
+  return JSON.stringify({
+    kind: input.kind,
+    path: input.path,
+    content: input.content,
+    conceptIds: [...new Set(input.conceptIds)].sort(),
+    reason: input.reason.trim()
+  });
+}
+
+function buildConceptFirewallMutationBlockedMessage(decision: {
+  auditId: string;
+  reason: string;
+  blockedCapabilities: string[];
+}): string {
+  return [
+    "Project concept firewall blocked this workspace mutation.",
+    `Concept firewall review id: ${decision.auditId}`,
+    decision.reason,
+    decision.blockedCapabilities.length
+      ? `Uncovered capabilities: ${decision.blockedCapabilities.join("; ")}`
+      : null,
+    "Teach and record the missing capability in this project, then retry the exact same mutation with this conceptFirewallReviewId. The id is valid only for the same path, content, reason, and conceptIds."
+  ].filter(Boolean).join(" ");
+}
+
 function pickFlowMainProtocolTools(protocolTools: ToolsInput, policy: FlowRunToolPolicy): ToolsInput {
   return Object.fromEntries(
     policy.protocolToolNames
@@ -4342,6 +4391,7 @@ CRITICAL PEDAGOGY RULE: You must NEVER use write/edit to write the actual implem
 
 The available Flow tools are run-mode dependent. The prompt includes a Current Flow run mode section with the exact tool list for this turn. Keep the tool surface calm. Do not ask for or invent extra tools.
 File mutation follows the Claude Code shape: write creates or overwrites a file; edit replaces one exact string in an existing file. Every write/edit call must include conceptIds from this project's taught concept ledger. The runtime independently audits the proposed content against those exact concept bodies and blocks uncovered syntax, APIs, patterns, tooling, or hidden prerequisites. A global concept or a concept taught in another project does not count. Use write/edit only to help the learner move through a project-taught concept, repair tiny scaffold/setup blockers, update simple docs, or make clearly requested support edits. Do not use write/edit to implement code whose concept has not been introduced in this project yet. Even after a concept is introduced, do not implement it; instead, create a practice task for the learner.
+If write/edit is blocked by the concept firewall, read the returned conceptFirewallReviewId. Teach and record the missing capability first. Then retry the same write/edit with the exact same path, content, reason, and conceptIds plus that conceptFirewallReviewId. Do not use the id for changed content, changed files, or a new action; omit it to audit a genuinely new mutation once.
 Before using write/edit for a learning-acceleration support edit, ask the learner first with ask-question and wait for the answer. This includes edits because the learner is stuck, because a scaffold bug is blocking progress, or because the edit would make learning faster. The question must name the file, describe the exact change, explain why it would speed progress, and say what learning remains for the learner. Example shape: "Should I edit [[file:src/core/index.ts|src/core/index.ts]] to remove the broken export so you can focus on module barrels instead of setup friction? You will still implement the public API yourself." If the learner says no or skips, do not edit; teach or create a learner task instead. If the learner explicitly asks in the current message for a concrete file edit, that counts as consent for that requested edit only.
 
 Project kickoff and path:

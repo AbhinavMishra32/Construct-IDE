@@ -52,6 +52,7 @@ export type ConstructProtocolToolsOptions = {
     content: string;
     conceptIds: string[];
     reason: string;
+    conceptFirewallReviewId?: string;
   }) => Promise<void>;
   onToolCallStart?: ConstructProtocolToolCallSink;
   onToolCall?: ConstructProtocolToolCallSink;
@@ -428,15 +429,18 @@ export function createConstructProtocolTools(options: ConstructProtocolToolsOpti
       currentWorkspaceDiff(options.project)
     )
   });
+  const conceptFirewallReviewIdSchema = z.string().min(1).max(120).optional()
+    .describe("Flow-only. If the concept firewall previously blocked this exact same mutation, retry with that review id after teaching/recording the missing concept. The id is valid only for the same path, content, reason, and conceptIds.");
 
   const editWriteFile = createTool({
     id: "edit-write-file",
-    description: "Create or rewrite a project file when explicitly appropriate. In Flow, conceptIds must name concepts taught in this project and the content must pass the project concept firewall.",
+    description: "Create or rewrite a project file when explicitly appropriate. In Flow, conceptIds must name concepts taught in this project and the content must pass the project concept firewall. If the firewall blocks this exact mutation, teach/record the missing concept, then retry the same mutation with the returned conceptFirewallReviewId.",
     inputSchema: z.object({
       path: z.string().min(1),
       content: z.string(),
       reason: z.string().min(1),
-      conceptIds: z.array(z.string().min(1)).default([])
+      conceptIds: z.array(z.string().min(1)).default([]),
+      conceptFirewallReviewId: conceptFirewallReviewIdSchema
     }).strict(),
     execute: async (toolInput) => {
       await options.authorizeWorkspaceMutation?.({
@@ -444,7 +448,8 @@ export function createConstructProtocolTools(options: ConstructProtocolToolsOpti
         path: toolInput.path,
         content: toolInput.content,
         conceptIds: toolInput.conceptIds ?? [],
-        reason: toolInput.reason
+        reason: toolInput.reason,
+        conceptFirewallReviewId: toolInput.conceptFirewallReviewId
       });
       return recordToolCall(
         "edit-write-file",
@@ -458,12 +463,13 @@ export function createConstructProtocolTools(options: ConstructProtocolToolsOpti
 
   const write = createTool({
     id: "write",
-    description: "Claude-Code-style file write. In Flow, conceptIds are required and every construct in content must be taught by those project-local concept bodies.",
+    description: "Claude-Code-style file write. In Flow, conceptIds are required and every construct in content must be taught by those project-local concept bodies. If the firewall blocks this exact mutation, teach/record the missing concept, then retry the same mutation with the returned conceptFirewallReviewId.",
     inputSchema: z.object({
       path: z.string().min(1),
       content: z.string(),
       reason: z.string().min(1),
-      conceptIds: z.array(z.string().min(1)).default([])
+      conceptIds: z.array(z.string().min(1)).default([]),
+      conceptFirewallReviewId: conceptFirewallReviewIdSchema
     }).strict(),
     execute: async (toolInput) => {
       await options.authorizeWorkspaceMutation?.({
@@ -471,7 +477,8 @@ export function createConstructProtocolTools(options: ConstructProtocolToolsOpti
         path: toolInput.path,
         content: toolInput.content,
         conceptIds: toolInput.conceptIds ?? [],
-        reason: toolInput.reason
+        reason: toolInput.reason,
+        conceptFirewallReviewId: toolInput.conceptFirewallReviewId
       });
       return recordToolCall(
         "write",
@@ -488,13 +495,14 @@ export function createConstructProtocolTools(options: ConstructProtocolToolsOpti
 
   const editReplace = createTool({
     id: "edit-replace",
-    description: "Replace one exact string in a project file. In Flow, conceptIds must cover every construct in the replacement.",
+    description: "Replace one exact string in a project file. In Flow, conceptIds must cover every construct in the replacement. If the firewall blocks this exact mutation, teach/record the missing concept, then retry the same mutation with the returned conceptFirewallReviewId.",
     inputSchema: z.object({
       path: z.string().min(1),
       find: z.string().min(1),
       replace: z.string(),
       reason: z.string().min(1),
-      conceptIds: z.array(z.string().min(1)).default([])
+      conceptIds: z.array(z.string().min(1)).default([]),
+      conceptFirewallReviewId: conceptFirewallReviewIdSchema
     }).strict(),
     execute: async (toolInput) => {
       await options.authorizeWorkspaceMutation?.({
@@ -502,7 +510,8 @@ export function createConstructProtocolTools(options: ConstructProtocolToolsOpti
         path: toolInput.path,
         content: toolInput.replace,
         conceptIds: toolInput.conceptIds ?? [],
-        reason: toolInput.reason
+        reason: toolInput.reason,
+        conceptFirewallReviewId: toolInput.conceptFirewallReviewId
       });
       return recordToolCall(
         "edit-replace",
@@ -516,13 +525,14 @@ export function createConstructProtocolTools(options: ConstructProtocolToolsOpti
 
   const edit = createTool({
     id: "edit",
-    description: "Claude-Code-style exact string edit. In Flow, conceptIds are required and the replacement must pass the project concept firewall.",
+    description: "Claude-Code-style exact string edit. In Flow, conceptIds are required and the replacement must pass the project concept firewall. If the firewall blocks this exact mutation, teach/record the missing concept, then retry the same mutation with the returned conceptFirewallReviewId.",
     inputSchema: z.object({
       path: z.string().min(1),
       find: z.string().min(1),
       replace: z.string(),
       reason: z.string().min(1),
-      conceptIds: z.array(z.string().min(1)).default([])
+      conceptIds: z.array(z.string().min(1)).default([]),
+      conceptFirewallReviewId: conceptFirewallReviewIdSchema
     }).strict(),
     execute: async (toolInput) => {
       await options.authorizeWorkspaceMutation?.({
@@ -530,7 +540,8 @@ export function createConstructProtocolTools(options: ConstructProtocolToolsOpti
         path: toolInput.path,
         content: toolInput.replace,
         conceptIds: toolInput.conceptIds ?? [],
-        reason: toolInput.reason
+        reason: toolInput.reason,
+        conceptFirewallReviewId: toolInput.conceptFirewallReviewId
       });
       return recordToolCall(
         "edit",
