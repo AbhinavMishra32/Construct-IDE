@@ -228,7 +228,7 @@ export class ConstructFlowService {
     const settings = await this.options.readSettings?.();
     const sourceGroundingEnabled = settings?.ai.flowSourceGroundingEnabled !== false;
     const toolPolicy = flowToolPolicyForInput(input, { sourceGroundingEnabled });
-    const answeredSession = applyQuestionResponse(project, input.questionResponse);
+    const answeredSession = applyFlowQuestionResponse(project, input.questionResponse);
     if (answeredSession) {
       onSessionEvent?.({
         type: "completed",
@@ -2784,7 +2784,7 @@ function diffBaseline(
   };
 }
 
-function applyQuestionResponse(
+export function applyFlowQuestionResponse(
   project: StoredFlowProject,
   response: ConstructFlowQuestionResponse | undefined
 ): ConstructFlowSession | undefined {

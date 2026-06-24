@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
 
-import { ConstructFlowService } from "./ConstructFlowService";
+import { applyFlowQuestionResponse, ConstructFlowService } from "./ConstructFlowService";
 import { ConstructProjectWorkspaceService } from "../projects/ConstructProjectWorkspaceService";
 import { ConstructFlowMemoryService } from "./ConstructFlowMemoryService";
 import { AgentLogService } from "../ai/AgentLogService";
@@ -1152,6 +1152,46 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     });
     assert.equal(starterSession.origin, "system");
     assert.deepEqual(starterSession.messages, []);
+  });
+
+  it("persists tracked question answers onto the source waiting session", async () => {
+    const project = createFlowTestProject("/tmp", "question-answer-project");
+    project.flow.sessions.push({
+      id: "question-session",
+      projectId: project.id,
+      threadId: project.flow.threadId,
+      origin: "user",
+      messages: [],
+      status: "waiting",
+      toolCalls: [{
+        id: "ask-question-1",
+        name: "ask-question",
+        title: "Ask learner",
+        reason: "Need package manager preference.",
+        input: { question: "Which package manager should Flow use?" },
+        status: "completed",
+        createdAt: "2026-06-24T05:00:01.000Z",
+        completedAt: "2026-06-24T05:00:02.000Z"
+      }],
+      agentEvents: [],
+      timeline: [],
+      actions: [],
+      practiceTasks: [],
+      createdAt: "2026-06-24T05:00:00.000Z",
+      updatedAt: "2026-06-24T05:00:02.000Z"
+    });
+
+    const answered = applyFlowQuestionResponse(project, {
+      sessionId: "question-session",
+      toolCallId: "ask-question-1",
+      question: "Which package manager should Flow use?",
+      answer: "pnpm",
+      answeredAt: "2026-06-24T05:00:03.000Z"
+    });
+
+    assert.equal(answered?.status, "completed");
+    assert.equal(project.flow.sessions[0]?.toolCalls[0]?.response?.answer, "pnpm");
+    assert.equal(project.flow.updatedAt, "2026-06-24T05:00:03.000Z");
   });
 
   it("sends the persisted Flow transcript as the model message array", async () => {

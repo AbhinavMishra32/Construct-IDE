@@ -6,7 +6,8 @@ import type { IpcMain } from "electron";
 
 import type { StoredSettings } from "../config/constructConfig";
 import { ConstructFlowMemoryService, FLOW_MEMORY_FILES } from "../flow/ConstructFlowMemoryService";
-import { ConstructFlowService } from "../flow/ConstructFlowService";
+import { mergeFlowProjectSnapshot, rememberFlowProjectSnapshot } from "../flow/ConstructFlowProjectSnapshotStore";
+import { applyFlowQuestionResponse, ConstructFlowService } from "../flow/ConstructFlowService";
 import type { StoredFlowProject, StoredProject } from "../projects/ConstructProjectTypes";
 import { isFlowProject } from "../projects/ConstructProjectTypes";
 import { ConstructProjectWorkspaceService } from "../projects/ConstructProjectWorkspaceService";
@@ -94,20 +95,20 @@ export class ConstructFlowIpcController {
       this.options.setActiveWebContents(event.sender);
 
       if (project.flow.researchEnabled) {
-        const publishSessionEvent = this.createPersistedSessionEventSink(event.sender, projects, project);
+        const publishSessionEvent = this.createPersistedSessionEventSink(event.sender, project);
         this.options.flow.runResearchAgent(project, publishSessionEvent)
-          .then(async () => this.queueProjectWrite(projects, project, "research-completed"))
+          .then(async () => this.queueProjectWrite(project, "research-completed"))
           .catch((error) => {
             console.error("[construct-flow] background research failed", error);
           });
       } else {
-        const publishSessionEvent = this.createPersistedSessionEventSink(event.sender, projects, project);
+        const publishSessionEvent = this.createPersistedSessionEventSink(event.sender, project);
         await this.options.flow.runMainAgent(project, {
           projectId: project.id,
           startReason: "new-project",
           message: "Start this new Flow project. Use the project goal, project settings, and current workspace context to decide the next helpful mentor step."
         }, publishSessionEvent);
-        await this.queueProjectWrite(projects, project, "new-project-main-agent");
+        await this.queueProjectWrite(project, "new-project-main-agent");
       }
 
       return project;
@@ -127,7 +128,7 @@ export class ConstructFlowIpcController {
       const updates = Array.isArray(input?.updates) ? input.updates : [];
       const result = await this.options.flowMemory.update(project, updates);
       project.flow.updatedAt = new Date().toISOString();
-      await this.options.writeProjects(projects);
+      await this.queueProjectWrite(project, "memory-update");
       return result;
     });
 
@@ -135,12 +136,15 @@ export class ConstructFlowIpcController {
       const projects = await this.options.readProjects();
       const project = this.findFlowProject(projects, String(input?.projectId ?? ""));
       this.options.setActiveWebContents(event.sender);
+      if (input.questionResponse && applyFlowQuestionResponse(project, input.questionResponse)) {
+        await this.queueProjectWrite(project, "question-response-received");
+      }
       const result = await this.options.flow.runMainAgent(
         project,
         input,
-        this.createPersistedSessionEventSink(event.sender, projects, project)
+        this.createPersistedSessionEventSink(event.sender, project)
       );
-      await this.queueProjectWrite(projects, project, "run-agent-completed");
+      await this.queueProjectWrite(project, "run-agent-completed");
       return result;
     });
 
@@ -150,9 +154,9 @@ export class ConstructFlowIpcController {
       this.options.setActiveWebContents(event.sender);
       const result = await this.options.flow.runResearchAgent(
         project,
-        this.createPersistedSessionEventSink(event.sender, projects, project)
+        this.createPersistedSessionEventSink(event.sender, project)
       );
-      await this.queueProjectWrite(projects, project, "research-completed");
+      await this.queueProjectWrite(project, "research-completed");
       return { ...result, project };
     });
 
@@ -165,7 +169,7 @@ export class ConstructFlowIpcController {
         typeof input?.note === "string" ? input.note : undefined,
         typeof input?.subtaskId === "string" ? input.subtaskId : undefined
       );
-      await this.options.writeProjects(projects);
+      await this.queueProjectWrite(project, "task-submission");
       return submission;
     });
 
@@ -198,7 +202,7 @@ export class ConstructFlowIpcController {
         }));
       }
       project.flow.updatedAt = new Date().toISOString();
-      await this.options.writeProjects(projects);
+      await this.queueProjectWrite(project, "rewind-session");
       return project;
     });
   }
@@ -220,7 +224,6 @@ export class ConstructFlowIpcController {
 
   private createPersistedSessionEventSink(
     webContents: Electron.WebContents,
-    projects: StoredProject[],
     project: StoredFlowProject
   ) {
     return (payload: ConstructFlowSessionEvent) => {
@@ -228,19 +231,25 @@ export class ConstructFlowIpcController {
       if (!webContents.isDestroyed()) {
         webContents.send("construct:flow:session-event", payload);
       }
-      void this.queueProjectWrite(projects, project, `session-${payload.type}`);
+      void this.queueProjectWrite(project, `session-${payload.type}`);
     };
   }
 
-  private queueProjectWrite(projects: StoredProject[], project: StoredFlowProject, reason: string): Promise<void> {
+  private queueProjectWrite(project: StoredFlowProject, reason: string): Promise<void> {
+    rememberFlowProjectSnapshot(project);
     const write = this.flowProjectWriteQueue
       .catch(() => undefined)
       .then(async () => {
+        const projects = await this.options.readProjects();
         const saved = projects.find((candidate) => candidate.id === project.id);
+        let persistedProject = project;
         if (saved && isFlowProject(saved)) {
-          Object.assign(saved, project);
+          persistedProject = Object.assign(saved, mergeFlowProjectSnapshot(saved, project));
+        } else {
+          projects.push(project);
         }
         await this.options.writeProjects(projects);
+        rememberFlowProjectSnapshot(persistedProject);
       });
     this.flowProjectWriteQueue = write.catch((error) => {
       console.error("[construct-flow] failed to persist Flow project snapshot", {

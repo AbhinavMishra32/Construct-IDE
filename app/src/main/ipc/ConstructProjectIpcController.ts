@@ -5,6 +5,7 @@ import { cp, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promis
 import type { IpcMain, WebContents } from "electron";
 
 import type { StoredSettings } from "../config/constructConfig";
+import { applyLiveFlowProjectSnapshot } from "../flow/ConstructFlowProjectSnapshotStore";
 import { ConstructProjectGitService } from "../projects/ConstructProjectGitService";
 import { isFlowProject, isTapeProject, type ProjectSummary, type StoredProject } from "../projects/ConstructProjectTypes";
 import { ConstructProjectWorkspaceService } from "../projects/ConstructProjectWorkspaceService";
@@ -204,13 +205,14 @@ export class ConstructProjectIpcController {
     });
 
     ipcMain.handle("construct:project:list", async () => {
-      return (await this.options.readProjects()).map(this.options.summarizeProject);
+      return (await this.options.readProjects())
+        .map((project) => this.options.summarizeProject(applyLiveFlowProjectSnapshot(project)));
     });
 
     ipcMain.handle("construct:project:open", async (_event, id: string) => {
       console.log("[construct] open project requested", { id });
       const projects = await this.options.readProjects();
-      const project = this.options.findProject(projects, id);
+      let project = this.options.findProject(projects, id);
 
       project.lastOpenedAt = new Date().toISOString();
       if (this.options.workspace.isInsidePath(project.workspacePath, this.options.getAppSourceRoot())) {
@@ -235,6 +237,14 @@ export class ConstructProjectIpcController {
           });
           project.activeFilePath = isTapeProject(project) ? project.program.files[0]?.path ?? null : null;
         }
+      }
+      const liveProject = applyLiveFlowProjectSnapshot(project);
+      if (liveProject !== project) {
+        const projectIndex = projects.findIndex((candidate) => candidate.id === project.id);
+        if (projectIndex >= 0) {
+          projects[projectIndex] = liveProject;
+        }
+        project = liveProject;
       }
       await this.options.workspace.materializeInitialFiles(project);
       await this.options.writeProjects(projects);
@@ -281,8 +291,9 @@ export class ConstructProjectIpcController {
         throw new Error(`Unknown Construct project: ${input.id}`);
       }
 
+      const currentProject = applyLiveFlowProjectSnapshot(projects[index]);
       projects[index] = {
-        ...projects[index],
+        ...currentProject,
         ...input.patch
       };
       projects[index].progress = this.options.workspace.calculateProgress(projects[index]);
