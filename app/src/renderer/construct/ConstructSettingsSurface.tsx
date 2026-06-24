@@ -102,7 +102,8 @@ const defaultAiSettings: AiSettings = {
   constructCloudModel: "deepseek/deepseek-v4-flash",
   tavilyApiKey: "",
   featureModels: {},
-  codeGhostEnabled: true
+  codeGhostEnabled: true,
+  conceptFirewallEnabled: true
 };
 
 const flowMemoryFiles: FlowMemoryFileName[] = [
@@ -938,7 +939,7 @@ export function ConstructSettingsSurface({
             <SettingsCard>
               <SettingsRow
                 title="Memory directory"
-                description=".construct/flow-memory keeps Flow's durable context readable, editable, and source-control friendly."
+                description=".construct keeps Flow's durable context readable, editable, and source-control friendly."
               />
               {flowMemoryBusy && !flowMemoryLoaded ? (
                 <SettingsRow title="Loading memory" description="Reading the current Flow memory files." />
@@ -965,7 +966,7 @@ export function ConstructSettingsSurface({
                         spellCheck={false}
                       />
                       <div className="flex items-center justify-between gap-3">
-                        <code className="text-xs text-muted-foreground">{entry?.path ?? `.construct/flow-memory/${file}`}</code>
+                        <code className="text-xs text-muted-foreground">{entry?.path ?? `.construct/${file}`}</code>
                         <Button
                           size="small"
                           disabled={flowMemoryBusy || flowMemorySaving !== null || !changed}
@@ -1168,6 +1169,7 @@ export function ConstructSettingsSurface({
         onProviderChange={updateAiProvider}
         onReasoningEffortChange={(reasoningEffort) => setAiSettingsDraft((current) => ({ ...current, reasoningEffort }))}
         onCodeGhostEnabledChange={(codeGhostEnabled: boolean) => setAiSettingsDraft((current) => ({ ...current, codeGhostEnabled }))}
+        onConceptFirewallEnabledChange={(conceptFirewallEnabled: boolean) => setAiSettingsDraft((current) => ({ ...current, conceptFirewallEnabled }))}
         onOpenAiApiKeyChange={(openAiApiKey: string) => setAiSettingsDraft((current) => ({ ...current, openAiApiKey }))}
         onOpenAiBaseUrlChange={(openAiBaseUrl: string) => setAiSettingsDraft((current) => ({ ...current, openAiBaseUrl }))}
         onOpenRouterApiKeyChange={(openRouterApiKey: string) => setAiSettingsDraft((current) => ({ ...current, openRouterApiKey }))}

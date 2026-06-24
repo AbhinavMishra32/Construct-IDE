@@ -152,7 +152,7 @@ Flow Memory should also be accessible to the agent through tools.
 Suggested file location:
 
 ```text
-.construct/flow-memory/
+.construct/
   research.md
   project.md
   path.md
