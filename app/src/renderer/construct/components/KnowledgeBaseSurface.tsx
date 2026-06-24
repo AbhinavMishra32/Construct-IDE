@@ -50,7 +50,9 @@ export function KnowledgeBaseSurface({
 
   const selected = filtered.find((record) => recordKey(record) === selectedKey) ?? filtered[0] ?? null;
   const tree = useMemo(() => buildConceptTree(filtered), [filtered]);
-  const flowProjectCount = isFlowProjectRecord(activeProject) ? records.filter((record) => record.sourceProjectId === activeProject.id).length : 0;
+  const flowProjectCount = isFlowProjectRecord(activeProject)
+    ? records.filter((record) => record.projects?.some((relation) => relation.projectId === activeProject.id) || record.sourceProjectId === activeProject.id).length
+    : 0;
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col bg-background">
@@ -226,6 +228,37 @@ function ConceptDetail({
             <MarkdownBlock content={record.summary || "No summary recorded yet."} theme={theme} />
           </ConceptSection>
 
+          <ConceptSection title="Project relations">
+            <div className="grid gap-2 md:grid-cols-2">
+              {(record.projects?.length ? record.projects : [{
+                projectId: record.sourceProjectId,
+                projectTitle: record.sourceProjectTitle,
+                conceptId: record.id,
+                introducedAt: record.savedAt,
+                firstReferencedAt: record.savedAt,
+                lastReferencedAt: record.lastModifiedAt ?? record.savedAt,
+                masteryLevel: record.masteryLevel ?? 0,
+                lastEventKind: "introduced" as const,
+                eventIds: []
+              }]).map((relation) => (
+                <button
+                  key={`${relation.projectId}:${relation.conceptId}`}
+                  type="button"
+                  className="rounded-[8px] border bg-muted/15 p-3 text-left hover:bg-muted"
+                  onClick={() => onOpenProject(relation.projectId)}
+                >
+                  <span className="block truncate text-sm font-medium">{relation.projectTitle}</span>
+                  <span className="mt-1 block text-xs text-muted-foreground">
+                    {relation.lastEventKind} · L{relation.masteryLevel} · {formatDate(relation.lastReferencedAt)}
+                  </span>
+                  <span className="mt-1 block truncate text-[11px] text-muted-foreground">
+                    {projectEventSummary(record, relation.projectId)}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </ConceptSection>
+
           {content && content !== record.summary ? (
             <ConceptSection title="Concept text">
               <MarkdownBlock content={content} theme={theme} />
@@ -338,6 +371,16 @@ function ConceptStat({ label, value }: { label: string; value: string }) {
       <strong className="mt-1 block truncate font-medium">{value}</strong>
     </div>
   );
+}
+
+function projectEventSummary(record: SavedKnowledgeRecord, projectId: string): string {
+  const events = (record.projectEvents ?? []).filter((event) => event.projectId === projectId);
+  if (!events.length) return "Introduced from legacy concept history";
+  const counts = new Map<string, number>();
+  for (const event of events) {
+    counts.set(event.kind, (counts.get(event.kind) ?? 0) + 1);
+  }
+  return [...counts.entries()].map(([kind, count]) => `${kind} ${count}`).join(" · ");
 }
 
 function HistoryEventDetails({ event }: { event: NonNullable<ConceptCard["history"]>[number] }) {

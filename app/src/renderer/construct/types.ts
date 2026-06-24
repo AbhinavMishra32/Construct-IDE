@@ -151,6 +151,7 @@ export type ConceptCard = {
   technology?: string;
   tags: string[];
   summary: string;
+  content?: string;
   why: string;
   commonMistake?: string;
   example: string;
@@ -448,7 +449,7 @@ export type FlowProjectRecord = ProjectSummary & {
     autonomyPreference?: "guided" | "balanced" | "agentic";
     permissionsPreference?: "ask" | "workspace" | "agentic";
     projectSettings?: import("../../shared/constructFlow").ConstructFlowProjectSettings;
-    memoryDirectory: ".construct/flow-memory";
+    memoryDirectory: ".construct";
     threadId: string;
     researchEnabled: boolean;
     researchCompletedAt?: string | null;
@@ -512,6 +513,7 @@ export type AiSettings = {
   tavilyApiKey: string;
   featureModels: Record<string, string>;
   codeGhostEnabled: boolean;
+  conceptFirewallEnabled: boolean;
 };
 
 export type AiFeatureSettings = {
@@ -599,6 +601,12 @@ export type DebugProcessSnapshot = {
   cpuPercent?: number | null;
   memoryMb?: number | null;
   elapsed?: string | null;
+};
+
+export type ProjectFileChangePayload = {
+  eventType?: string;
+  path?: string | null;
+  paths?: string[];
 };
 
 export type ConstructProjectsApi = {
@@ -790,7 +798,7 @@ export type ConstructProjectsApi = {
   onLitellmStatusChange(callback: (payload: LitellmState) => void): () => void;
   importOpencodeAuth(): Promise<string | null>;
   onProviderLog(callback: (payload: { provider: string; message: string; level: string }) => void): () => void;
-  onFileChanged(callback: () => void): () => void;
+  onFileChanged(callback: (payload: ProjectFileChangePayload) => void): () => void;
   closeProject(): Promise<void>;
 };
 

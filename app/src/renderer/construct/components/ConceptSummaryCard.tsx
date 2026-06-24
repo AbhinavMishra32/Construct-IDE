@@ -12,6 +12,8 @@ type ConceptSummaryCardProps = {
   actionLabel?: string;
   attention?: boolean;
   onOpen?: () => void;
+  levelChange?: { before: number; after: number } | null;
+  changedFields?: string[];
 };
 
 function ConceptStatusChip({ label, tone }: { label: string; tone?: "added" | "modified" | "removed" }) {
@@ -35,25 +37,94 @@ function ConceptStatusChip({ label, tone }: { label: string; tone?: "added" | "m
   );
 }
 
+function getModificationStatus(
+  actionLabel: string,
+  levelChange?: { before: number; after: number } | null,
+  changedFields?: string[]
+): { text: string; color: string } {
+  const isAdded = actionLabel.toLowerCase().includes("introduc") || actionLabel.toLowerCase().includes("added");
+  const isRemoved = actionLabel.toLowerCase().includes("remov");
+  const isModified = actionLabel.toLowerCase().includes("modif");
+
+  if (isAdded) {
+    return {
+      text: "New",
+      color: "text-[color:var(--construct-success)] font-medium"
+    };
+  }
+  if (isRemoved) {
+    return {
+      text: "Removed",
+      color: "text-destructive font-medium"
+    };
+  }
+  if (isModified) {
+    if (levelChange && levelChange.before !== levelChange.after) {
+      if (levelChange.after > levelChange.before) {
+        return {
+          text: "Mastery Upgraded!",
+          color: "text-[color:var(--construct-success)] font-medium"
+        };
+      } else {
+        return {
+          text: "Mastery Downgraded",
+          color: "text-[color:var(--construct-warning)] font-medium"
+        };
+      }
+    }
+
+    if (changedFields && changedFields.length > 0) {
+      if (changedFields.includes("masteryLevel")) {
+        return {
+          text: "Mastery Updated",
+          color: "text-[color:var(--construct-warning)] font-medium"
+        };
+      }
+      if (changedFields.includes("content") || changedFields.includes("examples") || changedFields.includes("title")) {
+        return {
+          text: "Concept Refined",
+          color: "text-[color:var(--construct-warning)] font-medium"
+        };
+      }
+      if (changedFields.includes("confidence")) {
+        return {
+          text: "Confidence Updated",
+          color: "text-[color:var(--construct-warning)] font-medium"
+        };
+      }
+      if (changedFields.includes("relatedConcepts")) {
+        return {
+          text: "Relations Refined",
+          color: "text-[color:var(--construct-warning)] font-medium"
+        };
+      }
+    }
+
+    return {
+      text: "Concept Refined",
+      color: "text-[color:var(--construct-warning)] font-medium"
+    };
+  }
+
+  return { text: "", color: "" };
+}
+
 export function ConceptSummaryCard({
   concept,
   compact = false,
   variant = "default",
   actionLabel = "Open concept",
   attention = false,
-  onOpen
+  onOpen,
+  levelChange,
+  changedFields
 }: ConceptSummaryCardProps) {
   const language = languageLabel(concept);
   const masteryLevel = masteryLevelForConcept(concept);
   const mastery = conceptMasteryRubricForLevel(masteryLevel);
 
   if (variant === "chat") {
-    const isAdded = actionLabel.toLowerCase().includes("introduc") || actionLabel.toLowerCase().includes("added");
-    const isRemoved = actionLabel.toLowerCase().includes("remov");
-    const isModified = actionLabel.toLowerCase().includes("modif");
-
-    const statusText = isAdded ? "New" : isModified ? "Updated" : isRemoved ? "Removed" : "";
-    const statusColor = isAdded ? "text-[color:var(--construct-success)] font-medium" : isModified ? "text-[color:var(--construct-warning)] font-medium" : isRemoved ? "text-destructive font-medium" : "";
+    const { text: statusText, color: statusColor } = getModificationStatus(actionLabel, levelChange, changedFields);
 
     const iconClass = "border-border/70 bg-background/80 text-muted-foreground";
 
@@ -71,10 +142,21 @@ export function ConceptSummaryCard({
             <AtomIcon size={14} />
           </span>
           <div className="min-w-0 flex-1">
-            <div className="mb-0.5 flex min-w-0 items-center gap-1 text-[10px] text-muted-foreground font-medium">
+            <div className="mb-0.5 flex min-w-0 items-center gap-1.5 text-[10px] text-muted-foreground font-medium flex-wrap">
               <span>{language} Concept</span>
               <span>·</span>
-              <span>L{masteryLevel}</span>
+              {levelChange && levelChange.before !== levelChange.after ? (
+                <span className="inline-flex items-center gap-1 bg-background/50 border border-border/40 rounded-full px-1.5 py-0.5 shadow-sm">
+                  <span className="text-muted-foreground/75 font-normal">L{levelChange.before}</span>
+                  <span className="text-muted-foreground/60">→</span>
+                  <span className={cn(
+                    "font-bold",
+                    levelChange.after > levelChange.before ? "text-[color:var(--construct-success)]" : "text-[color:var(--construct-warning)]"
+                  )}>L{levelChange.after}</span>
+                </span>
+              ) : (
+                <span>L{masteryLevel}</span>
+              )}
               {statusText ? (
                 <>
                   <span>·</span>

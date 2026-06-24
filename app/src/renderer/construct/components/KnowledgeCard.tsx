@@ -149,7 +149,7 @@ export function KnowledgeCard({
         {history.length ? (
           <ConceptBlock title="History">
             <ol className="flex flex-col gap-3">
-              {history.slice().reverse().map((event) => (
+              {history.slice().reverse().map((event, index) => (
                 <li key={event.id} className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-3 text-xs">
                   <time className="pt-0.5 text-[11px] text-muted-foreground">{formatShortDate(event.createdAt)}</time>
                   <div className="min-w-0 border-l pl-3">
@@ -162,7 +162,7 @@ export function KnowledgeCard({
                     {event.reason ? <p className="mt-1 leading-relaxed text-muted-foreground">{event.reason}</p> : null}
                     {event.confidenceReason ? <p className="mt-1 leading-relaxed text-muted-foreground">{event.confidenceReason}</p> : null}
                     {(event.provenance || event.fieldChanges?.length) ? (
-                      <details className="mt-2 rounded-[8px] border bg-muted/20 px-3 py-2">
+                      <details className="mt-2 rounded-[8px] border bg-muted/20 px-3 py-2" open={index === 0}>
                         <summary className="cursor-pointer text-[11px] font-medium text-muted-foreground">Inspect change</summary>
                         {event.provenance ? (
                           <div className="mt-2 flex flex-col gap-1 text-[11px] text-muted-foreground">

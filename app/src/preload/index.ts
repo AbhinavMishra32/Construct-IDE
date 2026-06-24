@@ -220,9 +220,9 @@ contextBridge.exposeInMainWorld("constructProjects", {
     ipcRenderer.on("construct:provider:log", listener);
     return () => ipcRenderer.off("construct:provider:log", listener);
   },
-  onFileChanged: (callback: () => void) => {
-    const listener = () => {
-      callback();
+  onFileChanged: (callback: (payload: { eventType?: string; path?: string | null; paths?: string[] }) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload?: { eventType?: string; path?: string | null; paths?: string[] }) => {
+      callback(payload ?? {});
     };
     ipcRenderer.on("construct:project:file-changed", listener);
     return () => ipcRenderer.off("construct:project:file-changed", listener);

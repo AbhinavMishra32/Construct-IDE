@@ -33,7 +33,7 @@ import type {
   ConstructFlowTimelinePart,
   ConstructFlowToolCallRecord
 } from "../../../shared/constructFlow";
-import type { AiSettings, ConceptCard, FlowProjectRecord, ModelCatalogEntry, WorkspaceTreeNode } from "../types";
+import type { AiSettings, ConceptCard, FlowProjectRecord, ModelCatalogEntry, ProjectFileChangePayload, WorkspaceTreeNode } from "../types";
 import {
   createFolder,
   deleteFile,
@@ -60,18 +60,18 @@ import { iconForFile } from "./workspace/FileChooserContent";
 import type { InlineFileRef } from "../lib/inlineRefs";
 import { Badge } from "../../components/ui/badge";
 import {
-  ShadcnDropdownMenu as DropdownMenu,
-  ShadcnDropdownMenuContent as DropdownMenuContent,
-  ShadcnDropdownMenuGroup as DropdownMenuGroup,
-  ShadcnDropdownMenuItem as DropdownMenuItem,
-  ShadcnDropdownMenuLabel as DropdownMenuLabel,
-  ShadcnDropdownMenuTrigger as DropdownMenuTrigger,
-  ShadcnDropdownMenuSeparator as DropdownMenuSeparator,
-  ShadcnDropdownMenuSub as DropdownMenuSub,
-  ShadcnDropdownMenuSubTrigger as DropdownMenuSubTrigger,
-  ShadcnDropdownMenuSubContent as DropdownMenuSubContent,
-  ShadcnDropdownMenuPortal as DropdownMenuPortal
-} from "@opaline/ui";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
+  DropdownMenuPortal
+} from "../../components/ui/dropdown-menu";
 import { Input } from "../../components/ui/input";
 import { ScrollArea } from "../../components/ui/scroll-area";
 import { Textarea } from "../../components/ui/textarea";
@@ -95,13 +95,53 @@ function taskIdFromFlowTab(tabId: string): string | null {
   return tabId.startsWith(FLOW_TASK_TAB_PREFIX) ? tabId.slice(FLOW_TASK_TAB_PREFIX.length) : null;
 }
 
+export type FlowChatMode = "panel" | "maximized";
+
+export type FlowLayoutRequest =
+  | { kind: "workbench-chat"; reason: "file-system-change" | "task-created" }
+  | { kind: "maximized-chat"; reason: "project-created" };
+
+const FLOW_MEMORY_FILE_NAMES = new Set(["research.md", "project.md", "path.md", "learner.md"]);
+
+function normalizeWorkspaceChangePath(value: string): string {
+  return value.replace(/\\/g, "/").replace(/^\.\//, "").replace(/^\/+/, "");
+}
+
+function isFlowMemoryChangePath(value: string): boolean {
+  const normalized = normalizeWorkspaceChangePath(value);
+  if (normalized === ".construct" || normalized === ".construct/flow-memory") {
+    return true;
+  }
+  if (normalized.startsWith(".construct/flow-memory/")) {
+    return FLOW_MEMORY_FILE_NAMES.has(normalized.slice(".construct/flow-memory/".length));
+  }
+  if (!normalized.startsWith(".construct/")) {
+    return false;
+  }
+  return FLOW_MEMORY_FILE_NAMES.has(normalized.slice(".construct/".length));
+}
+
+function fileChangePayloadPaths(payload: ProjectFileChangePayload): string[] {
+  if (payload.paths && payload.paths.length > 0) {
+    return payload.paths;
+  }
+  return payload.path ? [payload.path] : [];
+}
+
+function isOnlyFlowMemoryChange(payload: ProjectFileChangePayload): boolean {
+  const paths = fileChangePayloadPaths(payload);
+  return paths.length > 0 && paths.every(isFlowMemoryChangePath);
+}
+
 export function FlowWorkspace({
   project,
   activePanelView,
+  chatMode,
   theme,
   onGuidePanelChange,
   onKnowledgePanelChange,
   onPanelViewChange,
+  onLayoutRequest,
   onProjectChange,
   onRunCommand,
   onFileOpened,
@@ -110,10 +150,12 @@ export function FlowWorkspace({
 }: {
   project: FlowProjectRecord;
   activePanelView: "chat" | "project";
+  chatMode: FlowChatMode;
   theme: "light" | "dark" | "system";
   onGuidePanelChange: (panel: ReactNode | null) => void;
   onKnowledgePanelChange?: (panel: ReactNode | null) => void;
   onPanelViewChange: (view: "chat" | "project") => void;
+  onLayoutRequest?: (request: FlowLayoutRequest) => void;
   onProjectChange: (project: FlowProjectRecord) => void;
   onRunCommand: (command: string, cwd: string) => void;
   onFileOpened: (filePath: string) => void;
@@ -142,6 +184,7 @@ export function FlowWorkspace({
   const [liveSession, setLiveSession] = useState<ConstructFlowSession | undefined>();
   const [pending, setPending] = useState(false);
   const [openConcept, setOpenConcept] = useState<ConceptCard | null>(null);
+  const taskLayoutRequestIdsRef = useRef<Set<string>>(new Set((project.flow.sessions ?? []).flatMap((session) => session.practiceTasks.map((task) => task.id))));
   const activePathRef = useRef<string | null>(null);
   const dirtyPathsRef = useRef<Record<string, boolean>>({});
   const documentSessionRef = useRef(documentSession);
@@ -167,6 +210,17 @@ export function FlowWorkspace({
     return next;
   }, [project.id]);
 
+  const requestWorkbenchLayout = useCallback((reason: "file-system-change" | "task-created") => {
+    onLayoutRequest?.({ kind: "workbench-chat", reason });
+  }, [onLayoutRequest]);
+
+  const requestWorkbenchLayoutForPaths = useCallback((reason: "file-system-change", paths: string[]) => {
+    if (paths.length > 0 && paths.every(isFlowMemoryChangePath)) {
+      return;
+    }
+    requestWorkbenchLayout(reason);
+  }, [requestWorkbenchLayout]);
+
   useEffect(() => {
     const nextSession = createDocumentSession(project.activeFilePath);
     documentSessionRef.current = nextSession;
@@ -183,6 +237,7 @@ export function FlowWorkspace({
     setSessions(project.flow.sessions ?? []);
     setLiveSession(undefined);
     setOpenConcept(null);
+    taskLayoutRequestIdsRef.current = new Set((project.flow.sessions ?? []).flatMap((session) => session.practiceTasks.map((task) => task.id)));
   }, [project.id]);
 
   const openFile = useCallback(async (path: string, options: { persist?: boolean } = {}) => {
@@ -250,12 +305,13 @@ export function FlowWorkspace({
         });
       }
       await refreshTree();
+      requestWorkbenchLayoutForPaths("file-system-change", [normalizedPath]);
     } finally {
       if (saveSequenceRef.current === sequence) {
         onSavingChange(false);
       }
     }
-  }, [onSavingChange, project.id, refreshTree]);
+  }, [onSavingChange, project.id, refreshTree, requestWorkbenchLayoutForPaths]);
 
   const createFile = useCallback((path: string) => {
     const normalizedPath = normalizeDocumentPath(path);
@@ -274,10 +330,11 @@ export function FlowWorkspace({
           return next;
         });
         await refreshTree();
+        requestWorkbenchLayoutForPaths("file-system-change", [normalizedPath]);
       })
       .then(() => openFile(normalizedPath))
       .finally(() => onSavingChange(false));
-  }, [onSavingChange, openFile, project.id, refreshTree]);
+  }, [onSavingChange, openFile, project.id, refreshTree, requestWorkbenchLayoutForPaths]);
 
   const persistActiveFilePath = useCallback(async (path: string | null) => {
     const sequence = openFileSequenceRef.current + 1;
@@ -330,10 +387,11 @@ export function FlowWorkspace({
       await deleteFile({ projectId: project.id, path: normalizedPath });
       closeFileTab(normalizedPath);
       await refreshTree();
+      requestWorkbenchLayoutForPaths("file-system-change", [normalizedPath]);
     } finally {
       onSavingChange(false);
     }
-  }, [closeFileTab, onSavingChange, project.id, refreshTree]);
+  }, [closeFileTab, onSavingChange, project.id, refreshTree, requestWorkbenchLayoutForPaths]);
 
   const renameFileFn = useCallback(async (oldPath: string, newPath: string) => {
     const normalizedOldPath = normalizeDocumentPath(oldPath);
@@ -365,10 +423,11 @@ export function FlowWorkspace({
         void persistActiveFilePath(normalizedNewPath);
       }
       await refreshTree();
+      requestWorkbenchLayoutForPaths("file-system-change", [normalizedOldPath, normalizedNewPath]);
     } finally {
       onSavingChange(false);
     }
-  }, [onFileOpened, onSavingChange, persistActiveFilePath, project.id, refreshTree]);
+  }, [onFileOpened, onSavingChange, persistActiveFilePath, project.id, refreshTree, requestWorkbenchLayoutForPaths]);
 
   const createFolderFn = useCallback(async (path: string) => {
     const normalizedPath = normalizeDocumentPath(path);
@@ -377,10 +436,11 @@ export function FlowWorkspace({
     try {
       await createFolder({ projectId: project.id, path: normalizedPath });
       await refreshTree();
+      requestWorkbenchLayoutForPaths("file-system-change", [normalizedPath]);
     } finally {
       onSavingChange(false);
     }
-  }, [onSavingChange, project.id, refreshTree]);
+  }, [onSavingChange, project.id, refreshTree, requestWorkbenchLayoutForPaths]);
 
   const duplicateFileFn = useCallback(async (path: string, destPath: string) => {
     const normalizedPath = normalizeDocumentPath(path);
@@ -390,10 +450,11 @@ export function FlowWorkspace({
     try {
       await duplicateFile({ projectId: project.id, path: normalizedPath, destPath: normalizedDestPath });
       await refreshTree();
+      requestWorkbenchLayoutForPaths("file-system-change", [normalizedPath, normalizedDestPath]);
     } finally {
       onSavingChange(false);
     }
-  }, [onSavingChange, project.id, refreshTree]);
+  }, [onSavingChange, project.id, refreshTree, requestWorkbenchLayoutForPaths]);
 
   const openFileRef = useRef(openFile);
   openFileRef.current = openFile;
@@ -498,15 +559,18 @@ export function FlowWorkspace({
     };
 
     window.addEventListener("focus", handleFocus);
-    const unsubscribe = onFileChanged(() => {
+    const unsubscribe = onFileChanged((payload) => {
       void refreshTree();
+      if (!isOnlyFlowMemoryChange(payload)) {
+        requestWorkbenchLayout("file-system-change");
+      }
     });
 
     return () => {
       window.removeEventListener("focus", handleFocus);
       unsubscribe();
     };
-  }, [project.id, refreshTree]);
+  }, [project.id, refreshTree, requestWorkbenchLayout]);
 
   useEffect(() => {
     onTreeChange(tree, activePath, null, openFile, createFile, deleteFileFn, renameFileFn, createFolderFn, duplicateFileFn, async () => {
@@ -549,6 +613,16 @@ export function FlowWorkspace({
   const mergedFlowSessions = useMemo(() => mergeSessions(sessions, liveSession), [liveSession, sessions]);
   const flowConcepts = useMemo(() => collectFlowConcepts(mergedFlowSessions), [mergedFlowSessions]);
   const flowTasks = useMemo(() => mergedFlowSessions.flatMap((session) => session.practiceTasks), [mergedFlowSessions]);
+  useEffect(() => {
+    for (const task of flowTasks) {
+      if (taskLayoutRequestIdsRef.current.has(task.id)) {
+        continue;
+      }
+      taskLayoutRequestIdsRef.current.add(task.id);
+      requestWorkbenchLayout("task-created");
+      break;
+    }
+  }, [flowTasks, requestWorkbenchLayout]);
   const pathNodes = useMemo(() => [...(project.flow.pathNodes ?? [])].sort((a, b) => a.order - b.order), [project.flow.pathNodes]);
   const currentPathNode = useMemo(() => currentFlowPathNode(pathNodes, project.flow.currentPathNodeId), [pathNodes, project.flow.currentPathNodeId]);
   const currentTask = useMemo(() => findActiveTaskForNode(flowTasks, currentPathNode?.id), [currentPathNode?.id, flowTasks]);
@@ -570,10 +644,13 @@ export function FlowWorkspace({
         sessions={sessions}
         liveSession={liveSession}
         pending={pending}
+        chatMode={chatMode}
+        openConcept={activePanelView === "chat" && chatMode === "maximized" ? openConcept : null}
         theme={theme}
         onActiveViewChange={onPanelViewChange}
         onRunAgent={runAgent}
         onSubmitTask={submitTask}
+        onCloseConceptDetails={() => setOpenConcept(null)}
         onOpenConceptDetails={(concept) => setOpenConcept(concept)}
         onOpenConceptById={openConceptById}
         onOpenTask={openTaskTab}
@@ -586,14 +663,15 @@ export function FlowWorkspace({
       />
     );
     return () => onGuidePanelChange(null);
-  }, [activePanelView, liveSession, onGuidePanelChange, onPanelViewChange, openConceptById, openInlineFile, openTaskTab, pending, project, rewindUserSession, runAgent, sessions, submitTask, theme, setOpenConcept]);
+  }, [activePanelView, chatMode, liveSession, onGuidePanelChange, onPanelViewChange, openConcept, openConceptById, openInlineFile, openTaskTab, pending, project, rewindUserSession, runAgent, sessions, submitTask, theme, setOpenConcept]);
 
   useEffect(() => {
     onKnowledgePanelChange?.(null);
     return () => onKnowledgePanelChange?.(null);
   }, [onKnowledgePanelChange]);
 
-  const sidecar = openConcept ? (
+  const chatOwnsConceptCard = activePanelView === "chat" && chatMode === "maximized";
+  const sidecar = openConcept && !chatOwnsConceptCard ? (
     <div className="flex h-full max-h-full min-h-0 w-full flex-col" aria-label="Open concept details">
       <KnowledgeCard
         key={openConcept.id}
@@ -719,7 +797,7 @@ export function FlowWorkspace({
   return (
     <AdaptiveSidecarLayout
       className="h-full min-h-0"
-      open={openConcept !== null}
+      open={openConcept !== null && !chatOwnsConceptCard}
       pinned={false}
       sidecar={sidecar}
     >
@@ -906,7 +984,10 @@ function applyFlowConceptRecord(concepts: Map<string, ConceptCard>, toolName: st
     return;
   }
 
-  concepts.set(payload.id, buildConceptCardFromInput(payload));
+  const existing = concepts.get(payload.id);
+  const newCard = buildConceptCardFromInput(payload);
+  const merged = existing ? mergeConceptCards(existing, newCard) : newCard;
+  concepts.set(payload.id, merged);
 }
 
 function FlowAgentPanel({
@@ -915,10 +996,13 @@ function FlowAgentPanel({
   sessions,
   liveSession,
   pending,
+  chatMode,
+  openConcept,
   theme,
   onActiveViewChange,
   onRunAgent,
   onSubmitTask,
+  onCloseConceptDetails,
   onOpenConceptDetails,
   onOpenConceptById,
   onOpenTask,
@@ -931,10 +1015,13 @@ function FlowAgentPanel({
   sessions: ConstructFlowSession[];
   liveSession?: ConstructFlowSession;
   pending: boolean;
+  chatMode: FlowChatMode;
+  openConcept: ConceptCard | null;
   theme: "light" | "dark" | "system";
   onActiveViewChange: (view: "chat" | "project") => void;
   onRunAgent: (message: string, options?: FlowAgentRunOptions) => Promise<void>;
   onSubmitTask: (task: ConstructFlowPracticeTask, note?: string, subtaskId?: string) => Promise<void>;
+  onCloseConceptDetails: () => void;
   onOpenConceptDetails: (concept: ConceptCard) => void;
   onOpenConceptById: (conceptId: string) => void;
   onOpenTask: (task: ConstructFlowPracticeTask) => void;
@@ -1084,6 +1171,7 @@ function FlowAgentPanel({
     setDraft("");
     void onRunAgent(message, activeTask ? { taskMessage: { taskId: activeTask.id, pathNodeId: activeTask.pathNodeId } } : undefined);
   }, [activeTask, draft, onRunAgent]);
+  const showMaximizedConceptDock = activeView === "chat" && chatMode === "maximized" && openConcept !== null;
 
   return (
     <aside className="flex h-full min-h-0 flex-col bg-background">
@@ -1133,7 +1221,37 @@ function FlowAgentPanel({
           onOpenFile={onOpenFile}
         />
       ) : (
-        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div
+          className={cn(
+            "construct-flow-chat-stage relative flex min-h-0 flex-1 overflow-hidden",
+            chatMode === "maximized" && "is-maximized",
+            showMaximizedConceptDock && "has-concept"
+          )}
+        >
+          <div
+            className={cn(
+              "construct-flow-chat-concept-dock",
+              showMaximizedConceptDock && "is-open"
+            )}
+            aria-hidden={!showMaximizedConceptDock}
+          >
+            {openConcept ? (
+              <div className="construct-flow-chat-concept-card">
+                <KnowledgeCard
+                  key={openConcept.id}
+                  concept={openConcept}
+                  relatedConcepts={flowConcepts}
+                  saved={false}
+                  theme={theme}
+                  onClose={onCloseConceptDetails}
+                  onOpenConcept={onOpenConceptById}
+                  onOpenFile={onOpenFile}
+                  onSaveChange={() => {}}
+                />
+              </div>
+            ) : null}
+          </div>
+          <div className="construct-flow-chat-thread relative flex min-h-0 flex-1 flex-col overflow-hidden">
           {activeTask ? (
             <FloatingFlowTaskCard
               task={activeTask}
@@ -1184,8 +1302,7 @@ function FlowAgentPanel({
                       pending={pending}
                       submitLabel="Send"
                       placeholder={activeTask ? `Message Flow about: ${activeTask.title}` : "Ask for follow-up changes"}
-                      footerStart={null}
-                      footerEnd={
+                      footerStart={
                         <FlowComposerRightControls
                           contextWindow={latestContextWindow}
                           settings={aiSettings}
@@ -1205,6 +1322,7 @@ function FlowAgentPanel({
               />
             }
           />
+          </div>
         </div>
       )}
     </aside>
@@ -1369,9 +1487,8 @@ function FlowReasoningEffortDropdown({
     <DropdownMenu>
       <Tooltip>
         <TooltipTrigger asChild>
-          <DropdownMenuTrigger
-            render={
-              <Button
+          <DropdownMenuTrigger asChild>
+            <Button
                 className="h-6 gap-1 rounded-full px-2 text-[11px]"
                 size="sm"
                 variant="secondary"
@@ -1381,9 +1498,8 @@ function FlowReasoningEffortDropdown({
               >
                 <BrainCircuitIcon size={13} />
                 <span className="hidden sm:inline">{active.short}</span>
-              </Button>
-            }
-          />
+            </Button>
+          </DropdownMenuTrigger>
         </TooltipTrigger>
         <TooltipContent side="top">Thinking effort: {active.label}</TooltipContent>
       </Tooltip>
@@ -1458,9 +1574,8 @@ function FlowModelDropdown({
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger
-        render={
-          <Button
+      <DropdownMenuTrigger asChild>
+        <Button
             className="h-6 min-w-0 max-w-[12rem] justify-between gap-1.5 rounded-full px-2 text-[11px]"
             size="sm"
             variant="secondary"
@@ -1473,9 +1588,8 @@ function FlowModelDropdown({
               <span className="truncate">{activeModel?.name || readableModelName(value) || "Select model"}</span>
             </span>
             <ChevronDownIcon size={13} className="shrink-0 text-muted-foreground" />
-          </Button>
-        }
-      />
+        </Button>
+      </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"
         className="w-[min(46rem,calc(100vw-2rem))] p-2"
@@ -2436,7 +2550,7 @@ function formatFileReferenceLabel(path: string, line?: number, endLine?: number)
 }
 
 function flowMemoryFilePath(file: string): string {
-  return `.construct/flow-memory/${file}`;
+  return `.construct/${file}`;
 }
 
 function TaskConceptChips({
@@ -2705,6 +2819,7 @@ function buildFlowAgentParts({
     const isPracticeTask = toolName === "practice-task";
     const isConceptExercise = toolName === "concept-exercise";
     const isMemoryPatch = toolName === "flow-memory-patch" || toolName === "flow-memory-update";
+    const isPlanPath = toolName === "plan-learning-path";
     if (event.kind === "tool" && isQuestionTool(toolName)) {
       const questionToolCall = toolCallsById.get(event.toolCallId);
       if (questionToolCall?.response) {
@@ -2753,6 +2868,18 @@ function buildFlowAgentParts({
         session,
         theme,
         onOpenFile
+      }));
+      continue;
+    }
+
+    if (isPlanPath && event.kind === "tool") {
+      parts.push(buildPlanPathPart({
+        sessionId: session.id,
+        eventId: event.id,
+        input: event.input,
+        outputPreview: event.outputPreview,
+        status: event.status,
+        theme
       }));
       continue;
     }
@@ -3083,6 +3210,167 @@ function buildConceptExercisePart({
   };
 }
 
+function parsePlanPathInput(input: unknown) {
+  if (!input) return null;
+  if (typeof input === "string") {
+    try {
+      return JSON.parse(input);
+    } catch {
+      return null;
+    }
+  }
+  return input;
+}
+
+function parsePlanPathOutput(outputPreview?: string) {
+  if (!outputPreview) return null;
+  try {
+    const parsed = JSON.parse(outputPreview);
+    return parsed;
+  } catch {
+    return { message: outputPreview };
+  }
+}
+
+function buildPlanPathPart({
+  sessionId,
+  eventId,
+  input,
+  outputPreview,
+  status,
+  theme
+}: {
+  sessionId: string;
+  eventId: string;
+  input: unknown;
+  outputPreview?: string;
+  status: string;
+  theme: "light" | "dark" | "system";
+}): AgentSessionMessagePart {
+  const inputData = parsePlanPathInput(input);
+  const outputData = parsePlanPathOutput(outputPreview);
+  const failed = status === "error";
+  const running = status === "running" || status === "pending";
+
+  const reason = inputData?.reason || "";
+  const nodes = Array.isArray(inputData?.nodes) ? inputData.nodes : [];
+
+  let statusText = "Planned";
+  let statusColor = "text-muted-foreground";
+  if (running) {
+    statusText = "Planning...";
+    statusColor = "text-amber-500 font-medium animate-pulse";
+  } else if (failed) {
+    statusText = "Failed";
+    statusColor = "text-destructive font-medium";
+  } else if (status === "completed") {
+    statusText = "Success";
+    statusColor = "text-emerald-600 dark:text-emerald-400 font-medium";
+  }
+
+  const errorMessage = failed ? (outputData?.message || outputData?.error || (typeof outputPreview === "string" ? outputPreview : "An error occurred during path planning.")) : null;
+
+  return {
+    type: "actions",
+    id: `${sessionId}:plan-path:${eventId}`,
+    content: (
+      <div className="flex w-full max-w-[32rem] min-w-0 flex-col gap-2 rounded-[12px] border border-border/60 bg-muted/30 p-3 text-left text-foreground">
+        {/* Header */}
+        <div className="flex min-w-0 items-center justify-between gap-2.5 border-b border-border/40 pb-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className={cn(
+              "grid size-7 shrink-0 place-items-center rounded-[6px] border shadow-xs bg-background/80",
+              failed ? "border-destructive/15 text-destructive bg-destructive/5" : "border-border/70 text-muted-foreground"
+            )}>
+              {failed ? (
+                <CircleAlertIcon size={13} />
+              ) : running ? (
+                <Loader2Icon size={13} className="animate-spin" />
+              ) : (
+                <RouteIcon size={13} />
+              )}
+            </span>
+            <div className="min-w-0">
+              <span className="block text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">Flow Path Tool</span>
+              <strong className="block truncate text-sm font-semibold tracking-tight text-foreground">
+                Learning Path Plan
+              </strong>
+            </div>
+          </div>
+          <span className={cn("rounded-full border bg-background/70 px-2 py-0.5 text-[10px] font-medium shadow-2xs", statusColor)}>
+            {statusText}
+          </span>
+        </div>
+
+        {/* Reason / Context */}
+        {reason && (
+          <div className="mt-1 text-xs text-muted-foreground bg-background/40 rounded-md p-2 border border-border/20">
+            <span className="font-semibold text-foreground/80 block mb-0.5">Objective:</span>
+            <p className="leading-relaxed select-text italic">"{reason}"</p>
+          </div>
+        )}
+
+        {/* Error Block */}
+        {errorMessage && (
+          <div className="mt-2 rounded-md border border-destructive/20 bg-destructive/5 p-2.5 text-xs text-destructive select-text">
+            <div className="flex items-center gap-1.5 font-semibold mb-1">
+              <CircleAlertIcon size={13} className="shrink-0" />
+              <span>Planning Blocked / Failed</span>
+            </div>
+            <p className="leading-relaxed text-foreground/90 pl-4.5">{errorMessage}</p>
+          </div>
+        )}
+
+        {/* Nodes List */}
+        {nodes.length > 0 && !failed && (
+          <div className="mt-2 flex flex-col gap-1.5">
+            <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider px-1">Planned Nodes ({nodes.length})</span>
+            <div className="flex flex-col gap-1 max-h-56 overflow-y-auto pr-1">
+              {nodes.map((node: any, idx: number) => {
+                const nodeStatus = node.status || "planned";
+                const isActive = nodeStatus === "active";
+                const isCompleted = nodeStatus === "completed";
+                return (
+                  <div
+                    key={node.id || idx}
+                    className={cn(
+                      "flex items-start gap-2 rounded-md p-2 border transition-all text-xs",
+                      isActive
+                        ? "border-primary/40 bg-primary/5 text-foreground ring-1 ring-primary/20"
+                        : "border-border/30 bg-background/40 text-muted-foreground"
+                    )}
+                  >
+                    <span className="mt-0.5 shrink-0 flex items-center justify-center size-4 rounded-full border border-border/60 text-[9px] font-semibold">
+                      {isCompleted ? (
+                        <CheckIcon size={10} className="text-emerald-600 dark:text-emerald-400" />
+                      ) : (
+                        idx + 1
+                      )}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className={cn("font-medium truncate", isActive ? "text-foreground font-semibold" : "text-foreground/80")}>
+                          {node.title}
+                        </span>
+                        {node.kind && (
+                          <span className="text-[9px] px-1 rounded-sm bg-muted text-muted-foreground uppercase tracking-tight shrink-0 font-medium">
+                            {node.kind}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-muted-foreground leading-normal mt-0.5 line-clamp-2 select-text">{node.summary}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  };
+}
+
 type TaskToolPayload = {
   taskId?: string;
   title: string;
@@ -3390,6 +3678,7 @@ function buildConceptCardFromInput(input: ConceptPayload | Record<string, unknow
     technology,
     tags: id.split(".").slice(0, -1),
     summary,
+    content: content || undefined,
     why: "",
     example: examples[0] || "",
     docs: [],
@@ -3420,6 +3709,22 @@ function buildConceptCardFromInput(input: ConceptPayload | Record<string, unknow
   };
 }
 
+function mergeGuides(baseGuides: ConceptCard["guides"], overlayGuides: ConceptCard["guides"], overlayHasExplicitContent: boolean): ConceptCard["guides"] {
+  if (!baseGuides.length) return overlayGuides;
+  if (!overlayGuides.length) return baseGuides;
+
+  return baseGuides.map(baseGuide => {
+    const overlayGuide = overlayGuides.find(g => g.id === baseGuide.id);
+    if (!overlayGuide) return baseGuide;
+    if (baseGuide.id === "explanation" && !overlayHasExplicitContent) {
+      return baseGuide;
+    }
+    return overlayGuide;
+  }).concat(
+    overlayGuides.filter(overlayGuide => !baseGuides.some(g => g.id === overlayGuide.id))
+  );
+}
+
 function mergeConceptCards(base: ConceptCard, overlay: ConceptCard): ConceptCard {
   return {
     ...base,
@@ -3429,10 +3734,11 @@ function mergeConceptCards(base: ConceptCard, overlay: ConceptCard): ConceptCard
     technology: overlay.technology || base.technology,
     tags: overlay.tags.length ? overlay.tags : base.tags,
     summary: overlay.summary && overlay.summary !== overlay.title ? overlay.summary : base.summary || overlay.summary,
+    content: overlay.content || base.content,
     why: overlay.why || base.why,
     example: overlay.example || base.example,
     docs: overlay.docs.length ? overlay.docs : base.docs,
-    guides: overlay.guides.length ? overlay.guides : base.guides,
+    guides: mergeGuides(base.guides, overlay.guides, Boolean(overlay.content)),
     commonMistake: overlay.commonMistake || base.commonMistake,
     parentId: overlay.parentId ?? base.parentId,
     relatedConcepts: overlay.relatedConcepts?.length ? overlay.relatedConcepts : base.relatedConcepts,
@@ -3640,19 +3946,77 @@ function buildConceptCardPart(
     && Boolean(conceptId)
     && !acknowledgedConceptEventKeys.has(conceptEventKey);
 
+  let levelChange: { before: number; after: number } | null = null;
+  const targetLevel = payload.masteryLevel;
+  if (targetLevel !== undefined) {
+    if (status === "running") {
+      if (existingConcept && existingConcept.masteryLevel !== undefined) {
+        const before = existingConcept.masteryLevel;
+        const after = targetLevel;
+        if (before !== after) {
+          levelChange = { before, after };
+        }
+      }
+    } else {
+      const outputObj = parseJsonObject(outputPreview);
+      if (outputObj && Array.isArray(outputObj.fieldChanges)) {
+        const masteryChange = outputObj.fieldChanges.find((c: any) => c && c.field === "masteryLevel");
+        if (masteryChange) {
+          const before = parseInt(masteryChange.before, 10);
+          const after = parseInt(masteryChange.after, 10);
+          if (!isNaN(before) && !isNaN(after) && before !== after) {
+            levelChange = { before, after };
+          }
+        }
+      }
+      if (!levelChange && conceptCard.history && conceptCard.history.length > 0) {
+        const lastEntry = conceptCard.history[conceptCard.history.length - 1];
+        if (lastEntry && Array.isArray(lastEntry.fieldChanges)) {
+          const masteryChange = lastEntry.fieldChanges.find((c) => c.field === "masteryLevel");
+          if (masteryChange) {
+            const before = parseInt(masteryChange.before || "0", 10);
+            const after = parseInt(masteryChange.after || "0", 10);
+            if (!isNaN(before) && !isNaN(after) && before !== after) {
+              levelChange = { before, after };
+            }
+          }
+        }
+      }
+    }
+  }
+
+  let changedFields: string[] = [];
+  const outputObj = parseJsonObject(outputPreview);
+  if (outputObj && Array.isArray(outputObj.changedFields)) {
+    changedFields = outputObj.changedFields.map(String);
+  } else if (conceptCard.history && conceptCard.history.length > 0) {
+    const lastEntry = conceptCard.history[conceptCard.history.length - 1];
+    if (lastEntry && Array.isArray(lastEntry.changedFields)) {
+      changedFields = lastEntry.changedFields.map(String);
+    }
+  }
+
   return {
     type: "actions",
     id: `${sessionId}:concept:${eventId}`,
     content: (
       <div className="flex w-full max-w-[32rem] min-w-0 flex-col" data-attention={shouldRequestAttention ? "true" : "false"}>
         {status === "running" && toolName !== "remove-concept" ? (
-          <ConceptCreationPreview payload={payload} />
+          <ConceptCreationPreview
+            payload={payload}
+            toolName={toolName}
+            existingConcept={existingConcept}
+            levelChange={levelChange}
+            input={input}
+          />
         ) : toolName !== "remove-concept" ? (
           <ConceptSummaryCard
             concept={conceptCard}
             variant="chat"
             actionLabel={meta.label}
             attention={shouldRequestAttention}
+            levelChange={levelChange}
+            changedFields={changedFields}
             onOpen={() => {
               onAcknowledgeConceptEvent(conceptEventKey);
               onOpenConceptDetails(conceptCard);
@@ -3688,26 +4052,76 @@ function buildConceptCardPart(
   };
 }
 
-function ConceptCreationPreview({ payload }: { payload: ConceptPayload }) {
+function ConceptCreationPreview({
+  payload,
+  toolName,
+  existingConcept,
+  levelChange,
+  input
+}: {
+  payload: ConceptPayload;
+  toolName?: string;
+  existingConcept?: ConceptCard;
+  levelChange?: { before: number; after: number } | null;
+  input?: unknown;
+}) {
+  const isUpdate = toolName === "modify-concept" || Boolean(existingConcept);
   const title = payload.title && payload.title !== "Concept"
     ? payload.title
-    : payload.id
-      ? conceptTitleFromId(payload.id)
-      : "Preparing concept card";
+    : existingConcept?.title
+      ? existingConcept.title
+      : payload.id
+        ? conceptTitleFromId(payload.id)
+        : "concept";
+
+  let statusLabel = isUpdate ? "Updating" : "Preparing";
+  if (isUpdate) {
+    if (levelChange) {
+      if (levelChange.after > levelChange.before) {
+        statusLabel = "Upgrading Mastery";
+      } else {
+        statusLabel = "Adjusting Mastery";
+      }
+    } else {
+      const inputObj = readRecord(input);
+      const keys = Object.keys(inputObj);
+      if (keys.includes("content") || keys.includes("examples") || keys.includes("title")) {
+        statusLabel = "Refining Concept";
+      } else if (keys.includes("confidence")) {
+        statusLabel = "Updating Confidence";
+      } else if (keys.includes("relatedConcepts")) {
+        statusLabel = "Refining Relations";
+      } else {
+        statusLabel = "Refining Concept";
+      }
+    }
+  }
+  const mainTitle = isUpdate ? `Updating ${title} concept...` : title;
+
   return (
     <div className="construct-concept-summary-card flex w-full max-w-[32rem] min-w-0 items-center justify-between gap-2.5 rounded-[12px] border border-border/60 bg-muted/30 p-2.5 text-left text-foreground">
       <div className="flex min-w-0 flex-1 items-center gap-2.5">
         <span className="grid size-8 shrink-0 place-items-center rounded-[8px] border border-border/70 bg-background/80 text-muted-foreground shadow-sm">
-          <Loader2Icon size={14} className="animate-spin" />
+          <Loader2Icon size={14} className="animate-spin text-[color:var(--construct-warning)]" />
         </span>
         <div className="min-w-0 flex-1">
-          <div className="mb-0.5 flex min-w-0 items-center gap-1 text-[10px] text-muted-foreground font-medium">
+          <div className="mb-0.5 flex min-w-0 items-center gap-1.5 text-[10px] text-muted-foreground font-medium">
             <span>Concept</span>
             <span>·</span>
-            <span className="text-[color:var(--construct-warning)] font-medium">Preparing</span>
+            <span className="text-[color:var(--construct-warning)] font-medium">{statusLabel}</span>
+            {levelChange && (
+              <>
+                <span>·</span>
+                <span className="inline-flex items-center gap-1 bg-background/50 border border-border/40 rounded-full px-1.5 py-0.5 shadow-sm scale-95 origin-left">
+                  <span className="text-muted-foreground/75 font-normal">L{levelChange.before}</span>
+                  <span className="text-muted-foreground/60">→</span>
+                  <span className="font-bold text-[color:var(--construct-warning)]">L{levelChange.after}</span>
+                </span>
+              </>
+            )}
           </div>
           <strong className="block truncate text-sm font-semibold text-foreground/85 tracking-tight">
-            {title}
+            {mainTitle}
           </strong>
         </div>
       </div>
@@ -4317,7 +4731,7 @@ function readMemoryPatchResults(input: unknown, outputPreview?: string): Constru
       ))
       .map((item) => ({
         file: item.file as ConstructFlowMemoryPatchResult["file"],
-        path: item.path ?? `.construct/flow-memory/${item.file}`,
+        path: item.path ?? `.construct/${item.file}`,
         reason: item.reason ?? readPatchReason(input, item.file),
         mode: item.mode ?? "append",
         diff: item.diff ?? "",
@@ -4879,9 +5293,8 @@ function FlowComposerLeftControls() {
         <PlusIcon size={16} />
       </Button>
       <DropdownMenu>
-        <DropdownMenuTrigger
-          render={
-            <Button
+        <DropdownMenuTrigger asChild>
+          <Button
               variant="ghost"
               size="sm"
               className="h-7 gap-1 rounded-full px-2 text-xs font-semibold text-orange-600 hover:text-orange-700 hover:bg-orange-50 dark:text-orange-400 dark:hover:text-orange-300 dark:hover:bg-orange-950/20"
@@ -4890,9 +5303,8 @@ function FlowComposerLeftControls() {
               <CircleAlertIcon size={14} className="text-orange-500 dark:text-orange-400" />
               <span>Full access</span>
               <ChevronDownIcon size={12} className="text-orange-500/70" />
-            </Button>
-          }
-        />
+          </Button>
+        </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-48 p-1 z-50">
           <DropdownMenuGroup>
             <DropdownMenuLabel className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Context Access</DropdownMenuLabel>
@@ -4949,9 +5361,8 @@ function FlowComposerRightControls({
 
       {settings ? (
         <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <Button
+          <DropdownMenuTrigger asChild>
+            <Button
                 variant="ghost"
                 size="sm"
                 className="h-7 gap-1.5 rounded-full px-2 text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-muted"
@@ -4961,9 +5372,8 @@ function FlowComposerRightControls({
                 <CpuIcon size={15.5} className="shrink-0" />
                 <span className="composer-trigger-text truncate max-w-[12rem]">{triggerLabel}</span>
                 <ChevronDownIcon size={13.5} className="text-muted-foreground/70 shrink-0" />
-              </Button>
-            }
-          />
+            </Button>
+          </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56 p-1 z-50">
             <DropdownMenuGroup>
               <DropdownMenuLabel className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Reasoning</DropdownMenuLabel>

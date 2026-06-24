@@ -63,7 +63,7 @@ import { FileTree } from "./components/FileTree";
 import { NewProjectDialog } from "./components/NewProjectDialog";
 import { TerminalPanel, type TerminalPanelHandle } from "./components/TerminalPanel";
 import { Workspace } from "./components/Workspace";
-import { FlowWorkspace } from "./components/FlowWorkspace";
+import { FlowWorkspace, type FlowLayoutRequest } from "./components/FlowWorkspace";
 import { LogsPanel } from "./components/LogsPanel";
 import { KnowledgeBaseSurface } from "./components/KnowledgeBaseSurface";
 import { SelectionExplanationController } from "./components/SelectionExplanationController";
@@ -367,6 +367,8 @@ export default function ConstructApp() {
   const [rightPanel, setRightPanel] = useState<ReactNode | null>(null);
   const [sidebarKnowledgePanel, setSidebarKnowledgePanel] = useState<ReactNode | null>(null);
   const [flowPanelView, setFlowPanelView] = useState<"chat" | "project">("chat");
+  const [rightPanelOpen, setRightPanelOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [inspectorExpanded, setInspectorExpanded] = useState(false);
   const [knowledgeBaseOpen, setKnowledgeBaseOpen] = useState(false);
   const [learningContextOpen, setLearningContextOpen] = useState(false);
@@ -382,6 +384,7 @@ export default function ConstructApp() {
   const [error, setError] = useState<string | null>(null);
   const terminalRef = useRef<TerminalPanelHandle | null>(null);
   const applyingHistoryRef = useRef(false);
+  const pendingImmersiveFlowProjectIdsRef = useRef<Set<string>>(new Set());
   const [aiSettings, setAiSettings] = useState<AiSettings | null>(null);
 
   useEffect(() => {
@@ -851,7 +854,13 @@ export default function ConstructApp() {
         currentBlockIndex: isFlowProjectRecord(project) ? null : project.currentBlockIndex
       });
       setSettingsSurface(null);
-      setInspectorExpanded(false);
+      setFlowPanelView("chat");
+      setRightPanelOpen(true);
+      const shouldStartImmersive = isFlowProjectRecord(nextProject) && pendingImmersiveFlowProjectIdsRef.current.delete(nextProject.id);
+      setInspectorExpanded(shouldStartImmersive);
+      if (shouldStartImmersive) {
+        setSidebarOpen(true);
+      }
       setActiveProject(nextProject);
       const nextProjects = await bootstrapProjects();
       console.log("[construct] open project refreshed list", { count: nextProjects.length });
@@ -872,6 +881,39 @@ export default function ConstructApp() {
     }
   }
 
+  async function refreshActiveProjectSnapshot(projectId: string): Promise<AnyProjectRecord | null> {
+    try {
+      console.log("[construct] refresh active project snapshot", { projectId });
+      setIsSaving(true);
+      setError(null);
+      const [project, nextProjects] = await Promise.all([
+        openSavedProject(projectId),
+        bootstrapProjects()
+      ]);
+      setActiveProject((current) => current?.id === projectId ? project : current);
+      setProjects(nextProjects);
+      return project;
+    } catch (caught) {
+      console.error("[construct] refresh active project snapshot failed", { projectId, caught });
+      setError(caught instanceof Error ? caught.message : String(caught));
+      return null;
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  const handleFlowLayoutRequest = useCallback((request: FlowLayoutRequest) => {
+    setFlowPanelView("chat");
+    setRightPanelOpen(true);
+    if (request.kind === "maximized-chat") {
+      setInspectorExpanded(true);
+      setSidebarOpen(true);
+      return;
+    }
+    setInspectorExpanded(false);
+    setSidebarOpen(true);
+  }, []);
+
   useEffect(() => {
     const entry = history.current;
     if (!entry) {
@@ -889,6 +931,7 @@ export default function ConstructApp() {
     if (entry.type === "dashboard") {
       setSettingsSurface(null);
       setInspectorExpanded(false);
+      setRightPanelOpen(false);
       setKnowledgeBaseOpen(false);
       setLearningContextOpen(false);
       setRightPanel(null);
@@ -970,10 +1013,12 @@ export default function ConstructApp() {
       <FlowWorkspace
         project={activeProject}
         activePanelView={flowPanelView}
+        chatMode={rightPanelOpen && inspectorExpanded && flowPanelView === "chat" ? "maximized" : "panel"}
         theme={theme}
         onGuidePanelChange={setRightPanel}
         onKnowledgePanelChange={setSidebarKnowledgePanel}
         onPanelViewChange={setFlowPanelView}
+        onLayoutRequest={handleFlowLayoutRequest}
         onProjectChange={handleFlowProjectChange}
         onRunCommand={runCommand}
         onFileOpened={handleFileOpened}
@@ -1116,6 +1161,10 @@ export default function ConstructApp() {
           )}
           defaultBottomPanelOpen={Boolean(activeProject && !settingsSurface && !knowledgeBaseOpen && !learningContextOpen)}
           defaultRightPanelOpen={Boolean(activeProject && !settingsSurface && !knowledgeBaseOpen && !learningContextOpen)}
+          sidebarOpen={sidebarOpen}
+          onSidebarOpenChange={setSidebarOpen}
+          inspectorOpen={rightPanelOpen}
+          onInspectorOpenChange={setRightPanelOpen}
           inspectorExpanded={inspectorExpanded}
           onInspectorExpandedChange={setInspectorExpanded}
           headerTabs={[
@@ -1196,8 +1245,13 @@ export default function ConstructApp() {
                                 state.toggleRightPanel();
                                 return;
                               }
-                              setFlowPanelView("project");
-                              state.setRightPanelOpen(true);
+                              void (async () => {
+                                setFlowPanelView("project");
+                                const refreshed = await refreshActiveProjectSnapshot(activeProject.id);
+                                if (refreshed && !isFlowProjectRecord(refreshed)) return;
+                                if (!refreshed) return;
+                                state.setRightPanelOpen(true);
+                              })();
                             }}
                             aria-label="Open Flow project map"
                             title="Project map"
@@ -1479,6 +1533,13 @@ export default function ConstructApp() {
         onOpenChange={setIsNewProjectOpen}
         onProjectCreated={(project) => {
           setActiveProject(project);
+          if (isFlowProjectRecord(project)) {
+            pendingImmersiveFlowProjectIdsRef.current.add(project.id);
+            handleFlowLayoutRequest({ kind: "maximized-chat", reason: "project-created" });
+          } else {
+            setRightPanelOpen(true);
+            setInspectorExpanded(false);
+          }
           pushHistory({
             id: `project:${project.id}`,
             payload: { projectId: project.id },

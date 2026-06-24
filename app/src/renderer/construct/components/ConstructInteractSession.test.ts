@@ -118,7 +118,7 @@ describe("Construct Interact Codex-style UI", () => {
     assert.match(flow, /flowMemoryFilePath/);
     assert.match(flow, /<FlowMemoryUpdateCard results=\{results\} onOpenFile=\{onOpenFile\}/);
     assert.match(flow, /<MarkdownBlock content=\{event\.text\} theme=\{theme\} onOpenConcept=\{onOpenConceptById\} onOpenFile=\{onOpenFile\}/);
-    assert.doesNotMatch(css, /construct-concept-shimmer/);
+    assert.match(css, /construct-concept-card-shimmer/);
     assert.doesNotMatch(css, /construct-concept-profile-card/);
     assert.match(css, /\.construct-floating-task-card/);
     assert.match(css, /grid-template-rows 620ms cubic-bezier/);

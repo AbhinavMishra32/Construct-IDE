@@ -7,6 +7,9 @@ const workspaceSource = readFileSync(fileURLToPath(new URL("./Workspace.tsx", im
 const flowWorkspaceSource = readFileSync(fileURLToPath(new URL("./FlowWorkspace.tsx", import.meta.url)), "utf8");
 const appSource = readFileSync(fileURLToPath(new URL("../ConstructApplication.tsx", import.meta.url)), "utf8");
 const slotPanelSource = readFileSync(fileURLToPath(new URL("../../../../../opaline/packages/ui/src/slot-panel/SlotPanel.tsx", import.meta.url)), "utf8");
+const projectIpcSource = readFileSync(fileURLToPath(new URL("../../../main/ipc/ConstructProjectIpcController.ts", import.meta.url)), "utf8");
+const preloadSource = readFileSync(fileURLToPath(new URL("../../../preload/index.ts", import.meta.url)), "utf8");
+const flowMemorySource = readFileSync(fileURLToPath(new URL("../../../main/flow/ConstructFlowMemoryService.ts", import.meta.url)), "utf8");
 
 describe("Workspace render stability", () => {
   it("uses stable empty arrays for optional project data read during render", () => {
@@ -52,5 +55,49 @@ describe("Workspace render stability", () => {
     assert.match(source, /setActiveLiveStepId\(stepId\);\s*onRightSlotChange\("guide"\);/);
     assert.match(source, /onSelectLiveStep=\{openGeneratedLiveStep\}/);
     assert.match(source, /openGeneratedLiveStep\(firstStepId\)/);
+  });
+
+  it("refreshes the active Flow project before opening the project map", () => {
+    assert.match(appSource, /async function refreshActiveProjectSnapshot\(projectId: string\)/);
+    assert.match(appSource, /openSavedProject\(projectId\),\s*bootstrapProjects\(\)/s);
+    assert.match(appSource, /const refreshed = await refreshActiveProjectSnapshot\(activeProject\.id\);/);
+    assert.match(appSource, /if \(!refreshed\) return;\s*state\.setRightPanelOpen\(true\);/);
+  });
+
+  it("drives Flow chat layout from project, file, and task state changes", () => {
+    assert.match(appSource, /const \[rightPanelOpen, setRightPanelOpen\] = useState\(false\);/);
+    assert.match(appSource, /const \[sidebarOpen, setSidebarOpen\] = useState\(true\);/);
+    assert.match(appSource, /const pendingImmersiveFlowProjectIdsRef = useRef<Set<string>>\(new Set\(\)\);/);
+    assert.match(appSource, /pendingImmersiveFlowProjectIdsRef\.current\.delete\(nextProject\.id\)/);
+    assert.match(appSource, /setInspectorExpanded\(shouldStartImmersive\);/);
+    assert.match(appSource, /const handleFlowLayoutRequest = useCallback\(\(request: FlowLayoutRequest\)/);
+    assert.match(appSource, /if \(request\.kind === "maximized-chat"\)[\s\S]*setInspectorExpanded\(true\);[\s\S]*setSidebarOpen\(true\);/);
+    assert.match(appSource, /setInspectorExpanded\(false\);\s*setSidebarOpen\(true\);/);
+    assert.match(appSource, /chatMode=\{rightPanelOpen && inspectorExpanded && flowPanelView === "chat" \? "maximized" : "panel"\}/);
+    assert.match(appSource, /onLayoutRequest=\{handleFlowLayoutRequest\}/);
+    assert.match(appSource, /if \(isFlowProjectRecord\(project\)\) \{\s*pendingImmersiveFlowProjectIdsRef\.current\.add\(project\.id\);\s*handleFlowLayoutRequest\(\{ kind: "maximized-chat", reason: "project-created" \}\);/);
+
+    assert.match(flowWorkspaceSource, /export type FlowLayoutRequest/);
+    assert.match(flowWorkspaceSource, /requestWorkbenchLayout\("file-system-change"\)/);
+    assert.match(flowWorkspaceSource, /requestWorkbenchLayout\("task-created"\)/);
+    assert.match(flowWorkspaceSource, /construct-flow-chat-concept-dock/);
+    assert.match(flowWorkspaceSource, /chatOwnsConceptCard = activePanelView === "chat" && chatMode === "maximized"/);
+  });
+
+  it("keeps Flow Memory writes from collapsing immersive chat", () => {
+    assert.match(projectIpcSource, /const relativePath = typeof filename === "string" \? filename\.replace/);
+    assert.match(projectIpcSource, /webContents\.send\("construct:project:file-changed", \{/);
+    assert.match(projectIpcSource, /paths/);
+    assert.match(preloadSource, /callback\(payload \?\? \{\}\);/);
+
+    assert.match(flowWorkspaceSource, /function isOnlyFlowMemoryChange\(payload: ProjectFileChangePayload\)/);
+    assert.match(flowWorkspaceSource, /if \(!isOnlyFlowMemoryChange\(payload\)\) \{\s*requestWorkbenchLayout\("file-system-change"\);/);
+    assert.match(flowWorkspaceSource, /FLOW_MEMORY_FILE_NAMES = new Set\(\["research\.md", "project\.md", "path\.md", "learner\.md"\]\)/);
+
+    assert.match(flowMemorySource, /export const FLOW_MEMORY_DIRECTORY = "\.construct" as const;/);
+    assert.match(flowMemorySource, /export const LEGACY_FLOW_MEMORY_DIRECTORY = "\.construct\/flow-memory" as const;/);
+    assert.match(flowMemorySource, /legacyMemoryFilePath/);
+    assert.match(flowWorkspaceSource, /return `\.construct\/\$\{file\}`;/);
+    assert.doesNotMatch(flowWorkspaceSource, /return `\.construct\/flow-memory\/\$\{file\}`;/);
   });
 });

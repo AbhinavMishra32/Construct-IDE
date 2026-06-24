@@ -12,6 +12,7 @@ import { ConstructProjectWorkspaceService } from "../projects/ConstructProjectWo
 export class ConstructProjectIpcController {
   private activeWatcher: FSWatcher | null = null;
   private watchTimeout: NodeJS.Timeout | null = null;
+  private watchChangedPaths = new Set<string>();
 
   constructor(private readonly options: {
     ipcMain: IpcMain;
@@ -40,25 +41,36 @@ export class ConstructProjectIpcController {
       clearTimeout(this.watchTimeout);
       this.watchTimeout = null;
     }
+    this.watchChangedPaths.clear();
 
     try {
       this.activeWatcher = watch(workspacePath, { recursive: true }, (eventType, filename) => {
-        if (filename && (
-          filename.includes("node_modules") ||
-          filename.includes(".git") ||
-          filename.includes(".turbo") ||
-          filename.includes(".DS_Store")
+        const relativePath = typeof filename === "string" ? filename.replace(/\\/g, "/") : null;
+        if (relativePath && (
+          relativePath.includes("node_modules") ||
+          relativePath.includes(".git") ||
+          relativePath.includes(".turbo") ||
+          relativePath.includes(".DS_Store")
         )) {
           return;
         }
 
+        if (relativePath) {
+          this.watchChangedPaths.add(relativePath);
+        }
         if (this.watchTimeout) {
           clearTimeout(this.watchTimeout);
         }
         this.watchTimeout = setTimeout(() => {
           try {
             if (!webContents.isDestroyed()) {
-              webContents.send("construct:project:file-changed");
+              const paths = Array.from(this.watchChangedPaths);
+              this.watchChangedPaths.clear();
+              webContents.send("construct:project:file-changed", {
+                eventType,
+                path: paths[0] ?? null,
+                paths
+              });
             }
           } catch (err) {
             console.error("[watcher] error sending file-changed event", err);
@@ -257,6 +269,7 @@ export class ConstructProjectIpcController {
         clearTimeout(this.watchTimeout);
         this.watchTimeout = null;
       }
+      this.watchChangedPaths.clear();
       return { success: true };
     });
 

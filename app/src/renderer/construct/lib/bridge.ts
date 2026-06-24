@@ -388,6 +388,6 @@ export function closeProject(): Promise<void> {
   return api().closeProject();
 }
 
-export function onFileChanged(callback: () => void): () => void {
+export function onFileChanged(callback: (payload: import("../types").ProjectFileChangePayload) => void): () => void {
   return api().onFileChanged(callback);
 }
