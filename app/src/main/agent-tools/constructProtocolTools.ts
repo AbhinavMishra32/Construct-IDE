@@ -45,6 +45,13 @@ export type ConstructProtocolToolsOptions = {
   allowWorkspaceMutation?: boolean;
   allowTerminalCommands?: boolean;
   terminalCommandMode?: "workspace" | "validation-only";
+  authorizeWorkspaceMutation?: (input: {
+    kind: "file-write" | "file-edit";
+    path: string;
+    content: string;
+    conceptIds: string[];
+    reason: string;
+  }) => Promise<void>;
   onToolCallStart?: ConstructProtocolToolCallSink;
   onToolCall?: ConstructProtocolToolCallSink;
 };
@@ -144,7 +151,7 @@ export function createConstructProtocolTools(options: ConstructProtocolToolsOpti
 
   const flowMemoryEnsure = createTool({
     id: "flow-memory-ensure",
-    description: "Create any missing Flow Memory markdown files. Use during Flow setup or recovery. Mutates only .construct/flow-memory.",
+    description: "Create any missing Flow Memory markdown files. Use during Flow setup or recovery. Mutates only .construct.",
     inputSchema: z.object({}).strict(),
     execute: async () => {
       const project = requireFlowProject(options.project);
@@ -423,78 +430,118 @@ export function createConstructProtocolTools(options: ConstructProtocolToolsOpti
 
   const editWriteFile = createTool({
     id: "edit-write-file",
-    description: "Create or rewrite a project file when explicitly appropriate. Mutates workspace; existing files should usually use edit-replace or edit-propose-patch first.",
+    description: "Create or rewrite a project file when explicitly appropriate. In Flow, conceptIds must name concepts taught in this project and the content must pass the project concept firewall.",
     inputSchema: z.object({
       path: z.string().min(1),
       content: z.string(),
-      reason: z.string().min(1)
+      reason: z.string().min(1),
+      conceptIds: z.array(z.string().min(1)).default([])
     }).strict(),
-    execute: async (toolInput) => recordToolCall(
-      "edit-write-file",
-      `Wrote ${toolInput.path}`,
-      toolInput.reason,
-      writeWorkspaceFile(options, toolInput.path, toolInput.content),
-      toolInput
-    )
+    execute: async (toolInput) => {
+      await options.authorizeWorkspaceMutation?.({
+        kind: "file-write",
+        path: toolInput.path,
+        content: toolInput.content,
+        conceptIds: toolInput.conceptIds ?? [],
+        reason: toolInput.reason
+      });
+      return recordToolCall(
+        "edit-write-file",
+        `Wrote ${toolInput.path}`,
+        toolInput.reason,
+        writeWorkspaceFile(options, toolInput.path, toolInput.content),
+        toolInput
+      );
+    }
   });
 
   const write = createTool({
     id: "write",
-    description: "Claude-Code-style file write. Create or rewrite a project file only when explicitly appropriate; prefer edit for existing files.",
+    description: "Claude-Code-style file write. In Flow, conceptIds are required and every construct in content must be taught by those project-local concept bodies.",
     inputSchema: z.object({
       path: z.string().min(1),
       content: z.string(),
-      reason: z.string().min(1)
+      reason: z.string().min(1),
+      conceptIds: z.array(z.string().min(1)).default([])
     }).strict(),
-    execute: async (toolInput) => recordToolCall(
-      "write",
-      `Wrote ${toolInput.path}`,
-      `${toolInput.reason} Authorship: agent-created content.`,
-      writeWorkspaceFile(options, toolInput.path, toolInput.content).then((result) => ({
-        ...result,
-        authoredBy: "agent"
-      })),
-      toolInput
-    )
+    execute: async (toolInput) => {
+      await options.authorizeWorkspaceMutation?.({
+        kind: "file-write",
+        path: toolInput.path,
+        content: toolInput.content,
+        conceptIds: toolInput.conceptIds ?? [],
+        reason: toolInput.reason
+      });
+      return recordToolCall(
+        "write",
+        `Wrote ${toolInput.path}`,
+        `${toolInput.reason} Authorship: agent-created content.`,
+        writeWorkspaceFile(options, toolInput.path, toolInput.content).then((result) => ({
+          ...result,
+          authoredBy: "agent"
+        })),
+        toolInput
+      );
+    }
   });
 
   const editReplace = createTool({
     id: "edit-replace",
-    description: "Replace one exact string in a project file. Mutates workspace only when one exact match is found.",
+    description: "Replace one exact string in a project file. In Flow, conceptIds must cover every construct in the replacement.",
     inputSchema: z.object({
       path: z.string().min(1),
       find: z.string().min(1),
       replace: z.string(),
-      reason: z.string().min(1)
+      reason: z.string().min(1),
+      conceptIds: z.array(z.string().min(1)).default([])
     }).strict(),
-    execute: async (toolInput) => recordToolCall(
-      "edit-replace",
-      `Edited ${toolInput.path}`,
-      toolInput.reason,
-      replaceInWorkspaceFile(options, toolInput.path, toolInput.find, toolInput.replace),
-      toolInput
-    )
+    execute: async (toolInput) => {
+      await options.authorizeWorkspaceMutation?.({
+        kind: "file-edit",
+        path: toolInput.path,
+        content: toolInput.replace,
+        conceptIds: toolInput.conceptIds ?? [],
+        reason: toolInput.reason
+      });
+      return recordToolCall(
+        "edit-replace",
+        `Edited ${toolInput.path}`,
+        toolInput.reason,
+        replaceInWorkspaceFile(options, toolInput.path, toolInput.find, toolInput.replace),
+        toolInput
+      );
+    }
   });
 
   const edit = createTool({
     id: "edit",
-    description: "Claude-Code-style exact string edit. Replace one exact string in a project file; refuses ambiguous matches.",
+    description: "Claude-Code-style exact string edit. In Flow, conceptIds are required and the replacement must pass the project concept firewall.",
     inputSchema: z.object({
       path: z.string().min(1),
       find: z.string().min(1),
       replace: z.string(),
-      reason: z.string().min(1)
+      reason: z.string().min(1),
+      conceptIds: z.array(z.string().min(1)).default([])
     }).strict(),
-    execute: async (toolInput) => recordToolCall(
-      "edit",
-      `Edited ${toolInput.path}`,
-      `${toolInput.reason} Authorship: agent edit.`,
-      replaceInWorkspaceFile(options, toolInput.path, toolInput.find, toolInput.replace).then((result) => ({
-        ...result,
-        authoredBy: "agent"
-      })),
-      toolInput
-    )
+    execute: async (toolInput) => {
+      await options.authorizeWorkspaceMutation?.({
+        kind: "file-edit",
+        path: toolInput.path,
+        content: toolInput.replace,
+        conceptIds: toolInput.conceptIds ?? [],
+        reason: toolInput.reason
+      });
+      return recordToolCall(
+        "edit",
+        `Edited ${toolInput.path}`,
+        `${toolInput.reason} Authorship: agent edit.`,
+        replaceInWorkspaceFile(options, toolInput.path, toolInput.find, toolInput.replace).then((result) => ({
+          ...result,
+          authoredBy: "agent"
+        })),
+        toolInput
+      );
+    }
   });
 
   const runTerminalCommand = createTool({

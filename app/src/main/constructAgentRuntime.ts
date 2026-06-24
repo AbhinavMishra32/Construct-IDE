@@ -1122,7 +1122,17 @@ function parseMaybeJson(value: string | undefined): unknown {
 
 function previewUnknown(value: unknown): string {
   try {
-    return JSON.stringify(value, null, 2).slice(0, 1600);
+    const jsonStr = JSON.stringify(value, null, 2);
+    const isConceptResult = typeof value === "object" && value !== null && (
+      "concept" in (value as Record<string, unknown>) ||
+      "concepts" in (value as Record<string, unknown>) ||
+      "conceptId" in (value as Record<string, unknown>)
+    );
+    const limit = isConceptResult ? 48000 : 1600;
+    if (jsonStr.length <= limit) {
+      return jsonStr;
+    }
+    return jsonStr.slice(0, limit);
   } catch {
     return String(value).slice(0, 1600);
   }

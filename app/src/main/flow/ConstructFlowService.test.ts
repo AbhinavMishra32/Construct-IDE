@@ -29,7 +29,7 @@ function createFlowTestProject(workspaceRoot: string, id: string, goal = "Test F
     completedAt: null,
     flow: {
       goal,
-      memoryDirectory: ".construct/flow-memory",
+      memoryDirectory: ".construct",
       threadId: `${id}-thread`,
       researchEnabled: false,
       researchCompletedAt: null,
@@ -77,7 +77,7 @@ describe("ConstructFlowService Concept and Task Tools", () => {
       completedAt: null,
       flow: {
         goal: "Build a SwiftUI notes app",
-        memoryDirectory: ".construct/flow-memory",
+        memoryDirectory: ".construct",
         threadId: "test-thread",
         researchEnabled: false,
         researchCompletedAt: null,
@@ -271,7 +271,8 @@ describe("ConstructFlowService Concept and Task Tools", () => {
 
     assert.ok(removeResult.removed);
     const stateAfterRemove = await learningStore.getState();
-    assert.equal(stateAfterRemove.knowledgeBase.concepts["test-project:typescript.syntax.interface"], undefined);
+    assert.ok(stateAfterRemove.knowledgeBase.concepts["test-project:typescript.syntax.interface"]);
+    assert.equal(stateAfterRemove.projects["test-project"].conceptRelations?.["typescript.syntax.interface"], undefined);
   });
 
   it("prepares files and captures scoped baseline in practice-task", async () => {
@@ -310,7 +311,7 @@ describe("ConstructFlowService Concept and Task Tools", () => {
       completedAt: null,
       flow: {
         goal: "Test goals",
-        memoryDirectory: ".construct/flow-memory",
+        memoryDirectory: ".construct",
         threadId: "test-thread",
         researchEnabled: false,
         researchCompletedAt: null,
@@ -571,7 +572,7 @@ describe("ConstructFlowService Concept and Task Tools", () => {
       title: "Array map",
       language: "typescript",
       technology: "TypeScript",
-      content: "Array.map creates a new array by running a callback for every item. It does not mutate the original array.",
+      content: "Array.map creates a new array by running a callback for every item. A callback can use arrow-function syntax such as n => n * 10. It does not mutate the original array.",
       reason: "The learner has been introduced to map but has not answered any checks yet.",
       evidence: ["Flow explained that map transforms each item and returns a new array."]
     });
@@ -701,7 +702,7 @@ describe("ConstructFlowService Concept and Task Tools", () => {
       completedAt: null,
       flow: {
         goal: "Learn low-level C++ safely",
-        memoryDirectory: ".construct/flow-memory",
+        memoryDirectory: ".construct",
         threadId: "test-thread",
         researchEnabled: false,
         researchCompletedAt: null,
@@ -852,7 +853,7 @@ describe("ConstructFlowService Concept and Task Tools", () => {
       completedAt: null,
       flow: {
         goal: "Move from Swift to C++",
-        memoryDirectory: ".construct/flow-memory",
+        memoryDirectory: ".construct",
         threadId: "test-thread",
         researchEnabled: false,
         researchCompletedAt: null,
@@ -1011,7 +1012,7 @@ describe("ConstructFlowService Concept and Task Tools", () => {
       completedAt: null,
       flow: {
         goal: "Test memory patching",
-        memoryDirectory: ".construct/flow-memory",
+        memoryDirectory: ".construct",
         threadId: "test-thread",
         researchEnabled: false,
         researchCompletedAt: null,
@@ -1032,7 +1033,7 @@ describe("ConstructFlowService Concept and Task Tools", () => {
 
     assert.equal(result[0]?.file, "learner.md");
     assert.match(result[0]?.diff ?? "", /\+Recent learning evidence/);
-    const learnerMemory = await readFile(path.join(project.workspacePath, ".construct/flow-memory/learner.md"), "utf8");
+    const learnerMemory = await readFile(path.join(project.workspacePath, ".construct/learner.md"), "utf8");
     assert.match(learnerMemory, /exact memory patches/);
   });
 
@@ -1059,7 +1060,7 @@ describe("ConstructFlowService Concept and Task Tools", () => {
       completedAt: null,
       flow: {
         goal: "Test memory full-save diffs",
-        memoryDirectory: ".construct/flow-memory",
+        memoryDirectory: ".construct",
         threadId: "test-thread",
         researchEnabled: false,
         researchCompletedAt: null,
@@ -1116,7 +1117,7 @@ describe("ConstructFlowService Concept and Task Tools", () => {
       completedAt: null,
       flow: {
         goal: "Test hidden continuation sessions",
-        memoryDirectory: ".construct/flow-memory",
+        memoryDirectory: ".construct",
         threadId: "test-thread",
         researchEnabled: false,
         researchCompletedAt: null,
@@ -1979,7 +1980,7 @@ describe("ConstructFlowService Concept and Task Tools", () => {
       completedAt: null,
       flow: {
         goal: "DLSS From scratch",
-        memoryDirectory: ".construct/flow-memory",
+        memoryDirectory: ".construct",
         threadId: "research-thread",
         researchEnabled: false,
         researchCompletedAt: null,
@@ -1991,7 +1992,7 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     await mkdir(project.workspacePath, { recursive: true });
 
     const result = await service.runResearchAgent(project);
-    const researchMemory = await readFile(path.join(project.workspacePath, ".construct/flow-memory/research.md"), "utf8");
+    const researchMemory = await readFile(path.join(project.workspacePath, ".construct/research.md"), "utf8");
 
     assert.match(result.reply, /Research saved to research\.md/);
     assert.doesNotMatch(result.reply, /Are you looking to/);
@@ -2033,5 +2034,16 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     assert.match(source, /removeDuplicatedQuestionText/);
     assert.match(source, /Question-response guard/);
     assert.match(source, /learnerReadiness/);
+  });
+
+  it("keeps concept teaching conversational instead of reference-dump shaped", () => {
+    const source = readFileSync(new URL("./ConstructFlowService.ts", import.meta.url), "utf8");
+    assert.match(source, /Conversational teaching pace:/);
+    assert.match(source, /Treat Concepts as the durable reference shelf, not the chat script/);
+    assert.match(source, /normal chat should surface only the next small slice/);
+    assert.match(source, /Do not make the learner read a multi-section reference page before answering/);
+    assert.match(source, /Socratic checks should target the last small slice taught/);
+    assert.match(source, /do not mirror that full reference text into the learner-facing chat/);
+    assert.match(source, /Do not dump the entire concept body into chat/);
   });
 });

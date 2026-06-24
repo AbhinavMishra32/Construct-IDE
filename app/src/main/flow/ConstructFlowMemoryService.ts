@@ -9,7 +9,8 @@ import type {
 import type { StoredFlowProject } from "../projects/ConstructProjectTypes";
 import { ConstructProjectWorkspaceService } from "../projects/ConstructProjectWorkspaceService";
 
-export const FLOW_MEMORY_DIRECTORY = ".construct/flow-memory" as const;
+export const FLOW_MEMORY_DIRECTORY = ".construct" as const;
+export const LEGACY_FLOW_MEMORY_DIRECTORY = ".construct/flow-memory" as const;
 
 export const FLOW_MEMORY_FILES = [
   "research.md",
@@ -44,7 +45,11 @@ export class ConstructFlowMemoryService {
     for (const file of FLOW_MEMORY_FILES) {
       const target = this.memoryFilePath(project, file);
       if (!existsSync(target)) {
-        await writeFile(target, starterContent(project, file), "utf8");
+        const legacyTarget = this.legacyMemoryFilePath(project, file);
+        const content = existsSync(legacyTarget)
+          ? await readFile(legacyTarget, "utf8")
+          : starterContent(project, file);
+        await writeFile(target, content, "utf8");
       }
     }
 
@@ -57,7 +62,12 @@ export class ConstructFlowMemoryService {
   ): Promise<FlowMemoryReadResult[]> {
     return Promise.all(files.map(async (file) => {
       const target = this.memoryFilePath(project, file);
-      if (!existsSync(target)) {
+      const source = existsSync(target)
+        ? target
+        : existsSync(this.legacyMemoryFilePath(project, file))
+          ? this.legacyMemoryFilePath(project, file)
+          : null;
+      if (!source) {
         return {
           file,
           path: path.posix.join(FLOW_MEMORY_DIRECTORY, file),
@@ -67,11 +77,11 @@ export class ConstructFlowMemoryService {
         };
       }
 
-      const fileStat = await stat(target);
+      const fileStat = await stat(source);
       return {
         file,
         path: path.posix.join(FLOW_MEMORY_DIRECTORY, file),
-        content: await readFile(target, "utf8"),
+        content: await readFile(source, "utf8"),
         exists: true,
         updatedAt: fileStat.mtime.toISOString()
       };
@@ -100,7 +110,7 @@ export class ConstructFlowMemoryService {
     const results: ConstructFlowMemoryPatchResult[] = [];
     for (const update of updates) {
       const target = this.memoryFilePath(project, update.file);
-      const before = existsSync(target) ? await readFile(target, "utf8") : "";
+      const before = await this.readExistingMemoryFile(project, update.file);
       const after = normalizeMarkdown(update.content);
       await writeFile(target, after, "utf8");
       results.push({
@@ -126,7 +136,7 @@ export class ConstructFlowMemoryService {
     const results: ConstructFlowMemoryPatchResult[] = [];
     for (const patch of patches) {
       const target = this.memoryFilePath(project, patch.file);
-      const before = existsSync(target) ? await readFile(target, "utf8") : "";
+      const before = await this.readExistingMemoryFile(project, patch.file);
       const after = applyMemoryPatch(before, patch);
       await writeFile(target, normalizeMarkdown(after), "utf8");
       const updatedAt = new Date().toISOString();
@@ -150,6 +160,22 @@ export class ConstructFlowMemoryService {
       throw new Error(`Unsupported Flow Memory file: ${file}`);
     }
     return this.workspace.safeProjectPath(project, path.join(FLOW_MEMORY_DIRECTORY, file));
+  }
+
+  private legacyMemoryFilePath(project: StoredFlowProject, file: FlowMemoryFileName): string {
+    return this.workspace.safeProjectPath(project, path.join(LEGACY_FLOW_MEMORY_DIRECTORY, file));
+  }
+
+  private async readExistingMemoryFile(project: StoredFlowProject, file: FlowMemoryFileName): Promise<string> {
+    const target = this.memoryFilePath(project, file);
+    if (existsSync(target)) {
+      return readFile(target, "utf8");
+    }
+    const legacyTarget = this.legacyMemoryFilePath(project, file);
+    if (existsSync(legacyTarget)) {
+      return readFile(legacyTarget, "utf8");
+    }
+    return "";
   }
 }
 

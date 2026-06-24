@@ -60,7 +60,7 @@ export class ConstructProjectRepository {
         completedAt: project.completedAt ?? null,
         flow: {
           ...project.flow,
-          memoryDirectory: ".construct/flow-memory",
+          memoryDirectory: ".construct",
           researchCompletedAt: project.flow.researchCompletedAt ?? null,
           sessions: project.flow.sessions ?? [],
           updatedAt: project.flow.updatedAt ?? project.flow.createdAt ?? new Date().toISOString()

@@ -79,7 +79,7 @@ export type StoredFlowProject = StoredProjectBase & {
     autonomyPreference?: "guided" | "balanced" | "agentic";
     permissionsPreference?: "ask" | "workspace" | "agentic";
     projectSettings?: ConstructFlowProjectSettings;
-    memoryDirectory: ".construct/flow-memory";
+    memoryDirectory: ".construct";
     threadId: string;
     researchEnabled: boolean;
     researchCompletedAt?: string | null;

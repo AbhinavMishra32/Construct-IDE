@@ -30,6 +30,8 @@ import { ConstructSettingsIpcController } from "./ipc/ConstructSettingsIpcContro
 import { ConstructSystemIpcController } from "./ipc/ConstructSystemIpcController";
 import { ConstructTerminalIpcController } from "./ipc/ConstructTerminalIpcController";
 import { ConstructLearningStore } from "./constructLearningStore";
+import { createConstructAgentRuntime } from "./constructAgentRuntime";
+import { ConstructConceptPolicyService } from "./learning/ConstructConceptPolicyService";
 import { ConstructLspService } from "./lsp/ConstructLspService";
 import { ProcessInspector } from "./infra/ProcessInspector";
 import { ConstructObservabilityService } from "./observability/ConstructObservabilityService";
@@ -82,6 +84,12 @@ const constructFlowService = new ConstructFlowService({
   latestTerminalOutput: (projectId) => terminalService.latestOutput(projectId),
   logs: agentLogService,
   learningStore,
+  conceptPolicy: () => new ConstructConceptPolicyService({
+    learningStore,
+    agentRuntime: createConstructAgentRuntime,
+    readSettings,
+    readProjectMemory: (project) => flowMemoryService.read(project, ["learner.md"])
+  }),
   readSettings
 });
 const verifierService = new ConstructVerifierService({

@@ -39,6 +39,10 @@ import type {
 } from "../../shared/constructFlow";
 import { CONSTRUCT_CONCEPT_LANGUAGES, CONSTRUCT_CONCEPT_MASTERY_RUBRIC, conceptMasteryRubricForLevel, type ConstructAgentContextWindow, type ConstructAgentRunEvent, type ConstructConceptConfidence, type ConstructConceptLanguage, type ConstructConceptMasteryLevel, type KnowledgeBaseRecord } from "../../shared/constructLearning";
 import { ConstructLearningStore } from "../constructLearningStore";
+import {
+  ConstructConceptPolicyService,
+  assertConceptPolicyAllowed
+} from "../learning/ConstructConceptPolicyService";
 
 const ignoredNames = new Set([".git", ".construct", "node_modules", "dist", "build", ".next", "coverage"]);
 const maxBaselineFileBytes = 120_000;
@@ -166,6 +170,20 @@ function buildFlowRuntimeErrorReply(error: unknown): string {
   ].join("\n");
 }
 
+function buildConceptPolicyBlockedReply(decision: {
+  reason: string;
+  blockedCapabilities: string[];
+}): string {
+  return [
+    "I can’t present that next step yet because it depends on material that has not been taught in this project.",
+    decision.reason,
+    decision.blockedCapabilities.length
+      ? `Missing project concept coverage: ${decision.blockedCapabilities.join("; ")}`
+      : null,
+    "I need to teach and record that capability here before creating the task, assessment, explanation, or file change."
+  ].filter(Boolean).join("\n\n");
+}
+
 export type ConstructFlowSessionEventSink = (event: ConstructFlowSessionEvent) => void;
 
 export class ConstructFlowService {
@@ -175,9 +193,18 @@ export class ConstructFlowService {
     latestTerminalOutput: (projectId: string) => string;
     logs: AgentLogService;
     learningStore: () => ConstructLearningStore;
+    conceptPolicy?: () => ConstructConceptPolicyService;
     readSettings?: () => Promise<StoredSettings>;
     agentRuntime?: () => ReturnType<typeof createConstructAgentRuntime>;
   }) {}
+
+  private conceptPolicy(): ConstructConceptPolicyService {
+    return this.options.conceptPolicy?.() ?? new ConstructConceptPolicyService({
+      learningStore: this.options.learningStore,
+      readSettings: this.options.readSettings,
+      readProjectMemory: (project) => this.options.flowMemory.read(project, ["learner.md"])
+    });
+  }
 
   async runMainAgent(
     project: StoredFlowProject,
@@ -243,6 +270,16 @@ export class ConstructFlowService {
       allowWorkspaceMutation: toolPolicy.allowWorkspaceMutation,
       allowTerminalCommands: toolPolicy.allowTerminalCommands,
       terminalCommandMode: toolPolicy.terminalCommandMode,
+      authorizeWorkspaceMutation: async (mutation) => {
+        const decision = await this.conceptPolicy().authorize({
+          project,
+          artifactKind: mutation.kind,
+          artifactRef: mutation.path,
+          content: mutation.content,
+          declaredConceptIds: mutation.conceptIds
+        });
+        assertConceptPolicyAllowed(decision);
+      },
       onToolCallStart: (record) => {
         session.toolCalls.push(toFlowToolRecord(record, "running"));
         upsertTimelinePart(session.timeline, timelinePartFromToolRecord(record, "running"));
@@ -257,8 +294,8 @@ export class ConstructFlowService {
     });
 
     const store = this.options.learningStore();
-    const learningState = await store.getState();
-    const concepts = uniqueKnowledgeConcepts(Object.values(learningState.knowledgeBase.concepts));
+    await store.migrateLegacyProjectConcepts(project.id, project.title);
+    const concepts = await store.getProjectConceptRecords(project.id);
     const flowStatePrompt = buildMainPrompt(project, input, memory, concepts, toolPolicy, session.id);
     let systemPrompt = buildFlowSystemPrompt(flowStatePrompt);
     let modelMessages = buildFlowModelMessages(project);
@@ -391,6 +428,17 @@ export class ConstructFlowService {
         maxRetries: 2,
         onTrace: (entry) => {
           applyTrace(session, entry);
+          if (entry.event?.type === "tool") {
+            const toolEvent = entry.event;
+            const level = toolEvent.status === "error" ? "error" : "info";
+            this.options.logs.toolCall(
+              toolEvent.toolName ?? "tool",
+              toolEvent.status,
+              toolEvent.input,
+              toolEvent.outputPreview,
+              level
+            );
+          }
           if (entry.payload !== undefined) {
             this.options.logs.structured("flow", entry.title, entry.payload, entry.level ?? "debug");
           } else {
@@ -415,6 +463,19 @@ export class ConstructFlowService {
       runError = error;
       runFinishReason = "error";
       reply = buildFlowRuntimeErrorReply(error);
+    }
+
+    if (!runError) {
+      const replyDecision = await this.conceptPolicy().authorize({
+        project,
+        artifactKind: "next-step",
+        artifactRef: `Flow reply ${session.id}`,
+        content: reply
+      });
+      if (!replyDecision.allowed) {
+        reply = buildConceptPolicyBlockedReply(replyDecision);
+        runFinishReason = "concept-policy";
+      }
     }
 
     const waiting = session.practiceTasks.some((task) => task.status === "waiting") || Boolean(findPendingLearnerQuestion(session.toolCalls));
@@ -732,6 +793,7 @@ export class ConstructFlowService {
         publish("updated");
         return {
           planned: true,
+          conceptAuditId: undefined,
           reason: toolInput.reason,
           currentNodeId,
           nodeCount: nextNodes.length,
@@ -802,8 +864,7 @@ export class ConstructFlowService {
         const requiredMasteryLevel = toolInput.requiredMasteryLevel ?? taskReadyMasteryLevel;
         const learnerReadiness = normalizeLearnerReadiness(toolInput.learnerReadiness, project);
         const store = this.options.learningStore();
-        const state = await store.getState();
-        const knownConcepts = uniqueKnowledgeConcepts(Object.values(state.knowledgeBase.concepts));
+        const knownConcepts = await store.getProjectConceptRecords(project.id);
         const knownConceptIds = new Set(knownConcepts.map((concept) => concept.id));
         const conceptRecords = introducedConceptIds
           .map((conceptId) => findKnowledgeConceptById(knownConcepts, conceptId))
@@ -818,6 +879,22 @@ export class ConstructFlowService {
         assertTaskConceptReadiness(introducedConceptIds, conceptRecords, learnerReadiness, requiredMasteryLevel);
         assertTaskLanguageMatchesConcepts(taskLanguage, conceptRecords);
         assertTaskLanguageMatchesPath(project, pathNodeId, taskLanguage, knownConcepts);
+        const conceptDecision = await this.conceptPolicy().authorize({
+          project,
+          artifactKind: "task",
+          artifactRef: toolInput.title,
+          declaredConceptIds: introducedConceptIds,
+          requireTaskReady: true,
+          content: JSON.stringify({
+            title: toolInput.title,
+            prompt: toolInput.prompt,
+            successCriteria: toolInput.successCriteria,
+            subtasks: toolInput.subtasks,
+            preparations: toolInput.preparations,
+            guidance: toolInput.guidance
+          }, null, 2)
+        });
+        assertConceptPolicyAllowed(conceptDecision);
         const cancelledStaleTaskIds = cancelStaleLanguageTasks(project, taskLanguage, knownConcepts, now);
         if (cancelledStaleTaskIds.length > 0) {
           project.flow.updatedAt = now;
@@ -908,7 +985,8 @@ export class ConstructFlowService {
           cancelledStaleTaskIds,
           successCriteria: task.successCriteria,
           subtasks: task.subtasks,
-          preparedFiles: task.preparedFiles
+          preparedFiles: task.preparedFiles,
+          conceptAuditId: conceptDecision.auditId
         };
       }
     });
@@ -1081,6 +1159,22 @@ export class ConstructFlowService {
         newRecord.history = appendConceptHistory(existingRecord?.history, historyEntry);
 
         await store.saveKnowledgeConcept(newRecord);
+        const currentRelation = state.projects[project.id]?.conceptRelations?.[conceptId];
+        await store.recordConceptProjectEvent({
+          id: randomUUID(),
+          projectId: project.id,
+          projectTitle: project.title,
+          conceptId,
+          kind: "introduced",
+          previousMasteryLevel: currentRelation?.masteryLevel,
+          masteryLevel,
+          reason: toolInput.reason,
+          evidence: toolInput.evidence,
+          artifactKind: "teaching",
+          pathNodeId: toolInput.pathNodeId,
+          taskId: toolInput.taskId,
+          createdAt: now
+        });
         publish("updated");
 
         return {
@@ -1154,6 +1248,10 @@ export class ConstructFlowService {
         if (!existing) {
           throw new Error(`Concept with ID ${conceptId} not found in the learner's global concepts.`);
         }
+        const projectRelation = state.projects[project.id]?.conceptRelations?.[conceptId];
+        if (!projectRelation?.introducedAt) {
+          throw new Error(`Concept ${conceptId} exists globally but has not been taught in project ${project.title}. Use add-concept to introduce it in this project before modifying or using it.`);
+        }
         const existingMasteryLevel = masteryLevelForConcept(existing);
         const nextMasteryLevel = toolInput.masteryLevel !== undefined
           ? normalizeMasteryLevel(toolInput.masteryLevel)
@@ -1214,6 +1312,22 @@ export class ConstructFlowService {
         updatedRecord.history = appendConceptHistory(existing.history, historyEntry);
 
         await store.saveKnowledgeConcept(updatedRecord);
+        const direction = masteryChanged ? masteryDirection(existingMasteryLevel, nextMasteryLevel) : "unchanged";
+        await store.recordConceptProjectEvent({
+          id: randomUUID(),
+          projectId: project.id,
+          projectTitle: project.title,
+          conceptId,
+          kind: direction === "increased" ? "leveled-up" : direction === "decreased" ? "leveled-down" : "referenced",
+          previousMasteryLevel: existingMasteryLevel,
+          masteryLevel: nextMasteryLevel,
+          reason: toolInput.reason,
+          evidence: toolInput.evidence,
+          artifactKind: "teaching",
+          pathNodeId: toolInput.pathNodeId,
+          taskId: toolInput.taskId,
+          createdAt: now
+        });
         publish("updated");
 
         return {
@@ -1254,8 +1368,10 @@ export class ConstructFlowService {
         const store = this.options.learningStore();
         const state = await store.getState();
         const conceptId = normalizeConceptId(toolInput.id, project);
-        const existing = findKnowledgeConceptById(Object.values(state.knowledgeBase.concepts), conceptId);
-        await store.removeKnowledgeConcept(existing?.sourceProjectId ?? project.id, conceptId);
+        if (!state.projects[project.id]?.conceptRelations?.[conceptId]) {
+          throw new Error(`Concept ${conceptId} is not related to project ${project.title}.`);
+        }
+        await store.removeProjectConcept(project.id, conceptId);
         publish("updated");
 
         return {
@@ -1289,8 +1405,7 @@ export class ConstructFlowService {
       }),
       execute: async (toolInput) => {
         const store = this.options.learningStore();
-        const state = await store.getState();
-        const concepts = uniqueKnowledgeConcepts(Object.values(state.knowledgeBase.concepts));
+        const concepts = await store.getProjectConceptRecords(project.id);
         const selected = new Map<string, KnowledgeBaseRecord>();
         const limit = toolInput.limit ?? 8;
         const includeContent = toolInput.includeContent ?? false;
@@ -1392,8 +1507,7 @@ export class ConstructFlowService {
         const now = new Date().toISOString();
         const conceptIds = normalizeConceptIds(toolInput.conceptIds, project);
         const store = this.options.learningStore();
-        const state = await store.getState();
-        const concepts = uniqueKnowledgeConcepts(Object.values(state.knowledgeBase.concepts));
+        const concepts = await store.getProjectConceptRecords(project.id);
         const conceptRecords = conceptIds
           .map((conceptId) => findKnowledgeConceptById(concepts, conceptId))
           .filter((concept): concept is KnowledgeBaseRecord => Boolean(concept));
@@ -1405,6 +1519,20 @@ export class ConstructFlowService {
         if (!sourceText) {
           throw new Error("Concept exercises must be answerable from the concept text. Add concept content first or provide sourceText.");
         }
+        const conceptDecision = await this.conceptPolicy().authorize({
+          project,
+          artifactKind: "assessment",
+          artifactRef: toolInput.title,
+          declaredConceptIds: conceptIds,
+          content: JSON.stringify({
+            title: toolInput.title,
+            prompt: toolInput.prompt,
+            successCriteria: toolInput.successCriteria,
+            expectedSignals: toolInput.expectedSignals,
+            sourceText
+          }, null, 2)
+        });
+        assertConceptPolicyAllowed(conceptDecision);
         const exercise: ConstructFlowConceptExercise = {
           id: randomUUID(),
           projectId: project.id,
@@ -1432,7 +1560,8 @@ export class ConstructFlowService {
           successCriteria: exercise.successCriteria,
           expectedSignals: exercise.expectedSignals,
           sourceText: exercise.sourceText,
-          reason: toolInput.reason
+          reason: toolInput.reason,
+          conceptAuditId: conceptDecision.auditId
         };
       }
     });
@@ -1766,6 +1895,10 @@ async function applyConceptMasteryUpdate(
   if (!existing) {
     throw new Error(`Concept with ID ${conceptId} not found in the learner's global concepts.`);
   }
+  const projectRelation = state.projects[project.id]?.conceptRelations?.[conceptId];
+  if (!projectRelation?.introducedAt) {
+    throw new Error(`Concept ${conceptId} cannot gain project Mastery because it has not been taught in project ${project.title}.`);
+  }
   const previousMasteryLevel = masteryLevelForConcept(existing);
   const masteryLevel = normalizeMasteryLevel(update.masteryLevel);
   const masteryText = normalizeMasteryText(masteryLevel, update.masteryText);
@@ -1801,6 +1934,22 @@ async function applyConceptMasteryUpdate(
   });
   updatedRecord.history = appendConceptHistory(existing.history, historyEntry);
   await store.saveKnowledgeConcept(updatedRecord);
+  const direction = masteryDirection(previousMasteryLevel, masteryLevel);
+  await store.recordConceptProjectEvent({
+    id: randomUUID(),
+    projectId: project.id,
+    projectTitle: project.title,
+    conceptId,
+    kind: direction === "increased" ? "leveled-up" : direction === "decreased" ? "leveled-down" : "practiced",
+    previousMasteryLevel,
+    masteryLevel,
+    reason: update.masteryReason,
+    evidence: update.evidence,
+    artifactKind: "assessment",
+    pathNodeId: update.pathNodeId,
+    taskId: update.taskId,
+    createdAt: updatedAt
+  });
   return updatedRecord;
 }
 
@@ -3402,7 +3551,7 @@ function buildMainPrompt(
       content: item.content.slice(0, 3_000)
     })), null, 2),
     "",
-    "Concepts:",
+    "Concepts taught in this project:",
     JSON.stringify(concepts.map((c) => ({
       id: c.id,
       parentId: c.parentId,
@@ -3709,7 +3858,7 @@ function flowToolPolicyForInput(input: ConstructFlowAgentInput): FlowRunToolPoli
     mode: "mentor",
     allowWorkspaceMutation: true,
     allowTerminalCommands: true,
-    terminalCommandMode: "workspace",
+      terminalCommandMode: "validation-only",
     protocolToolNames: mentorProtocolToolNames,
     flowToolNames: mentorFlowToolNames,
     maxSteps: 16
@@ -3994,15 +4143,15 @@ You are not a coding agent. You are a teaching system that uses real tasks to le
 CRITICAL PEDAGOGY RULE: You must NEVER use write/edit to write the actual implementation or solve the tasks for the learner. Even if the concept has been introduced and recorded, the learner must be the one who writes the code. You are strictly forbidden from writing or implementing the solution code yourself.
 
 The available Flow tools are run-mode dependent. The prompt includes a Current Flow run mode section with the exact tool list for this turn. Keep the tool surface calm. Do not ask for or invent extra tools.
-File mutation follows the Claude Code shape: write creates or overwrites a file; edit replaces one exact string in an existing file. These are the only normal file modification tools. Use them only to help the learner move through an introduced concept, repair tiny scaffold/setup blockers, update simple docs, or make clearly requested support edits. Do not use write/edit to implement code whose concept has not been introduced yet. Even after a concept is introduced, do not implement it; instead, create a practice task for the learner. If a code change needs an unintroduced concept, teach it first, record the concept, then create a learner task or make the smallest necessary support edit (such as an empty scaffold file/boilerplate) with clear authorship.
+File mutation follows the Claude Code shape: write creates or overwrites a file; edit replaces one exact string in an existing file. Every write/edit call must include conceptIds from this project's taught concept ledger. The runtime independently audits the proposed content against those exact concept bodies and blocks uncovered syntax, APIs, patterns, tooling, or hidden prerequisites. A global concept or a concept taught in another project does not count. Use write/edit only to help the learner move through a project-taught concept, repair tiny scaffold/setup blockers, update simple docs, or make clearly requested support edits. Do not use write/edit to implement code whose concept has not been introduced in this project yet. Even after a concept is introduced, do not implement it; instead, create a practice task for the learner.
 Before using write/edit for a learning-acceleration support edit, ask the learner first with ask-question and wait for the answer. This includes edits because the learner is stuck, because a scaffold bug is blocking progress, or because the edit would make learning faster. The question must name the file, describe the exact change, explain why it would speed progress, and say what learning remains for the learner. Example shape: "Should I edit [[file:src/core/index.ts|src/core/index.ts]] to remove the broken export so you can focus on module barrels instead of setup friction? You will still implement the public API yourself." If the learner says no or skips, do not edit; teach or create a learner task instead. If the learner explicitly asks in the current message for a concrete file edit, that counts as consent for that requested edit only.
 
 Project kickoff and path:
 - When a new Flow project starts, first learn the learner and the project. Ask a good amount of tracked questions when needed. You may ask about prior experience, comfort level, goals, constraints, taste, and what they already understand, but choose questions naturally from the situation.
-- Read the global Concepts in the prompt. Use it to avoid asking questions that are already answered, and to notice what the learner may already know.
+- Read only the project Concepts in the prompt when deciding what may be used. Global knowledge can help choose what to teach next, but it never authorizes a task, assessment, explanation, or write in this project.
 - Use ask-question for learner modeling when it would improve the path: background, preferences, constraints, confidence, what they want to do manually, and what they want handled by normal tooling.
 - After learner profiling or any meaningful learner answer, update learner.md with flow-memory-patch before creating or revising tasks.
-- After updating learner.md for kickoff, call plan-learning-path. The path must be based on the learner's abilities, the project goal, global concepts, and useful research. If the learner is new to a technology, begin with the beginner concepts before project-specific app work.
+- After updating learner.md for kickoff, call plan-learning-path. The path must be based on the learner's abilities, the project goal, concepts already taught in this project, and useful research. Future nodes must not name or depend on untaught implementation concepts; introduce them first, then revise the path.
 - The path is allowed to change. Revise it with plan-learning-path when learner evidence changes.
 - Each practice-task belongs to the current path node unless there is a clear reason to place it elsewhere.
 
@@ -4014,20 +4163,28 @@ Guided discovery:
 - Celebrate curiosity through the work itself: make the next question feel like opening a door, not taking a quiz. Avoid schooly recap checks. Ask questions that help the learner notice the shape of the solution.
 - If the learner proposes an approach, treat it as the primary material. Improve it, test it against edge cases, and only then fill in missing details.
 
+Conversational teaching pace:
+- Treat Concepts as the durable reference shelf, not the chat script. Concept bodies can be detailed for future auditing and recall; normal chat should surface only the next small slice the learner needs right now.
+- A teaching turn should advance one idea or one relationship, then hand the learner a small thinking move. If the concept contains several subideas, record the whole concept but teach the first useful slice now and continue later from learner evidence.
+- Do not make the learner read a multi-section reference page before answering. Avoid broad overview dumps, glossary cascades, long enumerations, diagrams plus caveats plus future applications, or all phases of a system in one ordinary chat turn.
+- Prefer short, conversational paragraphs. Use lightweight structure only when it genuinely reduces cognitive load. The learner should feel guided through a project, not assigned reading from documentation.
+- Socratic checks should target the last small slice taught. Ask for a prediction, comparison, tiny example, or mental model that can be answered from that slice, not from a whole reference article.
+- If the learner asks for a reference overview, provide it in a collapsible/linked concept card style and still make the next action small.
+
 Concept-first tutoring:
-- Concepts are global learner knowledge across projects. They are not per-project folders.
-- Before explaining a topic, check the global Concepts in the prompt.
+- Concept definitions may be reusable, but permission to use them is project-local. Every project has its own introduced, referenced, practiced, assessed, and leveled-up ledger.
+- Before explaining a topic, check the Concepts taught in this project. A matching global concept from another project is only a candidate to introduce here, never permission to use it.
 - Use fetch-concepts when you need exact concept content, examples, evidence, confidence, or related concepts. Use exact conceptIds when you know them and query search when you do not. Do not guess concept details from memory.
 - Before modifying or removing a concept, fetch it first unless the full current record is already visible in the prompt or current tool output.
-- If an existing concept covers the need, link it in chat with the inline markdown tag [[concept:concept.id|Concept title]] and briefly say why it is relevant, then teach from it if the learner's Mastery is below the level needed for the next step.
-- Introducing a concept is only the start of the teaching journey. After add-concept/suggest-existing-concept, teach the concept with a small mental model, examples, contrasts, and Socratic checks. Do not jump straight from "introduced" to a project task.
+- If a reusable concept exists but is not in this project, introduce it here with add-concept before teaching from or using it. Then link it in chat with the inline markdown tag [[concept:concept.id|Concept title]].
+- Introducing a concept is only the start of the teaching journey. After add-concept/suggest-existing-concept, teach a small slice of the concept with a mental model, a tiny example, or a contrast chosen for the learner's current level. Do not dump the entire concept body into chat and do not jump straight from "introduced" to a project task.
 - Use ask-question for Socratic checks when the learner's answer is needed as Mastery evidence. Ask focused questions that reveal their model, not schooly recap prompts. After ask-question, stop and wait.
 - Normal chat is for ideas, mental models, questions, and review. Do not put implementation code blocks or broad code snippets in normal chat unless the learner has already attempted the shape or explicitly asks for the code.
 - Only create a practice-task after every relevant concept is recorded at Mastery Level 3 or higher. If any required concept is Level 0, 1, or 2, the correct next move is more explanation, ask-question, or concept-exercise, not a task.
-- Every practice-task must include introducedConceptIds and requiredMasteryLevel. Those are the exact concepts and minimum Mastery level the task tests.
+- Every practice-task must include introducedConceptIds and requiredMasteryLevel. Those are project-local prerequisites. The runtime audits every word of the task, criteria, guidance, subtasks, and preparations against the bodies of those concepts.
 - Every practice-task must include learnerReadiness evidence for every introducedConceptId. This evidence must come from the learner's own chat answer, plan, explanation, or submitted diff. Agent-written demos, prepared files, terminal output, and "the demo ran" are not learner readiness.
 - concept-exercise is for practicing a concept before roadmap/project tasks. Exercises must be answerable from the concept text/sourceText directly and should usually target Mastery 1-3. After creating an exercise, use ask-question for the learner's answer and stop. When they answer, use review-concept-exercise and update only the concepts proven by that answer.
-- If no concept is introduced yet, teach first. Explain the idea, record the concept at Mastery Level 0 unless there is learner-owned evidence for more, get observable learner understanding with questions/exercises, then create the task only after Level 3 readiness.
+- If no concept is introduced in this project yet, teach first. Record the concept in this project at Mastery Level 0 unless there is learner-owned evidence for more, get observable learner understanding with questions/exercises, then create the task only after Level 3 readiness.
 - If the learner switches languages or says they do not know the current language, stop using stale tasks/path nodes from the old language. Patch learner.md, revise the path, teach the new language prerequisites, and only then create tasks in the new language.
 
 When you teach or the learner demonstrates understanding, update Concepts with evidence:
@@ -4047,7 +4204,7 @@ When you teach or the learner demonstrates understanding, update Concepts with e
 - Use dot-notated hierarchical IDs for reusable concepts (e.g. 'typescript.types.interfaces', 'react.hooks.state', 'swiftui.core-structure'). Max 3 levels deep (domain.area.topic).
 - Do not include product/project/app names in concept IDs. For a notes app, use 'swiftui.core-structure', not 'swiftui.notesapp.core-structure'.
 - Do not create smaller and smaller concepts. Group related sub-concepts inside parent concepts logically.
-- Keep concept content detailed, natural, and free-form markdown so it can be easily read and modified. Write detailed text explanations.
+- Keep concept content detailed, natural, and free-form markdown so it can be easily read and modified. Write detailed text explanations inside the concept record, but do not mirror that full reference text into the learner-facing chat.
 - When a learner struggles, modify the concept to note the specific confusion point.
 - Concepts are persistent memory of what the learner knows, where they are confused, and what the agent wrote. Preserve authoredBy, history, and evidence so future agents do not mistake agent-created content for learner mastery.
 
@@ -4074,7 +4231,7 @@ Clickable file protocol:
 - If the UI should immediately open or focus a file, also call open-file or focus-code. Inline refs are for clickable text; action tools are for immediate navigation.
 - For taskFiles, prepared files, and focus paths, use project-relative paths that the UI can open directly.
 
-Do not build whole apps for the learner by hand. For project setup, use run-terminal-command with the normal scaffold command when one exists, then inspect and make small targeted changes only as task preparation. If a native scaffold command is unavailable, explain why, ask a tracked question if direction matters, or create the smallest learner task that can move understanding forward. Never hand-write a whole package.json, Xcode project, or broad app tree as a substitute for a real scaffold command.
+Do not build whole apps for the learner by hand. Flow terminal commands are validation-only because generators can write unaudited code containing untaught concepts. Prepare only small concept-audited files through write/edit or practice-task preparations. Never hand-write a whole package.json, Xcode project, or broad app tree as a substitute for a learner-owned, concept-scoped task.
 
 When the latest input is a learner message inside an active task, treat it as task-scoped chat. Answer in the context of the active task and do not create a new task unless the path genuinely changes. When the latest input includes a task submission, act as a task-review mentor: inspect the compact diff and authoredBy metadata, compare it against the active subtask success criteria, update concepts only with evidence, call review-subtask with outcome "done" when the submitted subtask passes, or outcome "needs-work" when it does not. Use task.submission.authoredBy, preparedFiles.authoredBy, and recent write/edit tool records as the authorship source of truth. Call complete-task only after a learner-authored submission exists and every subtask has been reviewed as completed; complete-task.evidence must be an array of concrete learner evidence strings. Agent writes, scaffold repairs, terminal checks, and prepared files are support work, not learner completion evidence. If Flow edited a task file after the learner submission, do not mark the task done from that stale submission; ask the learner to review and resubmit. If there is no learner submission, keep the task waiting and explain the next learner action. If the diff is insufficient or ambiguous in a way that blocks review, ask-question with one focused follow-up; do not ask conceptual quiz questions as review blockers.
 

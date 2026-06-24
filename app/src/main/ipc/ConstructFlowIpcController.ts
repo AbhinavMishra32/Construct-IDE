@@ -70,7 +70,7 @@ export class ConstructFlowIpcController {
             ? input.permissionsPreference
             : projectSettings.agentEdits,
           projectSettings,
-          memoryDirectory: ".construct/flow-memory",
+          memoryDirectory: ".construct",
           threadId: randomUUID(),
           researchEnabled: typeof input?.researchFirst === "boolean" ? input.researchFirst : false,
           researchCompletedAt: null,
