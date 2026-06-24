@@ -37,7 +37,7 @@ import type {
   ConstructFlowTaskSubmission,
   ConstructFlowToolCallRecord
 } from "../../shared/constructFlow";
-import { CONSTRUCT_CONCEPT_LANGUAGES, CONSTRUCT_CONCEPT_MASTERY_RUBRIC, conceptMasteryRubricForLevel, type ConstructAgentContextWindow, type ConstructAgentRunEvent, type ConstructConceptConfidence, type ConstructConceptLanguage, type ConstructConceptMasteryLevel, type KnowledgeBaseRecord } from "../../shared/constructLearning";
+import { CONSTRUCT_CONCEPT_LANGUAGES, CONSTRUCT_CONCEPT_MASTERY_RUBRIC, conceptMasteryRubricForLevel, type ConstructAgentContextWindow, type ConstructAgentRunEvent, type ConstructCitationSource, type ConstructConceptConfidence, type ConstructConceptLanguage, type ConstructConceptMasteryLevel, type KnowledgeBaseRecord } from "../../shared/constructLearning";
 import { ConstructLearningStore } from "../constructLearningStore";
 import {
   ConstructConceptPolicyService,
@@ -73,6 +73,17 @@ const flowConceptMasterySchema = z.union([
   z.literal(4),
   z.literal(5)
 ]);
+const citationSourceSchema = z.object({
+  id: z.string().min(1).max(80).optional(),
+  title: z.string().min(1).max(180),
+  url: z.string().url(),
+  provider: z.string().min(1).max(80).optional(),
+  publisher: z.string().min(1).max(120).optional(),
+  snippet: z.string().min(1).max(700).optional(),
+  quote: z.string().min(1).max(500).optional(),
+  accessedAt: z.string().min(1).max(80).optional()
+}).strict();
+type CitationSourceInput = z.infer<typeof citationSourceSchema>;
 const taskReadyMasteryLevel = 3 satisfies ConstructConceptMasteryLevel;
 const flowMasteryRubricDescription = CONSTRUCT_CONCEPT_MASTERY_RUBRIC
   .map((entry) => `Level ${entry.level} (${entry.title}): ${entry.text}`)
@@ -91,6 +102,7 @@ type FlowRunMode = "mentor" | "task-review";
 
 type FlowRunToolPolicy = {
   mode: FlowRunMode;
+  sourceGroundingEnabled: boolean;
   allowWorkspaceMutation: boolean;
   allowTerminalCommands: boolean;
   terminalCommandMode: "workspace" | "validation-only";
@@ -214,7 +226,8 @@ export class ConstructFlowService {
     await this.options.flowMemory.ensure(project);
     const memory = await this.options.flowMemory.read(project, ["project.md", "path.md", "learner.md", "research.md"]);
     const settings = await this.options.readSettings?.();
-    const toolPolicy = flowToolPolicyForInput(input);
+    const sourceGroundingEnabled = settings?.ai.flowSourceGroundingEnabled !== false;
+    const toolPolicy = flowToolPolicyForInput(input, { sourceGroundingEnabled });
     const answeredSession = applyQuestionResponse(project, input.questionResponse);
     if (answeredSession) {
       onSessionEvent?.({
@@ -267,6 +280,7 @@ export class ConstructFlowService {
       flowMemory: this.options.flowMemory,
       latestTerminalOutput: this.options.latestTerminalOutput(project.id),
       tavilyApiKey: settings?.ai.tavilyApiKey,
+      webResearchEnabled: sourceGroundingEnabled,
       allowWorkspaceMutation: toolPolicy.allowWorkspaceMutation,
       allowTerminalCommands: toolPolicy.allowTerminalCommands,
       terminalCommandMode: toolPolicy.terminalCommandMode,
@@ -288,6 +302,7 @@ export class ConstructFlowService {
       onToolCall: (record) => {
         replaceToolRecord(session, toFlowToolRecord(record, record.status ?? "completed"));
         upsertTimelinePart(session.timeline, timelinePartFromToolRecord(record, record.status ?? "completed"));
+        appendCitationSourcesFromToolRecord(session, record);
         extractAction(record).forEach((action) => actionsFromTools.push(action));
         publish("updated");
       }
@@ -534,12 +549,14 @@ export class ConstructFlowService {
     trimSessions(project);
     publish("started");
 
+    const settings = await this.options.readSettings?.();
     const protocol = createConstructProtocolTools({
       project,
       workspace: this.options.workspace,
       flowMemory: this.options.flowMemory,
       latestTerminalOutput: this.options.latestTerminalOutput(project.id),
-      tavilyApiKey: (await this.options.readSettings?.())?.ai.tavilyApiKey,
+      tavilyApiKey: settings?.ai.tavilyApiKey,
+      webResearchEnabled: settings?.ai.flowSourceGroundingEnabled !== false,
       allowWorkspaceMutation: false,
       allowTerminalCommands: false,
       onToolCallStart: (record) => {
@@ -550,6 +567,7 @@ export class ConstructFlowService {
       onToolCall: (record) => {
         replaceToolRecord(session, toFlowToolRecord(record, record.status ?? "completed"));
         upsertTimelinePart(session.timeline, timelinePartFromToolRecord(record, record.status ?? "completed"));
+        appendCitationSourcesFromToolRecord(session, record);
         publish("updated");
       }
     });
@@ -563,7 +581,7 @@ export class ConstructFlowService {
         purpose: "Construct Flow research agent",
         instructions: FLOW_RESEARCH_AGENT_PROMPT,
         prompt: buildResearchPrompt(project),
-        tools: protocol.tools,
+        tools: settings?.ai.flowSourceGroundingEnabled === false ? omitInternetTools(protocol.tools) : protocol.tools,
         maxSteps: 10,
         maxRetries: 2,
         onTrace: (entry) => {
@@ -710,6 +728,7 @@ export class ConstructFlowService {
       toolCalls: [],
       agentEvents: [],
       timeline: [],
+      citations: [],
       actions: [],
       practiceTasks: [],
       conceptExercises: [],
@@ -1005,6 +1024,7 @@ export class ConstructFlowService {
         language: conceptLanguageSchema.default("unknown").describe("Primary programming language family for the concept. Use unknown only when it genuinely is not language-specific."),
         technology: z.string().min(1).max(80).optional().describe("Primary framework, library, API, or platform, e.g. SwiftUI, GLFW, OpenGL, React."),
         content: z.string().min(1).describe("Rich, detailed free-form markdown explanation of the concept"),
+        sources: z.array(citationSourceSchema).max(10).optional().describe("Docs/articles actually used for source-grounded sentences in content. Use source IDs in content as [[source:id|Label]]."),
         examples: z.array(z.string()).optional().describe("Code examples illustrating the concept"),
         relatedConcepts: z.array(z.string()).optional().describe("IDs of related concepts"),
         confidence: flowConceptConfidenceSchema.optional().default("unknown").describe("Learner's current evidence-backed learning state for this concept"),
@@ -1066,6 +1086,7 @@ export class ConstructFlowService {
               why: "",
               examples: [],
               docs: [],
+              sources: [],
               content: "",
               confidence: "unknown",
               masteryLevel: 0,
@@ -1117,7 +1138,8 @@ export class ConstructFlowService {
           why: "",
           example: toolInput.examples?.[0] || "",
           examples: toolInput.examples ?? [],
-          docs: [],
+          docs: sourcesToDocs(toolInput.sources ?? []),
+          sources: normalizeCitationSources(toolInput.sources ?? []),
           content: toolInput.content,
           confidence: toolInput.confidence,
           masteryLevel,
@@ -1210,6 +1232,7 @@ export class ConstructFlowService {
         language: conceptLanguageSchema.optional().describe("Updated primary programming language family for the concept"),
         technology: z.string().min(1).max(80).optional().describe("Updated primary framework, library, API, or platform"),
         content: z.string().optional().describe("New markdown explanation"),
+        sources: z.array(citationSourceSchema).max(10).optional().describe("Docs/articles used for newly source-grounded sentences. Use source IDs in content as [[source:id|Label]]."),
         examples: z.array(z.string()).optional().describe("New code examples"),
         relatedConcepts: z.array(z.string()).optional().describe("New related concepts"),
         confidence: flowConceptConfidenceSchema.optional().describe("Updated evidence-backed learner state for this concept"),
@@ -1271,6 +1294,8 @@ export class ConstructFlowService {
           language: toolInput.language ?? existing.language,
           technology: toolInput.technology ?? existing.technology,
           content: toolInput.content ?? existing.content,
+          docs: toolInput.sources ? mergeDocs(existing.docs, sourcesToDocs(toolInput.sources)) : existing.docs,
+          sources: toolInput.sources ? mergeCitationSources(existing.sources ?? [], normalizeCitationSources(toolInput.sources)) : existing.sources,
           example: toolInput.examples ? (toolInput.examples[0] || "") : existing.example,
           examples: toolInput.examples ?? existing.examples,
           relatedConcepts: toolInput.relatedConcepts ?? existing.relatedConcepts,
@@ -2003,6 +2028,8 @@ function introducedConceptFields(record: KnowledgeBaseRecord): string[] {
     "language",
     "technology",
     "content",
+    "docs",
+    "sources",
     "examples",
     "relatedConcepts",
     "confidence",
@@ -2022,6 +2049,8 @@ function conceptPatchFields(input: Record<string, unknown>): string[] {
     "language",
     "technology",
     "content",
+    "docs",
+    "sources",
     "examples",
     "relatedConcepts",
     "confidence",
@@ -2240,6 +2269,7 @@ function serializeConceptForAgent(concept: KnowledgeBaseRecord, includeContent: 
     authoredBy: concept.authoredBy,
     agentContributionPercent: concept.agentContributionPercent,
     relatedConcepts: concept.relatedConcepts,
+    sources: concept.sources,
     history: concept.history,
     savedAt: concept.savedAt,
     lastModifiedAt: concept.lastModifiedAt
@@ -3428,6 +3458,7 @@ function buildMainPrompt(
     status: session.status,
     origin: session.origin,
     messages: session.messages.slice(-2),
+    citations: session.citations?.slice(-8),
     toolCalls: session.toolCalls.map((tool) => ({
       name: tool.name,
       title: tool.title,
@@ -3475,10 +3506,16 @@ function buildMainPrompt(
     "Current Flow run mode:",
     JSON.stringify({
       mode: toolPolicy.mode,
+      sourceGrounding: toolPolicy.sourceGroundingEnabled ? "enabled" : "disabled",
       workspaceMutation: toolPolicy.allowWorkspaceMutation ? "available-with-mentor-guardrails" : "unavailable",
       terminalCommands: toolPolicy.allowTerminalCommands ? toolPolicy.terminalCommandMode : "unavailable",
       availableTools: availableFlowToolNames(toolPolicy)
     }, null, 2),
+    "",
+    "Source grounding:",
+    toolPolicy.sourceGroundingEnabled
+      ? "Enabled. Use internet-search and internet-fetch when teaching or updating concepts would benefit from official docs, primary sources, current APIs, or article context. Cite source-backed claims with markdown links or [[source:source-id|Label]] refs that match tool results or concept sources."
+      : "Disabled in settings. Do not call internet-search or internet-fetch and do not claim that fresh web research was performed.",
     "",
     "Structured Flow Path:",
     JSON.stringify({
@@ -3561,6 +3598,8 @@ function buildMainPrompt(
       sourceProjectTitle: c.sourceProjectTitle,
       content: c.content,
       examples: c.examples,
+      sources: c.sources,
+      docs: c.docs,
       confidence: c.confidence,
       confidenceReason: c.confidenceReason,
       masteryLevel: masteryLevelForConcept(c),
@@ -3794,6 +3833,147 @@ function replaceToolRecord(session: ConstructFlowSession, record: ConstructFlowT
   }
 }
 
+function appendCitationSourcesFromToolRecord(session: ConstructFlowSession, record: ConstructProtocolToolRecord): void {
+  const sources = citationSourcesFromToolRecord(record);
+  if (!sources.length) return;
+  session.citations = mergeCitationSources(session.citations ?? [], sources);
+}
+
+function citationSourcesFromToolRecord(record: ConstructProtocolToolRecord): ConstructCitationSource[] {
+  if (record.status === "running" || !record.outputPreview || !isInternetToolName(record.name)) {
+    return [];
+  }
+
+  const parsed = parseToolOutput(record.outputPreview);
+  const rawResults = Array.isArray(parsed)
+    ? parsed
+    : isRecord(parsed) && Array.isArray(parsed.results)
+      ? parsed.results
+      : [];
+
+  const accessedAt = record.completedAt ?? new Date().toISOString();
+  return rawResults
+    .filter(isRecord)
+    .map((result) => citationSourceFromResult(result, accessedAt))
+    .filter((source): source is ConstructCitationSource => Boolean(source));
+}
+
+function citationSourceFromResult(result: Record<string, unknown>, accessedAt: string): ConstructCitationSource | null {
+  const url = typeof result.url === "string" ? result.url : "";
+  const title = typeof result.title === "string" ? result.title : url || "Untitled source";
+  if (!url && !title) return null;
+  const content = typeof result.content === "string"
+    ? result.content
+    : typeof result.snippet === "string"
+      ? result.snippet
+      : "";
+  const id = typeof result.sourceId === "string" && result.sourceId.trim()
+    ? result.sourceId.trim()
+    : citationSourceId(url || title);
+  return {
+    id,
+    title,
+    url,
+    provider: typeof result.provider === "string" ? result.provider : undefined,
+    publisher: publisherFromUrl(url),
+    snippet: content ? compactCitationText(content, 420) : undefined,
+    quote: content ? compactCitationText(content, 220) : undefined,
+    accessedAt
+  };
+}
+
+function mergeCitationSources(current: ConstructCitationSource[], incoming: ConstructCitationSource[]): ConstructCitationSource[] {
+  const merged = new Map<string, ConstructCitationSource>();
+  for (const source of current) {
+    merged.set(citationSourceKey(source), source);
+  }
+  for (const source of incoming) {
+    const key = citationSourceKey(source);
+    const existing = merged.get(key);
+    merged.set(key, {
+      ...existing,
+      ...source,
+      snippet: source.snippet ?? existing?.snippet,
+      quote: source.quote ?? existing?.quote,
+      accessedAt: source.accessedAt ?? existing?.accessedAt
+    });
+  }
+  return [...merged.values()].slice(-40);
+}
+
+function normalizeCitationSources(sources: CitationSourceInput[]): ConstructCitationSource[] {
+  return mergeCitationSources([], sources.map((source) => ({
+    id: source.id?.trim() || citationSourceId(source.url || source.title),
+    title: source.title,
+    url: source.url,
+    provider: source.provider,
+    publisher: source.publisher ?? publisherFromUrl(source.url),
+    snippet: source.snippet,
+    quote: source.quote,
+    accessedAt: source.accessedAt ?? new Date().toISOString()
+  })));
+}
+
+function sourcesToDocs(sources: CitationSourceInput[]): KnowledgeBaseRecord["docs"] {
+  return normalizeCitationSources(sources).map((source) => ({
+    title: source.title,
+    url: source.url,
+    why: source.quote ?? source.snippet
+  }));
+}
+
+function mergeDocs(current: KnowledgeBaseRecord["docs"], incoming: KnowledgeBaseRecord["docs"]): KnowledgeBaseRecord["docs"] {
+  const urls = new Set<string>();
+  const merged: KnowledgeBaseRecord["docs"] = [];
+  for (const doc of [...(current ?? []), ...incoming]) {
+    if (!doc.url || urls.has(doc.url)) continue;
+    urls.add(doc.url);
+    merged.push(doc);
+  }
+  return merged.slice(-20);
+}
+
+function citationSourceKey(source: ConstructCitationSource): string {
+  return source.url || source.id;
+}
+
+function citationSourceId(seed: string): string {
+  const normalized = seed
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+  return normalized || "source";
+}
+
+function publisherFromUrl(value: string): string | undefined {
+  if (!value) return undefined;
+  try {
+    return new URL(value).hostname.replace(/^www\./, "");
+  } catch {
+    return undefined;
+  }
+}
+
+function compactCitationText(value: string, maxLength: number): string {
+  const compact = value.replace(/\s+/g, " ").trim();
+  return compact.length > maxLength ? `${compact.slice(0, maxLength - 1).trimEnd()}…` : compact;
+}
+
+function parseToolOutput(value: string): unknown {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return undefined;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 const mentorProtocolToolNames = [
   "read",
   "grep",
@@ -3803,6 +3983,8 @@ const mentorProtocolToolNames = [
   "edit",
   "ask-question",
   "askQuestion",
+  "internet-search",
+  "internetSearch",
   "internet-fetch",
   "internetFetch",
   "flowMemoryPatch",
@@ -3842,10 +4024,11 @@ const taskReviewFlowToolNames = [
   "complete-task"
 ];
 
-function flowToolPolicyForInput(input: ConstructFlowAgentInput): FlowRunToolPolicy {
+function flowToolPolicyForInput(input: ConstructFlowAgentInput, options: { sourceGroundingEnabled: boolean }): FlowRunToolPolicy {
   if (input.taskSubmission) {
     return {
       mode: "task-review",
+      sourceGroundingEnabled: false,
       allowWorkspaceMutation: false,
       allowTerminalCommands: true,
       terminalCommandMode: "validation-only",
@@ -3856,13 +4039,21 @@ function flowToolPolicyForInput(input: ConstructFlowAgentInput): FlowRunToolPoli
   }
   return {
     mode: "mentor",
+    sourceGroundingEnabled: options.sourceGroundingEnabled,
     allowWorkspaceMutation: true,
     allowTerminalCommands: true,
-      terminalCommandMode: "validation-only",
-    protocolToolNames: mentorProtocolToolNames,
+    terminalCommandMode: "validation-only",
+    protocolToolNames: options.sourceGroundingEnabled
+      ? mentorProtocolToolNames
+      : mentorProtocolToolNames.filter((name) => !isInternetToolName(name)),
     flowToolNames: mentorFlowToolNames,
     maxSteps: 16
   };
+}
+
+function isInternetToolName(name: string): boolean {
+  const normalized = normalizeToolName(name);
+  return normalized === "internetsearch" || normalized === "internetfetch";
 }
 
 function availableFlowToolNames(policy: FlowRunToolPolicy): string[] {
@@ -3882,6 +4073,12 @@ function pickFlowMainFlowTools(flowTools: ToolsInput, policy: FlowRunToolPolicy)
     policy.flowToolNames
       .map((name) => [name, flowTools[name]] as const)
       .filter((entry): entry is [string, ToolsInput[string]] => entry[1] !== undefined)
+  );
+}
+
+function omitInternetTools(tools: ToolsInput): ToolsInput {
+  return Object.fromEntries(
+    Object.entries(tools).filter(([name]) => !isInternetToolName(name))
   );
 }
 
@@ -4098,6 +4295,7 @@ function cloneSession(session: ConstructFlowSession): ConstructFlowSession {
     })),
     agentEvents: session.agentEvents.map((event) => ({ ...event })),
     timeline: (session.timeline ?? []).map((part) => ({ ...part })),
+    citations: session.citations?.map((source) => ({ ...source })),
     contextCompaction: session.contextCompaction
       ? {
           ...session.contextCompaction,
@@ -4170,6 +4368,13 @@ Conversational teaching pace:
 - Prefer short, conversational paragraphs. Use lightweight structure only when it genuinely reduces cognitive load. The learner should feel guided through a project, not assigned reading from documentation.
 - Socratic checks should target the last small slice taught. Ask for a prediction, comparison, tiny example, or mental model that can be answered from that slice, not from a whole reference article.
 - If the learner asks for a reference overview, provide it in a collapsible/linked concept card style and still make the next action small.
+
+Source-grounded teaching and citations:
+- When the Current Flow run mode says source grounding is enabled, use internet-search and internet-fetch before teaching or recording factual concepts about languages, frameworks, APIs, libraries, standards, tools, or current project-domain facts unless the exact source is already in the current prompt.
+- Prefer official documentation, standards, primary project docs, and highly relevant articles. Avoid uncited claims for docs/API behavior when the web tools are available.
+- In chat replies, put citation refs at the end of the sentence or paragraph they support. Use normal markdown links or [[source:source-id|Label]] refs that match web tool results. Do not invent source IDs, titles, quotes, or URLs.
+- In add-concept and modify-concept, include a sources array for docs/articles actually used. The concept content should contain source-backed paragraphs with sentence-level citations and short quote/highlight snippets when useful. Keep direct quotes short; use paraphrase for most explanation.
+- If source grounding is disabled, do not call internet-search or internet-fetch and do not imply fresh web research. You may still link previously saved concept sources if they are already present.
 
 Concept-first tutoring:
 - Concept definitions may be reusable, but permission to use them is project-local. Every project has its own introduced, referenced, practiced, assessed, and leveled-up ledger.
@@ -4279,6 +4484,6 @@ Do not ask the learner clarifying questions. If the project goal is broad or amb
 
 Create useful markdown for research.md. Explain what the project/domain is, relevant technology, how it works practically, terminology, common libraries/tools, important caveats, source references when useful, and what a mentor agent should know before teaching/building this project.
 
-Keep it concise and source-grounded. Use short search queries, low result counts, and no raw web dumps. Prefer official docs or primary project sources when available. Use internet-fetch when you already have exact URLs and need the page contents; use query-focused fetch chunks for long docs.
+Keep it concise and source-grounded. Use short search queries, low result counts, and no raw web dumps. Prefer official docs or primary project sources when available. Use internet-fetch when you already have exact URLs and need the page contents; use query-focused fetch chunks for long docs. Put citations next to the sentences or bullets they support using markdown links or [[source:source-id|Label]] refs from web tool results.
 
 Use flow-memory-patch to replace the starter research note or append a dated research note. Then reply with a short summary of what you saved, not a question.`;

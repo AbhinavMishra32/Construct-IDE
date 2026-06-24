@@ -14,10 +14,13 @@ import type {
   ConstructFlowAgentInput,
   ConstructFlowProjectSettings,
   ConstructFlowRewindInput,
+  ConstructFlowSessionEvent,
   FlowMemoryFileName
 } from "../../shared/constructFlow";
 
 export class ConstructFlowIpcController {
+  private flowProjectWriteQueue: Promise<void> = Promise.resolve();
+
   constructor(private readonly options: {
     ipcMain: IpcMain;
     readSettings: () => Promise<StoredSettings>;
@@ -91,29 +94,20 @@ export class ConstructFlowIpcController {
       this.options.setActiveWebContents(event.sender);
 
       if (project.flow.researchEnabled) {
-        this.options.flow.runResearchAgent(project, (payload) => {
-          if (!event.sender.isDestroyed()) {
-            event.sender.send("construct:flow:session-event", payload);
-          }
-        }).then(async () => {
-          const allProjects = await this.options.readProjects();
-          const saved = allProjects.find((p) => p.id === project.id);
-          if (saved) {
-            Object.assign(saved, project);
-            await this.options.writeProjects(allProjects);
-          }
-        }).catch(() => {});
+        const publishSessionEvent = this.createPersistedSessionEventSink(event.sender, projects, project);
+        this.options.flow.runResearchAgent(project, publishSessionEvent)
+          .then(async () => this.queueProjectWrite(projects, project, "research-completed"))
+          .catch((error) => {
+            console.error("[construct-flow] background research failed", error);
+          });
       } else {
+        const publishSessionEvent = this.createPersistedSessionEventSink(event.sender, projects, project);
         await this.options.flow.runMainAgent(project, {
           projectId: project.id,
           startReason: "new-project",
           message: "Start this new Flow project. Use the project goal, project settings, and current workspace context to decide the next helpful mentor step."
-        }, (payload) => {
-          if (!event.sender.isDestroyed()) {
-            event.sender.send("construct:flow:session-event", payload);
-          }
-        });
-        await this.options.writeProjects(projects);
+        }, publishSessionEvent);
+        await this.queueProjectWrite(projects, project, "new-project-main-agent");
       }
 
       return project;
@@ -141,12 +135,12 @@ export class ConstructFlowIpcController {
       const projects = await this.options.readProjects();
       const project = this.findFlowProject(projects, String(input?.projectId ?? ""));
       this.options.setActiveWebContents(event.sender);
-      const result = await this.options.flow.runMainAgent(project, input, (payload) => {
-        if (!event.sender.isDestroyed()) {
-          event.sender.send("construct:flow:session-event", payload);
-        }
-      });
-      await this.options.writeProjects(projects);
+      const result = await this.options.flow.runMainAgent(
+        project,
+        input,
+        this.createPersistedSessionEventSink(event.sender, projects, project)
+      );
+      await this.queueProjectWrite(projects, project, "run-agent-completed");
       return result;
     });
 
@@ -154,12 +148,11 @@ export class ConstructFlowIpcController {
       const projects = await this.options.readProjects();
       const project = this.findFlowProject(projects, String(input?.projectId ?? ""));
       this.options.setActiveWebContents(event.sender);
-      const result = await this.options.flow.runResearchAgent(project, (payload) => {
-        if (!event.sender.isDestroyed()) {
-          event.sender.send("construct:flow:session-event", payload);
-        }
-      });
-      await this.options.writeProjects(projects);
+      const result = await this.options.flow.runResearchAgent(
+        project,
+        this.createPersistedSessionEventSink(event.sender, projects, project)
+      );
+      await this.queueProjectWrite(projects, project, "research-completed");
       return { ...result, project };
     });
 
@@ -224,6 +217,54 @@ export class ConstructFlowIpcController {
     }
     return project;
   }
+
+  private createPersistedSessionEventSink(
+    webContents: Electron.WebContents,
+    projects: StoredProject[],
+    project: StoredFlowProject
+  ) {
+    return (payload: ConstructFlowSessionEvent) => {
+      applyFlowSessionSnapshot(project, payload);
+      if (!webContents.isDestroyed()) {
+        webContents.send("construct:flow:session-event", payload);
+      }
+      void this.queueProjectWrite(projects, project, `session-${payload.type}`);
+    };
+  }
+
+  private queueProjectWrite(projects: StoredProject[], project: StoredFlowProject, reason: string): Promise<void> {
+    const write = this.flowProjectWriteQueue
+      .catch(() => undefined)
+      .then(async () => {
+        const saved = projects.find((candidate) => candidate.id === project.id);
+        if (saved && isFlowProject(saved)) {
+          Object.assign(saved, project);
+        }
+        await this.options.writeProjects(projects);
+      });
+    this.flowProjectWriteQueue = write.catch((error) => {
+      console.error("[construct-flow] failed to persist Flow project snapshot", {
+        projectId: project.id,
+        reason,
+        error
+      });
+    });
+    return write;
+  }
+}
+
+export function applyFlowSessionSnapshot(project: StoredFlowProject, payload: ConstructFlowSessionEvent): void {
+  const index = project.flow.sessions.findIndex((session) => session.id === payload.session.id);
+  if (index >= 0) {
+    Object.assign(project.flow.sessions[index], payload.session);
+  } else {
+    project.flow.sessions.push(payload.session);
+  }
+  if (payload.type === "completed" && payload.session.threadId === `${project.flow.threadId}:research`) {
+    project.flow.researchEnabled = true;
+    project.flow.researchCompletedAt = payload.session.updatedAt ?? new Date().toISOString();
+  }
+  project.flow.updatedAt = payload.session.updatedAt ?? new Date().toISOString();
 }
 
 function uniqueProjectId(base: string, projects: StoredProject[]): string {

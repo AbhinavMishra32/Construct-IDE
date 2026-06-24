@@ -2036,6 +2036,15 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     assert.match(source, /learnerReadiness/);
   });
 
+  it("wires source-grounding settings into Flow web tool availability", () => {
+    const source = readFileSync(new URL("./ConstructFlowService.ts", import.meta.url), "utf8");
+    assert.match(source, /const sourceGroundingEnabled = settings\?\.ai\.flowSourceGroundingEnabled !== false/);
+    assert.match(source, /webResearchEnabled: sourceGroundingEnabled/);
+    assert.match(source, /omitInternetTools\(protocol\.tools\)/);
+    assert.match(source, /sourceGrounding: toolPolicy\.sourceGroundingEnabled \? "enabled" : "disabled"/);
+    assert.match(source, /Disabled in settings\. Do not call internet-search or internet-fetch/);
+  });
+
   it("keeps concept teaching conversational instead of reference-dump shaped", () => {
     const source = readFileSync(new URL("./ConstructFlowService.ts", import.meta.url), "utf8");
     assert.match(source, /Conversational teaching pace:/);
@@ -2045,5 +2054,8 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     assert.match(source, /Socratic checks should target the last small slice taught/);
     assert.match(source, /do not mirror that full reference text into the learner-facing chat/);
     assert.match(source, /Do not dump the entire concept body into chat/);
+    assert.match(source, /Source-grounded teaching and citations:/);
+    assert.match(source, /sentence or paragraph they support/);
+    assert.match(source, /sources array for docs\/articles actually used/);
   });
 });

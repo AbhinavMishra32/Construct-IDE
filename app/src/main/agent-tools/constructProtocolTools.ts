@@ -42,6 +42,7 @@ export type ConstructProtocolToolsOptions = {
   flowMemory?: ConstructFlowMemoryService;
   latestTerminalOutput?: string;
   tavilyApiKey?: string;
+  webResearchEnabled?: boolean;
   allowWorkspaceMutation?: boolean;
   allowTerminalCommands?: boolean;
   terminalCommandMode?: "workspace" | "validation-only";
@@ -597,18 +598,23 @@ export function createConstructProtocolTools(options: ConstructProtocolToolsOpti
 
   const internetSearch = createTool({
     id: "internet-search",
-    description: "Search the web for current project/domain/technology research. Use mainly from the Flow Research Agent; returns concise source-grounded results.",
+    description: "Search the web for current project/domain/technology/concept research. Return concise source-grounded results for citation-backed Flow chat and Concepts.",
     inputSchema: z.object({
       query: z.string().min(2).max(180),
       limit: z.number().int().min(1).max(6).default(4)
     }).strict(),
-    execute: async (toolInput) => recordToolCall(
-      "internet-search",
-      "Searched web",
-      toolInput.query,
-      searchInternet(toolInput.query, toolInput.limit ?? 4, options.tavilyApiKey),
-      toolInput
-    )
+    execute: async (toolInput) => {
+      if (options.webResearchEnabled === false) {
+        throw new Error("Source-grounded Flow is disabled in settings; web search is not available.");
+      }
+      return recordToolCall(
+        "internet-search",
+        "Searched web",
+        toolInput.query,
+        searchInternet(toolInput.query, toolInput.limit ?? 4, options.tavilyApiKey),
+        toolInput
+      );
+    }
   });
   const createInternetFetchTool = (id: "internet-fetch" | "internetFetch") => createTool({
     id,
@@ -622,22 +628,27 @@ export function createConstructProtocolTools(options: ConstructProtocolToolsOpti
       format: z.enum(["markdown", "text"]).default("markdown"),
       timeoutSeconds: z.number().min(1).max(30).default(10)
     }).strict(),
-    execute: async (toolInput) => recordToolCall(
-      id,
-      "Fetched web page",
-      toolInput.query ?? toolInput.urls.join(", "),
-      fetchInternetPages({
-        urls: toolInput.urls,
-        query: toolInput.query,
-        maxChars: toolInput.maxChars ?? 6_000,
-        extractDepth: toolInput.extractDepth ?? "basic",
-        chunksPerSource: toolInput.chunksPerSource,
-        format: toolInput.format ?? "markdown",
-        timeoutSeconds: toolInput.timeoutSeconds ?? 10,
-        tavilyApiKey: options.tavilyApiKey
-      }),
-      toolInput
-    )
+    execute: async (toolInput) => {
+      if (options.webResearchEnabled === false) {
+        throw new Error("Source-grounded Flow is disabled in settings; web fetch is not available.");
+      }
+      return recordToolCall(
+        id,
+        "Fetched web page",
+        toolInput.query ?? toolInput.urls.join(", "),
+        fetchInternetPages({
+          urls: toolInput.urls,
+          query: toolInput.query,
+          maxChars: toolInput.maxChars ?? 6_000,
+          extractDepth: toolInput.extractDepth ?? "basic",
+          chunksPerSource: toolInput.chunksPerSource,
+          format: toolInput.format ?? "markdown",
+          timeoutSeconds: toolInput.timeoutSeconds ?? 10,
+          tavilyApiKey: options.tavilyApiKey
+        }),
+        toolInput
+      );
+    }
   });
   const internetFetch = createInternetFetchTool("internet-fetch");
   const internetFetchAlias = createInternetFetchTool("internetFetch");
@@ -659,6 +670,7 @@ export function createConstructProtocolTools(options: ConstructProtocolToolsOpti
     "ask-user": askUser,
     askUser: askUserAlias,
     internetSearch,
+    "internet-search": internetSearch,
     "internet-fetch": internetFetch,
     internetFetch: internetFetchAlias
   };
@@ -1034,6 +1046,7 @@ async function searchInternet(query: string, limit: number, tavilyApiKey?: strin
       results?: Array<{ title?: string; url?: string; content?: string; score?: number }>;
     };
     return (json.results ?? []).slice(0, boundedLimit).map((result) => ({
+      sourceId: citationSourceId(result.url ?? result.title ?? "source"),
       title: result.title ?? result.url ?? "Untitled result",
       url: result.url ?? "",
       snippet: result.content ?? "",
@@ -1051,6 +1064,7 @@ async function searchInternet(query: string, limit: number, tavilyApiKey?: strin
   const html = await response.text();
   const matches = [...html.matchAll(/<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<a[^>]+class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g)];
   return matches.slice(0, boundedLimit).map((match) => ({
+    sourceId: citationSourceId(decodeDuckDuckGoUrl(match[1]) || stripHtml(match[2])),
     title: stripHtml(match[2]),
     url: decodeDuckDuckGoUrl(match[1]),
     snippet: stripHtml(match[3]),
@@ -1108,6 +1122,7 @@ async function fetchInternetPages(input: {
       results: (json.results ?? []).map((result) => {
         const content = result.raw_content ?? "";
         return {
+          sourceId: citationSourceId(result.url ?? titleFromMarkdown(content) ?? "source"),
           url: result.url ?? "",
           title: titleFromMarkdown(content) ?? result.url ?? "Fetched page",
           content: content.slice(0, maxChars),
@@ -1146,6 +1161,7 @@ async function fetchPublicPage(url: string, maxChars: number) {
     const text = await response.text();
     const content = contentType.includes("html") ? htmlToReadableText(text) : text.replace(/\s+/g, " ").trim();
     return {
+      sourceId: citationSourceId(url),
       url,
       title: readHtmlTitle(text) ?? url,
       content: content.slice(0, maxChars),
@@ -1155,6 +1171,17 @@ async function fetchPublicPage(url: string, maxChars: number) {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function citationSourceId(seed: string): string {
+  const normalized = seed
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+  return normalized || "source";
 }
 
 function normalizePublicWebUrl(value: string): string {
