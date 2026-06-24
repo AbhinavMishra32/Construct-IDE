@@ -2798,7 +2798,11 @@ function buildFlowAgentParts({
   const pendingQuestion = findPendingLearnerQuestion(session);
   const renderedConceptKeys = new Set<string>();
 
-  for (const event of timeline) {
+  for (const rawEvent of timeline) {
+    if (shouldHideFlowTimelinePart(session, rawEvent)) {
+      continue;
+    }
+    const event = settleFlowTimelinePartForSession(session, rawEvent);
     if (event.kind === "message") {
       if (!event.text?.trim()) continue;
       if (Date.now() < 0 && isDuplicateQuestionProse(event.text, pendingQuestion)) continue;
@@ -2808,9 +2812,6 @@ function buildFlowAgentParts({
         id: `${session.id}:message:${event.id}`,
         content: <MarkdownBlock content={event.text} theme={theme} sources={session.citations} onOpenConcept={onOpenConceptById} onOpenFile={onOpenFile} />
       });
-      continue;
-    }
-    if (event.kind === "reasoning" && event.status === "completed" && !event.text?.trim()) {
       continue;
     }
 
@@ -2927,6 +2928,37 @@ function buildFlowAgentParts({
   }
 
   return parts;
+}
+
+function shouldHideFlowTimelinePart(
+  session: ConstructFlowSession,
+  part: ConstructFlowTimelinePart
+): boolean {
+  if (part.kind !== "reasoning") return false;
+  if (session.status !== "running") return true;
+  return part.status === "completed" && !part.text?.trim();
+}
+
+function settleFlowTimelinePartForSession(
+  session: ConstructFlowSession,
+  part: ConstructFlowTimelinePart
+): ConstructFlowTimelinePart {
+  if (session.status === "running" || part.status !== "running") return part;
+  const status = session.status === "error" ? "error" : "completed";
+  const updatedAt = part.updatedAt ?? session.updatedAt;
+  if (part.kind === "tool" || part.kind === "compaction") {
+    return {
+      ...part,
+      status,
+      completedAt: part.completedAt ?? updatedAt,
+      updatedAt
+    };
+  }
+  return {
+    ...part,
+    status,
+    updatedAt
+  };
 }
 
 function buildFallbackReasoningPart(sessionId: string, index: number, text: string): AgentSessionMessagePart {

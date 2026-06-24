@@ -533,6 +533,7 @@ export class ConstructFlowService {
     session.finishReason = runFinishReason;
     session.stepCount = runStepCount;
     session.errorMessage = runError instanceof Error ? runError.message : undefined;
+    settleRunningSessionTrace(session, session.status);
     project.flow.updatedAt = new Date().toISOString();
 
     const result: ConstructFlowAgentResult = {
@@ -650,6 +651,7 @@ export class ConstructFlowService {
       });
     }
     session.status = session.status === "error" ? "error" : "completed";
+    settleRunningSessionTrace(session, session.status);
     const result: ConstructFlowAgentResult = {
       session: cloneSession(session),
       reply,
@@ -3738,6 +3740,44 @@ function applyTrace(session: ConstructFlowSession, entry: ConstructAgentTraceEnt
       upsertTimelinePart(session.timeline, part);
     }
   }
+}
+
+function settleRunningSessionTrace(session: ConstructFlowSession, status: ConstructFlowSession["status"]): void {
+  if (status === "running" || status === "queued") return;
+  const settledStatus = status === "error" ? "error" : "completed";
+  const settledAt = new Date().toISOString();
+  session.agentEvents = session.agentEvents.map((event) => (
+    event.status === "running"
+      ? { ...event, status: settledStatus }
+      : event
+  ));
+  session.timeline = session.timeline.map((part) => settleTimelinePart(part, settledStatus, settledAt));
+  session.toolCalls = session.toolCalls.map((toolCall) => (
+    toolCall.status === "running"
+      ? { ...toolCall, status: settledStatus, completedAt: toolCall.completedAt ?? settledAt }
+      : toolCall
+  ));
+}
+
+function settleTimelinePart(
+  part: ConstructFlowTimelinePart,
+  status: "completed" | "error",
+  settledAt: string
+): ConstructFlowTimelinePart {
+  if (part.status !== "running") return part;
+  if (part.kind === "tool" || part.kind === "compaction") {
+    return {
+      ...part,
+      status,
+      completedAt: part.completedAt ?? settledAt,
+      updatedAt: part.updatedAt ?? settledAt
+    };
+  }
+  return {
+    ...part,
+    status,
+    updatedAt: part.updatedAt ?? settledAt
+  };
 }
 
 function upsertEvent(events: ConstructAgentRunEvent[], event: ConstructAgentRunEvent): void {

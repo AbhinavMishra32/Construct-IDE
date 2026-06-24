@@ -1194,6 +1194,57 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     assert.equal(project.flow.updatedAt, "2026-06-24T05:00:03.000Z");
   });
 
+  it("settles running reasoning trace rows when a Flow run completes", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "construct-flow-test-settle-trace-"));
+    const workspaceRoot = path.join(dir, "workspaces");
+    await mkdir(workspaceRoot, { recursive: true });
+    const workspace = new ConstructProjectWorkspaceService(
+      () => workspaceRoot,
+      () => dir
+    );
+    const flowMemory = new ConstructFlowMemoryService(workspace);
+    const logs = new AgentLogService(() => {});
+    const learningStore = new ConstructLearningStore(path.join(dir, "learning-state.json"));
+    const service = new ConstructFlowService({
+      workspace,
+      flowMemory,
+      latestTerminalOutput: () => "",
+      logs,
+      learningStore: () => learningStore,
+      agentRuntime: () => ({
+        runAgentic: async (input: any) => {
+          input.onTrace?.({
+            title: "Agent analysis progress",
+            level: "debug",
+            detail: "Reasoning is streaming.",
+            event: {
+              id: "reasoning-left-open",
+              type: "reasoning",
+              status: "running",
+              title: "Thinking",
+              detail: "Reasoning is streaming.",
+              text: "Planning the next mentor step.",
+              createdAt: "2026-06-24T05:00:01.000Z"
+            }
+          });
+          return { text: "Done with the mentor step.", stepCount: 1, finishReason: "stop", durationMs: 1 };
+        }
+      }) as any
+    });
+    const project = createFlowTestProject(workspaceRoot, "settle-trace-project");
+    await mkdir(project.workspacePath, { recursive: true });
+
+    const result = await service.runMainAgent(project, {
+      projectId: project.id,
+      message: "continue"
+    });
+
+    assert.equal(result.session.status, "completed");
+    assert.equal(result.session.timeline.find((part) => part.id === "reasoning-left-open")?.status, "completed");
+    assert.equal(result.session.agentEvents.find((event) => event.id === "reasoning-left-open")?.status, "completed");
+    assert.equal(result.session.timeline.some((part) => part.status === "running"), false);
+  });
+
   it("sends the persisted Flow transcript as the model message array", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "construct-flow-test-message-array-"));
     const workspaceRoot = path.join(dir, "workspaces");

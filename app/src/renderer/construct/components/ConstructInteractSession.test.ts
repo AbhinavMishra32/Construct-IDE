@@ -164,6 +164,10 @@ describe("Construct Interact Codex-style UI", () => {
     assert.match(flow, /answeredQuestionKeys\.has\(questionKey\(session\.id, candidate\.id\)\)/);
     assert.match(flow, /buildFlowAgentParts/);
     assert.match(flow, /flowTimelineParts\(session\)/);
+    assert.match(flow, /shouldHideFlowTimelinePart\(session, rawEvent\)/);
+    assert.match(flow, /part\.kind !== "reasoning"/);
+    assert.match(flow, /session\.status !== "running"/);
+    assert.match(flow, /settleFlowTimelinePartForSession\(session, rawEvent\)/);
     assert.match(flow, /session\.timeline/);
     assert.match(flow, /toolCallsById/);
     assert.match(flow, /findPendingLearnerQuestion\(session\)/);
