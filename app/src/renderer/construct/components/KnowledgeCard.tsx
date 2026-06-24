@@ -101,28 +101,28 @@ export function KnowledgeCard({
 
         {concept.summary ? (
           <ConceptBlock title="Summary">
-            <MarkdownBlock content={concept.summary} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
+            <MarkdownBlock content={concept.summary} theme={theme} sources={concept.sources} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
           </ConceptBlock>
         ) : null}
 
         {guideBlocks.map((guide) => (
           <ConceptBlock key={guide.id} title={guideLabel(guide.guideKind)}>
-            {guide.content ? <MarkdownBlock content={guide.content} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} /> : null}
+            {guide.content ? <MarkdownBlock content={guide.content} theme={theme} sources={concept.sources} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} /> : null}
             {guide.sections.map((section) => (
-              <MarkdownBlock key={section.kind} content={section.content} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
+              <MarkdownBlock key={section.kind} content={section.content} theme={theme} sources={concept.sources} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
             ))}
           </ConceptBlock>
         ))}
 
         {concept.why ? (
           <ConceptBlock title="Why">
-            <MarkdownBlock content={concept.why} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
+            <MarkdownBlock content={concept.why} theme={theme} sources={concept.sources} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
           </ConceptBlock>
         ) : null}
 
         {concept.commonMistake ? (
           <ConceptBlock title="Common mistake">
-            <MarkdownBlock content={concept.commonMistake} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
+            <MarkdownBlock content={concept.commonMistake} theme={theme} sources={concept.sources} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
           </ConceptBlock>
         ) : null}
 
@@ -207,6 +207,22 @@ export function KnowledgeCard({
                 <a className="flex items-center gap-2 rounded-[7px] px-2 py-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground" key={link.url} href={link.url} target="_blank" rel="noreferrer">
                   <ExternalLinkIcon size={13} />
                   <span>{link.title}</span>
+                </a>
+              ))}
+            </div>
+          </ConceptBlock>
+        ) : null}
+
+        {concept.sources?.length ? (
+          <ConceptBlock title="Sources">
+            <div className="flex flex-col gap-2">
+              {concept.sources.map((source) => (
+                <a key={`${source.id}:${source.url}`} className="rounded-[8px] border bg-muted/15 p-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground" href={source.url} target="_blank" rel="noreferrer">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <ExternalLinkIcon size={13} className="shrink-0" />
+                    <strong className="truncate text-foreground">{source.title}</strong>
+                  </span>
+                  {(source.quote || source.snippet) ? <span className="mt-1 block leading-relaxed">{source.quote || source.snippet}</span> : null}
                 </a>
               ))}
             </div>

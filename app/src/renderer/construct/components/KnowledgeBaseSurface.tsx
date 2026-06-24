@@ -225,7 +225,7 @@ function ConceptDetail({
           </div>
 
           <ConceptSection title="Summary">
-            <MarkdownBlock content={record.summary || "No summary recorded yet."} theme={theme} />
+            <MarkdownBlock content={record.summary || "No summary recorded yet."} theme={theme} sources={record.sources} />
           </ConceptSection>
 
           <ConceptSection title="Project relations">
@@ -261,13 +261,13 @@ function ConceptDetail({
 
           {content && content !== record.summary ? (
             <ConceptSection title="Concept text">
-              <MarkdownBlock content={content} theme={theme} />
+              <MarkdownBlock content={content} theme={theme} sources={record.sources} />
             </ConceptSection>
           ) : null}
 
           {record.why ? (
             <ConceptSection title="Why it matters">
-              <MarkdownBlock content={record.why} theme={theme} />
+              <MarkdownBlock content={record.why} theme={theme} sources={record.sources} />
             </ConceptSection>
           ) : null}
 
@@ -344,6 +344,22 @@ function ConceptDetail({
                   <a key={link.url} className="inline-flex items-center gap-2 rounded-[8px] border px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground" href={link.url} target="_blank" rel="noreferrer">
                     <ExternalLinkIcon size={14} />
                     {link.title}
+                  </a>
+                ))}
+              </div>
+            </ConceptSection>
+          ) : null}
+
+          {record.sources?.length ? (
+            <ConceptSection title="Sources">
+              <div className="grid gap-2 md:grid-cols-2">
+                {record.sources.map((source) => (
+                  <a key={`${source.id}:${source.url}`} className="rounded-[8px] border bg-muted/15 p-3 text-sm text-muted-foreground hover:bg-muted hover:text-foreground" href={source.url} target="_blank" rel="noreferrer">
+                    <span className="flex min-w-0 items-center gap-2">
+                      <ExternalLinkIcon size={14} className="shrink-0" />
+                      <strong className="truncate text-foreground">{source.title}</strong>
+                    </span>
+                    {(source.quote || source.snippet) ? <span className="mt-2 block text-xs leading-relaxed">{source.quote || source.snippet}</span> : null}
                   </a>
                 ))}
               </div>

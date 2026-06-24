@@ -1,7 +1,8 @@
 export type InlineConceptRef = { kind: "concept"; id: string; label: string; raw: string };
 export type InlineFileRef = { kind: "file"; path: string; label: string; line?: number; endLine?: number; anchor?: string; raw: string };
 export type InlineDocsRef = { kind: "docs"; url: string; label: string; raw: string };
-export type InlineRef = InlineConceptRef | InlineFileRef | InlineDocsRef;
+export type InlineSourceRef = { kind: "source"; id: string; label: string; raw: string };
+export type InlineRef = InlineConceptRef | InlineFileRef | InlineDocsRef | InlineSourceRef;
 
 const inlinePattern = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
 
@@ -34,6 +35,11 @@ export function parseInlineRef(rawTarget: string, rawLabel?: string, raw = `[[${
     return { kind: "docs", url, label: requestedLabel || url, raw };
   }
 
+  if (target.startsWith("source:")) {
+    const id = target.slice(7);
+    return { kind: "source", id, label: requestedLabel || id, raw };
+  }
+
   const id = target.startsWith("concept:") ? target.slice(8) : target;
   return { kind: "concept", id, label: requestedLabel || id, raw };
 }
@@ -46,7 +52,7 @@ export function parseInlineFileRef(rawTarget: string, rawLabel?: string): Inline
 }
 
 function looksLikeLegacyFileTarget(target: string): boolean {
-  if (target.startsWith("docs:") || target.startsWith("concept:")) return false;
+  if (target.startsWith("docs:") || target.startsWith("concept:") || target.startsWith("source:")) return false;
   if (/\s/.test(target)) return false;
   return /(?:^|\/)[^/]+\.[a-zA-Z0-9]{1,8}(?::\d+(?:-\d+)?|#[a-zA-Z0-9_.-]+)?$/.test(target);
 }

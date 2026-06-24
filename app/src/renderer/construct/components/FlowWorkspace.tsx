@@ -18,7 +18,7 @@ import {
   type SlotTab
 } from "@opaline/ui";
 
-import { CONSTRUCT_CONCEPT_MASTERY_RUBRIC, conceptMasteryRubricForLevel, type ConstructAgentContextWindow, type ConstructConceptLanguage, type ConstructConceptMasteryLevel } from "../../../shared/constructLearning";
+import { CONSTRUCT_CONCEPT_MASTERY_RUBRIC, conceptMasteryRubricForLevel, type ConstructAgentContextWindow, type ConstructCitationSource, type ConstructConceptLanguage, type ConstructConceptMasteryLevel } from "../../../shared/constructLearning";
 import type {
   ConstructFlowAction,
   ConstructFlowConceptExercise,
@@ -193,6 +193,7 @@ export function FlowWorkspace({
   const projectActiveFilePathRef = useRef(project.activeFilePath);
   const saveSequenceRef = useRef(0);
   const sessionsRef = useRef(sessions);
+  const projectRef = useRef(project);
   sessionsRef.current = sessions;
   const activePath = documentSession.activePath;
   const content = activePath ? fileContents[activePath] ?? "" : "";
@@ -202,6 +203,7 @@ export function FlowWorkspace({
   dirtyPathsRef.current = dirtyPaths;
   documentSessionRef.current = documentSession;
   fileContentsRef.current = fileContents;
+  projectRef.current = project;
   projectActiveFilePathRef.current = project.activeFilePath;
 
   const refreshTree = useCallback(async () => {
@@ -581,34 +583,31 @@ export function FlowWorkspace({
   useEffect(() => {
     const unsubscribe = onConstructFlowSessionEvent((event: ConstructFlowSessionEvent) => {
       if (event.projectId !== project.id) return;
-      if (event.type === "completed" || event.type === "error" || event.type === "waiting") {
-        const nextSessions = upsertSession(sessionsRef.current, event.session);
-        sessionsRef.current = nextSessions;
-        setSessions(nextSessions);
-        setLiveSession(undefined);
-        if (
-          event.type === "completed" &&
-          event.session.threadId === `${project.flow.threadId}:research` &&
-          !project.flow.researchCompletedAt
-        ) {
-          const completedAt = event.session.updatedAt || new Date().toISOString();
-          onProjectChange({
-            ...project,
-            flow: {
-              ...project.flow,
-              researchEnabled: true,
-              researchCompletedAt: completedAt,
-              sessions: nextSessions,
-              updatedAt: completedAt
-            }
-          });
+      const nextSessions = upsertSession(sessionsRef.current, event.session);
+      const updatedAt = event.session.updatedAt || new Date().toISOString();
+      const currentProject = projectRef.current;
+      sessionsRef.current = nextSessions;
+      setSessions(nextSessions);
+      onProjectChange({
+        ...currentProject,
+        flow: {
+          ...currentProject.flow,
+          researchEnabled: currentProject.flow.researchEnabled || event.session.threadId === `${currentProject.flow.threadId}:research`,
+          researchCompletedAt: event.type === "completed" && event.session.threadId === `${currentProject.flow.threadId}:research`
+            ? updatedAt
+            : currentProject.flow.researchCompletedAt,
+          sessions: nextSessions,
+          updatedAt
         }
+      });
+      if (event.type === "completed" || event.type === "error" || event.type === "waiting") {
+        setLiveSession(undefined);
       } else {
         setLiveSession(event.session);
       }
     });
     return unsubscribe;
-  }, [onProjectChange, project]);
+  }, [onProjectChange, project.id]);
 
   const mergedFlowSessions = useMemo(() => mergeSessions(sessions, liveSession), [liveSession, sessions]);
   const flowConcepts = useMemo(() => collectFlowConcepts(mergedFlowSessions), [mergedFlowSessions]);
@@ -839,6 +838,7 @@ type ConceptPayload = {
   language?: ConstructConceptLanguage;
   technology?: string;
   summary?: string;
+  sources?: ConstructCitationSource[];
   content?: string;
   examples: string[];
   relatedConcepts?: string[];
@@ -2806,7 +2806,7 @@ function buildFlowAgentParts({
       parts.push({
         type: "text",
         id: `${session.id}:message:${event.id}`,
-        content: <MarkdownBlock content={event.text} theme={theme} onOpenConcept={onOpenConceptById} onOpenFile={onOpenFile} />
+        content: <MarkdownBlock content={event.text} theme={theme} sources={session.citations} onOpenConcept={onOpenConceptById} onOpenFile={onOpenFile} />
       });
       continue;
     }
@@ -2922,7 +2922,7 @@ function buildFlowAgentParts({
     parts.push({
       type: "text",
       id: `${session.id}:reply`,
-      content: <MarkdownBlock content={fallbackText.answer} theme={theme} onOpenConcept={onOpenConceptById} onOpenFile={onOpenFile} />
+      content: <MarkdownBlock content={fallbackText.answer} theme={theme} sources={session.citations} onOpenConcept={onOpenConceptById} onOpenFile={onOpenFile} />
     });
   }
 
@@ -3613,6 +3613,8 @@ function readConceptPayload(input: unknown, outputPreview?: string): ConceptPayl
     : readStringArray(inputObj.evidence).length
       ? readStringArray(inputObj.evidence)
       : readStringArray(conceptObj.learnerEvidence);
+  const conceptSources = readCitationSources(conceptObj.sources);
+  const inputSources = readCitationSources(inputObj.sources);
 
   return {
     id,
@@ -3621,6 +3623,7 @@ function readConceptPayload(input: unknown, outputPreview?: string): ConceptPayl
     language: readConceptLanguage(conceptObj.language) ?? readConceptLanguage(inputObj.language) ?? readConceptLanguage(outputObj.language) ?? inferConceptLanguage(id, title),
     technology: readString(conceptObj.technology) ?? readString(inputObj.technology) ?? readString(outputObj.technology),
     summary,
+    sources: conceptSources.length ? conceptSources : inputSources,
     content,
     examples,
     relatedConcepts: readStringArray(conceptObj.relatedConcepts).length
@@ -3658,6 +3661,7 @@ function buildConceptCardFromInput(input: ConceptPayload | Record<string, unknow
   const parentId = readNullableString((input as Record<string, unknown>).parentId);
   const content = typeof input.content === "string" ? input.content : "";
   const summary = readString((input as Record<string, unknown>).summary) ?? (content ? content.split("\n").find((line) => line.trim()) : undefined) ?? title;
+  const sources = readCitationSources((input as Record<string, unknown>).sources);
   const evidence = readStringArray((input as Record<string, unknown>).evidence);
   const learnerEvidence = readStringArray((input as Record<string, unknown>).learnerEvidence);
   const reason = readString((input as Record<string, unknown>).reason);
@@ -3678,6 +3682,7 @@ function buildConceptCardFromInput(input: ConceptPayload | Record<string, unknow
     technology,
     tags: id.split(".").slice(0, -1),
     summary,
+    sources,
     content: content || undefined,
     why: "",
     example: examples[0] || "",
@@ -3734,6 +3739,7 @@ function mergeConceptCards(base: ConceptCard, overlay: ConceptCard): ConceptCard
     technology: overlay.technology || base.technology,
     tags: overlay.tags.length ? overlay.tags : base.tags,
     summary: overlay.summary && overlay.summary !== overlay.title ? overlay.summary : base.summary || overlay.summary,
+    sources: overlay.sources?.length ? overlay.sources : base.sources,
     content: overlay.content || base.content,
     why: overlay.why || base.why,
     example: overlay.example || base.example,
@@ -3879,6 +3885,44 @@ function inferConceptLanguage(id: string, title: string): ConstructConceptLangua
 
 function readStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [];
+}
+
+function readCitationSources(value: unknown): ConstructCitationSource[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item): ConstructCitationSource[] => {
+    const record = readRecord(item);
+    const url = readString(record.url);
+    const title = readString(record.title) ?? url;
+    if (!url || !title) return [];
+    return [{
+      id: readString(record.id) ?? sourceIdFromUrl(url),
+      title,
+      url,
+      provider: readString(record.provider),
+      publisher: readString(record.publisher) ?? publisherFromUrl(url),
+      snippet: readString(record.snippet),
+      quote: readString(record.quote),
+      accessedAt: readString(record.accessedAt)
+    }];
+  });
+}
+
+function sourceIdFromUrl(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48) || "source";
+}
+
+function publisherFromUrl(value: string): string | undefined {
+  try {
+    return new URL(value).hostname.replace(/^www\./, "");
+  } catch {
+    return undefined;
+  }
 }
 
 function conceptTitleFromId(id: string): string {

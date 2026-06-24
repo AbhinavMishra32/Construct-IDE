@@ -13,6 +13,9 @@ describe("inline Construct references", () => {
     assert.deepEqual(parseInlineRef("concept:zod.object", "Zod"), {
       kind: "concept", id: "zod.object", label: "Zod", raw: "[[concept:zod.object|Zod]]"
     });
+    assert.deepEqual(parseInlineRef("source:mdn-js", "MDN"), {
+      kind: "source", id: "mdn-js", label: "MDN", raw: "[[source:mdn-js|MDN]]"
+    });
     assert.deepEqual(parseInlineRef("src/legacy.ts:3", "legacy file"), {
       kind: "file", path: "src/legacy.ts", label: "legacy file", line: 3, endLine: undefined, anchor: undefined,
       raw: "[[src/legacy.ts:3|legacy file]]"
