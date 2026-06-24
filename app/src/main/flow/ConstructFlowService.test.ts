@@ -2045,6 +2045,83 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     assert.match(source, /Disabled in settings\. Do not call internet-search or internet-fetch/);
   });
 
+  it("allows one exact workspace mutation retry with a concept firewall review id", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "construct-flow-firewall-review-"));
+    const workspaceRoot = path.join(dir, "workspaces");
+    await mkdir(workspaceRoot, { recursive: true });
+    const workspace = new ConstructProjectWorkspaceService(
+      () => workspaceRoot,
+      () => dir
+    );
+    const flowMemory = new ConstructFlowMemoryService(workspace);
+    const logs = new AgentLogService(() => {});
+    const learningStore = new ConstructLearningStore(path.join(dir, "learning-state.json"));
+    const project = createFlowTestProject(workspaceRoot, "firewall-review-project");
+    await mkdir(project.workspacePath, { recursive: true });
+
+    const writeInput = {
+      path: "src/log.js",
+      content: "console.log(sadfdasf);\n",
+      reason: "Prepare a tiny console logging scaffold.",
+      conceptIds: ["js.console-log"]
+    };
+    let reviewId = "";
+    const service = new ConstructFlowService({
+      workspace,
+      flowMemory,
+      latestTerminalOutput: () => "",
+      logs,
+      learningStore: () => learningStore,
+      agentRuntime: () => ({
+        runAgentic: async (request: any) => {
+          await assert.rejects(
+            () => request.tools.write.execute(writeInput),
+            (error: unknown) => {
+              const message = error instanceof Error ? error.message : String(error);
+              reviewId = message.match(/Concept firewall review id: ([a-f0-9-]+)/i)?.[1] ?? "";
+              return /Project concept firewall blocked/.test(message) && reviewId.length > 0;
+            }
+          );
+
+          const writeResult = await request.tools.write.execute({
+            ...writeInput,
+            conceptFirewallReviewId: reviewId
+          });
+          assert.equal(writeResult.path, writeInput.path);
+
+          await assert.rejects(
+            () => request.tools.write.execute({
+              ...writeInput,
+              content: "console.log(changed);\n",
+              conceptFirewallReviewId: reviewId
+            }),
+            /different mutation/
+          );
+
+          return {
+            text: "Support scaffold is ready.",
+            finishReason: "stop",
+            stepCount: 3
+          };
+        }
+      }) as any
+    });
+
+    await service.runMainAgent(project, {
+      projectId: project.id,
+      message: "Create the tiny support file."
+    });
+
+    const written = await readFile(path.join(project.workspacePath, "src/log.js"), "utf8");
+    assert.equal(written, writeInput.content);
+    assert.ok(project.flow.sessions.at(-1)?.toolCalls.some((toolCall) => (
+      toolCall.name === "write" &&
+      toolCall.input &&
+      typeof toolCall.input === "object" &&
+      (toolCall.input as Record<string, unknown>).conceptFirewallReviewId === reviewId
+    )));
+  });
+
   it("keeps concept teaching conversational instead of reference-dump shaped", () => {
     const source = readFileSync(new URL("./ConstructFlowService.ts", import.meta.url), "utf8");
     assert.match(source, /Conversational teaching pace:/);
