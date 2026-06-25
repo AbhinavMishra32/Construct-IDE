@@ -6,6 +6,7 @@ import "./index.css";
 import ConstructApp from "./construct/ConstructApplication";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { logStore } from "./construct/lib/logStore";
+import { performanceProfiler } from "./construct/lib/performanceProfiler";
 
 // 1. Capture Renderer process console logs
 const originalRendererLog = console.log;
@@ -69,7 +70,21 @@ document.documentElement.dataset.opalineOs = os;
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <TooltipProvider>
-      <ConstructApp />
+      <React.Profiler
+        id="ConstructApp"
+        onRender={(id, phase, actualDuration, baseDuration) => {
+          if (phase !== "mount" && actualDuration < 8) return;
+          performanceProfiler.record({
+            kind: "mark",
+            label: `react.${phase}:${id}`,
+            durationMs: actualDuration,
+            detail: { baseDuration },
+            severity: actualDuration > 32 ? "warn" : "info"
+          });
+        }}
+      >
+        <ConstructApp />
+      </React.Profiler>
       <Toaster richColors position="bottom-right" toastOptions={{ className: "font-sans" }} />
     </TooltipProvider>
   </React.StrictMode>

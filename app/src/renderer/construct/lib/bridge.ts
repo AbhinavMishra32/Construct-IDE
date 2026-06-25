@@ -14,10 +14,12 @@ import type {
   ConstructInteractClientResult,
   WorkspaceFile,
   WorkspaceTreeNode,
-  ConstructUiStateScope
+  ConstructUiStateScope,
+  ConstructStorageMetrics
 } from "../types";
 import type { ConstructSelectionContext } from "./selectionContext";
 import { apiTracker } from "./apiTracker";
+import { performanceProfiler } from "./performanceProfiler";
 
 declare global {
   interface Window {
@@ -54,15 +56,35 @@ export function getUiState<T = unknown>(input: {
   projectId?: string;
   fallback?: T;
 }): Promise<T> {
-  return api().getUiState<T>(input);
+  return performanceProfiler.measureAsync(
+    "storage.getUiState",
+    { key: input.key, scope: input.scope ?? "application", projectId: input.projectId },
+    () => api().getUiState<T>(input)
+  );
 }
 
 export function setUiState(input: Parameters<ConstructProjectsApi["setUiState"]>[0]): ReturnType<ConstructProjectsApi["setUiState"]> {
-  return api().setUiState(input);
+  const bytes = estimateJsonBytes(input.value);
+  performanceProfiler.recordStorageWrite({
+    label: "ui-state queued",
+    key: input.key,
+    scope: input.scope,
+    projectId: input.projectId,
+    bytes
+  });
+  return performanceProfiler.measureAsync(
+    "storage.setUiState",
+    { key: input.key, scope: input.scope ?? "application", projectId: input.projectId, bytes },
+    () => api().setUiState(input)
+  );
 }
 
 export function flushStorage(): ReturnType<ConstructProjectsApi["flushStorage"]> {
-  return api().flushStorage();
+  return performanceProfiler.measureAsync("storage.flush", {}, () => api().flushStorage());
+}
+
+export function storageMetrics(): Promise<ConstructStorageMetrics> {
+  return performanceProfiler.measureAsync("storage.metrics", {}, () => api().storageMetrics());
 }
 
 export function ensureProject(input: {
@@ -408,4 +430,12 @@ export function closeProject(): Promise<void> {
 
 export function onFileChanged(callback: (payload: import("../types").ProjectFileChangePayload) => void): () => void {
   return api().onFileChanged(callback);
+}
+
+function estimateJsonBytes(value: unknown): number {
+  try {
+    return new TextEncoder().encode(JSON.stringify(value)).length;
+  } catch {
+    return 0;
+  }
 }

@@ -76,7 +76,10 @@ export const LOG_GROUPS: LogGroup[] = [
   {
     id: "debug",
     label: "Debug",
-    children: [{ id: "debug-processes", label: "Processes" }]
+    children: [
+      { id: "debug-profiler", label: "Profiler", description: "Frame time, storage writes, IPC, and long tasks" },
+      { id: "debug-processes", label: "Processes", description: "Managed PTY, LSP, and installer processes" }
+    ]
   }
 ];
 

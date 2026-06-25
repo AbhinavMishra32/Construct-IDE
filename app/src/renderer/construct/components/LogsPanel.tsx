@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Braces, ChevronDown, ChevronRight } from "lucide-react";
+import { ActivityIcon, Braces, ChevronDown, ChevronRight, DatabaseIcon, GaugeIcon, TimerIcon } from "lucide-react";
 import {
   logStore,
   LOG_GROUPS,
@@ -10,8 +10,9 @@ import {
   type LogGroup,
   type LogEntry
 } from "../lib/logStore";
-import { debugProcesses } from "../lib/bridge";
-import type { DebugProcessSnapshot } from "../types";
+import { debugProcesses, storageMetrics } from "../lib/bridge";
+import { performanceProfiler, type ConstructProfilerSnapshot, type ConstructProfilerEvent } from "../lib/performanceProfiler";
+import type { ConstructStorageMetricEvent, ConstructStorageMetrics, DebugProcessSnapshot } from "../types";
 import {
   Button,
   Select,
@@ -93,6 +94,17 @@ function formatMemory(value: number | null | undefined): string {
   return typeof value === "number" ? `${value.toFixed(1)} MB` : "--";
 }
 
+function formatBytes(value: number | null | undefined): string {
+  if (typeof value !== "number") return "--";
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / 1024 / 1024).toFixed(2)} MB`;
+}
+
+function formatDuration(value: number | null | undefined): string {
+  return typeof value === "number" ? `${value.toFixed(value > 10 ? 1 : 2)} ms` : "--";
+}
+
 function DebugProcesses({ processes }: { processes: DebugProcessSnapshot[] }) {
   const running = processes.filter((process) => process.status === "running").length;
   const totalMemory = processes.reduce((sum, process) => sum + (process.memoryMb ?? 0), 0);
@@ -135,6 +147,147 @@ function DebugProcesses({ processes }: { processes: DebugProcessSnapshot[] }) {
       )}
     </div>
   );
+}
+
+function DebugProfiler() {
+  const [snapshot, setSnapshot] = useState<ConstructProfilerSnapshot>(() => performanceProfiler.snapshot());
+  const [storage, setStorage] = useState<ConstructStorageMetrics | null>(null);
+
+  useEffect(() => performanceProfiler.subscribe(setSnapshot), []);
+
+  useEffect(() => {
+    let disposed = false;
+    const refresh = async () => {
+      try {
+        const next = await storageMetrics();
+        if (!disposed) setStorage(next);
+      } catch {
+        if (!disposed) setStorage(null);
+      }
+    };
+    void refresh();
+    const interval = window.setInterval(refresh, 750);
+    return () => {
+      disposed = true;
+      window.clearInterval(interval);
+    };
+  }, []);
+
+  const latestEvents = snapshot.events.slice(0, 80);
+
+  return (
+    <div className="flex min-h-0 flex-col gap-3 text-xs">
+      <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
+        <ProfilerStat icon={<GaugeIcon size={14} />} label="FPS" value={snapshot.fps ? snapshot.fps.toFixed(0) : "--"} detail={`avg ${formatDuration(snapshot.frameAvgMs)} · max ${formatDuration(snapshot.frameMaxMs)}`} tone={snapshot.frameMaxMs > 50 ? "warn" : "ok"} />
+        <ProfilerStat icon={<TimerIcon size={14} />} label="Main thread" value={`${snapshot.droppedFrames}`} detail={`dropped frames · long tasks ${snapshot.longTaskCount}`} tone={snapshot.longTaskCount > 0 || snapshot.droppedFrames > 30 ? "warn" : "ok"} />
+        <ProfilerStat icon={<DatabaseIcon size={14} />} label="Storage queue" value={`${storage?.pendingInserts ?? 0}/${storage?.pendingDeletes ?? 0}`} detail={`${storage?.scheduledFlushes ?? 0} scheduled · ${storage?.inFlightFlushes ?? 0} flushing`} tone={(storage?.pendingInserts ?? 0) > 20 ? "warn" : "ok"} />
+        <ProfilerStat icon={<ActivityIcon size={14} />} label="Heap" value={formatMemory(snapshot.heapUsedMb)} detail={snapshot.heapLimitMb ? `limit ${formatMemory(snapshot.heapLimitMb)}` : "Chromium heap API unavailable"} />
+      </div>
+
+      <div className="grid min-h-0 grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(26rem,0.95fr)]">
+        <section className="min-h-0 rounded-[8px] border bg-muted/18">
+          <ProfilerHeader title="Realtime profiler events" subtitle="Frame stalls, long tasks, IPC timings, and renderer-originated storage writes" />
+          <div className="max-h-[28rem] overflow-auto">
+            {latestEvents.length === 0 ? (
+              <div className="p-3 text-muted-foreground">No profiler events yet. Move panels, scroll chat, or run agents to populate this stream.</div>
+            ) : (
+              latestEvents.map((event) => <ProfilerEventRow key={event.id} event={event} />)
+            )}
+          </div>
+        </section>
+
+        <section className="min-h-0 rounded-[8px] border bg-muted/18">
+          <ProfilerHeader
+            title="SQLite storage"
+            subtitle={`provider=${storage?.providerId ?? "--"} · debounce=${storage?.flushDelayMs ?? "--"}ms · periodic=${storage?.periodicFlushIntervalMs ?? "--"}ms`}
+          />
+          <div className="grid grid-cols-2 gap-2 border-b p-2">
+            <MiniMetric label="queued writes" value={storage?.totalQueuedWrites ?? 0} />
+            <MiniMetric label="queued bytes" value={formatBytes(storage?.totalQueuedBytes)} />
+            <MiniMetric label="flushes" value={storage?.totalFlushes ?? 0} />
+            <MiniMetric label="flushed bytes" value={formatBytes(storage?.totalFlushedBytes)} />
+            <MiniMetric label="last flush" value={formatDuration(storage?.lastFlushDurationMs)} />
+            <MiniMetric label="scopes" value={storage?.scopeCount ?? 0} />
+          </div>
+          <div className="max-h-[22rem] overflow-auto">
+            {(storage?.recentEvents ?? []).length === 0 ? (
+              <div className="p-3 text-muted-foreground">No storage writes observed in this process.</div>
+            ) : (
+              storage!.recentEvents.slice(0, 80).map((event) => <StorageEventRow key={event.id} event={event} />)
+            )}
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function ProfilerHeader({ title, subtitle }: { title: string; subtitle: string }) {
+  return (
+    <header className="border-b px-3 py-2">
+      <strong className="block text-xs font-semibold">{title}</strong>
+      <span className="text-[11px] text-muted-foreground">{subtitle}</span>
+    </header>
+  );
+}
+
+function ProfilerStat({
+  icon,
+  label,
+  value,
+  detail,
+  tone = "neutral"
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  detail: string;
+  tone?: "neutral" | "ok" | "warn";
+}) {
+  return (
+    <div className={`rounded-[8px] border p-3 ${tone === "warn" ? "bg-amber-500/10 border-amber-500/25" : "bg-muted/25"}`}>
+      <div className="flex items-center gap-2 text-[11px] uppercase tracking-wide text-muted-foreground">{icon}{label}</div>
+      <strong className="mt-1 block text-lg font-semibold">{value}</strong>
+      <span className="text-[11px] text-muted-foreground">{detail}</span>
+    </div>
+  );
+}
+
+function MiniMetric({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="rounded-[7px] bg-background/55 px-2 py-1.5">
+      <span className="block text-[10px] uppercase text-muted-foreground">{label}</span>
+      <strong className="font-mono text-[12px] font-medium">{value}</strong>
+    </div>
+  );
+}
+
+function ProfilerEventRow({ event }: { event: ConstructProfilerEvent }) {
+  return (
+    <div className={`grid grid-cols-[5.5rem_5.5rem_minmax(0,1fr)_6rem] gap-2 border-b px-3 py-1.5 font-mono text-[11px] ${event.severity === "critical" ? "bg-destructive/10" : event.severity === "warn" ? "bg-amber-500/10" : ""}`}>
+      <span className="text-muted-foreground">{formatProfilerTime(event.at)}</span>
+      <span>{event.kind}</span>
+      <span className="min-w-0 truncate" title={event.label}>{event.label}</span>
+      <span className="text-right">{formatDuration(event.durationMs)}</span>
+      {event.detail ? <pre className="col-span-4 max-h-24 overflow-auto whitespace-pre-wrap break-words text-[10px] text-muted-foreground">{JSON.stringify(event.detail)}</pre> : null}
+    </div>
+  );
+}
+
+function StorageEventRow({ event }: { event: ConstructStorageMetricEvent }) {
+  return (
+    <div className="grid grid-cols-[5.5rem_4rem_minmax(0,1fr)_5rem_5rem] gap-2 border-b px-3 py-1.5 font-mono text-[11px]">
+      <span className="text-muted-foreground">{formatTimestamp(event.at)}</span>
+      <span>{event.type}</span>
+      <span className="min-w-0 truncate" title={`${event.scopeKey}:${event.key ?? ""}`}>{event.scopeKey}{event.key ? ` · ${event.key}` : ""}</span>
+      <span className="text-right">{event.insertCount != null || event.deleteCount != null ? `${event.insertCount ?? 0}/${event.deleteCount ?? 0}` : event.operation ?? "--"}</span>
+      <span className="text-right">{event.durationMs != null ? formatDuration(event.durationMs) : formatBytes(event.bytes)}</span>
+    </div>
+  );
+}
+
+function formatProfilerTime(at: number): string {
+  return formatTimestamp(new Date(performance.timeOrigin + at).toISOString());
 }
 
 interface StructuredLogItemProps {
@@ -252,6 +405,7 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
   const channel = isDebug ? null : resolveChannel(activeGroup, activeChildId);
   const activeChildMeta = children.find((c) => c.id === activeChildId);
   const hasChildren = children.length > 0;
+  const debugView = isDebug ? activeChildId : null;
 
   // Reset child when group changes
   useEffect(() => {
@@ -290,7 +444,7 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
 
   // Debug processes polling
   useEffect(() => {
-    if (!isDebug) return;
+    if (debugView !== "debug-processes") return;
 
     let disposed = false;
     const refresh = async () => {
@@ -308,7 +462,7 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
       disposed = true;
       window.clearInterval(interval);
     };
-  }, [isDebug]);
+  }, [debugView]);
 
   useLayoutEffect(() => {
     if (autoScroll) scrollToBottom();
@@ -316,7 +470,11 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
 
   const handleCopyAll = () => {
     if (isDebug) {
-      const text = processes.map(formatProcessLine).join("\n");
+      const text = debugView === "debug-processes"
+        ? processes.map(formatProcessLine).join("\n")
+        : JSON.stringify({
+            profiler: performanceProfiler.snapshot()
+          }, null, 2);
       navigator.clipboard.writeText(text);
       return;
     }
@@ -330,7 +488,7 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
 
   const handleClear = () => {
     if (isDebug) {
-      setProcesses([]);
+      if (debugView === "debug-processes") setProcesses([]);
       return;
     }
     if (channel) logStore.clearLogs(channel);
@@ -443,7 +601,9 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
           ref={containerRef}
           className="h-0 min-h-0 flex-1 space-y-0.5 overflow-y-auto overflow-x-hidden bg-transparent px-3 py-2 font-mono text-xs leading-relaxed select-text"
         >
-          {isDebug ? (
+          {debugView === "debug-profiler" ? (
+            <DebugProfiler />
+          ) : debugView === "debug-processes" ? (
             <DebugProcesses processes={processes} />
           ) : logs.length === 0 ? (
             <div className="font-mono text-muted-foreground italic select-none">

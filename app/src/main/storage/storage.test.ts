@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import type { DatabaseSync as NodeDatabaseSync } from "node:sqlite";
 
 import {
   APPLICATION_SCOPE,
@@ -11,6 +13,9 @@ import {
   readStorageObjectFromSqliteSync,
   StorageTarget
 } from "./storage";
+
+const requireBuiltin = createRequire(import.meta.url);
+const { DatabaseSync } = requireBuiltin("node:sqlite") as typeof import("node:sqlite");
 
 test("SQLite storage caches immediately and persists on flush", async (t) => {
   const dir = mkdtempSync(path.join(tmpdir(), "construct-storage-"));
@@ -26,6 +31,7 @@ test("SQLite storage caches immediately and persists on flush", async (t) => {
   storage.store("construct.ui.test", { open: true }, APPLICATION_SCOPE, StorageTarget.USER);
   assert.deepEqual(storage.getObject("construct.ui.test", APPLICATION_SCOPE), { open: true });
   assert.equal(readStorageObjectFromSqliteSync({ databasePath: dbPath, key: "construct.ui.test" }), null);
+  assert.equal(readSyncQueueCount(dbPath), 0);
 
   await storage.flush();
   await storage.close();
@@ -62,3 +68,14 @@ test("legacy JSON values migrate into storage once", async (t) => {
   await storage.close();
   assert.deepEqual(readStorageObjectFromSqliteSync({ databasePath: dbPath, key: "construct.legacy" }), { name: "legacy", count: 2 });
 });
+
+function readSyncQueueCount(databasePath: string): number {
+  let db: NodeDatabaseSync | null = null;
+  try {
+    db = new DatabaseSync(databasePath, { readOnly: true });
+    const row = db.prepare("SELECT COUNT(*) AS count FROM storage_sync_queue").get() as { count: number };
+    return row.count;
+  } finally {
+    db?.close();
+  }
+}

@@ -614,6 +614,38 @@ export type ProjectFileChangePayload = {
 
 export type ConstructUiStateScope = "application" | "workspace";
 
+export type ConstructStorageMetricEvent = {
+  id: number;
+  at: string;
+  type: "queue" | "flush";
+  scopeKey: string;
+  key?: string;
+  operation?: "set" | "delete";
+  target?: number | null;
+  bytes?: number;
+  insertCount?: number;
+  deleteCount?: number;
+  durationMs?: number;
+};
+
+export type ConstructStorageMetrics = {
+  providerId: string;
+  flushDelayMs: number;
+  periodicFlushIntervalMs: number;
+  scopeCount: number;
+  pendingInserts: number;
+  pendingDeletes: number;
+  scheduledFlushes: number;
+  inFlightFlushes: number;
+  totalQueuedWrites: number;
+  totalQueuedBytes: number;
+  totalFlushes: number;
+  totalFlushedBytes: number;
+  lastFlushAt: string | null;
+  lastFlushDurationMs: number | null;
+  recentEvents: ConstructStorageMetricEvent[];
+};
+
 export type ConstructProjectsApi = {
   setThemeSource(theme: "light" | "dark" | "system"): Promise<void>;
   getUiState<T = unknown>(input: {
@@ -629,6 +661,7 @@ export type ConstructProjectsApi = {
     value: unknown;
   }): Promise<{ ok: true }>;
   flushStorage(): Promise<{ ok: true }>;
+  storageMetrics(): Promise<ConstructStorageMetrics>;
   ensureProject(input: {
     source: string;
     sourcePath?: string | null;

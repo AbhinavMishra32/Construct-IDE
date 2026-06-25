@@ -43,6 +43,10 @@ export class ConstructSystemIpcController {
       return { ok: true };
     });
 
+    ipcMain.handle("construct:storage:metrics", async () => {
+      return this.options.storage.snapshotMetrics();
+    });
+
     ipcMain.handle("construct:debug:processes", async () => {
       return this.options.collectDebugProcessSnapshots();
     });

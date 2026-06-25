@@ -92,6 +92,38 @@ export interface IStorageEntry {
   readonly target: StorageTarget;
 }
 
+export type ConstructStorageMetricEvent = {
+  readonly id: number;
+  readonly at: string;
+  readonly type: "queue" | "flush";
+  readonly scopeKey: string;
+  readonly key?: string;
+  readonly operation?: "set" | "delete";
+  readonly target?: StorageTarget | null;
+  readonly bytes?: number;
+  readonly insertCount?: number;
+  readonly deleteCount?: number;
+  readonly durationMs?: number;
+};
+
+export type ConstructStorageMetrics = {
+  readonly providerId: string;
+  readonly flushDelayMs: number;
+  readonly periodicFlushIntervalMs: number;
+  readonly scopeCount: number;
+  readonly pendingInserts: number;
+  readonly pendingDeletes: number;
+  readonly scheduledFlushes: number;
+  readonly inFlightFlushes: number;
+  readonly totalQueuedWrites: number;
+  readonly totalQueuedBytes: number;
+  readonly totalFlushes: number;
+  readonly totalFlushedBytes: number;
+  readonly lastFlushAt: string | null;
+  readonly lastFlushDurationMs: number | null;
+  readonly recentEvents: ConstructStorageMetricEvent[];
+};
+
 export interface IStorageService {
   readonly _serviceBrand: undefined;
   readonly onDidChangeTarget: Event<IStorageTargetChangeEvent>;
@@ -114,6 +146,7 @@ export interface IStorageService {
   whenFlushed(): Promise<void>;
   optimize(scope?: StorageScopeRef): Promise<void>;
   close(): Promise<void>;
+  snapshotMetrics(): ConstructStorageMetrics;
 }
 
 type ConstructStorageOptions = {
@@ -153,6 +186,7 @@ export class ConstructStorageService implements IStorageService {
   private readonly _onDidChangeValue = new Emitter<IStorageValueChangeEvent>();
   private readonly _onDidChangeTarget = new Emitter<IStorageTargetChangeEvent>();
   private readonly _onWillSaveState = new Emitter<IWillSaveStateEvent>();
+  private readonly metrics = new ConstructStorageMetricsRecorder();
   private readonly scopes = new Map<string, ConstructStorageBucket>();
   private readonly syncProviders = new Map<string, IStorageSyncProvider>();
   private initialized = false;
@@ -237,6 +271,13 @@ export class ConstructStorageService implements IStorageService {
       const value = stringifyStorageValue(entry.value);
       if (value == null) {
         if (bucket.delete(entry.key)) {
+          this.metrics.recordQueue({
+            scopeKey,
+            key: entry.key,
+            operation: "delete",
+            target: null,
+            bytes: 0
+          });
           this._onDidChangeValue.fire({
             scope: entry.scope.scope,
             scopeKey,
@@ -251,6 +292,13 @@ export class ConstructStorageService implements IStorageService {
       }
       const changed = bucket.set(entry.key, value, entry.target);
       if (changed) {
+        this.metrics.recordQueue({
+          scopeKey,
+          key: entry.key,
+          operation: "set",
+          target: entry.target,
+          bytes: Buffer.byteLength(value, "utf8")
+        });
         const event = {
           scope: entry.scope.scope,
           scopeKey,
@@ -268,6 +316,13 @@ export class ConstructStorageService implements IStorageService {
   remove(key: string, scope: StorageScopeRef): void {
     const scopeKey = storageScopeKey(scope);
     if (this.bucket(scope).delete(key)) {
+      this.metrics.recordQueue({
+        scopeKey,
+        key,
+        operation: "delete",
+        target: null,
+        bytes: 0
+      });
       this._onDidChangeValue.fire({ scope: scope.scope, scopeKey, key, target: undefined });
       this._onDidChangeTarget.fire({ scope: scope.scope, scopeKey });
       this.enqueueSync(scopeKey, key, "delete", null);
@@ -310,6 +365,20 @@ export class ConstructStorageService implements IStorageService {
     await this.provider.close();
   }
 
+  snapshotMetrics(): ConstructStorageMetrics {
+    const buckets = Array.from(this.scopes.values()).map((bucket) => bucket.snapshot());
+    return this.metrics.snapshot({
+      providerId: this.provider.id,
+      flushDelayMs: this.options.flushDelayMs ?? 100,
+      periodicFlushIntervalMs: this.options.periodicFlushIntervalMs ?? 60_000,
+      scopeCount: this.scopes.size,
+      pendingInserts: buckets.reduce((sum, bucket) => sum + bucket.pendingInserts, 0),
+      pendingDeletes: buckets.reduce((sum, bucket) => sum + bucket.pendingDeletes, 0),
+      scheduledFlushes: buckets.filter((bucket) => bucket.scheduled).length,
+      inFlightFlushes: buckets.filter((bucket) => bucket.inFlight).length
+    });
+  }
+
   private bucket(scope: StorageScopeRef): ConstructStorageBucket {
     const scopeKey = storageScopeKey(scope);
     const existing = this.scopes.get(scopeKey);
@@ -317,7 +386,8 @@ export class ConstructStorageService implements IStorageService {
     const bucket = new ConstructStorageBucket({
       scopeKey,
       provider: this.provider,
-      flushDelayMs: this.options.flushDelayMs ?? 100
+      flushDelayMs: this.options.flushDelayMs ?? 100,
+      onFlush: (event) => this.metrics.recordFlush(event)
     });
     this.scopes.set(scopeKey, bucket);
     return bucket;
@@ -360,6 +430,13 @@ class ConstructStorageBucket {
     scopeKey: string;
     provider: IStorageProvider;
     flushDelayMs: number;
+    onFlush: (event: {
+      scopeKey: string;
+      insertCount: number;
+      deleteCount: number;
+      bytes: number;
+      durationMs: number;
+    }) => void;
   }) {}
 
   get(key: string): string | undefined {
@@ -426,6 +503,20 @@ class ConstructStorageBucket {
     return new Promise((resolve) => this.whenFlushedCallbacks.push(resolve));
   }
 
+  snapshot(): {
+    pendingInserts: number;
+    pendingDeletes: number;
+    scheduled: boolean;
+    inFlight: boolean;
+  } {
+    return {
+      pendingInserts: this.pendingInserts.size,
+      pendingDeletes: this.pendingDeletes.size,
+      scheduled: this.flushTimer != null,
+      inFlight: this.flushPromise != null
+    };
+  }
+
   private initialize(): void {
     if (this.initialized) return;
     this.initialized = true;
@@ -479,12 +570,25 @@ class ConstructStorageBucket {
       delete: new Set(this.pendingDeletes),
       targets: new Map(this.pendingTargets)
     };
+    const insertCount = request.insert?.size ?? 0;
+    const deleteCount = request.delete?.size ?? 0;
+    const bytes = Array.from(request.insert?.values() ?? []).reduce((sum, value) => sum + Buffer.byteLength(value, "utf8"), 0);
     this.pendingInserts.clear();
     this.pendingDeletes.clear();
     this.pendingTargets.clear();
 
+    const startedAt = performance.now();
     this.flushPromise = Promise.resolve()
       .then(() => this.options.provider.updateItems(this.options.scopeKey, request))
+      .then(() => {
+        this.options.onFlush({
+          scopeKey: this.options.scopeKey,
+          insertCount,
+          deleteCount,
+          bytes,
+          durationMs: performance.now() - startedAt
+        });
+      })
       .finally(() => {
         this.flushPromise = null;
         if (!this.hasPending) {
@@ -497,6 +601,78 @@ class ConstructStorageBucket {
   private resolveWhenFlushed(): void {
     while (this.whenFlushedCallbacks.length) {
       this.whenFlushedCallbacks.pop()?.();
+    }
+  }
+}
+
+class ConstructStorageMetricsRecorder {
+  private nextEventId = 1;
+  private totalQueuedWrites = 0;
+  private totalQueuedBytes = 0;
+  private totalFlushes = 0;
+  private totalFlushedBytes = 0;
+  private lastFlushAt: string | null = null;
+  private lastFlushDurationMs: number | null = null;
+  private readonly recentEvents: ConstructStorageMetricEvent[] = [];
+
+  recordQueue(event: Omit<ConstructStorageMetricEvent, "id" | "at" | "type">): void {
+    this.totalQueuedWrites += 1;
+    this.totalQueuedBytes += event.bytes ?? 0;
+    this.push({ ...event, type: "queue" });
+  }
+
+  recordFlush(event: {
+    scopeKey: string;
+    insertCount: number;
+    deleteCount: number;
+    bytes: number;
+    durationMs: number;
+  }): void {
+    this.totalFlushes += 1;
+    this.totalFlushedBytes += event.bytes;
+    this.lastFlushAt = new Date().toISOString();
+    this.lastFlushDurationMs = event.durationMs;
+    this.push({
+      type: "flush",
+      scopeKey: event.scopeKey,
+      insertCount: event.insertCount,
+      deleteCount: event.deleteCount,
+      bytes: event.bytes,
+      durationMs: event.durationMs
+    });
+  }
+
+  snapshot(input: Pick<
+    ConstructStorageMetrics,
+    "providerId" |
+    "flushDelayMs" |
+    "periodicFlushIntervalMs" |
+    "scopeCount" |
+    "pendingInserts" |
+    "pendingDeletes" |
+    "scheduledFlushes" |
+    "inFlightFlushes"
+  >): ConstructStorageMetrics {
+    return {
+      ...input,
+      totalQueuedWrites: this.totalQueuedWrites,
+      totalQueuedBytes: this.totalQueuedBytes,
+      totalFlushes: this.totalFlushes,
+      totalFlushedBytes: this.totalFlushedBytes,
+      lastFlushAt: this.lastFlushAt,
+      lastFlushDurationMs: this.lastFlushDurationMs,
+      recentEvents: [...this.recentEvents].reverse()
+    };
+  }
+
+  private push(event: Omit<ConstructStorageMetricEvent, "id" | "at">): void {
+    this.recentEvents.push({
+      ...event,
+      id: this.nextEventId++,
+      at: new Date().toISOString()
+    });
+    if (this.recentEvents.length > 160) {
+      this.recentEvents.splice(0, this.recentEvents.length - 160);
     }
   }
 }
@@ -639,16 +815,12 @@ export class LocalStorageSyncProvider implements IStorageSyncProvider {
 
   private pending = new Map<string, StorageSyncOperation>();
 
-  constructor(private readonly sqlite?: SQLiteStorageProvider) {}
-
   async enqueue(operation: StorageSyncOperation): Promise<void> {
     this.pending.set(`${operation.scopeKey}:${operation.key}`, operation);
-    this.sqlite?.enqueueSync(operation);
   }
 
   async flush(): Promise<void> {
     this.pending.clear();
-    this.sqlite?.markSyncFlushed(this.id);
   }
 }
 
@@ -671,7 +843,7 @@ export class ConstructCloudStorageSyncProvider implements IStorageSyncProvider {
 export function createConstructStorageService(databasePath: string, options?: ConstructStorageOptions): ConstructStorageService {
   const sqlite = new SQLiteStorageProvider(databasePath);
   const service = new ConstructStorageService(sqlite, options);
-  service.registerSyncProvider(new LocalStorageSyncProvider(sqlite));
+  service.registerSyncProvider(new LocalStorageSyncProvider());
   return service;
 }
 

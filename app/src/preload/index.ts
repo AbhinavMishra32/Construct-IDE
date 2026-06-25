@@ -19,6 +19,8 @@ contextBridge.exposeInMainWorld("constructProjects", {
     ipcRenderer.invoke("construct:ui-state:set", input),
   flushStorage: () =>
     ipcRenderer.invoke("construct:storage:flush"),
+  storageMetrics: () =>
+    ipcRenderer.invoke("construct:storage:metrics"),
   ensureProject: (input: unknown) =>
     ipcRenderer.invoke("construct:project:ensure", input),
   importProject: (input: unknown) =>
