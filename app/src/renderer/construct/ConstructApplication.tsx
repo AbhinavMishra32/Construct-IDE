@@ -74,6 +74,8 @@ import {
 } from "./lib/projectStore";
 import {
   setThemeSource,
+  getUiState,
+  setUiState,
   getSettings,
   updateAiSettings,
   updateProject,
@@ -99,11 +101,77 @@ type SettingsSurfaceState = {
   projectId?: string;
 };
 
+type ConstructShellUiState = {
+  version: 1;
+  activeProjectId: string | null;
+  sidebarOpen: boolean;
+  rightPanelOpen: boolean;
+  inspectorExpanded: boolean;
+  knowledgeBaseOpen: boolean;
+  learningContextOpen: boolean;
+  settingsSurface: SettingsSurfaceState | null;
+  flowPanelView: "chat" | "project";
+  activeRightSlotId: string;
+  activeBottomTabId: string | null;
+  openBottomTabIds: string[];
+  bottomPanelOpen: boolean;
+  bottomPanelExpanded: boolean;
+  sidebarWidth: number;
+  inspectorWidth: number;
+  theme: ThemeMode;
+  showStatusBar: boolean;
+};
+
+const SHELL_UI_STATE_KEY = "shell";
+
 function rightSlotTitle(slotId: string): string {
   if (slotId === "steps") return "Steps";
   if (slotId === "interact") return "Interact";
   if (slotId === "git") return "Git";
   return "Guide";
+}
+
+function normalizeShellUiState(value: unknown): ConstructShellUiState | null {
+  if (!value || typeof value !== "object") return null;
+  const input = value as Partial<ConstructShellUiState>;
+  return {
+    version: 1,
+    activeProjectId: typeof input.activeProjectId === "string" ? input.activeProjectId : null,
+    sidebarOpen: typeof input.sidebarOpen === "boolean" ? input.sidebarOpen : true,
+    rightPanelOpen: typeof input.rightPanelOpen === "boolean" ? input.rightPanelOpen : false,
+    inspectorExpanded: typeof input.inspectorExpanded === "boolean" ? input.inspectorExpanded : false,
+    knowledgeBaseOpen: typeof input.knowledgeBaseOpen === "boolean" ? input.knowledgeBaseOpen : false,
+    learningContextOpen: typeof input.learningContextOpen === "boolean" ? input.learningContextOpen : false,
+    settingsSurface: normalizeSettingsSurfaceState(input.settingsSurface),
+    flowPanelView: input.flowPanelView === "project" ? "project" : "chat",
+    activeRightSlotId: typeof input.activeRightSlotId === "string" && input.activeRightSlotId.trim() ? input.activeRightSlotId : "guide",
+    activeBottomTabId: typeof input.activeBottomTabId === "string" ? input.activeBottomTabId : null,
+    openBottomTabIds: Array.isArray(input.openBottomTabIds)
+      ? input.openBottomTabIds.filter((id): id is string => typeof id === "string")
+      : [],
+    bottomPanelOpen: typeof input.bottomPanelOpen === "boolean" ? input.bottomPanelOpen : false,
+    bottomPanelExpanded: typeof input.bottomPanelExpanded === "boolean" ? input.bottomPanelExpanded : false,
+    sidebarWidth: normalizePanelWidth(input.sidebarWidth, 300, 240, 520),
+    inspectorWidth: normalizePanelWidth(input.inspectorWidth, 320, 260, 760),
+    theme: input.theme === "light" || input.theme === "dark" || input.theme === "system" ? input.theme : getInitialTheme(),
+    showStatusBar: input.showStatusBar !== false
+  };
+}
+
+function normalizeSettingsSurfaceState(value: unknown): SettingsSurfaceState | null {
+  if (!value || typeof value !== "object") return null;
+  const input = value as Partial<SettingsSurfaceState>;
+  if (typeof input.itemId !== "string" || !input.itemId.trim()) return null;
+  return {
+    itemId: input.itemId,
+    projectId: typeof input.projectId === "string" ? input.projectId : undefined
+  };
+}
+
+function normalizePanelWidth(value: unknown, fallback: number, min: number, max: number): number {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.max(min, Math.min(max, value))
+    : fallback;
 }
 
 function authViewFromPath(path: string): AuthView {
@@ -376,14 +444,20 @@ export default function ConstructApp() {
   const [settingsSurface, setSettingsSurface] = useState<SettingsSurfaceState | null>(null);
   const [settingsQuery, setSettingsQuery] = useState("");
   const [activeRightSlotId, setActiveRightSlotId] = useState("guide");
-  const [activeBottomTabId, setActiveBottomTabId] = useState("terminal");
+  const [activeBottomTabId, setActiveBottomTabId] = useState<string | null>("terminal");
   const [openBottomTabIds, setOpenBottomTabIds] = useState<string[]>(["terminal", "logs"]);
+  const [bottomPanelOpen, setBottomPanelOpen] = useState(false);
+  const [bottomPanelExpanded, setBottomPanelExpanded] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(300);
+  const [inspectorWidth, setInspectorWidth] = useState(320);
   const [theme, setTheme] = useState<ThemeMode>(() => getInitialTheme());
   const [showStatusBar, setShowStatusBar] = useState(true);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [uiStateHydrated, setUiStateHydrated] = useState(false);
   const terminalRef = useRef<TerminalPanelHandle | null>(null);
   const applyingHistoryRef = useRef(false);
+  const restoringUiStateRef = useRef(false);
   const pendingImmersiveFlowProjectIdsRef = useRef<Set<string>>(new Set());
   const [aiSettings, setAiSettings] = useState<AiSettings | null>(null);
 
@@ -641,6 +715,7 @@ export default function ConstructApp() {
     setLearningContextOpen(false);
     setRightPanel(null);
     setActiveProject(null);
+    setBottomPanelOpen(false);
     setTreeData({ tree: [], activePath: null, relevantPath: null, openFile: null, createFile: null, deleteFile: null, renameFile: null, createFolder: null, duplicateFile: null, refreshTree: null });
     pushHistory({ id: "dashboard", title: "Projects", type: "dashboard" });
     void refresh();
@@ -706,10 +781,66 @@ export default function ConstructApp() {
     const active = resolveActiveTheme(theme);
     applyDocumentTheme(active);
     localStorage.setItem("construct.theme", theme);
+    if (!uiStateHydrated) {
+      return;
+    }
     void Promise.resolve().then(() => setThemeSource(theme)).catch(() => {
       // The Vite renderer can be opened without Electron preload during local smoke checks.
     });
-  }, [theme]);
+  }, [theme, uiStateHydrated]);
+
+  useEffect(() => {
+    if (!uiStateHydrated || restoringUiStateRef.current) {
+      return;
+    }
+
+    const state: ConstructShellUiState = {
+      version: 1,
+      activeProjectId: activeProject?.id ?? null,
+      sidebarOpen,
+      rightPanelOpen,
+      inspectorExpanded,
+      knowledgeBaseOpen,
+      learningContextOpen,
+      settingsSurface,
+      flowPanelView,
+      activeRightSlotId,
+      activeBottomTabId,
+      openBottomTabIds,
+      bottomPanelOpen,
+      bottomPanelExpanded,
+      sidebarWidth,
+      inspectorWidth,
+      theme,
+      showStatusBar
+    };
+    const timeout = window.setTimeout(() => {
+      void setUiState({ key: SHELL_UI_STATE_KEY, value: state }).catch(() => {
+        // Browser-only smoke checks run without Electron storage.
+      });
+    }, 150);
+
+    return () => window.clearTimeout(timeout);
+  }, [
+    activeBottomTabId,
+    activeProject?.id,
+    activeRightSlotId,
+    bottomPanelExpanded,
+    bottomPanelOpen,
+    flowPanelView,
+    inspectorExpanded,
+    inspectorWidth,
+    knowledgeBaseOpen,
+    learningContextOpen,
+    openBottomTabIds,
+    rightPanelOpen,
+    settingsSurface,
+    showStatusBar,
+    sidebarOpen,
+    sidebarWidth,
+    theme,
+    uiStateHydrated
+  ]);
 
   useEffect(() => {
     const mql = window.matchMedia("(prefers-color-scheme: dark)");
@@ -725,10 +856,11 @@ export default function ConstructApp() {
 
   useEffect(() => {
     if (activeProject) {
-      setOpenBottomTabIds(["terminal", "logs"]);
-      setActiveBottomTabId("terminal");
+      setOpenBottomTabIds((current) => current.length > 0 ? current : ["terminal", "logs"]);
+      setActiveBottomTabId((current) => current ?? "terminal");
     } else {
       setOpenBottomTabIds([]);
+      setBottomPanelOpen(false);
     }
   }, [activeProject?.id]);
 
@@ -812,13 +944,53 @@ export default function ConstructApp() {
 
     window.addEventListener("error", handleWindowError);
     window.addEventListener("unhandledrejection", handleUnhandledRejection);
-    void refresh();
+    void restoreUiStateAndProjects();
 
     return () => {
       window.removeEventListener("error", handleWindowError);
       window.removeEventListener("unhandledrejection", handleUnhandledRejection);
     };
   }, []);
+
+  async function restoreUiStateAndProjects() {
+    restoringUiStateRef.current = true;
+    try {
+      const [saved] = await Promise.all([
+        getUiState<ConstructShellUiState | null>({ key: SHELL_UI_STATE_KEY, fallback: null }).catch(() => null),
+        refresh()
+      ]);
+      const shellState = normalizeShellUiState(saved);
+      if (shellState) {
+        applyShellUiState(shellState);
+        if (shellState.activeProjectId) {
+          await openProject(shellState.activeProjectId, { recordHistory: true });
+          applyShellUiState(shellState);
+        }
+      }
+    } finally {
+      restoringUiStateRef.current = false;
+      setUiStateHydrated(true);
+    }
+  }
+
+  function applyShellUiState(state: ConstructShellUiState): void {
+    setSidebarOpen(state.sidebarOpen);
+    setRightPanelOpen(state.rightPanelOpen);
+    setInspectorExpanded(state.inspectorExpanded);
+    setKnowledgeBaseOpen(state.knowledgeBaseOpen);
+    setLearningContextOpen(state.learningContextOpen);
+    setSettingsSurface(state.settingsSurface);
+    setFlowPanelView(state.flowPanelView);
+    setActiveRightSlotId(state.activeRightSlotId);
+    setActiveBottomTabId(state.activeBottomTabId);
+    setOpenBottomTabIds(state.openBottomTabIds);
+    setBottomPanelOpen(state.bottomPanelOpen);
+    setBottomPanelExpanded(state.bottomPanelExpanded);
+    setSidebarWidth(state.sidebarWidth);
+    setInspectorWidth(state.inspectorWidth);
+    setTheme(state.theme);
+    setShowStatusBar(state.showStatusBar);
+  }
 
   async function refresh() {
     try {
@@ -855,7 +1027,10 @@ export default function ConstructApp() {
       });
       setSettingsSurface(null);
       setFlowPanelView("chat");
-      setRightPanelOpen(true);
+      if (!restoringUiStateRef.current) {
+        setRightPanelOpen(true);
+        setBottomPanelOpen(true);
+      }
       const shouldStartImmersive = isFlowProjectRecord(nextProject) && pendingImmersiveFlowProjectIdsRef.current.delete(nextProject.id);
       setInspectorExpanded(shouldStartImmersive);
       if (shouldStartImmersive) {
@@ -1167,6 +1342,14 @@ export default function ConstructApp() {
           onInspectorOpenChange={setRightPanelOpen}
           inspectorExpanded={inspectorExpanded}
           onInspectorExpandedChange={setInspectorExpanded}
+          bottomPanelOpen={Boolean(activeProject && !settingsSurface && !knowledgeBaseOpen && !learningContextOpen && bottomPanelOpen)}
+          onBottomPanelOpenChange={setBottomPanelOpen}
+          bottomPanelExpanded={bottomPanelExpanded}
+          onBottomPanelExpandedChange={setBottomPanelExpanded}
+          sidebarWidth={sidebarWidth}
+          onSidebarWidthChange={setSidebarWidth}
+          inspectorWidth={inspectorWidth}
+          onInspectorWidthChange={setInspectorWidth}
           headerTabs={[
             {
               id: settingsSurface
@@ -1540,6 +1723,7 @@ export default function ConstructApp() {
             setRightPanelOpen(true);
             setInspectorExpanded(false);
           }
+          setBottomPanelOpen(true);
           pushHistory({
             id: `project:${project.id}`,
             payload: { projectId: project.id },
