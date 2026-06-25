@@ -242,6 +242,8 @@ export function FlowWorkspace({
   const documentSessionRef = useRef(documentSession);
   const fileContentsRef = useRef<Record<string, string>>({});
   const restoringFlowUiStateRef = useRef(false);
+  const pendingChatScrollTopRef = useRef<number | null>(null);
+  const chatScrollFrameRef = useRef<number | null>(null);
   const openFileSequenceRef = useRef(0);
   const projectActiveFilePathRef = useRef(project.activeFilePath);
   const saveSequenceRef = useRef(0);
@@ -759,6 +761,22 @@ export function FlowWorkspace({
     setOpenConcept(concept);
   }, [flowConcepts]);
 
+  const updateChatScrollTop = useCallback((scrollTop: number | null) => {
+    pendingChatScrollTopRef.current = scrollTop;
+    if (chatScrollFrameRef.current != null) return;
+    chatScrollFrameRef.current = window.requestAnimationFrame(() => {
+      chatScrollFrameRef.current = null;
+      setChatScrollTop((current) => current === pendingChatScrollTopRef.current ? current : pendingChatScrollTopRef.current);
+    });
+  }, []);
+
+  useEffect(() => () => {
+    if (chatScrollFrameRef.current != null) {
+      window.cancelAnimationFrame(chatScrollFrameRef.current);
+      chatScrollFrameRef.current = null;
+    }
+  }, []);
+
   useEffect(() => {
     onGuidePanelChange(
       <FlowAgentPanel
@@ -780,7 +798,7 @@ export function FlowWorkspace({
         onOpenTask={openTaskTab}
         onOpenFile={openInlineFile}
         onRewindUserMessage={rewindUserSession}
-        onChatScrollTopChange={setChatScrollTop}
+        onChatScrollTopChange={updateChatScrollTop}
         onResetChat={() => {
           setSessions([]);
           setLiveSession(undefined);
@@ -788,7 +806,7 @@ export function FlowWorkspace({
       />
     );
     return () => onGuidePanelChange(null);
-  }, [activePanelView, chatMode, liveSession, onGuidePanelChange, onPanelViewChange, openConcept, openConceptById, openInlineFile, openTaskTab, pending, project, rewindUserSession, runAgent, sessions, submitTask, theme, setOpenConcept]);
+  }, [activePanelView, chatMode, liveSession, onGuidePanelChange, onPanelViewChange, openConcept, openConceptById, openInlineFile, openTaskTab, pending, project, rewindUserSession, runAgent, sessions, submitTask, theme, updateChatScrollTop, setOpenConcept]);
 
   useEffect(() => {
     onKnowledgePanelChange?.(null);
