@@ -5,10 +5,13 @@ export default defineConfig({
     main: "src/main/index.ts",
     preload: "src/preload/index.ts"
   },
-  external: ["electron"],
+  platform: "node",
+  target: "node22",
+  external: ["electron", "node:sqlite"],
   format: ["cjs"],
   clean: true,
   dts: false,
+  shims: true,
   outDir: "dist",
   outExtension() {
     return {
@@ -16,4 +19,3 @@ export default defineConfig({
     };
   }
 });
-
