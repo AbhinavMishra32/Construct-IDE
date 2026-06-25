@@ -118,18 +118,6 @@ export class ConstructInteractService {
       stateOverride?: Awaited<ReturnType<ConstructLearningStore["getState"]>>
     ) => {
       const snapshot = cloneSession(session);
-      if (type === "updated") {
-        onSessionEvent?.({
-          type,
-          runId: sourceRunId,
-          projectId: input.projectId,
-          blockId: input.blockId,
-          threadId,
-          session: snapshot,
-          result
-        });
-        return Promise.resolve();
-      }
       publishQueue = publishQueue
         .then(async () => {
           const state = stateOverride ?? await store.upsertConstructInteractSession(snapshot);

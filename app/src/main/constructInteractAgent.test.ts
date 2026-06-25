@@ -48,7 +48,8 @@ describe("Construct Interact agent guidance", () => {
     assert.match(source, /result\.reply = runError\s*\? result\.reply/);
     assert.match(source, /if \(runError \|\| mode === "general"\)/);
     assert.match(source, /selectLearnerFacingReply\(result, streamedReply\)/);
-    assert.match(source, /if \(type === "updated"\)/);
+    assert.match(source, /const state = stateOverride \?\? await store\.upsertConstructInteractSession\(snapshot\)/);
+    assert.doesNotMatch(source, /if \(type === "updated"\)\s*{\s*onSessionEvent/s);
     assert.match(runtimeSource, /nextEventOrdinal/);
     assert.match(runtimeSource, /state\.event\.text = state\.text/);
     assert.match(runtimeSource, /summarizeReasoningText\(state\.text\)/);
