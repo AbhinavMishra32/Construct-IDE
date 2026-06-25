@@ -95,12 +95,13 @@ export interface IStorageEntry {
 export type ConstructStorageMetricEvent = {
   readonly id: number;
   readonly at: string;
-  readonly type: "queue" | "flush";
+  readonly type: "read" | "write" | "flush";
   readonly scopeKey: string;
   readonly key?: string;
   readonly operation?: "set" | "delete";
   readonly target?: StorageTarget | null;
   readonly bytes?: number;
+  readonly hit?: boolean;
   readonly insertCount?: number;
   readonly deleteCount?: number;
   readonly durationMs?: number;
@@ -115,6 +116,8 @@ export type ConstructStorageMetrics = {
   readonly pendingDeletes: number;
   readonly scheduledFlushes: number;
   readonly inFlightFlushes: number;
+  readonly totalReads: number;
+  readonly totalReadBytes: number;
   readonly totalQueuedWrites: number;
   readonly totalQueuedBytes: number;
   readonly totalFlushes: number;
@@ -227,7 +230,14 @@ export class ConstructStorageService implements IStorageService {
   get(key: string, scope: StorageScopeRef, fallbackValue: string): string;
   get(key: string, scope: StorageScopeRef, fallbackValue?: string): string | undefined;
   get(key: string, scope: StorageScopeRef, fallbackValue?: string): string | undefined {
+    const scopeKey = storageScopeKey(scope);
     const value = this.bucket(scope).get(key);
+    this.metrics.recordRead({
+      scopeKey,
+      key,
+      bytes: value == null ? 0 : Buffer.byteLength(value, "utf8"),
+      hit: value != null
+    });
     return value ?? fallbackValue;
   }
 
@@ -271,7 +281,7 @@ export class ConstructStorageService implements IStorageService {
       const value = stringifyStorageValue(entry.value);
       if (value == null) {
         if (bucket.delete(entry.key)) {
-          this.metrics.recordQueue({
+          this.metrics.recordWrite({
             scopeKey,
             key: entry.key,
             operation: "delete",
@@ -292,7 +302,7 @@ export class ConstructStorageService implements IStorageService {
       }
       const changed = bucket.set(entry.key, value, entry.target);
       if (changed) {
-        this.metrics.recordQueue({
+        this.metrics.recordWrite({
           scopeKey,
           key: entry.key,
           operation: "set",
@@ -316,7 +326,7 @@ export class ConstructStorageService implements IStorageService {
   remove(key: string, scope: StorageScopeRef): void {
     const scopeKey = storageScopeKey(scope);
     if (this.bucket(scope).delete(key)) {
-      this.metrics.recordQueue({
+      this.metrics.recordWrite({
         scopeKey,
         key,
         operation: "delete",
@@ -330,7 +340,15 @@ export class ConstructStorageService implements IStorageService {
   }
 
   keys(scope: StorageScopeRef, target?: StorageTarget): string[] {
-    return this.bucket(scope).keys(target);
+    const scopeKey = storageScopeKey(scope);
+    const keys = this.bucket(scope).keys(target);
+    this.metrics.recordRead({
+      scopeKey,
+      key: target == null ? "*" : `target:${target}`,
+      bytes: 0,
+      hit: keys.length > 0
+    });
+    return keys;
   }
 
   async flush(reason = WillSaveStateReason.NONE): Promise<void> {
@@ -607,6 +625,8 @@ class ConstructStorageBucket {
 
 class ConstructStorageMetricsRecorder {
   private nextEventId = 1;
+  private totalReads = 0;
+  private totalReadBytes = 0;
   private totalQueuedWrites = 0;
   private totalQueuedBytes = 0;
   private totalFlushes = 0;
@@ -615,10 +635,16 @@ class ConstructStorageMetricsRecorder {
   private lastFlushDurationMs: number | null = null;
   private readonly recentEvents: ConstructStorageMetricEvent[] = [];
 
-  recordQueue(event: Omit<ConstructStorageMetricEvent, "id" | "at" | "type">): void {
+  recordRead(event: Omit<ConstructStorageMetricEvent, "id" | "at" | "type">): void {
+    this.totalReads += 1;
+    this.totalReadBytes += event.bytes ?? 0;
+    this.push({ ...event, type: "read" });
+  }
+
+  recordWrite(event: Omit<ConstructStorageMetricEvent, "id" | "at" | "type">): void {
     this.totalQueuedWrites += 1;
     this.totalQueuedBytes += event.bytes ?? 0;
-    this.push({ ...event, type: "queue" });
+    this.push({ ...event, type: "write" });
   }
 
   recordFlush(event: {
@@ -655,6 +681,8 @@ class ConstructStorageMetricsRecorder {
   >): ConstructStorageMetrics {
     return {
       ...input,
+      totalReads: this.totalReads,
+      totalReadBytes: this.totalReadBytes,
       totalQueuedWrites: this.totalQueuedWrites,
       totalQueuedBytes: this.totalQueuedBytes,
       totalFlushes: this.totalFlushes,

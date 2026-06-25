@@ -36,7 +36,7 @@ import { ConstructLspService } from "./lsp/ConstructLspService";
 import { ProcessInspector } from "./infra/ProcessInspector";
 import { ConstructObservabilityService } from "./observability/ConstructObservabilityService";
 import { ConstructProjectGitService } from "./projects/ConstructProjectGitService";
-import { ConstructProjectRepository } from "./projects/ConstructProjectRepository";
+import { ConstructProjectRepository, type ProjectWriteOptions } from "./projects/ConstructProjectRepository";
 import {
   ConstructProjectWorkspaceService
 } from "./projects/ConstructProjectWorkspaceService";
@@ -171,6 +171,10 @@ async function writeProjects(projects: StoredProject[]): Promise<void> {
   return projectRepository().writeAll(projects);
 }
 
+async function writeProject(project: StoredProject, options?: ProjectWriteOptions): Promise<void> {
+  return projectRepository().writeOne(project, options);
+}
+
 async function readSettings(): Promise<StoredSettings> {
   return readConstructSettings(constructDataPaths(), storageService());
 }
@@ -182,7 +186,7 @@ async function writeSettings(settings: StoredSettings): Promise<StoredSettings> 
 function storageService(): IStorageService {
   if (!storageServiceInstance) {
     storageServiceInstance = createConstructStorageService(constructDataPaths().storageDatabasePath, {
-      flushDelayMs: 150,
+      flushDelayMs: 10_000,
       periodicFlushIntervalMs: 60_000
     });
   }
@@ -272,6 +276,7 @@ function installConstructProjectIpcHandlers(): void {
     readSettings,
     readProjects,
     writeProjects,
+    writeProject,
     workspace: workspaceService,
     flowMemory: flowMemoryService,
     flow: constructFlowService,

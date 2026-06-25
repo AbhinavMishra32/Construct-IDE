@@ -617,12 +617,13 @@ export type ConstructUiStateScope = "application" | "workspace";
 export type ConstructStorageMetricEvent = {
   id: number;
   at: string;
-  type: "queue" | "flush";
+  type: "read" | "write" | "flush";
   scopeKey: string;
   key?: string;
   operation?: "set" | "delete";
   target?: number | null;
   bytes?: number;
+  hit?: boolean;
   insertCount?: number;
   deleteCount?: number;
   durationMs?: number;
@@ -637,6 +638,8 @@ export type ConstructStorageMetrics = {
   pendingDeletes: number;
   scheduledFlushes: number;
   inFlightFlushes: number;
+  totalReads: number;
+  totalReadBytes: number;
   totalQueuedWrites: number;
   totalQueuedBytes: number;
   totalFlushes: number;

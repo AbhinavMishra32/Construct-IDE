@@ -180,7 +180,7 @@ function DebugProfiler() {
       <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
         <ProfilerStat icon={<GaugeIcon size={14} />} label="FPS" value={snapshot.fps ? snapshot.fps.toFixed(0) : "--"} detail={`avg ${formatDuration(snapshot.frameAvgMs)} · max ${formatDuration(snapshot.frameMaxMs)}`} tone={snapshot.frameMaxMs > 50 ? "warn" : "ok"} />
         <ProfilerStat icon={<TimerIcon size={14} />} label="Main thread" value={`${snapshot.droppedFrames}`} detail={`dropped frames · long tasks ${snapshot.longTaskCount}`} tone={snapshot.longTaskCount > 0 || snapshot.droppedFrames > 30 ? "warn" : "ok"} />
-        <ProfilerStat icon={<DatabaseIcon size={14} />} label="Storage queue" value={`${storage?.pendingInserts ?? 0}/${storage?.pendingDeletes ?? 0}`} detail={`${storage?.scheduledFlushes ?? 0} scheduled · ${storage?.inFlightFlushes ?? 0} flushing`} tone={(storage?.pendingInserts ?? 0) > 20 ? "warn" : "ok"} />
+        <ProfilerStat icon={<DatabaseIcon size={14} />} label="Storage pending" value={`${storage?.pendingInserts ?? 0}/${storage?.pendingDeletes ?? 0}`} detail={`${storage?.scheduledFlushes ?? 0} scheduled · ${storage?.inFlightFlushes ?? 0} flushing`} tone={(storage?.pendingInserts ?? 0) > 20 ? "warn" : "ok"} />
         <ProfilerStat icon={<ActivityIcon size={14} />} label="Heap" value={formatMemory(snapshot.heapUsedMb)} detail={snapshot.heapLimitMb ? `limit ${formatMemory(snapshot.heapLimitMb)}` : "Chromium heap API unavailable"} />
       </div>
 
@@ -202,8 +202,10 @@ function DebugProfiler() {
             subtitle={`provider=${storage?.providerId ?? "--"} · debounce=${storage?.flushDelayMs ?? "--"}ms · periodic=${storage?.periodicFlushIntervalMs ?? "--"}ms`}
           />
           <div className="grid grid-cols-2 gap-2 border-b p-2">
-            <MiniMetric label="queued writes" value={storage?.totalQueuedWrites ?? 0} />
-            <MiniMetric label="queued bytes" value={formatBytes(storage?.totalQueuedBytes)} />
+            <MiniMetric label="reads" value={storage?.totalReads ?? 0} />
+            <MiniMetric label="read bytes" value={formatBytes(storage?.totalReadBytes)} />
+            <MiniMetric label="writes" value={storage?.totalQueuedWrites ?? 0} />
+            <MiniMetric label="write bytes" value={formatBytes(storage?.totalQueuedBytes)} />
             <MiniMetric label="flushes" value={storage?.totalFlushes ?? 0} />
             <MiniMetric label="flushed bytes" value={formatBytes(storage?.totalFlushedBytes)} />
             <MiniMetric label="last flush" value={formatDuration(storage?.lastFlushDurationMs)} />
@@ -211,7 +213,7 @@ function DebugProfiler() {
           </div>
           <div className="max-h-[22rem] overflow-auto">
             {(storage?.recentEvents ?? []).length === 0 ? (
-              <div className="p-3 text-muted-foreground">No storage writes observed in this process.</div>
+              <div className="p-3 text-muted-foreground">No storage reads or writes observed in this process.</div>
             ) : (
               storage!.recentEvents.slice(0, 80).map((event) => <StorageEventRow key={event.id} event={event} />)
             )}
@@ -275,12 +277,17 @@ function ProfilerEventRow({ event }: { event: ConstructProfilerEvent }) {
 }
 
 function StorageEventRow({ event }: { event: ConstructStorageMetricEvent }) {
+  const activity = event.type === "read"
+    ? event.hit === false ? "miss" : "hit"
+    : event.insertCount != null || event.deleteCount != null
+      ? `${event.insertCount ?? 0}/${event.deleteCount ?? 0}`
+      : event.operation ?? "--";
   return (
     <div className="grid grid-cols-[5.5rem_4rem_minmax(0,1fr)_5rem_5rem] gap-2 border-b px-3 py-1.5 font-mono text-[11px]">
       <span className="text-muted-foreground">{formatTimestamp(event.at)}</span>
       <span>{event.type}</span>
       <span className="min-w-0 truncate" title={`${event.scopeKey}:${event.key ?? ""}`}>{event.scopeKey}{event.key ? ` · ${event.key}` : ""}</span>
-      <span className="text-right">{event.insertCount != null || event.deleteCount != null ? `${event.insertCount ?? 0}/${event.deleteCount ?? 0}` : event.operation ?? "--"}</span>
+      <span className="text-right">{activity}</span>
       <span className="text-right">{event.durationMs != null ? formatDuration(event.durationMs) : formatBytes(event.bytes)}</span>
     </div>
   );

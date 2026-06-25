@@ -677,6 +677,10 @@ export function FlowWorkspace({
   useEffect(() => {
     const unsubscribe = onConstructFlowSessionEvent((event: ConstructFlowSessionEvent) => {
       if (event.projectId !== project.id) return;
+      if (event.type === "started" || event.type === "updated") {
+        setLiveSession(event.session);
+        return;
+      }
       const nextSessions = upsertSession(sessionsRef.current, event.session);
       const updatedAt = event.session.updatedAt || new Date().toISOString();
       const currentProject = projectRef.current;
@@ -726,7 +730,7 @@ export function FlowWorkspace({
       }).catch(() => {
         // Browser-only smoke checks run without Electron storage.
       });
-    }, 150);
+    }, 2_000);
     return () => window.clearTimeout(timeout);
   }, [
     activeWorkspaceTabId,

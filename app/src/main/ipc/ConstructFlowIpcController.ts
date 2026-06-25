@@ -6,8 +6,9 @@ import type { IpcMain } from "electron";
 
 import type { StoredSettings } from "../config/constructConfig";
 import { ConstructFlowMemoryService, FLOW_MEMORY_FILES } from "../flow/ConstructFlowMemoryService";
-import { mergeFlowProjectSnapshot, rememberFlowProjectSnapshot } from "../flow/ConstructFlowProjectSnapshotStore";
+import { rememberFlowProjectSnapshot } from "../flow/ConstructFlowProjectSnapshotStore";
 import { applyFlowQuestionResponse, ConstructFlowService } from "../flow/ConstructFlowService";
+import type { ProjectWriteOptions } from "../projects/ConstructProjectRepository";
 import type { StoredFlowProject, StoredProject } from "../projects/ConstructProjectTypes";
 import { isFlowProject } from "../projects/ConstructProjectTypes";
 import { ConstructProjectWorkspaceService } from "../projects/ConstructProjectWorkspaceService";
@@ -21,12 +22,15 @@ import type {
 
 export class ConstructFlowIpcController {
   private flowProjectWriteQueue: Promise<void> = Promise.resolve();
+  private readonly pendingFlowProjectWriteTimers = new Map<string, NodeJS.Timeout>();
+  private readonly pendingFlowProjectWriteReasons = new Map<string, string>();
 
   constructor(private readonly options: {
     ipcMain: IpcMain;
     readSettings: () => Promise<StoredSettings>;
     readProjects: () => Promise<StoredProject[]>;
     writeProjects: (projects: StoredProject[]) => Promise<void>;
+    writeProject: (project: StoredProject, options?: ProjectWriteOptions) => Promise<void>;
     workspace: ConstructProjectWorkspaceService;
     flowMemory: ConstructFlowMemoryService;
     flow: ConstructFlowService;
@@ -226,30 +230,94 @@ export class ConstructFlowIpcController {
     webContents: Electron.WebContents,
     project: StoredFlowProject
   ) {
-    return (payload: ConstructFlowSessionEvent) => {
-      applyFlowSessionSnapshot(project, payload);
-      if (!webContents.isDestroyed()) {
+    let pendingRendererPayload: ConstructFlowSessionEvent | null = null;
+    let pendingRendererTimer: NodeJS.Timeout | null = null;
+    const flushRendererUpdate = () => {
+      if (pendingRendererTimer) {
+        clearTimeout(pendingRendererTimer);
+        pendingRendererTimer = null;
+      }
+      const payload = pendingRendererPayload;
+      pendingRendererPayload = null;
+      if (payload && !webContents.isDestroyed()) {
         webContents.send("construct:flow:session-event", payload);
       }
-      void this.queueProjectWrite(project, `session-${payload.type}`);
+    };
+
+    return (payload: ConstructFlowSessionEvent) => {
+      applyFlowSessionSnapshot(project, payload);
+
+      if (payload.type === "updated") {
+        pendingRendererPayload = payload;
+        if (!pendingRendererTimer) {
+          pendingRendererTimer = setTimeout(flushRendererUpdate, 120);
+          pendingRendererTimer.unref?.();
+        }
+      } else {
+        flushRendererUpdate();
+        if (!webContents.isDestroyed()) {
+          webContents.send("construct:flow:session-event", payload);
+        }
+      }
+
+      if (payload.type === "updated") {
+        this.scheduleCoalescedProjectWrite(project, `session-${payload.type}`, {
+          changedFlowSessionId: payload.session.id,
+          includeProjectRecord: false,
+          includeFlowSessions: false
+        });
+        return;
+      }
+
+      this.cancelCoalescedProjectWrite(project.id);
+      void this.queueProjectWrite(project, `session-${payload.type}`, {
+        changedFlowSessionId: payload.session.id,
+        includeProjectRecord: true,
+        includeFlowSessions: false,
+        ensureIndexed: true
+      });
     };
   }
 
-  private queueProjectWrite(project: StoredFlowProject, reason: string): Promise<void> {
+  private scheduleCoalescedProjectWrite(
+    project: StoredFlowProject,
+    reason: string,
+    options: ProjectWriteOptions
+  ): void {
+    rememberFlowProjectSnapshot(project);
+    this.pendingFlowProjectWriteReasons.set(project.id, reason);
+    const existing = this.pendingFlowProjectWriteTimers.get(project.id);
+    if (existing) clearTimeout(existing);
+
+    const timer = setTimeout(() => {
+      this.pendingFlowProjectWriteTimers.delete(project.id);
+      const latestReason = this.pendingFlowProjectWriteReasons.get(project.id) ?? reason;
+      this.pendingFlowProjectWriteReasons.delete(project.id);
+      void this.queueProjectWrite(project, latestReason, options);
+    }, 1_000);
+    timer.unref?.();
+    this.pendingFlowProjectWriteTimers.set(project.id, timer);
+  }
+
+  private cancelCoalescedProjectWrite(projectId: string): void {
+    const timer = this.pendingFlowProjectWriteTimers.get(projectId);
+    if (timer) clearTimeout(timer);
+    this.pendingFlowProjectWriteTimers.delete(projectId);
+    this.pendingFlowProjectWriteReasons.delete(projectId);
+  }
+
+  private queueProjectWrite(project: StoredFlowProject, reason: string, options: ProjectWriteOptions = {
+    includeProjectRecord: true,
+    includeFlowSessions: true,
+    ensureIndexed: true,
+    pruneStaleFlowSessions: true
+  }): Promise<void> {
     rememberFlowProjectSnapshot(project);
     const write = this.flowProjectWriteQueue
       .catch(() => undefined)
       .then(async () => {
-        const projects = await this.options.readProjects();
-        const saved = projects.find((candidate) => candidate.id === project.id);
-        let persistedProject = project;
-        if (saved && isFlowProject(saved)) {
-          persistedProject = Object.assign(saved, mergeFlowProjectSnapshot(saved, project));
-        } else {
-          projects.push(project);
-        }
-        await this.options.writeProjects(projects);
-        rememberFlowProjectSnapshot(persistedProject);
+        await this.options.writeProject(project, options);
+        rememberFlowProjectSnapshot(project);
       });
     this.flowProjectWriteQueue = write.catch((error) => {
       console.error("[construct-flow] failed to persist Flow project snapshot", {

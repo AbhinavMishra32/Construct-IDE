@@ -39,6 +39,7 @@ class ConstructPerformanceProfiler {
   private longTaskMaxMs = 0;
   private running = false;
   private notifyHandle: number | null = null;
+  private notifySoonHandle: number | null = null;
   private longTaskObserver: PerformanceObserver | null = null;
 
   start(): void {
@@ -59,6 +60,10 @@ class ConstructPerformanceProfiler {
     if (this.notifyHandle != null) {
       window.clearInterval(this.notifyHandle);
       this.notifyHandle = null;
+    }
+    if (this.notifySoonHandle != null) {
+      window.clearTimeout(this.notifySoonHandle);
+      this.notifySoonHandle = null;
     }
     this.longTaskObserver?.disconnect();
     this.longTaskObserver = null;
@@ -102,7 +107,9 @@ class ConstructPerformanceProfiler {
     if (this.events.length > MAX_EVENTS) {
       this.events.splice(0, this.events.length - MAX_EVENTS);
     }
-    this.notify();
+    if (input.kind !== "mark") {
+      this.scheduleNotifySoon();
+    }
   }
 
   async measureAsync<T>(label: string, detail: Record<string, unknown>, run: () => Promise<T>): Promise<T> {
@@ -199,7 +206,18 @@ class ConstructPerformanceProfiler {
     this.notifyHandle = window.setInterval(() => this.notify(), 500);
   }
 
+  private scheduleNotifySoon(): void {
+    if (this.listeners.size === 0 || typeof window === "undefined" || this.notifySoonHandle != null) {
+      return;
+    }
+    this.notifySoonHandle = window.setTimeout(() => {
+      this.notifySoonHandle = null;
+      this.notify();
+    }, 100);
+  }
+
   private notify(): void {
+    if (this.listeners.size === 0) return;
     const snapshot = this.snapshot();
     for (const listener of Array.from(this.listeners)) {
       listener(snapshot);

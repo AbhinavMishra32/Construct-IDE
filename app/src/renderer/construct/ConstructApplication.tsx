@@ -818,7 +818,7 @@ export default function ConstructApp() {
       void setUiState({ key: SHELL_UI_STATE_KEY, value: state }).catch(() => {
         // Browser-only smoke checks run without Electron storage.
       });
-    }, 150);
+    }, 1_500);
 
     return () => window.clearTimeout(timeout);
   }, [
