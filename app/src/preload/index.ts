@@ -13,6 +13,12 @@ contextBridge.exposeInMainWorld("construct", {
 contextBridge.exposeInMainWorld("constructProjects", {
   setThemeSource: (theme: "light" | "dark" | "system") =>
     ipcRenderer.invoke("construct:theme:set", theme),
+  getUiState: (input: unknown) =>
+    ipcRenderer.invoke("construct:ui-state:get", input),
+  setUiState: (input: unknown) =>
+    ipcRenderer.invoke("construct:ui-state:set", input),
+  flushStorage: () =>
+    ipcRenderer.invoke("construct:storage:flush"),
   ensureProject: (input: unknown) =>
     ipcRenderer.invoke("construct:project:ensure", input),
   importProject: (input: unknown) =>

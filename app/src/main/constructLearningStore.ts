@@ -4,6 +4,12 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import {
+  APPLICATION_SCOPE,
+  migrateJsonValueToStorage,
+  StorageTarget,
+  type IStorageService
+} from "./storage/storage";
+import {
   createDefaultLearningState,
   knowledgeKey,
   type AssistanceEventRecord,
@@ -18,8 +24,26 @@ import {
   type RecallAttemptRecord
 } from "../shared/constructLearning";
 
+type ConstructLearningStoreOptions = {
+  storage: IStorageService;
+  legacyPath: string;
+};
+
+const LEARNING_STATE_STORAGE_KEY = "construct.learningState";
+
 export class ConstructLearningStore {
-  constructor(private readonly filePath: string) {}
+  private readonly filePath: string;
+  private readonly storage: IStorageService | null;
+
+  constructor(filePathOrOptions: string | ConstructLearningStoreOptions) {
+    if (typeof filePathOrOptions === "string") {
+      this.filePath = filePathOrOptions;
+      this.storage = null;
+    } else {
+      this.filePath = filePathOrOptions.legacyPath;
+      this.storage = filePathOrOptions.storage;
+    }
+  }
 
   async getState(): Promise<ConstructLearningState> {
     return decorateConceptProjects(await this.read());
@@ -213,6 +237,24 @@ export class ConstructLearningStore {
   }
 
   private async read(): Promise<ConstructLearningState> {
+    if (this.storage) {
+      const migrated = await migrateJsonValueToStorage<Partial<ConstructLearningState>>({
+        storage: this.storage,
+        key: LEARNING_STATE_STORAGE_KEY,
+        scope: APPLICATION_SCOPE,
+        target: StorageTarget.USER,
+        legacyPath: this.filePath,
+        normalize: normalizeLearningState
+      });
+      if (migrated) {
+        return decorateConceptProjects(normalizeLearningState(migrated));
+      }
+
+      const state = createDefaultLearningState(randomUUID());
+      await this.write(state);
+      return state;
+    }
+
     await mkdir(path.dirname(this.filePath), { recursive: true });
     if (!existsSync(this.filePath)) {
       const state = createDefaultLearningState(randomUUID());
@@ -232,6 +274,11 @@ export class ConstructLearningStore {
 
   private async write(state: ConstructLearningState): Promise<void> {
     state.sync.updatedAt = new Date().toISOString();
+    if (this.storage) {
+      this.storage.store(LEARNING_STATE_STORAGE_KEY, normalizeLearningState(state), APPLICATION_SCOPE, StorageTarget.USER);
+      return;
+    }
+
     await mkdir(path.dirname(this.filePath), { recursive: true });
     const temporary = `${this.filePath}.${process.pid}.${Date.now()}.tmp`;
     await writeFile(temporary, `${JSON.stringify(state, null, 2)}\n`, "utf8");

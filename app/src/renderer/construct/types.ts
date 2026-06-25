@@ -612,8 +612,23 @@ export type ProjectFileChangePayload = {
   paths?: string[];
 };
 
+export type ConstructUiStateScope = "application" | "workspace";
+
 export type ConstructProjectsApi = {
   setThemeSource(theme: "light" | "dark" | "system"): Promise<void>;
+  getUiState<T = unknown>(input: {
+    key: string;
+    scope?: ConstructUiStateScope;
+    projectId?: string;
+    fallback?: T;
+  }): Promise<T>;
+  setUiState(input: {
+    key: string;
+    scope?: ConstructUiStateScope;
+    projectId?: string;
+    value: unknown;
+  }): Promise<{ ok: true }>;
+  flushStorage(): Promise<{ ok: true }>;
   ensureProject(input: {
     source: string;
     sourcePath?: string | null;

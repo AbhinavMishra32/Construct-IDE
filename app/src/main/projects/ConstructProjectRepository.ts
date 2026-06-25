@@ -3,13 +3,36 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 
 import type { ConstructDataPaths } from "../config/constructConfig";
+import {
+  APPLICATION_SCOPE,
+  migrateJsonValueToStorage,
+  StorageTarget,
+  type IStorageService
+} from "../storage/storage";
 import { isFlowProject, type StoredProject } from "./ConstructProjectTypes";
 
+const PROJECTS_STORAGE_KEY = "construct.projects";
+
 export class ConstructProjectRepository {
-  constructor(private readonly paths: ConstructDataPaths) {}
+  constructor(
+    private readonly paths: ConstructDataPaths,
+    private readonly storage?: IStorageService
+  ) {}
 
   async readAll(): Promise<StoredProject[]> {
     await mkdir(this.paths.projectsRoot, { recursive: true });
+
+    if (this.storage) {
+      const projects = await migrateJsonValueToStorage<StoredProject[]>({
+        storage: this.storage,
+        key: PROJECTS_STORAGE_KEY,
+        scope: APPLICATION_SCOPE,
+        target: StorageTarget.USER,
+        legacyPath: this.paths.projectsManifestPath,
+        normalize: (value) => Array.isArray(value) ? value.map((project) => this.normalize(project)) : []
+      });
+      return projects ?? [];
+    }
 
     if (!existsSync(this.paths.projectsManifestPath)) {
       return [];
@@ -33,6 +56,16 @@ export class ConstructProjectRepository {
   }
 
   async writeAll(projects: StoredProject[]): Promise<void> {
+    if (this.storage) {
+      this.storage.store(
+        PROJECTS_STORAGE_KEY,
+        projects.map((project) => this.normalize(project)),
+        APPLICATION_SCOPE,
+        StorageTarget.USER
+      );
+      return;
+    }
+
     await mkdir(this.paths.projectsRoot, { recursive: true });
     const target = this.paths.projectsManifestPath;
     const temporary = `${target}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`;

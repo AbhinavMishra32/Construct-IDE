@@ -42,6 +42,11 @@ import {
 } from "./projects/ConstructProjectWorkspaceService";
 import { LegacyProjectDataMigrator } from "./projects/LegacyProjectDataMigrator";
 import type { StoredProject } from "./projects/ConstructProjectTypes";
+import {
+  createConstructStorageService,
+  WillSaveStateReason,
+  type IStorageService
+} from "./storage/storage";
 import { ConstructTerminalService } from "./terminal/ConstructTerminalService";
 import { ConstructFlowMemoryService } from "./flow/ConstructFlowMemoryService";
 import { ConstructFlowService } from "./flow/ConstructFlowService";
@@ -115,9 +120,11 @@ const windowManager = new ConstructWindowManager({
   openDevTools: shouldOpenDevTools
 });
 let lspServiceInstance: ConstructLspService | null = null;
+let storageServiceInstance: IStorageService | null = null;
+let shutdownStarted = false;
 
 function projectRepository(): ConstructProjectRepository {
-  return new ConstructProjectRepository(constructDataPaths());
+  return new ConstructProjectRepository(constructDataPaths(), storageService());
 }
 
 function getLspService(): ConstructLspService {
@@ -138,7 +145,10 @@ function learningStatePath(): string {
 }
 
 function learningStore(): ConstructLearningStore {
-  return new ConstructLearningStore(learningStatePath());
+  return new ConstructLearningStore({
+    storage: storageService(),
+    legacyPath: learningStatePath()
+  });
 }
 
 function workspacePathForProject(projectId: string): string {
@@ -162,11 +172,21 @@ async function writeProjects(projects: StoredProject[]): Promise<void> {
 }
 
 async function readSettings(): Promise<StoredSettings> {
-  return readConstructSettings(constructDataPaths());
+  return readConstructSettings(constructDataPaths(), storageService());
 }
 
 async function writeSettings(settings: StoredSettings): Promise<StoredSettings> {
-  return writeConstructSettings(settings, constructDataPaths());
+  return writeConstructSettings(settings, constructDataPaths(), storageService());
+}
+
+function storageService(): IStorageService {
+  if (!storageServiceInstance) {
+    storageServiceInstance = createConstructStorageService(constructDataPaths().storageDatabasePath, {
+      flushDelayMs: 150,
+      periodicFlushIntervalMs: 60_000
+    });
+  }
+  return storageServiceInstance;
 }
 
 function findProject(projects: StoredProject[], id: string): StoredProject {
@@ -211,7 +231,8 @@ function installConstructProjectIpcHandlers(): void {
   new ConstructSystemIpcController({
     ipcMain,
     defaultWorkspaceParent,
-    collectDebugProcessSnapshots
+    collectDebugProcessSnapshots,
+    storage: storageService()
   }).register();
 
   new ConstructSettingsIpcController({
@@ -284,6 +305,7 @@ function installConstructProjectIpcHandlers(): void {
 
 app.whenReady().then(async () => {
   configureConstructDataPaths(constructDataPaths());
+  await storageService().initialize();
   await new LegacyProjectDataMigrator(constructDataPaths()).migrateIfNeeded();
   observabilityService.configure(await readSettings());
   installConstructProjectIpcHandlers();
@@ -302,8 +324,21 @@ app.on("window-all-closed", () => {
   }
 });
 
-app.on("will-quit", () => {
+app.on("before-quit", (event) => {
+  if (shutdownStarted) {
+    return;
+  }
+  shutdownStarted = true;
+  event.preventDefault();
   stopLspServer();
-  void litellmService.stop();
-  void observabilityService.shutdown();
+  void (async () => {
+    await Promise.allSettled([
+      litellmService.stop(),
+      observabilityService.shutdown()
+    ]);
+    await storageService().flush(WillSaveStateReason.SHUTDOWN);
+    await storageService().close();
+  })().finally(() => {
+    app.quit();
+  });
 });

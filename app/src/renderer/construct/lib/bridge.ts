@@ -13,7 +13,8 @@ import type {
   VerificationResult,
   ConstructInteractClientResult,
   WorkspaceFile,
-  WorkspaceTreeNode
+  WorkspaceTreeNode,
+  ConstructUiStateScope
 } from "../types";
 import type { ConstructSelectionContext } from "./selectionContext";
 import { apiTracker } from "./apiTracker";
@@ -45,6 +46,23 @@ function api(): ConstructProjectsApi {
 
 export function setThemeSource(theme: "light" | "dark" | "system"): Promise<void> {
   return api().setThemeSource(theme);
+}
+
+export function getUiState<T = unknown>(input: {
+  key: string;
+  scope?: ConstructUiStateScope;
+  projectId?: string;
+  fallback?: T;
+}): Promise<T> {
+  return api().getUiState<T>(input);
+}
+
+export function setUiState(input: Parameters<ConstructProjectsApi["setUiState"]>[0]): ReturnType<ConstructProjectsApi["setUiState"]> {
+  return api().setUiState(input);
+}
+
+export function flushStorage(): ReturnType<ConstructProjectsApi["flushStorage"]> {
+  return api().flushStorage();
 }
 
 export function ensureProject(input: {

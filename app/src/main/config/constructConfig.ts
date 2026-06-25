@@ -3,6 +3,14 @@ import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 
+import {
+  APPLICATION_SCOPE,
+  migrateJsonValueToStorage,
+  readStorageObjectFromSqliteSync,
+  StorageTarget,
+  type IStorageService
+} from "../storage/storage";
+
 export type AiProvider = "openai" | "openrouter" | "github-copilot" | "opencode-zen" | "litellm";
 export type AiCallSource = "byok" | "construct-cloud";
 export type ConstructAgentRuntimeId = "mastra" | "fxpnt";
@@ -59,6 +67,7 @@ export type StoredSettings = {
 
 export type ConstructDataPaths = {
   userDataRoot: string;
+  storageDatabasePath: string;
   configPath: string;
   projectsRoot: string;
   projectsManifestPath: string;
@@ -72,12 +81,14 @@ const DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 const DEFAULT_LITELLM_BASE_URL = "http://localhost:4000/v1";
 const DEFAULT_OPENCODE_ZEN_BASE_URL = "https://opencode.ai/zen/v1";
 const DEFAULT_CONSTRUCT_CLOUD_BASE_URL = "https://cloud.tryconstruct.cc";
+const SETTINGS_STORAGE_KEY = "construct.settings";
 let configuredDataPaths: ConstructDataPaths | null = null;
 
 export function createConstructDataPaths(userDataRoot: string): ConstructDataPaths {
   const projectsRoot = path.join(userDataRoot, "construct-projects");
   return {
     userDataRoot,
+    storageDatabasePath: path.join(userDataRoot, "construct-state.vscdb"),
     configPath: path.join(userDataRoot, "construct.config.json"),
     projectsRoot,
     projectsManifestPath: path.join(projectsRoot, "projects.json"),
@@ -97,13 +108,40 @@ export function readConstructAiSettingsSync(): StoredAiSettings {
     return defaultAiSettings();
   }
 
+  const stored = readStorageObjectFromSqliteSync<Partial<StoredSettings>>({
+    databasePath: paths.storageDatabasePath,
+    key: SETTINGS_STORAGE_KEY,
+    scope: APPLICATION_SCOPE
+  });
   const config = readJsonFileSync<Partial<StoredSettings>>(paths.configPath)
     ?? readJsonFileSync<Partial<StoredSettings>>(paths.legacySettingsPath);
-  return normalizeSettings(config, paths).ai;
+  return normalizeSettings(stored ?? config, paths).ai;
 }
 
-export async function readConstructSettings(paths = requireElectronDataPaths()): Promise<StoredSettings> {
+export async function readConstructSettings(
+  paths = requireElectronDataPaths(),
+  storage?: IStorageService
+): Promise<StoredSettings> {
   await mkdir(paths.projectsRoot, { recursive: true });
+
+  if (storage) {
+    const migratedConfig = await migrateJsonValueToStorage<Partial<StoredSettings>>({
+      storage,
+      key: SETTINGS_STORAGE_KEY,
+      scope: APPLICATION_SCOPE,
+      target: StorageTarget.USER,
+      legacyPath: paths.configPath,
+      normalize: (value) => normalizeSettings(value, paths)
+    });
+    if (migratedConfig) {
+      return normalizeSettings(migratedConfig, paths);
+    }
+
+    const legacy = await readJsonFile<Partial<StoredSettings>>(paths.legacySettingsPath);
+    const settings = normalizeSettings(legacy, paths);
+    storage.store(SETTINGS_STORAGE_KEY, settings, APPLICATION_SCOPE, StorageTarget.USER);
+    return settings;
+  }
 
   const config = await readJsonFile<Partial<StoredSettings>>(paths.configPath);
   if (config) {
@@ -118,9 +156,15 @@ export async function readConstructSettings(paths = requireElectronDataPaths()):
 
 export async function writeConstructSettings(
   settings: StoredSettings,
-  paths = requireElectronDataPaths()
+  paths = requireElectronDataPaths(),
+  storage?: IStorageService
 ): Promise<StoredSettings> {
   const normalized = normalizeSettings(settings, paths);
+  if (storage) {
+    storage.store(SETTINGS_STORAGE_KEY, normalized, APPLICATION_SCOPE, StorageTarget.USER);
+    return normalized;
+  }
+
   await mkdir(path.dirname(paths.configPath), { recursive: true });
   const temporary = `${paths.configPath}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`;
   await writeFile(temporary, `${JSON.stringify(normalized, null, 2)}\n`, "utf8");
