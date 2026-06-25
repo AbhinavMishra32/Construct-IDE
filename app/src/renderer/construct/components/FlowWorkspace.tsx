@@ -38,6 +38,7 @@ import {
   createFolder,
   deleteFile,
   duplicateFile,
+  getUiState,
   getSettings,
   listFiles,
   listModels,
@@ -47,6 +48,7 @@ import {
   rewindFlowSession,
   runConstructFlowAgent,
   submitFlowTask,
+  setUiState,
   updateAiSettings,
   updateProject,
   writeFile,
@@ -101,6 +103,17 @@ export type FlowLayoutRequest =
   | { kind: "workbench-chat"; reason: "file-system-change" | "task-created" }
   | { kind: "maximized-chat"; reason: "project-created" };
 
+type FlowWorkspaceUiState = {
+  version: 1;
+  activeWorkspaceTabId: string | null;
+  documentTabs: string[];
+  openTaskTabIds: string[];
+  openConceptId: string | null;
+  chatScrollTop: number | null;
+};
+
+const FLOW_WORKSPACE_UI_STATE_KEY = "flow.workspace";
+
 const FLOW_MEMORY_FILE_NAMES = new Set(["research.md", "project.md", "path.md", "learner.md"]);
 
 function normalizeWorkspaceChangePath(value: string): string {
@@ -131,6 +144,43 @@ function fileChangePayloadPaths(payload: ProjectFileChangePayload): string[] {
 function isOnlyFlowMemoryChange(payload: ProjectFileChangePayload): boolean {
   const paths = fileChangePayloadPaths(payload);
   return paths.length > 0 && paths.every(isFlowMemoryChangePath);
+}
+
+function normalizeFlowWorkspaceUiState(value: unknown): FlowWorkspaceUiState | null {
+  if (!value || typeof value !== "object") return null;
+  const input = value as Partial<FlowWorkspaceUiState>;
+  const documentTabs = Array.isArray(input.documentTabs)
+    ? input.documentTabs.map((tab) => typeof tab === "string" ? normalizeDocumentPath(tab) : "").filter(Boolean)
+    : [];
+  const openTaskTabIds = Array.isArray(input.openTaskTabIds)
+    ? input.openTaskTabIds.filter((id): id is string => typeof id === "string" && id.trim().length > 0)
+    : [];
+  const activeWorkspaceTabId = typeof input.activeWorkspaceTabId === "string" && input.activeWorkspaceTabId.trim()
+    ? input.activeWorkspaceTabId
+    : null;
+  return {
+    version: 1,
+    activeWorkspaceTabId,
+    documentTabs: [...new Set(documentTabs)],
+    openTaskTabIds: [...new Set(openTaskTabIds)],
+    openConceptId: typeof input.openConceptId === "string" && input.openConceptId.trim() ? input.openConceptId : null,
+    chatScrollTop: typeof input.chatScrollTop === "number" && Number.isFinite(input.chatScrollTop)
+      ? Math.max(0, input.chatScrollTop)
+      : null
+  };
+}
+
+function createDocumentSessionFromUiState(state: FlowWorkspaceUiState, fallbackPath?: string | null) {
+  const fallback = createDocumentSession(fallbackPath);
+  const tabs = state.documentTabs.length > 0 ? state.documentTabs : fallback.tabs;
+  const activePath = state.activeWorkspaceTabId && !taskIdFromFlowTab(state.activeWorkspaceTabId)
+    ? normalizeDocumentPath(state.activeWorkspaceTabId)
+    : fallback.activePath;
+  return {
+    activePath: activePath && tabs.includes(activePath) ? activePath : tabs[0] ?? null,
+    reveal: null,
+    tabs
+  };
 }
 
 export function FlowWorkspace({
@@ -184,11 +234,14 @@ export function FlowWorkspace({
   const [liveSession, setLiveSession] = useState<ConstructFlowSession | undefined>();
   const [pending, setPending] = useState(false);
   const [openConcept, setOpenConcept] = useState<ConceptCard | null>(null);
+  const [chatScrollTop, setChatScrollTop] = useState<number | null>(null);
+  const [flowUiStateHydrated, setFlowUiStateHydrated] = useState(false);
   const taskLayoutRequestIdsRef = useRef<Set<string>>(new Set((project.flow.sessions ?? []).flatMap((session) => session.practiceTasks.map((task) => task.id))));
   const activePathRef = useRef<string | null>(null);
   const dirtyPathsRef = useRef<Record<string, boolean>>({});
   const documentSessionRef = useRef(documentSession);
   const fileContentsRef = useRef<Record<string, string>>({});
+  const restoringFlowUiStateRef = useRef(false);
   const openFileSequenceRef = useRef(0);
   const projectActiveFilePathRef = useRef(project.activeFilePath);
   const saveSequenceRef = useRef(0);
@@ -224,14 +277,17 @@ export function FlowWorkspace({
   }, [requestWorkbenchLayout]);
 
   useEffect(() => {
-    const nextSession = createDocumentSession(project.activeFilePath);
-    documentSessionRef.current = nextSession;
+    let cancelled = false;
+    restoringFlowUiStateRef.current = true;
+    setFlowUiStateHydrated(false);
+    const fallbackSession = createDocumentSession(project.activeFilePath);
+    documentSessionRef.current = fallbackSession;
     fileContentsRef.current = {};
     dirtyPathsRef.current = {};
     openFileSequenceRef.current += 1;
     saveSequenceRef.current += 1;
-    setDocumentSession(nextSession);
-    setActiveWorkspaceTabId(nextSession.activePath);
+    setDocumentSession(fallbackSession);
+    setActiveWorkspaceTabId(fallbackSession.activePath);
     setOpenTaskTabIds([]);
     setFileContents({});
     setDirtyPaths({});
@@ -239,7 +295,37 @@ export function FlowWorkspace({
     setSessions(project.flow.sessions ?? []);
     setLiveSession(undefined);
     setOpenConcept(null);
+    setChatScrollTop(null);
     taskLayoutRequestIdsRef.current = new Set((project.flow.sessions ?? []).flatMap((session) => session.practiceTasks.map((task) => task.id)));
+
+    void getUiState<FlowWorkspaceUiState | null>({
+      key: FLOW_WORKSPACE_UI_STATE_KEY,
+      scope: "workspace",
+      projectId: project.id,
+      fallback: null
+    })
+      .then((saved) => {
+        if (cancelled) return;
+        const state = normalizeFlowWorkspaceUiState(saved);
+        if (!state) return;
+        const restoredSession = createDocumentSessionFromUiState(state, project.activeFilePath);
+        documentSessionRef.current = restoredSession;
+        setDocumentSession(restoredSession);
+        setActiveWorkspaceTabId(state.activeWorkspaceTabId ?? restoredSession.activePath);
+        setOpenTaskTabIds(state.openTaskTabIds);
+        setOpenConcept(state.openConceptId ? buildInlineConceptPlaceholder(state.openConceptId) : null);
+        setChatScrollTop(state.chatScrollTop);
+      })
+      .finally(() => {
+        if (cancelled) return;
+        restoringFlowUiStateRef.current = false;
+        setFlowUiStateHydrated(true);
+      });
+
+    return () => {
+      cancelled = true;
+      restoringFlowUiStateRef.current = false;
+    };
   }, [project.id]);
 
   const openFile = useCallback(async (path: string, options: { persist?: boolean } = {}) => {
@@ -288,6 +374,12 @@ export function FlowWorkspace({
     }
     return true;
   }, [onFileOpened, onProjectChange, project.id]);
+
+  useEffect(() => {
+    if (!activePath || taskIdFromFlowTab(activeWorkspaceTabId ?? "")) return;
+    if (Object.prototype.hasOwnProperty.call(fileContentsRef.current, activePath)) return;
+    void openFile(activePath, { persist: false });
+  }, [activePath, activeWorkspaceTabId, openFile]);
 
   const saveFile = useCallback(async (path = activePathRef.current) => {
     const normalizedPath = path ? normalizeDocumentPath(path) : "";
@@ -612,6 +704,38 @@ export function FlowWorkspace({
   const mergedFlowSessions = useMemo(() => mergeSessions(sessions, liveSession), [liveSession, sessions]);
   const flowConcepts = useMemo(() => collectFlowConcepts(mergedFlowSessions), [mergedFlowSessions]);
   const flowTasks = useMemo(() => mergedFlowSessions.flatMap((session) => session.practiceTasks), [mergedFlowSessions]);
+
+  useEffect(() => {
+    if (!flowUiStateHydrated || restoringFlowUiStateRef.current) return;
+    const state: FlowWorkspaceUiState = {
+      version: 1,
+      activeWorkspaceTabId,
+      documentTabs: documentSession.tabs,
+      openTaskTabIds,
+      openConceptId: openConcept?.id ?? null,
+      chatScrollTop
+    };
+    const timeout = window.setTimeout(() => {
+      void setUiState({
+        key: FLOW_WORKSPACE_UI_STATE_KEY,
+        scope: "workspace",
+        projectId: project.id,
+        value: state
+      }).catch(() => {
+        // Browser-only smoke checks run without Electron storage.
+      });
+    }, 150);
+    return () => window.clearTimeout(timeout);
+  }, [
+    activeWorkspaceTabId,
+    chatScrollTop,
+    documentSession.tabs,
+    flowUiStateHydrated,
+    openConcept?.id,
+    openTaskTabIds,
+    project.id
+  ]);
+
   useEffect(() => {
     for (const task of flowTasks) {
       if (taskLayoutRequestIdsRef.current.has(task.id)) {
@@ -644,6 +768,7 @@ export function FlowWorkspace({
         liveSession={liveSession}
         pending={pending}
         chatMode={chatMode}
+        chatScrollTop={chatScrollTop}
         openConcept={activePanelView === "chat" && chatMode === "maximized" ? openConcept : null}
         theme={theme}
         onActiveViewChange={onPanelViewChange}
@@ -655,6 +780,7 @@ export function FlowWorkspace({
         onOpenTask={openTaskTab}
         onOpenFile={openInlineFile}
         onRewindUserMessage={rewindUserSession}
+        onChatScrollTopChange={setChatScrollTop}
         onResetChat={() => {
           setSessions([]);
           setLiveSession(undefined);
@@ -997,6 +1123,7 @@ function FlowAgentPanel({
   liveSession,
   pending,
   chatMode,
+  chatScrollTop,
   openConcept,
   theme,
   onActiveViewChange,
@@ -1008,6 +1135,7 @@ function FlowAgentPanel({
   onOpenTask,
   onOpenFile,
   onRewindUserMessage,
+  onChatScrollTopChange,
   onResetChat
 }: {
   project: FlowProjectRecord;
@@ -1016,6 +1144,7 @@ function FlowAgentPanel({
   liveSession?: ConstructFlowSession;
   pending: boolean;
   chatMode: FlowChatMode;
+  chatScrollTop: number | null;
   openConcept: ConceptCard | null;
   theme: "light" | "dark" | "system";
   onActiveViewChange: (view: "chat" | "project") => void;
@@ -1027,6 +1156,7 @@ function FlowAgentPanel({
   onOpenTask: (task: ConstructFlowPracticeTask) => void;
   onOpenFile: (reference: InlineFileRef) => void;
   onRewindUserMessage: (sessionId: string) => Promise<void>;
+  onChatScrollTopChange: (scrollTop: number | null) => void;
   onResetChat: () => void;
 }) {
   const [draft, setDraft] = useState("");
@@ -1268,6 +1398,10 @@ function FlowAgentPanel({
             messages={messages}
             emptyState={<div className="flex flex-col items-center gap-2 text-center"><BotIcon size={18} /><span>Ask Flow what to build or learn next.</span></div>}
             scrollKey={`${messages.length}:${liveSession?.updatedAt ?? "idle"}`}
+            timelineScrollTop={chatScrollTop}
+            onTimelineScroll={(state) => {
+              onChatScrollTopChange(state.atBottom ? null : state.scrollTop);
+            }}
             composer={
               <FlowComposerWithTransition
                 activeQuestion={activeQuestion}
