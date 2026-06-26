@@ -27,7 +27,7 @@ export function DashboardSidebar({
     .slice(0, 8);
 
   return (
-    <SidebarSection heading="Projects">
+    <SidebarSection heading="Recent projects">
       <div className="flex flex-col gap-1 px-2 pb-2">
         {visibleProjects.map((project) => (
           <DashboardSidebarProjectRow
@@ -60,7 +60,10 @@ function DashboardSidebarProjectRow({
   return (
     <div className="group relative min-h-8 rounded-lg hover:bg-muted focus-within:bg-muted">
       <button className="flex h-8 w-full min-w-0 items-center rounded-lg px-2 py-1 text-left" onClick={onClick} type="button">
-        <span className="block min-w-0 flex-1 truncate pr-14 text-[13px] font-medium text-foreground">{title}</span>
+        <span className="grid size-[18px] shrink-0 place-items-center text-muted-foreground" aria-hidden="true">
+          <Folder size={15} weight="duotone" />
+        </span>
+        <span className="ml-2 block min-w-0 flex-1 truncate pr-14 text-[13px] font-medium text-foreground">{title}</span>
       </button>
       {meta ? (
         <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground group-hover:opacity-0 group-focus-within:opacity-0">
@@ -90,14 +93,16 @@ function DashboardSidebarProjectRow({
 }
 
 function formatDashboardProjectMeta(project: ProjectSummary) {
-  if (project.kind === "flow") {
-    return "Flow";
-  }
-  if (project.progress >= 100 || project.completedAt) {
-    return "Done";
-  }
-  if (project.progress > 0) {
-    return `${project.progress}%`;
-  }
-  return null;
+  if (!project.lastOpenedAt) return null;
+  const elapsed = Date.now() - Date.parse(project.lastOpenedAt);
+  if (!Number.isFinite(elapsed) || elapsed < 0) return null;
+  const minutes = Math.max(1, Math.floor(elapsed / 60_000));
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months}mo ago`;
+  return `${Math.floor(months / 12)}y ago`;
 }

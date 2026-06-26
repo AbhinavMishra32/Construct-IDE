@@ -13,6 +13,12 @@ const originalRendererLog = console.log;
 const originalRendererError = console.error;
 const originalRendererWarn = console.warn;
 
+if (typeof window !== "undefined") {
+  (window as any).__originalRendererLog = originalRendererLog;
+  (window as any).__originalRendererError = originalRendererError;
+  (window as any).__originalRendererWarn = originalRendererWarn;
+}
+
 function formatArgs(...args: any[]): string {
   return args.map(arg => {
     if (arg instanceof Error) {
@@ -27,17 +33,23 @@ function formatArgs(...args: any[]): string {
 
 console.log = (...args: any[]) => {
   originalRendererLog(...args);
-  logStore.addLog("renderer", formatArgs(...args), "info");
+  setTimeout(() => {
+    logStore.addLog("renderer", formatArgs(...args), "info");
+  }, 0);
 };
 
 console.error = (...args: any[]) => {
   originalRendererError(...args);
-  logStore.addLog("renderer", formatArgs(...args), "error");
+  setTimeout(() => {
+    logStore.addLog("renderer", formatArgs(...args), "error");
+  }, 0);
 };
 
 console.warn = (...args: any[]) => {
   originalRendererWarn(...args);
-  logStore.addLog("renderer", formatArgs(...args), "warn");
+  setTimeout(() => {
+    logStore.addLog("renderer", formatArgs(...args), "warn");
+  }, 0);
 };
 
 // 2. Capture Electron Main process logs via IPC

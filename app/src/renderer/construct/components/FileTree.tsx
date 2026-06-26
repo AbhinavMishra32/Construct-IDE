@@ -19,6 +19,8 @@ import {
   Trash2,
   Clipboard,
   RotateCw,
+  Search,
+  FolderOpen,
 } from "lucide-react";
 
 import type { WorkspaceTreeNode } from "../types";
@@ -103,6 +105,7 @@ export function FileTree({
     type: "file" | "folder";
     parentPath: string;
   } | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Auto-expand parents when activePath changes
   useEffect(() => {
@@ -345,10 +348,43 @@ export function FileTree({
     return <ContextMenuContent>{items}</ContextMenuContent>;
   }, [onCreateFile, onCreateFolder, onRenameFile, onDuplicateFile, onDeleteFile, copiedPath]);
 
+  // Filter nodes based on search query
+  const filteredNodes = useMemo(() => {
+    if (!searchQuery.trim()) return nodes;
+
+    const query = searchQuery.toLowerCase().trim();
+
+    function filterNodeList(nodeList: WorkspaceTreeNode[]): WorkspaceTreeNode[] {
+      return nodeList
+        .map((node) => {
+          if (node.type === "directory") {
+            const filteredChildren = node.children ? filterNodeList(node.children) : [];
+            const nameMatches = node.name.toLowerCase().includes(query);
+            if (nameMatches || filteredChildren.length > 0) {
+              return {
+                ...node,
+                children: filteredChildren,
+              };
+            }
+          } else {
+            if (node.name.toLowerCase().includes(query)) {
+              return node;
+            }
+          }
+          return null;
+        })
+        .filter((node): node is WorkspaceTreeNode => node !== null);
+    }
+
+    return filterNodeList(nodes);
+  }, [nodes, searchQuery]);
+
   // Transform nodes to Opaline items, injecting the new file/folder creation row if active
   const openShellItems = useMemo(() => {
     function mapNode(node: WorkspaceTreeNode): FileTreeItem {
-      const isExpanded = node.type === "directory" ? !!expandedPaths[node.path] : undefined;
+      const isExpanded = node.type === "directory"
+        ? (searchQuery.trim() ? true : !!expandedPaths[node.path])
+        : undefined;
       const isTarget = node.path === relevantPath;
       const isRenaming = node.path === renamingPath;
 
@@ -421,7 +457,7 @@ export function FileTree({
     }
 
     // Map root level nodes
-    const rootItems = nodes.map((node) => mapNode(node));
+    const rootItems = filteredNodes.map((node) => mapNode(node));
 
     // If we are creating in the root directory (parentPath is empty string)
     if (creatingState && creatingState.parentPath === "") {
@@ -449,36 +485,35 @@ export function FileTree({
     }
 
     return rootItems;
-  }, [nodes, activePath, relevantPath, expandedPaths, renamingPath, creatingState, onCreateFile, onCreateFolder, onRenameFile]);
+  }, [filteredNodes, searchQuery, activePath, relevantPath, expandedPaths, renamingPath, creatingState, onCreateFile, onCreateFolder, onRenameFile]);
+
+  const showEmptyWorkspaceState = nodes.length === 0 && !creatingState;
+  const showEmptySearchState = nodes.length > 0 && filteredNodes.length === 0;
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-transparent">
-      <div className="flex h-8 shrink-0 items-center justify-between border-b px-2.5">
-        <span className="text-[13px] font-medium">Explorer</span>
-        <div className="flex items-center gap-0.5">
-          {onRefresh ? (
-            <button
-              className="flex size-6 items-center justify-center rounded-[7px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              type="button"
-              onClick={onRefresh}
-              title="Refresh Explorer"
-              aria-label="Refresh Explorer"
-            >
-              <RotateCw size={13} className="text-muted-foreground hover:text-foreground transition-colors" />
-            </button>
-          ) : null}
-          {onCreateFile ? (
-            <button
-              className="flex size-6 items-center justify-center rounded-[7px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              type="button"
-              onClick={() => setIsCreating((value) => !value)}
-              title="New File..."
-              aria-label="New File"
-            >
-              <FilePlus size={15} weight="duotone" />
-            </button>
-          ) : null}
-        </div>
+      <div className="shrink-0 flex items-center gap-1.5 px-3 pb-2.5 pt-3">
+        <label className="flex h-[30px] flex-1 items-center gap-2 rounded-[6px] border bg-background/70 px-2.5 text-xs ring-offset-background focus-within:ring-2 focus-within:ring-ring/30">
+          <Search className="size-3.5 shrink-0 text-muted-foreground/50" />
+          <input
+            type="text"
+            className="min-w-0 flex-1 border-0 bg-transparent text-xs outline-none placeholder:text-muted-foreground/45"
+            value={searchQuery}
+            placeholder="Search files..."
+            onChange={(event) => setSearchQuery(event.target.value)}
+          />
+        </label>
+        {onRefresh && (
+          <button
+            className="flex size-[30px] items-center justify-center rounded-[6px] text-muted-foreground/60 hover:bg-muted hover:text-foreground transition-all duration-150 active:scale-95 shrink-0"
+            type="button"
+            onClick={onRefresh}
+            title="Refresh Explorer"
+            aria-label="Refresh Explorer"
+          >
+            <RotateCw size={13} />
+          </button>
+        )}
       </div>
 
       {isCreating ? (
@@ -511,26 +546,65 @@ export function FileTree({
         </div>
       ) : null}
 
-      <div className="min-h-0 flex-1 overflow-hidden">
-        <OpalineFileTree
-          items={openShellItems}
-          gitLane={false}
-          onSelectPath={(path, item) => {
-            if (item.type === "directory") {
-              setExpandedPaths((prev) => ({
-                ...prev,
-                [path]: !prev[path]
-              }));
-            } else {
-              onOpenFile(path);
-            }
-          }}
-          searchPlaceholder="Search files..."
-          showActions={false}
-          variant="sidebar"
-          renderRowContextMenu={renderRowContextMenu}
-        />
-      </div>
+      {showEmptyWorkspaceState ? (
+        <div className="flex flex-col items-center justify-center pt-20 pb-12 px-5 text-center text-muted-foreground animate-in fade-in duration-300">
+          <FolderOpen className="size-7 text-muted-foreground/40 mb-2.5" />
+          <h3 className="text-xs font-medium text-foreground">No files in project</h3>
+          <p className="text-[11px] text-muted-foreground/50 mt-1 max-w-[190px] leading-relaxed">
+            Create a file to get started.
+          </p>
+          {onCreateFile && (
+            <button
+              type="button"
+              onClick={() =>
+                setCreatingState({
+                  type: "file",
+                  parentPath: "",
+                })
+              }
+              className="mt-3.5 flex h-7 items-center justify-center rounded-[6px] border border-border bg-background/50 px-3.5 text-[11px] font-medium text-foreground hover:bg-muted transition-all duration-150 active:scale-95"
+            >
+              Create File
+            </button>
+          )}
+        </div>
+      ) : showEmptySearchState ? (
+        <div className="flex flex-col items-center justify-center pt-20 pb-12 px-5 text-center text-muted-foreground animate-in fade-in duration-300">
+          <Search className="size-7 text-muted-foreground/35 mb-2.5" />
+          <h3 className="text-xs font-medium text-foreground">No matches found</h3>
+          <p className="text-[11px] text-muted-foreground/50 mt-1 max-w-[190px] leading-relaxed">
+            No files match "{searchQuery}"
+          </p>
+          <button
+            type="button"
+            onClick={() => setSearchQuery("")}
+            className="mt-3.5 flex h-7 items-center justify-center rounded-[6px] border border-input bg-background/50 px-3.5 text-[11px] font-medium hover:bg-muted transition-all duration-150 active:scale-95"
+          >
+            Clear Search
+          </button>
+        </div>
+      ) : (
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <OpalineFileTree
+            items={openShellItems}
+            gitLane={false}
+            onSelectPath={(path, item) => {
+              if (item.type === "directory") {
+                setExpandedPaths((prev) => ({
+                  ...prev,
+                  [path]: !prev[path]
+                }));
+              } else {
+                onOpenFile(path);
+              }
+            }}
+            search={false}
+            showActions={true}
+            variant="sidebar"
+            renderRowContextMenu={renderRowContextMenu}
+          />
+        </div>
+      )}
     </div>
   );
 }

@@ -122,13 +122,22 @@ class LogStoreClass {
       channelLogs.shift();
     }
 
-    this.listeners.forEach((listener) => {
-      try {
-        listener(channel, entry);
-      } catch (err) {
-        console.error("Error in log store listener:", err);
-      }
-    });
+    // Notify listeners asynchronously to avoid triggering synchronous React state updates during render/commit phases,
+    // which can lead to React "Should not already be working" invariant violations.
+    setTimeout(() => {
+      this.listeners.forEach((listener) => {
+        try {
+          listener(channel, entry);
+        } catch (err) {
+          const originalError = typeof window !== "undefined" ? (window as any).__originalRendererError : null;
+          if (originalError) {
+            originalError("Error in log store listener:", err);
+          } else {
+            console.error("Error in log store listener:", err);
+          }
+        }
+      });
+    }, 0);
   }
 
   getLogs(channel: LogChannel): LogEntry[] {

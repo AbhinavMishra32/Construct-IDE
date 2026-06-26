@@ -1,4 +1,4 @@
-import { BookOpenIcon, ChevronRightIcon, ExternalLinkIcon, FileTextIcon, FolderIcon, GitBranchIcon, HistoryIcon, SearchIcon, Trash2Icon } from "lucide-react";
+import { ArrowRightIcon, BookOpenIcon, ChevronRightIcon, ExternalLinkIcon, FileTextIcon, FolderIcon, GitBranchIcon, HistoryIcon, SearchIcon, SparklesIcon, Trash2Icon } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Button, ShadcnScrollArea } from "@opaline/ui";
 
@@ -6,6 +6,7 @@ import { MarkdownBlock } from "./MarkdownBlock";
 import { readKnowledgeRecords, subscribeKnowledgeRecords, removeKnowledgeConcept, type SavedKnowledgeRecord } from "../lib/knowledgeStore";
 import type { AnyProjectRecord, ConceptCard } from "../types";
 import { isFlowProjectRecord } from "../types";
+import { cn } from "../../lib/utils";
 
 type ConceptTreeNode = {
   id: string;
@@ -421,13 +422,7 @@ function HistoryEventDetails({ event }: { event: NonNullable<ConceptCard["histor
       {event.fieldChanges?.length ? (
         <div className="mt-3 flex flex-col gap-2">
           {event.fieldChanges.map((change) => (
-            <div key={`${event.id}:${change.field}`} className="rounded-[8px] border bg-background/60 p-3 text-xs">
-              <div className="font-medium text-foreground">{fieldLabel(change.field)}</div>
-              <div className="mt-2 grid gap-2 md:grid-cols-2">
-                <AuditValue label="Before" value={change.before} />
-                <AuditValue label="After" value={change.after} />
-              </div>
-            </div>
+            <HistoryFieldChange key={`${event.id}:${change.field}`} change={change} />
           ))}
         </div>
       ) : event.changedFields?.length ? (
@@ -445,13 +440,92 @@ function HistoryEventDetails({ event }: { event: NonNullable<ConceptCard["histor
   );
 }
 
-function AuditValue({ label, value }: { label: string; value?: string }) {
+function HistoryFieldChange({ change }: { change: NonNullable<NonNullable<ConceptCard["history"]>[number]["fieldChanges"]>[number] }) {
+  if (change.field === "masteryLevel") {
+    return <HistoryMasteryChange before={change.before} after={change.after} />;
+  }
+  if (isConceptTextField(change.field)) {
+    return <HistoryTextChange field={change.field} before={change.before} after={change.after} />;
+  }
+  return (
+    <div className="rounded-[10px] border bg-background/60 p-3 text-xs">
+      <div className="font-medium text-foreground">{fieldLabel(change.field)}</div>
+      <div className="mt-2 grid gap-2 md:grid-cols-2">
+        <AuditValue label="Before" value={change.before} muted />
+        <AuditValue label="After" value={change.after} />
+      </div>
+    </div>
+  );
+}
+
+function HistoryMasteryChange({ before, after }: { before?: string; after?: string }) {
+  return (
+    <div className="rounded-[10px] border border-[color:var(--construct-success)]/30 bg-[color:var(--construct-success-soft)]/20 p-3 text-xs">
+      <div className="mb-2 flex items-center gap-2 font-medium text-[color:var(--construct-success)]">
+        <SparklesIcon size={14} />
+        <span>Mastery level moved</span>
+      </div>
+      <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
+        <AuditValue label="Before" value={before} muted />
+        <ArrowRightIcon size={14} className="text-muted-foreground" />
+        <AuditValue label="After" value={after} />
+      </div>
+    </div>
+  );
+}
+
+function HistoryTextChange({ field, before, after }: { field: string; before?: string; after?: string }) {
+  const beforeText = compactAuditText(before);
+  const afterText = compactAuditText(after);
+  const mode = beforeText && afterText ? "Replaced" : afterText ? "Added" : "Removed";
+  return (
+    <div className="rounded-[10px] border bg-background/60 p-3 text-xs">
+      <div className="flex items-center justify-between gap-2">
+        <div className="font-medium text-foreground">{fieldLabel(field)}</div>
+        <span className="rounded-full border bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">{mode}</span>
+      </div>
+      <div className="mt-2 grid gap-2">
+        {beforeText ? (
+          <div className="rounded-[9px] border border-destructive/20 bg-destructive/10 p-2 text-muted-foreground line-through decoration-destructive/60">
+            {beforeText}
+          </div>
+        ) : null}
+        {beforeText && afterText ? (
+          <div className="flex items-center gap-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            <ArrowRightIcon size={12} />
+            <span>became</span>
+          </div>
+        ) : null}
+        {afterText ? (
+          <div className="rounded-[9px] border border-[color:var(--construct-success)]/25 bg-[color:var(--construct-success-soft)]/20 p-2 text-foreground">
+            {afterText}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function AuditValue({ label, value, muted }: { label: string; value?: string; muted?: boolean }) {
   return (
     <div className="min-w-0">
       <span className="block text-[10px] uppercase tracking-wide text-muted-foreground">{label}</span>
-      <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded-[6px] bg-muted/50 p-2 font-mono text-[11px] leading-relaxed text-muted-foreground">{value ?? "not set"}</pre>
+      <div className={cn("mt-1 min-h-10 rounded-[8px] border bg-muted/30 p-2 text-sm leading-6", muted ? "text-muted-foreground" : "text-foreground")}>
+        {compactAuditText(value) || "not set"}
+      </div>
     </div>
   );
+}
+
+function isConceptTextField(field: string): boolean {
+  return ["title", "summary", "content", "why", "commonMistake", "example", "examples", "masteryText", "masteryReason", "confidenceReason"].includes(field);
+}
+
+function compactAuditText(value?: string): string {
+  if (!value) return "";
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length <= 220) return normalized;
+  return `${normalized.slice(0, 208).trim()}...`;
 }
 
 function buildConceptTree(records: SavedKnowledgeRecord[]): ConceptTreeNode {
