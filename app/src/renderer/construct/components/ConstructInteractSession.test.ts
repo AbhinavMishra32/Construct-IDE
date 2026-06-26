@@ -111,7 +111,7 @@ describe("Construct Interact Codex-style UI", () => {
     assert.match(flow, /<ConceptSummaryCard[\s\S]*variant="chat"/);
     assert.match(flow, /taskMessage: \{ taskId: activeTask\.id, pathNodeId: activeTask\.pathNodeId \}/);
     assert.match(flow, /placeholder=\{activeTask \? `Message Flow about: \$\{activeTask\.title\}`/);
-    assert.match(flow, /<ActiveComposerItemIndicator activeItem=\{activeComposerItem\}/);
+    assert.match(flow, /<ActiveComposerItemIndicator\s+activeItem=\{activeComposerItem\}/);
     assert.match(flow, /onOpenFile=\{onOpenFile\}/);
     assert.match(flow, /function FlowFileChip/);
     assert.match(flow, /createInlineFileReference/);

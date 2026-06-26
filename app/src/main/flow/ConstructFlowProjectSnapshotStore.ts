@@ -4,7 +4,7 @@ import { isFlowProject, type StoredFlowProject, type StoredProject } from "../pr
 const liveFlowProjectSnapshots = new Map<string, StoredFlowProject>();
 
 export function rememberFlowProjectSnapshot(project: StoredFlowProject): void {
-  liveFlowProjectSnapshots.set(project.id, cloneFlowProject(project));
+  liveFlowProjectSnapshots.set(project.id, project);
 }
 
 export function forgetFlowProjectSnapshot(projectId: string): void {
@@ -123,14 +123,16 @@ function parseIsoTime(value: string | null | undefined): number | undefined {
   return Number.isFinite(time) ? time : undefined;
 }
 
-function cloneFlowProject(project: StoredFlowProject): StoredFlowProject {
-  return JSON.parse(JSON.stringify(project)) as StoredFlowProject;
-}
-
 function cloneSession(session: ConstructFlowSession): ConstructFlowSession {
-  return JSON.parse(JSON.stringify(session)) as ConstructFlowSession;
+  return clonePlain(session);
 }
 
 function clonePathNode(node: ConstructFlowPathNode): ConstructFlowPathNode {
-  return JSON.parse(JSON.stringify(node)) as ConstructFlowPathNode;
+  return clonePlain(node);
+}
+
+function clonePlain<T>(value: T): T {
+  return typeof structuredClone === "function"
+    ? structuredClone(value)
+    : JSON.parse(JSON.stringify(value)) as T;
 }

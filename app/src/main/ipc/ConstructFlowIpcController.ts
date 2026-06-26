@@ -6,10 +6,10 @@ import type { IpcMain } from "electron";
 
 import type { StoredSettings } from "../config/constructConfig";
 import { ConstructFlowMemoryService, FLOW_MEMORY_FILES } from "../flow/ConstructFlowMemoryService";
-import { rememberFlowProjectSnapshot } from "../flow/ConstructFlowProjectSnapshotStore";
+import { forgetFlowProjectSnapshot, rememberFlowProjectSnapshot } from "../flow/ConstructFlowProjectSnapshotStore";
 import { applyFlowQuestionResponse, ConstructFlowService } from "../flow/ConstructFlowService";
 import type { ProjectWriteOptions } from "../projects/ConstructProjectRepository";
-import type { StoredFlowProject, StoredProject } from "../projects/ConstructProjectTypes";
+import type { ProjectSummary, StoredFlowProject, StoredProject } from "../projects/ConstructProjectTypes";
 import { isFlowProject } from "../projects/ConstructProjectTypes";
 import { ConstructProjectWorkspaceService } from "../projects/ConstructProjectWorkspaceService";
 import type {
@@ -28,8 +28,8 @@ export class ConstructFlowIpcController {
   constructor(private readonly options: {
     ipcMain: IpcMain;
     readSettings: () => Promise<StoredSettings>;
-    readProjects: () => Promise<StoredProject[]>;
-    writeProjects: (projects: StoredProject[]) => Promise<void>;
+    readProject: (projectId: string) => Promise<StoredProject | null>;
+    readProjectSummaries: () => Promise<ProjectSummary[]>;
     writeProject: (project: StoredProject, options?: ProjectWriteOptions) => Promise<void>;
     workspace: ConstructProjectWorkspaceService;
     flowMemory: ConstructFlowMemoryService;
@@ -43,13 +43,13 @@ export class ConstructFlowIpcController {
     const { ipcMain } = this.options;
 
     ipcMain.handle("construct:flow:create", async (event, input) => {
-      const projects = await this.options.readProjects();
       const settings = await this.options.readSettings();
+      const projectSummaries = await this.options.readProjectSummaries();
       const now = new Date().toISOString();
       const title = String(input?.title ?? "Flow Project").trim() || "Flow Project";
       const goal = String(input?.goal ?? input?.description ?? "").trim() || "Build and understand this project.";
       const projectSettings = normalizeProjectSettings(input?.projectSettings);
-      const id = uniqueProjectId(slugify(title), projects);
+      const id = uniqueProjectId(slugify(title), projectSummaries);
       const requestedWorkspace = typeof input?.workspacePath === "string" && input.workspacePath.trim()
         ? path.resolve(input.workspacePath)
         : this.options.workspacePathForProject(id);
@@ -94,8 +94,7 @@ export class ConstructFlowIpcController {
 
       await mkdir(project.workspacePath, { recursive: true });
       await this.options.flowMemory.ensure(project);
-      projects.push(project);
-      await this.options.writeProjects(projects);
+      await this.options.writeProject(project);
       this.options.setActiveWebContents(event.sender);
 
       if (project.flow.researchEnabled) {
@@ -127,8 +126,7 @@ export class ConstructFlowIpcController {
     });
 
     ipcMain.handle("construct:flow:memory-update", async (_event, input) => {
-      const projects = await this.options.readProjects();
-      const project = this.findFlowProject(projects, String(input?.projectId ?? ""));
+      const project = await this.flowProjectById(String(input?.projectId ?? ""));
       const updates = Array.isArray(input?.updates) ? input.updates : [];
       const result = await this.options.flowMemory.update(project, updates);
       project.flow.updatedAt = new Date().toISOString();
@@ -137,8 +135,7 @@ export class ConstructFlowIpcController {
     });
 
     ipcMain.handle("construct:flow:run-agent", async (event, input: ConstructFlowAgentInput) => {
-      const projects = await this.options.readProjects();
-      const project = this.findFlowProject(projects, String(input?.projectId ?? ""));
+      const project = await this.flowProjectById(String(input?.projectId ?? ""));
       this.options.setActiveWebContents(event.sender);
       if (input.questionResponse && applyFlowQuestionResponse(project, input.questionResponse)) {
         await this.queueProjectWrite(project, "question-response-received");
@@ -153,8 +150,7 @@ export class ConstructFlowIpcController {
     });
 
     ipcMain.handle("construct:flow:research", async (event, input) => {
-      const projects = await this.options.readProjects();
-      const project = this.findFlowProject(projects, String(input?.projectId ?? ""));
+      const project = await this.flowProjectById(String(input?.projectId ?? ""));
       this.options.setActiveWebContents(event.sender);
       const result = await this.options.flow.runResearchAgent(
         project,
@@ -165,8 +161,7 @@ export class ConstructFlowIpcController {
     });
 
     ipcMain.handle("construct:flow:submit-task", async (_event, input) => {
-      const projects = await this.options.readProjects();
-      const project = this.findFlowProject(projects, String(input?.projectId ?? ""));
+      const project = await this.flowProjectById(String(input?.projectId ?? ""));
       const submission = await this.options.flow.submitPracticeTask(
         project,
         String(input?.taskId ?? ""),
@@ -178,8 +173,7 @@ export class ConstructFlowIpcController {
     });
 
     ipcMain.handle("construct:flow:rewind-session", async (_event, input: ConstructFlowRewindInput) => {
-      const projects = await this.options.readProjects();
-      const project = this.findFlowProject(projects, String(input?.projectId ?? ""));
+      const project = await this.flowProjectById(String(input?.projectId ?? ""));
       const sessionId = String(input?.sessionId ?? "");
       const index = project.flow.sessions.findIndex((session) => session.id === sessionId);
       if (index < 0) {
@@ -212,11 +206,7 @@ export class ConstructFlowIpcController {
   }
 
   private async flowProjectById(projectId: string): Promise<StoredFlowProject> {
-    return this.findFlowProject(await this.options.readProjects(), projectId);
-  }
-
-  private findFlowProject(projects: StoredProject[], projectId: string): StoredFlowProject {
-    const project = projects.find((candidate) => candidate.id === projectId);
+    const project = await this.options.readProject(projectId);
     if (!project) {
       throw new Error(`Unknown Construct project: ${projectId}`);
     }
@@ -317,7 +307,7 @@ export class ConstructFlowIpcController {
       .catch(() => undefined)
       .then(async () => {
         await this.options.writeProject(project, options);
-        rememberFlowProjectSnapshot(project);
+        forgetFlowProjectSnapshot(project.id);
       });
     this.flowProjectWriteQueue = write.catch((error) => {
       console.error("[construct-flow] failed to persist Flow project snapshot", {
@@ -344,7 +334,7 @@ export function applyFlowSessionSnapshot(project: StoredFlowProject, payload: Co
   project.flow.updatedAt = payload.session.updatedAt ?? new Date().toISOString();
 }
 
-function uniqueProjectId(base: string, projects: StoredProject[]): string {
+function uniqueProjectId(base: string, projects: Array<{ id: string }>): string {
   const existing = new Set(projects.map((project) => project.id));
   if (!existing.has(base)) return base;
   for (let index = 2; index < 1_000; index += 1) {

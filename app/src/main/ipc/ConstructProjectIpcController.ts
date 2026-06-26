@@ -19,12 +19,13 @@ export class ConstructProjectIpcController {
     ipcMain: IpcMain;
     readSettings: () => Promise<StoredSettings>;
     readProjects: () => Promise<StoredProject[]>;
+    readProject: (projectId: string) => Promise<StoredProject | null>;
+    readProjectSummaries: () => Promise<ProjectSummary[]>;
     writeProjects: (projects: StoredProject[]) => Promise<void>;
-    findProject: (projects: StoredProject[], projectId: string) => StoredProject;
+    writeProject: (project: StoredProject) => Promise<void>;
     workspace: ConstructProjectWorkspaceService;
     git: ConstructProjectGitService;
     workspacePathForProject: (projectId: string) => string;
-    summarizeProject: (project: StoredProject) => ProjectSummary;
     setActiveWebContents: (webContents: WebContents) => void;
     getAppSourceRoot: () => string;
   }) {}
@@ -88,18 +89,16 @@ export class ConstructProjectIpcController {
     const { ipcMain } = this.options;
 
     ipcMain.handle("construct:project:import", async (_event, input) => {
-      const projects = await this.options.readProjects();
       const settings = await this.options.readSettings();
-      const existingIndex = projects.findIndex((project) => project.id === input.program.id);
+      const existing = await this.options.readProject(input.program.id);
       const now = new Date().toISOString();
       const workspacePath = this.options.workspace.resolveImportWorkspacePath(input, settings);
 
-      if (existingIndex >= 0) {
-        const existing = projects[existingIndex];
+      if (existing) {
         if (isFlowProject(existing)) {
           throw new Error(`Project "${input.program.id}" is a Flow project and cannot be replaced by a tape import.`);
         }
-        projects[existingIndex] = {
+        const project = {
           ...existing,
           source: input.source,
           originalSource: typeof input.originalSource === "string" ? input.originalSource : existing.originalSource ?? input.source,
@@ -111,13 +110,13 @@ export class ConstructProjectIpcController {
           workspacePath,
           lastOpenedAt: now
         };
-        projects[existingIndex].progress = this.options.workspace.calculateProgress(projects[existingIndex]);
-        await this.options.workspace.materializeInitialFiles(projects[existingIndex]);
+        project.progress = this.options.workspace.calculateProgress(project);
+        await this.options.workspace.materializeInitialFiles(project);
         if (input.initializeGit === true) {
-          await this.options.git.initializeRepository(projects[existingIndex].workspacePath);
+          await this.options.git.initializeRepository(project.workspacePath);
         }
-        await this.options.writeProjects(projects);
-        return projects[existingIndex];
+        await this.options.writeProject(project);
+        return project;
       }
 
       const project: StoredProject = {
@@ -149,14 +148,12 @@ export class ConstructProjectIpcController {
       if (input.initializeGit === true) {
         await this.options.git.initializeRepository(project.workspacePath);
       }
-      projects.push(project);
-      await this.options.writeProjects(projects);
+      await this.options.writeProject(project);
       return project;
     });
 
     ipcMain.handle("construct:project:ensure", async (_event, input) => {
-      const projects = await this.options.readProjects();
-      const existing = projects.find((project) => project.id === input.program.id);
+      const existing = await this.options.readProject(input.program.id);
       const now = new Date().toISOString();
 
       if (existing) {
@@ -170,7 +167,7 @@ export class ConstructProjectIpcController {
         existing.sourcePath = typeof input.sourcePath === "string" ? input.sourcePath : existing.sourcePath ?? null;
         existing.progress = this.options.workspace.calculateProgress(existing);
         await this.options.workspace.materializeInitialFiles(existing);
-        await this.options.writeProjects(projects);
+        await this.options.writeProject(existing);
         return existing;
       }
 
@@ -199,20 +196,17 @@ export class ConstructProjectIpcController {
 
       await this.options.workspace.materializeInitialFiles(project);
       project.lastOpenedAt = now;
-      projects.push(project);
-      await this.options.writeProjects(projects);
+      await this.options.writeProject(project);
       return project;
     });
 
     ipcMain.handle("construct:project:list", async () => {
-      return (await this.options.readProjects())
-        .map((project) => this.options.summarizeProject(applyLiveFlowProjectSnapshot(project)));
+      return this.options.readProjectSummaries();
     });
 
     ipcMain.handle("construct:project:open", async (_event, id: string) => {
       console.log("[construct] open project requested", { id });
-      const projects = await this.options.readProjects();
-      let project = this.options.findProject(projects, id);
+      let project = await this.projectById(id);
 
       project.lastOpenedAt = new Date().toISOString();
       if (this.options.workspace.isInsidePath(project.workspacePath, this.options.getAppSourceRoot())) {
@@ -240,14 +234,10 @@ export class ConstructProjectIpcController {
       }
       const liveProject = applyLiveFlowProjectSnapshot(project);
       if (liveProject !== project) {
-        const projectIndex = projects.findIndex((candidate) => candidate.id === project.id);
-        if (projectIndex >= 0) {
-          projects[projectIndex] = liveProject;
-        }
         project = liveProject;
       }
       await this.options.workspace.materializeInitialFiles(project);
-      await this.options.writeProjects(projects);
+      await this.options.writeProject(project);
       this.options.setActiveWebContents(_event.sender);
       console.log("[construct] open project resolved", {
         id: project.id,
@@ -284,25 +274,18 @@ export class ConstructProjectIpcController {
     });
 
     ipcMain.handle("construct:project:update", async (_event, input) => {
-      const projects = await this.options.readProjects();
-      const index = projects.findIndex((project) => project.id === input.id);
-
-      if (index < 0) {
-        throw new Error(`Unknown Construct project: ${input.id}`);
-      }
-
-      const currentProject = applyLiveFlowProjectSnapshot(projects[index]);
-      projects[index] = {
+      const currentProject = applyLiveFlowProjectSnapshot(await this.projectById(input.id));
+      const project = {
         ...currentProject,
         ...input.patch
       };
-      projects[index].progress = this.options.workspace.calculateProgress(projects[index]);
-      await this.options.writeProjects(projects);
-      return projects[index];
+      project.progress = this.options.workspace.calculateProgress(project);
+      await this.options.writeProject(project);
+      return project;
     });
 
     ipcMain.handle("construct:project:read-tape", async (_event, projectId: string) => {
-      const project = this.options.findProject(await this.options.readProjects(), projectId);
+      const project = await this.projectById(projectId);
       if (!isTapeProject(project)) {
         throw new Error("Flow projects do not have a project tape.");
       }
@@ -317,8 +300,7 @@ export class ConstructProjectIpcController {
     });
 
     ipcMain.handle("construct:project:update-tape", async (_event, input) => {
-      const projects = await this.options.readProjects();
-      const project = this.options.findProject(projects, input.projectId);
+      const project = await this.projectById(input.projectId);
       if (!isTapeProject(project)) {
         throw new Error("Flow projects do not have a project tape.");
       }
@@ -344,18 +326,18 @@ export class ConstructProjectIpcController {
         await writeFile(project.sourcePath, project.source, "utf8");
       }
       await this.options.workspace.materializeInitialFiles(project);
-      await this.options.writeProjects(projects);
+      await this.options.writeProject(project);
       return project;
     });
 
     ipcMain.handle("construct:project:list-files", async (_event, projectId: string) => {
-      const project = this.options.findProject(await this.options.readProjects(), projectId);
+      const project = await this.projectById(projectId);
       await mkdir(project.workspacePath, { recursive: true });
       return this.options.workspace.listWorkspaceTree(project);
     });
 
     ipcMain.handle("construct:project:read-file", async (_event, input) => {
-      const project = this.options.findProject(await this.options.readProjects(), input.projectId);
+      const project = await this.projectById(input.projectId);
       const target = this.options.workspace.safeProjectPath(project, input.path);
       const fileStat = await stat(target);
 
@@ -370,7 +352,7 @@ export class ConstructProjectIpcController {
     });
 
     ipcMain.handle("construct:project:write-file", async (_event, input) => {
-      const project = this.options.findProject(await this.options.readProjects(), input.projectId);
+      const project = await this.projectById(input.projectId);
       const target = this.options.workspace.safeProjectPath(project, input.path);
       await mkdir(path.dirname(target), { recursive: true });
       await writeFile(target, input.content, "utf8");
@@ -381,7 +363,7 @@ export class ConstructProjectIpcController {
     });
 
     ipcMain.handle("construct:project:delete-file", async (_event, input) => {
-      const project = this.options.findProject(await this.options.readProjects(), input.projectId);
+      const project = await this.projectById(input.projectId);
       const target = this.options.workspace.safeProjectPath(project, input.path);
       const fileStat = await stat(target);
       if (fileStat.isDirectory()) {
@@ -392,7 +374,7 @@ export class ConstructProjectIpcController {
     });
 
     ipcMain.handle("construct:project:rename-file", async (_event, input) => {
-      const project = this.options.findProject(await this.options.readProjects(), input.projectId);
+      const project = await this.projectById(input.projectId);
       const oldTarget = this.options.workspace.safeProjectPath(project, input.oldPath);
       const newTarget = this.options.workspace.safeProjectPath(project, input.newPath);
       await mkdir(path.dirname(newTarget), { recursive: true });
@@ -400,13 +382,13 @@ export class ConstructProjectIpcController {
     });
 
     ipcMain.handle("construct:project:create-folder", async (_event, input) => {
-      const project = this.options.findProject(await this.options.readProjects(), input.projectId);
+      const project = await this.projectById(input.projectId);
       const target = this.options.workspace.safeProjectPath(project, input.path);
       await mkdir(target, { recursive: true });
     });
 
     ipcMain.handle("construct:project:duplicate-file", async (_event, input) => {
-      const project = this.options.findProject(await this.options.readProjects(), input.projectId);
+      const project = await this.projectById(input.projectId);
       const srcTarget = this.options.workspace.safeProjectPath(project, input.path);
       const destTarget = this.options.workspace.safeProjectPath(project, input.destPath);
       await mkdir(path.dirname(destTarget), { recursive: true });
@@ -414,12 +396,12 @@ export class ConstructProjectIpcController {
     });
 
     ipcMain.handle("construct:project:git-status", async (_event, projectId: string) => {
-      const project = this.options.findProject(await this.options.readProjects(), projectId);
+      const project = await this.projectById(projectId);
       return this.options.git.getStatus(project);
     });
 
     ipcMain.handle("construct:project:git-commit", async (_event, input) => {
-      const project = this.options.findProject(await this.options.readProjects(), input.projectId);
+      const project = await this.projectById(input.projectId);
       return this.options.git.commitMilestone(
         project,
         String(input.message ?? ""),
@@ -428,7 +410,7 @@ export class ConstructProjectIpcController {
     });
 
     ipcMain.handle("construct:project:git-push", async (_event, projectId: string) => {
-      const project = this.options.findProject(await this.options.readProjects(), projectId);
+      const project = await this.projectById(projectId);
       return this.options.git.push(project);
     });
 
@@ -454,5 +436,13 @@ export class ConstructProjectIpcController {
 
       return { deleted: true as const };
     });
+  }
+
+  private async projectById(projectId: string): Promise<StoredProject> {
+    const project = await this.options.readProject(projectId);
+    if (!project) {
+      throw new Error(`Unknown Construct project: ${projectId}`);
+    }
+    return project;
   }
 }

@@ -11,8 +11,7 @@ import type { ConstructInteractRuntimeInput } from "../../shared/constructLearni
 export class ConstructAgentIpcController {
   constructor(private readonly options: {
     ipcMain: IpcMain;
-    readProjects: () => Promise<StoredProject[]>;
-    findProject: (projects: StoredProject[], projectId: string) => StoredProject;
+    readProject: (projectId: string) => Promise<StoredProject | null>;
     interact: ConstructInteractService;
     verifier: ConstructVerifierService;
     authoringReview: ConstructAuthoringReviewService;
@@ -53,6 +52,10 @@ export class ConstructAgentIpcController {
   }
 
   private async projectById(projectId: string): Promise<StoredProject> {
-    return this.options.findProject(await this.options.readProjects(), projectId);
+    const project = await this.options.readProject(projectId);
+    if (!project) {
+      throw new Error(`Unknown Construct project: ${projectId}`);
+    }
+    return project;
   }
 }

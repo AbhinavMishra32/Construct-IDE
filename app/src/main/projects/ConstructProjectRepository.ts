@@ -10,7 +10,8 @@ import {
   type IStorageEntry,
   type IStorageService
 } from "../storage/storage";
-import { isFlowProject, type StoredProject } from "./ConstructProjectTypes";
+import { readLegacyJsonFile, type ConstructDomainStorage } from "../storage/ConstructDomainStorage";
+import { isFlowProject, type ProjectSummary, type StoredProject } from "./ConstructProjectTypes";
 import type { ConstructFlowSession } from "../../shared/constructFlow";
 
 const LEGACY_PROJECTS_STORAGE_KEY = "construct.projects";
@@ -49,11 +50,20 @@ const DEFAULT_PROJECT_WRITE_OPTIONS: ProjectWriteOptions = {
 export class ConstructProjectRepository {
   constructor(
     private readonly paths: ConstructDataPaths,
-    private readonly storage?: IStorageService
+    private readonly storage?: IStorageService,
+    private readonly domainStorage?: ConstructDomainStorage
   ) {}
 
   async readAll(): Promise<StoredProject[]> {
     await mkdir(this.paths.projectsRoot, { recursive: true });
+
+    if (this.domainStorage) {
+      const migrated = await this.ensureDomainProjects();
+      if (migrated) {
+        return migrated;
+      }
+      return this.domainStorage.readProjects().map((project) => this.normalize(project));
+    }
 
     if (this.storage) {
       const segmented = this.readSegmentedProjects();
@@ -92,6 +102,11 @@ export class ConstructProjectRepository {
   }
 
   async writeAll(projects: StoredProject[]): Promise<void> {
+    if (this.domainStorage) {
+      this.domainStorage.writeProjects(projects.map((project) => this.normalize(project)));
+      return;
+    }
+
     if (this.storage) {
       this.writeSegmentedProjects(projects.map((project) => this.normalize(project)));
       return;
@@ -105,6 +120,11 @@ export class ConstructProjectRepository {
   }
 
   async writeOne(project: StoredProject, options: ProjectWriteOptions = DEFAULT_PROJECT_WRITE_OPTIONS): Promise<void> {
+    if (this.domainStorage) {
+      this.domainStorage.writeProject(this.normalize(project), options);
+      return;
+    }
+
     if (this.storage) {
       this.writeSegmentedProject(this.normalize(project), options);
       return;
@@ -119,6 +139,25 @@ export class ConstructProjectRepository {
       projects.push(normalized);
     }
     await this.writeAll(projects);
+  }
+
+  async readOne(projectId: string): Promise<StoredProject | null> {
+    await mkdir(this.paths.projectsRoot, { recursive: true });
+    if (this.domainStorage) {
+      await this.ensureDomainProjects();
+      const project = this.domainStorage.readProject(projectId);
+      return project ? this.normalize(project) : null;
+    }
+    return (await this.readAll()).find((project) => project.id === projectId) ?? null;
+  }
+
+  async readSummaries(): Promise<ProjectSummary[]> {
+    await mkdir(this.paths.projectsRoot, { recursive: true });
+    if (this.domainStorage) {
+      await this.ensureDomainProjects();
+      return this.domainStorage.readProjectSummaries();
+    }
+    return (await this.readAll()).map((project) => this.summarizeFallback(project));
   }
 
   find(projects: StoredProject[], id: string): StoredProject {
@@ -136,6 +175,7 @@ export class ConstructProjectRepository {
       return {
         ...project,
         kind: "flow",
+        sourcePath: project.sourcePath ?? null,
         activeFilePath: project.activeFilePath ?? null,
         fileTreeExpanded: project.fileTreeExpanded ?? [],
         completedAt: project.completedAt ?? null,
@@ -152,6 +192,8 @@ export class ConstructProjectRepository {
     return {
       ...project,
       kind: project.kind ?? "tape",
+      sourcePath: project.sourcePath ?? null,
+      activeFilePath: project.activeFilePath ?? project.program.files[0]?.path ?? null,
       program: {
         ...project.program,
         references: project.program.references ?? [],
@@ -185,6 +227,22 @@ export class ConstructProjectRepository {
     }
 
     return projects;
+  }
+
+  private async ensureDomainProjects(): Promise<StoredProject[] | null> {
+    if (!this.domainStorage) return null;
+    if (this.domainStorage.hasProjects()) return null;
+
+    const segmented = this.storage ? this.readSegmentedProjects() : null;
+    const legacy = segmented
+      ?? await this.readLegacyProjectsFromStorageOrDisk()
+      ?? readLegacyJsonFile<StoredProject[]>(this.paths.projectsManifestPath)?.map((project) => this.normalize(project))
+      ?? null;
+    if (!legacy?.length) return [];
+
+    this.domainStorage.writeProjects(legacy.map((project) => this.normalize(project)));
+    this.domainStorage.removeLegacyProjectRows();
+    return legacy.map((project) => this.normalize(project));
   }
 
   private async readLegacyProjectsFromStorageOrDisk(): Promise<StoredProject[] | null> {
@@ -405,6 +463,61 @@ export class ConstructProjectRepository {
         }
       }
     }
+  }
+
+  private summarizeFallback(project: StoredProject): ProjectSummary {
+    if (isFlowProject(project)) {
+      return {
+        kind: "flow",
+        id: project.id,
+        title: project.title,
+        description: project.description,
+        progress: project.progress,
+        lastOpenedAt: project.lastOpenedAt,
+        workspacePath: project.workspacePath,
+        sourcePath: project.sourcePath,
+        activeFilePath: project.activeFilePath,
+        verificationPassCount: 0,
+        verificationFailCount: 0,
+        authoringFixCount: 0,
+        completedAt: project.completedAt,
+        flowGoal: project.flow.goal,
+        flowMemoryFileCount: 4,
+        flowSessionCount: project.flow.sessions.length,
+        flowLastActivityAt: project.flow.updatedAt
+      };
+    }
+    const currentStep = project.program.steps[project.currentStepIndex] ?? null;
+    const currentBlock = currentStep?.blocks[project.currentBlockIndex] ?? null;
+    const blockCount = project.program.steps.reduce((total, step) => total + step.blocks.length, 0);
+    const completedBlockCount = Object.values(project.completedBlocks ?? {}).filter(Boolean).length;
+    const verificationResults = Object.values(project.verificationResults ?? {});
+    return {
+      kind: "tape",
+      id: project.id,
+      title: project.title,
+      description: project.description,
+      progress: project.progress,
+      lastOpenedAt: project.lastOpenedAt,
+      workspacePath: project.workspacePath,
+      sourcePath: project.sourcePath,
+      currentStepIndex: project.currentStepIndex,
+      currentBlockIndex: project.currentBlockIndex,
+      currentStepTitle: currentStep?.title ?? null,
+      currentBlockKind: currentBlock?.kind ?? null,
+      currentBlockLabel: currentBlock?.path ?? currentBlock?.title ?? currentBlock?.task ?? currentBlock?.content?.slice(0, 80) ?? null,
+      activeFilePath: project.activeFilePath,
+      stepCount: project.program.steps.length,
+      blockCount,
+      completedBlockCount,
+      fileCount: project.program.files.length,
+      conceptCount: project.program.concepts?.length ?? 0,
+      referenceCount: project.program.references?.length ?? 0,
+      verificationPassCount: verificationResults.filter((result) => result.passed).length,
+      verificationFailCount: verificationResults.filter((result) => !result.passed).length,
+      authoringFixCount: project.authoringFixes?.length ?? 0,
+      completedAt: project.completedAt
+    };
   }
 }
 

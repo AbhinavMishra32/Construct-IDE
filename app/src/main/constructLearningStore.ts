@@ -9,6 +9,7 @@ import {
   StorageTarget,
   type IStorageService
 } from "./storage/storage";
+import { readLegacyJsonFile, type ConstructDomainStorage } from "./storage/ConstructDomainStorage";
 import {
   createDefaultLearningState,
   knowledgeKey,
@@ -26,6 +27,7 @@ import {
 
 type ConstructLearningStoreOptions = {
   storage: IStorageService;
+  domainStorage?: ConstructDomainStorage;
   legacyPath: string;
 };
 
@@ -34,14 +36,17 @@ const LEARNING_STATE_STORAGE_KEY = "construct.learningState";
 export class ConstructLearningStore {
   private readonly filePath: string;
   private readonly storage: IStorageService | null;
+  private readonly domainStorage: ConstructDomainStorage | null;
 
   constructor(filePathOrOptions: string | ConstructLearningStoreOptions) {
     if (typeof filePathOrOptions === "string") {
       this.filePath = filePathOrOptions;
       this.storage = null;
+      this.domainStorage = null;
     } else {
       this.filePath = filePathOrOptions.legacyPath;
       this.storage = filePathOrOptions.storage;
+      this.domainStorage = filePathOrOptions.domainStorage ?? null;
     }
   }
 
@@ -237,6 +242,24 @@ export class ConstructLearningStore {
   }
 
   private async read(): Promise<ConstructLearningState> {
+    if (this.domainStorage) {
+      const stored = this.domainStorage.readLearningState();
+      if (stored) {
+        return decorateConceptProjects(normalizeLearningState(stored));
+      }
+      const legacy = this.storage?.getObject<Partial<ConstructLearningState>>(LEARNING_STATE_STORAGE_KEY, APPLICATION_SCOPE)
+        ?? readLegacyJsonFile<Partial<ConstructLearningState>>(this.filePath);
+      if (legacy) {
+        const state = decorateConceptProjects(normalizeLearningState(legacy));
+        this.domainStorage.writeLearningState(state);
+        this.domainStorage.removeLegacyLearningRow();
+        return state;
+      }
+      const state = createDefaultLearningState(randomUUID());
+      this.domainStorage.writeLearningState(state);
+      return state;
+    }
+
     if (this.storage) {
       const migrated = await migrateJsonValueToStorage<Partial<ConstructLearningState>>({
         storage: this.storage,
@@ -274,6 +297,12 @@ export class ConstructLearningStore {
 
   private async write(state: ConstructLearningState): Promise<void> {
     state.sync.updatedAt = new Date().toISOString();
+    if (this.domainStorage) {
+      this.domainStorage.writeLearningState(normalizeLearningState(state));
+      this.domainStorage.removeLegacyLearningRow();
+      return;
+    }
+
     if (this.storage) {
       this.storage.store(LEARNING_STATE_STORAGE_KEY, normalizeLearningState(state), APPLICATION_SCOPE, StorageTarget.USER);
       return;

@@ -47,6 +47,10 @@ import {
   WillSaveStateReason,
   type IStorageService
 } from "./storage/storage";
+import {
+  createConstructDomainStorage,
+  type ConstructDomainStorage
+} from "./storage/ConstructDomainStorage";
 import { ConstructTerminalService } from "./terminal/ConstructTerminalService";
 import { ConstructFlowMemoryService } from "./flow/ConstructFlowMemoryService";
 import { ConstructFlowService } from "./flow/ConstructFlowService";
@@ -121,10 +125,11 @@ const windowManager = new ConstructWindowManager({
 });
 let lspServiceInstance: ConstructLspService | null = null;
 let storageServiceInstance: IStorageService | null = null;
+let domainStorageInstance: ConstructDomainStorage | null = null;
 let shutdownStarted = false;
 
 function projectRepository(): ConstructProjectRepository {
-  return new ConstructProjectRepository(constructDataPaths(), storageService());
+  return new ConstructProjectRepository(constructDataPaths(), storageService(), domainStorage());
 }
 
 function getLspService(): ConstructLspService {
@@ -147,6 +152,7 @@ function learningStatePath(): string {
 function learningStore(): ConstructLearningStore {
   return new ConstructLearningStore({
     storage: storageService(),
+    domainStorage: domainStorage(),
     legacyPath: learningStatePath()
   });
 }
@@ -165,6 +171,14 @@ function constructDataPaths(): ConstructDataPaths {
 
 async function readProjects(): Promise<StoredProject[]> {
   return projectRepository().readAll();
+}
+
+async function readProject(projectId: string): Promise<StoredProject | null> {
+  return projectRepository().readOne(projectId);
+}
+
+async function readProjectSummaries() {
+  return projectRepository().readSummaries();
 }
 
 async function writeProjects(projects: StoredProject[]): Promise<void> {
@@ -193,8 +207,11 @@ function storageService(): IStorageService {
   return storageServiceInstance;
 }
 
-function findProject(projects: StoredProject[], id: string): StoredProject {
-  return projectRepository().find(projects, id);
+function domainStorage(): ConstructDomainStorage {
+  if (!domainStorageInstance) {
+    domainStorageInstance = createConstructDomainStorage(constructDataPaths().storageDatabasePath);
+  }
+  return domainStorageInstance;
 }
 
 function summarizeProject(project: StoredProject) {
@@ -214,7 +231,11 @@ async function collectDebugProcessSnapshots() {
 
 function installConstructProjectIpcHandlers(): void {
   const findProjectById = async (projectId: string) => {
-    return findProject(await readProjects(), projectId);
+    const project = await readProject(projectId);
+    if (!project) {
+      throw new Error(`Unknown Construct project: ${projectId}`);
+    }
+    return project;
   };
 
   new ConstructLspIpcController({
@@ -259,12 +280,13 @@ function installConstructProjectIpcHandlers(): void {
     ipcMain,
     readSettings,
     readProjects,
+    readProject,
+    readProjectSummaries,
     writeProjects,
-    findProject,
+    writeProject,
     workspace: workspaceService,
     git: gitService,
     workspacePathForProject,
-    summarizeProject,
     setActiveWebContents: (webContents) => {
       activeWebContents = webContents;
     },
@@ -274,8 +296,8 @@ function installConstructProjectIpcHandlers(): void {
   new ConstructFlowIpcController({
     ipcMain,
     readSettings,
-    readProjects,
-    writeProjects,
+    readProject,
+    readProjectSummaries,
     writeProject,
     workspace: workspaceService,
     flowMemory: flowMemoryService,
@@ -289,8 +311,7 @@ function installConstructProjectIpcHandlers(): void {
 
   new ConstructAgentIpcController({
     ipcMain,
-    readProjects,
-    findProject,
+    readProject,
     interact: constructInteractService,
     verifier: verifierService,
     authoringReview: authoringReviewService,
@@ -311,6 +332,7 @@ function installConstructProjectIpcHandlers(): void {
 app.whenReady().then(async () => {
   configureConstructDataPaths(constructDataPaths());
   await storageService().initialize();
+  await domainStorage().initialize();
   await new LegacyProjectDataMigrator(constructDataPaths()).migrateIfNeeded();
   observabilityService.configure(await readSettings());
   installConstructProjectIpcHandlers();
@@ -342,6 +364,7 @@ app.on("before-quit", (event) => {
       observabilityService.shutdown()
     ]);
     await storageService().flush(WillSaveStateReason.SHUTDOWN);
+    domainStorage().close();
     await storageService().close();
   })().finally(() => {
     app.quit();

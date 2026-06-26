@@ -1,10 +1,18 @@
 import assert from "node:assert/strict";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
+import type { DatabaseSync as NodeDatabaseSync } from "node:sqlite";
 
+import { createConstructDataPaths } from "./config/constructConfig";
 import { ConstructLearningStore } from "./constructLearningStore";
+import { createConstructDomainStorage } from "./storage/ConstructDomainStorage";
+import { createConstructStorageService } from "./storage/storage";
+
+const requireBuiltin = createRequire(import.meta.url);
+const { DatabaseSync } = requireBuiltin("node:sqlite") as typeof import("node:sqlite");
 
 describe("ConstructLearningStore", () => {
   it("records knowledge, opens, recall attempts, and weak concepts in one state file", async () => {
@@ -62,6 +70,68 @@ describe("ConstructLearningStore", () => {
 
     await store.removeKnowledgeConcept("project-a", "sandbox.runtime");
     assert.equal((await store.getState()).knowledgeBase.concepts["project-a:sandbox.runtime"], undefined);
+  });
+
+  it("persists learning concepts and attempts as domain rows", async (t) => {
+    const dir = await mkdtemp(path.join(tmpdir(), "construct-learning-domain-"));
+    t.after(() => rm(dir, { recursive: true, force: true }));
+
+    const paths = createConstructDataPaths(dir);
+    const storage = createConstructStorageService(paths.storageDatabasePath, {
+      flushDelayMs: 10_000,
+      periodicFlushIntervalMs: 60_000
+    });
+    const domainStorage = createConstructDomainStorage(paths.storageDatabasePath);
+    await storage.initialize();
+    await domainStorage.initialize();
+
+    const store = new ConstructLearningStore({
+      storage,
+      domainStorage,
+      legacyPath: paths.learningStatePath
+    });
+
+    await store.saveKnowledgeConcept({
+      id: "sqlite.rows",
+      sourceProjectId: "project-db",
+      sourceProjectTitle: "Project DB",
+      title: "SQLite rows",
+      kind: "concept",
+      tags: ["storage"],
+      summary: "Sessions and concepts are stored as rows.",
+      why: "Append/update rows avoid rewriting the whole learning state.",
+      docs: [],
+      savedAt: "2026-06-12T00:00:00.000Z",
+      openCount: 0,
+      usedInRecall: false
+    });
+
+    await store.recordRecallAttempt({
+      id: "attempt-db-1",
+      projectId: "project-db",
+      recallId: "recall-db",
+      mode: "reply",
+      answer: "Store the mutable parts as indexed rows.",
+      passed: false,
+      status: "almost",
+      confidence: "medium",
+      conceptIds: ["sqlite.rows"],
+      createdAt: "2026-06-12T00:00:01.000Z"
+    });
+
+    const state = await store.getState();
+    assert.equal(state.knowledgeBase.concepts["project-db:sqlite.rows"]?.title, "SQLite rows");
+    assert.equal(state.projects["project-db"]?.recallAttempts.length, 1);
+    assert.equal(state.learner.globalConceptUnderstanding["sqlite.rows"]?.confidence, "weak");
+    await storage.flush();
+
+    assert.equal(readStorageValue(paths.storageDatabasePath, "construct.learningState"), null);
+    assert.equal(readTableCount(paths.storageDatabasePath, "construct_knowledge_concepts"), 1);
+    assert.equal(readTableCount(paths.storageDatabasePath, "construct_project_recall_attempts"), 1);
+    assert.equal(readTableCount(paths.storageDatabasePath, "construct_project_concept_understanding"), 1);
+
+    domainStorage.close();
+    await storage.close();
   });
 
   it("persists the full agent trace with each Construct Interact turn", async () => {
@@ -281,3 +351,25 @@ describe("ConstructLearningStore", () => {
     assert.equal(state.projects["project-a"]?.assistanceEvents.filter((event) => event.kind === "concept-open").length, 2);
   });
 });
+
+function readStorageValue(databasePath: string, key: string): string | null {
+  let db: NodeDatabaseSync | null = null;
+  try {
+    db = new DatabaseSync(databasePath, { readOnly: true });
+    const row = db.prepare("SELECT value FROM storage_items WHERE scope = 'application' AND key = ?").get(key) as { value: string } | undefined;
+    return row?.value ?? null;
+  } finally {
+    db?.close();
+  }
+}
+
+function readTableCount(databasePath: string, table: string): number {
+  let db: NodeDatabaseSync | null = null;
+  try {
+    db = new DatabaseSync(databasePath, { readOnly: true });
+    const row = db.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get() as { count: number };
+    return row.count;
+  } finally {
+    db?.close();
+  }
+}
