@@ -1,6 +1,6 @@
 import { DiffEditor } from "@monaco-editor/react";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { BadgeCheckIcon, BookOpenIcon, BotIcon, BrainCircuitIcon, CheckCircle2Icon, CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleAlertIcon, CircleIcon, CpuIcon, FileTextIcon, GaugeIcon, GitCompareIcon, HelpCircleIcon, Layers3Icon, ListChecksIcon, Loader2Icon, PencilIcon, PlusCircleIcon, RotateCcwIcon, RouteIcon, SearchIcon, SendIcon, StarIcon, TerminalIcon, Trash2Icon, PlusIcon, MicIcon, type LucideIcon } from "lucide-react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { ArrowDownIcon, ArrowUpIcon, BadgeCheckIcon, BookOpenIcon, BotIcon, BrainCircuitIcon, CheckCircle2Icon, CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleAlertIcon, CircleIcon, CornerDownLeftIcon, CpuIcon, FileTextIcon, GaugeIcon, GitCompareIcon, HelpCircleIcon, Layers3Icon, ListChecksIcon, Loader2Icon, PencilIcon, PlusCircleIcon, RotateCcwIcon, RouteIcon, SearchIcon, SendIcon, StarIcon, TerminalIcon, Trash2Icon, PlusIcon, MicIcon, type LucideIcon } from "lucide-react";
 import {
   AdaptiveSidecarLayout,
   AgentSessionComposer,
@@ -56,6 +56,11 @@ import {
 } from "../lib/bridge";
 import { EditorPane } from "./EditorPane";
 import { MarkdownBlock } from "./MarkdownBlock";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import {
+  oneDark,
+  oneLight
+} from "react-syntax-highlighter/dist/esm/styles/prism";
 import { KnowledgeCard } from "./KnowledgeCard";
 import { ConceptSummaryCard } from "./ConceptSummaryCard";
 import { iconForFile } from "./workspace/FileChooserContent";
@@ -78,6 +83,7 @@ import { Input } from "../../components/ui/input";
 import { ScrollArea } from "../../components/ui/scroll-area";
 import { Textarea } from "../../components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../../components/ui/tooltip";
+import { Popover, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
 import { cn } from "../../lib/utils";
 import {
   activateDocument,
@@ -699,6 +705,7 @@ export function FlowWorkspace({
         }
       });
       if (event.type === "completed" || event.type === "error" || event.type === "waiting") {
+        setPending(false);
         setLiveSession(undefined);
       } else {
         setLiveSession(event.session);
@@ -1094,6 +1101,7 @@ function applyFlowConceptRecord(concepts: Map<string, ConceptCard>, toolName: st
             tags: conceptPayload.tags,
             parentId: conceptPayload.parentId,
             summary: conceptPayload.summary,
+            content: conceptPayload.content,
             why: conceptPayload.why,
             example: conceptPayload.example || conceptPayload.examples?.[0],
             examples: conceptPayload.examples,
@@ -1200,6 +1208,78 @@ function FlowAgentPanel({
   const currentPathNode = useMemo(() => currentFlowPathNode(pathNodes, project.flow.currentPathNodeId), [pathNodes, project.flow.currentPathNodeId]);
   const activeTask = useMemo(() => findActiveTaskForNode(flowTasks, currentPathNode?.id), [currentPathNode?.id, flowTasks]);
   const activeQuestion = useMemo(() => findActiveFlowQuestion(mergedSessions), [mergedSessions]);
+  const activeConceptExercise = useMemo(() => {
+    const waitingExercises = flowExercises.filter((ex) => ex.status === "waiting");
+    return waitingExercises.length > 0 ? waitingExercises[waitingExercises.length - 1] : undefined;
+  }, [flowExercises]);
+
+  const activeComposerItem = useMemo(() => {
+    if (activeConceptExercise) {
+      let eventId = "";
+      for (const session of mergedSessions) {
+        const timelineEvent = session.timeline?.find(
+          (e) => e.kind === "tool" && e.name === "concept-exercise" && (() => {
+            const payload = readExerciseToolPayload(e.input, e.outputPreview);
+            const resolved = resolveExerciseForToolPayload(payload, session.conceptExercises ?? [], session.id);
+            return resolved?.id === activeConceptExercise.id;
+          })()
+        );
+        if (timelineEvent) {
+          eventId = timelineEvent.id;
+          return {
+            type: "exercise" as const,
+            id: activeConceptExercise.id,
+            title: activeConceptExercise.title,
+            prompt: activeConceptExercise.prompt,
+            domId: `${session.id}:exercise:${eventId}`,
+            item: activeConceptExercise
+          };
+        }
+      }
+      return {
+        type: "exercise" as const,
+        id: activeConceptExercise.id,
+        title: activeConceptExercise.title,
+        prompt: activeConceptExercise.prompt,
+        domId: "",
+        item: activeConceptExercise
+      };
+    }
+
+    if (activeTask) {
+      let eventId = "";
+      for (const session of mergedSessions) {
+        const timelineEvent = session.timeline?.find(
+          (e) => e.kind === "tool" && e.name === "practice-task" && (() => {
+            const payload = readTaskToolPayload(e.input, e.outputPreview);
+            const resolved = resolveTaskForToolPayload(payload, session.practiceTasks ?? [], session.id);
+            return resolved?.id === activeTask.id;
+          })()
+        );
+        if (timelineEvent) {
+          eventId = timelineEvent.id;
+          return {
+            type: "task" as const,
+            id: activeTask.id,
+            title: activeTask.title,
+            prompt: activeTask.prompt,
+            domId: `${session.id}:task:${eventId}`,
+            item: activeTask
+          };
+        }
+      }
+      return {
+        type: "task" as const,
+        id: activeTask.id,
+        title: activeTask.title,
+        prompt: activeTask.prompt,
+        domId: "",
+        item: activeTask
+      };
+    }
+
+    return undefined;
+  }, [activeConceptExercise, activeTask, mergedSessions]);
   const messages = useMemo(() => buildFlowMessages({
     sessions: mergedSessions,
     concepts: flowConcepts,
@@ -1224,8 +1304,9 @@ function FlowAgentPanel({
       }
     },
     rewindingSessionId,
-    pending
-  }), [acknowledgeConceptEvent, acknowledgedConceptEventKeys, activeTask?.id, conceptMutations, flowConcepts, flowTasks, mergedSessions, onOpenConceptById, onOpenConceptDetails, onOpenFile, onOpenTask, onRewindUserMessage, pathNodes, rewindingSessionId, pending, theme]);
+    pending,
+    chatMode
+  }), [acknowledgeConceptEvent, acknowledgedConceptEventKeys, activeTask?.id, conceptMutations, flowConcepts, flowTasks, mergedSessions, onOpenConceptById, onOpenConceptDetails, onOpenFile, onOpenTask, onRewindUserMessage, pathNodes, rewindingSessionId, pending, theme, chatMode]);
   const latestContextWindow = useMemo(() => findLatestContextWindow(mergedSessions), [mergedSessions]);
   const [aiSettings, setAiSettings] = useState<AiSettings | null>(null);
   const [modelOptions, setModelOptions] = useState<ModelCatalogEntry[]>([]);
@@ -1367,6 +1448,7 @@ function FlowAgentPanel({
           exercises={flowExercises}
           concepts={flowConcepts}
           theme={theme}
+          chatMode={chatMode}
           onOpenConcept={onOpenConceptDetails}
           onOpenTask={onOpenTask}
           onSubmitTask={onSubmitTask}
@@ -1404,17 +1486,6 @@ function FlowAgentPanel({
             ) : null}
           </div>
           <div className="construct-flow-chat-thread relative flex min-h-0 flex-1 flex-col overflow-hidden">
-          {activeTask ? (
-            <FloatingFlowTaskCard
-              task={activeTask}
-              node={currentPathNode}
-              theme={theme}
-              pending={pending}
-              onOpenTask={onOpenTask}
-              onSubmitTask={onSubmitTask}
-              onOpenFile={onOpenFile}
-            />
-          ) : null}
           <AgentSessionSurface
             className="construct-flow-session min-h-0 flex-1 bg-transparent"
             messages={messages}
@@ -1425,125 +1496,77 @@ function FlowAgentPanel({
               onChatScrollTopChange(state.atBottom ? null : state.scrollTop);
             }}
             composer={
-              <FlowComposerWithTransition
-                activeQuestion={activeQuestion}
-                questionComposer={
-                  activeQuestion ? (
-                    <FlowQuestionComposer
-                      key={activeQuestion.id}
-                      question={activeQuestion}
-                      theme={theme}
-                      value={draft}
-                      onValueChange={setDraft}
-                      onAnswer={(response) => {
-                        setDraft("");
-                        void onRunAgent("Continue from the tracked question answer.", { questionResponse: response });
-                      }}
-                      onSkip={() => {
-                        const response = buildFlowQuestionResponse(activeQuestion, "", true);
-                        setDraft("");
-                        void onRunAgent("Continue from the skipped tracked question.", { questionResponse: response });
-                      }}
-                      pending={pending}
-                    />
-                  ) : null
-                }
-                defaultComposer={
-                  <>
-                    <AgentSessionComposer
-                      className="construct-flow-composer"
-                      value={draft}
-                      onValueChange={setDraft}
-                      onSubmit={submitComposer}
-                      pending={pending}
-                      submitLabel="Send"
-                      placeholder={activeTask ? `Message Flow about: ${activeTask.title}` : "Ask for follow-up changes"}
-                      footerStart={
-                        <FlowComposerRightControls
-                          contextWindow={latestContextWindow}
-                          settings={aiSettings}
-                          model={activeFlowModel}
-                          models={flowModelOptions}
-                          modelsBusy={modelsBusy}
-                          modelsError={modelsError}
-                          reasoningEffort={aiSettings?.reasoningEffort ?? "auto"}
-                          onModelChange={updateFlowModel}
-                          onReasoningEffortChange={updateReasoningEffort}
+              activeQuestion ? (
+                <FlowQuestionComposer
+                  key={activeQuestion.id}
+                  question={activeQuestion}
+                  theme={theme}
+                  chatMode={chatMode}
+                  value={draft}
+                  onValueChange={setDraft}
+                  onAnswer={(response) => {
+                    setDraft("");
+                    void onRunAgent("Continue from the tracked question answer.", { questionResponse: response });
+                  }}
+                  onSkip={() => {
+                    const response = buildFlowQuestionResponse(activeQuestion, "", true);
+                    setDraft("");
+                    void onRunAgent("Continue from the skipped tracked question.", { questionResponse: response });
+                  }}
+                  pending={pending && !activeQuestion}
+                />
+              ) : (
+                <>
+                  <AgentSessionComposer
+                    className={cn("construct-flow-composer", chatMode === "panel" && "is-panel")}
+                    value={draft}
+                    onValueChange={setDraft}
+                    onSubmit={submitComposer}
+                    pending={pending}
+                    submitLabel="Send"
+                    placeholder={activeTask ? `Message Flow about: ${activeTask.title}` : "Ask for follow-up changes"}
+                    header={
+                      chatMode === "panel" && activeComposerItem ? (
+                        <ActiveComposerItemIndicator
+                          activeItem={activeComposerItem}
+                          isHeader={true}
+                          pending={pending}
+                          onSubmitTask={onSubmitTask}
                         />
-                      }
-                    />
-                    {/* Kept for static analysis tests: <FlowComposerControls */}
-                  </>
-                }
-              />
+                      ) : undefined
+                    }
+                    footerStart={
+                      chatMode !== "panel" && activeComposerItem ? (
+                        <ActiveComposerItemIndicator
+                          activeItem={activeComposerItem}
+                          pending={pending}
+                          onSubmitTask={onSubmitTask}
+                        />
+                      ) : null
+                    }
+                    footerEnd={
+                      <FlowComposerRightControls
+                        contextWindow={latestContextWindow}
+                        settings={aiSettings}
+                        model={activeFlowModel}
+                        models={flowModelOptions}
+                        modelsBusy={modelsBusy}
+                        modelsError={modelsError}
+                        reasoningEffort={aiSettings?.reasoningEffort ?? "auto"}
+                        onModelChange={updateFlowModel}
+                        onReasoningEffortChange={updateReasoningEffort}
+                      />
+                    }
+                  />
+                  {/* Kept for static analysis tests: <FlowComposerControls */}
+                </>
+              )
             }
           />
           </div>
         </div>
       )}
     </aside>
-  );
-}
-
-function FlowComposerWithTransition({
-  activeQuestion,
-  questionComposer,
-  defaultComposer
-}: {
-  activeQuestion: ActiveFlowQuestion | null;
-  questionComposer: ReactNode;
-  defaultComposer: ReactNode;
-}) {
-  const hasQuestion = activeQuestion !== null;
-  const [questionExpanded, setQuestionExpanded] = useState(false);
-  const cachedQuestionRef = useRef<ReactNode>(null);
-
-  /* Cache the last non-null question composer so the collapse exit
-     animation still has content to display while collapsing. */
-  if (questionComposer !== null) {
-    cachedQuestionRef.current = questionComposer;
-  }
-
-  useEffect(() => {
-    if (hasQuestion) {
-      /* The accordion must paint at grid-template-rows: 0fr first,
-         then transition to 1fr.  requestAnimationFrame guarantees
-         the collapsed state is committed before we expand. */
-      const frame = requestAnimationFrame(() => {
-        setQuestionExpanded(true);
-      });
-      return () => cancelAnimationFrame(frame);
-    } else {
-      setQuestionExpanded(false);
-    }
-  }, [hasQuestion]);
-
-  const handleCollapseEnd = useCallback((event: React.TransitionEvent<HTMLDivElement>) => {
-    /* Clear cached question content after the collapse animation finishes */
-    if (event.target === event.currentTarget && event.propertyName === "grid-template-rows") {
-      if (!questionExpanded) {
-        cachedQuestionRef.current = null;
-      }
-    }
-  }, [questionExpanded]);
-
-  const displayedQuestion = questionComposer ?? cachedQuestionRef.current;
-
-  return (
-    <div className="construct-flow-composer-transition">
-      {/* Question accordion – always rendered; toggles between 0fr / 1fr */}
-      <div
-        className={`construct-flow-composer-question-accordion${questionExpanded ? " is-open" : ""}`}
-        onTransitionEnd={handleCollapseEnd}
-      >
-        <div>{displayedQuestion}</div>
-      </div>
-
-      {/* Default composer + controls – fades out / in with the accordion */}
-      <div className={`construct-flow-composer-default${questionExpanded ? " is-hidden" : ""}`}>
-        {defaultComposer}
-      </div>
-    </div>
   );
 }
 
@@ -1907,6 +1930,7 @@ function FlowProjectDataPanel({
   exercises,
   concepts,
   theme,
+  chatMode,
   onOpenConcept,
   onOpenTask,
   onSubmitTask,
@@ -1919,6 +1943,7 @@ function FlowProjectDataPanel({
   exercises: ConstructFlowConceptExercise[];
   concepts: ConceptCard[];
   theme: "light" | "dark" | "system";
+  chatMode: FlowChatMode;
   onOpenConcept: (concept: ConceptCard) => void;
   onOpenTask: (task: ConstructFlowPracticeTask) => void;
   onSubmitTask: (task: ConstructFlowPracticeTask, note?: string, subtaskId?: string) => Promise<void>;
@@ -1977,7 +2002,7 @@ function FlowProjectDataPanel({
           {currentNodeTasks.length ? (
             <div className="flex flex-col border-y">
               {currentNodeTasks.map((task) => (
-                <FlowTaskCard key={task.id} task={task} theme={theme} onOpenTask={onOpenTask} onSubmitTask={onSubmitTask} onOpenFile={onOpenFile} />
+                <FlowTaskCard key={task.id} task={task} theme={theme} chatMode={chatMode} onOpenTask={onOpenTask} onSubmitTask={onSubmitTask} onOpenFile={onOpenFile} />
               ))}
             </div>
           ) : (
@@ -2342,6 +2367,7 @@ function FloatingFlowTaskCard({
   node,
   theme,
   pending,
+  chatMode,
   onOpenTask,
   onSubmitTask,
   onOpenFile
@@ -2350,6 +2376,7 @@ function FloatingFlowTaskCard({
   node?: ConstructFlowPathNode;
   theme: "light" | "dark" | "system";
   pending: boolean;
+  chatMode: FlowChatMode;
   onOpenTask: (task: ConstructFlowPracticeTask) => void;
   onSubmitTask: (task: ConstructFlowPracticeTask, note?: string, subtaskId?: string) => Promise<void>;
   onOpenFile: (reference: InlineFileRef) => void;
@@ -2359,51 +2386,61 @@ function FloatingFlowTaskCard({
   const completedSubtasks = task.subtasks?.filter((subtask) => subtask.status === "completed").length ?? 0;
   const subtaskCount = task.subtasks?.length ?? 1;
   const introducedConceptIds = taskIntroducedConceptIds(task);
+  const isPanel = chatMode === "panel";
 
   return (
-    <div className="shrink-0 border-b bg-background/90 px-2.5 py-1.5">
+    <div className={cn("shrink-0 border-b bg-background/90 px-2.5 py-1.5", isPanel && "px-1.5 py-1")}>
       <div
-        className="construct-floating-task-card mx-auto w-full max-w-[46rem] rounded-[8px] border bg-muted/20 text-xs shadow-none"
+        className={cn(
+          "construct-floating-task-card mx-auto w-full max-w-[46rem] rounded-[8px] border bg-muted/20 text-xs shadow-none",
+          isPanel && "text-[11px] rounded-md"
+        )}
         onMouseEnter={() => setOpen(true)}
         onMouseLeave={() => setOpen(false)}
       >
         <button
           type="button"
-          className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left"
+          className={cn("flex w-full items-center gap-2 px-2.5 py-1.5 text-left", isPanel && "px-2 py-1")}
           aria-expanded={open}
           onClick={() => setOpen((current) => !current)}
         >
-          <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-[7px] bg-background/70 text-muted-foreground ring-1 ring-border/60">
-            <ListChecksIcon size={14} />
+          <span className={cn(
+            "inline-flex size-7 shrink-0 items-center justify-center rounded-[7px] bg-background/70 text-muted-foreground ring-1 ring-border/60",
+            isPanel && "size-6 rounded-md"
+          )}>
+            <ListChecksIcon size={isPanel ? 13 : 14} />
           </span>
           <div className="min-w-0">
-            <span className="block truncate text-[10px] font-medium uppercase text-muted-foreground">{node?.title ?? "Current task"}</span>
-            <strong className="block truncate text-xs leading-4">{task.title}</strong>
+            <span className={cn("block truncate text-[10px] font-medium uppercase text-muted-foreground", isPanel && "text-[9px]")}>{node?.title ?? "Current task"}</span>
+            <strong className={cn("block truncate text-xs leading-4", isPanel && "text-[11px] leading-3.5")}>{task.title}</strong>
           </div>
           <span className="ml-auto flex shrink-0 items-center gap-2">
-            <span className="hidden max-w-32 truncate text-[11px] text-muted-foreground md:inline">
+            <span className={cn("hidden max-w-32 truncate text-[11px] text-muted-foreground md:inline", isPanel && "text-[10px]")}>
               {taskStatusLabel(task.status)}
             </span>
-            <span className="rounded-full border bg-background/70 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+            <span className={cn(
+              "rounded-full border bg-background/70 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground",
+              isPanel && "px-1 py-0.5 text-[9px]"
+            )}>
               {completedSubtasks}/{subtaskCount}
             </span>
           </span>
           <ChevronDownIcon
-            size={14}
+            size={isPanel ? 13 : 14}
             className={`shrink-0 text-muted-foreground transition-transform duration-500 ease-out ${open ? "rotate-180" : ""}`}
           />
         </button>
         <div className={`construct-floating-task-card__details ${open ? "is-open" : ""}`}>
-          <div className="flex flex-col gap-1.5 px-3 pb-2.5">
+          <div className={cn("flex flex-col gap-1.5 px-3 pb-2.5", isPanel && "px-2 pb-2")}>
             <MarkdownBlock content={active?.prompt || task.prompt} theme={theme} onOpenFile={onOpenFile} />
             {introducedConceptIds.length ? (
               <TaskConceptChips conceptIds={introducedConceptIds} compact />
             ) : null}
             {task.successCriteria?.length ? (
-              <div className="rounded-[8px] bg-muted/30 p-2">
+              <div className={cn("rounded-[8px] bg-muted/30 p-2", isPanel && "rounded-md p-1.5 text-[11px]")}>
                 <span className="mb-1 block font-medium">Success criteria</span>
                 <ul className="flex flex-col gap-1 text-muted-foreground">
-                  {task.successCriteria.map((item, index) => <li key={`${index}:${item}`}>- {item}</li>)}
+                  {task.successCriteria.map((item, index) => <li key={`${index}:${item}`}>{item}</li>)}
                 </ul>
               </div>
             ) : null}
@@ -2414,17 +2451,14 @@ function FloatingFlowTaskCard({
                 ))}
               </div>
             ) : null}
-            <div className="flex items-center justify-between gap-3">
-              <span className="min-w-0 truncate text-[11px] text-muted-foreground">
-                {active?.title ?? task.title}
-              </span>
+            <div className="flex justify-end pt-1">
               <span className="flex shrink-0 items-center gap-1.5">
-                <Button size="sm" variant="secondary" onClick={() => onOpenTask(task)}>
-                  <ListChecksIcon size={14} />
+                <Button size={isPanel ? "sm" : "default"} variant="secondary" onClick={() => onOpenTask(task)}>
+                  <ListChecksIcon size={isPanel ? 12 : 14} />
                   Open
                 </Button>
-                <Button size="sm" onClick={() => void onSubmitTask(task, undefined, active?.id)} disabled={pending}>
-                  <SendIcon size={14} />
+                <Button size={isPanel ? "sm" : "default"} onClick={() => void onSubmitTask(task, undefined, active?.id)} disabled={pending}>
+                  <SendIcon size={isPanel ? 12 : 14} />
                   Submit
                 </Button>
               </span>
@@ -2442,7 +2476,8 @@ function FlowTaskCard({
   onOpenTask,
   onSubmitTask,
   onOpenFile,
-  compact = false
+  compact = false,
+  chatMode
 }: {
   task: ConstructFlowPracticeTask;
   theme: "light" | "dark" | "system";
@@ -2450,29 +2485,32 @@ function FlowTaskCard({
   onSubmitTask: (task: ConstructFlowPracticeTask, note?: string, subtaskId?: string) => Promise<void>;
   onOpenFile: (reference: InlineFileRef) => void;
   compact?: boolean;
+  chatMode?: FlowChatMode;
 }) {
   const [note, setNote] = useState("");
   const active = activeSubtask(task);
   const canSubmit = task.status === "waiting" || task.status === "submitted";
   const introducedConceptIds = taskIntroducedConceptIds(task);
   const guidance = taskGuidanceItems(task, active?.id);
+  const isPanel = chatMode === "panel";
+
   return (
-    <article className="grid min-w-0 gap-3 border-b py-4 text-xs last:border-b-0">
-      <aside className="min-w-0 border-b pb-3">
+    <article className={cn("grid min-w-0 gap-3 border-b py-4 text-xs last:border-b-0", isPanel && "py-3 gap-2.5 text-[11px]")}>
+      <aside className={cn("min-w-0 border-b pb-3", isPanel && "pb-2")}>
         <div className="mb-3 min-w-0">
           <div className="flex items-center justify-between gap-2">
-            <strong className="truncate text-sm">{task.title}</strong>
+            <strong className={cn("truncate text-sm", isPanel && "text-xs")}>{task.title}</strong>
             <span className="flex shrink-0 items-center gap-1.5">
               <Badge variant={task.status === "completed" ? "secondary" : "outline"}>{taskStatusLabel(task.status)}</Badge>
               {onOpenTask ? (
-                <Button size="sm" variant="ghost" onClick={() => onOpenTask(task)}>
-                  <ListChecksIcon size={13} />
+                <Button size={isPanel ? "sm" : "default"} variant="ghost" onClick={() => onOpenTask(task)}>
+                  <ListChecksIcon size={isPanel ? 12 : 13} />
                   Open
                 </Button>
               ) : null}
             </span>
           </div>
-          <p className="mt-1 line-clamp-2 text-[11px] leading-4 text-muted-foreground">{task.prompt}</p>
+          <p className={cn("mt-1 line-clamp-2 text-[11px] leading-4 text-muted-foreground", isPanel && "text-[10px] leading-3.5")}>{task.prompt}</p>
         </div>
 
         {task.subtasks?.length ? (
@@ -2482,14 +2520,18 @@ function FlowTaskCard({
                 key={subtask.id}
                 className={cn(
                   "grid grid-cols-[1.5rem_minmax(0,1fr)] gap-2 rounded-[7px] px-1.5 py-1.5",
+                  isPanel && "gap-1.5 px-1 py-1 rounded-md",
                   subtask.id === active?.id && "bg-muted/55 text-foreground",
                   subtask.status === "completed" && "text-muted-foreground"
                 )}
               >
-                <span className="inline-flex size-5 items-center justify-center rounded-[6px] bg-background text-[10px] font-semibold ring-1 ring-border/70">{index + 1}</span>
+                <span className={cn(
+                  "inline-flex size-5 items-center justify-center rounded-[6px] bg-background text-[10px] font-semibold ring-1 ring-border/70",
+                  isPanel && "size-4 text-[9px] rounded-md"
+                )}>{index + 1}</span>
                 <span className="min-w-0">
                   <span className="block truncate">{subtask.title}</span>
-                  <span className="text-[10px] text-muted-foreground">{subtaskStatusLabel(subtask.status)}</span>
+                  <span className={cn("text-[10px] text-muted-foreground", isPanel && "text-[9px]")}>{subtaskStatusLabel(subtask.status)}</span>
                 </span>
               </li>
             ))}
@@ -2500,7 +2542,7 @@ function FlowTaskCard({
       <div className="min-w-0">
         <div className="flex flex-col gap-3">
           <div>
-            <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Now</span>
+            <span className={cn("mb-1 block text-[11px] font-medium uppercase tracking-wide text-muted-foreground", isPanel && "text-[10px]")}>Now</span>
             <MarkdownBlock content={active?.nextInstructions || active?.prompt || task.prompt} theme={theme} onOpenFile={onOpenFile} />
           </div>
 
@@ -2516,10 +2558,10 @@ function FlowTaskCard({
           </div>
 
           {!compact && task.successCriteria?.length ? (
-            <div className="grid gap-1.5 border-t pt-3">
-              <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Done means</span>
+            <div className={cn("grid gap-1.5 border-t pt-3", isPanel && "gap-1 border-t pt-2")}>
+              <span className={cn("text-[11px] font-medium uppercase tracking-wide text-muted-foreground", isPanel && "text-[10px]")}>Done means</span>
               <ul className="grid gap-1 text-muted-foreground">
-                {task.successCriteria.map((item, index) => <li key={`${index}:${item}`}>- {item}</li>)}
+                {task.successCriteria.map((item, index) => <li key={`${index}:${item}`}>{item}</li>)}
               </ul>
             </div>
           ) : null}
@@ -2527,8 +2569,8 @@ function FlowTaskCard({
           {introducedConceptIds.length ? <TaskConceptChips conceptIds={introducedConceptIds} compact /> : null}
 
           {task.preparedFiles?.length && !compact ? (
-            <details className="group border-t pt-3">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground [&::-webkit-details-marker]:hidden">
+            <details className={cn("group border-t pt-3", isPanel && "pt-2")}>
+              <summary className={cn("flex cursor-pointer list-none items-center justify-between gap-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground [&::-webkit-details-marker]:hidden", isPanel && "text-[10px]")}>
                 Prepared by Flow
                 <ChevronDownIcon size={13} className="transition-transform group-open:rotate-180" />
               </summary>
@@ -2544,15 +2586,15 @@ function FlowTaskCard({
             <div className="grid gap-2 border-t pt-3">
               {!compact ? (
                 <Textarea
-                  className="min-h-16 resize-y text-sm"
+                  className={cn("min-h-16 resize-y text-sm", isPanel && "min-h-12 text-xs")}
                   value={note}
                   placeholder="Optional note for Flow before submitting..."
                   onChange={(event) => setNote(event.target.value)}
                 />
               ) : null}
               <div className="flex justify-end">
-                <Button size="sm" onClick={() => void onSubmitTask(task, note.trim() || undefined, active?.id)}>
-                  <SendIcon size={14} />
+                <Button size={isPanel ? "sm" : "default"} onClick={() => void onSubmitTask(task, note.trim() || undefined, active?.id)}>
+                  <SendIcon size={isPanel ? 12 : 14} />
                   Submit {active ? "subtask" : "task"}
                 </Button>
               </div>
@@ -2787,7 +2829,8 @@ function buildFlowMessages({
   onOpenFile,
   onRewindUserMessage,
   rewindingSessionId,
-  pending
+  pending,
+  chatMode
 }: {
   sessions: ConstructFlowSession[];
   concepts: ConceptCard[];
@@ -2805,6 +2848,7 @@ function buildFlowMessages({
   onRewindUserMessage?: (sessionId: string, content: string) => Promise<void>;
   rewindingSessionId?: string | null;
   pending?: boolean;
+  chatMode: FlowChatMode;
 }): AgentSessionMessage[] {
   return sessions.flatMap((session): AgentSessionMessage[] => {
     const user = session.messages.find((message) => message.role === "user");
@@ -2823,7 +2867,8 @@ function buildFlowMessages({
       onOpenConceptById,
       onAcknowledgeConceptEvent,
       onOpenTask,
-      onOpenFile
+      onOpenFile,
+      chatMode
     });
 
     const submittedTask = sessions
@@ -2929,7 +2974,8 @@ function buildFlowAgentParts({
   onOpenConceptById,
   onAcknowledgeConceptEvent,
   onOpenTask,
-  onOpenFile
+  onOpenFile,
+  chatMode
 }: {
   session: ConstructFlowSession;
   assistantContent?: string;
@@ -2945,6 +2991,7 @@ function buildFlowAgentParts({
   onAcknowledgeConceptEvent: (eventKey: string) => void;
   onOpenTask: (task: ConstructFlowPracticeTask) => void;
   onOpenFile: (reference: InlineFileRef) => void;
+  chatMode: FlowChatMode;
 }): AgentSessionMessagePart[] {
   const parts: AgentSessionMessagePart[] = [];
   const toolCallsById = new Map(session.toolCalls.map((toolCall) => [toolCall.id, toolCall]));
@@ -2953,6 +3000,7 @@ function buildFlowAgentParts({
   const fallbackText = splitProcessNarration(assistantContent);
   const pendingQuestion = findPendingLearnerQuestion(session);
   const renderedConceptKeys = new Set<string>();
+  let planPathCount = 0;
 
   for (const rawEvent of timeline) {
     if (shouldHideFlowTimelinePart(session, rawEvent)) {
@@ -2970,7 +3018,6 @@ function buildFlowAgentParts({
       });
       continue;
     }
-
     const toolName = event.kind === "tool" ? event.name : event.title;
     const isConcept = toolName === "add-concept" || toolName === "modify-concept" || toolName === "remove-concept" || toolName === "suggest-existing-concept";
     const isPracticeTask = toolName === "practice-task";
@@ -2980,7 +3027,7 @@ function buildFlowAgentParts({
     if (event.kind === "tool" && isQuestionTool(toolName)) {
       const questionToolCall = toolCallsById.get(event.toolCallId);
       if (questionToolCall?.response) {
-        parts.push(buildQuestionAnsweredPart(session.id, questionToolCall));
+        parts.push(buildQuestionAnsweredPart(session.id, questionToolCall, theme));
       }
       continue;
     }
@@ -2994,7 +3041,7 @@ function buildFlowAgentParts({
       if (payload.id) {
         renderedConceptKeys.add(mutationKey);
       }
-      parts.push(buildConceptCardPart(session.id, event.id, toolName, event.input, event.outputPreview, event.status, theme, conceptMutations, acknowledgedConceptEventKeys, onAcknowledgeConceptEvent, onOpenConceptDetails, concepts));
+      parts.push(buildConceptCardPart(session.id, event.id, toolName, event.input, event.outputPreview, event.status, theme, conceptMutations, acknowledgedConceptEventKeys, onAcknowledgeConceptEvent, onOpenConceptDetails, concepts, chatMode));
       continue;
     }
 
@@ -3010,7 +3057,8 @@ function buildFlowAgentParts({
         currentTaskId,
         onOpenTask,
         theme,
-        onOpenFile
+        onOpenFile,
+        chatMode
       }));
       continue;
     }
@@ -3024,19 +3072,24 @@ function buildFlowAgentParts({
         status: event.status,
         session,
         theme,
-        onOpenFile
+        onOpenFile,
+        chatMode
       }));
       continue;
     }
 
     if (isPlanPath && event.kind === "tool") {
+      const isUpdate = planPathCount > 0;
+      planPathCount++;
       parts.push(buildPlanPathPart({
         sessionId: session.id,
         eventId: event.id,
         input: event.input,
         outputPreview: event.outputPreview,
         status: event.status,
-        theme
+        theme,
+        chatMode,
+        isUpdate
       }));
       continue;
     }
@@ -3224,19 +3277,26 @@ function buildFlowQuestionResponse(
 
 function buildQuestionAnsweredPart(
   sessionId: string,
-  toolCall: ConstructFlowToolCallRecord
+  toolCall: ConstructFlowToolCallRecord,
+  theme: "light" | "dark" | "system"
 ): AgentSessionMessagePart {
   const payload = readAskUserPayload(toolCall.input, toolCall.outputPreview);
   const response = toolCall.response;
   const question = response?.question || payload.question || "Flow question";
   const answer = response?.answer || "";
+
+  const isDark = theme === "system"
+    ? window.matchMedia("(prefers-color-scheme: dark)").matches
+    : theme === "dark";
+  const codeTheme = isDark ? oneDark : oneLight;
+
   return {
     type: "actions",
     id: `${sessionId}:question-answer:${toolCall.id}`,
     content: (
       <div className="group flex w-fit max-w-full min-w-0 items-start gap-2 rounded-[12px] border border-border/70 bg-muted/20 px-3 py-2 text-xs shadow-sm transition-[background-color,border-color] duration-150 hover:bg-muted/30">
         <HelpCircleIcon size={15} className="mt-0.5 shrink-0 text-muted-foreground" />
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 bg-transparent">
           <div className="flex flex-wrap items-center gap-1.5">
             <strong className="font-medium text-foreground">Question answered</strong>
             <span className="rounded-full bg-background/80 px-1.5 py-0.5 text-[10px] leading-none text-muted-foreground ring-1 ring-border/60">
@@ -3245,9 +3305,39 @@ function buildQuestionAnsweredPart(
           </div>
           <p className="mt-1 max-w-[68ch] text-muted-foreground">{question}</p>
           {answer ? (
-            <p className="mt-1 max-w-[68ch] whitespace-pre-wrap break-words text-foreground/90">
-              {answer}
-            </p>
+            payload.answerMode === "code" && !response?.skipped ? (
+              <div className="mt-1.5 overflow-hidden rounded-md border bg-muted/30 max-w-[68ch] w-full font-mono">
+                <div className="border-b bg-muted/40 px-2 py-1 text-[10px] text-muted-foreground select-none flex items-center justify-between">
+                  <span className="font-semibold uppercase tracking-wider">{payload.language ?? "typescript"}</span>
+                </div>
+                <SyntaxHighlighter
+                  style={codeTheme}
+                  language={payload.language ?? "typescript"}
+                  PreTag="div"
+                  customStyle={{
+                    margin: 0,
+                    padding: "8px 10px",
+                    background: "transparent",
+                    border: 0,
+                    borderRadius: 0,
+                    fontSize: "11px",
+                    lineHeight: "1.4",
+                    overflowX: "auto"
+                  }}
+                  codeTagProps={{
+                    style: {
+                      fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
+                    }
+                  }}
+                >
+                  {answer}
+                </SyntaxHighlighter>
+              </div>
+            ) : (
+              <p className="mt-1 max-w-[68ch] whitespace-pre-wrap break-words text-foreground/90">
+                {answer}
+              </p>
+            )
           ) : null}
         </div>
       </div>
@@ -3304,7 +3394,8 @@ function buildConceptExercisePart({
   status,
   session,
   theme,
-  onOpenFile
+  onOpenFile,
+  chatMode
 }: {
   sessionId: string;
   eventId: string;
@@ -3314,6 +3405,7 @@ function buildConceptExercisePart({
   session: ConstructFlowSession;
   theme: "light" | "dark" | "system";
   onOpenFile: (reference: InlineFileRef) => void;
+  chatMode: FlowChatMode;
 }): AgentSessionMessagePart {
   const payload = readExerciseToolPayload(input, outputPreview);
   const exercises = session.conceptExercises ?? [];
@@ -3337,37 +3429,53 @@ function buildConceptExercisePart({
 
   const promptText = exercise?.prompt ?? payload.prompt;
   const sourceText = exercise?.sourceText ?? payload.sourceText;
+  const isPanel = chatMode === "panel";
+
+  const containerClass = cn(
+    "flex w-full max-w-[32rem] min-w-0 flex-col gap-2 rounded-[12px] border border-border/60 bg-muted/30 p-3 text-left text-foreground",
+    isPanel && "p-2.5 rounded-xl gap-1.5"
+  );
 
   return {
     type: "actions",
     id: `${sessionId}:exercise:${eventId}`,
     content: (
-      <div className="flex w-full max-w-[32rem] min-w-0 flex-col gap-2 rounded-[12px] border border-border/60 bg-muted/30 p-3 text-left text-foreground">
-        <div className="flex min-w-0 items-center justify-between gap-2.5 border-b border-border/40 pb-2">
+      <div className={containerClass}>
+        <div className={cn("flex min-w-0 items-center justify-between gap-2.5 border-b border-border/40 pb-2", isPanel && "pb-1.5 gap-2")}>
           <div className="flex min-w-0 items-center gap-2">
-            <span className={cn("grid size-7 shrink-0 place-items-center rounded-[6px] border shadow-xs", iconClass)}>
+            <span className={cn("grid size-7 shrink-0 place-items-center rounded-[6px] border shadow-xs bg-background/80", iconClass, isPanel && "size-6")}>
               {failed ? (
-                <CircleAlertIcon size={13} />
+                <CircleAlertIcon size={isPanel ? 11 : 13} />
               ) : status === "running" ? (
-                <Loader2Icon size={13} className="animate-spin" />
+                <Loader2Icon size={isPanel ? 11 : 13} className="animate-spin" />
               ) : (
-                <PencilIcon size={13} />
+                <PencilIcon size={isPanel ? 11 : 13} />
               )}
             </span>
             <div className="min-w-0">
-              <span className="block text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">Concept Exercise</span>
-              <strong className="block truncate text-sm font-semibold tracking-tight text-foreground">
+              <span className={cn(
+                "block text-[10px] text-muted-foreground font-semibold uppercase tracking-wider",
+                isPanel && "text-[9px]"
+              )}>Concept Exercise</span>
+              <strong className={cn(
+                "block truncate text-sm font-semibold tracking-tight text-foreground",
+                isPanel && "text-xs"
+              )}>
                 {exercise?.title ?? payload.title}
               </strong>
             </div>
           </div>
-          <span className={cn("rounded-full border bg-background/70 px-2 py-0.5 text-[10px] font-medium shadow-2xs", statusColor)}>
+          <span className={cn(
+            "rounded-full border bg-background/70 px-2 py-0.5 text-[10px] font-medium shadow-2xs",
+            statusColor,
+            isPanel && "text-[9px] px-1.5"
+          )}>
             {statusText}
           </span>
         </div>
 
         {status !== "running" && (
-          <div className="mt-1 flex flex-col gap-2.5 text-xs">
+          <div className={cn("mt-1 flex flex-col gap-2.5 text-xs", isPanel && "gap-2 text-[11px]")}>
             {promptText && (
               <div className="text-foreground/90 font-medium leading-relaxed">
                 <MarkdownBlock content={promptText} theme={theme} onOpenFile={onOpenFile} />
@@ -3376,16 +3484,28 @@ function buildConceptExercisePart({
 
             {sourceText && (
               <div className="flex flex-col gap-1">
-                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Reference Code / Context:</span>
-                <pre className="max-h-80 overflow-y-auto overflow-x-auto rounded-[8px] border bg-background/80 p-3 font-mono text-[10px] leading-relaxed select-text">
+                <span className={cn(
+                  "text-[10px] font-semibold text-muted-foreground uppercase tracking-wider",
+                  isPanel && "text-[9px]"
+                )}>Reference Code / Context:</span>
+                <pre className={cn(
+                  "max-h-80 overflow-y-auto overflow-x-auto rounded-[8px] border bg-background/80 p-3 font-mono text-[10px] leading-relaxed select-text",
+                  isPanel && "p-2 rounded-md text-[9px]"
+                )}>
                   <code className="text-foreground/95">{sourceText}</code>
                 </pre>
               </div>
             )}
 
             {exercise?.status === "reviewed" && exercise.reviewNote && (
-              <div className="rounded-[8px] border border-[color:var(--construct-success-soft)] bg-[color:var(--construct-success-soft)]/20 p-2.5 text-foreground/90">
-                <span className="mb-0.5 block text-[10px] font-bold text-[color:var(--construct-success)] uppercase tracking-wider">Feedback</span>
+              <div className={cn(
+                "rounded-[8px] border border-[color:var(--construct-success-soft)] bg-[color:var(--construct-success-soft)]/20 p-2.5 text-foreground/90",
+                isPanel && "p-2 rounded-md text-[11px]"
+              )}>
+                <span className={cn(
+                  "mb-0.5 block text-[10px] font-bold text-[color:var(--construct-success)] uppercase tracking-wider",
+                  isPanel && "text-[9px]"
+                )}>Feedback</span>
                 <div className="italic">
                   <MarkdownBlock content={exercise.reviewNote} theme={theme} onOpenFile={onOpenFile} />
                 </div>
@@ -3426,7 +3546,9 @@ function buildPlanPathPart({
   input,
   outputPreview,
   status,
-  theme
+  theme,
+  chatMode,
+  isUpdate
 }: {
   sessionId: string;
   eventId: string;
@@ -3434,6 +3556,8 @@ function buildPlanPathPart({
   outputPreview?: string;
   status: string;
   theme: "light" | "dark" | "system";
+  chatMode: FlowChatMode;
+  isUpdate?: boolean;
 }): AgentSessionMessagePart {
   const inputData = parsePlanPathInput(input);
   const outputData = parsePlanPathOutput(outputPreview);
@@ -3443,10 +3567,10 @@ function buildPlanPathPart({
   const reason = inputData?.reason || "";
   const nodes = Array.isArray(inputData?.nodes) ? inputData.nodes : [];
 
-  let statusText = "Planned";
+  let statusText = isUpdate ? "Updated" : "Planned";
   let statusColor = "text-muted-foreground";
   if (running) {
-    statusText = "Planning...";
+    statusText = isUpdate ? "Updating..." : "Planning...";
     statusColor = "text-amber-500 font-medium animate-pulse";
   } else if (failed) {
     statusText = "Failed";
@@ -3457,42 +3581,59 @@ function buildPlanPathPart({
   }
 
   const errorMessage = failed ? (outputData?.message || outputData?.error || (typeof outputPreview === "string" ? outputPreview : "An error occurred during path planning.")) : null;
+  const isPanel = chatMode === "panel";
+
+  const containerClass = cn(
+    "flex w-full max-w-[32rem] min-w-0 flex-col gap-2 rounded-[12px] border border-border/60 bg-muted/30 p-3 text-left text-foreground",
+    isPanel && "p-2.5 rounded-xl gap-1.5"
+  );
 
   return {
     type: "actions",
     id: `${sessionId}:plan-path:${eventId}`,
     content: (
-      <div className="flex w-full max-w-[32rem] min-w-0 flex-col gap-2 rounded-[12px] border border-border/60 bg-muted/30 p-3 text-left text-foreground">
+      <div className={containerClass}>
         {/* Header */}
         <div className="flex min-w-0 items-center justify-between gap-2.5 border-b border-border/40 pb-2">
           <div className="flex min-w-0 items-center gap-2">
             <span className={cn(
               "grid size-7 shrink-0 place-items-center rounded-[6px] border shadow-xs bg-background/80",
-              failed ? "border-destructive/15 text-destructive bg-destructive/5" : "border-border/70 text-muted-foreground"
+              failed ? "border-destructive/15 text-destructive bg-destructive/5" : "border-border/70 text-muted-foreground",
+              isPanel && "size-6"
             )}>
               {failed ? (
-                <CircleAlertIcon size={13} />
+                <CircleAlertIcon size={isPanel ? 11 : 13} />
               ) : running ? (
-                <Loader2Icon size={13} className="animate-spin" />
+                <Loader2Icon size={isPanel ? 11 : 13} className="animate-spin" />
               ) : (
-                <RouteIcon size={13} />
+                <RouteIcon size={isPanel ? 11 : 13} />
               )}
             </span>
             <div className="min-w-0">
-              <span className="block text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">Flow Path Tool</span>
-              <strong className="block truncate text-sm font-semibold tracking-tight text-foreground">
-                Learning Path Plan
+              <strong className={cn(
+                "block truncate text-sm font-semibold tracking-tight",
+                running ? "opaline-agent-thinking-shimmer" : "text-foreground",
+                isPanel && "text-xs"
+              )}>
+                {isUpdate ? "Updating path" : "Planning path"}
               </strong>
             </div>
           </div>
-          <span className={cn("rounded-full border bg-background/70 px-2 py-0.5 text-[10px] font-medium shadow-2xs", statusColor)}>
+          <span className={cn(
+            "rounded-full border bg-background/70 px-2 py-0.5 text-[10px] font-medium shadow-2xs",
+            statusColor,
+            isPanel && "text-[9px] px-1.5"
+          )}>
             {statusText}
           </span>
         </div>
 
         {/* Reason / Context */}
         {reason && (
-          <div className="mt-1 text-xs text-muted-foreground bg-background/40 rounded-md p-2 border border-border/20">
+          <div className={cn(
+            "mt-1 text-xs text-muted-foreground bg-background/40 rounded-md p-2 border border-border/20",
+            isPanel && "text-[11px] p-1.5"
+          )}>
             <span className="font-semibold text-foreground/80 block mb-0.5">Objective:</span>
             <p className="leading-relaxed select-text italic">"{reason}"</p>
           </div>
@@ -3500,19 +3641,25 @@ function buildPlanPathPart({
 
         {/* Error Block */}
         {errorMessage && (
-          <div className="mt-2 rounded-md border border-destructive/20 bg-destructive/5 p-2.5 text-xs text-destructive select-text">
+          <div className={cn(
+            "mt-2 rounded-md border border-destructive/20 bg-destructive/5 p-2.5 text-xs text-destructive select-text",
+            isPanel && "p-2 text-[11px]"
+          )}>
             <div className="flex items-center gap-1.5 font-semibold mb-1">
-              <CircleAlertIcon size={13} className="shrink-0" />
+              <CircleAlertIcon size={isPanel ? 11 : 13} className="shrink-0" />
               <span>Planning Blocked / Failed</span>
             </div>
-            <p className="leading-relaxed text-foreground/90 pl-4.5">{errorMessage}</p>
+            <p className={cn("leading-relaxed text-foreground/90 pl-4.5", isPanel && "pl-3.5")}>{errorMessage}</p>
           </div>
         )}
 
         {/* Nodes List */}
         {nodes.length > 0 && !failed && (
           <div className="mt-2 flex flex-col gap-1.5">
-            <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider px-1">Planned Nodes ({nodes.length})</span>
+            <span className={cn(
+              "text-[10px] font-semibold text-muted-foreground uppercase tracking-wider px-1",
+              isPanel && "text-[9px]"
+            )}>Planned Nodes ({nodes.length})</span>
             <div className="flex flex-col gap-1 max-h-56 overflow-y-auto pr-1">
               {nodes.map((node: any, idx: number) => {
                 const nodeStatus = node.status || "planned";
@@ -3525,12 +3672,16 @@ function buildPlanPathPart({
                       "flex items-start gap-2 rounded-md p-2 border transition-all text-xs",
                       isActive
                         ? "border-primary/40 bg-primary/5 text-foreground ring-1 ring-primary/20"
-                        : "border-border/30 bg-background/40 text-muted-foreground"
+                        : "border-border/30 bg-background/40 text-muted-foreground",
+                      isPanel && "p-1.5 text-[11px]"
                     )}
                   >
-                    <span className="mt-0.5 shrink-0 flex items-center justify-center size-4 rounded-full border border-border/60 text-[9px] font-semibold">
+                    <span className={cn(
+                      "mt-0.5 shrink-0 flex items-center justify-center size-4 rounded-full border border-border/60 text-[9px] font-semibold",
+                      isPanel && "size-3.5 text-[8px]"
+                    )}>
                       {isCompleted ? (
-                        <CheckIcon size={10} className="text-emerald-600 dark:text-emerald-400" />
+                        <CheckIcon size={isPanel ? 9 : 10} className="text-emerald-600 dark:text-emerald-400" />
                       ) : (
                         idx + 1
                       )}
@@ -3541,12 +3692,18 @@ function buildPlanPathPart({
                           {node.title}
                         </span>
                         {node.kind && (
-                          <span className="text-[9px] px-1 rounded-sm bg-muted text-muted-foreground uppercase tracking-tight shrink-0 font-medium">
+                          <span className={cn(
+                            "text-[9px] px-1 rounded-sm bg-muted text-muted-foreground uppercase tracking-tight shrink-0 font-medium",
+                            isPanel && "text-[8px] px-0.5"
+                          )}>
                             {node.kind}
                           </span>
                         )}
                       </div>
-                      <p className="text-[11px] text-muted-foreground leading-normal mt-0.5 line-clamp-2 select-text">{node.summary}</p>
+                      <p className={cn(
+                        "text-[11px] text-muted-foreground leading-normal mt-0.5 line-clamp-2 select-text",
+                        isPanel && "text-[10px] mt-0"
+                      )}>{node.summary}</p>
                     </div>
                   </div>
                 );
@@ -3580,7 +3737,10 @@ function buildTaskCreatedPart({
   tasks,
   pathNodes,
   currentTaskId,
-  onOpenTask
+  onOpenTask,
+  theme,
+  onOpenFile,
+  chatMode
 }: {
   sessionId: string;
   eventId: string;
@@ -3593,6 +3753,7 @@ function buildTaskCreatedPart({
   onOpenTask: (task: ConstructFlowPracticeTask) => void;
   theme: "light" | "dark" | "system";
   onOpenFile: (reference: InlineFileRef) => void;
+  chatMode: FlowChatMode;
 }): AgentSessionMessagePart {
   const payload = readTaskToolPayload(input, outputPreview);
   const task = resolveTaskForToolPayload(payload, tasks, sessionId);
@@ -3612,6 +3773,8 @@ function buildTaskCreatedPart({
     ? "border-destructive/15 bg-destructive/5 text-destructive"
     : "border-border/70 bg-background/80 text-muted-foreground";
 
+  const isPanel = chatMode === "panel";
+
   return {
     type: "actions",
     id: `${sessionId}:task:${eventId}`,
@@ -3619,19 +3782,24 @@ function buildTaskCreatedPart({
       <button
         type="button"
         className={cn(
-          "construct-flow-event-card group flex w-full max-w-[32rem] min-w-0 items-center justify-between gap-2.5 rounded-[12px] border border-border/60 bg-muted/30 p-2.5 text-left text-foreground hover:bg-muted/65 active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 cursor-default"
+          "construct-flow-event-card group flex w-full max-w-[32rem] min-w-0 items-center justify-between gap-2.5 rounded-[12px] border border-border/60 bg-muted/30 p-2.5 text-left text-foreground hover:bg-muted/65 active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 cursor-default",
+          isPanel && "p-2 gap-2 rounded-lg"
         )}
         disabled={!ready}
         onClick={() => task && onOpenTask(task)}
       >
         <div className="flex min-w-0 flex-1 items-center gap-2.5">
-          <span className={cn("grid size-8 shrink-0 place-items-center rounded-[8px] border shadow-sm group-hover:scale-95", iconClass)}>
+          <span className={cn(
+            "grid size-8 shrink-0 place-items-center rounded-[8px] border shadow-sm group-hover:scale-95",
+            iconClass,
+            isPanel && "size-7 rounded-md"
+          )}>
             {failed ? (
-              <CircleAlertIcon size={14} />
+              <CircleAlertIcon size={isPanel ? 13 : 14} />
             ) : status === "running" ? (
-              <Loader2Icon size={14} className="animate-spin" />
+              <Loader2Icon size={isPanel ? 13 : 14} className="animate-spin" />
             ) : (
-              <TerminalIcon size={14} />
+              <TerminalIcon size={isPanel ? 13 : 14} />
             )}
           </span>
           <div className="min-w-0 flex-1">
@@ -3646,13 +3814,16 @@ function buildTaskCreatedPart({
                 </>
               ) : null}
             </div>
-            <strong className="block truncate text-sm font-semibold text-foreground tracking-tight group-hover:text-foreground/90">
+            <strong className={cn(
+              "block truncate text-sm font-semibold text-foreground tracking-tight group-hover:text-foreground/90",
+              isPanel && "text-xs"
+            )}>
               {task?.title ?? payload.title}
             </strong>
           </div>
         </div>
         {ready && (
-          <ChevronRightIcon size={15} className="shrink-0 text-muted-foreground/60 group-hover:translate-x-0.5 group-hover:text-foreground" />
+          <ChevronRightIcon size={isPanel ? 13 : 15} className="shrink-0 text-muted-foreground/60 group-hover:translate-x-0.5 group-hover:text-foreground" />
         )}
       </button>
     )
@@ -4154,7 +4325,8 @@ function buildConceptCardPart(
   acknowledgedConceptEventKeys: Set<string>,
   onAcknowledgeConceptEvent: (eventKey: string) => void,
   onOpenConceptDetails: (concept: ConceptCard) => void,
-  concepts: ConceptCard[]
+  concepts: ConceptCard[],
+  chatMode: FlowChatMode
 ): AgentSessionMessagePart {
   const payload = readConceptPayload(input, outputPreview);
   const conceptId = payload.id;
@@ -4228,6 +4400,8 @@ function buildConceptCardPart(
     }
   }
 
+  const isPanel = chatMode === "panel";
+
   return {
     type: "actions",
     id: `${sessionId}:concept:${eventId}`,
@@ -4240,6 +4414,7 @@ function buildConceptCardPart(
             existingConcept={existingConcept}
             levelChange={levelChange}
             input={input}
+            chatMode={chatMode}
           />
         ) : toolName !== "remove-concept" ? (
           <ConceptSummaryCard
@@ -4249,16 +4424,23 @@ function buildConceptCardPart(
             attention={shouldRequestAttention}
             levelChange={levelChange}
             changedFields={changedFields}
+            chatMode={chatMode}
             onOpen={() => {
               onAcknowledgeConceptEvent(conceptEventKey);
               onOpenConceptDetails(conceptCard);
             }}
           />
         ) : (
-          <div className="construct-concept-summary-card flex w-full max-w-[32rem] min-w-0 items-center justify-between gap-2.5 rounded-[12px] border border-border/60 bg-muted/30 p-2.5 text-left text-foreground">
+          <div className={cn(
+            "construct-concept-summary-card flex w-full max-w-[32rem] min-w-0 items-center justify-between gap-2.5 rounded-[12px] border border-border/60 bg-muted/30 p-2.5 text-left text-foreground",
+            isPanel && "p-2 gap-2 rounded-lg"
+          )}>
             <div className="flex min-w-0 flex-1 items-center gap-2.5">
-              <span className="grid size-8 shrink-0 place-items-center rounded-[8px] border border-destructive/15 bg-destructive/5 text-destructive shadow-sm">
-                <Trash2Icon size={14} />
+              <span className={cn(
+                "grid size-8 shrink-0 place-items-center rounded-[8px] border border-destructive/15 bg-destructive/5 text-destructive shadow-sm",
+                isPanel && "size-7 rounded-md"
+              )}>
+                <Trash2Icon size={isPanel ? 13 : 14} />
               </span>
               <div className="min-w-0 flex-1">
                 <div className="mb-0.5 flex min-w-0 items-center gap-1 text-[10px] text-muted-foreground font-medium">
@@ -4272,7 +4454,10 @@ function buildConceptCardPart(
                     </>
                   )}
                 </div>
-                <strong className="block truncate text-sm font-semibold text-destructive/90 tracking-tight">
+                <strong className={cn(
+                  "block truncate text-sm font-semibold text-destructive/90 tracking-tight",
+                  isPanel && "text-xs"
+                )}>
                   {payload.title || conceptId || "Removed concept"}
                 </strong>
               </div>
@@ -4289,13 +4474,15 @@ function ConceptCreationPreview({
   toolName,
   existingConcept,
   levelChange,
-  input
+  input,
+  chatMode
 }: {
   payload: ConceptPayload;
   toolName?: string;
   existingConcept?: ConceptCard;
   levelChange?: { before: number; after: number } | null;
   input?: unknown;
+  chatMode: FlowChatMode;
 }) {
   const isUpdate = toolName === "modify-concept" || Boolean(existingConcept);
   const title = payload.title && payload.title !== "Concept"
@@ -4329,12 +4516,19 @@ function ConceptCreationPreview({
     }
   }
   const mainTitle = isUpdate ? `Updating ${title} concept...` : title;
+  const isPanel = chatMode === "panel";
 
   return (
-    <div className="construct-concept-summary-card flex w-full max-w-[32rem] min-w-0 items-center justify-between gap-2.5 rounded-[12px] border border-border/60 bg-muted/30 p-2.5 text-left text-foreground">
+    <div className={cn(
+      "construct-concept-summary-card flex w-full max-w-[32rem] min-w-0 items-center justify-between gap-2.5 rounded-[12px] border border-border/60 bg-muted/30 p-2.5 text-left text-foreground",
+      isPanel && "p-2 gap-2 rounded-lg"
+    )}>
       <div className="flex min-w-0 flex-1 items-center gap-2.5">
-        <span className="grid size-8 shrink-0 place-items-center rounded-[8px] border border-border/70 bg-background/80 text-muted-foreground shadow-sm">
-          <Loader2Icon size={14} className="animate-spin text-[color:var(--construct-warning)]" />
+        <span className={cn(
+          "grid size-8 shrink-0 place-items-center rounded-[8px] border border-border/70 bg-background/80 text-muted-foreground shadow-sm",
+          isPanel && "size-7 rounded-md"
+        )}>
+          <Loader2Icon size={isPanel ? 13 : 14} className="animate-spin text-[color:var(--construct-warning)]" />
         </span>
         <div className="min-w-0 flex-1">
           <div className="mb-0.5 flex min-w-0 items-center gap-1.5 text-[10px] text-muted-foreground font-medium">
@@ -4352,7 +4546,10 @@ function ConceptCreationPreview({
               </>
             )}
           </div>
-          <strong className="block truncate text-sm font-semibold text-foreground/85 tracking-tight">
+          <strong className={cn(
+            "block truncate text-sm font-semibold text-foreground tracking-tight group-hover:text-foreground/90",
+            isPanel && "text-xs"
+          )}>
             {mainTitle}
           </strong>
         </div>
@@ -4645,11 +4842,13 @@ function conceptMutationLabel(kind: ConceptMutationKind): string {
 
 function FlowQuestionComposer({
   question,
+  theme,
   value,
   onValueChange,
   onAnswer,
   onSkip,
-  pending
+  pending,
+  chatMode
 }: {
   question: ActiveFlowQuestion;
   theme: "light" | "dark" | "system";
@@ -4658,91 +4857,289 @@ function FlowQuestionComposer({
   onAnswer: (response: ConstructFlowQuestionResponse) => void;
   onSkip: () => void;
   pending: boolean;
+  chatMode: FlowChatMode;
 }) {
   const payload = question.payload;
+  const [isDark, setIsDark] = useState(() => {
+    if (theme === "system") {
+      return window.matchMedia("(prefers-color-scheme: dark)").matches;
+    }
+    return theme === "dark";
+  });
+
+  useEffect(() => {
+    if (theme === "system") {
+      const mql = window.matchMedia("(prefers-color-scheme: dark)");
+      const handler = (event: MediaQueryListEvent) => setIsDark(event.matches);
+      mql.addEventListener("change", handler);
+      setIsDark(mql.matches);
+      return () => mql.removeEventListener("change", handler);
+    }
+
+    setIsDark(theme === "dark");
+  }, [theme]);
+
+  const codeTheme = isDark ? oneDark : oneLight;
+
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea || payload.answerMode !== "code") return;
+    textarea.style.height = "auto";
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  }, [value, payload.answerMode]);
   const choices = payload.choices ?? [];
   const allowOther = payload.allowOther !== false;
-  const [selected, setSelected] = useState<string | null>(choices.length ? null : (allowOther ? "__other__" : null));
+  const [selected, setSelected] = useState<string | null>(choices[0] ?? (allowOther ? "__other__" : null));
   const usingOther = selected === "__other__" || choices.length === 0;
   const answer = usingOther ? value.trim() : selected?.trim() ?? "";
   const canSubmit = !pending && Boolean(answer);
   const questionText = payload.question || "I need one more detail before continuing.";
+  const questionDetail = payload.reason?.trim();
 
   function submit() {
     if (!canSubmit) return;
     onAnswer(buildFlowQuestionResponse(question, answer));
   }
 
+  const isPanel = chatMode === "panel";
+
+  const containerClass = isPanel
+    ? "mx-auto w-full max-w-[min(46rem,calc(100%-0.75rem))] rounded-xl border border-border/70 bg-card px-2.5 pb-2 pt-2.5 shadow-[0_4px_12px_color-mix(in_srgb,var(--foreground)_5%,transparent)] dark:shadow-none"
+    : "mx-auto w-full max-w-[min(46rem,calc(100%-0.75rem))] rounded-[22px] border border-border/70 bg-card px-3 pb-2.5 pt-3 shadow-[0_8px_24px_color-mix(in_srgb,var(--foreground)_6%,transparent)] dark:shadow-none";
+
+  const questionTextClass = isPanel
+    ? "max-w-full text-[13px] font-medium leading-5 text-foreground"
+    : "max-w-[58rem] text-[14px] font-medium leading-6 text-foreground";
+
+  const questionDetailClass = isPanel
+    ? "max-w-full whitespace-pre-wrap break-words text-[12px] leading-relaxed text-muted-foreground"
+    : "max-w-full whitespace-pre-wrap break-words text-[13px] leading-5 text-muted-foreground";
+
+  const choicesContainerClass = isPanel ? "mt-3 grid grid-cols-1 gap-1" : "mt-4 grid grid-cols-1 gap-1.5";
+
+  const choiceButtonClass = (choice: string) => cn(
+    isPanel
+      ? "group flex min-h-9 items-center gap-2 rounded-[12px] px-2 text-left text-[13px] leading-relaxed outline-none focus-visible:ring-2 focus-visible:ring-ring/35"
+      : "group flex min-h-10 items-center gap-2.5 rounded-[16px] px-2.5 text-left text-[14px] leading-5 outline-none focus-visible:ring-2 focus-visible:ring-ring/35",
+    selected === choice
+      ? "bg-muted/70 text-foreground"
+      : "bg-transparent text-foreground hover:bg-muted/35"
+  );
+
+  const choiceCircleClass = (choice: string) => cn(
+    isPanel
+      ? "inline-flex size-5 shrink-0 items-center justify-center rounded-full text-[12px] font-medium"
+      : "inline-flex size-6 shrink-0 items-center justify-center rounded-full text-[14px] font-medium",
+    selected === choice
+      ? "bg-foreground text-background"
+      : "border border-border bg-muted/30 text-muted-foreground"
+  );
+
+  const otherLabelClass = cn(
+    isPanel
+      ? "mt-1.5 flex min-h-9 items-center gap-2 rounded-[12px] px-2 text-[13px] leading-relaxed"
+      : "mt-2 flex min-h-10 items-center gap-2.5 rounded-[16px] px-2.5 text-[14px] leading-5",
+    usingOther ? "bg-muted/55 text-foreground" : "text-muted-foreground hover:bg-muted/25"
+  );
+
+  const otherIconContainerClass = cn(
+    isPanel
+      ? "inline-flex size-5.5 shrink-0 items-center justify-center rounded-full border"
+      : "inline-flex size-6 shrink-0 items-center justify-center rounded-full border",
+    usingOther ? "border-foreground/25 bg-background text-foreground" : "border-border bg-muted/25 text-muted-foreground"
+  );
+
+  const otherInputClass = isPanel
+    ? "min-w-0 flex-1 border-0 bg-transparent p-0 text-[13px] leading-relaxed text-inherit outline-none placeholder:text-muted-foreground"
+    : "min-w-0 flex-1 border-0 bg-transparent p-0 text-[14px] leading-5 text-inherit outline-none placeholder:text-muted-foreground";
+
   return (
-    <div className="mx-auto w-full max-w-[840px] overflow-hidden rounded-[28px] bg-card/95 shadow-[0_8px_24px_color-mix(in_srgb,var(--foreground)_6%,transparent)] ring-1 ring-border/65 transition-[box-shadow,background-color] duration-200 ease-out focus-within:ring-ring/70">
-      <div className="px-4 pb-2 pt-3">
-        <div className="flex items-start gap-2.5">
-          <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-full bg-muted/60 text-muted-foreground ring-1 ring-border/60">
-            <HelpCircleIcon size={14} />
-          </span>
-          <div className="min-w-0 flex-1">
-            <strong className="block text-xs font-medium text-muted-foreground">Flow needs an answer</strong>
-            <p className="mt-0.5 text-xs leading-5 text-foreground">{questionText}</p>
-          </div>
-        </div>
+    <div className={containerClass}>
+      <div className={isPanel ? "space-y-2 px-0.5" : "space-y-3 px-1"}>
+        <p className={questionTextClass}>
+          {questionText}
+        </p>
+        {questionDetail ? (
+          <p className={questionDetailClass}>
+            {questionDetail}
+          </p>
+        ) : null}
       </div>
       {choices.length ? (
-        <div className="grid grid-cols-1 gap-1.5 px-3 pb-2">
+        <div className={choicesContainerClass}>
           {choices.map((choice, index) => (
             <button
               key={choice}
               type="button"
-              className={`flex min-h-9 items-center gap-2 rounded-[14px] border px-2.5 py-1.5 text-left text-xs transition-[background-color,border-color,color] duration-150 ${selected === choice ? "border-foreground/60 bg-muted/80 text-foreground shadow-sm" : "border-border/65 bg-background/35 text-muted-foreground hover:bg-muted/50 hover:text-foreground"}`}
+              className={choiceButtonClass(choice)}
               onClick={() => {
                 setSelected(choice);
                 onValueChange("");
               }}
               disabled={pending}
             >
-              <span className={`inline-flex size-5 shrink-0 items-center justify-center rounded-[7px] text-[11px] font-semibold ${selected === choice ? "bg-background text-foreground" : "bg-muted text-muted-foreground"}`}>{index + 1}</span>
+              <span className={choiceCircleClass(choice)}>
+                {index + 1}
+              </span>
               <span className="min-w-0 flex-1">{choice}</span>
             </button>
           ))}
         </div>
       ) : null}
       {allowOther ? (
-        <div className="px-3 pb-2">
-          <textarea
-            className={`min-h-12 max-h-28 w-full resize-none rounded-[18px] border-0 bg-background/45 px-3 py-2 text-xs leading-5 shadow-none outline-none ring-1 ring-border/45 transition-[background-color,box-shadow,color] duration-150 placeholder:text-muted-foreground/70 focus-visible:border-transparent focus-visible:ring-1 focus-visible:ring-ring/65 ${usingOther ? "text-foreground" : "text-muted-foreground"}`}
-            value={value}
-            placeholder={choices.length ? "Other (write your answer)..." : "Write your answer..."}
-            onFocus={() => setSelected("__other__")}
-            onChange={(event) => {
-              setSelected("__other__");
-              onValueChange(event.target.value);
-            }}
-            onKeyDown={(event) => {
-              if (event.nativeEvent.isComposing) return;
-              if (event.key === "Enter" && !event.shiftKey && canSubmit) {
-                event.preventDefault();
-                submit();
-              }
-            }}
-            disabled={pending}
-            spellCheck
-          />
-        </div>
+        payload.answerMode === "code" ? (
+          <div className="mt-3 flex flex-col rounded-xl border border-border/70 bg-muted/20 overflow-hidden focus-within:border-foreground/30 focus-within:ring-2 focus-within:ring-ring/20 transition-all duration-200">
+            {/* Header / Meta bar */}
+            <div className="flex items-center justify-between border-b border-border/60 bg-muted/40 px-3.5 py-1.5 text-xs text-muted-foreground select-none">
+              <span className="font-mono font-semibold tracking-wide uppercase text-[10px] bg-muted-foreground/10 text-muted-foreground px-1.5 py-0.5 rounded">
+                {payload.language ?? "typescript"}
+              </span>
+              <span className="text-[10px] font-mono opacity-80">Shift + Enter to submit</span>
+            </div>
+
+            {/* Editor container */}
+            <div className="relative w-full min-h-[140px] font-mono text-sm leading-relaxed">
+              {/* Highlighted text layer (positioned absolutely underneath) */}
+              <div
+                className="absolute inset-0 pointer-events-none p-3 whitespace-pre-wrap break-all overflow-hidden"
+                style={{
+                  fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                  fontSize: "13px",
+                  lineHeight: "1.5"
+                }}
+              >
+                <SyntaxHighlighter
+                  style={codeTheme}
+                  language={payload.language ?? "typescript"}
+                  PreTag="div"
+                  customStyle={{
+                    margin: 0,
+                    padding: 0,
+                    background: "transparent",
+                    border: 0,
+                    borderRadius: 0,
+                    fontSize: "inherit",
+                    lineHeight: "inherit",
+                    whiteSpace: "pre-wrap",
+                    wordBreak: "break-all",
+                  }}
+                  codeTagProps={{
+                    style: {
+                      fontFamily: "inherit",
+                      whiteSpace: "inherit",
+                      wordBreak: "inherit"
+                    }
+                  }}
+                >
+                  {value}
+                </SyntaxHighlighter>
+              </div>
+
+              {/* Transparent Textarea overlay */}
+              <textarea
+                ref={textareaRef}
+                className="w-full min-h-[140px] bg-transparent border-0 p-3 resize-none outline-none font-mono text-sm leading-relaxed text-transparent caret-foreground whitespace-pre-wrap break-all block placeholder:text-muted-foreground/60 focus:ring-0"
+                style={{
+                  fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                  fontSize: "13px",
+                  lineHeight: "1.5",
+                  caretColor: "var(--foreground)",
+                  color: "transparent"
+                }}
+                value={value}
+                placeholder="Write your code here..."
+                onFocus={() => setSelected("__other__")}
+                onChange={(event) => {
+                  setSelected("__other__");
+                  onValueChange(event.target.value);
+                }}
+                onKeyDown={(event) => {
+                  if ((event.nativeEvent as KeyboardEvent).isComposing) return;
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    // Normal Enter key inserts newline (default behavior of textarea)
+                  } else if (event.key === "Enter" && event.shiftKey && canSubmit) {
+                    event.preventDefault();
+                    submit();
+                  }
+                }}
+                disabled={pending}
+                spellCheck={false}
+              />
+            </div>
+          </div>
+        ) : (
+          <label className={otherLabelClass}>
+            <span className={otherIconContainerClass}>
+              <PencilIcon size={isPanel ? 12 : 14} strokeWidth={1.8} />
+            </span>
+            <input
+              className={otherInputClass}
+              value={value}
+              placeholder={choices.length ? "Custom answer" : "Type your answer"}
+              onFocus={() => setSelected("__other__")}
+              onChange={(event) => {
+                setSelected("__other__");
+                onValueChange(event.target.value);
+              }}
+              onKeyDown={(event) => {
+                if ((event.nativeEvent as KeyboardEvent).isComposing) return;
+                if (event.key === "Enter" && !event.shiftKey && canSubmit) {
+                  event.preventDefault();
+                  submit();
+                }
+              }}
+              disabled={pending}
+              spellCheck
+            />
+          </label>
+        )
       ) : null}
-      <div className="flex items-center justify-end gap-2 px-2 pb-2 pt-1.5">
+      <div className={isPanel ? "mt-2.5 flex items-center justify-end gap-3" : "mt-2.5 flex items-center justify-end gap-4"}>
         {payload.allowSkip !== false ? (
-          <Button variant="ghost" size="sm" onClick={onSkip} disabled={pending}>
+          <Button
+            type="button"
+            variant="ghost"
+            size={isPanel ? "default" : "lg"}
+            className="rounded-full font-medium"
+            onClick={onSkip}
+            disabled={pending}
+          >
             Skip
           </Button>
         ) : null}
-        <Button className="rounded-full" size="sm" disabled={!canSubmit} onClick={submit}>
-          Submit
+        <Button
+          type="button"
+          variant="default"
+          size={isPanel ? "default" : "lg"}
+          className="rounded-full gap-1.5 font-medium"
+          disabled={!canSubmit}
+          onClick={submit}
+        >
+          <span>Submit</span>
+          {payload.answerMode === "code" ? (
+            <span className={cn(
+              "inline-flex items-center justify-center rounded-md bg-primary-foreground/15 text-primary-foreground px-1.5 py-0.5 text-[10px] font-mono font-medium tracking-tight gap-0.5",
+              isPanel ? "h-5" : "h-5.5"
+            )}>
+              <span className="opacity-70">Shift</span>
+              <CornerDownLeftIcon size={isPanel ? 9 : 10} strokeWidth={2.2} />
+            </span>
+          ) : (
+            <span className={cn(
+              "inline-flex items-center justify-center rounded-full bg-primary-foreground/15 text-primary-foreground",
+              isPanel ? "size-5" : "size-5.5"
+            )}>
+              <CornerDownLeftIcon size={isPanel ? 11 : 12} strokeWidth={2.2} />
+            </span>
+          )}
         </Button>
       </div>
     </div>
   );
 }
 
-function readAskUserPayload(input: unknown, outputPreview?: string): { question?: string; reason?: string; choices?: string[]; allowOther?: boolean; allowSkip?: boolean; blocksProgress?: boolean } {
+function readAskUserPayload(input: unknown, outputPreview?: string): { question?: string; reason?: string; choices?: string[]; allowOther?: boolean; allowSkip?: boolean; blocksProgress?: boolean; answerMode?: string; language?: string } {
   const parsedOutput = parseJsonObject(outputPreview);
   const source = parsedOutput ?? (typeof input === "object" && input !== null ? input as Record<string, unknown> : {});
   return {
@@ -4751,7 +5148,9 @@ function readAskUserPayload(input: unknown, outputPreview?: string): { question?
     choices: Array.isArray(source.choices) ? source.choices.filter((choice): choice is string => typeof choice === "string") : undefined,
     allowOther: typeof source.allowOther === "boolean" ? source.allowOther : true,
     allowSkip: typeof source.allowSkip === "boolean" ? source.allowSkip : true,
-    blocksProgress: typeof source.blocksProgress === "boolean" ? source.blocksProgress : false
+    blocksProgress: typeof source.blocksProgress === "boolean" ? source.blocksProgress : false,
+    answerMode: typeof source.answerMode === "string" ? source.answerMode : undefined,
+    language: typeof source.language === "string" ? source.language : undefined
   };
 }
 
@@ -5463,8 +5862,8 @@ function FlowCircularContextMeter({ contextWindow }: { contextWindow?: Construct
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-full hover:bg-muted cursor-help">
-          <svg className="size-[14px] -rotate-90" viewBox="0 0 16 16">
+        <div className="flex size-7 shrink-0 items-center justify-center rounded-full hover:bg-muted cursor-help">
+          <svg className="size-[14px] -rotate-90 origin-center" viewBox="0 0 16 16">
             <circle
               cx="8"
               cy="8"
@@ -5483,9 +5882,9 @@ function FlowCircularContextMeter({ contextWindow }: { contextWindow?: Construct
               strokeLinecap="round"
             />
           </svg>
-        </span>
+        </div>
       </TooltipTrigger>
-      <TooltipContent side="top" className="flex min-w-[15rem] flex-col items-stretch gap-1.5 rounded-[10px] px-4 py-3 text-left z-50">
+      <TooltipContent side="top" sideOffset={5} className="flex min-w-[15rem] flex-col items-stretch gap-1.5 rounded-[10px] px-4 py-3 text-left z-50">
         <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">Context Window</span>
         <strong className="text-sm font-semibold">{percent == null ? "Unknown" : `${percent}% full`}</strong>
         <span className="text-xs text-muted-foreground">{formatTokens(usedTokens)} / {maxTokens ? formatTokens(maxTokens) : "unknown"} tokens</span>
@@ -5509,49 +5908,6 @@ function FlowCircularContextMeter({ contextWindow }: { contextWindow?: Construct
         ) : null}
       </TooltipContent>
     </Tooltip>
-  );
-}
-
-function FlowComposerLeftControls() {
-  return (
-    <div className="flex items-center gap-1.5">
-      <Button
-        size="icon-sm"
-        variant="ghost"
-        className="h-7 w-7 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted"
-        type="button"
-        title="Add files or context"
-      >
-        <PlusIcon size={16} />
-      </Button>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 gap-1 rounded-full px-2 text-xs font-semibold text-orange-600 hover:text-orange-700 hover:bg-orange-50 dark:text-orange-400 dark:hover:text-orange-300 dark:hover:bg-orange-950/20"
-              type="button"
-            >
-              <CircleAlertIcon size={14} className="text-orange-500 dark:text-orange-400" />
-              <span>Full access</span>
-              <ChevronDownIcon size={12} className="text-orange-500/70" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-48 p-1 z-50">
-          <DropdownMenuGroup>
-            <DropdownMenuLabel className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Context Access</DropdownMenuLabel>
-            <DropdownMenuItem className="flex items-center gap-2 rounded-[7px] text-xs">
-              <CircleAlertIcon size={13} className="text-orange-500" />
-              <span>Full access</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem className="flex items-center gap-2 rounded-[7px] text-xs text-muted-foreground" disabled>
-              <CircleIcon size={13} />
-              <span>Workspace only (mock)</span>
-            </DropdownMenuItem>
-          </DropdownMenuGroup>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </div>
   );
 }
 
@@ -5681,5 +6037,260 @@ function FlowComposerRightControls({
         </Tooltip>
       ) : null}
     </div>
+  );
+}
+
+function ActiveComposerItemIndicator({
+  activeItem,
+  isHeader = false,
+  pending = false,
+  onSubmitTask
+}: {
+  activeItem?: {
+    type: "exercise" | "task";
+    id: string;
+    title: string;
+    prompt: string;
+    domId: string;
+    item: ConstructFlowConceptExercise | ConstructFlowPracticeTask;
+  };
+  isHeader?: boolean;
+  pending?: boolean;
+  onSubmitTask?: (task: ConstructFlowPracticeTask, note?: string, subtaskId?: string) => Promise<void>;
+}) {
+  const [isPopoverOpen, setIsPopoverOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  if (!activeItem) return null;
+
+  const handleMouseEnter = () => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    setIsPopoverOpen(true);
+  };
+
+  const handleMouseLeave = () => {
+    timeoutRef.current = setTimeout(() => {
+      setIsPopoverOpen(false);
+    }, 150);
+  };
+
+  const handlePillClick = (event: MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!activeItem.domId) return;
+    const element = document.getElementById(activeItem.domId);
+    if (!element) return;
+    element.scrollIntoView({ behavior: "smooth", block: "center" });
+    setTimeout(() => {
+      element.classList.add("highlight-flash");
+      setTimeout(() => {
+        element.classList.remove("highlight-flash");
+      }, 4000);
+    }, 450);
+  };
+
+  const isExercise = activeItem.type === "exercise";
+  const task = activeItem.type === "task" ? activeItem.item as ConstructFlowPracticeTask : undefined;
+  const active = task ? activeSubtask(task) : undefined;
+  const activeSubtaskIndex = task?.subtasks?.findIndex((subtask) => subtask.id === active?.id) ?? -1;
+  const subtaskCount = Math.max(task?.subtasks?.length ?? 1, 1);
+  const subtaskNumber = activeSubtaskIndex >= 0 ? activeSubtaskIndex + 1 : 1;
+  const subtaskStatus = active?.status;
+  const canSubmitSubtask = Boolean(
+    task &&
+    onSubmitTask &&
+    !pending &&
+    !submitting &&
+    task.status === "waiting" &&
+    (!subtaskStatus || subtaskStatus === "active" || subtaskStatus === "needs-work" || subtaskStatus === "ready")
+  );
+  const subtaskActionLabel = submitting || pending
+    ? "Reviewing"
+    : task?.status === "completed" || subtaskStatus === "completed"
+      ? "Done"
+      : task?.status === "submitted" || subtaskStatus === "submitted"
+        ? "Submitted"
+        : "Submit";
+
+  const handleSubmitSubtask = (event: MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!task || !onSubmitTask || !canSubmitSubtask) return;
+    setIsPopoverOpen(false);
+    setSubmitting(true);
+    void onSubmitTask(task, undefined, active?.id)
+      .catch((error) => {
+        console.error("Failed to submit Flow subtask", error);
+      })
+      .finally(() => {
+        setSubmitting(false);
+      });
+  };
+
+  const pulseDot = (
+    <span className="relative flex h-1.5 w-1.5 shrink-0">
+      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-75"></span>
+      <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+    </span>
+  );
+
+  const subtaskSubmitPill = task ? (
+    <button
+      type="button"
+      className={cn(
+        "ml-auto inline-flex h-5 shrink-0 items-center gap-1 overflow-hidden rounded-full px-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted/45 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30",
+        !canSubmitSubtask && "cursor-default opacity-60 hover:bg-transparent hover:text-muted-foreground",
+        isHeader ? "max-w-[10rem]" : "max-w-[9rem]"
+      )}
+      aria-label={`Submit subtask ${subtaskNumber} of ${subtaskCount} for Flow review`}
+      title={`Subtask ${subtaskNumber} of ${subtaskCount}: ${active?.title ?? task.title}`}
+      disabled={!canSubmitSubtask}
+      onClick={handleSubmitSubtask}
+    >
+      <span className="inline-flex h-4 shrink-0 items-center rounded-full bg-muted/55 px-1 font-mono text-[10px] text-muted-foreground">
+        {subtaskNumber}/{subtaskCount}
+      </span>
+      <span className="min-w-0 truncate">{subtaskActionLabel}</span>
+      {submitting || pending ? (
+        <Loader2Icon size={10} className="shrink-0 animate-spin" />
+      ) : (
+        <SendIcon size={10} className="shrink-0" />
+      )}
+    </button>
+  ) : null;
+
+  const popoverContent = (
+    <PopoverContent
+      align="start"
+      side="top"
+      sideOffset={isHeader ? 4 : 6}
+      className="z-50 flex w-80 flex-col gap-2.5 rounded-xl border border-border bg-card p-3 shadow-md"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+    >
+      <div className="flex items-center justify-between border-b pb-1.5">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/80">
+          {isExercise ? "Concept Exercise" : "Project Task"}
+        </span>
+        <span className={cn(
+          "rounded-full border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide",
+          isExercise
+            ? "border-border bg-muted/40 text-muted-foreground/80"
+            : "border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+        )}>
+          {isExercise ? "Waiting for response" : "In Progress"}
+        </span>
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <h4 className="text-xs font-bold leading-snug text-foreground">
+          {activeItem.title}
+        </h4>
+        {activeItem.prompt ? (
+          <div className="max-h-24 overflow-y-auto pr-1 text-[11px] leading-relaxed text-muted-foreground select-text">
+            <MarkdownBlock content={activeItem.prompt} theme="system" onOpenFile={() => {}} />
+          </div>
+        ) : null}
+      </div>
+
+      {task?.subtasks?.length ? (
+        <div className="flex flex-col gap-1 border-t pt-2">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/80">Subtasks</span>
+          <div className="flex max-h-32 flex-col gap-1 overflow-y-auto pr-1">
+            {task.subtasks.map((subtask) => {
+              const isCompleted = subtask.status === "completed";
+              const isNeedsWork = subtask.status === "needs-work";
+              const isActive = subtask.status === "active" || subtask.status === "submitted";
+
+              let subtaskIcon = <CircleIcon size={11} className="shrink-0 text-muted-foreground/50" />;
+              let subtaskColor = "text-muted-foreground/75";
+
+              if (isCompleted) {
+                subtaskIcon = <CheckCircle2Icon size={11} className="shrink-0 text-emerald-500/70" />;
+                subtaskColor = "text-muted-foreground line-through opacity-80";
+              } else if (isNeedsWork) {
+                subtaskIcon = <CircleAlertIcon size={11} className="shrink-0 text-amber-500/70" />;
+                subtaskColor = "text-muted-foreground/80";
+              } else if (isActive) {
+                subtaskIcon = (
+                  <span className="relative flex h-2 w-2 shrink-0 items-center justify-center">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400/80 opacity-75"></span>
+                    <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500/80"></span>
+                  </span>
+                );
+                subtaskColor = "text-foreground/90 font-medium";
+              }
+
+              return (
+                <div key={subtask.id} className="flex items-start gap-2 text-[11px]">
+                  <div className="mt-0.5">{subtaskIcon}</div>
+                  <span className={cn("truncate leading-relaxed", subtaskColor)} title={subtask.title}>
+                    {subtask.title}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+
+      <div className="flex items-center justify-between border-t pt-2 text-[10px] text-muted-foreground">
+        <span className="flex items-center gap-1">
+          <CornerDownLeftIcon size={10} />
+          <span>Click to scroll to source</span>
+        </span>
+      </div>
+    </PopoverContent>
+  );
+
+  if (isHeader) {
+    return (
+      <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
+        <div
+          className="flex w-full items-center gap-2 pb-0 pl-1.5 pr-5 pt-0.5 text-xs text-muted-foreground"
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={handleMouseLeave}
+        >
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              onClick={handlePillClick}
+              className="flex min-w-0 flex-1 items-center gap-2 border-0 bg-transparent p-0 text-left transition-colors hover:text-foreground focus-visible:outline-none"
+            >
+              {pulseDot}
+              <span className="truncate font-medium text-foreground/80">{activeItem.title}</span>
+            </button>
+          </PopoverTrigger>
+          {subtaskSubmitPill}
+        </div>
+        {popoverContent}
+      </Popover>
+    );
+  }
+
+  return (
+    <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
+      <div
+        className="flex min-w-0 items-center gap-1.5"
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+      >
+        <PopoverTrigger asChild>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handlePillClick}
+            className="h-7 min-w-0 gap-1.5 rounded-full px-2 text-xs font-semibold text-muted-foreground hover:bg-muted hover:text-foreground"
+            type="button"
+          >
+            {pulseDot}
+            <span className="truncate">{activeItem.title}</span>
+          </Button>
+        </PopoverTrigger>
+        {subtaskSubmitPill}
+      </div>
+      {popoverContent}
+    </Popover>
   );
 }

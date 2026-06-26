@@ -111,7 +111,7 @@ describe("Construct Interact Codex-style UI", () => {
     assert.match(flow, /<ConceptSummaryCard[\s\S]*variant="chat"/);
     assert.match(flow, /taskMessage: \{ taskId: activeTask\.id, pathNodeId: activeTask\.pathNodeId \}/);
     assert.match(flow, /placeholder=\{activeTask \? `Message Flow about: \$\{activeTask\.title\}`/);
-    assert.match(flow, /<FloatingFlowTaskCard/);
+    assert.match(flow, /<ActiveComposerItemIndicator activeItem=\{activeComposerItem\}/);
     assert.match(flow, /onOpenFile=\{onOpenFile\}/);
     assert.match(flow, /function FlowFileChip/);
     assert.match(flow, /createInlineFileReference/);
@@ -181,7 +181,14 @@ describe("Construct Interact Codex-style UI", () => {
     assert.match(flow, /questionResponse/);
     assert.match(flow, /markQuestionAnswered/);
     assert.match(flow, /session\.origin === "question-response"/);
-    assert.match(flow, /Flow needs an answer/);
+    assert.match(flow, /setPending\(false\);\s*setLiveSession\(undefined\);/);
+    assert.match(flow, /pending=\{pending && !activeQuestion\}/);
+    assert.match(flow, /Custom answer/);
+    assert.match(flow, /Type your answer/);
+    assert.match(flow, /CornerDownLeftIcon/);
+    assert.doesNotMatch(flow, /FlowComposerWithTransition/);
+    assert.doesNotMatch(flow, /construct-flow-composer-question-accordion/);
+    assert.doesNotMatch(flow, /Flow needs an answer/);
     assert.doesNotMatch(flow, /splitReasoningSegments\(fallbackText\.process\)/);
     assert.doesNotMatch(flow, /pushFallbackReasoning\(\)/);
     assert.doesNotMatch(flow, /Answer to question:/);

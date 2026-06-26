@@ -402,9 +402,40 @@ html, body {
     background: transparent !important;
   }
 
+  .construct-flow-composer div + textarea {
+    padding-top: 0.2rem !important;
+  }
+
   .construct-flow-composer > div:last-child {
     gap: 0.375rem;
     padding: 0.25rem 0.5rem 0.5rem 0.625rem !important;
+  }
+
+  /* ── Panel / Sidebar chat mode composer layout optimizations ── */
+  .construct-flow-composer.is-panel {
+    border-radius: 1rem !important;
+  }
+
+  .construct-flow-composer.is-panel textarea {
+    font-size: 13px !important;
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+    padding-top: 0.6rem !important;
+  }
+
+  .construct-flow-composer.is-panel div + textarea {
+    padding-top: 0.15rem !important;
+  }
+
+  .construct-flow-composer.is-panel > div:first-child button {
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+    padding-top: 0.6rem !important;
+    padding-bottom: 0.05rem !important;
+  }
+
+  .construct-flow-composer.is-panel > div:last-child {
+    padding: 0.125rem 0.5rem 0.375rem 0.5rem !important;
   }
 
   @container composer (max-width: 440px) {
@@ -800,3 +831,19 @@ html, body {
   background: color-mix(in srgb, var(--primary) 6%, transparent);
 }
 
+@keyframes highlight-fade {
+  0% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+  30% {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 70%, transparent), 0 0 16px 3px color-mix(in srgb, var(--primary) 55%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+.highlight-flash {
+  animation: highlight-fade 3.5s ease-in-out;
+  border-radius: 12px;
+}

@@ -14,6 +14,7 @@ type ConceptSummaryCardProps = {
   onOpen?: () => void;
   levelChange?: { before: number; after: number } | null;
   changedFields?: string[];
+  chatMode?: "panel" | "maximized";
 };
 
 function ConceptStatusChip({ label, tone }: { label: string; tone?: "added" | "modified" | "removed" }) {
@@ -117,7 +118,8 @@ export function ConceptSummaryCard({
   attention = false,
   onOpen,
   levelChange,
-  changedFields
+  changedFields,
+  chatMode
 }: ConceptSummaryCardProps) {
   const language = languageLabel(concept);
   const masteryLevel = masteryLevelForConcept(concept);
@@ -127,19 +129,25 @@ export function ConceptSummaryCard({
     const { text: statusText, color: statusColor } = getModificationStatus(actionLabel, levelChange, changedFields);
 
     const iconClass = "border-border/70 bg-background/80 text-muted-foreground";
+    const isPanel = chatMode === "panel";
 
     return (
       <button
         type="button"
         className={cn(
-          "construct-concept-summary-card group flex w-full max-w-[32rem] min-w-0 items-center justify-between gap-2.5 rounded-[12px] border border-border/60 bg-muted/30 p-2.5 text-left text-foreground hover:bg-muted/65 active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 cursor-default"
+          "construct-concept-summary-card group flex w-full max-w-[32rem] min-w-0 items-center justify-between gap-2.5 rounded-[12px] border border-border/60 bg-muted/30 p-2.5 text-left text-foreground hover:bg-muted/65 active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 cursor-default",
+          isPanel && "p-2 gap-2 rounded-lg"
         )}
         data-attention={attention ? "true" : "false"}
         onClick={onOpen}
       >
         <div className="flex min-w-0 flex-1 items-center gap-2.5">
-          <span className={cn("grid size-8 shrink-0 place-items-center rounded-[8px] border shadow-sm group-hover:scale-95", iconClass)}>
-            <AtomIcon size={14} />
+          <span className={cn(
+            "grid size-8 shrink-0 place-items-center rounded-[8px] border shadow-sm group-hover:scale-95",
+            iconClass,
+            isPanel && "size-7 rounded-md"
+          )}>
+            <AtomIcon size={isPanel ? 13 : 14} />
           </span>
           <div className="min-w-0 flex-1">
             <div className="mb-0.5 flex min-w-0 items-center gap-1.5 text-[10px] text-muted-foreground font-medium flex-wrap">
@@ -164,13 +172,16 @@ export function ConceptSummaryCard({
                 </>
               ) : null}
             </div>
-            <strong className="block truncate text-sm font-semibold text-foreground tracking-tight group-hover:text-foreground/90">
+            <strong className={cn(
+              "block truncate text-sm font-semibold text-foreground tracking-tight group-hover:text-foreground/90",
+              isPanel && "text-xs"
+            )}>
               {concept.title}
             </strong>
           </div>
         </div>
         {onOpen ? (
-          <ChevronRightIcon size={15} className="shrink-0 text-muted-foreground/60 group-hover:translate-x-0.5 group-hover:text-foreground" />
+          <ChevronRightIcon size={isPanel ? 13 : 15} className="shrink-0 text-muted-foreground/60 group-hover:translate-x-0.5 group-hover:text-foreground" />
         ) : null}
       </button>
     );
