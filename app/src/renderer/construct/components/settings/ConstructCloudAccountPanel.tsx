@@ -212,7 +212,7 @@ function ConstructCloudTokenPanel({
       const payload = await response.json() as { token?: string };
       if (!payload.token) throw new Error("Token response did not include a desktop token.");
       onAccessTokenChange(payload.token);
-      setStatus("Desktop token saved in the current draft.");
+      setStatus("Hosted compute token saved in the current draft.");
       await refetch();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error));
@@ -227,10 +227,10 @@ function ConstructCloudTokenPanel({
     <div className="flex min-w-0 flex-col gap-3 rounded-lg border bg-background p-3">
       <div>
         <div className="text-sm font-medium">
-          {user ? (user.email ?? user.name ?? "Signed in") : isPending ? "Checking account" : "No cloud account"}
+          {user ? (user.email ?? user.name ?? "Signed in") : isPending ? "Checking account" : "No Construct account"}
         </div>
         <div className="mt-1 text-xs text-muted-foreground">
-          {usage ? `${usage.plan.toUpperCase()} plan` : accessToken ? "Desktop token is present." : "Sign in to mint a desktop token."}
+          {usage ? `${usage.plan.toUpperCase()} plan` : accessToken ? "Hosted compute token is present." : "Sign in to mint a hosted compute token."}
         </div>
       </div>
 
@@ -243,7 +243,7 @@ function ConstructCloudTokenPanel({
 
       <div className="flex flex-wrap items-center gap-2">
         <Button size="small" disabled={disabled || busy || !user} onClick={() => void mintToken()}>
-          {busy ? "Minting..." : "Mint desktop token"}
+          {busy ? "Minting..." : "Mint hosted token"}
         </Button>
         {accessToken ? (
           <Button size="small" variant="secondary" disabled={disabled} onClick={() => onAccessTokenChange("")}>
@@ -260,7 +260,7 @@ function ConstructCloudTokenPanel({
             window.location.reload();
           }}
         >
-          Sign Out
+          Sign out
         </Button>
       </div>
 

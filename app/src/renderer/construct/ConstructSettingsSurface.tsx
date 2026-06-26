@@ -549,7 +549,7 @@ export function ConstructSettingsSurface({
       return;
     }
     if (!usesLiteLlm && !resolvedKey && (provider === "openai" || provider === "construct-cloud")) {
-      setModelsError(provider === "construct-cloud" ? "Enter your Construct Cloud desktop token first." : "Enter your OpenAI API key first.");
+      setModelsError(provider === "construct-cloud" ? "Enter your Construct account hosted-compute token first." : "Enter your OpenAI API key first.");
       setModelOptions([]);
       return;
     }

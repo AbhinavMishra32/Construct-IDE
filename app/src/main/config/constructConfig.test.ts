@@ -65,7 +65,7 @@ test("settings normalize OpenCode Zen provider options", () => {
   assert.equal(settings.ai.flowSourceGroundingEnabled, true);
 });
 
-test("settings normalize and persist Construct Cloud routing options", async (t) => {
+test("settings normalize and persist hosted compute routing options", async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "construct-config-"));
   const paths = createConstructDataPaths(root);
   configureConstructDataPaths(paths);

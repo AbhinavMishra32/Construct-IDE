@@ -95,7 +95,7 @@ function resolveConstructCloudModelFromSettings(
 ): ConstructAgentModel {
   const token = settings.constructCloudAccessToken.trim();
   if (!token) {
-    throw new Error(`Construct Cloud access token is required for ${purpose}. Sign in or paste a desktop token in Settings.`);
+    throw new Error(`Construct account hosted-compute token is required for ${purpose}. Sign in or paste a token in Settings.`);
   }
 
   const modelId = featureId ? modelForAiFeature(settings, featureId) : (settings.constructCloudModel || "deepseek/deepseek-v4-flash");

@@ -50,7 +50,7 @@ test("agent model resolution uses the selected OpenRouter credentials and featur
   );
 });
 
-test("Construct Cloud source resolves through the hosted proxy with a desktop token", () => {
+test("hosted compute source resolves through the hosted proxy with a desktop token", () => {
   assert.deepEqual(
     resolveConstructAgentModelFromSettings(
       {
@@ -74,7 +74,7 @@ test("Construct Cloud source resolves through the hosted proxy with a desktop to
   );
 });
 
-test("Construct Cloud source requires a desktop token", () => {
+test("hosted compute source requires a desktop token", () => {
   assert.throws(
     () => resolveConstructAgentModelFromSettings(
       {
@@ -86,7 +86,7 @@ test("Construct Cloud source requires a desktop token", () => {
       "Construct Flow",
       "construct-flow"
     ),
-    /Construct Cloud access token is required/
+    /Construct account hosted-compute token is required/
   );
 });
 

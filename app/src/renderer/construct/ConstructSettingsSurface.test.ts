@@ -36,7 +36,7 @@ describe("Construct project advanced settings", () => {
     assert.match(controller, /ipcMain\.handle\("construct:settings:update-app"/);
   });
 
-  it("wires Construct Cloud account UI through durable AI settings", () => {
+  it("wires Construct account hosted-compute UI through durable AI settings", () => {
     const source = readFileSync(fileURLToPath(new URL("./ConstructSettingsSurface.tsx", import.meta.url)), "utf8");
     const aiSection = readFileSync(
       fileURLToPath(new URL("./components/settings/ConstructAiSettingsSection.tsx", import.meta.url)),
@@ -50,7 +50,7 @@ describe("Construct project advanced settings", () => {
 
     assert.match(source, /onSourceChange=\{updateAiSource\}/);
     assert.match(source, /onConstructCloudAccessTokenChange=\{\(constructCloudAccessToken: string\) => setAiSettingsDraft/);
-    assert.match(aiSection, /LLM calls/);
+    assert.match(aiSection, /LLM source/);
     assert.match(aiSection, /ConstructCloudAccountPanel/);
     assert.match(cloudPanel, /createAuthClient\(\{[\s\S]*?baseURL: normalizedBaseUrl/);
     assert.match(cloudPanel, /authClient\.signOut\(\)/);

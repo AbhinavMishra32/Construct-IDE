@@ -7,10 +7,11 @@ import { useConstructLogBridge } from "./lib/useConstructLogBridge";
 import { useProjectLspLifecycle } from "./lib/useProjectLspLifecycle";
 import { StatusBar } from "./components/StatusBar";
 import { apiTracker } from "./lib/apiTracker";
-import { useSession } from "@better-auth-ui/react";
+import { useAuth, useSession } from "@better-auth-ui/react";
 import { createAuthClient } from "better-auth/react";
 import { Auth } from "../components/auth/auth";
 import { AuthProvider } from "../components/auth/auth-provider";
+import { UserAvatar } from "../components/auth/user/user-avatar";
 import type { AuthView } from "@better-auth-ui/core";
 import type { AiSettings } from "./types";
 
@@ -19,12 +20,17 @@ import {
   BookOpen,
   ArrowLeftIcon,
   ArrowRightIcon,
+  CheckCircle2Icon,
+  ChevronDownIcon,
+  CloudIcon,
   CopyIcon,
   FileTerminalIcon,
   FileTextIcon,
   FolderOpenIcon,
   HomeIcon,
+  KeyRoundIcon,
   ListChecksIcon,
+  LogOutIcon,
   MoreHorizontalIcon,
   MessageCircleIcon,
   MessageCircleOff as MessageCircleOffIcon,
@@ -34,7 +40,8 @@ import {
   SearchIcon,
   SettingsIcon,
   SidebarIcon,
-  TerminalSquareIcon
+  TerminalSquareIcon,
+  UserRoundIcon
 } from "lucide-react";
 
 import {
@@ -45,8 +52,15 @@ import {
   Badge,
   BottomPanel,
   Button,
+  Input,
   Sidebar,
   SettingsSidebar,
+  ShadcnDialog,
+  ShadcnDialogContent,
+  ShadcnDialogDescription,
+  ShadcnDialogFooter,
+  ShadcnDialogHeader,
+  ShadcnDialogTitle,
   ShadcnDropdownMenu,
   ShadcnDropdownMenuContent,
   ShadcnDropdownMenuItem,
@@ -54,7 +68,7 @@ import {
   ShadcnDropdownMenuTrigger,
   useShellHistory
 } from "@opaline/ui";
-import type { SettingsNavItem, ShellHistoryEntry } from "@opaline/ui";
+import type { SettingsNavItem, ShellHistoryEntry, SidebarNavItem } from "@opaline/ui";
 import type { AppShellState } from "@opaline/ui";
 
 import { Dashboard } from "./components/Dashboard";
@@ -196,21 +210,15 @@ function AuthGateContent({
   baseUrl: string;
   aiSettings: AiSettings;
 }) {
-  const hasDesktopToken = !!aiSettings.constructCloudAccessToken?.trim();
   const { data: session, isPending, isError } = useSession(authClient);
   const [timedOut, setTimedOut] = useState(false);
   const [customUrl, setCustomUrl] = useState(baseUrl);
 
   useEffect(() => {
-    console.log("[auth] Checking account status...", { isPending, hasSession: !!session, hasDesktopToken, isError });
-  }, [isPending, session, hasDesktopToken, isError]);
+    console.log("[auth] Checking account status...", { isPending, hasSession: !!session, isError });
+  }, [isPending, session, isError]);
 
   useEffect(() => {
-    if (hasDesktopToken) {
-      setTimedOut(false);
-      return;
-    }
-
     if (!isPending) {
       setTimedOut(false);
       return;
@@ -224,13 +232,9 @@ function AuthGateContent({
     }, 5000);
 
     return () => clearTimeout(timer);
-  }, [isPending, session, baseUrl, hasDesktopToken]);
+  }, [isPending, session, baseUrl]);
 
-  const connectFailed = !hasDesktopToken && (isError || (timedOut && !session));
-
-  if (hasDesktopToken) {
-    return <>{children}</>;
-  }
+  const connectFailed = isError || (timedOut && !session);
 
   if (connectFailed) {
     const isDev = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
@@ -340,7 +344,7 @@ function AuthGateContent({
             </div>
             <h1 className="text-2xl font-bold tracking-tight mt-2">Construct</h1>
             <p className="text-xs text-muted-foreground max-w-[280px]">
-              Please sign in to your cloud account to access Construct.
+              Sign in to your Construct account to continue.
             </p>
           </div>
 
@@ -441,6 +445,7 @@ export default function ConstructApp() {
   const [knowledgeBaseOpen, setKnowledgeBaseOpen] = useState(false);
   const [learningContextOpen, setLearningContextOpen] = useState(false);
   const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
+  const [accountDialogOpen, setAccountDialogOpen] = useState(false);
   const [settingsSurface, setSettingsSurface] = useState<SettingsSurfaceState | null>(null);
   const [settingsQuery, setSettingsQuery] = useState("");
   const [activeRightSlotId, setActiveRightSlotId] = useState("guide");
@@ -1540,7 +1545,13 @@ export default function ConstructApp() {
               <SettingsSidebar
                 activeItemId={settingsSurface.itemId}
                 backLabel={settingsSurface.projectId ? "Back to project" : "Back to projects"}
-                footer={<SidebarSettingsButton onClick={() => openSettingsSurface("workspace")} />}
+                footer={
+                  <ConstructSidebarFooter
+                    aiSettings={aiSettings}
+                    onAccountClick={() => setAccountDialogOpen(true)}
+                    onOpenSettings={() => openSettingsSurface("workspace")}
+                  />
+                }
                 onBack={closeSettingsSurface}
                 onItemSelect={(item: SettingsNavItem) => {
                   const projectId = item.id.startsWith("project-") ? settingsSurface.projectId : undefined;
@@ -1558,16 +1569,17 @@ export default function ConstructApp() {
                 projects={[]}
                 items={[]}
                 footer={
-                  <>
-                    <div className="flex flex-col gap-1">
-                      {isFlowProjectRecord(activeProject) ? (
-                        <SidebarConceptsButton onClick={openKnowledgeBase} />
-                      ) : (
-                        <SidebarLearningButton onClick={openLearningContext} />
-                      )}
-                      <SidebarSettingsButton onClick={() => openSettingsSurface("workspace")} />
-                    </div>
-                  </>
+                  <ConstructSidebarFooter
+                    aiSettings={aiSettings}
+                    onAccountClick={() => setAccountDialogOpen(true)}
+                    onOpenSettings={() => openSettingsSurface("workspace")}
+                  >
+                    {isFlowProjectRecord(activeProject) ? (
+                      <SidebarConceptsButton onClick={openKnowledgeBase} />
+                    ) : (
+                      <SidebarLearningButton onClick={openLearningContext} />
+                    )}
+                  </ConstructSidebarFooter>
                 }
               >
                 <div className="flex min-h-0 flex-1 flex-col">
@@ -1597,19 +1609,43 @@ export default function ConstructApp() {
                 projects={[]} items={[]}
                 primaryItems={[
                   {
+                    id: "brand",
+                    label: "Construct"
+                  },
+                  {
                     id: "new-project",
                     icon: <PlusIcon size={18} />,
                     label: "New project",
                     onClick: () => setIsNewProjectOpen(true)
                   },
                   {
+                    id: "home",
+                    active: !knowledgeBaseOpen && !learningContextOpen,
+                    icon: <HomeIcon size={18} />,
+                    label: "Home",
+                    onClick: handleBack
+                  },
+                  {
                     id: "knowledge-base",
                     icon: <BookOpen size={18} />,
                     label: "Concepts",
                     onClick: openKnowledgeBase
+                  },
+                  {
+                    id: "projects",
+                    icon: <FolderOpenIcon size={18} />,
+                    label: "Projects",
+                    onClick: handleBack
                   }
                 ]}
-                footer={<div className="flex flex-col gap-1"><SidebarSettingsButton onClick={() => openSettingsSurface("workspace")} /></div>}
+                renderNavItem={(item) => <ConstructDashboardNavItem item={item} key={item.id} />}
+                footer={
+                  <ConstructSidebarFooter
+                    aiSettings={aiSettings}
+                    onAccountClick={() => setAccountDialogOpen(true)}
+                    onOpenSettings={() => openSettingsSurface("workspace")}
+                  />
+                }
               >
                 <DashboardSidebar
                   projects={projects}
@@ -1711,6 +1747,12 @@ export default function ConstructApp() {
         </div>
         {showStatusBar ? <StatusBar theme={theme} onThemeChange={setTheme} /> : null}
       </div>
+      <ConstructAccountDialog
+        aiSettings={aiSettings}
+        open={accountDialogOpen}
+        onAiSettingsChange={(settings) => setAiSettings(settings)}
+        onOpenChange={setAccountDialogOpen}
+      />
       <NewProjectDialog
         open={isNewProjectOpen}
         onOpenChange={setIsNewProjectOpen}
@@ -1753,6 +1795,412 @@ export default function ConstructApp() {
       />
       </AuthGate>
     </AppErrorBoundary>
+  );
+}
+
+type ConstructAccountUsageWindow = {
+  windowStart: string;
+  windowEnd: string;
+  usedSeconds: number;
+  limitSeconds: number;
+  remainingSeconds: number;
+};
+
+type ConstructAccountPayload = {
+  user?: {
+    email?: string | null;
+    name?: string | null;
+    plan?: string | null;
+  };
+  usage?: {
+    plan: string;
+    windows: {
+      fiveHour: ConstructAccountUsageWindow;
+      weekly: ConstructAccountUsageWindow;
+    };
+  };
+};
+
+type ConstructAccountUser = {
+  email?: string | null;
+  name?: string | null;
+  image?: string | null;
+};
+
+function ConstructSidebarFooter({
+  aiSettings,
+  children,
+  onAccountClick,
+  onOpenSettings
+}: {
+  aiSettings: AiSettings;
+  children?: ReactNode;
+  onAccountClick: () => void;
+  onOpenSettings: () => void;
+}) {
+  const account = useConstructAccount(aiSettings.constructCloudBaseUrl);
+  const user = account.session?.user as ConstructAccountUser | undefined;
+  const name = displayAccountName(user);
+  const email = user?.email ?? "Signed in";
+  const plan = account.usage?.plan ?? account.account?.user?.plan ?? null;
+
+  return (
+    <div className="flex flex-col gap-1">
+      {children}
+      <SidebarSettingsButton onClick={onOpenSettings} />
+      <button
+        type="button"
+        className="flex min-h-11 w-full min-w-0 items-center gap-2 rounded-[7px] px-2 py-1.5 text-left text-[13px] transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+        onClick={onAccountClick}
+      >
+        <UserAvatar className="size-7" />
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate font-medium">{account.isPending ? "Account" : name}</span>
+            {plan ? <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">{formatPlan(plan)}</Badge> : null}
+          </span>
+          <span className="truncate text-xs text-muted-foreground">{email}</span>
+        </span>
+        <ChevronDownIcon size={14} className="shrink-0 text-muted-foreground" />
+      </button>
+    </div>
+  );
+}
+
+function ConstructAccountDialog({
+  aiSettings,
+  onAiSettingsChange,
+  onOpenChange,
+  open
+}: {
+  aiSettings: AiSettings;
+  onAiSettingsChange: (settings: AiSettings) => void;
+  onOpenChange: (open: boolean) => void;
+  open: boolean;
+}) {
+  const account = useConstructAccount(aiSettings.constructCloudBaseUrl);
+  const user = account.session?.user as ConstructAccountUser | undefined;
+  const [baseUrlDraft, setBaseUrlDraft] = useState(aiSettings.constructCloudBaseUrl);
+  const [tokenDraft, setTokenDraft] = useState(aiSettings.constructCloudAccessToken);
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+  const plan = account.usage?.plan ?? account.account?.user?.plan ?? null;
+
+  useEffect(() => {
+    if (!open) return;
+    setBaseUrlDraft(aiSettings.constructCloudBaseUrl);
+    setTokenDraft(aiSettings.constructCloudAccessToken);
+    setStatus(null);
+  }, [aiSettings.constructCloudAccessToken, aiSettings.constructCloudBaseUrl, open]);
+
+  async function saveHostedSettings(next?: { baseUrl?: string; token?: string }): Promise<boolean> {
+    const baseUrl = cleanAndNormalizeUrl(next?.baseUrl ?? baseUrlDraft);
+    const token = (next?.token ?? tokenDraft).trim();
+
+    try {
+      setBusy(true);
+      setStatus(null);
+      const settings = await updateAiSettings({
+        ai: {
+          ...aiSettings,
+          constructCloudBaseUrl: baseUrl,
+          constructCloudAccessToken: token
+        }
+      });
+      const savedAiSettings = {
+        ...aiSettings,
+        ...(settings.ai ?? {})
+      };
+      onAiSettingsChange(savedAiSettings);
+      setBaseUrlDraft(savedAiSettings.constructCloudBaseUrl);
+      setTokenDraft(savedAiSettings.constructCloudAccessToken);
+      setStatus("Account settings saved.");
+      void account.refetch();
+      return true;
+    } catch (caught) {
+      setStatus(caught instanceof Error ? caught.message : String(caught));
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function mintHostedToken() {
+    try {
+      setBusy(true);
+      setStatus(null);
+      const token = localStorage.getItem("bearer_token");
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+      const baseUrl = cleanAndNormalizeUrl(baseUrlDraft);
+      const response = await fetch(`${baseUrl}/api/cloud/tokens`, {
+        method: "POST",
+        credentials: "include",
+        headers,
+        body: JSON.stringify({ name: "Construct Desktop" })
+      });
+      if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        throw new Error(body || `Token mint failed (${response.status}).`);
+      }
+      const payload = await response.json() as { token?: string };
+      if (!payload.token) {
+        throw new Error("Token response did not include a desktop token.");
+      }
+      setTokenDraft(payload.token);
+      const saved = await saveHostedSettings({ baseUrl, token: payload.token });
+      if (saved) {
+        setStatus("Hosted compute token updated.");
+      }
+    } catch (caught) {
+      setStatus(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function signOut() {
+    try {
+      setBusy(true);
+      localStorage.removeItem("bearer_token");
+      await account.authClient.signOut();
+      window.location.reload();
+    } catch (caught) {
+      setStatus(caught instanceof Error ? caught.message : String(caught));
+      setBusy(false);
+    }
+  }
+
+  return (
+    <ShadcnDialog open={open} onOpenChange={onOpenChange}>
+      <ShadcnDialogContent className="sm:max-w-2xl">
+        <ShadcnDialogHeader>
+          <div className="mb-1 flex size-9 items-center justify-center rounded-md bg-muted text-foreground">
+            <UserRoundIcon size={18} />
+          </div>
+          <ShadcnDialogTitle>Construct Account</ShadcnDialogTitle>
+          <ShadcnDialogDescription>Account access is required for Construct. Project workspaces remain local on this device.</ShadcnDialogDescription>
+        </ShadcnDialogHeader>
+
+        <div className="flex flex-col gap-3 py-1">
+          <div className="flex min-w-0 items-center gap-3 rounded-lg border bg-background p-3">
+            <UserAvatar className="size-10" />
+            <div className="min-w-0 flex-1">
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="truncate text-sm font-medium">{displayAccountName(user)}</span>
+                {plan ? <Badge variant="secondary">{formatPlan(plan)}</Badge> : null}
+              </div>
+              <div className="mt-1 truncate text-xs text-muted-foreground">{user?.email ?? "Signed in"}</div>
+            </div>
+            <Button size="small" variant="secondary" disabled={busy} onClick={() => void signOut()}>
+              <LogOutIcon data-icon="inline-start" />
+              Sign out
+            </Button>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <ConstructAccountFact icon={<CheckCircle2Icon size={16} />} label="Login" value="Active" />
+            <ConstructAccountFact icon={<FolderOpenIcon size={16} />} label="Project storage" value="Local only" />
+          </div>
+
+          {account.usage ? (
+            <div className="rounded-lg border bg-background p-3">
+              <div className="mb-3 flex items-center gap-2 text-sm font-medium">
+                <CloudIcon size={16} />
+                Hosted compute
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <ConstructAccountUsageMeter label="5 hour" window={account.usage.windows.fiveHour} />
+                <ConstructAccountUsageMeter label="Weekly" window={account.usage.windows.weekly} />
+              </div>
+            </div>
+          ) : null}
+
+          <div className="flex flex-col gap-3 rounded-lg border bg-background p-3">
+            <div className="flex items-start gap-2">
+              <KeyRoundIcon size={16} className="mt-0.5 text-muted-foreground" />
+              <div>
+                <div className="text-sm font-medium">Hosted compute token</div>
+                <div className="mt-1 text-xs text-muted-foreground">Used only when AI source is set to hosted compute. BYOK keys stay local.</div>
+              </div>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+              <Input
+                value={baseUrlDraft}
+                disabled={busy}
+                placeholder="https://cloud.tryconstruct.cc"
+                onChange={(event) => setBaseUrlDraft(event.target.value)}
+              />
+              <Input
+                type="password"
+                value={tokenDraft}
+                disabled={busy}
+                placeholder="Hosted compute token"
+                onChange={(event) => setTokenDraft(event.target.value)}
+              />
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button size="small" disabled={busy || !account.session?.user} onClick={() => void mintHostedToken()}>
+                {busy ? "Working..." : "Mint token"}
+              </Button>
+              <Button size="small" variant="secondary" disabled={busy} onClick={() => void saveHostedSettings()}>
+                Save
+              </Button>
+              {tokenDraft ? (
+                <Button size="small" variant="secondary" disabled={busy} onClick={() => void saveHostedSettings({ token: "" })}>
+                  Clear token
+                </Button>
+              ) : null}
+            </div>
+            {status ?? account.status ? (
+              <div className="text-xs text-muted-foreground">{status ?? account.status}</div>
+            ) : null}
+          </div>
+        </div>
+
+        <ShadcnDialogFooter>
+          <Button variant="secondary" onClick={() => onOpenChange(false)}>
+            Close
+          </Button>
+        </ShadcnDialogFooter>
+      </ShadcnDialogContent>
+    </ShadcnDialog>
+  );
+}
+
+function useConstructAccount(baseUrl: string) {
+  const { authClient } = useAuth();
+  const { data: session, isPending, refetch } = useSession(authClient as ReturnType<typeof createAuthClient>);
+  const normalizedBaseUrl = useMemo(() => cleanAndNormalizeUrl(baseUrl), [baseUrl]);
+  const [account, setAccount] = useState<ConstructAccountPayload | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!session) {
+      setAccount(null);
+      return;
+    }
+
+    let cancelled = false;
+    const token = localStorage.getItem("bearer_token");
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    void fetch(`${normalizedBaseUrl}/api/me`, {
+      credentials: "include",
+      headers
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`Account lookup failed (${response.status}).`);
+        return await response.json() as ConstructAccountPayload;
+      })
+      .then((payload) => {
+        if (!cancelled) {
+          setAccount(payload);
+          setStatus(null);
+        }
+      })
+      .catch((caught) => {
+        if (!cancelled) {
+          setAccount(null);
+          setStatus(caught instanceof Error ? caught.message : String(caught));
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [normalizedBaseUrl, session]);
+
+  return {
+    account,
+    authClient: authClient as ReturnType<typeof createAuthClient>,
+    isPending,
+    refetch,
+    session,
+    status,
+    usage: account?.usage ?? null
+  };
+}
+
+function ConstructAccountFact({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
+  return (
+    <div className="flex items-center gap-3 rounded-lg border bg-background p-3">
+      <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">{icon}</div>
+      <div className="min-w-0">
+        <div className="text-xs text-muted-foreground">{label}</div>
+        <div className="mt-0.5 truncate text-sm font-medium">{value}</div>
+      </div>
+    </div>
+  );
+}
+
+function ConstructAccountUsageMeter({ label, window }: { label: string; window: ConstructAccountUsageWindow }) {
+  const used = formatSeconds(window.usedSeconds);
+  const limit = formatSeconds(window.limitSeconds);
+  const reset = new Date(window.windowEnd).toLocaleString();
+  const percent = window.limitSeconds > 0 ? Math.min(100, Math.max(0, (window.usedSeconds / window.limitSeconds) * 100)) : 0;
+
+  return (
+    <div className="rounded-md bg-muted/35 px-3 py-2 text-xs">
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-medium text-foreground">{label}</span>
+        <span className="text-muted-foreground">{used} / {limit}</span>
+      </div>
+      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-background">
+        <div className="h-full rounded-full bg-primary" style={{ width: `${percent}%` }} />
+      </div>
+      <div className="mt-2 truncate text-muted-foreground">Resets {reset}</div>
+    </div>
+  );
+}
+
+function displayAccountName(user: ConstructAccountUser | undefined): string {
+  return user?.name?.trim() || user?.email?.trim() || "Construct user";
+}
+
+function formatPlan(plan: string): string {
+  return plan.trim() ? plan.trim().slice(0, 1).toUpperCase() + plan.trim().slice(1) : "Free";
+}
+
+function formatSeconds(seconds: number): string {
+  const hours = seconds / 3600;
+  if (hours >= 1) return `${hours.toFixed(hours % 1 === 0 ? 0 : 1)}h`;
+  const minutes = Math.ceil(seconds / 60);
+  return `${minutes}m`;
+}
+
+function ConstructDashboardNavItem({ item }: { item: SidebarNavItem }) {
+  if (item.id === "brand") {
+    return <ConstructSidebarBrand />;
+  }
+
+  return (
+    <Button
+      className="h-8 w-full justify-start gap-2 rounded-[7px] px-2 text-[13px] data-[active=true]:bg-sidebar-accent data-[active=true]:text-sidebar-accent-foreground"
+      data-active={item.active === true ? "true" : undefined}
+      onClick={item.onClick}
+      variant={item.id === "new-project" ? "default" : "ghost"}
+    >
+      {item.icon != null ? <span className="grid size-[18px] shrink-0 place-items-center" data-icon="inline-start" aria-hidden="true">{item.icon}</span> : null}
+      <span>{item.label}</span>
+    </Button>
+  );
+}
+
+function ConstructSidebarBrand() {
+  return (
+    <div className="flex min-w-0 items-center gap-2 px-2 py-2">
+      <div className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary text-sm font-semibold text-primary-foreground">C</div>
+      <div className="min-w-0">
+        <div className="truncate text-sm font-semibold text-foreground">Construct</div>
+        <div className="truncate text-xs text-muted-foreground">Learn by building</div>
+      </div>
+    </div>
   );
 }
 
