@@ -12,22 +12,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
+        uses: actions/checkout@v5
 
+      - name: Checkout Opaline submodule
+        run: |
+          git submodule sync opaline
+          git submodule update --init --depth=1 opaline
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v5
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: 25
+          node-version: 24
           cache: pnpm
 
+      - name: Release pipeline preflight
+        run: node scripts/release/preflight.mjs
+
       - name: Cache Turbo
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: .turbo/cache
           key: ${{ runner.os }}-turbo-${{ github.sha }}

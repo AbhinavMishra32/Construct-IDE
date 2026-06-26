@@ -18,7 +18,10 @@
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "verify": "pnpm typecheck && pnpm test && pnpm build"
+    "verify": "pnpm typecheck && pnpm test && pnpm build",
+    "verify:no-build": "pnpm typecheck && pnpm test && pnpm release:preflight",
+    "release:preflight": "node scripts/release/preflight.mjs",
+    "release:publish": "node scripts/release/publish-gh.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

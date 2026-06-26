@@ -26,9 +26,12 @@ win:
     - portable
     - zip
 nsis:
+  artifactName: Construct-${version}-windows-installer-${arch}.${ext}
   oneClick: false
   allowToChangeInstallationDirectory: true
   perMachine: false
+portable:
+  artifactName: Construct-${version}-windows-portable-${arch}.${ext}
 linux:
   category: Development
   syncDesktopName: true
