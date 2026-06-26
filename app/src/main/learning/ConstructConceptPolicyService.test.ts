@@ -191,6 +191,44 @@ describe("ConstructConceptPolicyService", () => {
     assert.equal(decision.allowed, true);
   });
 
+  it("uses learner.md heading and bullet sections as prior evidence", async () => {
+    const { store, project } = await projectHarness("js-project", "JavaScript Project");
+    await teach(store, project, concept({
+      id: "js.variables",
+      title: "JavaScript variables",
+      content: "A variable stores a named value that code can read later.",
+      masteryLevel: 3
+    }));
+    const policy = new ConstructConceptPolicyService({
+      learningStore: () => store,
+      readProjectMemory: async () => [{
+        file: ".construct/learner.md",
+        content: [
+          "# Learner",
+          "",
+          "## Known concepts",
+          "",
+          "- JavaScript arrow functions — comfortable from earlier project work.",
+          "",
+          "## Recent learning evidence",
+          "",
+          "- The learner explained callback input and return value flow in their own words."
+        ].join("\n")
+      }]
+    });
+
+    const decision = await policy.authorize({
+      project,
+      artifactKind: "task",
+      artifactRef: "Use a tiny callback",
+      declaredConceptIds: ["js.variables"],
+      requireTaskReady: true,
+      content: "Read const double = (value) => value * 2; and explain what value stores."
+    });
+
+    assert.equal(decision.allowed, true);
+  });
+
   it("does not use learner memory to cover capabilities recorded as weak", async () => {
     const { store, project } = await projectHarness("js-project", "JavaScript Project");
     await teach(store, project, concept({
@@ -280,6 +318,88 @@ describe("ConstructConceptPolicyService", () => {
     assert.match(prompt, /App Router \(v14\/v15\)/);
     assert.match(prompt, /Project-local weak or needs-learning evidence/i);
     assert.match(prompt, /Cache Components/);
+  });
+
+  it("allows covered artifacts when the semantic model returns empty structured output", async () => {
+    const { store, project } = await projectHarness("cpp-parser", "C++ Parser");
+    await teach(store, project, concept({
+      id: "cpp.parser-foundations",
+      title: "C++ parser foundations",
+      content: "A C++ enum class names scoped variants such as TokenType::StartTag. A struct groups fields such as type and name. A std::string variable can copy a tag name.",
+      examples: [
+        "enum class TokenType { StartTag, EndTag, Text };",
+        "Token t; t.type = TokenType::StartTag; t.name = tagName;"
+      ],
+      masteryLevel: 2
+    }));
+    const policy = new ConstructConceptPolicyService({
+      learningStore: () => store,
+      agentRuntime: () => ({
+        generateStructured: async () => {
+          throw new Error("Model returned empty structured output. Model: deepseek-v4-flash-free, Provider: opencode-zen.");
+        }
+      } as any)
+    });
+
+    const decision = await policy.authorize({
+      project,
+      artifactKind: "assessment",
+      artifactRef: "C++ warmup: token struct",
+      declaredConceptIds: ["cpp.parser-foundations"],
+      content: JSON.stringify({
+        title: "C++ warmup: token struct",
+        prompt: [
+          "Look at this C++ snippet. Fill in the blank so that t.name is \"div\" and t.type is TokenType::StartTag:",
+          "enum class TokenType { StartTag, EndTag, Text };",
+          "struct Token { TokenType type; std::string name; };",
+          "Token makeStartTag(const std::string& tagName) { Token t; t.type = _____; t.name = _____; return t; }"
+        ].join("\n"),
+        successCriteria: [
+          "Correctly fills type as TokenType::StartTag",
+          "Correctly fills name as tagName"
+        ]
+      }, null, 2)
+    });
+
+    assert.equal(decision.allowed, true);
+    assert.deepEqual(decision.blockedCapabilities, []);
+    assert.match(decision.reason, /Semantic concept audit unavailable/i);
+    assert.doesNotMatch(decision.reason, /failed closed/i);
+    const state = await store.getState();
+    assert.equal(state.projects[project.id].artifactAudits?.at(-1)?.status, "allowed");
+  });
+
+  it("still blocks deterministic uncovered capabilities when the semantic model is unavailable", async () => {
+    const { store, project } = await projectHarness("cpp-project", "C++ Project");
+    await teach(store, project, concept({
+      id: "cpp.functions",
+      title: "C++ functions",
+      content: "A named function has parameters, a return type, and a body. Call it by name.",
+      examples: ["int add(int a, int b) { return a + b; }"],
+      masteryLevel: 3
+    }));
+    const policy = new ConstructConceptPolicyService({
+      learningStore: () => store,
+      agentRuntime: () => ({
+        generateStructured: async () => {
+          throw new Error("Model returned empty structured output.");
+        }
+      } as any)
+    });
+
+    const decision = await policy.authorize({
+      project,
+      artifactKind: "task",
+      artifactRef: "Transform values",
+      declaredConceptIds: ["cpp.functions"],
+      requireTaskReady: true,
+      content: "Use auto twice = [](int value) { return value * 2; }; and call it for each input."
+    });
+
+    assert.equal(decision.allowed, false);
+    assert.match(decision.blockedCapabilities.join("\n"), /lambda/i);
+    assert.doesNotMatch(decision.blockedCapabilities.join("\n"), /semantic concept audit/i);
+    assert.match(decision.reason, /Semantic concept audit unavailable/i);
   });
 
   it("allows everything without restrictions if the firewall is disabled in settings", async () => {

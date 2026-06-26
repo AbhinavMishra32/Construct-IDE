@@ -462,15 +462,23 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     );
 
     const reviewTool = (service as any).createReviewSubtaskTool(project, () => {});
-    await assert.rejects(
-      () => reviewTool.execute({
-        taskId: task.id,
-        subtaskId: task.subtasks?.[0]?.id,
-        outcome: "done",
-        evidence: "Agent-created task setup is not learner evidence."
-      }),
-      /learner-authored task submission/
-    );
+    await reviewTool.execute({
+      taskId: task.id,
+      subtaskId: task.subtasks?.[0]?.id,
+      outcome: "done",
+      evidence: "The current workspace evidence already satisfies this scaffold subtask."
+    });
+    assert.equal(task.subtasks?.[0]?.status, "completed");
+    assert.equal(task.status, "submitted");
+    task.status = "waiting";
+    if (task.subtasks?.[0]) {
+      task.subtasks[0].status = "active";
+      task.subtasks[0].completedAt = undefined;
+      task.subtasks[0].evidence = undefined;
+      task.subtasks[0].reviewedAt = undefined;
+      task.subtasks[0].reviewNote = undefined;
+      task.subtasks[0].nextInstructions = undefined;
+    }
 
     // Modify file and submit task
     await writeFile(path.join(project.workspacePath, "src/greet.ts"), "export function greet() { return 'hello'; }", "utf8");
@@ -2136,7 +2144,7 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     assert.match(source, /Disabled in settings\. Do not call internet-search or internet-fetch/);
   });
 
-  it("allows one exact workspace mutation retry with a concept firewall review id", async () => {
+  it("allows the next matching workspace mutation after a concept firewall review", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "construct-flow-firewall-review-"));
     const workspaceRoot = path.join(dir, "workspaces");
     await mkdir(workspaceRoot, { recursive: true });
@@ -2156,7 +2164,6 @@ describe("ConstructFlowService Concept and Task Tools", () => {
       reason: "Prepare a tiny console logging scaffold.",
       conceptIds: ["js.console-log"]
     };
-    let reviewId = "";
     const service = new ConstructFlowService({
       workspace,
       flowMemory,
@@ -2169,24 +2176,23 @@ describe("ConstructFlowService Concept and Task Tools", () => {
             () => request.tools.write.execute(writeInput),
             (error: unknown) => {
               const message = error instanceof Error ? error.message : String(error);
-              reviewId = message.match(/Concept firewall review id: ([a-f0-9-]+)/i)?.[1] ?? "";
-              return /Project concept firewall blocked/.test(message) && reviewId.length > 0;
+              return /Project concept firewall blocked/.test(message) && /one-shot internal firewall token/.test(message);
             }
           );
 
           const writeResult = await request.tools.write.execute({
             ...writeInput,
-            conceptFirewallReviewId: reviewId
+            path: "src/log-fixed.js",
+            content: "console.log('ready');\n",
+            reason: "Prepare a revised tiny console logging scaffold after the firewall review."
           });
-          assert.equal(writeResult.path, writeInput.path);
+          assert.equal(writeResult.path, "src/log-fixed.js");
 
           await assert.rejects(
             () => request.tools.write.execute({
-              ...writeInput,
-              content: "console.log(changed);\n",
-              conceptFirewallReviewId: reviewId
+              ...writeInput
             }),
-            /different mutation/
+            /Project concept firewall blocked/
           );
 
           return {
@@ -2203,14 +2209,105 @@ describe("ConstructFlowService Concept and Task Tools", () => {
       message: "Create the tiny support file."
     });
 
-    const written = await readFile(path.join(project.workspacePath, "src/log.js"), "utf8");
-    assert.equal(written, writeInput.content);
-    assert.ok(project.flow.sessions.at(-1)?.toolCalls.some((toolCall) => (
-      toolCall.name === "write" &&
-      toolCall.input &&
-      typeof toolCall.input === "object" &&
-      (toolCall.input as Record<string, unknown>).conceptFirewallReviewId === reviewId
+    const written = await readFile(path.join(project.workspacePath, "src/log-fixed.js"), "utf8");
+    assert.equal(written, "console.log('ready');\n");
+    assert.equal(existsSync(path.join(project.workspacePath, "src/log.js")), false);
+    assert.ok(project.flow.sessions.at(-1)?.toolCalls.every((toolCall) => (
+      !toolCall.input ||
+      typeof toolCall.input !== "object" ||
+      !("conceptFirewallReviewId" in (toolCall.input as Record<string, unknown>))
     )));
+  });
+
+  it("allows the next practice-task tool call after a concept firewall review", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "construct-flow-task-firewall-review-"));
+    const learningStorePath = path.join(dir, "learning-state.json");
+    const workspaceRoot = path.join(dir, "workspaces");
+    await mkdir(workspaceRoot, { recursive: true });
+
+    const learningStore = new ConstructLearningStore(learningStorePath);
+    const workspace = new ConstructProjectWorkspaceService(
+      () => workspaceRoot,
+      () => dir
+    );
+    const flowMemory = new ConstructFlowMemoryService(workspace);
+    const logs = new AgentLogService(() => {});
+    const service = new ConstructFlowService({
+      workspace,
+      flowMemory,
+      latestTerminalOutput: () => "",
+      logs,
+      learningStore: () => learningStore
+    });
+    const project = createFlowTestProject(workspaceRoot, "task-firewall-review-project", "Practice JavaScript safely");
+    await mkdir(project.workspacePath, { recursive: true });
+
+    const session: ConstructFlowSession = {
+      id: "task-firewall-session",
+      projectId: project.id,
+      threadId: "thread-task-firewall",
+      messages: [],
+      status: "running",
+      toolCalls: [],
+      agentEvents: [],
+      timeline: [],
+      actions: [],
+      practiceTasks: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    project.flow.sessions.push(session);
+
+    const addTool = (service as any).createAddConceptTool(project, () => {});
+    await addTool.execute({
+      id: "js.variables",
+      title: "JavaScript variables",
+      language: "javascript",
+      technology: "JavaScript",
+      content: "A variable stores a named value that code can read later.",
+      masteryLevel: 3,
+      masteryReason: "The learner explained variables as named stored values.",
+      reason: "Seed a ready concept that does not cover callbacks.",
+      evidence: ["The learner explained variable storage in chat."]
+    });
+
+    const reviews = new Map();
+    const taskTool = (service as any).createPracticeTaskTool(project, session, () => {}, reviews);
+    const taskInput = {
+      title: "Read a callback",
+      prompt: "Read const double = (value) => value * 2; and explain what value stores.",
+      language: "javascript",
+      taskFiles: ["src/callback.js"],
+      introducedConceptIds: ["js.variables"],
+      learnerReadiness: [{
+        conceptId: "js.variables",
+        evidence: "The learner explained variables as named values.",
+        source: "learner-chat"
+      }],
+      successCriteria: ["The learner explains the variable value."]
+    };
+
+    await assert.rejects(
+      () => taskTool.execute(taskInput),
+      (error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        return /Project concept firewall blocked this practice task/.test(message) && /one-shot internal firewall token/.test(message);
+      }
+    );
+
+    const result = await taskTool.execute({
+      ...taskInput,
+      title: "Read the callback value",
+      prompt: `${taskInput.prompt} Then say which value the callback receives.`
+    });
+    assert.equal(result.created, true);
+    assert.ok(result.conceptAuditId);
+
+    session.practiceTasks[0].status = "cancelled";
+    await assert.rejects(
+      () => taskTool.execute(taskInput),
+      /Project concept firewall blocked this practice task/
+    );
   });
 
   it("keeps concept teaching conversational instead of reference-dump shaped", () => {
@@ -2225,5 +2322,17 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     assert.match(source, /Source-grounded teaching and citations:/);
     assert.match(source, /sentence or paragraph they support/);
     assert.match(source, /sources array for docs\/articles actually used/);
+  });
+
+  it("keeps Flow from turning the learner into a command executor", () => {
+    const source = readFileSync(new URL("./ConstructFlowService.ts", import.meta.url), "utf8");
+    assert.match(source, /Mentor handoffs, not executor checklists:/);
+    assert.match(source, /Do not turn ordinary chat into a coding-agent handoff/);
+    assert.match(source, /the learner is only told to run a command, create a directory tree, paste full files, add env vars, then run a build/);
+    assert.match(source, /use practice-task, small consented support edits, or a focused ask-question instead of a long prose checklist/);
+    assert.match(source, /ask what prior pattern, Concept, task, or file shape this resembles/);
+    assert.match(source, /guide the learner to identify roles and boundaries before paths and commands/);
+    assert.match(source, /Command snippets in chat should be rare, tiny, and observational or validation-focused/);
+    assert.match(source, /Do not provide multi-command setup scripts, full file contents, or copy-paste implementation blocks/);
   });
 });

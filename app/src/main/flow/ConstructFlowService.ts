@@ -89,6 +89,16 @@ const flowMasteryRubricDescription = CONSTRUCT_CONCEPT_MASTERY_RUBRIC
   .map((entry) => `Level ${entry.level} (${entry.title}): ${entry.text}`)
   .join(" ");
 
+type ConceptFirewallReviewRecord =
+  | {
+      kind: "file-write" | "file-edit";
+      createdAt: string;
+    }
+  | {
+      kind: "practice-task";
+      createdAt: string;
+    };
+
 type FlowModelMessage = ConstructAgentRuntimeMessage & {
   id: string;
   sessionId?: string;
@@ -274,7 +284,7 @@ export class ConstructFlowService {
     publish("started");
 
     const actionsFromTools: ConstructFlowAction[] = [];
-    const conceptFirewallReviews = new Map<string, string>();
+    const conceptFirewallReviews = new Map<string, ConceptFirewallReviewRecord>();
     const protocol = createConstructProtocolTools({
       project,
       workspace: this.options.workspace,
@@ -286,16 +296,9 @@ export class ConstructFlowService {
       allowTerminalCommands: toolPolicy.allowTerminalCommands,
       terminalCommandMode: toolPolicy.terminalCommandMode,
       authorizeWorkspaceMutation: async (mutation) => {
-        const fingerprint = conceptFirewallMutationFingerprint(mutation);
-        const reviewId = mutation.conceptFirewallReviewId?.trim();
+        const reviewId = findLatestConceptFirewallReviewId(conceptFirewallReviews, mutation.kind);
         if (reviewId) {
-          const reviewedFingerprint = conceptFirewallReviews.get(reviewId);
-          if (!reviewedFingerprint) {
-            throw new Error(`Concept firewall review id "${reviewId}" is not available in this Flow run. Omit the id to audit this mutation once.`);
-          }
-          if (reviewedFingerprint !== fingerprint) {
-            throw new Error(`Concept firewall review id "${reviewId}" belongs to a different mutation. Retry the exact same path, content, reason, and conceptIds, or omit the id for a new audit.`);
-          }
+          consumeConceptFirewallToolReview(conceptFirewallReviews, reviewId, mutation.kind);
           return;
         }
         const decision = await this.conceptPolicy().authorize({
@@ -306,7 +309,10 @@ export class ConstructFlowService {
           declaredConceptIds: mutation.conceptIds
         });
         if (!decision.allowed) {
-          conceptFirewallReviews.set(decision.auditId, fingerprint);
+          conceptFirewallReviews.set(decision.auditId, {
+            kind: mutation.kind,
+            createdAt: new Date().toISOString()
+          });
           throw new Error(buildConceptFirewallMutationBlockedMessage(decision));
         }
         assertConceptPolicyAllowed(decision);
@@ -413,7 +419,7 @@ export class ConstructFlowService {
       }
     }
 
-    const practiceTask = this.createPracticeTaskTool(project, session, publish);
+    const practiceTask = this.createPracticeTaskTool(project, session, publish, conceptFirewallReviews);
     const planLearningPath = this.createPlanLearningPathTool(project, publish);
     const addConcept = this.createAddConceptTool(project, publish);
     const modifyConcept = this.createModifyConceptTool(project, publish);
@@ -844,7 +850,8 @@ export class ConstructFlowService {
   private createPracticeTaskTool(
     project: StoredFlowProject,
     session: ConstructFlowSession,
-    publish: (type: ConstructFlowSessionEvent["type"]) => void
+    publish: (type: ConstructFlowSessionEvent["type"]) => void,
+    conceptFirewallReviews?: Map<string, ConceptFirewallReviewRecord>
   ): ToolsInput[string] {
     return createTool({
       id: "practice-task",
@@ -917,22 +924,6 @@ export class ConstructFlowService {
         assertTaskConceptReadiness(introducedConceptIds, conceptRecords, learnerReadiness, requiredMasteryLevel);
         assertTaskLanguageMatchesConcepts(taskLanguage, conceptRecords);
         assertTaskLanguageMatchesPath(project, pathNodeId, taskLanguage, knownConcepts);
-        const conceptDecision = await this.conceptPolicy().authorize({
-          project,
-          artifactKind: "task",
-          artifactRef: toolInput.title,
-          declaredConceptIds: introducedConceptIds,
-          requireTaskReady: true,
-          content: JSON.stringify({
-            title: toolInput.title,
-            prompt: toolInput.prompt,
-            successCriteria: toolInput.successCriteria,
-            subtasks: toolInput.subtasks,
-            preparations: toolInput.preparations,
-            guidance: toolInput.guidance
-          }, null, 2)
-        });
-        assertConceptPolicyAllowed(conceptDecision);
         const cancelledStaleTaskIds = cancelStaleLanguageTasks(project, taskLanguage, knownConcepts, now);
         if (cancelledStaleTaskIds.length > 0) {
           project.flow.updatedAt = now;
@@ -945,6 +936,43 @@ export class ConstructFlowService {
         if (blockingTask) {
           throw new Error(`A waiting Flow task already exists for this path node: "${blockingTask.title}" (${blockingTask.id}). Do not create another task; resume the existing task or ask the learner to submit or cancel it first.`);
         }
+        const conceptAuditContent = JSON.stringify({
+          title: toolInput.title,
+          prompt: toolInput.prompt,
+          successCriteria: toolInput.successCriteria,
+          subtasks: toolInput.subtasks,
+          preparations: toolInput.preparations,
+          guidance: toolInput.guidance
+        }, null, 2);
+        const reviewId = findLatestConceptFirewallReviewId(conceptFirewallReviews, "practice-task");
+        const conceptDecision = reviewId && conceptFirewallReviews
+          ? (() => {
+              consumeConceptFirewallToolReview(conceptFirewallReviews, reviewId, "practice-task");
+              return {
+                allowed: true,
+                declaredConceptIds: introducedConceptIds,
+                matchedConceptIds: introducedConceptIds,
+                blockedCapabilities: [],
+                reason: "Practice task approved by one-shot concept firewall tool review.",
+                auditId: reviewId
+              };
+            })()
+          : await this.conceptPolicy().authorize({
+              project,
+              artifactKind: "task",
+              artifactRef: toolInput.title,
+              declaredConceptIds: introducedConceptIds,
+              requireTaskReady: true,
+              content: conceptAuditContent
+            });
+        if (!conceptDecision.allowed && conceptFirewallReviews) {
+          conceptFirewallReviews.set(conceptDecision.auditId, {
+            kind: "practice-task",
+            createdAt: new Date().toISOString()
+          });
+          throw new Error(buildConceptFirewallTaskBlockedMessage(conceptDecision));
+        }
+        assertConceptPolicyAllowed(conceptDecision);
         if (toolInput.preparations && toolInput.preparations.length > 0) {
           await applyTaskPreparations(project, this.options.workspace, toolInput.preparations);
         }
@@ -1683,7 +1711,7 @@ export class ConstructFlowService {
   ): ToolsInput[string] {
     return createTool({
       id: "review-subtask",
-      description: `Review a learner-authored subtask submission and mark it either done or needing more work with explicit evidence. Requires a current learner submission; agent-authored edits or verification commands are not learner evidence. Optionally update concept Mastery only for concepts whose level is proven by the learner-authored diff or explanation. Mastery scale: ${flowMasteryRubricDescription}`,
+      description: `Review the current subtask and mark it either done or needing more work with explicit evidence. A formal learner submission is useful but not required; concrete workspace evidence, task-scoped learner messages, or validation results can complete a subtask. Agent-authored edits alone are not learner evidence. Optionally update concept Mastery only for concepts whose level is proven by learner-authored work or explanation. Mastery scale: ${flowMasteryRubricDescription}`,
       inputSchema: z.object({
         taskId: z.string().min(1),
         subtaskId: z.string().min(1),
@@ -1701,18 +1729,19 @@ export class ConstructFlowService {
       execute: async (toolInput) => {
         const task = findPracticeTask(project, toolInput.taskId);
         const subtask = findPracticeSubtask(task, toolInput.subtaskId);
-        const submission = requireLearnerSubmission(task, "review a subtask");
-        if (task.status !== "submitted" || subtask.status !== "submitted") {
-          throw new Error("Cannot review a subtask until the learner submits that subtask.");
+        const submission = task.submission?.authoredBy?.actor === "learner" ? task.submission : undefined;
+        const reviewingLatestSubmission = Boolean(submission && (task.status === "submitted" || subtask.status === "submitted"));
+        if (task.status === "completed" || task.status === "cancelled") {
+          throw new Error(`Cannot review a subtask for a ${task.status} task.`);
         }
-        if (submission.subtaskId && submission.subtaskId !== subtask.id) {
+        if (reviewingLatestSubmission && submission?.subtaskId && submission.subtaskId !== subtask.id) {
           throw new Error("Cannot review a different subtask from the latest learner submission.");
         }
-        if (toolInput.outcome === "done" && submission.nothingChanged) {
+        if (reviewingLatestSubmission && toolInput.outcome === "done" && submission?.nothingChanged) {
           throw new Error("Cannot mark a subtask done from a learner submission with no file changes.");
         }
-        const agentEditedPaths = findAgentEditedTaskFilesAfterSubmission(project, task);
-        if (toolInput.outcome === "done" && agentEditedPaths.length > 0) {
+        const agentEditedPaths = reviewingLatestSubmission ? findAgentEditedTaskFilesAfterSubmission(project, task) : [];
+        if (reviewingLatestSubmission && toolInput.outcome === "done" && agentEditedPaths.length > 0) {
           throw new Error(`Cannot mark learner work done because Flow edited task files after the learner submission: ${agentEditedPaths.join(", ")}. Ask the learner to review and resubmit.`);
         }
         const now = new Date().toISOString();
@@ -1782,7 +1811,7 @@ export class ConstructFlowService {
   ): ToolsInput[string] {
     return createTool({
       id: "complete-task",
-      description: "Mark a full Flow task done only after a learner-authored submission and after every subtask has been reviewed as completed. Evidence must come from learner-authored submission metadata, not agent edits or terminal checks.",
+      description: "Mark a full Flow task done after every subtask has been reviewed as completed. A learner-authored submission can be used as evidence when present, but concrete reviewed subtask evidence can also complete the task.",
       inputSchema: z.object({
         taskId: z.string().min(1),
         summary: z.string().min(1).max(1_200),
@@ -1790,15 +1819,15 @@ export class ConstructFlowService {
       }).strict(),
       execute: async (toolInput) => {
         const task = findPracticeTask(project, toolInput.taskId);
-        const submission = requireLearnerSubmission(task, "complete a task");
-        if (task.status !== "submitted") {
-          throw new Error("Cannot complete a task until the learner has submitted work and all subtasks have been reviewed.");
+        const submission = task.submission?.authoredBy?.actor === "learner" ? task.submission : undefined;
+        if (task.status === "completed" || task.status === "cancelled") {
+          throw new Error(`Cannot complete a task that is already ${task.status}.`);
         }
-        if (submission.nothingChanged) {
+        if (submission?.nothingChanged) {
           throw new Error("Cannot complete a task from a learner submission with no file changes.");
         }
-        const agentEditedPaths = findAgentEditedTaskFilesAfterSubmission(project, task);
-        if (agentEditedPaths.length > 0) {
+        const agentEditedPaths = submission ? findAgentEditedTaskFilesAfterSubmission(project, task) : [];
+        if (submission && agentEditedPaths.length > 0) {
           throw new Error(`Cannot complete learner task because Flow edited task files after the learner submission: ${agentEditedPaths.join(", ")}. Ask the learner to review and resubmit.`);
         }
         const incompleteSubtasks = task.subtasks?.filter((subtask) => subtask.status !== "completed") ?? [];
@@ -1858,14 +1887,6 @@ function findConceptExercise(project: StoredFlowProject, exerciseId: string): Co
     throw new Error(`Unknown Flow concept exercise: ${exerciseId}`);
   }
   return exercise;
-}
-
-function requireLearnerSubmission(task: ConstructFlowPracticeTask, action: string): ConstructFlowTaskSubmission {
-  const submission = task.submission;
-  if (!submission || submission.authoredBy?.actor !== "learner") {
-    throw new Error(`Cannot ${action} without a learner-authored task submission. Agent-authored edits, scaffold repairs, and verification commands are support work, not learner completion evidence.`);
-  }
-  return submission;
 }
 
 function findAgentEditedTaskFilesAfterSubmission(project: StoredFlowProject, task: ConstructFlowPracticeTask): string[] {
@@ -4117,20 +4138,30 @@ function availableFlowToolNames(policy: FlowRunToolPolicy): string[] {
   return [...new Set([...policy.protocolToolNames, ...policy.flowToolNames])];
 }
 
-function conceptFirewallMutationFingerprint(input: {
-  kind: "file-write" | "file-edit";
-  path: string;
-  content: string;
-  conceptIds: string[];
-  reason: string;
-}): string {
-  return JSON.stringify({
-    kind: input.kind,
-    path: input.path,
-    content: input.content,
-    conceptIds: [...new Set(input.conceptIds)].sort(),
-    reason: input.reason.trim()
-  });
+function consumeConceptFirewallToolReview(
+  reviews: Map<string, ConceptFirewallReviewRecord>,
+  reviewId: string,
+  kind: ConceptFirewallReviewRecord["kind"]
+): void {
+  const review = reviews.get(reviewId);
+  if (!review) {
+    throw new Error("The internal concept firewall token is not available in this Flow run. It may already have been consumed.");
+  }
+  if (review.kind !== kind) {
+    throw new Error(`The internal concept firewall token belongs to ${review.kind}, not ${kind}.`);
+  }
+  reviews.delete(reviewId);
+}
+
+function findLatestConceptFirewallReviewId(
+  reviews: Map<string, ConceptFirewallReviewRecord> | undefined,
+  kind: ConceptFirewallReviewRecord["kind"]
+): string | undefined {
+  if (!reviews) return undefined;
+  return [...reviews.entries()]
+    .filter(([, review]) => review.kind === kind)
+    .sort(([, a], [, b]) => b.createdAt.localeCompare(a.createdAt))
+    .at(0)?.[0];
 }
 
 function buildConceptFirewallMutationBlockedMessage(decision: {
@@ -4140,12 +4171,26 @@ function buildConceptFirewallMutationBlockedMessage(decision: {
 }): string {
   return [
     "Project concept firewall blocked this workspace mutation.",
-    `Concept firewall review id: ${decision.auditId}`,
     decision.reason,
     decision.blockedCapabilities.length
       ? `Uncovered capabilities: ${decision.blockedCapabilities.join("; ")}`
       : null,
-    "Teach and record the missing capability in this project, then retry the exact same mutation with this conceptFirewallReviewId. The id is valid only for the same path, content, reason, and conceptIds."
+    "Flow queued a one-shot internal firewall token for the next matching write/edit tool call in this run. Teach and record the missing capability or adjust the tool input, then call the tool again; the token is applied automatically and cannot be reused."
+  ].filter(Boolean).join(" ");
+}
+
+function buildConceptFirewallTaskBlockedMessage(decision: {
+  auditId: string;
+  reason: string;
+  blockedCapabilities: string[];
+}): string {
+  return [
+    "Project concept firewall blocked this practice task.",
+    decision.reason,
+    decision.blockedCapabilities.length
+      ? `Uncovered capabilities: ${decision.blockedCapabilities.join("; ")}`
+      : null,
+    "Flow queued a one-shot internal firewall token for the next practice-task call in this run. Teach and record the missing capability or adjust the task input, then call practice-task again; the token is applied automatically and cannot be reused."
   ].filter(Boolean).join(" ");
 }
 
@@ -4346,14 +4391,16 @@ function normalizeQuestionForComparison(value: string): string {
     .toLowerCase();
 }
 
-function readQuestionPayload(toolCall: ConstructFlowToolCallRecord): { choices?: string[] } {
+function readQuestionPayload(toolCall: ConstructFlowToolCallRecord): { choices?: string[]; answerMode?: string; language?: string } {
   const source = typeof toolCall.input === "object" && toolCall.input !== null
-    ? toolCall.input as { choices?: unknown }
+    ? toolCall.input as { choices?: unknown; answerMode?: unknown; language?: unknown }
     : {};
   return {
     choices: Array.isArray(source.choices)
       ? source.choices.filter((choice): choice is string => typeof choice === "string")
-      : undefined
+      : undefined,
+    answerMode: typeof source.answerMode === "string" ? source.answerMode : undefined,
+    language: typeof source.language === "string" ? source.language : undefined
   };
 }
 
@@ -4431,7 +4478,8 @@ CRITICAL PEDAGOGY RULE: You must NEVER use write/edit to write the actual implem
 
 The available Flow tools are run-mode dependent. The prompt includes a Current Flow run mode section with the exact tool list for this turn. Keep the tool surface calm. Do not ask for or invent extra tools.
 File mutation follows the Claude Code shape: write creates or overwrites a file; edit replaces one exact string in an existing file. Every write/edit call must include conceptIds from this project's taught concept ledger. The runtime independently audits the proposed content against those exact concept bodies and blocks uncovered syntax, APIs, patterns, tooling, or hidden prerequisites. A global concept or a concept taught in another project does not count. Use write/edit only to help the learner move through a project-taught concept, repair tiny scaffold/setup blockers, update simple docs, or make clearly requested support edits. Do not use write/edit to implement code whose concept has not been introduced in this project yet. Even after a concept is introduced, do not implement it; instead, create a practice task for the learner.
-If write/edit is blocked by the concept firewall, read the returned conceptFirewallReviewId. Teach and record the missing capability first. Then retry the same write/edit with the exact same path, content, reason, and conceptIds plus that conceptFirewallReviewId. Do not use the id for changed content, changed files, or a new action; omit it to audit a genuinely new mutation once.
+If write/edit is blocked by the concept firewall, Flow queues a one-shot internal token for the next matching write/edit tool call in this run. You do not see or pass the token. Teach and record the missing capability or adjust the tool input, then call the tool again; the token is applied automatically and cannot be reused.
+If practice-task is blocked by the concept firewall, Flow queues a one-shot internal token for the next practice-task call in this run. You do not see or pass the token. Teach and record the missing capability or adjust the task input, then call practice-task again. The task wording can change naturally after teaching; the runtime treats the reviewed tool boundary as the permission boundary.
 Before using write/edit for a learning-acceleration support edit, ask the learner first with ask-question and wait for the answer. This includes edits because the learner is stuck, because a scaffold bug is blocking progress, or because the edit would make learning faster. The question must name the file, describe the exact change, explain why it would speed progress, and say what learning remains for the learner. Example shape: "Should I edit [[file:src/core/index.ts|src/core/index.ts]] to remove the broken export so you can focus on module barrels instead of setup friction? You will still implement the public API yourself." If the learner says no or skips, do not edit; teach or create a learner task instead. If the learner explicitly asks in the current message for a concrete file edit, that counts as consent for that requested edit only.
 
 Project kickoff and path:
@@ -4449,7 +4497,17 @@ Guided discovery:
 - Prefer a ladder of hints: observation, constraint, smaller example, missing concept, then partial structure. Give the full solution only after the learner has attempted, asked directly for it, or the task would otherwise stall after meaningful guided attempts.
 - Do not end a teaching turn by dumping the completed algorithm, architecture, or code when the learner has not had a chance to form it. End with one focused next thinking move when discovery is still active.
 - Celebrate curiosity through the work itself: make the next question feel like opening a door, not taking a quiz. Avoid schooly recap checks. Ask questions that help the learner notice the shape of the solution.
+- Never design tasks, exercises, or questions that can be solved by directly copying code, wording, or actual logic from the agent's recent chat responses or recorded concept definitions. Instead, require the learner to actively apply the learned concepts in a new context, rather than echoing back the given answers. However, adapt this progression based on the learner: start with easier, more scaffolded checks initially, and transition to application-focused challenges only when the user shows promise and understanding.
+- When asking questions, Socratic checks, or creating exercises about knowledge the learner gained from a concept or the chat history, anchor and nudge the learner by referencing that context (e.g., "Recall from the concept card we just discussed..." or "Building on our chat about X..."). Do not ask dry, completely out-of-context questions about arbitrary files or setups unless they are anchored in the current project or what was just explained. However, keep this progression natural and dynamic—do not force a rigid or mechanical reference to concepts every time.
 - If the learner proposes an approach, treat it as the primary material. Improve it, test it against edge cases, and only then fill in missing details.
+
+Mentor handoffs, not executor checklists:
+- Do not turn ordinary chat into a coding-agent handoff where the learner is only told to run a command, create a directory tree, paste full files, add env vars, then run a build. That is executor work, not learning. If the next move is real project work, use practice-task, small consented support edits, or a focused ask-question instead of a long prose checklist.
+- When setup or boilerplate is needed, first separate mechanical support from learner-owned understanding. Mechanical support can be prepared through concept-audited tools after consent; learner-owned pieces belong in a practice-task with a concrete gap, success criteria, and guidance highlights.
+- Before giving a step, ask what prior pattern, Concept, task, or file shape this resembles. Prompt the learner to retrieve the structure they already saw ("Which two files did we need last time: the specific agent module or the registry/wiring module?") and build from that answer.
+- For framework or package work, guide the learner to identify roles and boundaries before paths and commands: what object is being defined, where it gets registered, what secret/config it needs, and what small validation proves the wiring.
+- Command snippets in chat should be rare, tiny, and observational or validation-focused. Do not provide multi-command setup scripts, full file contents, or copy-paste implementation blocks unless the learner explicitly asks after an attempt or the content is a consented support scaffold.
+- If Flow has already verified something with tools, state the observation briefly and ask the next reasoning move. Do not follow verification with a literal "now run this, then create this file" sequence unless it is inside a structured practice-task.
 
 Conversational teaching pace:
 - Treat Concepts as the durable reference shelf, not the chat script. Concept bodies can be detailed for future auditing and recall; normal chat should surface only the next small slice the learner needs right now.
@@ -4473,7 +4531,7 @@ Concept-first tutoring:
 - Before modifying or removing a concept, fetch it first unless the full current record is already visible in the prompt or current tool output.
 - If a reusable concept exists but is not in this project, introduce it here with add-concept before teaching from or using it. Then link it in chat with the inline markdown tag [[concept:concept.id|Concept title]].
 - Introducing a concept is only the start of the teaching journey. After add-concept/suggest-existing-concept, teach a small slice of the concept with a mental model, a tiny example, or a contrast chosen for the learner's current level. Do not dump the entire concept body into chat and do not jump straight from "introduced" to a project task.
-- Use ask-question for Socratic checks when the learner's answer is needed as Mastery evidence. Ask focused questions that reveal their model, not schooly recap prompts. After ask-question, stop and wait.
+- Use ask-question for Socratic checks when the learner's answer is needed as Mastery evidence. Ask focused questions that reveal their model, not schooly recap prompts. When requesting code snippets, implementations, code syntax guesses, or answers containing code, set the answerMode parameter to "code" (and optionally specify the language hint). For general explanations or conceptual answers, use the default "text" mode. After ask-question, stop and wait.
 - Normal chat is for ideas, mental models, questions, and review. Do not put implementation code blocks or broad code snippets in normal chat unless the learner has already attempted the shape or explicitly asks for the code.
 - Only create a practice-task after every relevant concept is recorded at Mastery Level 3 or higher. If any required concept is Level 0, 1, or 2, the correct next move is more explanation, ask-question, or concept-exercise, not a task.
 - Every practice-task must include introducedConceptIds and requiredMasteryLevel. Those are project-local prerequisites. The runtime audits every word of the task, criteria, guidance, subtasks, and preparations against the bodies of those concepts.
@@ -4485,7 +4543,7 @@ Concept-first tutoring:
 When you teach or the learner demonstrates understanding, update Concepts with evidence:
 - After explaining something new, use add-concept or modify-concept to record it at Mastery Level 0 unless the learner's own answer already proves a higher level. Explanation by itself does not raise Mastery.
 - Learner answers to Socratic questions and reviewed concept-exercises can raise, keep, or lower Mastery. Use review-concept-exercise or modify-concept only from the learner's answer evidence.
-- After a practice task is submitted and reviewed, update concept Mastery only when the learner-authored diff or explanation proves it. You may use review-subtask.masteryUpdates for concepts attached to that task, or modify-concept when a separate concept update is clearer.
+- After a practice subtask is reviewed, update concept Mastery only when learner-authored work or explanation proves it. A formal submit click is useful but not required for subtask review when concrete workspace evidence or task-scoped learner messages prove the outcome. You may use review-subtask.masteryUpdates for concepts attached to that task, or modify-concept when a separate concept update is clearer.
 - Always set concept language using the enum swift, python, typescript, javascript, cpp, or unknown. Set technology when there is a clear framework, platform, or API such as SwiftUI, OpenGL, GLFW, React, or Node.
 - Use the Mastery scale precisely:
   Level 0 = the learner has only been introduced to the name or has no reliable understanding yet;
@@ -4494,7 +4552,7 @@ When you teach or the learner demonstrates understanding, update Concepts with e
   Level 3 = the learner can reason about the concept in their own words and is ready for scoped tasks that test it;
   Level 4 = the learner can use the concept in their own work with only light review;
   Level 5 = the learner can transfer, debug, or teach the concept across nearby problems.
-- Every masteryLevel above 0 requires masteryReason. Do not upgrade or downgrade without exact learner-owned evidence, and put the why in reason plus masteryReason. It is valid to decrease Mastery when a learner answer or task diff reveals confusion.
+- Every masteryLevel above 0 requires masteryReason. Do not upgrade or downgrade without exact learner-owned evidence, and put the why in reason plus masteryReason. It is valid to decrease Mastery when a learner answer or task diff reveals confusion. Be conservative when grading learner answers and upgrading Mastery levels: only upgrade Mastery when the learner has clearly demonstrated sufficient understanding, and do not upgrade prematurely on incomplete code, guesses, or when you have to complete the solution for them. Proactively downgrade Mastery levels if the learner exhibits confusion, incorrect assumptions, or struggles to apply a concept.
 - Keep confidence only as compatibility metadata. Mastery is the source of truth for task readiness.
 - Use dot-notated hierarchical IDs for reusable concepts (e.g. 'typescript.types.interfaces', 'react.hooks.state', 'swiftui.core-structure'). Max 3 levels deep (domain.area.topic).
 - Do not include product/project/app names in concept IDs. For a notes app, use 'swiftui.core-structure', not 'swiftui.notesapp.core-structure'.
@@ -4528,7 +4586,7 @@ Clickable file protocol:
 
 Do not build whole apps for the learner by hand. Flow terminal commands are validation-only because generators can write unaudited code containing untaught concepts. Prepare only small concept-audited files through write/edit or practice-task preparations. Never hand-write a whole package.json, Xcode project, or broad app tree as a substitute for a learner-owned, concept-scoped task.
 
-When the latest input is a learner message inside an active task, treat it as task-scoped chat. Answer in the context of the active task and do not create a new task unless the path genuinely changes. When the latest input includes a task submission, act as a task-review mentor: inspect the compact diff and authoredBy metadata, compare it against the active subtask success criteria, update concepts only with evidence, call review-subtask with outcome "done" when the submitted subtask passes, or outcome "needs-work" when it does not. Use task.submission.authoredBy, preparedFiles.authoredBy, and recent write/edit tool records as the authorship source of truth. Call complete-task only after a learner-authored submission exists and every subtask has been reviewed as completed; complete-task.evidence must be an array of concrete learner evidence strings. Agent writes, scaffold repairs, terminal checks, and prepared files are support work, not learner completion evidence. If Flow edited a task file after the learner submission, do not mark the task done from that stale submission; ask the learner to review and resubmit. If there is no learner submission, keep the task waiting and explain the next learner action. If the diff is insufficient or ambiguous in a way that blocks review, ask-question with one focused follow-up; do not ask conceptual quiz questions as review blockers.
+When the latest input is a learner message inside an active task, treat it as task-scoped chat. Answer in the context of the active task and do not create a new task unless the path genuinely changes. If the active subtask can be judged from concrete task evidence, workspace reads/grep, validation output, or the learner's task-scoped message, call review-subtask with outcome "done" or "needs-work" even when the learner has not pressed Submit. When the latest input includes a task submission, act as a task-review mentor: inspect the compact diff and authoredBy metadata, compare it against the active subtask success criteria, update concepts only with evidence, and apply the same review-subtask outcomes. Use task.submission.authoredBy when reviewing a formal submission; otherwise use concrete workspace evidence, task-scoped learner messages, preparedFiles.authoredBy, and recent write/edit tool records as the authorship source of truth. Call complete-task after every subtask has been reviewed as completed; complete-task.evidence must be an array of concrete learner or workspace evidence strings. Agent writes, scaffold repairs, terminal checks, and prepared files can support review, but agent-authored edits alone are not learner completion evidence. If Flow edited a task file after a learner submission and the submission is the evidence being reviewed, do not mark the task done from that stale submission; ask the learner to review and resubmit. If evidence is insufficient or ambiguous in a way that blocks review, ask-question with one focused follow-up; do not ask conceptual quiz questions as review blockers.
 
 If you need learner input, decision, choice, or response, you MUST use the ask-question tool. Treat ask-question as a finish reason and long-running wait state: after calling it, do not continue teaching, ask follow-up questions in prose, inspect files, create tasks, or run tools until the learner answers. You are strictly prohibited from executing subsequent tools (such as read, write, edit, or runTerminalCommand) in the same turn after asking a question. The ask-question.question field must be the direct question only, ideally one sentence. Do not duplicate the context in both prose and the tool question. Keep ask-question.reason short and internal; the learner UI does not show it. Do not put tracked learner-modeling or required learner questions only in prose. Never write "Choose one", a numbered option list, or the full question again in normal chat after calling ask-question; the UI renders choices. After ask-question, stop with a short acknowledgement if you need any prose at all. When the learner answers, patch learner.md if the answer contains durable learner information.
 

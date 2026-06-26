@@ -189,6 +189,7 @@ export class ConstructConceptPolicyService {
         : "Deterministic syntax audit passed."
     };
 
+    let semanticAuditUnavailableReason: string | null = null;
     if (this.options.agentRuntime) {
       try {
         const generatedAudit = await this.options.agentRuntime().generateStructured({
@@ -231,13 +232,7 @@ export class ConstructConceptPolicyService {
         });
         semanticAudit = normalizeCapabilityAudit(generatedAudit);
       } catch (error) {
-        return this.block(
-          input,
-          declaredConceptIds,
-          [],
-          ["The semantic concept audit could not complete."],
-          `Concept firewall failed closed: ${error instanceof Error ? error.message : String(error)}`
-        );
+        semanticAuditUnavailableReason = semanticAuditFailureReason(error);
       }
     }
 
@@ -261,12 +256,15 @@ export class ConstructConceptPolicyService {
         declaredConceptIds,
         matchedConceptIds,
         blockedCapabilities,
-        semanticAudit.summary
+        auditSummaryWithSemanticStatus(semanticAudit.summary, semanticAuditUnavailableReason)
       );
     }
 
     const auditId = randomUUID();
-    const reason = semanticAudit.summary || "Every detected capability is covered by concepts taught in this project.";
+    const reason = auditSummaryWithSemanticStatus(
+      semanticAudit.summary || "Every detected capability is covered by concepts taught in this project.",
+      semanticAuditUnavailableReason
+    );
     await store.recordConceptArtifactAudit({
       id: auditId,
       projectId: input.project.id,
@@ -412,6 +410,16 @@ function normalizeCapabilityAudit(audit: RawCapabilityAudit): CapabilityAudit {
   };
 }
 
+function semanticAuditFailureReason(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.trim() || "The semantic concept audit returned no usable result.";
+}
+
+function auditSummaryWithSemanticStatus(summary: string, semanticAuditUnavailableReason: string | null): string {
+  if (!semanticAuditUnavailableReason) return summary;
+  return `${summary} Semantic concept audit unavailable; using deterministic project-local audit only. ${semanticAuditUnavailableReason}`;
+}
+
 function conceptCoversCapability(concept: KnowledgeBaseRecord, capability: DetectedCapability): boolean {
   const body = normalizeCoverageText([
     concept.id,
@@ -459,43 +467,72 @@ function normalizeCoverageText(value: string): string {
 
 function extractLearnerPriorEvidence(snapshot: ConstructConceptPolicyMemorySnapshot): LearnerPriorEvidence[] {
   if (!snapshot.file.endsWith("learner.md")) return [];
-  const sections = extractSimpleMarkdownFields(snapshot.content);
+  const sections = extractMarkdownEvidenceSections(snapshot.content);
   return [
-    ...evidenceFromSection(snapshot.file, sections, "known concepts", "known"),
-    ...evidenceFromSection(snapshot.file, sections, "recent learning evidence", "known"),
-    ...evidenceFromSection(snapshot.file, sections, "weak concepts", "weak"),
-    ...evidenceFromSection(snapshot.file, sections, "current help level", "weak")
+    ...evidenceFromSections(snapshot.file, sections, [
+      "known concepts",
+      "recent learning evidence",
+      "preferences and constraints",
+      "autonomy and tooling preferences"
+    ], "known"),
+    ...evidenceFromSections(snapshot.file, sections, [
+      "weak concepts",
+      "current help level"
+    ], "weak")
   ];
 }
 
-function extractSimpleMarkdownFields(content: string): Map<string, string> {
-  const fields = new Map<string, string>();
+function extractMarkdownEvidenceSections(content: string): Map<string, string> {
+  const fields = new Map<string, string[]>();
+  let currentHeading: string | null = null;
   for (const line of content.split(/\r?\n/)) {
-    const match = line.match(/^\s*([^:#]{2,80}):\s*(.+?)\s*$/);
-    if (!match) continue;
-    const key = normalizeCoverageText(match[1]);
-    const value = match[2].trim();
-    if (!value || /\bnone recorded yet\b/i.test(value)) continue;
-    fields.set(key, value);
+    const heading = line.match(/^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$/);
+    if (heading) {
+      currentHeading = normalizeCoverageText(heading[1].replace(/:$/, ""));
+      continue;
+    }
+
+    const field = line.match(/^\s*([^:#]{2,80}):\s*(.+?)\s*$/);
+    if (field) {
+      appendEvidenceSectionValue(fields, normalizeCoverageText(field[1]), field[2]);
+      if (currentHeading && currentHeading === normalizeCoverageText(field[1])) {
+        appendEvidenceSectionValue(fields, currentHeading, field[2]);
+      }
+      continue;
+    }
+
+    if (currentHeading) {
+      appendEvidenceSectionValue(fields, currentHeading, line);
+    }
   }
-  return fields;
+  return new Map([...fields.entries()].map(([key, values]) => [key, values.join("\n")]));
 }
 
-function evidenceFromSection(
+function appendEvidenceSectionValue(fields: Map<string, string[]>, key: string, rawValue: string): void {
+  const value = rawValue
+    .replace(/^\s*[-*+]\s+/, "")
+    .trim();
+  if (!value || /\bnone recorded yet\b/i.test(value)) return;
+  fields.set(key, [...(fields.get(key) ?? []), value]);
+}
+
+function evidenceFromSections(
   sourceFile: string,
   sections: Map<string, string>,
-  label: string,
+  labels: string[],
   coverage: LearnerPriorEvidence["coverage"]
 ): LearnerPriorEvidence[] {
-  const text = sections.get(normalizeCoverageText(label));
-  if (!text) return [];
-  return [{
-    id: `${sourceFile}:${normalizeCoverageText(label).replace(/\s+/g, "-")}`,
-    sourceFile,
-    label,
-    text,
-    coverage
-  }];
+  return labels.flatMap((label) => {
+    const text = sections.get(normalizeCoverageText(label));
+    if (!text) return [];
+    return [{
+      id: `${sourceFile}:${normalizeCoverageText(label).replace(/\s+/g, "-")}`,
+      sourceFile,
+      label,
+      text,
+      coverage
+    }];
+  });
 }
 
 function detectCapabilities(content: string): DetectedCapability[] {
