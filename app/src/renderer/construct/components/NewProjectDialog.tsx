@@ -21,9 +21,6 @@ import {
 } from "@opaline/ui";
 import type { AgentActivityEntry } from "@opaline/ui";
 
-import type {
-  ConstructFlowProjectSettings
-} from "../../../shared/constructFlow";
 import { applyConstructPatch } from "../compiler/patches";
 import { validateConstructSource } from "../compiler/pipeline";
 import { parseConstructDocument } from "../compiler/parser";
@@ -34,6 +31,7 @@ import { parseConstructSource } from "../lib/parser";
 import { createProjectFromConstructFile } from "../lib/projectStore";
 import type { AnyProjectRecord, ConstructProgram } from "../types";
 import { cn } from "../../lib/utils";
+import { defaultFlowProjectSettings, inferFlowTitle } from "./project-create/flowProjectDefaults";
 import { ValidationPanel, type ValidationStage } from "./project-create/ValidationPanel";
 
 type SelectedConstructFile = {
@@ -52,19 +50,6 @@ const initialStages: ValidationStage[] = [
   { id: "suggest", title: "Preparing suggestions", detail: "Ambiguous patches remain user-selectable.", status: "pending" },
   { id: "final", title: "Final validation", detail: "The runtime parser is the final project gate.", status: "pending" }
 ];
-
-const defaultFlowProjectSettings: ConstructFlowProjectSettings = {
-  projectType: "agent",
-  codebaseState: "empty",
-  projectPhase: "build",
-  setupScope: "standard",
-  packageManager: "auto",
-  testStrategy: "unit",
-  docsLevel: "standard",
-  gitStrategy: "initialize",
-  agentEdits: "ask",
-  openWorkspace: true
-};
 
 export function NewProjectDialog({ open, onOpenChange, onProjectCreated }: {
   open: boolean;
@@ -353,15 +338,6 @@ export function NewProjectDialog({ open, onOpenChange, onProjectCreated }: {
       </ShadcnDialogContent>
     </ShadcnDialog>
   );
-}
-
-function inferFlowTitle(goal: string): string {
-  const stripped = goal
-    .replace(/^i\s*(am|'m)?\s*(making|building|creating|working on)\s+/i, "")
-    .replace(/^a\s+/i, "")
-    .trim();
-  const words = stripped.split(/\s+/).filter(Boolean).slice(0, 7);
-  return words.length ? words.map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ") : "Flow Project";
 }
 
 function finalizeStages(result: ConstructValidationResult): ValidationStage[] {

@@ -23,11 +23,10 @@ export function DashboardSidebar({
       const left = a.lastOpenedAt ? Date.parse(a.lastOpenedAt) : 0;
       const right = b.lastOpenedAt ? Date.parse(b.lastOpenedAt) : 0;
       return right - left;
-    })
-    .slice(0, 8);
+    });
 
   return (
-    <SidebarSection heading="Recent projects">
+    <SidebarSection heading="Projects">
       <div className="flex flex-col gap-1 px-2 pb-2">
         {visibleProjects.map((project) => (
           <DashboardSidebarProjectRow
@@ -39,7 +38,7 @@ export function DashboardSidebar({
           />
         ))}
         {visibleProjects.length === 0 ? (
-          <div className="px-2 py-1.5 text-[13px] text-muted-foreground">No active project yet.</div>
+          <div className="px-2 py-1.5 text-[13px] text-muted-foreground">No projects yet.</div>
         ) : null}
       </div>
     </SidebarSection>
