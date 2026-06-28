@@ -1170,9 +1170,15 @@ export default function ConstructApp() {
       window.setTimeout(() => {
         restoringProjectUiStateRef.current = false;
       }, 0);
-      const nextProjects = await bootstrapProjects();
-      console.log("[construct] open project refreshed list", { count: nextProjects.length });
-      setProjects(nextProjects);
+      setProjects((current) => upsertProjectSummary(current, projectSummaryFromRecord(nextProject)));
+      if (!isFlowProjectRecord(nextProject)) {
+        void bootstrapProjects()
+          .then((nextProjects) => {
+            console.log("[construct] open project refreshed list", { count: nextProjects.length });
+            setProjects(nextProjects);
+          })
+          .catch((caught) => console.warn("[construct] background project list refresh failed", caught));
+      }
       if (options.recordHistory !== false) {
         pushHistory({
           id: options.filePath ? `file:${projectId}:${options.filePath}` : `project:${projectId}`,
@@ -1211,22 +1217,7 @@ export default function ConstructApp() {
     });
     setProjects((current) => {
       const withoutProject = current.filter((item) => item.id !== project.id);
-      return [
-        {
-          kind: project.kind ?? "tape",
-          id: project.id,
-          title: project.title,
-          description: project.description,
-          progress: project.progress,
-          lastOpenedAt: project.lastOpenedAt,
-          sourcePath: project.sourcePath,
-          workspacePath: project.workspacePath,
-          flowGoal: isFlowProjectRecord(project) ? project.flow.goal : undefined,
-          flowSessionCount: isFlowProjectRecord(project) ? project.flow.sessions.length : undefined,
-          flowLastActivityAt: isFlowProjectRecord(project) ? project.flow.updatedAt : undefined
-        },
-        ...withoutProject
-      ];
+      return [projectSummaryFromRecord(project), ...withoutProject].sort(compareProjectSummaryActivity);
     });
   }
 
@@ -1251,12 +1242,9 @@ export default function ConstructApp() {
       console.log("[construct] refresh active project snapshot", { projectId });
       setIsSaving(true);
       setError(null);
-      const [project, nextProjects] = await Promise.all([
-        openSavedProject(projectId),
-        bootstrapProjects()
-      ]);
+      const project = await openSavedProject(projectId);
       setActiveProject((current) => current?.id === projectId ? project : current);
-      setProjects(nextProjects);
+      setProjects((current) => upsertProjectSummary(current, projectSummaryFromRecord(project)));
       return project;
     } catch (caught) {
       console.error("[construct] refresh active project snapshot failed", { projectId, caught });
@@ -1969,6 +1957,77 @@ export default function ConstructApp() {
       </AuthGate>
     </AppErrorBoundary>
   );
+}
+
+function upsertProjectSummary(projects: ProjectSummary[], summary: ProjectSummary): ProjectSummary[] {
+  return [
+    summary,
+    ...projects.filter((project) => project.id !== summary.id)
+  ].sort(compareProjectSummaryActivity);
+}
+
+function compareProjectSummaryActivity(left: ProjectSummary, right: ProjectSummary): number {
+  return projectSummaryActivityTime(right) - projectSummaryActivityTime(left);
+}
+
+function projectSummaryActivityTime(project: ProjectSummary): number {
+  const timestamp = Date.parse(project.lastOpenedAt ?? project.flowLastActivityAt ?? project.completedAt ?? "");
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function projectSummaryFromRecord(project: AnyProjectRecord): ProjectSummary {
+  if (isFlowProjectRecord(project)) {
+    return {
+      kind: "flow",
+      id: project.id,
+      title: project.title,
+      description: project.description,
+      progress: project.progress,
+      lastOpenedAt: project.lastOpenedAt,
+      sourcePath: project.sourcePath,
+      workspacePath: project.workspacePath,
+      completedAt: project.completedAt,
+      conceptCount: project.learnedConcepts?.length ?? project.conceptCount ?? 0,
+      learnedConcepts: project.learnedConcepts,
+      flowGoal: project.flow.goal,
+      flowMemoryFileCount: project.flowMemoryFileCount,
+      flowSessionCount: project.flow.sessions.length,
+      flowLastActivityAt: project.flow.updatedAt
+    };
+  }
+
+  const step = project.program.steps[project.currentStepIndex];
+  const block = step?.blocks[project.currentBlockIndex];
+  const blockCount = project.program.steps.reduce((total, item) => total + item.blocks.length, 0);
+  const verificationResults = Object.values(project.verificationResults ?? {});
+
+  return {
+    kind: project.kind ?? "tape",
+    id: project.id,
+    title: project.title,
+    description: project.description,
+    progress: project.progress,
+    lastOpenedAt: project.lastOpenedAt,
+    sourcePath: project.sourcePath,
+    workspacePath: project.workspacePath,
+    currentStepIndex: project.currentStepIndex,
+    currentBlockIndex: project.currentBlockIndex,
+    currentStepTitle: step?.title ?? null,
+    currentBlockKind: block?.kind ?? null,
+    currentBlockLabel: block?.kind === "edit" ? block.path : block?.kind ?? null,
+    activeFilePath: project.activeFilePath,
+    stepCount: project.program.steps.length,
+    blockCount,
+    completedBlockCount: Object.values(project.completedBlocks ?? {}).filter(Boolean).length,
+    fileCount: project.program.files.length,
+    conceptCount: project.learnedConcepts?.length ?? project.program.concepts?.length ?? 0,
+    learnedConcepts: project.learnedConcepts,
+    referenceCount: project.program.references?.length ?? 0,
+    verificationPassCount: verificationResults.filter((result) => result.passed).length,
+    verificationFailCount: verificationResults.filter((result) => !result.passed).length,
+    authoringFixCount: project.authoringFixes?.length ?? 0,
+    completedAt: project.completedAt
+  };
 }
 
 type ConstructAccountUsageWindow = {
