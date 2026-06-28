@@ -17,6 +17,7 @@ const publishScript = read("scripts/release/publish-gh.mjs");
 check(packageJson.scripts?.["release:preflight"] === "node scripts/release/preflight.mjs", "package.json exposes release:preflight.");
 check(packageJson.scripts?.["verify:no-build"]?.includes("release:preflight"), "package.json verify:no-build includes release:preflight.");
 check(appPackageJson.name === "@construct/app", "app/package.json is readable and still points at @construct/app.");
+check(packageJson.version === appPackageJson.version, "Root and app package versions stay aligned for release tags.");
 
 check(exists("opaline/packages/ui/src"), "opaline/packages/ui/src exists for the @opaline/ui CSS copy step.");
 check(
@@ -25,6 +26,11 @@ check(
 );
 
 check(gitmodules.includes('path = opaline'), ".gitmodules still declares the opaline submodule.");
+check(
+  gitmodules.includes("url = https://github.com/AbhinavMishra32/opaline-ui.git"),
+  ".gitmodules points the opaline submodule at the public opaline-ui repository."
+);
+check(!/submodule "opaline"[\s\S]*?open-shell\.git/.test(gitmodules), ".gitmodules no longer points opaline at open-shell.");
 if (gitmodules.includes("private/construct-cloud-backend")) {
   check(!ciWorkflow.includes("submodules: recursive"), "CI does not recursively clone the private backend submodule.");
   check(!releaseWorkflow.includes("submodules: recursive"), "Release does not recursively clone the private backend submodule.");
@@ -37,6 +43,7 @@ for (const [name, workflow] of [
   if (workflow.includes("pnpm/action-setup")) {
     check(workflow.includes("pnpm/action-setup@v5"), `${name} uses pnpm/action-setup@v5.`);
   }
+  check(workflow.includes("submodules: false"), `${name} checkout keeps submodules disabled before the targeted opaline update.`);
   check(workflow.includes("actions/setup-node@v5"), `${name} uses actions/setup-node@v5.`);
   check(workflow.includes("node-version: 24"), `${name} pins Node 24 for shell steps.`);
   check(workflow.includes("git submodule update --init --depth=1 opaline"), `${name} initializes only the opaline submodule.`);
