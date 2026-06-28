@@ -11,7 +11,7 @@ import {
   type IStorageService
 } from "../storage/storage";
 import { readLegacyJsonFile, type ConstructDomainStorage } from "../storage/ConstructDomainStorage";
-import { isFlowProject, type ProjectSummary, type StoredProject } from "./ConstructProjectTypes";
+import { isFlowProject, type ProjectLearnedConceptSummary, type ProjectSummary, type StoredProject } from "./ConstructProjectTypes";
 import type { ConstructFlowSession } from "../../shared/constructFlow";
 
 const LEGACY_PROJECTS_STORAGE_KEY = "construct.projects";
@@ -481,6 +481,7 @@ export class ConstructProjectRepository {
         verificationFailCount: 0,
         authoringFixCount: 0,
         completedAt: project.completedAt,
+        learnedConcepts: [],
         flowGoal: project.flow.goal,
         flowMemoryFileCount: 4,
         flowSessionCount: project.flow.sessions.length,
@@ -492,6 +493,7 @@ export class ConstructProjectRepository {
     const blockCount = project.program.steps.reduce((total, step) => total + step.blocks.length, 0);
     const completedBlockCount = Object.values(project.completedBlocks ?? {}).filter(Boolean).length;
     const verificationResults = Object.values(project.verificationResults ?? {});
+    const learnedConcepts = collectTapeConceptSummaries(project.program.concepts ?? []);
     return {
       kind: "tape",
       id: project.id,
@@ -511,14 +513,52 @@ export class ConstructProjectRepository {
       blockCount,
       completedBlockCount,
       fileCount: project.program.files.length,
-      conceptCount: project.program.concepts?.length ?? 0,
+      conceptCount: learnedConcepts.length,
       referenceCount: project.program.references?.length ?? 0,
       verificationPassCount: verificationResults.filter((result) => result.passed).length,
       verificationFailCount: verificationResults.filter((result) => !result.passed).length,
       authoringFixCount: project.authoringFixes?.length ?? 0,
-      completedAt: project.completedAt
+      completedAt: project.completedAt,
+      learnedConcepts
     };
   }
+}
+
+function collectTapeConceptSummaries(values: unknown[]): ProjectLearnedConceptSummary[] {
+  return values
+    .map(toProjectLearnedConceptSummary)
+    .filter((concept): concept is ProjectLearnedConceptSummary => Boolean(concept))
+    .sort((left, right) => left.title.localeCompare(right.title));
+}
+
+function toProjectLearnedConceptSummary(value: unknown): ProjectLearnedConceptSummary | null {
+  if (!value || typeof value !== "object") return null;
+
+  const record = value as Record<string, unknown>;
+  const id = typeof record.id === "string" && record.id.trim() ? record.id.trim() : null;
+  const title = typeof record.title === "string" && record.title.trim() ? record.title.trim() : id ? titleFromConceptId(id) : null;
+  if (!id || !title) return null;
+
+  return {
+    id,
+    title,
+    kind: typeof record.kind === "string" && record.kind.trim() ? record.kind.trim() : "concept",
+    summary: typeof record.summary === "string" && record.summary.trim() ? record.summary.trim() : undefined,
+    language: typeof record.language === "string" ? (record.language as ProjectLearnedConceptSummary["language"]) : undefined,
+    technology: typeof record.technology === "string" && record.technology.trim() ? record.technology.trim() : undefined,
+    masteryLevel: typeof record.masteryLevel === "number" ? (record.masteryLevel as ProjectLearnedConceptSummary["masteryLevel"]) : undefined,
+    masteryText: typeof record.masteryText === "string" && record.masteryText.trim() ? record.masteryText.trim() : undefined,
+    savedAt: typeof record.savedAt === "string" ? record.savedAt : undefined,
+    lastModifiedAt: typeof record.lastModifiedAt === "string" ? record.lastModifiedAt : undefined
+  };
+}
+
+function titleFromConceptId(id: string): string {
+  return id
+    .split(/[.\-_]/)
+    .filter(Boolean)
+    .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function projectRecordKey(projectId: string): string {

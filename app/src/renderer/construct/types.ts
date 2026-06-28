@@ -415,10 +415,25 @@ export type ProjectSummary = {
   verificationFailCount?: number;
   authoringFixCount?: number;
   completedAt?: string | null;
+  learnedConcepts?: ProjectLearnedConceptSummary[];
   flowGoal?: string;
   flowMemoryFileCount?: number;
   flowSessionCount?: number;
   flowLastActivityAt?: string | null;
+};
+
+export type ProjectLearnedConceptSummary = {
+  id: string;
+  title: string;
+  kind: string;
+  summary?: string;
+  language?: ConstructConceptLanguage;
+  technology?: string;
+  masteryLevel?: ConstructConceptMasteryLevel;
+  masteryText?: string;
+  lastReferencedAt?: string;
+  savedAt?: string;
+  lastModifiedAt?: string;
 };
 
 export type ProjectRecord = ProjectSummary & {

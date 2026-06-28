@@ -20,7 +20,14 @@ import {
   type ProjectLearningState,
   type RecallAttemptRecord
 } from "../../shared/constructLearning";
-import { isFlowProject, type ProjectSummary, type StoredFlowProject, type StoredProject, type StoredTapeProject } from "../projects/ConstructProjectTypes";
+import {
+  isFlowProject,
+  type ProjectLearnedConceptSummary,
+  type ProjectSummary,
+  type StoredFlowProject,
+  type StoredProject,
+  type StoredTapeProject
+} from "../projects/ConstructProjectTypes";
 
 const requireBuiltin = createRequire(import.meta.url);
 const { DatabaseSync } = requireBuiltin("node:sqlite") as typeof import("node:sqlite");
@@ -521,7 +528,8 @@ export class ConstructDomainStorage {
       GROUP BY p.id
       ORDER BY COALESCE(p.last_opened_at, p.flow_updated_at, p.updated_at) DESC, p.id
     `).all() as Array<ProjectRow & { flow_session_count: number; flow_last_session_at: string | null }>;
-    return rows.map((row) => this.rowToSummary(row));
+    const learnedConcepts = this.readProjectLearnedConceptSummaries();
+    return rows.map((row) => this.rowToSummary(row, learnedConcepts.get(row.id) ?? []));
   }
 
   writeProjects(projects: StoredProject[]): void {
@@ -960,7 +968,10 @@ export class ConstructDomainStorage {
     };
   }
 
-  private rowToSummary(row: ProjectRow & { flow_session_count?: number; flow_last_session_at?: string | null }): ProjectSummary {
+  private rowToSummary(
+    row: ProjectRow & { flow_session_count?: number; flow_last_session_at?: string | null },
+    learnedConcepts: ProjectLearnedConceptSummary[] = []
+  ): ProjectSummary {
     if (row.kind === "flow") {
       return {
         kind: "flow",
@@ -981,12 +992,13 @@ export class ConstructDomainStorage {
         blockCount: undefined,
         completedBlockCount: undefined,
         fileCount: undefined,
-        conceptCount: undefined,
+        conceptCount: learnedConcepts.length,
         referenceCount: undefined,
         verificationPassCount: 0,
         verificationFailCount: 0,
         authoringFixCount: 0,
         completedAt: row.completed_at,
+        learnedConcepts,
         flowGoal: row.flow_goal ?? undefined,
         flowMemoryFileCount: 4,
         flowSessionCount: Number(row.flow_session_count ?? 0),
@@ -1008,6 +1020,7 @@ export class ConstructDomainStorage {
     const verificationResults = Object.values(parseJson(row.verification_results_json, {}) as Record<string, { passed: boolean }>);
     const completedBlocks = parseJson(row.completed_blocks_json, {}) as Record<string, boolean>;
     const blockCount = (program.steps ?? []).reduce((total: number, step: { blocks?: unknown[] }) => total + (step.blocks?.length ?? 0), 0);
+    const conceptSummaries = learnedConcepts.length > 0 ? learnedConcepts : collectTapeConceptSummaries(program.concepts ?? []);
     return {
       kind: "tape",
       id: row.id,
@@ -1027,13 +1040,71 @@ export class ConstructDomainStorage {
       blockCount,
       completedBlockCount: Object.values(completedBlocks).filter(Boolean).length,
       fileCount: program.files?.length ?? 0,
-      conceptCount: program.concepts?.length ?? 0,
+      conceptCount: conceptSummaries.length,
       referenceCount: program.references?.length ?? 0,
       verificationPassCount: verificationResults.filter((result) => result.passed).length,
       verificationFailCount: verificationResults.filter((result) => !result.passed).length,
       authoringFixCount: parseJson(row.authoring_fixes_json, [] as unknown[]).length,
-      completedAt: row.completed_at
+      completedAt: row.completed_at,
+      learnedConcepts: conceptSummaries
     };
+  }
+
+  private readProjectLearnedConceptSummaries(): Map<string, ProjectLearnedConceptSummary[]> {
+    const latestByConceptId = new Map<string, KnowledgeBaseRecord>();
+    for (const row of this.rows<KnowledgeConceptRow>("SELECT * FROM construct_knowledge_concepts")) {
+      const record = parseJson(row.payload_json, {} as KnowledgeBaseRecord);
+      if (!record.id) continue;
+      const current = latestByConceptId.get(record.id);
+      if (!current || conceptTimestamp(record) >= conceptTimestamp(current)) {
+        latestByConceptId.set(record.id, record);
+      }
+    }
+
+    const summariesByProject = new Map<string, ProjectLearnedConceptSummary[]>();
+    const rows = this.rows<{
+      project_id: string;
+      concept_id: string;
+      last_referenced_at: string | null;
+      payload_json: string;
+    }>("SELECT project_id, concept_id, last_referenced_at, payload_json FROM construct_project_concept_relations ORDER BY project_id, concept_id");
+
+    for (const row of rows) {
+      const concept = latestByConceptId.get(row.concept_id);
+      if (!concept) continue;
+
+      const relation = parseJson(row.payload_json, {} as NonNullable<ProjectLearningState["conceptRelations"]>[string]);
+      const summary: ProjectLearnedConceptSummary = {
+        id: concept.id,
+        title: concept.title,
+        kind: concept.kind,
+        summary: concept.summary,
+        language: concept.language,
+        technology: concept.technology,
+        masteryLevel: relation.masteryLevel ?? concept.masteryLevel,
+        masteryText: concept.masteryText,
+        lastReferencedAt: relation.lastReferencedAt ?? row.last_referenced_at ?? undefined,
+        savedAt: concept.savedAt,
+        lastModifiedAt: concept.lastModifiedAt
+      };
+
+      const projectSummaries = summariesByProject.get(row.project_id) ?? [];
+      projectSummaries.push(summary);
+      summariesByProject.set(row.project_id, projectSummaries);
+    }
+
+    for (const summaries of summariesByProject.values()) {
+      summaries.sort((left, right) => {
+        const leftTime = Date.parse(left.lastReferencedAt ?? left.lastModifiedAt ?? left.savedAt ?? "");
+        const rightTime = Date.parse(right.lastReferencedAt ?? right.lastModifiedAt ?? right.savedAt ?? "");
+        if (Number.isFinite(leftTime) && Number.isFinite(rightTime) && leftTime !== rightTime) {
+          return rightTime - leftTime;
+        }
+        return left.title.localeCompare(right.title);
+      });
+    }
+
+    return summariesByProject;
   }
 
   private readPathNodes(projectId: string): ConstructFlowPathNode[] {
@@ -1538,6 +1609,48 @@ function parseJson<T>(value: string | null | undefined, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+function collectTapeConceptSummaries(values: unknown[]): ProjectLearnedConceptSummary[] {
+  return values
+    .map(toProjectLearnedConceptSummary)
+    .filter((concept): concept is ProjectLearnedConceptSummary => Boolean(concept))
+    .sort((left, right) => left.title.localeCompare(right.title));
+}
+
+function toProjectLearnedConceptSummary(value: unknown): ProjectLearnedConceptSummary | null {
+  if (!value || typeof value !== "object") return null;
+
+  const record = value as Record<string, unknown>;
+  const id = typeof record.id === "string" && record.id.trim() ? record.id.trim() : null;
+  const title = typeof record.title === "string" && record.title.trim() ? record.title.trim() : id ? titleFromConceptId(id) : null;
+  if (!id || !title) return null;
+
+  return {
+    id,
+    title,
+    kind: typeof record.kind === "string" && record.kind.trim() ? record.kind.trim() : "concept",
+    summary: typeof record.summary === "string" && record.summary.trim() ? record.summary.trim() : undefined,
+    language: typeof record.language === "string" ? (record.language as ProjectLearnedConceptSummary["language"]) : undefined,
+    technology: typeof record.technology === "string" && record.technology.trim() ? record.technology.trim() : undefined,
+    masteryLevel: typeof record.masteryLevel === "number" ? (record.masteryLevel as ProjectLearnedConceptSummary["masteryLevel"]) : undefined,
+    masteryText: typeof record.masteryText === "string" && record.masteryText.trim() ? record.masteryText.trim() : undefined,
+    savedAt: typeof record.savedAt === "string" ? record.savedAt : undefined,
+    lastModifiedAt: typeof record.lastModifiedAt === "string" ? record.lastModifiedAt : undefined
+  };
+}
+
+function conceptTimestamp(record: KnowledgeBaseRecord): number {
+  const timestamp = Date.parse(record.lastModifiedAt ?? record.savedAt);
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function titleFromConceptId(id: string): string {
+  return id
+    .split(/[.\-_]/)
+    .filter(Boolean)
+    .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function toJson(value: unknown): string {
