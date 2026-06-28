@@ -275,16 +275,28 @@ function ConstructCloudTokenPanel({
 }
 
 function UsageMeter({ label, window }: { label: string; window: CloudUsageWindow }) {
-  const reset = new Date(window.resetAt ?? window.windowEnd).toLocaleString();
+  const resetDate = new Date(window.resetAt ?? window.windowEnd);
+  const now = new Date();
+  const diffMs = resetDate.getTime() - now.getTime();
+  const diffH = Math.max(0, Math.floor(diffMs / 3_600_000));
+  const diffM = Math.max(0, Math.floor((diffMs % 3_600_000) / 60_000));
+  const resetLabel = diffH > 24 ? `${Math.ceil(diffH / 24)}d` : diffH > 0 ? `${diffH}h ${diffM}m` : `${diffM}m`;
+
+  const remainingPercent = Math.min(100, Math.max(0, 100 - window.percentage));
+  const barColor = remainingPercent > 50 ? "bg-emerald-500" : remainingPercent > 20 ? "bg-amber-400" : "bg-rose-500";
 
   return (
     <div className="rounded-md bg-muted/40 px-2 py-1.5">
       <div className="flex items-center justify-between gap-2">
         <span>{label}</span>
-        <span>{formatUsageUnits(window.usedUnits)} / {formatUsageUnits(window.limitUnits)}</span>
+        <span className="tabular-nums font-semibold">{Math.round(remainingPercent)}%</span>
       </div>
-      <div className="mt-1 truncate">
-        {window.reservedUnits > 0 ? `${formatUsageUnits(window.reservedUnits)} reserved · ` : ""}{formatUsageUnits(window.remainingUnits)} left · resets {reset}
+      <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-background">
+        <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${remainingPercent}%` }} />
+      </div>
+      <div className="mt-1.5 flex items-center justify-between gap-2 truncate">
+        <span>{formatUsageUnits(window.remainingUnits)} remaining</span>
+        <span>resets in {resetLabel}</span>
       </div>
     </div>
   );

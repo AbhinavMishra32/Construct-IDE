@@ -590,25 +590,29 @@ export function ConstructSettingsSurface({
   }
 
   function updateAiProvider(provider: AiSettings["provider"]) {
-    setAiSettingsDraft((current) => ({ ...current, provider }));
+    setAiSettingsDraft((current) => ({
+      ...current,
+      provider,
+      featureModels: {}
+    }));
     setModelOptions([]);
     setModelsError(null);
     setAiFeatures((features) => features.map((feature) => {
-      const saved = aiSettings.featureModels[feature.id]?.trim();
-      if (saved) return feature;
       const model = defaultModelForFeature(provider, feature);
       return { ...feature, model };
     }));
   }
 
   function updateAiSource(source: AiSettings["source"]) {
-    setAiSettingsDraft((current) => ({ ...current, source }));
+    const provider = source === "construct-cloud" ? "construct-cloud" : aiSettingsRef.current.provider;
+    setAiSettingsDraft((current) => ({
+      ...current,
+      source,
+      featureModels: {}
+    }));
     setModelOptions([]);
     setModelsError(null);
-    const provider = source === "construct-cloud" ? "construct-cloud" : aiSettingsRef.current.provider;
     setAiFeatures((features) => features.map((feature) => {
-      const saved = aiSettingsRef.current.featureModels[feature.id]?.trim();
-      if (saved) return feature;
       return { ...feature, model: defaultModelForFeature(provider, feature) };
     }));
   }
