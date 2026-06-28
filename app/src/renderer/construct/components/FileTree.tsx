@@ -617,8 +617,9 @@ export function FileTree({
           </button>
         </div>
       ) : (
-        <div className="min-h-0 flex-1 overflow-hidden">
+        <div className="relative min-h-0 flex-1 overflow-hidden">
           <OpalineFileTree
+            className="[&_[data-file-tree-virtualized-list=true]]:pb-9"
             items={openShellItems}
             gitLane={false}
             onSelectPath={(path, item) => {
@@ -635,6 +636,10 @@ export function FileTree({
             showActions={true}
             variant="sidebar"
             renderRowContextMenu={renderRowContextMenu}
+          />
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-b from-transparent via-sidebar/80 to-sidebar"
           />
         </div>
       )}
