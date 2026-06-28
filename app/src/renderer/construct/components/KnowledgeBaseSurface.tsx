@@ -1,4 +1,4 @@
-import { ArrowRightIcon, BookOpenIcon, ChevronRightIcon, ExternalLinkIcon, FileTextIcon, FolderIcon, GitBranchIcon, HistoryIcon, SearchIcon, SparklesIcon, Trash2Icon } from "lucide-react";
+import { ArrowRightIcon, BookOpenIcon, ChevronRightIcon, ExternalLinkIcon, GitBranchIcon, HistoryIcon, NetworkIcon, SearchIcon, SparklesIcon, Trash2Icon } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Button, ShadcnScrollArea } from "@opaline/ui";
 
@@ -8,12 +8,7 @@ import type { AnyProjectRecord, ConceptCard } from "../types";
 import { isFlowProjectRecord } from "../types";
 import { cn } from "../../lib/utils";
 
-type ConceptTreeNode = {
-  id: string;
-  label: string;
-  children: Map<string, ConceptTreeNode>;
-  records: SavedKnowledgeRecord[];
-};
+type ConceptScope = "current" | "all";
 
 export function KnowledgeBaseSurface({
   activeProject,
@@ -26,14 +21,26 @@ export function KnowledgeBaseSurface({
 }) {
   const [records, setRecords] = useState<SavedKnowledgeRecord[]>(() => readKnowledgeRecords());
   const [query, setQuery] = useState("");
+  const [scope, setScope] = useState<ConceptScope>(() => isFlowProjectRecord(activeProject) ? "current" : "all");
   const [selectedKey, setSelectedKey] = useState<string | null>(() => records[0] ? recordKey(records[0]) : null);
 
   useEffect(() => subscribeKnowledgeRecords(() => setRecords(readKnowledgeRecords())), []);
+  useEffect(() => {
+    setScope(isFlowProjectRecord(activeProject) ? "current" : "all");
+  }, [activeProject?.id, activeProject?.kind]);
+
+  const canUseProjectScope = isFlowProjectRecord(activeProject);
+  const currentProjectRecords = useMemo(() => {
+    if (!canUseProjectScope) return [];
+    return records.filter((record) => recordBelongsToProject(record, activeProject.id));
+  }, [activeProject?.id, canUseProjectScope, records]);
+
+  const scopedRecords = canUseProjectScope && scope === "current" ? currentProjectRecords : records;
 
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase();
-    if (!normalized) return records;
-    return records.filter((record) => [
+    if (!normalized) return scopedRecords;
+    return scopedRecords.filter((record) => [
       record.id,
       record.title,
       record.summary,
@@ -44,33 +51,50 @@ export function KnowledgeBaseSurface({
       record.confidence,
       record.confidenceReason,
       record.lastChangeReason,
-      record.tags.join(" "),
+      (record.tags ?? []).join(" "),
       record.sourceProjectTitle
     ].filter(Boolean).join(" ").toLowerCase().includes(normalized));
-  }, [query, records]);
+  }, [query, scopedRecords]);
+
+  useEffect(() => {
+    if (!filtered.length) {
+      if (selectedKey !== null) setSelectedKey(null);
+      return;
+    }
+    if (!selectedKey || !filtered.some((record) => recordKey(record) === selectedKey)) {
+      setSelectedKey(recordKey(filtered[0]));
+    }
+  }, [filtered, selectedKey]);
 
   const selected = filtered.find((record) => recordKey(record) === selectedKey) ?? filtered[0] ?? null;
-  const tree = useMemo(() => buildConceptTree(filtered), [filtered]);
-  const flowProjectCount = isFlowProjectRecord(activeProject)
-    ? records.filter((record) => record.projects?.some((relation) => relation.projectId === activeProject.id) || record.sourceProjectId === activeProject.id).length
-    : 0;
+  const activeProjectTitle = isFlowProjectRecord(activeProject) ? activeProject.title : null;
+  const scopeDescription = canUseProjectScope && scope === "current"
+    ? `Concepts learned in ${activeProjectTitle ?? "this Flow project"}.`
+    : "Every concept Construct has learned across projects.";
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col bg-background">
       <header className="flex shrink-0 items-center justify-between gap-4 border-b px-5 py-4">
         <div className="min-w-0">
-          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Global concept memory</p>
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            {canUseProjectScope && scope === "current" ? "Flow concept memory" : "Knowledge base"}
+          </p>
           <h1 className="mt-1 text-xl font-semibold tracking-tight">Concepts</h1>
+          <p className="mt-1 max-w-2xl truncate text-sm text-muted-foreground">{scopeDescription}</p>
         </div>
-        <div className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
-          <span className="rounded-full border bg-muted/30 px-2 py-1">{records.length} total</span>
-          {isFlowProjectRecord(activeProject) ? <span className="rounded-full border bg-muted/30 px-2 py-1">{flowProjectCount} in this Flow</span> : null}
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 text-xs text-muted-foreground">
+          <span className="rounded-full border bg-muted/30 px-2.5 py-1">{records.length} total</span>
+          {canUseProjectScope ? <span className="rounded-full border bg-muted/30 px-2.5 py-1">{currentProjectRecords.length} current</span> : null}
+          <Button size="sm" variant="outline" disabled className="gap-1.5">
+            <NetworkIcon size={14} />
+            Knowledge web
+          </Button>
         </div>
       </header>
 
-      <div className="grid min-h-0 flex-1 grid-cols-[minmax(18rem,22rem)_minmax(0,1fr)]">
+      <div className="grid min-h-0 flex-1 grid-cols-[minmax(20rem,26rem)_minmax(0,1fr)]">
         <aside className="flex min-h-0 flex-col border-r bg-muted/10">
-          <div className="shrink-0 border-b p-3">
+          <div className="flex shrink-0 flex-col gap-3 border-b p-3">
             <div className="flex h-9 items-center gap-2 rounded-[8px] border bg-background px-3 text-muted-foreground focus-within:ring-2 focus-within:ring-ring/30">
               <SearchIcon size={15} />
               <input
@@ -80,21 +104,41 @@ export function KnowledgeBaseSurface({
                 placeholder="Search concepts..."
               />
             </div>
+            {canUseProjectScope ? (
+              <div className="grid grid-cols-2 gap-1 rounded-[8px] border bg-background p-1">
+                <ScopeButton active={scope === "current"} onClick={() => setScope("current")}>
+                  Current project
+                </ScopeButton>
+                <ScopeButton active={scope === "all"} onClick={() => setScope("all")}>
+                  All concepts
+                </ScopeButton>
+              </div>
+            ) : null}
           </div>
           <ShadcnScrollArea className="min-h-0 flex-1">
             {filtered.length ? (
-              <nav className="p-2" aria-label="Concept file tree">
-                <ConceptTreeRows
-                  nodes={[...tree.children.values()]}
-                  selectedKey={selected ? recordKey(selected) : null}
-                  onSelect={(record) => setSelectedKey(recordKey(record))}
-                />
+              <nav className="flex flex-col gap-2 p-3" aria-label="Concept cards">
+                {filtered.map((record) => (
+                  <ConceptListCard
+                    key={recordKey(record)}
+                    activeProjectId={canUseProjectScope ? activeProject.id : undefined}
+                    record={record}
+                    selectedKey={selected ? recordKey(selected) : null}
+                    onSelect={() => setSelectedKey(recordKey(record))}
+                  />
+                ))}
               </nav>
             ) : (
               <div className="flex h-full min-h-[18rem] flex-col items-center justify-center px-5 text-center text-sm text-muted-foreground">
                 <BookOpenIcon size={28} />
-                <p className="mt-3 font-medium text-foreground">No concepts yet</p>
-                <p className="mt-1 text-xs leading-relaxed">Flow will add concepts here as it introduces, modifies, and reviews them.</p>
+                <p className="mt-3 font-medium text-foreground">
+                  {canUseProjectScope && scope === "current" ? "No concepts in this project yet" : "No concepts yet"}
+                </p>
+                <p className="mt-1 text-xs leading-relaxed">
+                  {canUseProjectScope && scope === "current"
+                    ? "Flow will list concepts here as this project introduces, practices, and reviews them."
+                    : "Construct will add concepts here as projects introduce, modify, and review them."}
+                </p>
               </div>
             )}
           </ShadcnScrollArea>
@@ -116,42 +160,70 @@ export function KnowledgeBaseSurface({
   );
 }
 
-function ConceptTreeRows({
-  nodes,
-  selectedKey,
-  depth = 0,
-  onSelect
+function ScopeButton({
+  active,
+  children,
+  onClick
 }: {
-  nodes: ConceptTreeNode[];
-  selectedKey: string | null;
-  depth?: number;
-  onSelect: (record: SavedKnowledgeRecord) => void;
+  active: boolean;
+  children: ReactNode;
+  onClick: () => void;
 }) {
   return (
-    <div className="flex flex-col gap-0.5">
-      {nodes.sort(sortConceptNodes).map((node) => {
-        const primaryRecord = newestRecord(node.records);
-        const active = primaryRecord ? recordKey(primaryRecord) === selectedKey : false;
-        return (
-          <div key={node.id}>
-            <button
-              type="button"
-              className={`flex h-8 w-full min-w-0 items-center gap-2 rounded-[7px] px-2 text-left text-xs hover:bg-muted ${active ? "bg-muted text-foreground" : "text-muted-foreground"}`}
-              style={{ paddingLeft: `${8 + depth * 14}px` }}
-              onClick={() => primaryRecord && onSelect(primaryRecord)}
-              disabled={!primaryRecord}
-            >
-              {node.children.size ? <FolderIcon size={14} className="shrink-0" /> : <FileTextIcon size={14} className="shrink-0" />}
-              <span className="min-w-0 flex-1 truncate font-medium">{primaryRecord?.title ?? node.label}</span>
-              {node.records.length > 1 ? <span className="rounded-full border px-1.5 py-0.5 text-[10px]">{node.records.length}</span> : null}
-            </button>
-            {node.children.size ? (
-              <ConceptTreeRows nodes={[...node.children.values()]} selectedKey={selectedKey} depth={depth + 1} onSelect={onSelect} />
-            ) : null}
-          </div>
-        );
-      })}
-    </div>
+    <button
+      type="button"
+      className={cn(
+        "h-8 rounded-[7px] px-2.5 text-xs font-medium transition-none",
+        active ? "bg-muted text-foreground shadow-sm" : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+      )}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}
+
+function ConceptListCard({
+  record,
+  selectedKey,
+  activeProjectId,
+  onSelect
+}: {
+  record: SavedKnowledgeRecord;
+  selectedKey: string | null;
+  activeProjectId?: string;
+  onSelect: () => void;
+}) {
+  const relation = activeProjectId ? projectRelationForRecord(record, activeProjectId) : null;
+  const active = recordKey(record) === selectedKey;
+  const relationLabel = relation
+    ? `${relation.lastEventKind} · L${relation.masteryLevel}`
+    : record.sourceProjectTitle;
+  const updatedAt = relation?.lastReferencedAt ?? record.lastModifiedAt ?? record.savedAt;
+
+  return (
+    <button
+      type="button"
+      className={cn(
+        "group rounded-[8px] border bg-background/70 p-3 text-left transition-none hover:border-foreground/20 hover:bg-muted/45",
+        active && "border-foreground/25 bg-muted shadow-sm"
+      )}
+      onClick={onSelect}
+    >
+      <span className="flex min-w-0 items-start justify-between gap-3">
+        <span className="min-w-0">
+          <span className="block truncate text-sm font-semibold text-foreground">{record.title}</span>
+          <span className="mt-1 line-clamp-2 block text-xs leading-relaxed text-muted-foreground">{record.summary || record.content || "No summary recorded yet."}</span>
+        </span>
+        <ChevronRightIcon size={15} className="mt-0.5 shrink-0 text-muted-foreground transition-none group-hover:text-foreground" />
+      </span>
+      <span className="mt-3 flex min-w-0 flex-wrap items-center gap-1.5 text-[10.5px] text-muted-foreground">
+        <span className="rounded-full border bg-muted/30 px-1.5 py-0.5">{relationLabel}</span>
+        {record.confidence ? <span className="rounded-full border bg-muted/30 px-1.5 py-0.5">{confidenceLabel(record.confidence)}</span> : null}
+        {record.relatedConcepts?.length ? <span className="rounded-full border bg-muted/30 px-1.5 py-0.5">{record.relatedConcepts.length} linked</span> : null}
+        <span className="ml-auto truncate">{formatDate(updatedAt)}</span>
+      </span>
+    </button>
   );
 }
 
@@ -531,39 +603,31 @@ function compactAuditText(value?: string): string {
   return `${normalized.slice(0, 208).trim()}...`;
 }
 
-function buildConceptTree(records: SavedKnowledgeRecord[]): ConceptTreeNode {
-  const root: ConceptTreeNode = { id: "", label: "", children: new Map(), records: [] };
-  for (const record of records) {
-    const parts = record.id.split(".").filter(Boolean);
-    let node = root;
-    let id = "";
-    for (const part of parts) {
-      id = id ? `${id}.${part}` : part;
-      let child = node.children.get(part);
-      if (!child) {
-        child = { id, label: part.replace(/-/g, " "), children: new Map(), records: [] };
-        node.children.set(part, child);
-      }
-      node = child;
-    }
-    node.records.push(record);
-  }
-  return root;
-}
-
-function sortConceptNodes(a: ConceptTreeNode, b: ConceptTreeNode): number {
-  if (a.children.size && !b.children.size) return -1;
-  if (!a.children.size && b.children.size) return 1;
-  return a.label.localeCompare(b.label);
-}
-
-function newestRecord(records: SavedKnowledgeRecord[]): SavedKnowledgeRecord | null {
-  if (!records.length) return null;
-  return records.slice().sort((a, b) => Date.parse(b.lastModifiedAt ?? b.savedAt) - Date.parse(a.lastModifiedAt ?? a.savedAt))[0] ?? null;
-}
-
 function recordKey(record: SavedKnowledgeRecord): string {
   return `${record.sourceProjectId}:${record.id}`;
+}
+
+function recordBelongsToProject(record: SavedKnowledgeRecord, projectId: string): boolean {
+  return record.sourceProjectId === projectId
+    || record.projects?.some((relation) => relation.projectId === projectId) === true
+    || record.projectEvents?.some((event) => event.projectId === projectId) === true;
+}
+
+function projectRelationForRecord(record: SavedKnowledgeRecord, projectId: string): NonNullable<SavedKnowledgeRecord["projects"]>[number] | null {
+  const relation = record.projects?.find((candidate) => candidate.projectId === projectId);
+  if (relation) return relation;
+  if (record.sourceProjectId !== projectId) return null;
+  return {
+    projectId,
+    projectTitle: record.sourceProjectTitle,
+    conceptId: record.id,
+    introducedAt: record.savedAt,
+    firstReferencedAt: record.savedAt,
+    lastReferencedAt: record.lastModifiedAt ?? record.savedAt,
+    masteryLevel: record.masteryLevel ?? 0,
+    lastEventKind: "introduced",
+    eventIds: []
+  };
 }
 
 function fallbackHistory(record: SavedKnowledgeRecord): NonNullable<ConceptCard["history"]> {

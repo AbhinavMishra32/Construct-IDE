@@ -103,7 +103,7 @@ import { isFlowProjectRecord } from "./types";
 import { currentBlock, currentBlockNumber, totalBlocks, nextPosition } from "./lib/runtime";
 
 type ConstructHistoryEntry = ShellHistoryEntry<
-  "bottom-tab" | "dashboard" | "file" | "knowledge-base" | "learner-context" | "project" | "project-settings" | "right-slot" | "settings",
+  "bottom-tab" | "dashboard" | "file" | "knowledge-base" | "learner-context" | "project" | "project-settings" | "projects" | "right-slot" | "settings",
   {
     filePath?: string;
     projectId?: string;
@@ -1309,6 +1309,16 @@ export default function ConstructApp() {
       setActiveProject(null);
       setKnowledgeBaseOpen(false);
       setLearningContextOpen(true);
+      finish();
+      return;
+    }
+
+    if (entry.type === "projects") {
+      setSettingsSurface(null);
+      setActiveProject(null);
+      setKnowledgeBaseOpen(false);
+      setLearningContextOpen(false);
+      setProjectsViewOpen(true);
       finish();
       return;
     }
