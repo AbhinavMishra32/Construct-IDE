@@ -20,7 +20,7 @@ import {
   BookOpen,
   ArrowLeftIcon,
   ArrowRightIcon,
-  CheckCircle2Icon,
+  ChevronRightIcon,
   ChevronDownIcon,
   CloudIcon,
   CopyIcon,
@@ -69,9 +69,11 @@ import {
 } from "@opaline/ui";
 import type { SettingsNavItem, ShellHistoryEntry, SidebarNavItem } from "@opaline/ui";
 import type { AppShellState } from "@opaline/ui";
+import { cn } from "../lib/utils";
 
 import { Dashboard } from "./components/Dashboard";
 import { DashboardSidebar } from "./components/DashboardSidebar";
+import { ProjectsSurface } from "./components/ProjectsSurface";
 import { FileTree } from "./components/FileTree";
 import { TerminalPanel, type TerminalPanelHandle } from "./components/TerminalPanel";
 import { Workspace } from "./components/Workspace";
@@ -440,6 +442,7 @@ export default function ConstructApp() {
   const [inspectorExpanded, setInspectorExpanded] = useState(false);
   const [knowledgeBaseOpen, setKnowledgeBaseOpen] = useState(false);
   const [learningContextOpen, setLearningContextOpen] = useState(false);
+  const [projectsViewOpen, setProjectsViewOpen] = useState(false);
   const [accountDialogOpen, setAccountDialogOpen] = useState(false);
   const [settingsSurface, setSettingsSurface] = useState<SettingsSurfaceState | null>(null);
   const [settingsQuery, setSettingsQuery] = useState("");
@@ -772,6 +775,7 @@ export default function ConstructApp() {
     setSettingsSurface(null);
     setKnowledgeBaseOpen(false);
     setLearningContextOpen(false);
+    setProjectsViewOpen(false);
     setRightPanel(null);
     setRightPanelOpen(false);
     setInspectorExpanded(false);
@@ -833,6 +837,20 @@ export default function ConstructApp() {
     setLearningContextOpen(true);
     pushHistory({ id: "learner-context", title: "Context", type: "learner-context" });
   }, [pushHistory]);
+
+  const openProjectsView = useCallback(() => {
+    const originProjectId = activeProject?.id;
+    setSettingsSurface(null);
+    setKnowledgeBaseOpen(false);
+    setLearningContextOpen(false);
+    setProjectsViewOpen(true);
+    pushHistory({
+      id: originProjectId ? `projects:${originProjectId}` : "projects",
+      payload: { projectId: originProjectId },
+      title: "Projects",
+      type: "projects"
+    });
+  }, [activeProject?.id, pushHistory]);
 
   const handleRightSlotChange = useCallback((slotId: string) => {
     if (!activeProject) {
@@ -1372,6 +1390,18 @@ export default function ConstructApp() {
       />
   ) : learningContextOpen ? (
     <LearningContextSurface />
+  ) : projectsViewOpen ? (
+    <ProjectsSurface
+      projects={projects}
+      onOpenProject={(projectId) => {
+        setProjectsViewOpen(false);
+        void openProject(projectId);
+      }}
+      onOpenProjectSettings={(projectId) => {
+        setProjectsViewOpen(false);
+        openSettingsSurface("project-overview", projectId);
+      }}
+    />
   ) : knowledgeBaseOpen ? (
     <KnowledgeBaseSurface activeProject={activeProject} theme={theme} onOpenProject={(projectId) => {
       setKnowledgeBaseOpen(false);
@@ -1424,17 +1454,7 @@ export default function ConstructApp() {
   );
 
   function closeSettingsSurface() {
-    if (history.canGoBack) {
-      history.goBack();
-      return;
-    }
-    const projectId = settingsSurface?.projectId;
     setSettingsSurface(null);
-    if (projectId) {
-      void openProject(projectId, { recordHistory: false });
-      return;
-    }
-
     showDashboardSurface({ recordHistory: false });
   }
 
@@ -1474,11 +1494,13 @@ export default function ConstructApp() {
 
   const headerTitle = settingsSurface
     ? settingsTitle(settingsSurface.itemId, settingsSurface.projectId, projects)
-    : knowledgeBaseOpen
-      ? "Concepts"
-      : learningContextOpen
-        ? "Context"
-        : activeProject?.title ?? "Home";
+    : projectsViewOpen
+      ? "Projects"
+      : knowledgeBaseOpen
+        ? "Concepts"
+        : learningContextOpen
+          ? "Context"
+          : activeProject?.title ?? "Home";
 
   const copyText = useCallback((text: string | undefined) => {
     if (!text) return;
@@ -1745,7 +1767,7 @@ export default function ConstructApp() {
             settingsSurface ? (
               <SettingsSidebar
                 activeItemId={settingsSurface.itemId}
-                backLabel={settingsSurface.projectId ? "Back to project" : "Back to home"}
+                backLabel="Back to projects"
                 footer={
                   <ConstructSidebarFooter
                     aiSettings={aiSettings}
@@ -1812,30 +1834,27 @@ export default function ConstructApp() {
                 projects={[]} items={[]}
                 primaryItems={[
                   {
-                    id: "brand",
-                    label: "Construct"
-                  },
-                  {
                     id: "home",
-                    active: !knowledgeBaseOpen && !learningContextOpen,
-                    icon: <HomeIcon size={18} />,
+                    active: !knowledgeBaseOpen && !learningContextOpen && !projectsViewOpen,
+                    icon: <HomeIcon size={15} />,
                     label: "Home",
                     onClick: handleBack
                   },
                   {
                     id: "knowledge-base",
-                    icon: <BookOpen size={18} />,
+                    active: knowledgeBaseOpen,
+                    icon: <BookOpen size={15} />,
                     label: "Concepts",
                     onClick: openKnowledgeBase
                   },
                   {
                     id: "projects",
-                    icon: <FolderOpenIcon size={18} />,
+                    active: projectsViewOpen,
+                    icon: <FolderOpenIcon size={15} />,
                     label: "Projects",
-                    onClick: handleBack
+                    onClick: openProjectsView
                   }
                 ]}
-                renderNavItem={(item) => <ConstructDashboardNavItem item={item} key={item.id} />}
                 footer={
                   <ConstructSidebarFooter
                     aiSettings={aiSettings}
@@ -2006,23 +2025,35 @@ function ConstructSidebarFooter({
   const plan = account.usage?.plan ?? account.account?.user?.plan ?? null;
 
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col gap-1.5">
       {children}
       <SidebarSettingsButton onClick={onOpenSettings} />
       <button
         type="button"
-        className="flex min-h-11 w-full min-w-0 items-center gap-2 rounded-[7px] px-2 py-1.5 text-left text-[13px] transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+        className="flex min-h-11 w-full min-w-0 items-center gap-2.5 rounded-[6px] px-2.5 py-1.5 text-left text-[12.5px] transition-all hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 border border-transparent hover:border-sidebar-border/10"
         onClick={onAccountClick}
       >
-        <UserAvatar className="size-7" />
+        <UserAvatar className="size-7 shrink-0" />
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="flex min-w-0 items-center gap-1.5">
-            <span className="truncate font-medium">{account.isPending ? "Account" : name}</span>
-            {plan ? <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">{formatPlan(plan)}</Badge> : null}
+            <span className="truncate font-semibold text-foreground/90">{account.isPending ? "Account" : name}</span>
+            {plan ? (
+              <Badge
+                variant="secondary"
+                className={cn(
+                  "h-[15px] rounded-[3px] border-0 px-1 text-[9px] font-bold tracking-wider uppercase shrink-0 select-none",
+                  plan.toLowerCase().includes("plus") || plan.toLowerCase().includes("pro")
+                    ? "bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400"
+                    : "bg-muted text-muted-foreground"
+                )}
+              >
+                {formatPlan(plan)}
+              </Badge>
+            ) : null}
           </span>
-          <span className="truncate text-xs text-muted-foreground">{email}</span>
+          <span className="truncate text-xs text-muted-foreground/80">{email}</span>
         </span>
-        <ChevronDownIcon size={14} className="shrink-0 text-muted-foreground" />
+        <ChevronDownIcon size={14} className="shrink-0 text-muted-foreground/60" />
       </button>
     </div>
   );
@@ -2141,8 +2172,8 @@ function ConstructAccountDialog({
           <div className="mb-1 flex size-9 items-center justify-center rounded-md bg-muted text-foreground">
             <UserRoundIcon size={18} />
           </div>
-          <ShadcnDialogTitle>Construct Account</ShadcnDialogTitle>
-          <ShadcnDialogDescription>Account access is required for Construct. Project workspaces remain local on this device.</ShadcnDialogDescription>
+          <ShadcnDialogTitle>Your Account</ShadcnDialogTitle>
+          <ShadcnDialogDescription>Manage your account and AI compute balance.</ShadcnDialogDescription>
         </ShadcnDialogHeader>
 
         <div className="flex flex-col gap-3 py-1">
@@ -2161,67 +2192,34 @@ function ConstructAccountDialog({
             </Button>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <ConstructAccountFact icon={<CheckCircle2Icon size={16} />} label="Login" value="Active" />
-            <ConstructAccountFact icon={<FolderOpenIcon size={16} />} label="Project storage" value="Local only" />
-          </div>
-
           {account.usage ? (
             <div className="rounded-lg border bg-background p-3">
               <div className="mb-3 flex items-center gap-2 text-sm font-medium">
                 <CloudIcon size={16} />
-                Hosted compute
+                AI Compute Balance
               </div>
               <div className="grid gap-2 sm:grid-cols-2">
-                <ConstructAccountUsageMeter label="5 hour" window={account.usage.windows.five_hour_all} />
-                <ConstructAccountUsageMeter label="Weekly" window={account.usage.windows.weekly_all} />
+                <ConstructAccountUsageMeter label="5-Hour Session" window={account.usage.windows.five_hour_all} />
+                <ConstructAccountUsageMeter label="Weekly Limit" window={account.usage.windows.weekly_all} />
                 {account.usage.windows.weekly_expensive ? (
-                  <ConstructAccountUsageMeter label="Expensive models" window={account.usage.windows.weekly_expensive} />
+                  <ConstructAccountUsageMeter label="Premium Models" window={account.usage.windows.weekly_expensive} />
                 ) : null}
               </div>
             </div>
           ) : null}
 
-          <div className="flex flex-col gap-3 rounded-lg border bg-background p-3">
-            <div className="flex items-start gap-2">
-              <KeyRoundIcon size={16} className="mt-0.5 text-muted-foreground" />
-              <div>
-                <div className="text-sm font-medium">Hosted compute token</div>
-                <div className="mt-1 text-xs text-muted-foreground">Used only when AI source is set to hosted compute. BYOK keys stay local.</div>
-              </div>
-            </div>
-            <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-              <Input
-                value={baseUrlDraft}
-                disabled={busy}
-                placeholder="https://cloud.tryconstruct.cc"
-                onChange={(event) => setBaseUrlDraft(event.target.value)}
-              />
-              <Input
-                type="password"
-                value={tokenDraft}
-                disabled={busy}
-                placeholder="Hosted compute token"
-                onChange={(event) => setTokenDraft(event.target.value)}
-              />
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button size="small" disabled={busy || !account.session?.user} onClick={() => void mintHostedToken()}>
-                {busy ? "Working..." : "Mint token"}
-              </Button>
-              <Button size="small" variant="secondary" disabled={busy} onClick={() => void saveHostedSettings()}>
-                Save
-              </Button>
-              {tokenDraft ? (
-                <Button size="small" variant="secondary" disabled={busy} onClick={() => void saveHostedSettings({ token: "" })}>
-                  Clear token
-                </Button>
-              ) : null}
-            </div>
-            {status ?? account.status ? (
-              <div className="text-xs text-muted-foreground">{status ?? account.status}</div>
-            ) : null}
-          </div>
+          <ConstructAccountConnectionSection
+            baseUrlDraft={baseUrlDraft}
+            tokenDraft={tokenDraft}
+            busy={busy}
+            hasUser={!!account.session?.user}
+            status={status ?? account.status ?? null}
+            onBaseUrlChange={setBaseUrlDraft}
+            onTokenChange={setTokenDraft}
+            onMint={() => void mintHostedToken()}
+            onSave={() => void saveHostedSettings()}
+            onClear={() => void saveHostedSettings({ token: "" })}
+          />
         </div>
 
         <ShadcnDialogFooter>
@@ -2291,33 +2289,108 @@ function useConstructAccount(baseUrl: string) {
   };
 }
 
-function ConstructAccountFact({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
+function ConstructAccountConnectionSection({
+  baseUrlDraft,
+  tokenDraft,
+  busy,
+  hasUser,
+  status,
+  onBaseUrlChange,
+  onTokenChange,
+  onMint,
+  onSave,
+  onClear
+}: {
+  baseUrlDraft: string;
+  tokenDraft: string;
+  busy: boolean;
+  hasUser: boolean;
+  status: string | null;
+  onBaseUrlChange: (value: string) => void;
+  onTokenChange: (value: string) => void;
+  onMint: () => void;
+  onSave: () => void;
+  onClear: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const connected = !!tokenDraft.trim();
+
   return (
-    <div className="flex items-center gap-3 rounded-lg border bg-background p-3">
-      <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">{icon}</div>
-      <div className="min-w-0">
-        <div className="text-xs text-muted-foreground">{label}</div>
-        <div className="mt-0.5 truncate text-sm font-medium">{value}</div>
-      </div>
+    <div className="rounded-lg border bg-background p-3">
+      <button
+        type="button"
+        className="flex w-full items-center gap-2 text-left text-sm"
+        onClick={() => setExpanded((v) => !v)}
+      >
+        <KeyRoundIcon size={16} className="shrink-0 text-muted-foreground" />
+        <span className="flex-1 font-medium">Connection</span>
+        <Badge variant={connected ? "secondary" : "outline"}>{connected ? "Connected" : "Not connected"}</Badge>
+        <ChevronRightIcon size={14} className={`shrink-0 text-muted-foreground transition-transform ${expanded ? "rotate-90" : ""}`} />
+      </button>
+
+      {expanded ? (
+        <div className="mt-3 flex flex-col gap-3 border-t pt-3">
+          <div className="text-xs text-muted-foreground">Cloud endpoint and access token for AI compute. Bring-your-own-key users can ignore this.</div>
+          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+            <Input
+              value={baseUrlDraft}
+              disabled={busy}
+              placeholder="https://cloud.tryconstruct.cc"
+              onChange={(event) => onBaseUrlChange(event.target.value)}
+            />
+            <Input
+              type="password"
+              value={tokenDraft}
+              disabled={busy}
+              placeholder="Access token"
+              onChange={(event) => onTokenChange(event.target.value)}
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="small" disabled={busy || !hasUser} onClick={onMint}>
+              {busy ? "Working..." : "Mint token"}
+            </Button>
+            <Button size="small" variant="secondary" disabled={busy} onClick={onSave}>
+              Save
+            </Button>
+            {tokenDraft ? (
+              <Button size="small" variant="secondary" disabled={busy} onClick={onClear}>
+                Clear token
+              </Button>
+            ) : null}
+          </div>
+          {status ? (
+            <div className="text-xs text-muted-foreground">{status}</div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
 
 function ConstructAccountUsageMeter({ label, window }: { label: string; window: ConstructAccountUsageWindow }) {
-  const reset = new Date(window.resetAt ?? window.windowEnd).toLocaleString();
-  const percent = Math.min(100, Math.max(0, window.percentage));
+  const resetDate = new Date(window.resetAt ?? window.windowEnd);
+  const now = new Date();
+  const diffMs = resetDate.getTime() - now.getTime();
+  const diffH = Math.max(0, Math.floor(diffMs / 3_600_000));
+  const diffM = Math.max(0, Math.floor((diffMs % 3_600_000) / 60_000));
+  const resetLabel = diffH > 24 ? `${Math.ceil(diffH / 24)}d` : diffH > 0 ? `${diffH}h ${diffM}m` : `${diffM}m`;
+
+  const remainingPercent = Math.min(100, Math.max(0, 100 - window.percentage));
+  const barColor = remainingPercent > 50 ? "bg-emerald-500" : remainingPercent > 20 ? "bg-amber-400" : "bg-rose-500";
 
   return (
-    <div className="rounded-md bg-muted/35 px-3 py-2 text-xs">
+    <div className="rounded-md bg-muted/35 px-3 py-2.5 text-xs">
       <div className="flex items-center justify-between gap-2">
         <span className="font-medium text-foreground">{label}</span>
-        <span className="text-muted-foreground">{formatUsageUnits(window.usedUnits)} / {formatUsageUnits(window.limitUnits)}</span>
+        <span className="tabular-nums font-semibold text-foreground">{Math.round(remainingPercent)}%</span>
       </div>
       <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-background">
-        <div className="h-full rounded-full bg-primary" style={{ width: `${percent}%` }} />
+        <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${remainingPercent}%` }} />
       </div>
-      <div className="mt-2 truncate text-muted-foreground">
-        {window.reservedUnits > 0 ? `${formatUsageUnits(window.reservedUnits)} reserved · ` : ""}{formatUsageUnits(window.remainingUnits)} left · resets {reset}
+      <div className="mt-2 flex items-center justify-between gap-2 text-muted-foreground">
+        <span>{formatUsageUnits(window.remainingUnits)} remaining</span>
+        <span>resets in {resetLabel}</span>
       </div>
     </div>
   );
@@ -2344,7 +2417,7 @@ function ConstructDashboardNavItem({ item }: { item: SidebarNavItem }) {
 
   return (
     <Button
-      className="h-8 w-full justify-start gap-2 rounded-[7px] px-2 text-[13px] data-[active=true]:bg-sidebar-accent data-[active=true]:text-sidebar-accent-foreground"
+      className="h-[30px] w-full justify-start gap-2.5 rounded-[6px] px-2.5 text-[12.5px] font-medium transition-colors data-[active=true]:bg-sidebar-accent/85 data-[active=true]:text-foreground data-[active=true]:font-semibold hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
       data-active={item.active === true ? "true" : undefined}
       onClick={item.onClick}
       variant={item.id === "new-project" ? "default" : "ghost"}

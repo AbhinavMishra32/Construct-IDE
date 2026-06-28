@@ -46,9 +46,9 @@ export function HeaderBottomPanelIcon({ open }: { open: boolean }) {
 
 export function SidebarLearningButton({ onClick }: { onClick: () => void }) {
   return (
-    <Button className="h-8 w-full justify-start gap-2 rounded-[7px] px-2 text-[13px]" onClick={onClick} variant="ghost">
+    <Button className="h-[30px] w-full justify-start gap-2.5 rounded-[6px] px-2.5 text-[12.5px] font-medium transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground" onClick={onClick} variant="ghost">
       <span className="grid size-[18px] shrink-0 place-items-center" data-icon="inline-start" aria-hidden="true">
-        <Notebook weight="duotone" className="size-[15px]" />
+        <Notebook className="size-[15px]" />
       </span>
       <span>Context</span>
     </Button>
@@ -57,7 +57,7 @@ export function SidebarLearningButton({ onClick }: { onClick: () => void }) {
 
 export function SidebarConceptsButton({ onClick }: { onClick: () => void }) {
   return (
-    <Button className="h-8 w-full justify-start gap-2 rounded-[7px] px-2 text-[13px]" onClick={onClick} variant="ghost">
+    <Button className="h-[30px] w-full justify-start gap-2.5 rounded-[6px] px-2.5 text-[12.5px] font-medium transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground" onClick={onClick} variant="ghost">
       <span className="grid size-[18px] shrink-0 place-items-center" data-icon="inline-start" aria-hidden="true">
         <BookOpenIcon className="size-[15px]" />
       </span>
@@ -68,9 +68,9 @@ export function SidebarConceptsButton({ onClick }: { onClick: () => void }) {
 
 export function SidebarSettingsButton({ onClick }: { onClick: () => void }) {
   return (
-    <Button className="h-8 w-full justify-start gap-2 rounded-[7px] px-2 text-[13px]" onClick={onClick} variant="ghost">
+    <Button className="h-[30px] w-full justify-start gap-2.5 rounded-[6px] px-2.5 text-[12.5px] font-medium transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground" onClick={onClick} variant="ghost">
       <span className="grid size-[18px] shrink-0 place-items-center" data-icon="inline-start" aria-hidden="true">
-        <GearSix weight="duotone" className="size-[15px]" />
+        <GearSix className="size-[15px]" />
       </span>
       <span>Settings</span>
     </Button>

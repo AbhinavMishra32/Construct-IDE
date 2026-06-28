@@ -311,7 +311,7 @@ function ConceptDetail({
           ) : null}
 
           <ConceptSection title="History">
-            <div className="grid gap-4 lg:grid-cols-[minmax(16rem,22rem)_minmax(0,1fr)]">
+            <div className="grid gap-4 md:grid-cols-[13rem_1fr] lg:grid-cols-[14rem_1fr]">
               <div className="flex flex-col gap-1.5">
                 {orderedHistory.map((event) => {
                   const active = selectedHistory?.id === event.id;
@@ -420,18 +420,20 @@ function HistoryEventDetails({ event }: { event: NonNullable<ConceptCard["histor
         </div>
       ) : null}
       {event.fieldChanges?.length ? (
-        <div className="mt-3 flex flex-col gap-2">
+        <div className="mt-3 divide-y divide-border/60">
           {event.fieldChanges.map((change) => (
-            <HistoryFieldChange key={`${event.id}:${change.field}`} change={change} />
+            <div key={`${event.id}:${change.field}`} className="py-3 first:pt-0 last:pb-0">
+              <HistoryFieldChange change={change} />
+            </div>
           ))}
         </div>
       ) : event.changedFields?.length ? (
         <p className="mt-3 text-xs text-muted-foreground"><strong className="text-foreground">Changed fields:</strong> {event.changedFields.map(fieldLabel).join(", ")}</p>
       ) : null}
       {event.evidence.length ? (
-        <div className="mt-3">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Evidence</p>
-          <ul className="mt-1 flex flex-col gap-1 text-xs text-muted-foreground">
+        <div className="mt-4 border-t pt-3">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">Evidence</p>
+          <ul className="mt-1 flex flex-col gap-1 text-xs text-muted-foreground/90">
             {event.evidence.map((item, index) => <li key={`${index}:${item}`}>- {item}</li>)}
           </ul>
         </div>
@@ -448,9 +450,9 @@ function HistoryFieldChange({ change }: { change: NonNullable<NonNullable<Concep
     return <HistoryTextChange field={change.field} before={change.before} after={change.after} />;
   }
   return (
-    <div className="rounded-[10px] border bg-background/60 p-3 text-xs">
-      <div className="font-medium text-foreground">{fieldLabel(change.field)}</div>
-      <div className="mt-2 grid gap-2 md:grid-cols-2">
+    <div>
+      <div className="font-semibold text-foreground/90 mb-1.5 text-xs">{fieldLabel(change.field)}</div>
+      <div className="grid gap-3 md:grid-cols-2">
         <AuditValue label="Before" value={change.before} muted />
         <AuditValue label="After" value={change.after} />
       </div>
@@ -460,14 +462,14 @@ function HistoryFieldChange({ change }: { change: NonNullable<NonNullable<Concep
 
 function HistoryMasteryChange({ before, after }: { before?: string; after?: string }) {
   return (
-    <div className="rounded-[10px] border border-[color:var(--construct-success)]/30 bg-[color:var(--construct-success-soft)]/20 p-3 text-xs">
-      <div className="mb-2 flex items-center gap-2 font-medium text-[color:var(--construct-success)]">
-        <SparklesIcon size={14} />
-        <span>Mastery level moved</span>
+    <div className="rounded-[8px] bg-[color:var(--construct-success-soft)]/15 px-3 py-2.5 text-xs">
+      <div className="mb-1.5 flex items-center gap-1.5 font-semibold text-[color:var(--construct-success)]">
+        <SparklesIcon size={12} />
+        <span>Mastery Level Shifted</span>
       </div>
-      <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
+      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
         <AuditValue label="Before" value={before} muted />
-        <ArrowRightIcon size={14} className="text-muted-foreground" />
+        <ArrowRightIcon size={12} className="text-muted-foreground/40 mt-4" />
         <AuditValue label="After" value={after} />
       </div>
     </div>
@@ -479,25 +481,26 @@ function HistoryTextChange({ field, before, after }: { field: string; before?: s
   const afterText = compactAuditText(after);
   const mode = beforeText && afterText ? "Replaced" : afterText ? "Added" : "Removed";
   return (
-    <div className="rounded-[10px] border bg-background/60 p-3 text-xs">
-      <div className="flex items-center justify-between gap-2">
-        <div className="font-medium text-foreground">{fieldLabel(field)}</div>
-        <span className="rounded-full border bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">{mode}</span>
+    <div className="text-xs">
+      <div className="flex items-center justify-between gap-2 mb-1.5">
+        <div className="font-semibold text-foreground/90">{fieldLabel(field)}</div>
+        <span className={cn(
+          "rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider border",
+          mode === "Added" && "bg-[color:var(--construct-success-soft)]/20 border-[color:var(--construct-success)]/30 text-[color:var(--construct-success)]",
+          mode === "Removed" && "bg-destructive/10 border-destructive/20 text-destructive",
+          mode === "Replaced" && "bg-amber-500/10 border-amber-500/20 text-amber-500"
+        )}>
+          {mode}
+        </span>
       </div>
-      <div className="mt-2 grid gap-2">
+      <div className="flex flex-col gap-1.5">
         {beforeText ? (
-          <div className="rounded-[9px] border border-destructive/20 bg-destructive/10 p-2 text-muted-foreground line-through decoration-destructive/60">
+          <div className="rounded-[6px] bg-destructive/5 px-2 py-1.5 text-muted-foreground/80 line-through decoration-destructive/40 font-mono text-[10.5px] leading-relaxed">
             {beforeText}
           </div>
         ) : null}
-        {beforeText && afterText ? (
-          <div className="flex items-center gap-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-            <ArrowRightIcon size={12} />
-            <span>became</span>
-          </div>
-        ) : null}
         {afterText ? (
-          <div className="rounded-[9px] border border-[color:var(--construct-success)]/25 bg-[color:var(--construct-success-soft)]/20 p-2 text-foreground">
+          <div className="rounded-[6px] bg-[color:var(--construct-success-soft)]/10 px-2 py-1.5 text-foreground/90 font-mono text-[10.5px] leading-relaxed">
             {afterText}
           </div>
         ) : null}
@@ -508,9 +511,9 @@ function HistoryTextChange({ field, before, after }: { field: string; before?: s
 
 function AuditValue({ label, value, muted }: { label: string; value?: string; muted?: boolean }) {
   return (
-    <div className="min-w-0">
-      <span className="block text-[10px] uppercase tracking-wide text-muted-foreground">{label}</span>
-      <div className={cn("mt-1 min-h-10 rounded-[8px] border bg-muted/30 p-2 text-sm leading-6", muted ? "text-muted-foreground" : "text-foreground")}>
+    <div className="min-w-0 text-xs">
+      <span className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">{label}</span>
+      <div className={cn("mt-1 font-medium leading-relaxed", muted ? "text-muted-foreground/80 line-through" : "text-foreground/90")}>
         {compactAuditText(value) || "not set"}
       </div>
     </div>

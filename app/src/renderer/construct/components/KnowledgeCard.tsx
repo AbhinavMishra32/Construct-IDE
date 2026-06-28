@@ -11,6 +11,7 @@ import {
   HistoryIcon,
   InfoIcon,
   SparklesIcon,
+  User,
   XIcon
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
@@ -128,24 +129,24 @@ export function KnowledgeCard({
       transition={cardSpring}
       layout
     >
-      <header className="shrink-0 border-b border-border/70 bg-background/35 px-4 py-3">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <MasteryBadge
-              level={displayedMasteryLevel}
-              title={masteryRubric.title}
-              tooltip={masteryTooltip}
-              emphasized={levelUp}
-              newConcept={introduced && mode === "history"}
-              onClick={() => {
-                if (history.length) {
-                  setMode("history");
-                  setSelectedHistoryIndex(latestMasteryEventIndex);
-                }
-              }}
-            />
+      <header className="flex shrink-0 items-stretch border-b border-border/70 bg-background/35">
+        <MasteryBadge
+          level={displayedMasteryLevel}
+          title={masteryRubric.title}
+          tooltip={masteryTooltip}
+          emphasized={levelUp}
+          newConcept={introduced && mode === "history"}
+          onClick={() => {
+            if (history.length) {
+              setMode("history");
+              setSelectedHistoryIndex(latestMasteryEventIndex);
+            }
+          }}
+        />
+        <div className="flex flex-1 flex-col py-2.5 pl-2.5 pr-3 min-w-0">
+          <div className="flex items-start justify-between gap-2.5">
             <div className="min-w-0">
-              <div className="mb-1 flex min-w-0 flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+              <div className="mb-0.5 flex min-w-0 flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
                 <span className="font-semibold uppercase tracking-wide">Concept</span>
                 {mode === "history" && selectedHistory ? (
                   <span className={cn(
@@ -159,86 +160,75 @@ export function KnowledgeCard({
                 {concept.technology ? <span className="rounded-full border px-1.5 py-0.5">{concept.technology}</span> : null}
               </div>
               <HeaderConceptTitle title={revisionSnapshot?.title ?? concept.title} event={activeHistoryEvent} />
-              <p className="mt-1 truncate font-mono text-[11px] text-muted-foreground">{concept.id}</p>
+              <p className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground/75">{concept.id}</p>
+            </div>
+            <div className="flex shrink-0 items-center gap-1">
+              <button
+                type="button"
+                className={cn(
+                  "grid size-8 place-items-center rounded-[8px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+                  mode === "history" && "bg-muted text-foreground"
+                )}
+                onClick={() => setMode((value) => value === "history" ? "latest" : "history")}
+                aria-pressed={mode === "history"}
+                aria-label="Toggle updates history"
+                title="Toggle updates history"
+              >
+                <HistoryIcon size={15} />
+              </button>
+              <button
+                type="button"
+                className="grid size-8 place-items-center rounded-[8px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                onClick={onClose}
+                aria-label="Close concept"
+                title="Close concept"
+              >
+                <XIcon size={15} />
+              </button>
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-1">
-            <button
-              type="button"
-              className="grid size-8 place-items-center rounded-[8px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              onClick={() => onSaveChange(!saved)}
-              aria-label={saved ? "Remove saved concept" : "Save concept"}
-              title={saved ? "Remove saved concept" : "Save concept"}
-            >
-              {saved ? <BookmarkCheckIcon size={15} /> : <BookmarkIcon size={15} />}
-            </button>
-            <button
-              type="button"
-              className="grid size-8 place-items-center rounded-[8px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              onClick={onClose}
-              aria-label="Close concept"
-              title="Close concept"
-            >
-              <XIcon size={15} />
-            </button>
-          </div>
-        </div>
 
-        <div className="mt-2.5 border-t border-border/60 pt-2">
-          <div className="flex items-center justify-between gap-2">
-            <button
-              type="button"
-              className={cn(
-                "inline-flex h-6 items-center gap-1 text-xs font-semibold transition-colors",
-                mode === "history" ? "text-foreground" : "text-muted-foreground hover:text-foreground"
-              )}
-              onClick={() => setMode((value) => value === "history" ? "latest" : "history")}
-              aria-pressed={mode === "history"}
-            >
-              Updates
-            </button>
+          <div className="mt-2 border-t border-border/60 pt-1.5">
             {mode === "history" ? (
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  className="text-muted-foreground hover:text-foreground disabled:opacity-20 disabled:pointer-events-none"
-                  onClick={() => setSelectedHistoryIndex((index) => clamp(index - 1, 0, history.length - 1))}
-                  disabled={selectedHistoryIndex <= 0}
-                  aria-label="Previous concept update"
-                  title="Previous concept update"
-                >
-                  <ChevronLeftIcon size={14} />
-                </button>
-                <span className="min-w-[2.5rem] text-center font-mono text-[11px] text-muted-foreground">
-                  {history.length ? `${selectedHistoryIndex + 1}/${history.length}` : "0/0"}
-                </span>
-                <button
-                  type="button"
-                  className="text-muted-foreground hover:text-foreground disabled:opacity-20 disabled:pointer-events-none"
-                  onClick={() => setSelectedHistoryIndex((index) => clamp(index + 1, 0, history.length - 1))}
-                  disabled={selectedHistoryIndex >= history.length - 1}
-                  aria-label="Next concept update"
-                  title="Next concept update"
-                >
-                  <ChevronRightIcon size={14} />
-                </button>
-              </div>
+              <>
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">History</span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      className="text-muted-foreground hover:text-foreground disabled:opacity-20 disabled:pointer-events-none"
+                      onClick={() => setSelectedHistoryIndex((index) => clamp(index - 1, 0, history.length - 1))}
+                      disabled={selectedHistoryIndex <= 0}
+                      aria-label="Previous concept update"
+                      title="Previous concept update"
+                    >
+                      <ChevronLeftIcon size={14} />
+                    </button>
+                    <span className="min-w-[2.5rem] text-center font-mono text-[11px] text-muted-foreground">
+                      {history.length ? `${selectedHistoryIndex + 1}/${history.length}` : "0/0"}
+                    </span>
+                    <button
+                      type="button"
+                      className="text-muted-foreground hover:text-foreground disabled:opacity-20 disabled:pointer-events-none"
+                      onClick={() => setSelectedHistoryIndex((index) => clamp(index + 1, 0, history.length - 1))}
+                      disabled={selectedHistoryIndex >= history.length - 1}
+                      aria-label="Next concept update"
+                      title="Next concept update"
+                    >
+                      <ChevronRightIcon size={14} />
+                    </button>
+                  </div>
+                </div>
+                <RevisionRail
+                  events={history}
+                  selectedIndex={selectedHistoryIndex}
+                  onSelect={setSelectedHistoryIndex}
+                />
+              </>
             ) : (
-              <span className="truncate text-xs font-medium text-muted-foreground/80">{masteryRubric.title}</span>
+              <ConceptProfileStrip concept={concept} />
             )}
           </div>
-
-          {mode === "history" ? (
-            <div className="mt-2.5">
-              <RevisionRail
-                events={history}
-                selectedIndex={selectedHistoryIndex}
-                onSelect={setSelectedHistoryIndex}
-              />
-            </div>
-          ) : (
-            <ConceptProfileStrip concept={concept} />
-          )}
         </div>
       </header>
 
@@ -289,11 +279,11 @@ function MasteryBadge({
       : "0 1px 2px color-mix(in srgb,var(--foreground)_10%,transparent)";
 
   return (
-    <div className="group relative shrink-0">
+    <div className="group relative shrink-0 self-stretch">
       <motion.button
         type="button"
         className={cn(
-          "relative grid size-12 place-items-center overflow-hidden rounded-[10px] border border-border/80 bg-muted/20 text-foreground outline-none transition-all duration-150 focus-visible:ring-2 focus-visible:ring-ring/40",
+          "relative grid w-10 h-full place-items-center overflow-hidden rounded-none border-y-0 border-l-0 border-r border-border/70 bg-muted/20 text-foreground outline-none transition-all duration-150 focus-visible:ring-2 focus-visible:ring-ring/40",
           emphasized && "border-foreground/35 bg-muted/40 font-semibold",
           newConcept && !emphasized && "bg-muted/30"
         )}
@@ -315,7 +305,7 @@ function MasteryBadge({
         <span className="absolute inset-0 bg-[radial-gradient(circle_at_35%_20%,color-mix(in_srgb,var(--foreground)_6%,transparent),transparent_45%)]" />
         <span className="relative flex flex-col items-center leading-none">
           <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground/80">Level</span>
-          <motion.span className="mt-0.5 text-xl font-bold tabular-nums tracking-tight text-foreground" layout>
+          <motion.span className="mt-0.5 text-lg font-bold tabular-nums tracking-tight text-foreground" layout>
             {level}
           </motion.span>
         </span>
@@ -334,36 +324,55 @@ function ConceptProfileStrip({ concept }: { concept: ConceptCard }) {
   const author = concept.authoredBy ? `${capitalize(concept.authoredBy)} authored` : "Source unknown";
   const language = concept.language ? languageLabel(concept.language) : "Language neutral";
   const updated = concept.lastModifiedAt ? formatShortDate(concept.lastModifiedAt) : concept.savedAt ? formatShortDate(concept.savedAt) : "Not saved yet";
+
+  const isAgent = concept.authoredBy?.toLowerCase() === "agent";
+
   return (
-    <div className="mt-2.5 grid grid-cols-3 gap-4">
-      <ProfileTile label="Mode" value={language} />
-      <ProfileTile label="Author" value={author} />
-      <ProfileTile label="Updated" value={updated} />
+    <div className="mt-1 flex items-center gap-2.5 text-[10px] text-muted-foreground/75">
+      {/* Mode / Language (always visible) */}
+      <span className="font-semibold text-foreground/80">{language}</span>
+      <span className="text-muted-foreground/20">·</span>
+
+      {/* Author Popover */}
+      <div className="group relative cursor-default">
+        <span className="flex items-center gap-1 hover:text-foreground transition-colors py-0.5">
+          <User size={11} className="text-muted-foreground/75" />
+          <span className="font-medium">Author</span>
+        </span>
+        {/* Popover content */}
+        <div className="pointer-events-none absolute left-1/2 top-[calc(100%+0.4rem)] z-50 hidden -translate-x-1/2 w-48 rounded-[8px] border border-border bg-popover/98 p-2 text-[11px] leading-normal text-popover-foreground shadow-lg backdrop-blur-md group-hover:block group-focus-within:block transition-all duration-200">
+          <div className="font-semibold text-foreground mb-0.5">Author</div>
+          <div className="text-muted-foreground">{author}</div>
+        </div>
+      </div>
+
+      <span className="text-muted-foreground/20">·</span>
+
+      {/* Updated Popover */}
+      <div className="group relative cursor-default">
+        <span className="flex items-center gap-1 hover:text-foreground transition-colors py-0.5">
+          <HistoryIcon size={11} className="text-muted-foreground/75" />
+          <span className="font-medium">Updated</span>
+        </span>
+        {/* Popover content */}
+        <div className="pointer-events-none absolute left-1/2 top-[calc(100%+0.4rem)] z-50 hidden -translate-x-1/2 w-48 rounded-[8px] border border-border bg-popover/98 p-2 text-[11px] leading-normal text-popover-foreground shadow-lg backdrop-blur-md group-hover:block group-focus-within:block transition-all duration-200">
+          <div className="font-semibold text-foreground mb-0.5">Last Updated</div>
+          <div className="text-muted-foreground">{updated}</div>
+        </div>
+      </div>
     </div>
   );
 }
 
-function ProfileTile({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="min-w-0">
-      <span className="block text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-        {label}
-      </span>
-      <span className="mt-0.5 block truncate text-xs font-medium text-foreground/90">
-        {value}
-      </span>
-    </div>
-  );
-}
 
 function HeaderConceptTitle({ title, event }: { title: string; event: ConceptHistoryEvent | null }) {
   const titleChange = event ? fieldChangeFor(event, "title") : undefined;
   if (!titleChange) {
-    return <h2 className="truncate text-base font-semibold tracking-tight">{title}</h2>;
+    return <h2 className="text-sm font-semibold tracking-tight break-words">{title}</h2>;
   }
   return (
     <div className="min-w-0">
-      <h2 className="truncate text-base font-semibold tracking-tight">
+      <h2 className="text-sm font-semibold tracking-tight break-words">
         {normalizeAuditText(titleChange.after) || title}
       </h2>
       {titleChange.before ? (

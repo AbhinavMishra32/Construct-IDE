@@ -36,6 +36,20 @@ function getParentPaths(path: string): string[] {
   return parents;
 }
 
+function expandedPathRecord(paths: string[]): Record<string, boolean> {
+  return Object.fromEntries(paths.filter((path) => path.trim()).map((path) => [path, true]));
+}
+
+function expandedPathList(paths: Record<string, boolean>): string[] {
+  return Object.keys(paths).filter((path) => paths[path]).sort();
+}
+
+function sameExpandedPaths(left: Record<string, boolean>, right: Record<string, boolean>): boolean {
+  const leftPaths = expandedPathList(left);
+  const rightPaths = expandedPathList(right);
+  return leftPaths.length === rightPaths.length && leftPaths.every((path, index) => path === rightPaths[index]);
+}
+
 function generateCopyPath(srcPath: string): string {
   const lastDot = srcPath.lastIndexOf(".");
   const lastSlash = srcPath.lastIndexOf("/");
@@ -77,26 +91,30 @@ export function FileTree({
   nodes,
   activePath,
   relevantPath,
+  expandedPaths: persistedExpandedPaths,
   onOpenFile,
   onCreateFile,
   onDeleteFile,
   onRenameFile,
   onCreateFolder,
   onDuplicateFile,
+  onExpandedPathsChange,
   onRefresh,
 }: {
   nodes: WorkspaceTreeNode[];
   activePath: string | null;
   relevantPath: string | null;
+  expandedPaths?: string[];
   onOpenFile: (path: string) => void;
   onCreateFile?: (path: string) => void;
   onDeleteFile?: (path: string) => Promise<void>;
   onRenameFile?: (oldPath: string, newPath: string) => Promise<void>;
   onCreateFolder?: (path: string) => Promise<void>;
   onDuplicateFile?: (path: string, destPath: string) => Promise<void>;
+  onExpandedPathsChange?: (paths: string[]) => void;
   onRefresh?: () => void;
 }) {
-  const [expandedPaths, setExpandedPaths] = useState<Record<string, boolean>>({});
+  const [expandedPaths, setExpandedPaths] = useState<Record<string, boolean>>(() => expandedPathRecord(persistedExpandedPaths ?? []));
   const [copiedPath, setCopiedPath] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [draftPath, setDraftPath] = useState("");
@@ -107,11 +125,26 @@ export function FileTree({
   } | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
 
+  useEffect(() => {
+    setExpandedPaths(expandedPathRecord(persistedExpandedPaths ?? []));
+  }, [persistedExpandedPaths]);
+
+  const updateExpandedPaths = useCallback((updater: (current: Record<string, boolean>) => Record<string, boolean>) => {
+    setExpandedPaths((current) => {
+      const next = updater(current);
+      if (sameExpandedPaths(current, next)) {
+        return current;
+      }
+      onExpandedPathsChange?.(expandedPathList(next));
+      return next;
+    });
+  }, [onExpandedPathsChange]);
+
   // Auto-expand parents when activePath changes
   useEffect(() => {
     if (activePath) {
       const parents = getParentPaths(activePath);
-      setExpandedPaths((prev) => {
+      updateExpandedPaths((prev) => {
         const next = { ...prev };
         let changed = false;
         parents.forEach((p) => {
@@ -123,7 +156,7 @@ export function FileTree({
         return changed ? next : prev;
       });
     }
-  }, [activePath]);
+  }, [activePath, updateExpandedPaths]);
 
   // Prefill path directory when starting creation
   useEffect(() => {
@@ -590,7 +623,7 @@ export function FileTree({
             gitLane={false}
             onSelectPath={(path, item) => {
               if (item.type === "directory") {
-                setExpandedPaths((prev) => ({
+                updateExpandedPaths((prev) => ({
                   ...prev,
                   [path]: !prev[path]
                 }));

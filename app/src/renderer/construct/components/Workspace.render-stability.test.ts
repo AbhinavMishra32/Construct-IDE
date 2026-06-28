@@ -106,9 +106,8 @@ describe("Workspace render stability", () => {
     assert.match(appSource, /const originProjectId = projectId \?\? activeProject\?\.id/);
     assert.match(appSource, /payload: \{ projectId: originProjectId, settingsItemId: itemId \}/);
     assert.match(appSource, /payload: \{ projectId: originProjectId \}/);
-    assert.match(appSource, /if \(history\.canGoBack\) \{\s*history\.goBack\(\);/);
-    assert.match(appSource, /openProject\(nextSettingsSurface\.projectId, \{ recordHistory: false \}\)/);
-    assert.match(appSource, /openProject\(projectId, \{ recordHistory: false \}\)\.then\(\(\) => \{/);
+    assert.match(appSource, /setSettingsSurface\(null\);\s*showDashboardSurface\(\{ recordHistory: false \}\);/s);
+    assert.match(appSource, /void openProject\(projectId, \{ recordHistory: false \}\)\.then\(\(\) => \{/);
   });
 
   it("persists expanded project sidebar folders", () => {

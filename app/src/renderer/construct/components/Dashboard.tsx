@@ -1,9 +1,17 @@
-import { FolderOpen, RefreshCcw, Sparkles } from "lucide-react";
+import { FolderOpen, RefreshCcw } from "lucide-react";
 import { useMemo, useState } from "react";
 
-import { AgentSessionComposer, Badge, Button } from "@opaline/ui";
+import { AgentSessionComposer, Button } from "@opaline/ui";
 import { formatLastOpened } from "../lib/projectStore";
 import type { ProjectSummary } from "../types";
+
+const HEADLINES = [
+  "What are you building today?",
+  "Ready to build the future?",
+  "What system shall we design today?",
+  "Let's build something from scratch.",
+  "Ready to build?"
+];
 
 export function Dashboard({
   projects,
@@ -24,6 +32,11 @@ export function Dashboard({
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const recentProjects = useMemo(() => [...projects].sort(compareProjectActivity).slice(0, 3), [projects]);
+
+  const headline = useMemo(() => {
+    const randomIndex = Math.floor(Math.random() * HEADLINES.length);
+    return HEADLINES[randomIndex];
+  }, []);
 
   async function submitPrompt() {
     const trimmed = prompt.trim();
@@ -53,22 +66,13 @@ export function Dashboard({
         <main className="flex flex-1 flex-col items-center justify-center gap-7 pb-[8vh] pt-8">
           <div className="flex w-full max-w-[920px] flex-col items-center gap-6">
             <h1 className="text-center text-[28px] font-semibold leading-tight sm:text-[34px]">
-              What should we build in Construct?
+              {headline}
             </h1>
 
             <AgentSessionComposer
               aria-label="Describe the project to create"
-              className="max-w-[860px]"
+              className="construct-flow-composer max-w-[860px]"
               disabled={busy}
-              footerStart={
-                <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                  <Badge variant="secondary">
-                    <Sparkles data-icon="inline-start" />
-                    Flow project
-                  </Badge>
-                  <Badge variant="outline">Research first</Badge>
-                </div>
-              }
               footerEnd={
                 <span className="truncate px-1 text-xs text-muted-foreground">
                   {projects.length} project{projects.length === 1 ? "" : "s"}
