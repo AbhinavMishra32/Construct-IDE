@@ -58,9 +58,12 @@ describe("Workspace render stability", () => {
     assert.match(source, /openGeneratedLiveStep\(firstStepId\)/);
   });
 
-  it("refreshes the active Flow project before opening the project map", () => {
+  it("refreshes the active Flow project map without a broad project list refresh", () => {
     assert.match(appSource, /async function refreshActiveProjectSnapshot\(projectId: string\)/);
-    assert.match(appSource, /openSavedProject\(projectId\),\s*bootstrapProjects\(\)/s);
+    assert.match(appSource, /const project = await openSavedProject\(projectId\);/);
+    assert.match(appSource, /setActiveProject\(\(current\) => current\?\.id === projectId \? project : current\);/);
+    assert.match(appSource, /setProjects\(\(current\) => upsertProjectSummary\(current, projectSummaryFromRecord\(project\)\)\);/);
+    assert.doesNotMatch(appSource, /openSavedProject\(projectId\),\s*bootstrapProjects\(\)/s);
     assert.match(appSource, /const refreshed = await refreshActiveProjectSnapshot\(activeProject\.id\);/);
     assert.match(appSource, /if \(!refreshed\) return;\s*state\.setRightPanelOpen\(true\);/);
   });
