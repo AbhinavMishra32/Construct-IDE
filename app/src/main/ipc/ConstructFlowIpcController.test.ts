@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import type { ConstructFlowSession, ConstructFlowSessionEvent } from "../../shared/constructFlow";
+import { ConstructFlowIpcController, applyFlowSessionSnapshot } from "./ConstructFlowIpcController";
+import type { ConstructFlowAgentResult, ConstructFlowSession, ConstructFlowSessionEvent } from "../../shared/constructFlow";
 import type { StoredFlowProject } from "../projects/ConstructProjectTypes";
 import {
   applyLiveFlowProjectSnapshot,
@@ -9,7 +10,6 @@ import {
   mergeFlowProjectSnapshot,
   rememberFlowProjectSnapshot
 } from "../flow/ConstructFlowProjectSnapshotStore";
-import { applyFlowSessionSnapshot } from "./ConstructFlowIpcController";
 
 describe("ConstructFlowIpcController", () => {
   it("upserts live Flow session snapshots into the persisted project", () => {
@@ -124,7 +124,90 @@ describe("ConstructFlowIpcController", () => {
     assert.equal(hydrated.flow.updatedAt, "2026-06-24T05:00:05.000Z");
     assert.equal(hydrated.flow.sessions[0]?.id, "latest-session");
   });
+
+  it("returns Flow run results before slow post-run project persistence finishes", async () => {
+    const project = flowProject("fast-unlock");
+    const completedSession = flowSession(project, "session-1", "completed", "Done.");
+    const result: ConstructFlowAgentResult = {
+      session: completedSession,
+      reply: "Done.",
+      actions: []
+    };
+    const handlers = new Map<string, (event: unknown, input: unknown) => Promise<unknown>>();
+    const sentEvents: Array<{ channel: string; payload: unknown }> = [];
+    const writeStarted = createDeferred<void>();
+    const slowWrite = createDeferred<void>();
+    const controller = new ConstructFlowIpcController({
+      ipcMain: {
+        handle: (channel: string, handler: (event: unknown, input: unknown) => Promise<unknown>) => {
+          handlers.set(channel, handler);
+        }
+      } as any,
+      readSettings: async () => ({}) as any,
+      readProject: async () => project,
+      readProjectSummaries: async () => [],
+      writeProject: async () => {
+        writeStarted.resolve();
+        await slowWrite.promise;
+      },
+      workspace: {} as any,
+      flowMemory: {} as any,
+      flow: {
+        runMainAgent: async (_project: StoredFlowProject, _input: unknown, onSessionEvent?: (event: ConstructFlowSessionEvent) => void) => {
+          onSessionEvent?.(event(project, "completed", completedSession));
+          return result;
+        }
+      } as any,
+      workspacePathForProject: (projectId: string) => `/tmp/${projectId}`,
+      setActiveWebContents: () => {},
+      getAppSourceRoot: () => "/tmp"
+    });
+    controller.register();
+
+    const runAgent = handlers.get("construct:flow:run-agent");
+    assert.ok(runAgent);
+    let settled = false;
+    let settledValue: unknown;
+    const invocation = runAgent({
+      sender: {
+        isDestroyed: () => false,
+        send: (channel: string, payload: unknown) => sentEvents.push({ channel, payload })
+      }
+    }, { projectId: project.id, message: "continue" }).then((value) => {
+      settled = true;
+      settledValue = value;
+      return value;
+    });
+
+    try {
+      await writeStarted.promise;
+      await Promise.resolve();
+      await Promise.resolve();
+
+      assert.equal(settled, true);
+      assert.deepEqual(settledValue, result);
+      assert.equal(sentEvents.some((entry) => entry.channel === "construct:flow:session-event"), true);
+    } finally {
+      slowWrite.resolve();
+    }
+
+    await invocation;
+  });
 });
+
+function createDeferred<T>(): {
+  promise: Promise<T>;
+  resolve: (value?: T | PromiseLike<T>) => void;
+  reject: (reason?: unknown) => void;
+} {
+  let resolve!: (value?: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = (value) => promiseResolve(value as T | PromiseLike<T>);
+    reject = promiseReject;
+  });
+  return { promise, resolve, reject };
+}
 
 function event(
   project: StoredFlowProject,
