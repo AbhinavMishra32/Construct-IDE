@@ -709,14 +709,19 @@ export default function ConstructApp() {
     setActiveProject(project);
   }, []);
 
-  const runCommand = useCallback((command: string, cwd: string) => {
-    setOpenBottomTabIds((current) => current.includes("terminal") ? current : [...current, "terminal"]);
+  const ensureBottomTerminalOpen = useCallback(() => {
+    setOpenBottomTabIds((current) => current.includes("terminal") ? current : ["terminal", ...current]);
     setActiveBottomTabId("terminal");
+    setBottomPanelOpen(true);
+  }, []);
+
+  const runCommand = useCallback((command: string, cwd: string) => {
+    ensureBottomTerminalOpen();
     if (!command.trim()) {
       return;
     }
     window.setTimeout(() => terminalRef.current?.runCommand(command, cwd), 0);
-  }, []);
+  }, [ensureBottomTerminalOpen]);
 
   const handleWorkspaceTreeChange = useCallback((
     tree: WorkspaceTreeNode[],
@@ -964,24 +969,11 @@ export default function ConstructApp() {
       // Toggle Terminal: Ctrl+` or Cmd+`
       if ((e.ctrlKey || e.metaKey) && e.key === "`") {
         e.preventDefault();
-        setOpenBottomTabIds((prev) => {
-          const isTerminalActive = activeBottomTabId === "terminal";
-          if (prev.includes("terminal") && isTerminalActive) {
-            const next = prev.filter((id) => id !== "terminal");
-            if (next.length > 0) {
-              setActiveBottomTabId(next[next.length - 1]);
-            } else {
-              setActiveBottomTabId(null as any);
-            }
-            return next;
-          } else {
-            setActiveBottomTabId("terminal");
-            if (!prev.includes("terminal")) {
-              return [...prev, "terminal"];
-            }
-            return prev;
-          }
-        });
+        if (bottomPanelOpen && activeBottomTabId === "terminal") {
+          setBottomPanelOpen(false);
+        } else {
+          ensureBottomTerminalOpen();
+        }
       }
 
       // Toggle Output: Ctrl+Shift+U or Cmd+Shift+U
@@ -1010,7 +1002,7 @@ export default function ConstructApp() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [openBottomTabIds, activeBottomTabId]);
+  }, [activeBottomTabId, bottomPanelOpen, ensureBottomTerminalOpen]);
 
   useEffect(() => {
     const runtimeInfo = window.construct?.getRuntimeInfo?.();
@@ -1463,6 +1455,7 @@ export default function ConstructApp() {
       return [];
     }
 
+    const terminalVisible = bottomPanelOpen && activeBottomTabId === "terminal";
     const allTabs = [
       {
         id: "terminal",
@@ -1476,6 +1469,7 @@ export default function ConstructApp() {
             projectId={activeProject.id}
             cwd={activeProject.workspacePath}
             theme={theme}
+            visible={terminalVisible}
           />
         )
       },
@@ -1490,7 +1484,7 @@ export default function ConstructApp() {
     ];
 
     return allTabs.filter((tab) => openBottomTabIds.includes(tab.id));
-  }, [activeProject, openBottomTabIds, activeBottomTabId, theme]);
+  }, [activeProject, openBottomTabIds, activeBottomTabId, bottomPanelOpen, theme]);
 
   const headerTitle = settingsSurface
     ? settingsTitle(settingsSurface.itemId, settingsSurface.projectId, projects)
@@ -1510,10 +1504,13 @@ export default function ConstructApp() {
   }, []);
 
   const openBottomTerminal = useCallback((shellState: AppShellState) => {
-    setOpenBottomTabIds((current) => current.includes("terminal") ? current : [...current, "terminal"]);
-    setActiveBottomTabId("terminal");
+    if (shellState.isBottomPanelOpen && activeBottomTabId === "terminal") {
+      shellState.setBottomPanelOpen(false);
+      return;
+    }
+    ensureBottomTerminalOpen();
     shellState.setBottomPanelOpen(true);
-  }, []);
+  }, [activeBottomTabId, ensureBottomTerminalOpen]);
 
   const openRightWorkspacePanel = useCallback((shellState: AppShellState) => {
     if (!activeProject) return;
@@ -1671,7 +1668,7 @@ export default function ConstructApp() {
                           </AppShellHeaderToolButton>
                           <AppShellHeaderToolButton
                             data-active={state.isBottomPanelOpen ? "true" : "false"}
-                            onClick={state.toggleBottomPanel}
+                            onClick={() => openBottomTerminal(state)}
                             aria-label="Toggle terminal"
                             title="Terminal"
                           >
@@ -1752,7 +1749,7 @@ export default function ConstructApp() {
                         </AppShellHeaderToolButton>
                         <AppShellHeaderToolButton
                           data-active={state.isBottomPanelOpen ? "true" : "false"}
-                          onClick={state.toggleBottomPanel}
+                          onClick={() => openBottomTerminal(state)}
                           aria-label="Toggle terminal"
                         >
                           <HeaderBottomPanelIcon open={state.isBottomPanelOpen} />

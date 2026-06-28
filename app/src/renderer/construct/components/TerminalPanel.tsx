@@ -4,6 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Terminal as XTerm } from "@xterm/xterm";
 import {
   forwardRef,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useRef,
@@ -32,12 +33,16 @@ export const TerminalPanel = forwardRef<
     projectId: string;
     cwd: string;
     theme: "light" | "dark" | "system";
+    visible?: boolean;
   }
->(function TerminalPanel({ projectId, cwd, theme }, ref) {
+>(function TerminalPanel({ projectId, cwd, theme, visible = true }, ref) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<XTerm | null>(null);
+  const fitAddonRef = useRef<FitAddon | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const pendingCommandsRef = useRef<string[]>([]);
+  const cleanupRef = useRef<(() => void) | null>(null);
+  const startingRef = useRef(false);
   const [status, setStatus] = useState("starting");
 
   useImperativeHandle(ref, () => ({
@@ -51,10 +56,26 @@ export const TerminalPanel = forwardRef<
       }
 
       pendingCommandsRef.current.push(actualCommand);
+      startTerminalSession();
     }
   }));
 
-  useEffect(() => {
+  const disposeTerminal = useCallback(() => {
+    cleanupRef.current?.();
+    cleanupRef.current = null;
+    terminalRef.current = null;
+    fitAddonRef.current = null;
+    sessionIdRef.current = null;
+    startingRef.current = false;
+  }, []);
+
+  const startTerminalSession = useCallback(() => {
+    if (!containerRef.current || terminalRef.current || startingRef.current) {
+      return;
+    }
+
+    startingRef.current = true;
+    setStatus("starting");
     const isDark = resolveTerminalDark(theme);
     let terminal: XTerm;
     let fitAddon: FitAddon;
@@ -62,7 +83,7 @@ export const TerminalPanel = forwardRef<
       terminal = new XTerm({
         allowTransparency: true,
         customGlyphs: false,
-        cursorBlink: true,
+        cursorBlink: false,
         cursorStyle: "bar",
         cursorWidth: 1.4,
         convertEol: true,
@@ -72,22 +93,27 @@ export const TerminalPanel = forwardRef<
         letterSpacing: 0,
         lineHeight: 1.18,
         macOptionIsMeta: true,
-        scrollback: 50_000,
-        smoothScrollDuration: 45,
+        scrollback: 20_000,
+        smoothScrollDuration: 0,
         theme: terminalTheme(isDark)
       });
       fitAddon = new FitAddon();
       terminal.loadAddon(fitAddon);
       terminalRef.current = terminal;
+      fitAddonRef.current = fitAddon;
     } catch (error) {
       const message = error instanceof Error ? `${error.name}: ${error.message}\n${error.stack ?? ""}` : String(error);
       logStore.addLog("terminal", `Terminal initialization failed\n${message}`, "error");
       console.error("[terminal] initialization failed", error);
       setStatus("unavailable");
+      startingRef.current = false;
       return;
     }
 
     function fitAndResize() {
+      if (!visible || !containerRef.current?.offsetParent) {
+        return;
+      }
       try {
         fitAddon.fit();
       } catch {
@@ -100,39 +126,26 @@ export const TerminalPanel = forwardRef<
       }
     }
 
-    let lastResizeTime = 0;
-    let resizeTimeout: NodeJS.Timeout | null = null;
+    let resizeFrame: number | null = null;
 
     function throttledFitAndResize() {
-      const now = Date.now();
-      const throttleMs = 100;
-      
-      if (resizeTimeout) {
-        clearTimeout(resizeTimeout);
-        resizeTimeout = null;
-      }
-
-      if (now - lastResizeTime >= throttleMs) {
+      if (resizeFrame != null) return;
+      resizeFrame = window.requestAnimationFrame(() => {
+        resizeFrame = null;
         fitAndResize();
-        lastResizeTime = now;
-      } else {
-        resizeTimeout = setTimeout(() => {
-          fitAndResize();
-          lastResizeTime = Date.now();
-        }, throttleMs - (now - lastResizeTime));
-      }
+      });
     }
 
-    if (containerRef.current) {
-      try {
-        terminal.open(containerRef.current);
-        fitAndResize();
-      } catch (error) {
-        const message = error instanceof Error ? `${error.name}: ${error.message}\n${error.stack ?? ""}` : String(error);
-        logStore.addLog("terminal", `Terminal mount failed\n${message}`, "error");
-        console.error("[terminal] mount failed", error);
-        setStatus("unavailable");
-      }
+    try {
+      terminal.open(containerRef.current);
+      fitAndResize();
+    } catch (error) {
+      const message = error instanceof Error ? `${error.name}: ${error.message}\n${error.stack ?? ""}` : String(error);
+      logStore.addLog("terminal", `Terminal mount failed\n${message}`, "error");
+      console.error("[terminal] mount failed", error);
+      setStatus("unavailable");
+      startingRef.current = false;
+      return;
     }
 
     const resizeObserver = new ResizeObserver(() => {
@@ -165,6 +178,7 @@ export const TerminalPanel = forwardRef<
     void terminalCreate(projectId, { cols: terminal.cols, rows: terminal.rows })
       .then(({ sessionId }) => {
         sessionIdRef.current = sessionId;
+        startingRef.current = false;
         setStatus("running");
         void terminalResize(sessionId, terminal.cols, terminal.rows);
         for (const command of pendingCommandsRef.current.splice(0)) {
@@ -175,11 +189,12 @@ export const TerminalPanel = forwardRef<
         const message = error instanceof Error ? error.message : String(error);
         logStore.addLog("terminal", `PTY session failed: ${message}`, "error");
         setStatus("unavailable");
+        startingRef.current = false;
       });
 
-    return () => {
-      if (resizeTimeout) {
-        clearTimeout(resizeTimeout);
+    cleanupRef.current = () => {
+      if (resizeFrame != null) {
+        window.cancelAnimationFrame(resizeFrame);
       }
       const sessionId = sessionIdRef.current;
       if (sessionId) {
@@ -190,10 +205,16 @@ export const TerminalPanel = forwardRef<
       removeExitListener();
       resizeObserver.disconnect();
       terminal.dispose();
-      terminalRef.current = null;
-      sessionIdRef.current = null;
     };
-  }, [projectId]);
+  }, [projectId, theme, visible]);
+
+  useEffect(() => {
+    if (visible) {
+      startTerminalSession();
+    }
+  }, [startTerminalSession, visible]);
+
+  useEffect(() => disposeTerminal, [disposeTerminal, projectId]);
 
   useEffect(() => {
     const terminal = terminalRef.current;
@@ -203,6 +224,30 @@ export const TerminalPanel = forwardRef<
 
     terminal.options.theme = terminalTheme(resolveTerminalDark(theme));
   }, [theme]);
+
+  useEffect(() => {
+    if (!visible) {
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      const terminal = terminalRef.current;
+      const fitAddon = fitAddonRef.current;
+      const sessionId = sessionIdRef.current;
+      if (!terminal || !fitAddon) {
+        return;
+      }
+      try {
+        fitAddon.fit();
+        if (sessionId) {
+          void terminalResize(sessionId, terminal.cols, terminal.rows);
+        }
+      } catch {
+        // The terminal can be between layout passes while the panel opens.
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [visible]);
 
   return (
     <TerminalSurface cwd={`${cwd} · ${status}`}>
