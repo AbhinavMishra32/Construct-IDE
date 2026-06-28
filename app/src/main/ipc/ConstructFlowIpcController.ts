@@ -145,7 +145,7 @@ export class ConstructFlowIpcController {
         input,
         this.createPersistedSessionEventSink(event.sender, project)
       );
-      await this.queueProjectWrite(project, "run-agent-completed");
+      void this.queueProjectWrite(project, "run-agent-completed");
       return result;
     });
 

@@ -89,14 +89,65 @@ export const constructAiFeatures: ConstructAiFeature[] = [
   }
 ];
 
+export function isModelValidForProvider(modelId: string, provider: string): boolean {
+  const model = modelId.trim();
+  if (!model) return false;
+
+  if (provider === "openai") {
+    return !model.includes("/") && (
+      model.startsWith("gpt-") ||
+      model.startsWith("o1-") ||
+      model.startsWith("o3-") ||
+      model.startsWith("chatgpt-")
+    );
+  }
+
+  if (provider === "openrouter" || provider === "construct-cloud") {
+    return model.includes("/");
+  }
+
+  if (provider === "github-copilot") {
+    return model.startsWith("github");
+  }
+
+  if (provider === "opencode-zen") {
+    if (model.includes("/")) {
+      return model === "deepseek/deepseek-v4-flash";
+    }
+    return (
+      model.startsWith("gpt-") ||
+      model.startsWith("claude-") ||
+      model.startsWith("gemini-") ||
+      model.startsWith("grok-") ||
+      model.startsWith("deepseek-") ||
+      model.startsWith("glm-") ||
+      model.startsWith("minimax-") ||
+      model.startsWith("kimi-") ||
+      model.startsWith("qwen-") ||
+      model.startsWith("mimo-") ||
+      model.startsWith("nemotron-") ||
+      model.startsWith("north-") ||
+      model === "big-pickle"
+    );
+  }
+
+  return true;
+}
+
 export function modelForAiFeature(settings: StoredAiSettings, featureId: ConstructAiFeatureId): string {
   const feature = constructAiFeatures.find((item) => item.id === featureId);
   const saved = settings.featureModels?.[featureId]?.trim();
-  if (saved) return saved;
+  const provider = settings.source === "construct-cloud" ? "construct-cloud" : settings.provider;
+
+  if (saved && isModelValidForProvider(saved, provider)) {
+    return saved;
+  }
 
   const globalModel = globalModelForProvider(settings);
 
-  if (globalModel) return globalModel;
+  if (globalModel && isModelValidForProvider(globalModel, provider)) {
+    return globalModel;
+  }
 
   if (settings.source === "construct-cloud") {
     return feature?.defaultConstructCloudModel ?? settings.constructCloudModel;

@@ -3,3 +3,23 @@ packages:
   - website
   - private/*
   - opaline/packages/*
+
+allowBuilds:
+  '@homebridge/node-pty-prebuilt-multiarch': set this to true or false
+  better-sqlite3: true
+  electron: true
+  electron-winstaller: true
+  esbuild: true
+  msw: true
+  node-pty: true
+  protobufjs: true
+  sharp: true
+
+onlyBuiltDependencies:
+  - electron
+  - esbuild
+  - node-pty
+
+overrides:
+  "@types/react": "^19.2.16"
+  "@types/react-dom": "^19.2.3"

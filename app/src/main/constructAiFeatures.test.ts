@@ -82,6 +82,39 @@ test("feature models use provider defaults and saved per-feature overrides", () 
   );
 });
 
+test("modelForAiFeature ignores incompatible overrides and falls back", () => {
+  // Overrides from opencode-zen (deepseek-v4-flash-free) should be ignored for openai provider
+  assert.equal(
+    modelForAiFeature({
+      ...baseSettings,
+      provider: "openai",
+      featureModels: { verification: "deepseek-v4-flash-free" }
+    }, "verification"),
+    "gpt-5-mini"
+  );
+
+  // Overrides from opencode-zen should be ignored for construct-cloud source
+  assert.equal(
+    modelForAiFeature({
+      ...baseSettings,
+      source: "construct-cloud",
+      constructCloudModel: "deepseek/deepseek-v4-flash",
+      featureModels: { verification: "deepseek-v4-flash-free" }
+    }, "verification"),
+    "deepseek/deepseek-v4-flash"
+  );
+
+  // Overrides from opencode-zen are valid when provider is opencode-zen
+  assert.equal(
+    modelForAiFeature({
+      ...baseSettings,
+      provider: "opencode-zen",
+      featureModels: { verification: "deepseek-v4-flash-free" }
+    }, "verification"),
+    "deepseek-v4-flash-free"
+  );
+});
+
 test("settings view returns the active model for each feature", () => {
   const rows = featureSettingsView({
     ...baseSettings,

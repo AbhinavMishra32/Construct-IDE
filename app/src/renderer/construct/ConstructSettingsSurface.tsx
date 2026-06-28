@@ -1,6 +1,6 @@
 import { useDeferredValue, useEffect, useRef, useState } from "react";
 import { PanelRight } from "lucide-react";
-import { FileCode, Folder, GearSix, Notebook, TerminalWindow, Trash } from "@phosphor-icons/react";
+import { Brain, FileCode, Folder, GearSix, Notebook, TerminalWindow, Trash } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import {
   Alert,
@@ -590,25 +590,29 @@ export function ConstructSettingsSurface({
   }
 
   function updateAiProvider(provider: AiSettings["provider"]) {
-    setAiSettingsDraft((current) => ({ ...current, provider }));
+    setAiSettingsDraft((current) => ({
+      ...current,
+      provider,
+      featureModels: {}
+    }));
     setModelOptions([]);
     setModelsError(null);
     setAiFeatures((features) => features.map((feature) => {
-      const saved = aiSettings.featureModels[feature.id]?.trim();
-      if (saved) return feature;
       const model = defaultModelForFeature(provider, feature);
       return { ...feature, model };
     }));
   }
 
   function updateAiSource(source: AiSettings["source"]) {
-    setAiSettingsDraft((current) => ({ ...current, source }));
+    const provider = source === "construct-cloud" ? "construct-cloud" : aiSettingsRef.current.provider;
+    setAiSettingsDraft((current) => ({
+      ...current,
+      source,
+      featureModels: {}
+    }));
     setModelOptions([]);
     setModelsError(null);
-    const provider = source === "construct-cloud" ? "construct-cloud" : aiSettingsRef.current.provider;
     setAiFeatures((features) => features.map((feature) => {
-      const saved = aiSettingsRef.current.featureModels[feature.id]?.trim();
-      if (saved) return feature;
       return { ...feature, model: defaultModelForFeature(provider, feature) };
     }));
   }
@@ -802,6 +806,73 @@ export function ConstructSettingsSurface({
     } finally {
       setFlowMemorySaving(null);
     }
+  }
+
+  function renderAiSettingsSection() {
+    return (
+      <ConstructAiSettingsSection
+        settings={aiSettings}
+        features={aiFeatures}
+        modelOptions={modelOptions}
+        modelsBusy={modelsBusy}
+        aiBusy={aiBusy}
+        modelsError={modelsError}
+        onRuntimeChange={updateAiRuntime}
+        onSourceChange={updateAiSource}
+        onProviderChange={updateAiProvider}
+        onReasoningEffortChange={(reasoningEffort) => setAiSettingsDraft((current) => ({ ...current, reasoningEffort }))}
+        onCodeGhostEnabledChange={(codeGhostEnabled: boolean) => setAiSettingsDraft((current) => ({ ...current, codeGhostEnabled }))}
+        onConceptFirewallEnabledChange={(conceptFirewallEnabled: boolean) => setAiSettingsDraft((current) => ({ ...current, conceptFirewallEnabled }))}
+        onFlowSourceGroundingEnabledChange={(flowSourceGroundingEnabled: boolean) => setAiSettingsDraft((current) => ({ ...current, flowSourceGroundingEnabled }))}
+        onOpenAiApiKeyChange={(openAiApiKey: string) => setAiSettingsDraft((current) => ({ ...current, openAiApiKey }))}
+        onOpenAiBaseUrlChange={(openAiBaseUrl: string) => setAiSettingsDraft((current) => ({ ...current, openAiBaseUrl }))}
+        onOpenRouterApiKeyChange={(openRouterApiKey: string) => setAiSettingsDraft((current) => ({ ...current, openRouterApiKey }))}
+        onOpenRouterBaseUrlChange={(openRouterBaseUrl: string) => setAiSettingsDraft((current) => ({ ...current, openRouterBaseUrl }))}
+        onLiteLlmApiKeyChange={(liteLlmApiKey: string) => setAiSettingsDraft((current) => ({ ...current, liteLlmApiKey }))}
+        onLiteLlmBaseUrlChange={(liteLlmBaseUrl: string) => setAiSettingsDraft((current) => ({ ...current, liteLlmBaseUrl }))}
+        onOpencodeZenApiKeyChange={(opencodeZenApiKey: string) => setAiSettingsDraft((current) => ({ ...current, opencodeZenApiKey }))}
+        onOpencodeZenBaseUrlChange={(opencodeZenBaseUrl: string) => setAiSettingsDraft((current) => ({ ...current, opencodeZenBaseUrl }))}
+        onTavilyApiKeyChange={(tavilyApiKey: string) => setAiSettingsDraft((current) => ({ ...current, tavilyApiKey }))}
+        onConstructCloudBaseUrlChange={(constructCloudBaseUrl: string) => setAiSettingsDraft((current) => ({ ...current, constructCloudBaseUrl }))}
+        onConstructCloudAccessTokenChange={(constructCloudAccessToken: string) => setAiSettingsDraft((current) => ({ ...current, constructCloudAccessToken }))}
+        onOpenRouterModelChange={updateGlobalModel}
+        onOpenAiModelChange={updateGlobalModel}
+        onOpencodeZenModelChange={updateGlobalModel}
+        onGithubCopilotModelChange={updateGlobalModel}
+        onLiteLlmModelChange={updateGlobalModel}
+        onConstructCloudModelChange={updateGlobalModel}
+        onRefreshModels={(provider) => { void refreshModels(provider); }}
+        onFeatureModelChange={updateFeatureModel}
+        onSave={() => { void saveAiConfiguration(); }}
+        onImportOpencodeAuth={async (): Promise<string | null> => {
+          try {
+            const apiKey = await importOpencodeAuth();
+            if (apiKey) {
+              setAiSettingsDraft((current) => ({ ...current, opencodeZenApiKey: apiKey }));
+              toast.success("OpenCode Zen API key imported from opencode CLI");
+            } else {
+              toast.error("No OpenCode API key found in opencode auth file.");
+            }
+            return apiKey;
+          } catch {
+            toast.error("Failed to import OpenCode API key.");
+            return null;
+          }
+        }}
+        litellmState={litellmState}
+        onLitellmStart={handleLitellmStart}
+        onLitellmStop={handleLitellmStop}
+      />
+    );
+  }
+
+  if (activeItemId === "ai") {
+    return (
+      <SettingsPanel title="AI" subtitle="Provider routing, model defaults, feature overrides, and hosted compute.">
+        {renderAiSettingsSection()}
+        {error ? <Alert variant="destructive"><AlertTitle>AI settings error</AlertTitle><AlertDescription>{error}</AlertDescription></Alert> : null}
+      </SettingsPanel>
+    );
   }
 
   if (activeItemId === "appearance") {
@@ -1138,7 +1209,7 @@ export function ConstructSettingsSurface({
   }
 
   return (
-    <SettingsPanel title="Workspace" subtitle="Local project storage and app-wide Construct defaults.">
+    <SettingsPanel title="General" subtitle="Local project storage and app-wide Construct defaults.">
       <SettingsSection title="Storage">
         <SettingsCard>
           <SettingsRow title="Workspace root" description="New and imported projects are kept under this folder.">
@@ -1158,60 +1229,6 @@ export function ConstructSettingsSurface({
           </SettingsRow>
         </SettingsCard>
       </SettingsSection>
-      <ConstructAiSettingsSection
-        settings={aiSettings}
-        features={aiFeatures}
-        modelOptions={modelOptions}
-        modelsBusy={modelsBusy}
-        aiBusy={aiBusy}
-        modelsError={modelsError}
-        onRuntimeChange={updateAiRuntime}
-        onSourceChange={updateAiSource}
-        onProviderChange={updateAiProvider}
-        onReasoningEffortChange={(reasoningEffort) => setAiSettingsDraft((current) => ({ ...current, reasoningEffort }))}
-        onCodeGhostEnabledChange={(codeGhostEnabled: boolean) => setAiSettingsDraft((current) => ({ ...current, codeGhostEnabled }))}
-        onConceptFirewallEnabledChange={(conceptFirewallEnabled: boolean) => setAiSettingsDraft((current) => ({ ...current, conceptFirewallEnabled }))}
-        onFlowSourceGroundingEnabledChange={(flowSourceGroundingEnabled: boolean) => setAiSettingsDraft((current) => ({ ...current, flowSourceGroundingEnabled }))}
-        onOpenAiApiKeyChange={(openAiApiKey: string) => setAiSettingsDraft((current) => ({ ...current, openAiApiKey }))}
-        onOpenAiBaseUrlChange={(openAiBaseUrl: string) => setAiSettingsDraft((current) => ({ ...current, openAiBaseUrl }))}
-        onOpenRouterApiKeyChange={(openRouterApiKey: string) => setAiSettingsDraft((current) => ({ ...current, openRouterApiKey }))}
-        onOpenRouterBaseUrlChange={(openRouterBaseUrl: string) => setAiSettingsDraft((current) => ({ ...current, openRouterBaseUrl }))}
-        onLiteLlmApiKeyChange={(liteLlmApiKey: string) => setAiSettingsDraft((current) => ({ ...current, liteLlmApiKey }))}
-        onLiteLlmBaseUrlChange={(liteLlmBaseUrl: string) => setAiSettingsDraft((current) => ({ ...current, liteLlmBaseUrl }))}
-        onOpencodeZenApiKeyChange={(opencodeZenApiKey: string) => setAiSettingsDraft((current) => ({ ...current, opencodeZenApiKey }))}
-        onOpencodeZenBaseUrlChange={(opencodeZenBaseUrl: string) => setAiSettingsDraft((current) => ({ ...current, opencodeZenBaseUrl }))}
-        onTavilyApiKeyChange={(tavilyApiKey: string) => setAiSettingsDraft((current) => ({ ...current, tavilyApiKey }))}
-        onConstructCloudBaseUrlChange={(constructCloudBaseUrl: string) => setAiSettingsDraft((current) => ({ ...current, constructCloudBaseUrl }))}
-        onConstructCloudAccessTokenChange={(constructCloudAccessToken: string) => setAiSettingsDraft((current) => ({ ...current, constructCloudAccessToken }))}
-        onOpenRouterModelChange={updateGlobalModel}
-        onOpenAiModelChange={updateGlobalModel}
-        onOpencodeZenModelChange={updateGlobalModel}
-        onGithubCopilotModelChange={updateGlobalModel}
-        onLiteLlmModelChange={updateGlobalModel}
-        onConstructCloudModelChange={updateGlobalModel}
-        onRefreshModels={(provider) => { void refreshModels(provider); }}
-        onFeatureModelChange={updateFeatureModel}
-        onSave={() => { void saveAiConfiguration(); }}
-        onImportOpencodeAuth={async (): Promise<string | null> => {
-          try {
-            const apiKey = await importOpencodeAuth();
-            if (apiKey) {
-              setAiSettingsDraft((current) => ({ ...current, opencodeZenApiKey: apiKey }));
-              toast.success("OpenCode Zen API key imported from opencode CLI");
-            } else {
-              toast.error("No OpenCode API key found in opencode auth file.");
-            }
-            return apiKey;
-          } catch {
-            toast.error("Failed to import OpenCode API key.");
-            return null;
-          }
-        }}
-        litellmState={litellmState}
-        onLitellmStart={handleLitellmStart}
-        onLitellmStop={handleLitellmStop}
-      />
-
       <SettingsSection title="About">
         <SettingsCard>
           <SettingsRow
@@ -1234,7 +1251,8 @@ export function buildSettingsSections(projects: ProjectSummary[], projectId?: st
       id: "app",
       label: "Construct",
       items: [
-        { id: "workspace", label: "Workspace", icon: <Folder size={18} weight="duotone" /> },
+        { id: "workspace", label: "General", icon: <Folder size={18} weight="duotone" /> },
+        { id: "ai", label: "AI", icon: <Brain size={18} weight="duotone" /> },
         { id: "appearance", label: "Appearance", icon: <GearSix size={18} weight="duotone" /> },
         { id: "lsp-settings", label: "Language Server", icon: <Notebook size={18} weight="duotone" /> }
       ]
@@ -1319,6 +1337,12 @@ function mergeFlowMemoryEntries(
 }
 
 export function settingsTitle(itemId: string, projectId: string | undefined, projects: ProjectSummary[]) {
+  if (itemId === "workspace") {
+    return "General";
+  }
+  if (itemId === "ai") {
+    return "AI";
+  }
   if (itemId === "appearance") {
     return "Appearance";
   }

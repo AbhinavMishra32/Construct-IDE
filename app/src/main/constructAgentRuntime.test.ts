@@ -1,11 +1,32 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { AgentLogService } from "./ai/AgentLogService";
 import { finalizeDanglingToolRunEvents, iterationDetail } from "./constructAgentRuntimeStream";
 import type { ConstructAgentRunEvent } from "../shared/constructLearning";
 
+const runtimeSource = readFileSync(fileURLToPath(new URL("./constructAgentRuntime.ts", import.meta.url)), "utf8");
+const codeGhostSource = readFileSync(fileURLToPath(new URL("./constructCodeGhostAgent.ts", import.meta.url)), "utf8");
+const selectionExplainSource = readFileSync(fileURLToPath(new URL("./constructSelectionExplainAgent.ts", import.meta.url)), "utf8");
+const gatewaySource = readFileSync(fileURLToPath(new URL("./ai/AIGateway.ts", import.meta.url)), "utf8");
+
 describe("construct agent runtime stream lifecycle", () => {
+  it("routes provider-bound model calls through the local AI gateway", () => {
+    assert.match(gatewaySource, /chatCompletions/);
+    assert.match(gatewaySource, /\/chat\/completions/);
+    assert.match(gatewaySource, /\/responses/);
+    assert.match(runtimeSource, /aiGateway\.resolveModel/);
+    assert.match(runtimeSource, /aiGateway\.preflightModelEndpoint/);
+    assert.match(runtimeSource, /aiGateway\.traceProviderCall/);
+    assert.match(codeGhostSource, /aiGateway\.chatCompletions/);
+    assert.match(selectionExplainSource, /aiGateway\.openAiResponses/);
+    assert.doesNotMatch(codeGhostSource, /fetch\(/);
+    assert.doesNotMatch(selectionExplainSource, /fetch\(/);
+    assert.doesNotMatch(runtimeSource, /fetch\(/);
+  });
+
   it("finalizes partial practice-task tool calls without a tool result", () => {
     const providerToolCallId = "chatcmpl-tool-practice-task";
     const event: ConstructAgentRunEvent = {

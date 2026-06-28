@@ -1,5 +1,5 @@
 import { BrowserWindow } from "electron";
-import { resolveConstructLlmModel } from "./constructAgentModels";
+import { aiGateway } from "./ai/AIGateway";
 
 export type CodeGhostStreamInput = {
   lineContent: string;
@@ -14,20 +14,6 @@ export type CodeGhostTraceEntry = {
   level?: "info" | "warn" | "error" | "debug";
   payload?: unknown;
 };
-
-async function buildModelConfig() {
-  const model = await resolveConstructLlmModel("Code Ghost explanation", "code-explain");
-  if (!model.url) {
-    throw new Error(`No base URL is configured for ${model.providerId}.`);
-  }
-
-  return {
-    providerId: model.providerId,
-    modelId: model.modelId,
-    apiKey: model.apiKey,
-    baseUrl: model.url
-  };
-}
 
 function buildMessages(input: CodeGhostStreamInput) {
   const beforeLines = input.linesBefore.length > 0
@@ -69,34 +55,29 @@ export async function fetchCodeGhostExplanation(
   signal?: AbortSignal,
   onTrace?: (entry: CodeGhostTraceEntry) => void
 ): Promise<string> {
-  const config = await buildModelConfig();
-  onTrace?.({
-    title: "Resolved agent model",
-    level: "debug",
-    detail: `${config.providerId} | ${config.modelId} | ${config.baseUrl}`,
-    payload: {
-      provider: config.providerId,
-      model: config.modelId,
-      baseUrl: config.baseUrl
-    }
-  });
-  console.log("[code ghost] fetching from", config.baseUrl, "model:", config.modelId);
-
-  const response = await fetch(`${config.baseUrl}/chat/completions`, {
-    method: "POST",
-    headers: {
-      ...(config.apiKey ? { "Authorization": `Bearer ${config.apiKey}` } : {}),
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: config.modelId,
+  const { model, response } = await aiGateway.chatCompletions({
+    purpose: "Code Ghost explanation",
+    featureId: "code-explain",
+    body: {
       messages: buildMessages(input),
       stream: true,
       max_tokens: 120,
       temperature: 0.3
-    }),
-    signal
+    },
+    signal,
+    trace: onTrace
   });
+  onTrace?.({
+    title: "Resolved agent model",
+    level: "debug",
+    detail: `${model.providerId} | ${model.modelId} | ${model.url ?? "default"}`,
+    payload: {
+      provider: model.providerId,
+      model: model.modelId,
+      baseUrl: model.url
+    }
+  });
+  console.log("[code ghost] fetching through AI gateway", { provider: model.providerId, model: model.modelId });
 
   if (!response.ok) {
     const body = await response.text().catch(() => "");

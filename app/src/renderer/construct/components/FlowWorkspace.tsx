@@ -1514,6 +1514,8 @@ function FlowAgentPanel({
                     void onRunAgent("Continue from the skipped tracked question.", { questionResponse: response });
                   }}
                   pending={pending && !activeQuestion}
+                  onOpenFile={onOpenFile}
+                  onOpenConcept={onOpenConceptById}
                 />
               ) : (
                 <>
@@ -3027,7 +3029,7 @@ function buildFlowAgentParts({
     if (event.kind === "tool" && isQuestionTool(toolName)) {
       const questionToolCall = toolCallsById.get(event.toolCallId);
       if (questionToolCall?.response) {
-        parts.push(buildQuestionAnsweredPart(session.id, questionToolCall, theme));
+        parts.push(buildQuestionAnsweredPart(session.id, questionToolCall, theme, onOpenFile, onOpenConceptById));
       }
       continue;
     }
@@ -3278,7 +3280,9 @@ function buildFlowQuestionResponse(
 function buildQuestionAnsweredPart(
   sessionId: string,
   toolCall: ConstructFlowToolCallRecord,
-  theme: "light" | "dark" | "system"
+  theme: "light" | "dark" | "system",
+  onOpenFile?: (reference: InlineFileRef) => void,
+  onOpenConcept?: (conceptId: string) => void
 ): AgentSessionMessagePart {
   const payload = readAskUserPayload(toolCall.input, toolCall.outputPreview);
   const response = toolCall.response;
@@ -3303,7 +3307,9 @@ function buildQuestionAnsweredPart(
               {response?.skipped ? "Skipped" : "Answered"}
             </span>
           </div>
-          <p className="mt-1 max-w-[68ch] text-muted-foreground">{question}</p>
+          <div className="mt-1 max-w-[68ch] text-muted-foreground">
+            <MarkdownBlock content={question} theme={theme} onOpenFile={onOpenFile} onOpenConcept={onOpenConcept} />
+          </div>
           {answer ? (
             payload.answerMode === "code" && !response?.skipped ? (
               <div className="mt-1.5 overflow-hidden rounded-md border bg-muted/30 max-w-[68ch] w-full font-mono">
@@ -4848,7 +4854,9 @@ function FlowQuestionComposer({
   onAnswer,
   onSkip,
   pending,
-  chatMode
+  chatMode,
+  onOpenFile,
+  onOpenConcept
 }: {
   question: ActiveFlowQuestion;
   theme: "light" | "dark" | "system";
@@ -4858,6 +4866,8 @@ function FlowQuestionComposer({
   onSkip: () => void;
   pending: boolean;
   chatMode: FlowChatMode;
+  onOpenFile?: (reference: InlineFileRef) => void;
+  onOpenConcept?: (conceptId: string) => void;
 }) {
   const payload = question.payload;
   const [isDark, setIsDark] = useState(() => {
@@ -4895,7 +4905,6 @@ function FlowQuestionComposer({
   const answer = usingOther ? value.trim() : selected?.trim() ?? "";
   const canSubmit = !pending && Boolean(answer);
   const questionText = payload.question || "I need one more detail before continuing.";
-  const questionDetail = payload.reason?.trim();
 
   function submit() {
     if (!canSubmit) return;
@@ -4912,16 +4921,12 @@ function FlowQuestionComposer({
     ? "max-w-full text-[13px] font-medium leading-5 text-foreground"
     : "max-w-[58rem] text-[14px] font-medium leading-6 text-foreground";
 
-  const questionDetailClass = isPanel
-    ? "max-w-full whitespace-pre-wrap break-words text-[12px] leading-relaxed text-muted-foreground"
-    : "max-w-full whitespace-pre-wrap break-words text-[13px] leading-5 text-muted-foreground";
-
-  const choicesContainerClass = isPanel ? "mt-3 grid grid-cols-1 gap-1" : "mt-4 grid grid-cols-1 gap-1.5";
+  const choicesContainerClass = isPanel ? "mt-3 grid grid-cols-1 gap-1" : "mt-3.5 grid grid-cols-1 gap-1.5";
 
   const choiceButtonClass = (choice: string) => cn(
     isPanel
-      ? "group flex min-h-9 items-center gap-2 rounded-[12px] px-2 text-left text-[13px] leading-relaxed outline-none focus-visible:ring-2 focus-visible:ring-ring/35"
-      : "group flex min-h-10 items-center gap-2.5 rounded-[16px] px-2.5 text-left text-[14px] leading-5 outline-none focus-visible:ring-2 focus-visible:ring-ring/35",
+      ? "group flex min-h-8 items-center gap-2 rounded-[10px] px-2 py-1 text-left text-[13px] leading-relaxed outline-none focus-visible:ring-2 focus-visible:ring-ring/35"
+      : "group flex min-h-[2.25rem] items-center gap-2.5 rounded-[12px] px-2.5 py-1.5 text-left text-[14px] leading-5 outline-none focus-visible:ring-2 focus-visible:ring-ring/35",
     selected === choice
       ? "bg-muted/70 text-foreground"
       : "bg-transparent text-foreground hover:bg-muted/35"
@@ -4929,8 +4934,8 @@ function FlowQuestionComposer({
 
   const choiceCircleClass = (choice: string) => cn(
     isPanel
-      ? "inline-flex size-5 shrink-0 items-center justify-center rounded-full text-[12px] font-medium"
-      : "inline-flex size-6 shrink-0 items-center justify-center rounded-full text-[14px] font-medium",
+      ? "inline-flex size-5 shrink-0 items-center justify-center rounded-full text-[11px] font-medium"
+      : "inline-flex size-5.5 shrink-0 items-center justify-center rounded-full text-[12px] font-medium",
     selected === choice
       ? "bg-foreground text-background"
       : "border border-border bg-muted/30 text-muted-foreground"
@@ -4938,15 +4943,15 @@ function FlowQuestionComposer({
 
   const otherLabelClass = cn(
     isPanel
-      ? "mt-1.5 flex min-h-9 items-center gap-2 rounded-[12px] px-2 text-[13px] leading-relaxed"
-      : "mt-2 flex min-h-10 items-center gap-2.5 rounded-[16px] px-2.5 text-[14px] leading-5",
+      ? "mt-1.5 flex min-h-8 items-center gap-2 rounded-[10px] px-2 py-1 text-[13px] leading-relaxed"
+      : "mt-2 flex min-h-[2.25rem] items-center gap-2.5 rounded-[12px] px-2.5 py-1.5 text-[14px] leading-5",
     usingOther ? "bg-muted/55 text-foreground" : "text-muted-foreground hover:bg-muted/25"
   );
 
   const otherIconContainerClass = cn(
     isPanel
-      ? "inline-flex size-5.5 shrink-0 items-center justify-center rounded-full border"
-      : "inline-flex size-6 shrink-0 items-center justify-center rounded-full border",
+      ? "inline-flex size-5 shrink-0 items-center justify-center rounded-full border"
+      : "inline-flex size-5.5 shrink-0 items-center justify-center rounded-full border",
     usingOther ? "border-foreground/25 bg-background text-foreground" : "border-border bg-muted/25 text-muted-foreground"
   );
 
@@ -4957,14 +4962,9 @@ function FlowQuestionComposer({
   return (
     <div className={containerClass}>
       <div className={isPanel ? "space-y-2 px-0.5" : "space-y-3 px-1"}>
-        <p className={questionTextClass}>
-          {questionText}
-        </p>
-        {questionDetail ? (
-          <p className={questionDetailClass}>
-            {questionDetail}
-          </p>
-        ) : null}
+        <div className={questionTextClass}>
+          <MarkdownBlock content={questionText} theme={theme} onOpenFile={onOpenFile} onOpenConcept={onOpenConcept} />
+        </div>
       </div>
       {choices.length ? (
         <div className={choicesContainerClass}>
@@ -5071,7 +5071,7 @@ function FlowQuestionComposer({
         ) : (
           <label className={otherLabelClass}>
             <span className={otherIconContainerClass}>
-              <PencilIcon size={isPanel ? 12 : 14} strokeWidth={1.8} />
+              <PencilIcon size={isPanel ? 11 : 12} strokeWidth={1.8} />
             </span>
             <input
               className={otherInputClass}

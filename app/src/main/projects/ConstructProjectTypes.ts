@@ -5,6 +5,7 @@ import type {
   ConstructFlowSession,
   FlowMemoryFileName
 } from "../../shared/constructFlow";
+import type { ConstructConceptLanguage, ConstructConceptMasteryLevel } from "../../shared/constructLearning";
 
 export type ConstructProjectKind = "tape" | "flow";
 
@@ -105,6 +106,20 @@ export type StoredBlockAssistance = {
   verificationFailureCount: number;
 };
 
+export type ProjectLearnedConceptSummary = {
+  id: string;
+  title: string;
+  kind: string;
+  summary?: string;
+  language?: ConstructConceptLanguage;
+  technology?: string;
+  masteryLevel?: ConstructConceptMasteryLevel;
+  masteryText?: string;
+  lastReferencedAt?: string;
+  savedAt?: string;
+  lastModifiedAt?: string;
+};
+
 export type ProjectSummary = {
   kind: ConstructProjectKind;
   id: string;
@@ -130,6 +145,7 @@ export type ProjectSummary = {
   verificationFailCount?: number;
   authoringFixCount?: number;
   completedAt?: string | null;
+  learnedConcepts?: ProjectLearnedConceptSummary[];
   flowGoal?: string;
   flowMemoryFileCount?: number;
   flowSessionCount?: number;

@@ -22,16 +22,22 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          submodules: false
 
       - name: Checkout Opaline submodule
         run: |
           git submodule sync opaline
           git submodule update --init --depth=1 opaline
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
           node-version: 24
+          package-manager-cache: false
 
       - name: Release pipeline preflight
         run: node scripts/release/preflight.mjs
@@ -56,6 +62,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          submodules: false
 
       - name: Checkout Opaline submodule
         run: |
@@ -162,6 +170,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          submodules: false
 
       - name: Download package artifacts
         uses: actions/download-artifact@v5

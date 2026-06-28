@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const workspaceSource = readFileSync(fileURLToPath(new URL("./Workspace.tsx", import.meta.url)), "utf8");
 const flowWorkspaceSource = readFileSync(fileURLToPath(new URL("./FlowWorkspace.tsx", import.meta.url)), "utf8");
+const fileTreeSource = readFileSync(fileURLToPath(new URL("./FileTree.tsx", import.meta.url)), "utf8");
 const appSource = readFileSync(fileURLToPath(new URL("../ConstructApplication.tsx", import.meta.url)), "utf8");
 const slotPanelSource = readFileSync(fileURLToPath(new URL("../../../../../opaline/packages/ui/src/slot-panel/SlotPanel.tsx", import.meta.url)), "utf8");
 const projectIpcSource = readFileSync(fileURLToPath(new URL("../../../main/ipc/ConstructProjectIpcController.ts", import.meta.url)), "utf8");
@@ -57,9 +58,12 @@ describe("Workspace render stability", () => {
     assert.match(source, /openGeneratedLiveStep\(firstStepId\)/);
   });
 
-  it("refreshes the active Flow project before opening the project map", () => {
+  it("refreshes the active Flow project map without a broad project list refresh", () => {
     assert.match(appSource, /async function refreshActiveProjectSnapshot\(projectId: string\)/);
-    assert.match(appSource, /openSavedProject\(projectId\),\s*bootstrapProjects\(\)/s);
+    assert.match(appSource, /const project = await openSavedProject\(projectId\);/);
+    assert.match(appSource, /setActiveProject\(\(current\) => current\?\.id === projectId \? project : current\);/);
+    assert.match(appSource, /setProjects\(\(current\) => upsertProjectSummary\(current, projectSummaryFromRecord\(project\)\)\);/);
+    assert.doesNotMatch(appSource, /openSavedProject\(projectId\),\s*bootstrapProjects\(\)/s);
     assert.match(appSource, /const refreshed = await refreshActiveProjectSnapshot\(activeProject\.id\);/);
     assert.match(appSource, /if \(!refreshed\) return;\s*state\.setRightPanelOpen\(true\);/);
   });
@@ -69,10 +73,15 @@ describe("Workspace render stability", () => {
     assert.match(appSource, /const \[sidebarOpen, setSidebarOpen\] = useState\(true\);/);
     assert.match(appSource, /const pendingImmersiveFlowProjectIdsRef = useRef<Set<string>>\(new Set\(\)\);/);
     assert.match(appSource, /pendingImmersiveFlowProjectIdsRef\.current\.delete\(nextProject\.id\)/);
-    assert.match(appSource, /setInspectorExpanded\(shouldStartImmersive\);/);
+    assert.match(appSource, /const PROJECT_SHELL_UI_STATE_KEY = "project\.shell";/);
+    assert.match(appSource, /const savedProjectShellState = shouldStartImmersive[\s\S]*await readProjectShellUiState\(nextProject\.id\);/);
+    assert.match(appSource, /applyProjectShellUiState\(savedProjectShellState \?\? defaultProjectShellUiState\(\{/);
     assert.match(appSource, /const handleFlowLayoutRequest = useCallback\(\(request: FlowLayoutRequest\)/);
     assert.match(appSource, /if \(request\.kind === "maximized-chat"\)[\s\S]*setInspectorExpanded\(true\);[\s\S]*setSidebarOpen\(request\.reason !== "project-created"\);/);
     assert.match(appSource, /setInspectorExpanded\(false\);\s*setSidebarOpen\(true\);/);
+    assert.match(appSource, /const expandFlowChat = useCallback\(\(shellState: AppShellState\)/);
+    assert.match(appSource, /window\.requestAnimationFrame\(\(\) => \{\s*window\.requestAnimationFrame/s);
+    assert.match(appSource, /expandFlowChat\(state\);/);
     assert.match(appSource, /chatMode=\{rightPanelOpen && inspectorExpanded && flowPanelView === "chat" \? "maximized" : "panel"\}/);
     assert.match(appSource, /onLayoutRequest=\{handleFlowLayoutRequest\}/);
     assert.match(appSource, /if \(isFlowProjectRecord\(project\)\) \{\s*pendingImmersiveFlowProjectIdsRef\.current\.add\(project\.id\);\s*handleFlowLayoutRequest\(\{ kind: "maximized-chat", reason: "project-created" \}\);/);
@@ -82,6 +91,36 @@ describe("Workspace render stability", () => {
     assert.match(flowWorkspaceSource, /requestWorkbenchLayout\("task-created"\)/);
     assert.match(flowWorkspaceSource, /construct-flow-chat-concept-dock/);
     assert.match(flowWorkspaceSource, /chatOwnsConceptCard = activePanelView === "chat" && chatMode === "maximized"/);
+  });
+
+  it("starts on the dashboard while restoring project layout only when a project opens", () => {
+    assert.doesNotMatch(appSource, /activeProjectId/);
+    assert.doesNotMatch(appSource, /await openProject\(shellState\.activeProjectId/);
+    assert.match(appSource, /showDashboardSurface\(\{ recordHistory: false \}\);/);
+    assert.match(appSource, /scope: "workspace",\s*projectId,\s*value: state/s);
+    assert.match(appSource, /key: PROJECT_SHELL_UI_STATE_KEY,\s*scope: "workspace",\s*projectId,\s*fallback: null/s);
+  });
+
+  it("keeps home prompt creation and shell history project-aware", () => {
+    assert.match(appSource, /async function createProjectFromHomePrompt\(prompt: string\)/);
+    assert.match(appSource, /researchFirst: true/);
+    assert.match(appSource, /onCreateProjectFromPrompt=\{createProjectFromHomePrompt\}/);
+    assert.doesNotMatch(appSource, /NewProjectDialog/);
+    assert.match(appSource, /const originProjectId = projectId \?\? activeProject\?\.id/);
+    assert.match(appSource, /payload: \{ projectId: originProjectId, settingsItemId: itemId \}/);
+    assert.match(appSource, /payload: \{ projectId: originProjectId \}/);
+    assert.match(appSource, /setSettingsSurface\(null\);\s*showDashboardSurface\(\{ recordHistory: false \}\);/s);
+    assert.match(appSource, /void openProject\(projectId, \{ recordHistory: false \}\)\.then\(\(\) => \{/);
+  });
+
+  it("persists expanded project sidebar folders", () => {
+    assert.match(fileTreeSource, /expandedPaths: persistedExpandedPaths/);
+    assert.match(fileTreeSource, /onExpandedPathsChange\?: \(paths: string\[\]\) => void/);
+    assert.match(fileTreeSource, /onExpandedPathsChange\?\.\(expandedPathList\(next\)\)/);
+    assert.match(appSource, /const handleFileTreeExpandedChange = useCallback/);
+    assert.match(appSource, /patch: \{ fileTreeExpanded: normalized \}/);
+    assert.match(appSource, /expandedPaths=\{activeProject\.fileTreeExpanded\}/);
+    assert.match(appSource, /onExpandedPathsChange=\{handleFileTreeExpandedChange\}/);
   });
 
   it("keeps Flow Memory writes from collapsing immersive chat", () => {

@@ -20,7 +20,7 @@ import {
   BookOpen,
   ArrowLeftIcon,
   ArrowRightIcon,
-  CheckCircle2Icon,
+  ChevronRightIcon,
   ChevronDownIcon,
   CloudIcon,
   CopyIcon,
@@ -36,7 +36,6 @@ import {
   MessageCircleOff as MessageCircleOffIcon,
   Maximize2 as Maximize2Icon,
   PanelRightIcon,
-  Plus as PlusIcon,
   SearchIcon,
   SettingsIcon,
   SidebarIcon,
@@ -70,17 +69,19 @@ import {
 } from "@opaline/ui";
 import type { SettingsNavItem, ShellHistoryEntry, SidebarNavItem } from "@opaline/ui";
 import type { AppShellState } from "@opaline/ui";
+import { cn } from "../lib/utils";
 
 import { Dashboard } from "./components/Dashboard";
 import { DashboardSidebar } from "./components/DashboardSidebar";
+import { ProjectsSurface } from "./components/ProjectsSurface";
 import { FileTree } from "./components/FileTree";
-import { NewProjectDialog } from "./components/NewProjectDialog";
 import { TerminalPanel, type TerminalPanelHandle } from "./components/TerminalPanel";
 import { Workspace } from "./components/Workspace";
 import { FlowWorkspace, type FlowLayoutRequest } from "./components/FlowWorkspace";
 import { LogsPanel } from "./components/LogsPanel";
 import { KnowledgeBaseSurface } from "./components/KnowledgeBaseSurface";
 import { SelectionExplanationController } from "./components/SelectionExplanationController";
+import { defaultFlowProjectSettings, inferFlowTitle } from "./components/project-create/flowProjectDefaults";
 import { Tabs, TabsList, TabsTrigger } from "../components/ui/tabs";
 import {
   bootstrapProjects,
@@ -88,19 +89,21 @@ import {
 } from "./lib/projectStore";
 import {
   setThemeSource,
+  createFlowProject,
   getUiState,
   setUiState,
   getSettings,
   updateAiSettings,
   updateProject,
-  closeProject
+  closeProject,
+  flushStorage
 } from "./lib/bridge";
 import type { AnyProjectRecord, FlowProjectRecord, ProjectRecord, ProjectSummary, WorkspaceTreeNode } from "./types";
 import { isFlowProjectRecord } from "./types";
 import { currentBlock, currentBlockNumber, totalBlocks, nextPosition } from "./lib/runtime";
 
 type ConstructHistoryEntry = ShellHistoryEntry<
-  "bottom-tab" | "dashboard" | "file" | "knowledge-base" | "learner-context" | "project" | "project-settings" | "right-slot" | "settings",
+  "bottom-tab" | "dashboard" | "file" | "knowledge-base" | "learner-context" | "project" | "project-settings" | "projects" | "right-slot" | "settings",
   {
     filePath?: string;
     projectId?: string;
@@ -115,15 +118,17 @@ type SettingsSurfaceState = {
   projectId?: string;
 };
 
-type ConstructShellUiState = {
+type ConstructAppUiState = {
   version: 1;
-  activeProjectId: string | null;
+  theme: ThemeMode;
+  showStatusBar: boolean;
+};
+
+type ConstructProjectShellUiState = {
+  version: 1;
   sidebarOpen: boolean;
   rightPanelOpen: boolean;
   inspectorExpanded: boolean;
-  knowledgeBaseOpen: boolean;
-  learningContextOpen: boolean;
-  settingsSurface: SettingsSurfaceState | null;
   flowPanelView: "chat" | "project";
   activeRightSlotId: string;
   activeBottomTabId: string | null;
@@ -132,11 +137,10 @@ type ConstructShellUiState = {
   bottomPanelExpanded: boolean;
   sidebarWidth: number;
   inspectorWidth: number;
-  theme: ThemeMode;
-  showStatusBar: boolean;
 };
 
 const SHELL_UI_STATE_KEY = "shell";
+const PROJECT_SHELL_UI_STATE_KEY = "project.shell";
 
 function rightSlotTitle(slotId: string): string {
   if (slotId === "steps") return "Steps";
@@ -145,18 +149,24 @@ function rightSlotTitle(slotId: string): string {
   return "Guide";
 }
 
-function normalizeShellUiState(value: unknown): ConstructShellUiState | null {
+function normalizeAppUiState(value: unknown): ConstructAppUiState | null {
   if (!value || typeof value !== "object") return null;
-  const input = value as Partial<ConstructShellUiState>;
+  const input = value as Partial<ConstructAppUiState>;
   return {
     version: 1,
-    activeProjectId: typeof input.activeProjectId === "string" ? input.activeProjectId : null,
+    theme: input.theme === "light" || input.theme === "dark" || input.theme === "system" ? input.theme : getInitialTheme(),
+    showStatusBar: input.showStatusBar !== false
+  };
+}
+
+function normalizeProjectShellUiState(value: unknown): ConstructProjectShellUiState | null {
+  if (!value || typeof value !== "object") return null;
+  const input = value as Partial<ConstructProjectShellUiState>;
+  return {
+    version: 1,
     sidebarOpen: typeof input.sidebarOpen === "boolean" ? input.sidebarOpen : true,
     rightPanelOpen: typeof input.rightPanelOpen === "boolean" ? input.rightPanelOpen : false,
     inspectorExpanded: typeof input.inspectorExpanded === "boolean" ? input.inspectorExpanded : false,
-    knowledgeBaseOpen: typeof input.knowledgeBaseOpen === "boolean" ? input.knowledgeBaseOpen : false,
-    learningContextOpen: typeof input.learningContextOpen === "boolean" ? input.learningContextOpen : false,
-    settingsSurface: normalizeSettingsSurfaceState(input.settingsSurface),
     flowPanelView: input.flowPanelView === "project" ? "project" : "chat",
     activeRightSlotId: typeof input.activeRightSlotId === "string" && input.activeRightSlotId.trim() ? input.activeRightSlotId : "guide",
     activeBottomTabId: typeof input.activeBottomTabId === "string" ? input.activeBottomTabId : null,
@@ -166,19 +176,7 @@ function normalizeShellUiState(value: unknown): ConstructShellUiState | null {
     bottomPanelOpen: typeof input.bottomPanelOpen === "boolean" ? input.bottomPanelOpen : false,
     bottomPanelExpanded: typeof input.bottomPanelExpanded === "boolean" ? input.bottomPanelExpanded : false,
     sidebarWidth: normalizePanelWidth(input.sidebarWidth, 300, 240, 520),
-    inspectorWidth: normalizePanelWidth(input.inspectorWidth, 320, 260, 760),
-    theme: input.theme === "light" || input.theme === "dark" || input.theme === "system" ? input.theme : getInitialTheme(),
-    showStatusBar: input.showStatusBar !== false
-  };
-}
-
-function normalizeSettingsSurfaceState(value: unknown): SettingsSurfaceState | null {
-  if (!value || typeof value !== "object") return null;
-  const input = value as Partial<SettingsSurfaceState>;
-  if (typeof input.itemId !== "string" || !input.itemId.trim()) return null;
-  return {
-    itemId: input.itemId,
-    projectId: typeof input.projectId === "string" ? input.projectId : undefined
+    inspectorWidth: normalizePanelWidth(input.inspectorWidth, 320, 260, 760)
   };
 }
 
@@ -430,7 +428,7 @@ function AuthGate({ children, aiSettings }: { children: React.ReactNode; aiSetti
 
 export default function ConstructApp() {
   const history = useShellHistory<ConstructHistoryEntry>([
-    { id: "dashboard", title: "Projects", type: "dashboard" }
+    { id: "dashboard", title: "Home", type: "dashboard" }
   ]);
 
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
@@ -444,7 +442,7 @@ export default function ConstructApp() {
   const [inspectorExpanded, setInspectorExpanded] = useState(false);
   const [knowledgeBaseOpen, setKnowledgeBaseOpen] = useState(false);
   const [learningContextOpen, setLearningContextOpen] = useState(false);
-  const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
+  const [projectsViewOpen, setProjectsViewOpen] = useState(false);
   const [accountDialogOpen, setAccountDialogOpen] = useState(false);
   const [settingsSurface, setSettingsSurface] = useState<SettingsSurfaceState | null>(null);
   const [settingsQuery, setSettingsQuery] = useState("");
@@ -463,8 +461,40 @@ export default function ConstructApp() {
   const terminalRef = useRef<TerminalPanelHandle | null>(null);
   const applyingHistoryRef = useRef(false);
   const restoringUiStateRef = useRef(false);
+  const restoringProjectUiStateRef = useRef(false);
   const pendingImmersiveFlowProjectIdsRef = useRef<Set<string>>(new Set());
   const [aiSettings, setAiSettings] = useState<AiSettings | null>(null);
+  const projectShellUiState = useMemo<ConstructProjectShellUiState>(() => ({
+    version: 1,
+    sidebarOpen,
+    rightPanelOpen,
+    inspectorExpanded,
+    flowPanelView,
+    activeRightSlotId,
+    activeBottomTabId,
+    openBottomTabIds,
+    bottomPanelOpen,
+    bottomPanelExpanded,
+    sidebarWidth,
+    inspectorWidth
+  }), [
+    activeBottomTabId,
+    activeRightSlotId,
+    bottomPanelExpanded,
+    bottomPanelOpen,
+    flowPanelView,
+    inspectorExpanded,
+    inspectorWidth,
+    openBottomTabIds,
+    rightPanelOpen,
+    sidebarOpen,
+    sidebarWidth
+  ]);
+  const projectShellUiStateRef = useRef(projectShellUiState);
+
+  useEffect(() => {
+    projectShellUiStateRef.current = projectShellUiState;
+  }, [projectShellUiState]);
 
   useEffect(() => {
     const initial = apiTracker.getSettings();
@@ -679,14 +709,19 @@ export default function ConstructApp() {
     setActiveProject(project);
   }, []);
 
-  const runCommand = useCallback((command: string, cwd: string) => {
-    setOpenBottomTabIds((current) => current.includes("terminal") ? current : [...current, "terminal"]);
+  const ensureBottomTerminalOpen = useCallback(() => {
+    setOpenBottomTabIds((current) => current.includes("terminal") ? current : ["terminal", ...current]);
     setActiveBottomTabId("terminal");
+    setBottomPanelOpen(true);
+  }, []);
+
+  const runCommand = useCallback((command: string, cwd: string) => {
+    ensureBottomTerminalOpen();
     if (!command.trim()) {
       return;
     }
     window.setTimeout(() => terminalRef.current?.runCommand(command, cwd), 0);
-  }, []);
+  }, [ensureBottomTerminalOpen]);
 
   const handleWorkspaceTreeChange = useCallback((
     tree: WorkspaceTreeNode[],
@@ -714,38 +749,91 @@ export default function ConstructApp() {
     });
   }, []);
 
-  const handleBack = useCallback(() => {
+  const handleFileTreeExpandedChange = useCallback((expandedPaths: string[]) => {
+    if (!activeProject) {
+      return;
+    }
+    const normalized = [...new Set(expandedPaths.filter((path) => path.trim()))].sort();
+    const projectId = activeProject.id;
+    setActiveProject((current) => current?.id === projectId
+      ? ({ ...current, fileTreeExpanded: normalized } as AnyProjectRecord)
+      : current);
+    void updateProject({
+      id: projectId,
+      patch: { fileTreeExpanded: normalized }
+    }).then((project) => {
+      setActiveProject((current) => current?.id === projectId ? project : current);
+    }).catch(() => {
+      // Folder expansion is a convenience state; keep the local UI responsive if persistence fails.
+    });
+  }, [activeProject?.id]);
+
+  function showDashboardSurface(options: {
+    persistCurrentProject?: boolean;
+    recordHistory?: boolean;
+  } = {}) {
+    if (options.persistCurrentProject !== false && activeProject && uiStateHydrated) {
+      void persistProjectShellUiState(activeProject.id, projectShellUiStateRef.current, { flush: true }).catch(() => {
+        // Best-effort layout checkpoint before leaving a project.
+      });
+    }
     setSettingsSurface(null);
     setKnowledgeBaseOpen(false);
     setLearningContextOpen(false);
+    setProjectsViewOpen(false);
     setRightPanel(null);
-    setActiveProject(null);
+    setRightPanelOpen(false);
+    setInspectorExpanded(false);
+    setFlowPanelView("chat");
+    setActiveRightSlotId("guide");
+    setActiveBottomTabId(null);
+    setOpenBottomTabIds([]);
     setBottomPanelOpen(false);
+    setBottomPanelExpanded(false);
+    setSidebarOpen(true);
+    setActiveProject(null);
     setTreeData({ tree: [], activePath: null, relevantPath: null, openFile: null, createFile: null, deleteFile: null, renameFile: null, createFolder: null, duplicateFile: null, refreshTree: null });
-    pushHistory({ id: "dashboard", title: "Projects", type: "dashboard" });
+    if (options.recordHistory !== false) {
+      pushHistory({ id: "dashboard", title: "Home", type: "dashboard" });
+    }
+    void Promise.resolve().then(() => closeProject()).catch(() => {});
+  }
+
+  const handleBack = useCallback(() => {
+    showDashboardSurface({ persistCurrentProject: true, recordHistory: true });
     void refresh();
-    void closeProject().catch(() => {});
-  }, [pushHistory]);
+  }, [activeProject?.id, projectShellUiState, pushHistory, uiStateHydrated]);
 
   const openSettingsSurface = useCallback((itemId: string, projectId?: string) => {
+    const originProjectId = projectId ?? activeProject?.id;
+    const isProjectItem = itemId.startsWith("project-");
+    if (isProjectItem && !originProjectId) {
+      return;
+    }
     setKnowledgeBaseOpen(false);
     setLearningContextOpen(false);
-    setSettingsSurface({ itemId, projectId });
+    setSettingsSurface({ itemId, projectId: originProjectId });
     setSettingsQuery("");
     pushHistory({
-      id: projectId ? `project-settings:${projectId}:${itemId}` : `settings:${itemId}`,
-      payload: { projectId, settingsItemId: itemId },
-      title: projectId ? "Project settings" : "Settings",
-      type: projectId ? "project-settings" : "settings"
+      id: originProjectId ? `${isProjectItem ? "project-settings" : "settings"}:${originProjectId}:${itemId}` : `settings:${itemId}`,
+      payload: { projectId: originProjectId, settingsItemId: itemId },
+      title: isProjectItem ? "Project settings" : "Settings",
+      type: isProjectItem ? "project-settings" : "settings"
     });
-  }, [pushHistory]);
+  }, [activeProject?.id, pushHistory]);
 
   const openKnowledgeBase = useCallback(() => {
+    const originProjectId = activeProject?.id;
     setSettingsSurface(null);
     setLearningContextOpen(false);
     setKnowledgeBaseOpen(true);
-    pushHistory({ id: "knowledge-base", title: "Concepts", type: "knowledge-base" });
-  }, [pushHistory]);
+    pushHistory({
+      id: originProjectId ? `knowledge-base:${originProjectId}` : "knowledge-base",
+      payload: { projectId: originProjectId },
+      title: "Concepts",
+      type: "knowledge-base"
+    });
+  }, [activeProject?.id, pushHistory]);
 
   const openLearningContext = useCallback(() => {
     setSettingsSurface(null);
@@ -754,6 +842,20 @@ export default function ConstructApp() {
     setLearningContextOpen(true);
     pushHistory({ id: "learner-context", title: "Context", type: "learner-context" });
   }, [pushHistory]);
+
+  const openProjectsView = useCallback(() => {
+    const originProjectId = activeProject?.id;
+    setSettingsSurface(null);
+    setKnowledgeBaseOpen(false);
+    setLearningContextOpen(false);
+    setProjectsViewOpen(true);
+    pushHistory({
+      id: originProjectId ? `projects:${originProjectId}` : "projects",
+      payload: { projectId: originProjectId },
+      title: "Projects",
+      type: "projects"
+    });
+  }, [activeProject?.id, pushHistory]);
 
   const handleRightSlotChange = useCallback((slotId: string) => {
     if (!activeProject) {
@@ -799,23 +901,8 @@ export default function ConstructApp() {
       return;
     }
 
-    const state: ConstructShellUiState = {
+    const state: ConstructAppUiState = {
       version: 1,
-      activeProjectId: activeProject?.id ?? null,
-      sidebarOpen,
-      rightPanelOpen,
-      inspectorExpanded,
-      knowledgeBaseOpen,
-      learningContextOpen,
-      settingsSurface,
-      flowPanelView,
-      activeRightSlotId,
-      activeBottomTabId,
-      openBottomTabIds,
-      bottomPanelOpen,
-      bottomPanelExpanded,
-      sidebarWidth,
-      inspectorWidth,
       theme,
       showStatusBar
     };
@@ -826,26 +913,29 @@ export default function ConstructApp() {
     }, 1_500);
 
     return () => window.clearTimeout(timeout);
-  }, [
-    activeBottomTabId,
-    activeProject?.id,
-    activeRightSlotId,
-    bottomPanelExpanded,
-    bottomPanelOpen,
-    flowPanelView,
-    inspectorExpanded,
-    inspectorWidth,
-    knowledgeBaseOpen,
-    learningContextOpen,
-    openBottomTabIds,
-    rightPanelOpen,
-    settingsSurface,
-    showStatusBar,
-    sidebarOpen,
-    sidebarWidth,
-    theme,
-    uiStateHydrated
-  ]);
+  }, [showStatusBar, theme, uiStateHydrated]);
+
+  useEffect(() => {
+    if (!uiStateHydrated || restoringUiStateRef.current || restoringProjectUiStateRef.current || !activeProject) {
+      return;
+    }
+
+    void persistProjectShellUiState(activeProject.id, projectShellUiState).catch(() => {
+      // Browser-only smoke checks run without Electron storage.
+    });
+  }, [activeProject?.id, projectShellUiState, uiStateHydrated]);
+
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      const projectId = activeProject?.id;
+      if (!projectId) {
+        return;
+      }
+      void persistProjectShellUiState(projectId, projectShellUiStateRef.current).catch(() => {});
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [activeProject?.id]);
 
   useEffect(() => {
     const mql = window.matchMedia("(prefers-color-scheme: dark)");
@@ -860,11 +950,9 @@ export default function ConstructApp() {
   }, [theme]);
 
   useEffect(() => {
-    if (activeProject) {
-      setOpenBottomTabIds((current) => current.length > 0 ? current : ["terminal", "logs"]);
-      setActiveBottomTabId((current) => current ?? "terminal");
-    } else {
+    if (!activeProject) {
       setOpenBottomTabIds([]);
+      setActiveBottomTabId(null);
       setBottomPanelOpen(false);
     }
   }, [activeProject?.id]);
@@ -881,24 +969,11 @@ export default function ConstructApp() {
       // Toggle Terminal: Ctrl+` or Cmd+`
       if ((e.ctrlKey || e.metaKey) && e.key === "`") {
         e.preventDefault();
-        setOpenBottomTabIds((prev) => {
-          const isTerminalActive = activeBottomTabId === "terminal";
-          if (prev.includes("terminal") && isTerminalActive) {
-            const next = prev.filter((id) => id !== "terminal");
-            if (next.length > 0) {
-              setActiveBottomTabId(next[next.length - 1]);
-            } else {
-              setActiveBottomTabId(null as any);
-            }
-            return next;
-          } else {
-            setActiveBottomTabId("terminal");
-            if (!prev.includes("terminal")) {
-              return [...prev, "terminal"];
-            }
-            return prev;
-          }
-        });
+        if (bottomPanelOpen && activeBottomTabId === "terminal") {
+          setBottomPanelOpen(false);
+        } else {
+          ensureBottomTerminalOpen();
+        }
       }
 
       // Toggle Output: Ctrl+Shift+U or Cmd+Shift+U
@@ -927,7 +1002,7 @@ export default function ConstructApp() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [openBottomTabIds, activeBottomTabId]);
+  }, [activeBottomTabId, bottomPanelOpen, ensureBottomTerminalOpen]);
 
   useEffect(() => {
     const runtimeInfo = window.construct?.getRuntimeInfo?.();
@@ -961,30 +1036,29 @@ export default function ConstructApp() {
     restoringUiStateRef.current = true;
     try {
       const [saved] = await Promise.all([
-        getUiState<ConstructShellUiState | null>({ key: SHELL_UI_STATE_KEY, fallback: null }).catch(() => null),
+        getUiState<ConstructAppUiState | null>({ key: SHELL_UI_STATE_KEY, fallback: null }).catch(() => null),
         refresh()
       ]);
-      const shellState = normalizeShellUiState(saved);
-      if (shellState) {
-        applyShellUiState(shellState);
-        if (shellState.activeProjectId) {
-          await openProject(shellState.activeProjectId, { recordHistory: true });
-          applyShellUiState(shellState);
-        }
+      const appState = normalizeAppUiState(saved);
+      if (appState) {
+        applyAppUiState(appState);
       }
+      showDashboardSurface({ recordHistory: false });
     } finally {
       restoringUiStateRef.current = false;
       setUiStateHydrated(true);
     }
   }
 
-  function applyShellUiState(state: ConstructShellUiState): void {
+  function applyAppUiState(state: ConstructAppUiState): void {
+    setTheme(state.theme);
+    setShowStatusBar(state.showStatusBar);
+  }
+
+  function applyProjectShellUiState(state: ConstructProjectShellUiState): void {
     setSidebarOpen(state.sidebarOpen);
     setRightPanelOpen(state.rightPanelOpen);
     setInspectorExpanded(state.inspectorExpanded);
-    setKnowledgeBaseOpen(state.knowledgeBaseOpen);
-    setLearningContextOpen(state.learningContextOpen);
-    setSettingsSurface(state.settingsSurface);
     setFlowPanelView(state.flowPanelView);
     setActiveRightSlotId(state.activeRightSlotId);
     setActiveBottomTabId(state.activeBottomTabId);
@@ -993,8 +1067,53 @@ export default function ConstructApp() {
     setBottomPanelExpanded(state.bottomPanelExpanded);
     setSidebarWidth(state.sidebarWidth);
     setInspectorWidth(state.inspectorWidth);
-    setTheme(state.theme);
-    setShowStatusBar(state.showStatusBar);
+  }
+
+  function defaultProjectShellUiState(input: {
+    flowProject: boolean;
+    immersiveFlow?: boolean;
+  }): ConstructProjectShellUiState {
+    const immersiveFlow = input.flowProject && input.immersiveFlow === true;
+    return {
+      version: 1,
+      sidebarOpen: !immersiveFlow,
+      rightPanelOpen: true,
+      inspectorExpanded: immersiveFlow,
+      flowPanelView: "chat",
+      activeRightSlotId: "guide",
+      activeBottomTabId: "terminal",
+      openBottomTabIds: ["terminal", "logs"],
+      bottomPanelOpen: true,
+      bottomPanelExpanded: false,
+      sidebarWidth: 300,
+      inspectorWidth: 320
+    };
+  }
+
+  async function persistProjectShellUiState(
+    projectId: string,
+    state: ConstructProjectShellUiState,
+    options: { flush?: boolean } = {}
+  ): Promise<void> {
+    await setUiState({
+      key: PROJECT_SHELL_UI_STATE_KEY,
+      scope: "workspace",
+      projectId,
+      value: state
+    });
+    if (options.flush) {
+      await flushStorage();
+    }
+  }
+
+  async function readProjectShellUiState(projectId: string): Promise<ConstructProjectShellUiState | null> {
+    const saved = await getUiState<ConstructProjectShellUiState | null>({
+      key: PROJECT_SHELL_UI_STATE_KEY,
+      scope: "workspace",
+      projectId,
+      fallback: null
+    }).catch(() => null);
+    return normalizeProjectShellUiState(saved);
   }
 
   async function refresh() {
@@ -1018,8 +1137,17 @@ export default function ConstructApp() {
       console.log("[construct] open project start", { projectId, options });
       setBusy(true);
       setError(null);
+      if (activeProject && activeProject.id !== projectId && uiStateHydrated && !restoringUiStateRef.current) {
+        await persistProjectShellUiState(activeProject.id, projectShellUiStateRef.current).catch(() => {});
+      }
       const project = await openSavedProject(projectId);
       const nextProject = options.filePath ? { ...project, activeFilePath: options.filePath } : project;
+      const shouldStartImmersive = isFlowProjectRecord(nextProject) && pendingImmersiveFlowProjectIdsRef.current.delete(nextProject.id);
+      const savedProjectShellState = shouldStartImmersive
+        ? null
+        : activeProject?.id === nextProject.id
+          ? projectShellUiStateRef.current
+          : await readProjectShellUiState(nextProject.id);
       console.log("[construct] open project loaded", {
         id: project.id,
         title: project.title,
@@ -1030,21 +1158,27 @@ export default function ConstructApp() {
         currentStepIndex: isFlowProjectRecord(project) ? null : project.currentStepIndex,
         currentBlockIndex: isFlowProjectRecord(project) ? null : project.currentBlockIndex
       });
+      restoringProjectUiStateRef.current = true;
       setSettingsSurface(null);
-      setFlowPanelView("chat");
-      if (!restoringUiStateRef.current) {
-        setRightPanelOpen(true);
-        setBottomPanelOpen(true);
-      }
-      const shouldStartImmersive = isFlowProjectRecord(nextProject) && pendingImmersiveFlowProjectIdsRef.current.delete(nextProject.id);
-      setInspectorExpanded(shouldStartImmersive);
-      if (shouldStartImmersive) {
-        setSidebarOpen(false);
-      }
+      setKnowledgeBaseOpen(false);
+      setLearningContextOpen(false);
+      applyProjectShellUiState(savedProjectShellState ?? defaultProjectShellUiState({
+        flowProject: isFlowProjectRecord(nextProject),
+        immersiveFlow: shouldStartImmersive
+      }));
       setActiveProject(nextProject);
-      const nextProjects = await bootstrapProjects();
-      console.log("[construct] open project refreshed list", { count: nextProjects.length });
-      setProjects(nextProjects);
+      window.setTimeout(() => {
+        restoringProjectUiStateRef.current = false;
+      }, 0);
+      setProjects((current) => upsertProjectSummary(current, projectSummaryFromRecord(nextProject)));
+      if (!isFlowProjectRecord(nextProject)) {
+        void bootstrapProjects()
+          .then((nextProjects) => {
+            console.log("[construct] open project refreshed list", { count: nextProjects.length });
+            setProjects(nextProjects);
+          })
+          .catch((caught) => console.warn("[construct] background project list refresh failed", caught));
+      }
       if (options.recordHistory !== false) {
         pushHistory({
           id: options.filePath ? `file:${projectId}:${options.filePath}` : `project:${projectId}`,
@@ -1054,6 +1188,7 @@ export default function ConstructApp() {
         });
       }
     } catch (caught) {
+      restoringProjectUiStateRef.current = false;
       console.error("[construct] open project failed", { projectId, options, caught });
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
@@ -1061,17 +1196,55 @@ export default function ConstructApp() {
     }
   }
 
+  function handleCreatedProject(project: AnyProjectRecord): void {
+    setSettingsSurface(null);
+    setKnowledgeBaseOpen(false);
+    setLearningContextOpen(false);
+    setActiveProject(project);
+    if (isFlowProjectRecord(project)) {
+      pendingImmersiveFlowProjectIdsRef.current.add(project.id);
+      handleFlowLayoutRequest({ kind: "maximized-chat", reason: "project-created" });
+    } else {
+      setRightPanelOpen(true);
+      setInspectorExpanded(false);
+    }
+    setBottomPanelOpen(true);
+    pushHistory({
+      id: `project:${project.id}`,
+      payload: { projectId: project.id },
+      title: project.title,
+      type: "project"
+    });
+    setProjects((current) => {
+      const withoutProject = current.filter((item) => item.id !== project.id);
+      return [projectSummaryFromRecord(project), ...withoutProject].sort(compareProjectSummaryActivity);
+    });
+  }
+
+  async function createProjectFromHomePrompt(prompt: string): Promise<void> {
+    const goal = prompt.trim();
+    if (!goal) {
+      return;
+    }
+    const project = await createFlowProject({
+      title: inferFlowTitle(goal),
+      goal,
+      researchFirst: true,
+      autonomyPreference: "balanced",
+      permissionsPreference: defaultFlowProjectSettings.agentEdits,
+      projectSettings: defaultFlowProjectSettings
+    });
+    handleCreatedProject(project);
+  }
+
   async function refreshActiveProjectSnapshot(projectId: string): Promise<AnyProjectRecord | null> {
     try {
       console.log("[construct] refresh active project snapshot", { projectId });
       setIsSaving(true);
       setError(null);
-      const [project, nextProjects] = await Promise.all([
-        openSavedProject(projectId),
-        bootstrapProjects()
-      ]);
+      const project = await openSavedProject(projectId);
       setActiveProject((current) => current?.id === projectId ? project : current);
-      setProjects(nextProjects);
+      setProjects((current) => upsertProjectSummary(current, projectSummaryFromRecord(project)));
       return project;
     } catch (caught) {
       console.error("[construct] refresh active project snapshot failed", { projectId, caught });
@@ -1109,19 +1282,21 @@ export default function ConstructApp() {
     };
 
     if (entry.type === "dashboard") {
-      setSettingsSurface(null);
-      setInspectorExpanded(false);
-      setRightPanelOpen(false);
-      setKnowledgeBaseOpen(false);
-      setLearningContextOpen(false);
-      setRightPanel(null);
-      setActiveProject(null);
-      setTreeData({ tree: [], activePath: null, relevantPath: null, openFile: null, createFile: null, deleteFile: null, renameFile: null, createFolder: null, duplicateFile: null, refreshTree: null });
+      showDashboardSurface({ persistCurrentProject: true, recordHistory: false });
       finish();
       return;
     }
 
     if (entry.type === "knowledge-base") {
+      const projectId = entry.payload?.projectId;
+      if (projectId && activeProject?.id !== projectId) {
+        void openProject(projectId, { recordHistory: false }).then(() => {
+          setSettingsSurface(null);
+          setLearningContextOpen(false);
+          setKnowledgeBaseOpen(true);
+        }).finally(finish);
+        return;
+      }
       setSettingsSurface(null);
       setLearningContextOpen(false);
       setKnowledgeBaseOpen(true);
@@ -1138,11 +1313,32 @@ export default function ConstructApp() {
       return;
     }
 
+    if (entry.type === "projects") {
+      setSettingsSurface(null);
+      setActiveProject(null);
+      setKnowledgeBaseOpen(false);
+      setLearningContextOpen(false);
+      setProjectsViewOpen(true);
+      finish();
+      return;
+    }
+
     if (entry.type === "settings" || entry.type === "project-settings") {
-      setSettingsSurface({
+      const nextSettingsSurface = {
         itemId: entry.payload?.settingsItemId ?? "workspace",
         projectId: entry.payload?.projectId
-      });
+      };
+      if (nextSettingsSurface.projectId && activeProject?.id !== nextSettingsSurface.projectId) {
+        void openProject(nextSettingsSurface.projectId, { recordHistory: false }).then(() => {
+          setKnowledgeBaseOpen(false);
+          setLearningContextOpen(false);
+          setSettingsSurface(nextSettingsSurface);
+        }).finally(finish);
+        return;
+      }
+      setKnowledgeBaseOpen(false);
+      setLearningContextOpen(false);
+      setSettingsSurface(nextSettingsSurface);
       finish();
       return;
     }
@@ -1184,6 +1380,18 @@ export default function ConstructApp() {
       />
   ) : learningContextOpen ? (
     <LearningContextSurface />
+  ) : projectsViewOpen ? (
+    <ProjectsSurface
+      projects={projects}
+      onOpenProject={(projectId) => {
+        setProjectsViewOpen(false);
+        void openProject(projectId);
+      }}
+      onOpenProjectSettings={(projectId) => {
+        setProjectsViewOpen(false);
+        openSettingsSurface("project-overview", projectId);
+      }}
+    />
   ) : knowledgeBaseOpen ? (
     <KnowledgeBaseSurface activeProject={activeProject} theme={theme} onOpenProject={(projectId) => {
       setKnowledgeBaseOpen(false);
@@ -1225,9 +1433,8 @@ export default function ConstructApp() {
       busy={busy}
       error={error}
       onRefresh={() => void refresh()}
-      onCreateProject={() => setIsNewProjectOpen(true)}
+      onCreateProjectFromPrompt={createProjectFromHomePrompt}
       onOpenProject={(projectId) => void openProject(projectId)}
-      onOpenProjectSettings={(projectId) => openSettingsSurface("project-overview", projectId)}
     />
   );
 
@@ -1237,14 +1444,8 @@ export default function ConstructApp() {
   );
 
   function closeSettingsSurface() {
-    const projectId = settingsSurface?.projectId;
     setSettingsSurface(null);
-    if (projectId) {
-      void openProject(projectId);
-      return;
-    }
-
-    handleBack();
+    showDashboardSurface({ recordHistory: false });
   }
 
   const bottomPanelTabs = useMemo(() => {
@@ -1252,6 +1453,7 @@ export default function ConstructApp() {
       return [];
     }
 
+    const terminalVisible = bottomPanelOpen && activeBottomTabId === "terminal";
     const allTabs = [
       {
         id: "terminal",
@@ -1265,6 +1467,7 @@ export default function ConstructApp() {
             projectId={activeProject.id}
             cwd={activeProject.workspacePath}
             theme={theme}
+            visible={terminalVisible}
           />
         )
       },
@@ -1279,15 +1482,17 @@ export default function ConstructApp() {
     ];
 
     return allTabs.filter((tab) => openBottomTabIds.includes(tab.id));
-  }, [activeProject, openBottomTabIds, activeBottomTabId, theme]);
+  }, [activeProject, openBottomTabIds, activeBottomTabId, bottomPanelOpen, theme]);
 
   const headerTitle = settingsSurface
     ? settingsTitle(settingsSurface.itemId, settingsSurface.projectId, projects)
-    : knowledgeBaseOpen
-      ? "Concepts"
-      : learningContextOpen
-        ? "Context"
-        : activeProject?.title ?? "Projects";
+    : projectsViewOpen
+      ? "Projects"
+      : knowledgeBaseOpen
+        ? "Concepts"
+        : learningContextOpen
+          ? "Context"
+          : activeProject?.title ?? "Home";
 
   const copyText = useCallback((text: string | undefined) => {
     if (!text) return;
@@ -1297,10 +1502,13 @@ export default function ConstructApp() {
   }, []);
 
   const openBottomTerminal = useCallback((shellState: AppShellState) => {
-    setOpenBottomTabIds((current) => current.includes("terminal") ? current : [...current, "terminal"]);
-    setActiveBottomTabId("terminal");
+    if (shellState.isBottomPanelOpen && activeBottomTabId === "terminal") {
+      shellState.setBottomPanelOpen(false);
+      return;
+    }
+    ensureBottomTerminalOpen();
     shellState.setBottomPanelOpen(true);
-  }, []);
+  }, [activeBottomTabId, ensureBottomTerminalOpen]);
 
   const openRightWorkspacePanel = useCallback((shellState: AppShellState) => {
     if (!activeProject) return;
@@ -1311,6 +1519,19 @@ export default function ConstructApp() {
     }
     shellState.setRightPanelOpen(true);
   }, [activeProject, handleRightSlotChange]);
+
+  const expandFlowChat = useCallback((shellState: AppShellState) => {
+    setFlowPanelView("chat");
+    shellState.setRightPanelOpen(true);
+    shellState.setInspectorExpanded(false);
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        setFlowPanelView("chat");
+        shellState.setRightPanelOpen(true);
+        shellState.setInspectorExpanded(true);
+      });
+    });
+  }, []);
 
   if (!aiSettings) {
     return (
@@ -1375,7 +1596,6 @@ export default function ConstructApp() {
               onBack={handleBack}
               onCopyProjectId={() => copyText(activeProject?.id)}
               onCopyWorkspacePath={() => copyText(activeProject?.workspacePath)}
-              onNewProject={() => setIsNewProjectOpen(true)}
               onOpenProjectSettings={() => {
                 if (activeProject) {
                   openSettingsSurface("project-overview", activeProject.id);
@@ -1407,9 +1627,7 @@ export default function ConstructApp() {
                                 state.setRightPanelOpen(true);
                                 state.setInspectorExpanded(false);
                               } else if (val === "expanded") {
-                                setFlowPanelView("chat");
-                                state.setRightPanelOpen(true);
-                                state.setInspectorExpanded(true);
+                                expandFlowChat(state);
                               }
                             }}
                             className="h-7"
@@ -1448,7 +1666,7 @@ export default function ConstructApp() {
                           </AppShellHeaderToolButton>
                           <AppShellHeaderToolButton
                             data-active={state.isBottomPanelOpen ? "true" : "false"}
-                            onClick={state.toggleBottomPanel}
+                            onClick={() => openBottomTerminal(state)}
                             aria-label="Toggle terminal"
                             title="Terminal"
                           >
@@ -1529,7 +1747,7 @@ export default function ConstructApp() {
                         </AppShellHeaderToolButton>
                         <AppShellHeaderToolButton
                           data-active={state.isBottomPanelOpen ? "true" : "false"}
-                          onClick={state.toggleBottomPanel}
+                          onClick={() => openBottomTerminal(state)}
                           aria-label="Toggle terminal"
                         >
                           <HeaderBottomPanelIcon open={state.isBottomPanelOpen} />
@@ -1544,7 +1762,7 @@ export default function ConstructApp() {
             settingsSurface ? (
               <SettingsSidebar
                 activeItemId={settingsSurface.itemId}
-                backLabel={settingsSurface.projectId ? "Back to project" : "Back to projects"}
+                backLabel="Back to projects"
                 footer={
                   <ConstructSidebarFooter
                     aiSettings={aiSettings}
@@ -1554,11 +1772,11 @@ export default function ConstructApp() {
                 }
                 onBack={closeSettingsSurface}
                 onItemSelect={(item: SettingsNavItem) => {
-                  const projectId = item.id.startsWith("project-") ? settingsSurface.projectId : undefined;
-                  if (item.id.startsWith("project-") && !projectId) {
+                  const originProjectId = settingsSurface.projectId;
+                  if (item.id.startsWith("project-") && !originProjectId) {
                     return;
                   }
-                  openSettingsSurface(item.id, projectId);
+                  openSettingsSurface(item.id, originProjectId);
                 }}
                 onSearchChange={setSettingsQuery}
                 query={settingsQuery}
@@ -1589,12 +1807,14 @@ export default function ConstructApp() {
                         nodes={treeData.tree}
                         activePath={treeData.activePath}
                         relevantPath={treeData.relevantPath}
+                        expandedPaths={activeProject.fileTreeExpanded}
                         onOpenFile={treeData.openFile}
                         onCreateFile={treeData.createFile ?? undefined}
                         onDeleteFile={treeData.deleteFile ?? undefined}
                         onRenameFile={treeData.renameFile ?? undefined}
                         onCreateFolder={treeData.createFolder ?? undefined}
                         onDuplicateFile={treeData.duplicateFile ?? undefined}
+                        onExpandedPathsChange={handleFileTreeExpandedChange}
                         onRefresh={treeData.refreshTree ?? undefined}
                       />
                     ) : null}
@@ -1609,36 +1829,27 @@ export default function ConstructApp() {
                 projects={[]} items={[]}
                 primaryItems={[
                   {
-                    id: "brand",
-                    label: "Construct"
-                  },
-                  {
-                    id: "new-project",
-                    icon: <PlusIcon size={18} />,
-                    label: "New project",
-                    onClick: () => setIsNewProjectOpen(true)
-                  },
-                  {
                     id: "home",
-                    active: !knowledgeBaseOpen && !learningContextOpen,
-                    icon: <HomeIcon size={18} />,
+                    active: !knowledgeBaseOpen && !learningContextOpen && !projectsViewOpen,
+                    icon: <HomeIcon size={15} />,
                     label: "Home",
                     onClick: handleBack
                   },
                   {
                     id: "knowledge-base",
-                    icon: <BookOpen size={18} />,
+                    active: knowledgeBaseOpen,
+                    icon: <BookOpen size={15} />,
                     label: "Concepts",
                     onClick: openKnowledgeBase
                   },
                   {
                     id: "projects",
-                    icon: <FolderOpenIcon size={18} />,
+                    active: projectsViewOpen,
+                    icon: <FolderOpenIcon size={15} />,
                     label: "Projects",
-                    onClick: handleBack
+                    onClick: openProjectsView
                   }
                 ]}
-                renderNavItem={(item) => <ConstructDashboardNavItem item={item} key={item.id} />}
                 footer={
                   <ConstructSidebarFooter
                     aiSettings={aiSettings}
@@ -1753,57 +1964,91 @@ export default function ConstructApp() {
         onAiSettingsChange={(settings) => setAiSettings(settings)}
         onOpenChange={setAccountDialogOpen}
       />
-      <NewProjectDialog
-        open={isNewProjectOpen}
-        onOpenChange={setIsNewProjectOpen}
-        onProjectCreated={(project) => {
-          setActiveProject(project);
-          if (isFlowProjectRecord(project)) {
-            pendingImmersiveFlowProjectIdsRef.current.add(project.id);
-            handleFlowLayoutRequest({ kind: "maximized-chat", reason: "project-created" });
-          } else {
-            setRightPanelOpen(true);
-            setInspectorExpanded(false);
-          }
-          setBottomPanelOpen(true);
-          pushHistory({
-            id: `project:${project.id}`,
-            payload: { projectId: project.id },
-            title: project.title,
-            type: "project"
-          });
-          setProjects((current) => {
-            const withoutProject = current.filter((item) => item.id !== project.id);
-            return [
-              {
-                kind: project.kind ?? "tape",
-                id: project.id,
-                title: project.title,
-                description: project.description,
-                progress: project.progress,
-                lastOpenedAt: project.lastOpenedAt,
-                sourcePath: project.sourcePath,
-                workspacePath: project.workspacePath,
-                flowGoal: isFlowProjectRecord(project) ? project.flow.goal : undefined,
-                flowSessionCount: isFlowProjectRecord(project) ? project.flow.sessions.length : undefined,
-                flowLastActivityAt: isFlowProjectRecord(project) ? project.flow.updatedAt : undefined
-              },
-              ...withoutProject
-            ];
-          });
-        }}
-      />
       </AuthGate>
     </AppErrorBoundary>
   );
 }
 
+function upsertProjectSummary(projects: ProjectSummary[], summary: ProjectSummary): ProjectSummary[] {
+  return [
+    summary,
+    ...projects.filter((project) => project.id !== summary.id)
+  ].sort(compareProjectSummaryActivity);
+}
+
+function compareProjectSummaryActivity(left: ProjectSummary, right: ProjectSummary): number {
+  return projectSummaryActivityTime(right) - projectSummaryActivityTime(left);
+}
+
+function projectSummaryActivityTime(project: ProjectSummary): number {
+  const timestamp = Date.parse(project.lastOpenedAt ?? project.flowLastActivityAt ?? project.completedAt ?? "");
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function projectSummaryFromRecord(project: AnyProjectRecord): ProjectSummary {
+  if (isFlowProjectRecord(project)) {
+    return {
+      kind: "flow",
+      id: project.id,
+      title: project.title,
+      description: project.description,
+      progress: project.progress,
+      lastOpenedAt: project.lastOpenedAt,
+      sourcePath: project.sourcePath,
+      workspacePath: project.workspacePath,
+      completedAt: project.completedAt,
+      conceptCount: project.learnedConcepts?.length ?? project.conceptCount ?? 0,
+      learnedConcepts: project.learnedConcepts,
+      flowGoal: project.flow.goal,
+      flowMemoryFileCount: project.flowMemoryFileCount,
+      flowSessionCount: project.flow.sessions.length,
+      flowLastActivityAt: project.flow.updatedAt
+    };
+  }
+
+  const step = project.program.steps[project.currentStepIndex];
+  const block = step?.blocks[project.currentBlockIndex];
+  const blockCount = project.program.steps.reduce((total, item) => total + item.blocks.length, 0);
+  const verificationResults = Object.values(project.verificationResults ?? {});
+
+  return {
+    kind: project.kind ?? "tape",
+    id: project.id,
+    title: project.title,
+    description: project.description,
+    progress: project.progress,
+    lastOpenedAt: project.lastOpenedAt,
+    sourcePath: project.sourcePath,
+    workspacePath: project.workspacePath,
+    currentStepIndex: project.currentStepIndex,
+    currentBlockIndex: project.currentBlockIndex,
+    currentStepTitle: step?.title ?? null,
+    currentBlockKind: block?.kind ?? null,
+    currentBlockLabel: block?.kind === "edit" ? block.path : block?.kind ?? null,
+    activeFilePath: project.activeFilePath,
+    stepCount: project.program.steps.length,
+    blockCount,
+    completedBlockCount: Object.values(project.completedBlocks ?? {}).filter(Boolean).length,
+    fileCount: project.program.files.length,
+    conceptCount: project.learnedConcepts?.length ?? project.program.concepts?.length ?? 0,
+    learnedConcepts: project.learnedConcepts,
+    referenceCount: project.program.references?.length ?? 0,
+    verificationPassCount: verificationResults.filter((result) => result.passed).length,
+    verificationFailCount: verificationResults.filter((result) => !result.passed).length,
+    authoringFixCount: project.authoringFixes?.length ?? 0,
+    completedAt: project.completedAt
+  };
+}
+
 type ConstructAccountUsageWindow = {
   windowStart: string;
   windowEnd: string;
-  usedSeconds: number;
-  limitSeconds: number;
-  remainingSeconds: number;
+  resetAt?: string;
+  usedUnits: number;
+  reservedUnits: number;
+  limitUnits: number;
+  remainingUnits: number;
+  percentage: number;
 };
 
 type ConstructAccountPayload = {
@@ -1815,8 +2060,9 @@ type ConstructAccountPayload = {
   usage?: {
     plan: string;
     windows: {
-      fiveHour: ConstructAccountUsageWindow;
-      weekly: ConstructAccountUsageWindow;
+      five_hour_all: ConstructAccountUsageWindow;
+      weekly_all: ConstructAccountUsageWindow;
+      weekly_expensive?: ConstructAccountUsageWindow;
     };
   };
 };
@@ -1845,23 +2091,35 @@ function ConstructSidebarFooter({
   const plan = account.usage?.plan ?? account.account?.user?.plan ?? null;
 
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col gap-1.5">
       {children}
       <SidebarSettingsButton onClick={onOpenSettings} />
       <button
         type="button"
-        className="flex min-h-11 w-full min-w-0 items-center gap-2 rounded-[7px] px-2 py-1.5 text-left text-[13px] transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+        className="flex min-h-11 w-full min-w-0 items-center gap-2.5 rounded-[6px] px-2.5 py-1.5 text-left text-[12.5px] transition-all hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 border border-transparent hover:border-sidebar-border/10"
         onClick={onAccountClick}
       >
-        <UserAvatar className="size-7" />
+        <UserAvatar className="size-7 shrink-0" />
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="flex min-w-0 items-center gap-1.5">
-            <span className="truncate font-medium">{account.isPending ? "Account" : name}</span>
-            {plan ? <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">{formatPlan(plan)}</Badge> : null}
+            <span className="truncate font-semibold text-foreground/90">{account.isPending ? "Account" : name}</span>
+            {plan ? (
+              <Badge
+                variant="secondary"
+                className={cn(
+                  "h-[15px] rounded-[3px] border-0 px-1 text-[9px] font-bold tracking-wider uppercase shrink-0 select-none",
+                  plan.toLowerCase().includes("plus") || plan.toLowerCase().includes("pro")
+                    ? "bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400"
+                    : "bg-muted text-muted-foreground"
+                )}
+              >
+                {formatPlan(plan)}
+              </Badge>
+            ) : null}
           </span>
-          <span className="truncate text-xs text-muted-foreground">{email}</span>
+          <span className="truncate text-xs text-muted-foreground/80">{email}</span>
         </span>
-        <ChevronDownIcon size={14} className="shrink-0 text-muted-foreground" />
+        <ChevronDownIcon size={14} className="shrink-0 text-muted-foreground/60" />
       </button>
     </div>
   );
@@ -1980,8 +2238,8 @@ function ConstructAccountDialog({
           <div className="mb-1 flex size-9 items-center justify-center rounded-md bg-muted text-foreground">
             <UserRoundIcon size={18} />
           </div>
-          <ShadcnDialogTitle>Construct Account</ShadcnDialogTitle>
-          <ShadcnDialogDescription>Account access is required for Construct. Project workspaces remain local on this device.</ShadcnDialogDescription>
+          <ShadcnDialogTitle>Your Account</ShadcnDialogTitle>
+          <ShadcnDialogDescription>Manage your account and AI compute balance.</ShadcnDialogDescription>
         </ShadcnDialogHeader>
 
         <div className="flex flex-col gap-3 py-1">
@@ -2000,64 +2258,34 @@ function ConstructAccountDialog({
             </Button>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <ConstructAccountFact icon={<CheckCircle2Icon size={16} />} label="Login" value="Active" />
-            <ConstructAccountFact icon={<FolderOpenIcon size={16} />} label="Project storage" value="Local only" />
-          </div>
-
           {account.usage ? (
             <div className="rounded-lg border bg-background p-3">
               <div className="mb-3 flex items-center gap-2 text-sm font-medium">
                 <CloudIcon size={16} />
-                Hosted compute
+                AI Compute Balance
               </div>
               <div className="grid gap-2 sm:grid-cols-2">
-                <ConstructAccountUsageMeter label="5 hour" window={account.usage.windows.fiveHour} />
-                <ConstructAccountUsageMeter label="Weekly" window={account.usage.windows.weekly} />
+                <ConstructAccountUsageMeter label="5-Hour Session" window={account.usage.windows.five_hour_all} />
+                <ConstructAccountUsageMeter label="Weekly Limit" window={account.usage.windows.weekly_all} />
+                {account.usage.windows.weekly_expensive ? (
+                  <ConstructAccountUsageMeter label="Premium Models" window={account.usage.windows.weekly_expensive} />
+                ) : null}
               </div>
             </div>
           ) : null}
 
-          <div className="flex flex-col gap-3 rounded-lg border bg-background p-3">
-            <div className="flex items-start gap-2">
-              <KeyRoundIcon size={16} className="mt-0.5 text-muted-foreground" />
-              <div>
-                <div className="text-sm font-medium">Hosted compute token</div>
-                <div className="mt-1 text-xs text-muted-foreground">Used only when AI source is set to hosted compute. BYOK keys stay local.</div>
-              </div>
-            </div>
-            <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-              <Input
-                value={baseUrlDraft}
-                disabled={busy}
-                placeholder="https://cloud.tryconstruct.cc"
-                onChange={(event) => setBaseUrlDraft(event.target.value)}
-              />
-              <Input
-                type="password"
-                value={tokenDraft}
-                disabled={busy}
-                placeholder="Hosted compute token"
-                onChange={(event) => setTokenDraft(event.target.value)}
-              />
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button size="small" disabled={busy || !account.session?.user} onClick={() => void mintHostedToken()}>
-                {busy ? "Working..." : "Mint token"}
-              </Button>
-              <Button size="small" variant="secondary" disabled={busy} onClick={() => void saveHostedSettings()}>
-                Save
-              </Button>
-              {tokenDraft ? (
-                <Button size="small" variant="secondary" disabled={busy} onClick={() => void saveHostedSettings({ token: "" })}>
-                  Clear token
-                </Button>
-              ) : null}
-            </div>
-            {status ?? account.status ? (
-              <div className="text-xs text-muted-foreground">{status ?? account.status}</div>
-            ) : null}
-          </div>
+          <ConstructAccountConnectionSection
+            baseUrlDraft={baseUrlDraft}
+            tokenDraft={tokenDraft}
+            busy={busy}
+            hasUser={!!account.session?.user}
+            status={status ?? account.status ?? null}
+            onBaseUrlChange={setBaseUrlDraft}
+            onTokenChange={setTokenDraft}
+            onMint={() => void mintHostedToken()}
+            onSave={() => void saveHostedSettings()}
+            onClear={() => void saveHostedSettings({ token: "" })}
+          />
         </div>
 
         <ShadcnDialogFooter>
@@ -2127,34 +2355,109 @@ function useConstructAccount(baseUrl: string) {
   };
 }
 
-function ConstructAccountFact({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
+function ConstructAccountConnectionSection({
+  baseUrlDraft,
+  tokenDraft,
+  busy,
+  hasUser,
+  status,
+  onBaseUrlChange,
+  onTokenChange,
+  onMint,
+  onSave,
+  onClear
+}: {
+  baseUrlDraft: string;
+  tokenDraft: string;
+  busy: boolean;
+  hasUser: boolean;
+  status: string | null;
+  onBaseUrlChange: (value: string) => void;
+  onTokenChange: (value: string) => void;
+  onMint: () => void;
+  onSave: () => void;
+  onClear: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const connected = !!tokenDraft.trim();
+
   return (
-    <div className="flex items-center gap-3 rounded-lg border bg-background p-3">
-      <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">{icon}</div>
-      <div className="min-w-0">
-        <div className="text-xs text-muted-foreground">{label}</div>
-        <div className="mt-0.5 truncate text-sm font-medium">{value}</div>
-      </div>
+    <div className="rounded-lg border bg-background p-3">
+      <button
+        type="button"
+        className="flex w-full items-center gap-2 text-left text-sm"
+        onClick={() => setExpanded((v) => !v)}
+      >
+        <KeyRoundIcon size={16} className="shrink-0 text-muted-foreground" />
+        <span className="flex-1 font-medium">Connection</span>
+        <Badge variant={connected ? "secondary" : "outline"}>{connected ? "Connected" : "Not connected"}</Badge>
+        <ChevronRightIcon size={14} className={`shrink-0 text-muted-foreground transition-transform ${expanded ? "rotate-90" : ""}`} />
+      </button>
+
+      {expanded ? (
+        <div className="mt-3 flex flex-col gap-3 border-t pt-3">
+          <div className="text-xs text-muted-foreground">Cloud endpoint and access token for AI compute. Bring-your-own-key users can ignore this.</div>
+          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+            <Input
+              value={baseUrlDraft}
+              disabled={busy}
+              placeholder="https://cloud.tryconstruct.cc"
+              onChange={(event) => onBaseUrlChange(event.target.value)}
+            />
+            <Input
+              type="password"
+              value={tokenDraft}
+              disabled={busy}
+              placeholder="Access token"
+              onChange={(event) => onTokenChange(event.target.value)}
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="small" disabled={busy || !hasUser} onClick={onMint}>
+              {busy ? "Working..." : "Mint token"}
+            </Button>
+            <Button size="small" variant="secondary" disabled={busy} onClick={onSave}>
+              Save
+            </Button>
+            {tokenDraft ? (
+              <Button size="small" variant="secondary" disabled={busy} onClick={onClear}>
+                Clear token
+              </Button>
+            ) : null}
+          </div>
+          {status ? (
+            <div className="text-xs text-muted-foreground">{status}</div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
 
 function ConstructAccountUsageMeter({ label, window }: { label: string; window: ConstructAccountUsageWindow }) {
-  const used = formatSeconds(window.usedSeconds);
-  const limit = formatSeconds(window.limitSeconds);
-  const reset = new Date(window.windowEnd).toLocaleString();
-  const percent = window.limitSeconds > 0 ? Math.min(100, Math.max(0, (window.usedSeconds / window.limitSeconds) * 100)) : 0;
+  const resetDate = new Date(window.resetAt ?? window.windowEnd);
+  const now = new Date();
+  const diffMs = resetDate.getTime() - now.getTime();
+  const diffH = Math.max(0, Math.floor(diffMs / 3_600_000));
+  const diffM = Math.max(0, Math.floor((diffMs % 3_600_000) / 60_000));
+  const resetLabel = diffH > 24 ? `${Math.ceil(diffH / 24)}d` : diffH > 0 ? `${diffH}h ${diffM}m` : `${diffM}m`;
+
+  const remainingPercent = Math.min(100, Math.max(0, 100 - window.percentage));
+  const barColor = remainingPercent > 50 ? "bg-emerald-500" : remainingPercent > 20 ? "bg-amber-400" : "bg-rose-500";
 
   return (
-    <div className="rounded-md bg-muted/35 px-3 py-2 text-xs">
+    <div className="rounded-md bg-muted/35 px-3 py-2.5 text-xs">
       <div className="flex items-center justify-between gap-2">
         <span className="font-medium text-foreground">{label}</span>
-        <span className="text-muted-foreground">{used} / {limit}</span>
+        <span className="tabular-nums font-semibold text-foreground">{Math.round(remainingPercent)}%</span>
       </div>
       <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-background">
-        <div className="h-full rounded-full bg-primary" style={{ width: `${percent}%` }} />
+        <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${remainingPercent}%` }} />
       </div>
-      <div className="mt-2 truncate text-muted-foreground">Resets {reset}</div>
+      <div className="mt-2 flex items-center justify-between gap-2 text-muted-foreground">
+        <span>{formatUsageUnits(window.remainingUnits)} remaining</span>
+        <span>resets in {resetLabel}</span>
+      </div>
     </div>
   );
 }
@@ -2167,11 +2470,10 @@ function formatPlan(plan: string): string {
   return plan.trim() ? plan.trim().slice(0, 1).toUpperCase() + plan.trim().slice(1) : "Free";
 }
 
-function formatSeconds(seconds: number): string {
-  const hours = seconds / 3600;
-  if (hours >= 1) return `${hours.toFixed(hours % 1 === 0 ? 0 : 1)}h`;
-  const minutes = Math.ceil(seconds / 60);
-  return `${minutes}m`;
+function formatUsageUnits(units: number): string {
+  if (units >= 1_000_000) return `${(units / 1_000_000).toFixed(1)}M`;
+  if (units >= 1_000) return `${(units / 1_000).toFixed(units >= 10_000 ? 0 : 1)}k`;
+  return String(units);
 }
 
 function ConstructDashboardNavItem({ item }: { item: SidebarNavItem }) {
@@ -2181,7 +2483,7 @@ function ConstructDashboardNavItem({ item }: { item: SidebarNavItem }) {
 
   return (
     <Button
-      className="h-8 w-full justify-start gap-2 rounded-[7px] px-2 text-[13px] data-[active=true]:bg-sidebar-accent data-[active=true]:text-sidebar-accent-foreground"
+      className="h-[30px] w-full justify-start gap-2.5 rounded-[6px] px-2.5 text-[12.5px] font-medium transition-colors data-[active=true]:bg-sidebar-accent/85 data-[active=true]:text-foreground data-[active=true]:font-semibold hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
       data-active={item.active === true ? "true" : undefined}
       onClick={item.onClick}
       variant={item.id === "new-project" ? "default" : "ghost"}
@@ -2258,7 +2560,6 @@ function ConstructProjectTitleMenu({
   onBack,
   onCopyProjectId,
   onCopyWorkspacePath,
-  onNewProject,
   onOpenProjectSettings,
   onOpenRightPanel,
   onOpenTerminal,
@@ -2270,7 +2571,6 @@ function ConstructProjectTitleMenu({
   onBack: () => void;
   onCopyProjectId: () => void;
   onCopyWorkspacePath: () => void;
-  onNewProject: () => void;
   onOpenProjectSettings: () => void;
   onOpenRightPanel: () => void;
   onOpenTerminal: () => void;
@@ -2325,10 +2625,6 @@ function ConstructProjectTitleMenu({
               <ShadcnDropdownMenuSeparator />
             </>
           ) : null}
-          <ShadcnDropdownMenuItem onClick={onNewProject}>
-            <PlusIcon size={14} />
-            New project
-          </ShadcnDropdownMenuItem>
           <ShadcnDropdownMenuItem onClick={onOpenWorkspaceSettings}>
             <SettingsIcon size={14} />
             Workspace settings
@@ -2338,7 +2634,7 @@ function ConstructProjectTitleMenu({
               <ShadcnDropdownMenuSeparator />
               <ShadcnDropdownMenuItem onClick={onBack}>
                 <HomeIcon size={14} />
-                Back to projects
+                Back to home
               </ShadcnDropdownMenuItem>
             </>
           ) : null}

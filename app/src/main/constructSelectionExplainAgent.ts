@@ -3,7 +3,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 
 import { z } from "zod";
-import { resolveConstructOpenAiResponsesConfig } from "./constructAgentModels";
+import { aiGateway } from "./ai/AIGateway";
 import { createConstructAgentRuntime, type ConstructAgentTraceEntry } from "./constructAgentRuntime";
 import { resolveConstructAiSettings } from "./constructAiSettings";
 
@@ -78,11 +78,11 @@ export async function runConstructSelectionExplainAgent(
   const codebase = await collectCodebaseContext(input, onProgress, onTrace);
   onProgress({ status: "done", message: "Selection context is ready", detail: `${input.selection.text.length} selected characters`, tool: "agent" });
 
-  const responsesConfig = resolveConstructOpenAiResponsesConfig("selection-explain");
+  const responsesConfig = aiGateway.resolveOpenAiResponses("selection-explain");
   if (responsesConfig) {
     try {
       onProgress({ status: "running", message: "Researching relevant sources", detail: "Using hosted web search when outside context is useful", tool: "web" });
-      const researched = await runOpenAiWebExplanation(input, codebase, responsesConfig);
+      const researched = await runOpenAiWebExplanation(input, codebase, onTrace);
       onTrace?.({
         title: "Selection explanation result",
         level: "debug",
@@ -210,18 +210,18 @@ async function collectCodebaseContext(
 async function runOpenAiWebExplanation(
   input: SelectionExplanationInput,
   codebase: Awaited<ReturnType<typeof collectCodebaseContext>>,
-  config: NonNullable<ReturnType<typeof resolveConstructOpenAiResponsesConfig>>
+  onTrace?: (entry: ConstructAgentTraceEntry) => void
 ): Promise<SelectionExplanationResult> {
-  const response = await fetch(`${config.baseUrl}/responses`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${config.apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: config.model,
+  const { response } = await aiGateway.openAiResponses({
+    purpose: "selection web research",
+    featureId: "selection-explain",
+    trace: onTrace,
+    body: {
       tools: [{ type: "web_search" }],
       tool_choice: "auto",
       include: ["web_search_call.action.sources"],
       input: buildExplanationPrompt(input, codebase.matches)
-    })
+    }
   });
 
   if (!response.ok) {

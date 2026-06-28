@@ -19,9 +19,12 @@ type ConstructCloudAccountPanelProps = {
 type CloudUsageWindow = {
   windowStart: string;
   windowEnd: string;
-  usedSeconds: number;
-  limitSeconds: number;
-  remainingSeconds: number;
+  resetAt?: string;
+  usedUnits: number;
+  reservedUnits: number;
+  limitUnits: number;
+  remainingUnits: number;
+  percentage: number;
 };
 
 type CloudUsageResponse = {
@@ -33,8 +36,9 @@ type CloudUsageResponse = {
   usage?: {
     plan: string;
     windows: {
-      fiveHour: CloudUsageWindow;
-      weekly: CloudUsageWindow;
+      five_hour_all: CloudUsageWindow;
+      weekly_all: CloudUsageWindow;
+      weekly_expensive?: CloudUsageWindow;
     };
   };
 };
@@ -236,8 +240,9 @@ function ConstructCloudTokenPanel({
 
       {usage ? (
         <div className="grid gap-2 text-xs text-muted-foreground">
-          <UsageMeter label="5 hour" window={usage.windows.fiveHour} />
-          <UsageMeter label="Weekly" window={usage.windows.weekly} />
+          <UsageMeter label="5 hour" window={usage.windows.five_hour_all} />
+          <UsageMeter label="Weekly" window={usage.windows.weekly_all} />
+          {usage.windows.weekly_expensive ? <UsageMeter label="Expensive models" window={usage.windows.weekly_expensive} /> : null}
         </div>
       ) : null}
 
@@ -270,17 +275,29 @@ function ConstructCloudTokenPanel({
 }
 
 function UsageMeter({ label, window }: { label: string; window: CloudUsageWindow }) {
-  const used = formatSeconds(window.usedSeconds);
-  const limit = formatSeconds(window.limitSeconds);
-  const reset = new Date(window.windowEnd).toLocaleString();
+  const resetDate = new Date(window.resetAt ?? window.windowEnd);
+  const now = new Date();
+  const diffMs = resetDate.getTime() - now.getTime();
+  const diffH = Math.max(0, Math.floor(diffMs / 3_600_000));
+  const diffM = Math.max(0, Math.floor((diffMs % 3_600_000) / 60_000));
+  const resetLabel = diffH > 24 ? `${Math.ceil(diffH / 24)}d` : diffH > 0 ? `${diffH}h ${diffM}m` : `${diffM}m`;
+
+  const remainingPercent = Math.min(100, Math.max(0, 100 - window.percentage));
+  const barColor = remainingPercent > 50 ? "bg-emerald-500" : remainingPercent > 20 ? "bg-amber-400" : "bg-rose-500";
 
   return (
     <div className="rounded-md bg-muted/40 px-2 py-1.5">
       <div className="flex items-center justify-between gap-2">
         <span>{label}</span>
-        <span>{used} / {limit}</span>
+        <span className="tabular-nums font-semibold">{Math.round(remainingPercent)}%</span>
       </div>
-      <div className="mt-1 truncate">Resets {reset}</div>
+      <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-background">
+        <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${remainingPercent}%` }} />
+      </div>
+      <div className="mt-1.5 flex items-center justify-between gap-2 truncate">
+        <span>{formatUsageUnits(window.remainingUnits)} remaining</span>
+        <span>resets in {resetLabel}</span>
+      </div>
     </div>
   );
 }
@@ -298,9 +315,8 @@ function normalizeCloudBaseUrl(baseUrl: string): string {
   return cleanAndNormalizeUrl(baseUrl);
 }
 
-function formatSeconds(seconds: number): string {
-  const hours = seconds / 3600;
-  if (hours >= 1) return `${hours.toFixed(hours % 1 === 0 ? 0 : 1)}h`;
-  const minutes = Math.ceil(seconds / 60);
-  return `${minutes}m`;
+function formatUsageUnits(units: number): string {
+  if (units >= 1_000_000) return `${(units / 1_000_000).toFixed(1)}M`;
+  if (units >= 1_000) return `${(units / 1_000).toFixed(units >= 10_000 ? 0 : 1)}k`;
+  return String(units);
 }

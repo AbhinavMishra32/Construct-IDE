@@ -13,6 +13,7 @@ import {
   StorageTarget
 } from "../storage/storage";
 import { createConstructDomainStorage } from "../storage/ConstructDomainStorage";
+import { ConstructLearningStore } from "../constructLearningStore";
 import { ConstructProjectRepository } from "./ConstructProjectRepository";
 import type { StoredFlowProject } from "./ConstructProjectTypes";
 import type { ConstructFlowSession } from "../../shared/constructFlow";
@@ -129,6 +130,70 @@ test("project repository stores Flow projects and sessions as domain rows", asyn
   assert.equal(reloaded?.kind, "flow");
   assert.equal(reloaded && reloaded.kind === "flow" ? reloaded.flow.sessions.length : 0, 2);
   assert.equal(reloaded && reloaded.kind === "flow" ? reloaded.flow.sessions[1]?.messages[0]?.content : null, "Second domain session");
+
+  domainStorage.close();
+  await storage.close();
+});
+
+test("project repository summaries include learned concepts", async (t) => {
+  const dir = mkdtempSync(path.join(tmpdir(), "construct-project-summary-concepts-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const paths = createConstructDataPaths(dir);
+  const storage = createConstructStorageService(paths.storageDatabasePath, {
+    flushDelayMs: 10_000,
+    periodicFlushIntervalMs: 60_000
+  });
+  const domainStorage = createConstructDomainStorage(paths.storageDatabasePath);
+  await storage.initialize();
+  await domainStorage.initialize();
+
+  const repository = new ConstructProjectRepository(paths, storage, domainStorage);
+  const project = createFlowProject("concept-summary-flow", [
+    createSession("concept-summary-flow", "summary-session", "Concept summary session")
+  ]);
+  await repository.writeAll([project]);
+
+  const learningStore = new ConstructLearningStore({
+    storage,
+    domainStorage,
+    legacyPath: paths.learningStatePath
+  });
+  await learningStore.saveKnowledgeConcept({
+    id: "typescript.generics",
+    sourceProjectId: project.id,
+    sourceProjectTitle: project.title,
+    title: "TypeScript generics",
+    kind: "language",
+    language: "typescript",
+    tags: ["typescript"],
+    summary: "Reusable type parameters for functions, classes, and interfaces.",
+    why: "This project used generic types in shared helpers.",
+    docs: [],
+    savedAt: "2026-06-25T00:00:00.000Z",
+    openCount: 0,
+    usedInRecall: false,
+    masteryLevel: 2,
+    masteryText: "Can explain with help"
+  });
+  await learningStore.recordConceptProjectEvent({
+    id: "concept-summary-event",
+    projectId: project.id,
+    projectTitle: project.title,
+    conceptId: "typescript.generics",
+    kind: "introduced",
+    masteryLevel: 3,
+    reason: "Learner demonstrated the concept during the project.",
+    evidence: ["Learner explained why a helper needs a type parameter."],
+    createdAt: "2026-06-25T00:10:00.000Z"
+  });
+
+  const summaries = await repository.readSummaries();
+  assert.equal(summaries[0]?.id, project.id);
+  assert.equal(summaries[0]?.conceptCount, 1);
+  assert.deepEqual(summaries[0]?.learnedConcepts?.map((concept) => concept.title), ["TypeScript generics"]);
+  assert.equal(summaries[0]?.learnedConcepts?.[0]?.masteryLevel, 3);
+  assert.equal(summaries[0]?.learnedConcepts?.[0]?.lastReferencedAt, "2026-06-25T00:10:00.000Z");
 
   domainStorage.close();
   await storage.close();
