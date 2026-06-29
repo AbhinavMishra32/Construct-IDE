@@ -3438,8 +3438,8 @@ function buildConceptExercisePart({
   const isPanel = chatMode === "panel";
 
   const containerClass = cn(
-    "flex w-full max-w-[32rem] min-w-0 flex-col gap-2 rounded-[12px] border border-border/60 bg-muted/30 p-3 text-left text-foreground",
-    isPanel && "p-2.5 rounded-xl gap-1.5"
+    "flex w-full max-w-[38rem] min-w-0 flex-col gap-2.5 rounded-[12px] border border-border/70 bg-card/95 p-3 text-left text-foreground shadow-sm",
+    isPanel && "max-w-full p-2.5 rounded-xl gap-2"
   );
 
   return {
@@ -3447,7 +3447,7 @@ function buildConceptExercisePart({
     id: `${sessionId}:exercise:${eventId}`,
     content: (
       <div className={containerClass}>
-        <div className={cn("flex min-w-0 items-center justify-between gap-2.5 border-b border-border/40 pb-2", isPanel && "pb-1.5 gap-2")}>
+        <div className={cn("flex min-w-0 items-center justify-between gap-2.5 border-b border-border/55 pb-2", isPanel && "pb-1.5 gap-2")}>
           <div className="flex min-w-0 items-center gap-2">
             <span className={cn("grid size-7 shrink-0 place-items-center rounded-[6px] border shadow-xs bg-background/80", iconClass, isPanel && "size-6")}>
               {failed ? (
@@ -3483,7 +3483,7 @@ function buildConceptExercisePart({
         {status !== "running" && (
           <div className={cn("mt-1 flex flex-col gap-2.5 text-xs", isPanel && "gap-2 text-[11px]")}>
             {promptText && (
-              <div className="text-foreground/90 font-medium leading-relaxed">
+              <div className={cn("text-[13px] font-medium leading-relaxed text-foreground", !isPanel && "text-sm")}>
                 <MarkdownBlock content={promptText} theme={theme} onOpenFile={onOpenFile} />
               </div>
             )}
@@ -3495,10 +3495,10 @@ function buildConceptExercisePart({
                   isPanel && "text-[9px]"
                 )}>Reference Code / Context:</span>
                 <pre className={cn(
-                  "max-h-80 overflow-y-auto overflow-x-auto rounded-[8px] border bg-background/80 p-3 font-mono text-[10px] leading-relaxed select-text",
-                  isPanel && "p-2 rounded-md text-[9px]"
+                  "max-h-52 overflow-y-auto overflow-x-auto rounded-[8px] border bg-muted/20 p-3 font-mono text-[10.5px] leading-relaxed text-foreground/90 select-text",
+                  isPanel && "max-h-40 p-2 rounded-md text-[10px]"
                 )}>
-                  <code className="text-foreground/95">{sourceText}</code>
+                  <code>{sourceText}</code>
                 </pre>
               </div>
             )}
@@ -4989,20 +4989,20 @@ function FlowQuestionComposer({
       ) : null}
       {allowOther ? (
         payload.answerMode === "code" ? (
-          <div className="mt-3 flex flex-col rounded-xl border border-border/70 bg-muted/20 overflow-hidden focus-within:border-foreground/30 focus-within:ring-2 focus-within:ring-ring/20 transition-all duration-200">
+          <div className="mt-3 flex flex-col overflow-hidden rounded-xl border border-border/75 bg-background shadow-sm transition-all duration-200 focus-within:border-foreground/30 focus-within:ring-2 focus-within:ring-ring/20">
             {/* Header / Meta bar */}
-            <div className="flex items-center justify-between border-b border-border/60 bg-muted/40 px-3.5 py-1.5 text-xs text-muted-foreground select-none">
-              <span className="font-mono font-semibold tracking-wide uppercase text-[10px] bg-muted-foreground/10 text-muted-foreground px-1.5 py-0.5 rounded">
+            <div className="flex items-center justify-between border-b border-border/70 bg-muted/35 px-3.5 py-1.5 text-xs text-muted-foreground select-none">
+              <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wide text-foreground/70">
                 {payload.language ?? "typescript"}
               </span>
-              <span className="text-[10px] font-mono opacity-80">Shift + Enter to submit</span>
+              <span className="font-mono text-[10px] text-muted-foreground">Shift + Enter to submit</span>
             </div>
 
             {/* Editor container */}
-            <div className="relative w-full min-h-[140px] font-mono text-sm leading-relaxed">
+            <div className="relative min-h-[132px] w-full font-mono text-sm leading-relaxed">
               {/* Highlighted text layer (positioned absolutely underneath) */}
               <div
-                className="absolute inset-0 pointer-events-none p-3 whitespace-pre-wrap break-all overflow-hidden"
+                className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words p-3"
                 style={{
                   fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
                   fontSize: "13px",
@@ -5022,7 +5022,7 @@ function FlowQuestionComposer({
                     fontSize: "inherit",
                     lineHeight: "inherit",
                     whiteSpace: "pre-wrap",
-                    wordBreak: "break-all",
+                    wordBreak: "break-word",
                   }}
                   codeTagProps={{
                     style: {
@@ -5039,13 +5039,13 @@ function FlowQuestionComposer({
               {/* Transparent Textarea overlay */}
               <textarea
                 ref={textareaRef}
-                className="w-full min-h-[140px] bg-transparent border-0 p-3 resize-none outline-none font-mono text-sm leading-relaxed text-transparent caret-foreground whitespace-pre-wrap break-all block placeholder:text-muted-foreground/60 focus:ring-0"
+                className="block min-h-[132px] w-full resize-none border-0 bg-transparent p-3 font-mono text-sm leading-relaxed outline-none caret-foreground placeholder:text-muted-foreground/70 focus:ring-0"
                 style={{
                   fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
                   fontSize: "13px",
                   lineHeight: "1.5",
                   caretColor: "var(--foreground)",
-                  color: "transparent"
+                  color: value ? "transparent" : "var(--muted-foreground)"
                 }}
                 value={value}
                 placeholder="Write your code here..."
