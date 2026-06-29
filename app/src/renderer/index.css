@@ -92,8 +92,21 @@
 }
 
 @keyframes construct-concept-card-shimmer {
-  from { --construct-concept-shimmer-angle: 0deg; }
-  to { --construct-concept-shimmer-angle: 360deg; }
+  0%, 100% {
+    border-color: color-mix(in srgb, var(--primary) 28%, var(--border));
+    box-shadow:
+      0 0 0 0 color-mix(in srgb, var(--primary) 0%, transparent),
+      0 1px 2px color-mix(in srgb, var(--foreground) 4%, transparent);
+    opacity: 0.72;
+  }
+  45% {
+    border-color: color-mix(in srgb, var(--primary) 62%, var(--border));
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--primary) 18%, transparent),
+      0 0 18px color-mix(in srgb, var(--primary) 16%, transparent),
+      0 1px 2px color-mix(in srgb, var(--foreground) 4%, transparent);
+    opacity: 1;
+  }
 }
 
 html, body, #root {
@@ -662,28 +675,10 @@ html, body {
     position: absolute;
     inset: -1px;
     border-radius: inherit;
-    padding: 1px;
+    border: 1px solid color-mix(in srgb, var(--primary) 35%, var(--border));
     pointer-events: none;
-    background:
-      conic-gradient(
-        from var(--construct-concept-shimmer-angle),
-        transparent 0deg,
-        transparent 238deg,
-        color-mix(in srgb, var(--primary) 26%, transparent) 278deg,
-        color-mix(in srgb, var(--foreground) 18%, transparent) 300deg,
-        transparent 330deg,
-        transparent 360deg
-      );
-    mask:
-      linear-gradient(#000 0 0) content-box,
-      linear-gradient(#000 0 0);
-    mask-composite: exclude;
-    -webkit-mask:
-      linear-gradient(#000 0 0) content-box,
-      linear-gradient(#000 0 0);
-    -webkit-mask-composite: xor;
-    opacity: 0.9;
-    animation: construct-concept-card-shimmer 3.4s linear infinite;
+    opacity: 0.72;
+    animation: construct-concept-card-shimmer 2.6s ease-in-out infinite;
   }
 
   .construct-flow-session [data-component="agent-run-trace"] {
@@ -940,4 +935,3 @@ html, body {
   padding-top: 0.75rem !important;
   padding-bottom: 0.25rem !important;
 }
-
