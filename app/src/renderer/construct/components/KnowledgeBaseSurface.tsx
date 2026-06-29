@@ -27,6 +27,14 @@ type KnowledgeGraphLink = {
   kind: "parent" | "related";
   label: string;
 };
+type ConceptTreeRecordNode = {
+  id: string;
+  path: string;
+  label: string;
+  record?: SavedKnowledgeRecord;
+  children: ConceptTreeRecordNode[];
+  count: number;
+};
 
 const ForceGraph3D = lazy(() => import("react-force-graph-3d"));
 
@@ -44,6 +52,7 @@ export function KnowledgeBaseSurface({
   const [scope, setScope] = useState<ConceptScope>(() => isFlowProjectRecord(activeProject) ? "current" : "all");
   const [view, setView] = useState<ConceptView>("detail");
   const [selectedKey, setSelectedKey] = useState<string | null>(() => records[0] ? recordKey(records[0]) : null);
+  const [collapsedTreePaths, setCollapsedTreePaths] = useState<Set<string>>(() => new Set());
 
   useEffect(() => subscribeKnowledgeRecords(() => setRecords(readKnowledgeRecords())), []);
   useEffect(() => {
@@ -88,6 +97,7 @@ export function KnowledgeBaseSurface({
   }, [filtered, selectedKey]);
 
   const selected = filtered.find((record) => recordKey(record) === selectedKey) ?? filtered[0] ?? null;
+  const conceptTree = useMemo(() => buildConceptRecordTree(filtered), [filtered]);
   const activeProjectTitle = isFlowProjectRecord(activeProject) ? activeProject.title : null;
   const scopeDescription = canUseProjectScope && scope === "current"
     ? `Concepts learned in ${activeProjectTitle ?? "this Flow project"}.`
@@ -144,14 +154,24 @@ export function KnowledgeBaseSurface({
           </div>
           <ShadcnScrollArea className="min-h-0 flex-1">
             {filtered.length ? (
-              <nav className="flex flex-col gap-2 p-3" aria-label="Concept cards">
-                {filtered.map((record) => (
-                  <ConceptListCard
-                    key={recordKey(record)}
-                    activeProjectId={canUseProjectScope ? activeProject.id : undefined}
-                    record={record}
+              <nav className="flex flex-col gap-1.5 p-3" aria-label="Concept tree">
+                {conceptTree.map((node) => (
+                  <ConceptTreeListNode
+                    key={node.path}
+                    node={node}
+                    depth={0}
                     selectedKey={selected ? recordKey(selected) : null}
-                    onSelect={() => setSelectedKey(recordKey(record))}
+                    collapsedTreePaths={collapsedTreePaths}
+                    activeProjectId={canUseProjectScope ? activeProject.id : undefined}
+                    onSelectRecord={(record) => setSelectedKey(recordKey(record))}
+                    onTogglePath={(path) => {
+                      setCollapsedTreePaths((current) => {
+                        const next = new Set(current);
+                        if (next.has(path)) next.delete(path);
+                        else next.add(path);
+                        return next;
+                      });
+                    }}
                   />
                 ))}
               </nav>
@@ -216,16 +236,92 @@ function ScopeButton({
   );
 }
 
+function ConceptTreeListNode({
+  node,
+  depth,
+  selectedKey,
+  collapsedTreePaths,
+  activeProjectId,
+  onSelectRecord,
+  onTogglePath
+}: {
+  node: ConceptTreeRecordNode;
+  depth: number;
+  selectedKey: string | null;
+  collapsedTreePaths: Set<string>;
+  activeProjectId?: string;
+  onSelectRecord: (record: SavedKnowledgeRecord) => void;
+  onTogglePath: (path: string) => void;
+}) {
+  const hasChildren = node.children.length > 0;
+  const collapsed = collapsedTreePaths.has(node.path);
+  const active = node.record ? recordKey(node.record) === selectedKey : false;
+  const content = node.record ? (
+    <ConceptListCard
+      activeProjectId={activeProjectId}
+      record={node.record}
+      selectedKey={selectedKey}
+      depth={depth}
+      hasChildren={hasChildren}
+      collapsed={collapsed}
+      onSelect={() => onSelectRecord(node.record!)}
+      onToggle={hasChildren ? () => onTogglePath(node.path) : undefined}
+    />
+  ) : (
+    <button
+      type="button"
+      className="group flex w-full min-w-0 items-center gap-2 rounded-[8px] px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted/45 hover:text-foreground"
+      style={{ paddingLeft: `${Math.min(depth, 5) * 0.85 + 0.5}rem` }}
+      onClick={() => onTogglePath(node.path)}
+    >
+      <ChevronRightIcon size={14} className={cn("shrink-0 transition-transform", !collapsed && "rotate-90")} />
+      <GitBranchIcon size={14} className="shrink-0" />
+      <span className="min-w-0 flex-1 truncate font-medium">{node.label}</span>
+      <span className="rounded-full border bg-background px-1.5 py-0.5 text-[10px] text-muted-foreground">{node.count}</span>
+    </button>
+  );
+
+  return (
+    <div className="min-w-0">
+      {content}
+      {hasChildren && !collapsed ? (
+        <div className={cn("ml-3 border-l border-border/70 pl-2", active && "border-foreground/25")}>
+          {node.children.map((child) => (
+            <ConceptTreeListNode
+              key={child.path}
+              node={child}
+              depth={depth + 1}
+              selectedKey={selectedKey}
+              collapsedTreePaths={collapsedTreePaths}
+              activeProjectId={activeProjectId}
+              onSelectRecord={onSelectRecord}
+              onTogglePath={onTogglePath}
+            />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function ConceptListCard({
   record,
   selectedKey,
   activeProjectId,
-  onSelect
+  depth = 0,
+  hasChildren = false,
+  collapsed = false,
+  onSelect,
+  onToggle
 }: {
   record: SavedKnowledgeRecord;
   selectedKey: string | null;
   activeProjectId?: string;
+  depth?: number;
+  hasChildren?: boolean;
+  collapsed?: boolean;
   onSelect: () => void;
+  onToggle?: () => void;
 }) {
   const relation = activeProjectId ? projectRelationForRecord(record, activeProjectId) : null;
   const active = recordKey(record) === selectedKey;
@@ -238,13 +334,25 @@ function ConceptListCard({
     <button
       type="button"
       className={cn(
-        "group rounded-[8px] border bg-background/70 p-3 text-left transition-none hover:border-foreground/20 hover:bg-muted/45",
+        "group rounded-[8px] border bg-background/70 py-2 pr-2.5 text-left transition-none hover:border-foreground/20 hover:bg-muted/45",
         active && "border-foreground/25 bg-muted shadow-sm"
       )}
+      style={{ paddingLeft: `${Math.min(depth, 5) * 0.35 + 0.75}rem` }}
       onClick={onSelect}
     >
-      <span className="flex min-w-0 items-start justify-between gap-3">
-        <span className="min-w-0">
+      <span className="flex min-w-0 items-start gap-2">
+        <span
+          className={cn("mt-0.5 grid size-5 shrink-0 place-items-center rounded text-muted-foreground", hasChildren && "hover:bg-muted")}
+          onClick={(event) => {
+            if (!onToggle) return;
+            event.preventDefault();
+            event.stopPropagation();
+            onToggle();
+          }}
+        >
+          {hasChildren ? <ChevronRightIcon size={14} className={cn("transition-transform", !collapsed && "rotate-90")} /> : <BookOpenIcon size={13} />}
+        </span>
+        <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-semibold text-foreground">{record.title}</span>
           <span className="mt-1 line-clamp-2 block text-xs leading-relaxed text-muted-foreground">{record.summary || record.content || "No summary recorded yet."}</span>
         </span>
@@ -735,6 +843,87 @@ function useElementSize<T extends HTMLElement>() {
   }, []);
 
   return [ref, size] as const;
+}
+
+function buildConceptRecordTree(records: SavedKnowledgeRecord[]): ConceptTreeRecordNode[] {
+  type MutableNode = ConceptTreeRecordNode & { childMap: Map<string, MutableNode> };
+  const root = new Map<string, MutableNode>();
+
+  const ensureNode = (siblings: Map<string, MutableNode>, path: string, label: string): MutableNode => {
+    const existing = siblings.get(path);
+    if (existing) return existing;
+    const node: MutableNode = {
+      id: path,
+      path,
+      label,
+      children: [],
+      childMap: new Map(),
+      count: 0
+    };
+    siblings.set(path, node);
+    return node;
+  };
+
+  for (const record of records) {
+    const parts = conceptTreePath(record);
+    let siblings = root;
+    let path = "";
+    parts.forEach((part, index) => {
+      path = path ? `${path}.${part}` : part;
+      const isLeaf = index === parts.length - 1;
+      const label = isLeaf ? record.title : conceptSegmentLabel(part);
+      const node = ensureNode(siblings, path, label);
+      if (isLeaf) {
+        node.record = record;
+        node.label = record.title;
+      }
+      siblings = node.childMap;
+    });
+  }
+
+  const freeze = (siblings: Map<string, MutableNode>): ConceptTreeRecordNode[] => (
+    [...siblings.values()]
+      .sort((a, b) => {
+        if (a.record && !b.record) return 1;
+        if (!a.record && b.record) return -1;
+        return a.label.localeCompare(b.label);
+      })
+      .map((node) => {
+        const children = freeze(node.childMap);
+        const count = (node.record ? 1 : 0) + children.reduce((sum, child) => sum + child.count, 0);
+        return {
+          id: node.id,
+          path: node.path,
+          label: node.label,
+          record: node.record,
+          children,
+          count
+        };
+      })
+  );
+
+  return freeze(root);
+}
+
+function conceptTreePath(record: SavedKnowledgeRecord): string[] {
+  const idParts = record.id.split(".").map((part) => part.trim()).filter(Boolean);
+  if (idParts.length) return idParts;
+  return [recordKey(record)];
+}
+
+function conceptSegmentLabel(segment: string): string {
+  const languageLabels: Record<string, string> = {
+    cpp: "C++",
+    c: "C",
+    js: "JavaScript",
+    ts: "TypeScript",
+    swiftui: "SwiftUI"
+  };
+  const normalized = segment.toLowerCase();
+  if (languageLabels[normalized]) return languageLabels[normalized];
+  return segment
+    .replace(/[-_]/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function buildKnowledgeGraph(records: SavedKnowledgeRecord[], selectedKey: string | null): GraphData<KnowledgeGraphNode, KnowledgeGraphLink> {
