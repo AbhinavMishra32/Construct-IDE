@@ -8,6 +8,7 @@ const failures = [];
 const packageJson = readJson("package.json");
 const appPackageJson = readJson("app/package.json");
 const builderConfig = read("app/electron-builder.yml");
+const viteConfig = read("app/vite.config.ts");
 const ciWorkflow = read(".github/workflows/ci.yml");
 const releaseWorkflow = read(".github/workflows/release.yml");
 const gitmodules = read(".gitmodules");
@@ -20,6 +21,10 @@ check(appPackageJson.name === "@construct/app", "app/package.json is readable an
 check(packageJson.version === appPackageJson.version, "Root and app package versions stay aligned for release tags.");
 
 check(exists("opaline/packages/ui/src"), "opaline/packages/ui/src exists for the @opaline/ui CSS copy step.");
+check(
+  /base:\s*["']\.\/["']/.test(viteConfig),
+  "Vite renderer build uses relative asset URLs so Electron loadFile can load packaged assets."
+);
 check(
   copyCss.includes("dirname(dirname(fileURLToPath(import.meta.url)))") && !copyCss.includes(".replace(/\\/scripts$/"),
   "Opaline CSS copy script derives packageRoot with platform-safe path helpers."
