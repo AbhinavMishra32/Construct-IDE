@@ -10,6 +10,7 @@ import {
   StorageTarget,
   type IStorageService
 } from "../storage/storage";
+import { CONSTRUCT_CLOUD_PRODUCTION_BASE_URL } from "../../shared/constructCloud";
 
 export type AiProvider = "openai" | "openrouter" | "github-copilot" | "opencode-zen" | "litellm";
 export type AiCallSource = "byok" | "construct-cloud";
@@ -80,9 +81,10 @@ const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
 const DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 const DEFAULT_LITELLM_BASE_URL = "http://localhost:4000/v1";
 const DEFAULT_OPENCODE_ZEN_BASE_URL = "https://opencode.ai/zen/v1";
-const DEFAULT_CONSTRUCT_CLOUD_BASE_URL = "https://cloud.tryconstruct.cc";
+const DEFAULT_CONSTRUCT_CLOUD_BASE_URL = CONSTRUCT_CLOUD_PRODUCTION_BASE_URL;
 const SETTINGS_STORAGE_KEY = "construct.settings";
 let configuredDataPaths: ConstructDataPaths | null = null;
+let constructCloudProductionEndpointLocked = false;
 
 export function createConstructDataPaths(userDataRoot: string): ConstructDataPaths {
   const projectsRoot = path.join(userDataRoot, "construct-projects");
@@ -102,6 +104,10 @@ export function configureConstructDataPaths(paths: ConstructDataPaths | null): v
   configuredDataPaths = paths;
 }
 
+export function configureConstructCloudProductionEndpointLock(locked: boolean): void {
+  constructCloudProductionEndpointLocked = locked;
+}
+
 export function readConstructAiSettingsSync(): StoredAiSettings {
   const paths = getElectronDataPaths();
   if (!paths) {
@@ -115,7 +121,10 @@ export function readConstructAiSettingsSync(): StoredAiSettings {
   });
   const config = readJsonFileSync<Partial<StoredSettings>>(paths.configPath)
     ?? readJsonFileSync<Partial<StoredSettings>>(paths.legacySettingsPath);
-  return normalizeSettings(stored ?? config, paths).ai;
+  return enforceConstructCloudProductionEndpoint(
+    normalizeSettings(stored ?? config, paths),
+    constructCloudProductionEndpointLocked
+  ).ai;
 }
 
 export async function readConstructSettings(
@@ -232,6 +241,20 @@ export function normalizeSettings(
       phoenixApiKey: normalizeString(inputObservability.phoenixApiKey, ""),
       phoenixProjectName: normalizeString(inputObservability.phoenixProjectName, defaults.observability.phoenixProjectName),
       batch: inputObservability.batch !== false
+    }
+  };
+}
+
+export function enforceConstructCloudProductionEndpoint(settings: StoredSettings, locked: boolean): StoredSettings {
+  if (!locked || settings.ai.constructCloudBaseUrl === CONSTRUCT_CLOUD_PRODUCTION_BASE_URL) {
+    return settings;
+  }
+
+  return {
+    ...settings,
+    ai: {
+      ...settings.ai,
+      constructCloudBaseUrl: CONSTRUCT_CLOUD_PRODUCTION_BASE_URL
     }
   };
 }

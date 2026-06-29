@@ -111,7 +111,8 @@ export function ConstructAiSettingsSection({
   onImportOpencodeAuth,
   litellmState,
   onLitellmStart,
-  onLitellmStop
+  onLitellmStop,
+  allowConstructCloudEndpointEditing = false
 }: {
   settings: AiSettings;
   features: AiFeatureSettings[];
@@ -150,6 +151,7 @@ export function ConstructAiSettingsSection({
   litellmState?: { status: string; port: number; pid: number | null; error: string | null };
   onLitellmStart?: () => void;
   onLitellmStop?: () => void;
+  allowConstructCloudEndpointEditing?: boolean;
 }) {
   const [showFeatureModels, setShowFeatureModels] = useState(false);
 
@@ -216,6 +218,7 @@ export function ConstructAiSettingsSection({
               baseUrl={settings.constructCloudBaseUrl}
               accessToken={settings.constructCloudAccessToken}
               disabled={aiBusy}
+              allowEndpointEditing={allowConstructCloudEndpointEditing}
               onBaseUrlChange={onConstructCloudBaseUrlChange}
               onAccessTokenChange={onConstructCloudAccessTokenChange}
             />

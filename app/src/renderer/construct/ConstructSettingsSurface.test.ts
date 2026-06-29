@@ -52,6 +52,9 @@ describe("Construct project advanced settings", () => {
     assert.match(source, /onConstructCloudAccessTokenChange=\{\(constructCloudAccessToken: string\) => setAiSettingsDraft/);
     assert.match(aiSection, /LLM source/);
     assert.match(aiSection, /ConstructCloudAccountPanel/);
+    assert.match(source, /allowConstructCloudEndpointEditing=\{isConstructDevRuntime\(\)\}/);
+    assert.match(aiSection, /allowEndpointEditing=\{allowConstructCloudEndpointEditing\}/);
+    assert.match(cloudPanel, /allowEndpointEditing = false/);
     assert.match(cloudPanel, /createAuthClient\(\{[\s\S]*?baseURL: normalizedBaseUrl/);
     assert.match(cloudPanel, /authClient\.signOut\(\)/);
     assert.match(cloudPanel, /api\/cloud\/tokens/);

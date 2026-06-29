@@ -13,8 +13,10 @@ import { providerLogService } from "./ai/ProviderLogService";
 import { MainProcessLogBridge } from "./app/MainProcessLogBridge";
 import { ConstructWindowManager } from "./app/ConstructWindowManager";
 import {
+  configureConstructCloudProductionEndpointLock,
   configureConstructDataPaths,
   createConstructDataPaths,
+  enforceConstructCloudProductionEndpoint,
   readConstructSettings,
   writeConstructSettings,
   type ConstructDataPaths,
@@ -63,6 +65,7 @@ logBridge.install();
 
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
 const shouldOpenDevTools = process.env.CONSTRUCT_OPEN_DEVTOOLS === "1";
+configureConstructCloudProductionEndpointLock(app.isPackaged);
 
 function sendToRenderers(channel: string, payload: unknown): void {
   for (const window of BrowserWindow.getAllWindows()) {
@@ -190,11 +193,18 @@ async function writeProject(project: StoredProject, options?: ProjectWriteOption
 }
 
 async function readSettings(): Promise<StoredSettings> {
-  return readConstructSettings(constructDataPaths(), storageService());
+  return enforceConstructCloudProductionEndpoint(
+    await readConstructSettings(constructDataPaths(), storageService()),
+    app.isPackaged
+  );
 }
 
 async function writeSettings(settings: StoredSettings): Promise<StoredSettings> {
-  return writeConstructSettings(settings, constructDataPaths(), storageService());
+  return writeConstructSettings(
+    enforceConstructCloudProductionEndpoint(settings, app.isPackaged),
+    constructDataPaths(),
+    storageService()
+  );
 }
 
 function storageService(): IStorageService {

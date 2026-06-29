@@ -7,11 +7,13 @@ import { Button, Input } from "@opaline/ui";
 import { Auth } from "../../../components/auth/auth";
 import { AuthProvider } from "../../../components/auth/auth-provider";
 import { cleanAndNormalizeUrl } from "../../ConstructApplication";
+import { CONSTRUCT_CLOUD_PRODUCTION_BASE_URL } from "../../../../shared/constructCloud";
 
 type ConstructCloudAccountPanelProps = {
   baseUrl: string;
   accessToken: string;
   disabled?: boolean;
+  allowEndpointEditing?: boolean;
   onBaseUrlChange: (baseUrl: string) => void;
   onAccessTokenChange: (accessToken: string) => void;
 };
@@ -47,6 +49,7 @@ export function ConstructCloudAccountPanel({
   baseUrl,
   accessToken,
   disabled,
+  allowEndpointEditing = false,
   onBaseUrlChange,
   onAccessTokenChange
 }: ConstructCloudAccountPanelProps) {
@@ -104,13 +107,15 @@ export function ConstructCloudAccountPanel({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-        <Input
-          value={baseUrl}
-          disabled={disabled}
-          placeholder="https://cloud.tryconstruct.cc"
-          onChange={(event) => onBaseUrlChange(event.target.value)}
-        />
+      <div className={allowEndpointEditing ? "grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]" : "grid gap-2"}>
+        {allowEndpointEditing ? (
+          <Input
+            value={baseUrl}
+            disabled={disabled}
+            placeholder={CONSTRUCT_CLOUD_PRODUCTION_BASE_URL}
+            onChange={(event) => onBaseUrlChange(event.target.value)}
+          />
+        ) : null}
         <Input
           type="password"
           value={accessToken}

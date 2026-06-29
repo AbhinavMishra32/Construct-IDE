@@ -14,6 +14,7 @@ import { AuthProvider } from "../components/auth/auth-provider";
 import { UserAvatar } from "../components/auth/user/user-avatar";
 import type { AuthView } from "@better-auth-ui/core";
 import type { AiSettings } from "./types";
+import { CONSTRUCT_CLOUD_PRODUCTION_BASE_URL } from "../../shared/constructCloud";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type ComponentPropsWithoutRef, type PropsWithChildren } from "react";
 import {
@@ -235,7 +236,16 @@ function AuthGateContent({
   const connectFailed = isError || (timedOut && !session);
 
   if (connectFailed) {
-    const isDev = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+    const isDev = isConstructDevRuntime();
+    const signOutAndReload = async () => {
+      localStorage.removeItem("bearer_token");
+      try {
+        await authClient.signOut();
+      } catch {
+        // The cloud service may be unreachable; local token cleanup is still useful.
+      }
+      window.location.reload();
+    };
 
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-background text-foreground font-sans">
@@ -245,7 +255,7 @@ function AuthGateContent({
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
             </svg>
           </div>
-          <h2 className="text-xl font-bold tracking-tight">Authentication Server Unreachable</h2>
+          <h2 className="text-xl font-bold tracking-tight">Construct Cloud is not reachable</h2>
 
           {isDev ? (
             <>
@@ -288,7 +298,7 @@ function AuthGateContent({
                 <button
                   onClick={() => {
                     void getSettings().then((settings) => {
-                      settings.ai.constructCloudBaseUrl = "https://cloud.tryconstruct.cc";
+                      settings.ai.constructCloudBaseUrl = CONSTRUCT_CLOUD_PRODUCTION_BASE_URL;
                       return updateAiSettings({ ai: settings.ai });
                     }).then(() => {
                       window.location.reload();
@@ -305,15 +315,22 @@ function AuthGateContent({
           ) : (
             <>
               <p className="text-xs text-muted-foreground max-w-[320px]">
-                Construct is unable to connect to the authentication server at:
-                <code className="block mt-2 p-1.5 rounded bg-muted text-foreground select-all break-all">{baseUrl}</code>
+                Construct could not reach your account service. Check your connection, retry, or sign out and use another account.
               </p>
-              <button
-                onClick={() => window.location.reload()}
-                className="w-full px-4 py-2 text-xs font-semibold rounded-lg bg-primary text-primary-foreground hover:bg-primary/95 transition-colors"
-              >
-                Retry Connection
-              </button>
+              <div className="flex w-full gap-2">
+                <button
+                  onClick={() => window.location.reload()}
+                  className="flex-1 px-4 py-2 text-xs font-semibold rounded-lg bg-primary text-primary-foreground hover:bg-primary/95 transition-colors"
+                >
+                  Retry
+                </button>
+                <button
+                  onClick={() => void signOutAndReload()}
+                  className="flex-1 px-4 py-2 text-xs font-semibold rounded-lg border hover:bg-muted transition-colors"
+                >
+                  Sign out
+                </button>
+              </div>
             </>
           )}
         </div>
@@ -2143,6 +2160,7 @@ function ConstructAccountDialog({
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const plan = account.usage?.plan ?? account.account?.user?.plan ?? null;
+  const allowEndpointEditing = isConstructDevRuntime();
 
   useEffect(() => {
     if (!open) return;
@@ -2152,7 +2170,9 @@ function ConstructAccountDialog({
   }, [aiSettings.constructCloudAccessToken, aiSettings.constructCloudBaseUrl, open]);
 
   async function saveHostedSettings(next?: { baseUrl?: string; token?: string }): Promise<boolean> {
-    const baseUrl = cleanAndNormalizeUrl(next?.baseUrl ?? baseUrlDraft);
+    const baseUrl = allowEndpointEditing
+      ? cleanAndNormalizeUrl(next?.baseUrl ?? baseUrlDraft)
+      : CONSTRUCT_CLOUD_PRODUCTION_BASE_URL;
     const token = (next?.token ?? tokenDraft).trim();
 
     try {
@@ -2192,7 +2212,7 @@ function ConstructAccountDialog({
       if (token) {
         headers.Authorization = `Bearer ${token}`;
       }
-      const baseUrl = cleanAndNormalizeUrl(baseUrlDraft);
+      const baseUrl = allowEndpointEditing ? cleanAndNormalizeUrl(baseUrlDraft) : CONSTRUCT_CLOUD_PRODUCTION_BASE_URL;
       const response = await fetch(`${baseUrl}/api/cloud/tokens`, {
         method: "POST",
         credentials: "include",
@@ -2280,6 +2300,7 @@ function ConstructAccountDialog({
             busy={busy}
             hasUser={!!account.session?.user}
             status={status ?? account.status ?? null}
+            allowEndpointEditing={allowEndpointEditing}
             onBaseUrlChange={setBaseUrlDraft}
             onTokenChange={setTokenDraft}
             onMint={() => void mintHostedToken()}
@@ -2356,6 +2377,7 @@ function useConstructAccount(baseUrl: string) {
 }
 
 function ConstructAccountConnectionSection({
+  allowEndpointEditing,
   baseUrlDraft,
   tokenDraft,
   busy,
@@ -2367,6 +2389,7 @@ function ConstructAccountConnectionSection({
   onSave,
   onClear
 }: {
+  allowEndpointEditing: boolean;
   baseUrlDraft: string;
   tokenDraft: string;
   busy: boolean;
@@ -2396,14 +2419,18 @@ function ConstructAccountConnectionSection({
 
       {expanded ? (
         <div className="mt-3 flex flex-col gap-3 border-t pt-3">
-          <div className="text-xs text-muted-foreground">Cloud endpoint and access token for AI compute. Bring-your-own-key users can ignore this.</div>
-          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-            <Input
-              value={baseUrlDraft}
-              disabled={busy}
-              placeholder="https://cloud.tryconstruct.cc"
-              onChange={(event) => onBaseUrlChange(event.target.value)}
-            />
+          <div className="text-xs text-muted-foreground">
+            {allowEndpointEditing ? "Cloud endpoint and access token for AI compute." : "Construct Cloud uses the production endpoint managed by Construct."}
+          </div>
+          <div className={allowEndpointEditing ? "grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]" : "grid gap-2"}>
+            {allowEndpointEditing ? (
+              <Input
+                value={baseUrlDraft}
+                disabled={busy}
+                placeholder={CONSTRUCT_CLOUD_PRODUCTION_BASE_URL}
+                onChange={(event) => onBaseUrlChange(event.target.value)}
+              />
+            ) : null}
             <Input
               type="password"
               value={tokenDraft}
@@ -2416,9 +2443,11 @@ function ConstructAccountConnectionSection({
             <Button size="small" disabled={busy || !hasUser} onClick={onMint}>
               {busy ? "Working..." : "Mint token"}
             </Button>
-            <Button size="small" variant="secondary" disabled={busy} onClick={onSave}>
-              Save
-            </Button>
+            {allowEndpointEditing ? (
+              <Button size="small" variant="secondary" disabled={busy} onClick={onSave}>
+                Save
+              </Button>
+            ) : null}
             {tokenDraft ? (
               <Button size="small" variant="secondary" disabled={busy} onClick={onClear}>
                 Clear token
@@ -2644,7 +2673,7 @@ function ConstructProjectTitleMenu({
   );
 }
 
-export function cleanAndNormalizeUrl(url: string | null | undefined, fallback: string = "https://cloud.tryconstruct.cc"): string {
+export function cleanAndNormalizeUrl(url: string | null | undefined, fallback: string = CONSTRUCT_CLOUD_PRODUCTION_BASE_URL): string {
   if (!url || typeof url !== "string") return fallback;
   
   let cleaned = url.trim().replace(/\/$/, "");
@@ -2672,4 +2701,8 @@ export function cleanAndNormalizeUrl(url: string | null | undefined, fallback: s
   }
 
   return cleaned;
+}
+
+function isConstructDevRuntime(): boolean {
+  return window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
 }

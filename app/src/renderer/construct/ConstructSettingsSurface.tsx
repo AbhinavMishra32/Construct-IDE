@@ -76,6 +76,7 @@ import type {
   ProjectSummary
 } from "./types";
 import type { ConstructFlowMemoryRead, FlowMemoryFileName } from "../../shared/constructFlow";
+import { CONSTRUCT_CLOUD_PRODUCTION_BASE_URL } from "../../shared/constructCloud";
 import type { ThemeMode } from "./theme";
 
 const defaultAiSettings: AiSettings = {
@@ -97,7 +98,7 @@ const defaultAiSettings: AiSettings = {
   opencodeZenBaseUrl: "https://opencode.ai/zen/v1",
   opencodeZenModel: "gpt-5.1-codex",
   githubCopilotModel: "github_copilot/gpt-4",
-  constructCloudBaseUrl: "https://cloud.tryconstruct.cc",
+  constructCloudBaseUrl: CONSTRUCT_CLOUD_PRODUCTION_BASE_URL,
   constructCloudAccessToken: "",
   constructCloudModel: "deepseek/deepseek-v4-flash",
   tavilyApiKey: "",
@@ -862,6 +863,7 @@ export function ConstructSettingsSurface({
         litellmState={litellmState}
         onLitellmStart={handleLitellmStart}
         onLitellmStop={handleLitellmStop}
+        allowConstructCloudEndpointEditing={isConstructDevRuntime()}
       />
     );
   }
@@ -1334,6 +1336,10 @@ function mergeFlowMemoryEntries(
     byFile.set(entry.file, entry);
   }
   return flowMemoryFiles.map((file) => byFile.get(file)).filter((entry): entry is ConstructFlowMemoryRead => Boolean(entry));
+}
+
+function isConstructDevRuntime(): boolean {
+  return window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
 }
 
 export function settingsTitle(itemId: string, projectId: string | undefined, projects: ProjectSummary[]) {
