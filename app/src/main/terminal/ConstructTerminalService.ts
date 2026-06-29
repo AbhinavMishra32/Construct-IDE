@@ -1,6 +1,12 @@
 import * as pty from "node-pty";
+import { chmodSync, existsSync, statSync } from "node:fs";
+import { createRequire } from "node:module";
+import { homedir } from "node:os";
+import path from "node:path";
 
 import type { StoredProject } from "../projects/ConstructProjectTypes";
+
+const require = createRequire(import.meta.url);
 
 export type TerminalSessionMeta = {
   projectId: string;
@@ -35,24 +41,58 @@ export class ConstructTerminalService {
     cols?: number;
     rows?: number;
   }): { sessionId: string } {
-    const shellPath = process.env.SHELL || "/bin/zsh";
-    const child = pty.spawn(shellPath, ["-i"], {
-      name: "xterm-256color",
-      cols: typeof input.cols === "number" ? input.cols : 80,
-      rows: typeof input.rows === "number" ? input.rows : 24,
-      cwd: input.project.workspacePath,
-      env: {
-        ...process.env,
-        TERM: "xterm-256color",
-        COLORTERM: "truecolor",
-        LANG: process.env.LANG || "en_US.UTF-8"
+    ensureNodePtySpawnHelperExecutable();
+    const cols = typeof input.cols === "number" && input.cols > 0 ? input.cols : 80;
+    const rows = typeof input.rows === "number" && input.rows > 0 ? input.rows : 24;
+    const cwdCandidates = terminalWorkspaceCandidates(input.project.workspacePath);
+    const shellCandidates = terminalShellCandidates();
+    const env = {
+      ...process.env,
+      TERM: "xterm-256color",
+      COLORTERM: "truecolor",
+      LANG: process.env.LANG || "en_US.UTF-8",
+      PATH: process.env.PATH || "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+    };
+
+    let child: pty.IPty | null = null;
+    let shellPath = shellCandidates[0] ?? "/bin/zsh";
+    let workspacePath = cwdCandidates[0] ?? homedir();
+    let lastError: unknown = null;
+
+    for (const candidateShell of shellCandidates) {
+      for (const candidateCwd of cwdCandidates) {
+        try {
+          child = pty.spawn(candidateShell, ["-i"], {
+            name: "xterm-256color",
+            cols,
+            rows,
+            cwd: candidateCwd,
+            env
+          });
+          shellPath = candidateShell;
+          workspacePath = candidateCwd;
+          lastError = null;
+          break;
+        } catch (error) {
+          lastError = error;
+        }
       }
-    });
+      if (child) {
+        break;
+      }
+    }
+
+    if (!child) {
+      const message = lastError instanceof Error ? lastError.message : String(lastError);
+      throw new Error(
+        `Failed to spawn terminal for project ${input.project.id}. shells=${shellCandidates.join(", ")} cwd=${cwdCandidates.join(", ")} cause=${message}`
+      );
+    }
 
     this.sessions.set(input.sessionId, child);
     this.sessionMeta.set(input.sessionId, {
       projectId: input.project.id,
-      workspacePath: input.project.workspacePath,
+      workspacePath,
       shellPath,
       startedAt: Date.now()
     });
@@ -125,5 +165,79 @@ export class ConstructTerminalService {
     }
 
     return snapshots;
+  }
+}
+
+function terminalShellCandidates(): string[] {
+  const seen = new Set<string>();
+  const candidates = [process.env.SHELL, "/bin/zsh", "/bin/bash", "/bin/sh"];
+  const result: string[] = [];
+
+  for (const candidate of candidates) {
+    if (typeof candidate !== "string") {
+      continue;
+    }
+    const value = candidate.trim();
+    if (!value || seen.has(value) || !isExecutableFile(value)) {
+      continue;
+    }
+    seen.add(value);
+    result.push(value);
+  }
+
+  return result.length > 0 ? result : ["/bin/sh"];
+}
+
+function terminalWorkspaceCandidates(workspacePath: string): string[] {
+  const seen = new Set<string>();
+  const candidates = [workspacePath, process.cwd(), homedir()];
+  const result: string[] = [];
+
+  for (const candidate of candidates) {
+    if (typeof candidate !== "string") {
+      continue;
+    }
+    const value = candidate.trim();
+    if (!value || seen.has(value) || !isDirectory(value)) {
+      continue;
+    }
+    seen.add(value);
+    result.push(value);
+  }
+
+  return result.length > 0 ? result : [homedir()];
+}
+
+function isExecutableFile(filePath: string): boolean {
+  try {
+    return existsSync(filePath) && statSync(filePath).isFile();
+  } catch {
+    return false;
+  }
+}
+
+function isDirectory(directoryPath: string): boolean {
+  try {
+    return existsSync(directoryPath) && statSync(directoryPath).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function ensureNodePtySpawnHelperExecutable(): void {
+  if (process.platform !== "darwin") {
+    return;
+  }
+
+  try {
+    const packageJsonPath = require.resolve("node-pty/package.json");
+    const helperPath = path.join(path.dirname(packageJsonPath), "prebuilds", `darwin-${process.arch}`, "spawn-helper");
+    const stats = statSync(helperPath);
+    if ((stats.mode & 0o111) !== 0) {
+      return;
+    }
+    chmodSync(helperPath, 0o755);
+  } catch {
+    // Ignore helper fixups and let the real spawn error surface if the helper is unavailable.
   }
 }

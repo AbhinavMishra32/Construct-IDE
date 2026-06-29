@@ -139,6 +139,7 @@ export const TerminalPanel = forwardRef<
     try {
       terminal.open(containerRef.current);
       fitAndResize();
+      terminal.focus();
     } catch (error) {
       const message = error instanceof Error ? `${error.name}: ${error.message}\n${error.stack ?? ""}` : String(error);
       logStore.addLog("terminal", `Terminal mount failed\n${message}`, "error");
@@ -239,6 +240,7 @@ export const TerminalPanel = forwardRef<
       }
       try {
         fitAddon.fit();
+        terminal.focus();
         if (sessionId) {
           void terminalResize(sessionId, terminal.cols, terminal.rows);
         }
@@ -253,6 +255,7 @@ export const TerminalPanel = forwardRef<
     <TerminalSurface cwd={`${cwd} · ${status}`}>
       <div
         ref={containerRef}
+        data-construct-terminal="true"
         className="h-full min-h-0 w-full overflow-hidden px-2.5 pb-2.5 pt-0 [&_.xterm]:!bg-transparent [&_.xterm-cursor-layer]:[mix-blend-mode:normal] [&_.xterm-rows]:-translate-y-px [&_.xterm-screen]:[font-kerning:none] [&_.xterm-screen]:[text-rendering:optimizeLegibility] [&_.xterm-screen]:antialiased [&_.xterm-viewport]:!bg-transparent"
       />
     </TerminalSurface>
@@ -260,11 +263,23 @@ export const TerminalPanel = forwardRef<
 });
 
 function resolveTerminalDark(theme: "light" | "dark" | "system"): boolean {
-  if (theme === "system") {
-    return window.matchMedia("(prefers-color-scheme: dark)").matches;
+  if (theme === "light") {
+    return false;
   }
 
-  return theme === "dark";
+  if (theme === "dark") {
+    return true;
+  }
+
+  const documentTheme = document.documentElement.dataset.constructTheme;
+  if (documentTheme === "dark") {
+    return true;
+  }
+  if (documentTheme === "light") {
+    return false;
+  }
+
+  return document.documentElement.classList.contains("dark");
 }
 
 function terminalTheme(isDark: boolean) {
@@ -273,7 +288,8 @@ function terminalTheme(isDark: boolean) {
     foreground: isDark ? "#d3d3cf" : "#202020",
     cursor: isDark ? "#10a37f" : "#0f7f64",
     cursorAccent: isDark ? "#0f1110" : "#ffffff",
-    selectionBackground: isDark ? "#10a37f33" : "#0f7f6426",
+    selectionBackground: isDark ? "#2f80ed59" : "#9cccff70",
+    selectionInactiveBackground: isDark ? "#ffffff20" : "#1f29371a",
     black: "#171717",
     red: "#ff6b6b",
     green: "#10a37f",

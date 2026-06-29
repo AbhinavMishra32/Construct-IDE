@@ -257,6 +257,18 @@ html, body {
 }
 
 @layer components {
+  [data-construct-terminal="true"] .xterm-selection div {
+    background-color: color-mix(in srgb, #9cccff 44%, transparent) !important;
+  }
+
+  .dark [data-construct-terminal="true"] .xterm-selection div {
+    background-color: color-mix(in srgb, #2f80ed 38%, transparent) !important;
+  }
+
+  [data-construct-terminal="true"] .xterm:not(.focus) .xterm-selection div {
+    background-color: color-mix(in srgb, var(--muted-foreground) 16%, transparent) !important;
+  }
+
   .construct-overlay-shadow {
     box-shadow: var(--construct-shadow-overlay) !important;
   }
@@ -928,5 +940,4 @@ html, body {
   padding-top: 0.75rem !important;
   padding-bottom: 0.25rem !important;
 }
-
 
