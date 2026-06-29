@@ -59,6 +59,12 @@ check(releaseWorkflow.includes("actions/upload-artifact@v5"), "Release uses acti
 check(releaseWorkflow.includes("actions/download-artifact@v5"), "Release uses actions/download-artifact@v5.");
 check(releaseWorkflow.includes("node scripts/release/preflight.mjs"), "Release workflow runs the no-build preflight before packaging.");
 check(releaseWorkflow.includes("node scripts/release/publish-gh.mjs"), "Release workflow delegates GitHub publishing to the idempotent publish script.");
+check(releaseWorkflow.includes("shell: bash"), "Release package step explicitly uses bash for cross-platform shell cleanup.");
+check(
+  releaseWorkflow.includes('if [ -z "$CSC_LINK" ]; then unset CSC_LINK CSC_KEY_PASSWORD; fi') &&
+    releaseWorkflow.includes('if [ -z "$APPLE_ID" ]; then unset APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; fi'),
+  "Release package step unsets empty macOS signing secrets before invoking electron-builder."
+);
 
 const topArtifactName = getScalar(builderConfig, "artifactName");
 const nsisArtifactName = getSectionScalar(builderConfig, "nsis", "artifactName");
