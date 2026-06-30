@@ -135,7 +135,7 @@ export function ConceptSummaryCard({
       <button
         type="button"
         className={cn(
-          "construct-concept-summary-card group flex w-full max-w-[32rem] min-w-0 items-center justify-between gap-2.5 rounded-[12px] border border-border/60 bg-muted/30 p-2.5 text-left text-foreground hover:bg-muted/65 active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 cursor-default",
+          "construct-concept-summary-card group flex w-full max-w-[46rem] min-w-0 items-center justify-between gap-2.5 rounded-[12px] border border-border/60 bg-muted/30 p-2.5 text-left text-foreground hover:bg-muted/65 active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 cursor-default",
           isPanel && "p-2 gap-2 rounded-lg"
         )}
         data-attention={attention ? "true" : "false"}

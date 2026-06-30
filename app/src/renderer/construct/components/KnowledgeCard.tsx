@@ -4,13 +4,13 @@ import {
   BrainCircuitIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
+  ChevronUpIcon,
   CirclePlusIcon,
   ExternalLinkIcon,
   FileTextIcon,
   FolderIcon,
   HistoryIcon,
   InfoIcon,
-  SparklesIcon,
   User,
   XIcon
 } from "lucide-react";
@@ -80,12 +80,17 @@ export function KnowledgeCard({
   const history = useMemo(() => orderConceptHistory(concept.history?.length ? concept.history : buildFallbackHistory(concept)), [concept]);
   const guideBlocks = concept.guides.filter((guide) => guide.content || guide.sections.length);
   const [mode, setMode] = useState<ConceptRevisionMode>("latest");
+  const [collapsed, setCollapsed] = useState(false);
   const [selectedHistoryIndex, setSelectedHistoryIndex] = useState(() => Math.max(0, history.length - 1));
 
   useEffect(() => {
     setMode("latest");
     setSelectedHistoryIndex(Math.max(0, history.length - 1));
   }, [concept.id, concept.lastModifiedAt, history.length]);
+
+  useEffect(() => {
+    setCollapsed(false);
+  }, [concept.id]);
 
   useEffect(() => {
     setSelectedHistoryIndex((index) => clamp(index, 0, Math.max(0, history.length - 1)));
@@ -119,17 +124,20 @@ export function KnowledgeCard({
 
   return (
     <motion.section
-      className="opaline-overlay-shadow flex h-full min-h-0 w-full flex-col overflow-hidden rounded-[18px] border border-border/80 bg-popover/94 text-sm text-popover-foreground backdrop-blur-xl backdrop-saturate-150"
+      className={cn(
+        "opaline-overlay-shadow flex min-h-0 w-full flex-col overflow-hidden rounded-[18px] border border-border/80 bg-popover/94 text-sm text-popover-foreground backdrop-blur-xl backdrop-saturate-150",
+        collapsed ? "h-auto" : "h-full"
+      )}
       data-construct-explainable="concept-card"
       data-construct-explainable-label={concept.title}
+      data-collapsed={collapsed ? "true" : "false"}
       data-saved={saved ? "true" : "false"}
       data-revision-mode={mode}
-      initial={{ opacity: 0, y: 18, scale: 0.985 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
+      initial={{ opacity: 0, y: 18 }}
+      animate={{ opacity: 1, y: 0 }}
       transition={cardSpring}
-      layout
     >
-      <header className="flex shrink-0 items-stretch border-b border-border/70 bg-background/35">
+      <header className={cn("flex shrink-0 items-stretch bg-background/35", !collapsed && "border-b border-border/70")}>
         <MasteryBadge
           level={displayedMasteryLevel}
           title={masteryRubric.title}
@@ -148,10 +156,13 @@ export function KnowledgeCard({
             <div className="min-w-0">
               <div className="mb-0.5 flex min-w-0 flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
                 <span className="font-semibold uppercase tracking-wide">Concept</span>
-                {mode === "history" && selectedHistory ? (
+                {introduced ? (
+                  <span className="rounded-full border border-[color:var(--construct-success)]/35 bg-[color:var(--construct-success-soft)] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-[color:var(--construct-success)]">
+                    New
+                  </span>
+                ) : mode === "history" && selectedHistory ? (
                   <span className={cn(
                     "rounded-full border px-1.5 py-0.5 capitalize",
-                    selectedHistory.kind === "introduced" && "border-[color:var(--construct-success)]/35 bg-[color:var(--construct-success-soft)] text-[color:var(--construct-success)]",
                     selectedHistory.kind === "modified" && "border-[color:var(--construct-warning)]/35 bg-[color:var(--construct-warning-soft)] text-[color:var(--construct-warning)]"
                   )}>
                     {selectedHistory.kind}
@@ -163,6 +174,19 @@ export function KnowledgeCard({
               <p className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground/75">{concept.id}</p>
             </div>
             <div className="flex shrink-0 items-center gap-1">
+              <button
+                type="button"
+                className={cn(
+                  "grid size-8 place-items-center rounded-[8px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+                  collapsed && "bg-muted text-foreground"
+                )}
+                onClick={() => setCollapsed((value) => !value)}
+                aria-pressed={collapsed}
+                aria-label={collapsed ? "Expand concept card" : "Collapse concept card"}
+                title={collapsed ? "Expand concept card" : "Collapse concept card"}
+              >
+                <ChevronUpIcon size={15} className={cn("transition-transform", collapsed && "rotate-180")} />
+              </button>
               <button
                 type="button"
                 className={cn(
@@ -188,63 +212,72 @@ export function KnowledgeCard({
             </div>
           </div>
 
-          <div className="mt-2 border-t border-border/60 pt-1.5">
-            {mode === "history" ? (
-              <>
-                <div className="flex items-center justify-between gap-2 mb-1.5">
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">History</span>
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      className="text-muted-foreground hover:text-foreground disabled:opacity-20 disabled:pointer-events-none"
-                      onClick={() => setSelectedHistoryIndex((index) => clamp(index - 1, 0, history.length - 1))}
-                      disabled={selectedHistoryIndex <= 0}
-                      aria-label="Previous concept update"
-                      title="Previous concept update"
-                    >
-                      <ChevronLeftIcon size={14} />
-                    </button>
-                    <span className="min-w-[2.5rem] text-center font-mono text-[11px] text-muted-foreground">
-                      {history.length ? `${selectedHistoryIndex + 1}/${history.length}` : "0/0"}
-                    </span>
-                    <button
-                      type="button"
-                      className="text-muted-foreground hover:text-foreground disabled:opacity-20 disabled:pointer-events-none"
-                      onClick={() => setSelectedHistoryIndex((index) => clamp(index + 1, 0, history.length - 1))}
-                      disabled={selectedHistoryIndex >= history.length - 1}
-                      aria-label="Next concept update"
-                      title="Next concept update"
-                    >
-                      <ChevronRightIcon size={14} />
-                    </button>
-                  </div>
-                </div>
-                <RevisionRail
-                  events={history}
-                  selectedIndex={selectedHistoryIndex}
-                  onSelect={setSelectedHistoryIndex}
-                />
-              </>
-            ) : (
-              <ConceptProfileStrip concept={concept} />
-            )}
+          <div className={cn("construct-concept-card-accordion shrink-0", !collapsed && "is-open")} aria-hidden={collapsed}>
+            <div>
+              <div className="mt-2 border-t border-border/60 pt-1.5">
+                {mode === "history" ? (
+                  <>
+                    <div className="flex items-center justify-between gap-2 mb-1.5">
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">History</span>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          className="text-muted-foreground hover:text-foreground disabled:opacity-20 disabled:pointer-events-none"
+                          onClick={() => setSelectedHistoryIndex((index) => clamp(index - 1, 0, history.length - 1))}
+                          disabled={selectedHistoryIndex <= 0}
+                          aria-label="Previous concept update"
+                          title="Previous concept update"
+                          tabIndex={collapsed ? -1 : undefined}
+                        >
+                          <ChevronLeftIcon size={14} />
+                        </button>
+                        <span className="min-w-[2.5rem] text-center font-mono text-[11px] text-muted-foreground">
+                          {history.length ? `${selectedHistoryIndex + 1}/${history.length}` : "0/0"}
+                        </span>
+                        <button
+                          type="button"
+                          className="text-muted-foreground hover:text-foreground disabled:opacity-20 disabled:pointer-events-none"
+                          onClick={() => setSelectedHistoryIndex((index) => clamp(index + 1, 0, history.length - 1))}
+                          disabled={selectedHistoryIndex >= history.length - 1}
+                          aria-label="Next concept update"
+                          title="Next concept update"
+                          tabIndex={collapsed ? -1 : undefined}
+                        >
+                          <ChevronRightIcon size={14} />
+                        </button>
+                      </div>
+                    </div>
+                    <RevisionRail
+                      events={history}
+                      selectedIndex={selectedHistoryIndex}
+                      onSelect={setSelectedHistoryIndex}
+                    />
+                  </>
+                ) : (
+                  <ConceptProfileStrip concept={concept} />
+                )}
+              </div>
+            </div>
           </div>
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-        <ConceptCardBody
-          concept={concept}
-          related={related}
-          guideBlocks={guideBlocks}
-          revisionSnapshot={revisionSnapshot}
-          theme={theme}
-          activeEvent={activeHistoryEvent}
-          latestHistory={latestHistory}
-          masteryShift={masteryShift}
-          onOpenConcept={onOpenConcept}
-          onOpenFile={onOpenFile}
-        />
+      <div className={cn("construct-concept-card-accordion min-h-0 flex-1", !collapsed && "is-open")} aria-hidden={collapsed}>
+        <div>
+          <div className="min-h-0 overflow-y-auto px-4 py-3">
+            <ConceptCardBody
+              concept={concept}
+              related={related}
+              guideBlocks={guideBlocks}
+              revisionSnapshot={revisionSnapshot}
+              theme={theme}
+              activeEvent={activeHistoryEvent}
+              masteryShift={masteryShift}
+              onOpenConcept={onOpenConcept}
+              onOpenFile={onOpenFile}
+            />
+          </div>
+        </div>
       </div>
     </motion.section>
   );
@@ -305,9 +338,9 @@ function MasteryBadge({
         <span className="absolute inset-0 bg-[radial-gradient(circle_at_35%_20%,color-mix(in_srgb,var(--foreground)_6%,transparent),transparent_45%)]" />
         <span className="relative flex flex-col items-center leading-none">
           <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground/80">Level</span>
-          <motion.span className="mt-0.5 text-lg font-bold tabular-nums tracking-tight text-foreground" layout>
+          <span className="mt-0.5 text-lg font-bold tabular-nums tracking-tight text-foreground">
             {level}
-          </motion.span>
+          </span>
         </span>
       </motion.button>
       <div className="pointer-events-none absolute left-0 top-[calc(100%+0.5rem)] z-50 hidden w-64 rounded-[8px] border border-border bg-popover/98 p-2.5 text-xs leading-relaxed text-popover-foreground shadow-lg backdrop-blur-md group-hover:block group-focus-within:block">
@@ -391,7 +424,6 @@ function ConceptCardBody({
   revisionSnapshot,
   theme,
   activeEvent,
-  latestHistory,
   masteryShift,
   onOpenConcept,
   onOpenFile
@@ -402,7 +434,6 @@ function ConceptCardBody({
   revisionSnapshot: ConceptRevisionSnapshot | null;
   theme: "light" | "dark" | "system";
   activeEvent: ConceptHistoryEvent | null;
-  latestHistory: ConceptHistoryEvent | null;
   masteryShift: MasteryShift | null;
   onOpenConcept: (conceptId: string) => void;
   onOpenFile: (reference: InlineFileRef) => void;
@@ -418,10 +449,6 @@ function ConceptCardBody({
 
   return (
     <>
-      {!activeEvent && latestHistory?.kind === "introduced" ? (
-        <NewConceptPulse event={latestHistory} />
-      ) : null}
-
       {activeEvent ? (
         <InlineRevisionMarker event={activeEvent} masteryShift={masteryShift} />
       ) : null}
@@ -748,27 +775,6 @@ function RevisionRail({
         );
       })}
     </div>
-  );
-}
-
-function NewConceptPulse({ event }: { event: ConceptHistoryEvent }) {
-  return (
-    <motion.div
-      className="mb-4 overflow-hidden rounded-[14px] border border-[color:var(--construct-success)]/30 bg-[color:var(--construct-success-soft)]/25 p-3"
-      initial={{ opacity: 0, y: -8, scale: 0.98 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      transition={cardSpring}
-    >
-      <div className="flex items-start gap-2">
-        <span className="grid size-8 shrink-0 place-items-center rounded-[10px] border border-[color:var(--construct-success)]/30 bg-background/65 text-[color:var(--construct-success)]">
-          <SparklesIcon size={15} />
-        </span>
-        <div className="min-w-0">
-          <strong className="block text-sm text-foreground">New concept added</strong>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">{event.reason || "Flow introduced this concept into the project memory."}</p>
-        </div>
-      </div>
-    </motion.div>
   );
 }
 

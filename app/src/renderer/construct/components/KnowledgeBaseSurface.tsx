@@ -1,7 +1,7 @@
-import { ArrowRightIcon, BookOpenIcon, ChevronRightIcon, ExternalLinkIcon, GitBranchIcon, HistoryIcon, NetworkIcon, SearchIcon, SparklesIcon, Trash2Icon } from "lucide-react";
+import { BookOpenIcon, ChevronRightIcon, ExternalLinkIcon, GitBranchIcon, HistoryIcon, NetworkIcon, SearchIcon, Trash2Icon } from "lucide-react";
 import { Suspense, lazy, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Button, ShadcnScrollArea } from "@opaline/ui";
-import type { GraphData } from "react-force-graph-3d";
+import type { ForceGraphMethods, GraphData, NodeObject } from "react-force-graph-3d";
 
 import { MarkdownBlock } from "./MarkdownBlock";
 import { readKnowledgeRecords, subscribeKnowledgeRecords, removeKnowledgeConcept, type SavedKnowledgeRecord } from "../lib/knowledgeStore";
@@ -27,6 +27,15 @@ type KnowledgeGraphLink = {
   kind: "parent" | "related";
   label: string;
 };
+type KnowledgeGraphRuntimeNode = NodeObject<KnowledgeGraphNode>;
+type GraphCameraOrbitState = {
+  startedAt: number;
+  initialAngle: number;
+  direction: 1 | -1;
+  radius: number;
+  yOffset: number;
+  yAmplitude: number;
+};
 type ConceptTreeRecordNode = {
   id: string;
   path: string;
@@ -37,6 +46,8 @@ type ConceptTreeRecordNode = {
 };
 
 const ForceGraph3D = lazy(() => import("react-force-graph-3d"));
+const GRAPH_CAMERA_FLIGHT_MS = 1200;
+const GRAPH_CAMERA_ORBIT_DELAY_MS = GRAPH_CAMERA_FLIGHT_MS + 150;
 
 export function KnowledgeBaseSurface({
   activeProject,
@@ -98,51 +109,35 @@ export function KnowledgeBaseSurface({
 
   const selected = filtered.find((record) => recordKey(record) === selectedKey) ?? filtered[0] ?? null;
   const conceptTree = useMemo(() => buildConceptRecordTree(filtered), [filtered]);
-  const activeProjectTitle = isFlowProjectRecord(activeProject) ? activeProject.title : null;
-  const scopeDescription = canUseProjectScope && scope === "current"
-    ? `Concepts learned in ${activeProjectTitle ?? "this Flow project"}.`
-    : "Every concept Construct has learned across projects.";
-
   return (
     <div className="flex h-full min-h-0 w-full flex-col bg-background">
-      <header className="flex shrink-0 items-center justify-between gap-4 border-b px-5 py-4">
-        <div className="min-w-0">
-          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            {canUseProjectScope && scope === "current" ? "Flow concept memory" : "Knowledge base"}
-          </p>
-          <h1 className="mt-1 text-xl font-semibold tracking-tight">Concepts</h1>
-          <p className="mt-1 max-w-2xl truncate text-sm text-muted-foreground">{scopeDescription}</p>
-        </div>
-        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 text-xs text-muted-foreground">
-          <span className="rounded-full border bg-muted/30 px-2.5 py-1">{records.length} total</span>
-          {canUseProjectScope ? <span className="rounded-full border bg-muted/30 px-2.5 py-1">{currentProjectRecords.length} current</span> : null}
-          <Button
-            size="sm"
-            variant={view === "graph" ? "default" : "outline"}
-            className="gap-1.5"
-            disabled={!scopedRecords.length}
-            onClick={() => setView((current) => current === "graph" ? "detail" : "graph")}
-          >
-            <NetworkIcon size={14} />
-            {view === "graph" ? "Concept details" : "Knowledge web"}
-          </Button>
+      <header className="flex h-11 shrink-0 items-center justify-between gap-3 border-b px-3">
+        <div className="inline-flex h-8 items-center rounded-[8px] border bg-muted/15 p-0.5">
+          <ViewModeButton active={view === "detail"} onClick={() => setView("detail")}>
+            <BookOpenIcon size={13} />
+            Concept tree
+          </ViewModeButton>
+          <ViewModeButton active={view === "graph"} disabled={!scopedRecords.length} onClick={() => setView("graph")}>
+            <NetworkIcon size={13} />
+            Knowledge web
+          </ViewModeButton>
         </div>
       </header>
 
       <div className="grid min-h-0 flex-1 grid-cols-[minmax(20rem,26rem)_minmax(0,1fr)]">
         <aside className="flex min-h-0 flex-col border-r bg-muted/10">
-          <div className="flex shrink-0 flex-col gap-3 border-b p-3">
-            <div className="flex h-9 items-center gap-2 rounded-[8px] border bg-background px-3 text-muted-foreground focus-within:ring-2 focus-within:ring-ring/30">
+          <div className="flex shrink-0 flex-col gap-2 border-b p-2">
+            <div className="flex h-8 items-center gap-2 rounded-[7px] border bg-background px-2.5 text-muted-foreground focus-within:ring-2 focus-within:ring-ring/30">
               <SearchIcon size={15} />
               <input
-                className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+                className="min-w-0 flex-1 bg-transparent text-[13px] text-foreground outline-none placeholder:text-muted-foreground"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Search concepts..."
               />
             </div>
             {canUseProjectScope ? (
-              <div className="grid grid-cols-2 gap-1 rounded-[8px] border bg-background p-1">
+              <div className="grid grid-cols-2 gap-1 rounded-[7px] border bg-background p-0.5">
                 <ScopeButton active={scope === "current"} onClick={() => setScope("current")}>
                   Current project
                 </ScopeButton>
@@ -154,7 +149,7 @@ export function KnowledgeBaseSurface({
           </div>
           <ShadcnScrollArea className="min-h-0 flex-1">
             {filtered.length ? (
-              <nav className="flex flex-col gap-1.5 p-3" aria-label="Concept tree">
+              <nav className="flex flex-col px-3 py-2" aria-label="Concept tree">
                 {conceptTree.map((node) => (
                   <ConceptTreeListNode
                     key={node.path}
@@ -213,6 +208,33 @@ export function KnowledgeBaseSurface({
   );
 }
 
+function ViewModeButton({
+  active,
+  children,
+  disabled,
+  onClick
+}: {
+  active: boolean;
+  children: ReactNode;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={cn(
+        "inline-flex h-7 items-center gap-1.5 rounded-[6px] px-2.5 text-xs font-medium transition-none",
+        active ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
+        disabled && "pointer-events-none opacity-45"
+      )}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}
+
 function ScopeButton({
   active,
   children,
@@ -226,8 +248,8 @@ function ScopeButton({
     <button
       type="button"
       className={cn(
-        "h-8 rounded-[7px] px-2.5 text-xs font-medium transition-none",
-        active ? "bg-muted text-foreground shadow-sm" : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+        "h-7 rounded-[6px] px-2 text-xs font-medium transition-none",
+        active ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
       )}
       onClick={onClick}
     >
@@ -258,7 +280,6 @@ function ConceptTreeListNode({
   const active = node.record ? recordKey(node.record) === selectedKey : false;
   const content = node.record ? (
     <ConceptListCard
-      activeProjectId={activeProjectId}
       record={node.record}
       selectedKey={selectedKey}
       depth={depth}
@@ -268,46 +289,73 @@ function ConceptTreeListNode({
       onToggle={hasChildren ? () => onTogglePath(node.path) : undefined}
     />
   ) : (
-    <button
-      type="button"
-      className="group flex w-full min-w-0 items-center gap-2 rounded-[8px] px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted/45 hover:text-foreground"
-      style={{ paddingLeft: `${Math.min(depth, 5) * 0.85 + 0.5}rem` }}
-      onClick={() => onTogglePath(node.path)}
-    >
-      <ChevronRightIcon size={14} className={cn("shrink-0 transition-transform", !collapsed && "rotate-90")} />
-      <GitBranchIcon size={14} className="shrink-0" />
-      <span className="min-w-0 flex-1 truncate font-medium">{node.label}</span>
-      <span className="rounded-full border bg-background px-1.5 py-0.5 text-[10px] text-muted-foreground">{node.count}</span>
-    </button>
+    <ConceptTreeGroupRow
+      count={node.count}
+      depth={depth}
+      label={node.label}
+      collapsed={collapsed}
+      onToggle={() => onTogglePath(node.path)}
+    />
   );
 
   return (
     <div className="min-w-0">
       {content}
-      {hasChildren && !collapsed ? (
-        <div className={cn("ml-3 border-l border-border/70 pl-2", active && "border-foreground/25")}>
-          {node.children.map((child) => (
-            <ConceptTreeListNode
-              key={child.path}
-              node={child}
-              depth={depth + 1}
-              selectedKey={selectedKey}
-              collapsedTreePaths={collapsedTreePaths}
-              activeProjectId={activeProjectId}
-              onSelectRecord={onSelectRecord}
-              onTogglePath={onTogglePath}
-            />
-          ))}
+      {hasChildren ? (
+        <div className={cn("construct-concept-tree-accordion__content", !collapsed && "is-open")}>
+          <div>
+            <div className={cn("ml-[1.125rem] border-l border-border/70 pl-2", active && "border-foreground/25")}>
+              {node.children.map((child) => (
+                <ConceptTreeListNode
+                  key={child.path}
+                  node={child}
+                  depth={depth + 1}
+                  selectedKey={selectedKey}
+                  collapsedTreePaths={collapsedTreePaths}
+                  activeProjectId={activeProjectId}
+                  onSelectRecord={onSelectRecord}
+                  onTogglePath={onTogglePath}
+                />
+              ))}
+            </div>
+          </div>
         </div>
       ) : null}
     </div>
   );
 }
 
+function ConceptTreeGroupRow({
+  count,
+  depth,
+  label,
+  collapsed,
+  onToggle
+}: {
+  count: number;
+  depth: number;
+  label: string;
+  collapsed: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="group flex h-8 w-full min-w-0 items-center gap-2 rounded-[6px] text-left text-sm text-muted-foreground hover:bg-muted/35 hover:text-foreground"
+      style={{ paddingLeft: `${Math.min(depth, 5) * 0.55}rem` }}
+      onClick={onToggle}
+    >
+      <ChevronRightIcon size={14} className={cn("shrink-0 transition-transform", !collapsed && "rotate-90")} />
+      <GitBranchIcon size={14} className="shrink-0 opacity-80" />
+      <span className="min-w-0 flex-1 truncate font-medium">{label}</span>
+      <span className="shrink-0 font-mono text-[10px] text-muted-foreground/70">{count}</span>
+    </button>
+  );
+}
+
 function ConceptListCard({
   record,
   selectedKey,
-  activeProjectId,
   depth = 0,
   hasChildren = false,
   collapsed = false,
@@ -316,54 +364,37 @@ function ConceptListCard({
 }: {
   record: SavedKnowledgeRecord;
   selectedKey: string | null;
-  activeProjectId?: string;
   depth?: number;
   hasChildren?: boolean;
   collapsed?: boolean;
   onSelect: () => void;
   onToggle?: () => void;
 }) {
-  const relation = activeProjectId ? projectRelationForRecord(record, activeProjectId) : null;
   const active = recordKey(record) === selectedKey;
-  const relationLabel = relation
-    ? `${relation.lastEventKind} · L${relation.masteryLevel}`
-    : record.sourceProjectTitle;
-  const updatedAt = relation?.lastReferencedAt ?? record.lastModifiedAt ?? record.savedAt;
 
   return (
     <button
       type="button"
       className={cn(
-        "group rounded-[8px] border bg-background/70 py-2 pr-2.5 text-left transition-none hover:border-foreground/20 hover:bg-muted/45",
-        active && "border-foreground/25 bg-muted shadow-sm"
+        "group flex h-8 w-full min-w-0 items-center gap-2 rounded-[6px] pr-2 text-left transition-none hover:bg-muted/35",
+        active && "bg-muted/65"
       )}
-      style={{ paddingLeft: `${Math.min(depth, 5) * 0.35 + 0.75}rem` }}
+      style={{ paddingLeft: `${Math.min(depth, 5) * 0.35}rem` }}
       onClick={onSelect}
     >
-      <span className="flex min-w-0 items-start gap-2">
-        <span
-          className={cn("mt-0.5 grid size-5 shrink-0 place-items-center rounded text-muted-foreground", hasChildren && "hover:bg-muted")}
-          onClick={(event) => {
-            if (!onToggle) return;
-            event.preventDefault();
-            event.stopPropagation();
-            onToggle();
-          }}
-        >
-          {hasChildren ? <ChevronRightIcon size={14} className={cn("transition-transform", !collapsed && "rotate-90")} /> : <BookOpenIcon size={13} />}
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-semibold text-foreground">{record.title}</span>
-          <span className="mt-1 line-clamp-2 block text-xs leading-relaxed text-muted-foreground">{record.summary || record.content || "No summary recorded yet."}</span>
-        </span>
-        <ChevronRightIcon size={15} className="mt-0.5 shrink-0 text-muted-foreground transition-none group-hover:text-foreground" />
+      <span
+        className={cn("grid size-5 shrink-0 place-items-center rounded text-muted-foreground", hasChildren && "hover:bg-background/80")}
+        onClick={(event) => {
+          if (!onToggle) return;
+          event.preventDefault();
+          event.stopPropagation();
+          onToggle();
+        }}
+      >
+        {hasChildren ? <ChevronRightIcon size={14} className={cn("transition-transform", !collapsed && "rotate-90")} /> : <BookOpenIcon size={13} />}
       </span>
-      <span className="mt-3 flex min-w-0 flex-wrap items-center gap-1.5 text-[10.5px] text-muted-foreground">
-        <span className="rounded-full border bg-muted/30 px-1.5 py-0.5">{relationLabel}</span>
-        {record.confidence ? <span className="rounded-full border bg-muted/30 px-1.5 py-0.5">{confidenceLabel(record.confidence)}</span> : null}
-        {record.relatedConcepts?.length ? <span className="rounded-full border bg-muted/30 px-1.5 py-0.5">{record.relatedConcepts.length} linked</span> : null}
-        <span className="ml-auto truncate">{formatDate(updatedAt)}</span>
-      </span>
+      <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">{record.title}</span>
+      <ChevronRightIcon size={14} className="shrink-0 text-muted-foreground/60 transition-none group-hover:text-foreground" />
     </button>
   );
 }
@@ -378,8 +409,77 @@ function KnowledgeGraphPanel({
   onSelectRecord: (record: SavedKnowledgeRecord) => void;
 }) {
   const [containerRef, size] = useElementSize<HTMLDivElement>();
-  const graphData = useMemo(() => buildKnowledgeGraph(records, selectedKey), [records, selectedKey]);
+  const graphRef = useRef<ForceGraphMethods | undefined>(undefined);
+  const selectedPulseRef = useRef(0);
+  const approachDirectionRef = useRef<1 | -1>(1);
+  const [hoveredKey, setHoveredKey] = useState<string | null>(null);
+  const graphData = useMemo(() => buildKnowledgeGraph(records), [records]);
   const recordByKey = useMemo(() => new Map(records.map((record) => [recordKey(record), record])), [records]);
+  const inspectedRecord = (hoveredKey ? recordByKey.get(hoveredKey) : undefined)
+    ?? (selectedKey ? recordByKey.get(selectedKey) : undefined)
+    ?? records[0];
+  const inspectedConnections = inspectedRecord ? graphRecordConnections(inspectedRecord, records) : [];
+
+  useEffect(() => {
+    if (!selectedKey || size.width <= 0 || size.height <= 0) return undefined;
+    let animationFrame = 0;
+    let attempts = 0;
+    const focusSelectedNode = () => {
+      const graph = graphRef.current;
+      const node = graphData.nodes.find((candidate) => candidate.recordKey === selectedKey);
+      if (graph && node) {
+        const direction = focusGraphCameraOnNode(graph, node, GRAPH_CAMERA_FLIGHT_MS, approachDirectionRef.current);
+        if (direction) {
+          approachDirectionRef.current = direction;
+          return;
+        }
+      }
+      attempts += 1;
+      if (attempts < 80) {
+        animationFrame = window.requestAnimationFrame(focusSelectedNode);
+      }
+    };
+    animationFrame = window.requestAnimationFrame(focusSelectedNode);
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+    };
+  }, [graphData, selectedKey, size.height, size.width]);
+
+  useEffect(() => {
+    if (!selectedKey || size.width <= 0 || size.height <= 0) return undefined;
+    let animationFrame = 0;
+    let orbitDelay = 0;
+    let orbitState: GraphCameraOrbitState | null = null;
+    const orbit = () => {
+      const graph = graphRef.current;
+      const node = graphData.nodes.find((candidate) => candidate.recordKey === selectedKey);
+      if (graph && node) {
+        const now = performance.now();
+        orbitState ??= createGraphCameraOrbitState(graph, node, now, approachDirectionRef.current);
+        if (orbitState) orbitGraphCameraAroundNode(graph, node, orbitState, now);
+      }
+      animationFrame = window.requestAnimationFrame(orbit);
+    };
+    orbitDelay = window.setTimeout(() => {
+      animationFrame = window.requestAnimationFrame(orbit);
+    }, GRAPH_CAMERA_ORBIT_DELAY_MS);
+    return () => {
+      window.clearTimeout(orbitDelay);
+      window.cancelAnimationFrame(animationFrame);
+    };
+  }, [graphData, selectedKey, size.height, size.width]);
+
+  useEffect(() => {
+    if (!selectedKey) return undefined;
+    let animationFrame = 0;
+    const tick = () => {
+      selectedPulseRef.current = (Math.sin(performance.now() / 280) + 1) / 2;
+      graphRef.current?.refresh();
+      animationFrame = window.requestAnimationFrame(tick);
+    };
+    animationFrame = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(animationFrame);
+  }, [selectedKey]);
 
   if (!records.length) {
     return (
@@ -396,24 +496,26 @@ function KnowledgeGraphPanel({
       {size.width > 0 && size.height > 0 ? (
         <Suspense fallback={<GraphLoadingState />}>
           <ForceGraph3D
+            ref={graphRef}
             graphData={graphData}
             width={size.width}
             height={size.height}
             backgroundColor="rgba(0,0,0,0)"
             showNavInfo={false}
             nodeId="id"
-            nodeLabel="label"
-            nodeColor="color"
-            nodeVal="val"
+            nodeLabel={(node) => graphNodeLabel(node as KnowledgeGraphNode)}
+            nodeColor={(node) => graphNodeColor(node as KnowledgeGraphNode, selectedKey)}
+            nodeVal={(node) => graphNodeValue(node as KnowledgeGraphNode, selectedKey, selectedPulseRef.current)}
             nodeResolution={12}
             linkSource="source"
             linkTarget="target"
             linkLabel="label"
-            linkColor={(link) => link.kind === "parent" ? "rgba(125, 211, 252, 0.62)" : "rgba(196, 181, 253, 0.52)"}
+            linkColor={(link) => graphLinkColor(link as KnowledgeGraphLink, selectedKey)}
             linkOpacity={0.55}
-            linkWidth={(link) => link.kind === "parent" ? 1.4 : 0.8}
-            linkDirectionalParticles={(link) => link.kind === "parent" ? 1 : 0}
-            linkDirectionalParticleWidth={1.2}
+            linkWidth={(link) => graphLinkWidth(link as KnowledgeGraphLink, selectedKey)}
+            linkDirectionalParticles={(link) => graphLinkParticles(link as KnowledgeGraphLink, selectedKey)}
+            linkDirectionalParticleWidth={(link) => graphLinkParticleWidth(link as KnowledgeGraphLink, selectedKey)}
+            linkDirectionalParticleColor={(link) => graphLinkColor(link as KnowledgeGraphLink, selectedKey)}
             cooldownTicks={80}
             warmupTicks={40}
             enableNodeDrag
@@ -423,21 +525,54 @@ function KnowledgeGraphPanel({
               const record = key ? recordByKey.get(key) : undefined;
               if (record) onSelectRecord(record);
             }}
+            onNodeHover={(node) => {
+              const key = node && typeof node.recordKey === "string" ? node.recordKey : null;
+              setHoveredKey(key);
+            }}
           />
         </Suspense>
       ) : <GraphLoadingState />}
 
-      <div className="pointer-events-none absolute left-4 top-4 max-w-[22rem] rounded-[8px] border bg-background/88 px-4 py-3 shadow-sm backdrop-blur">
-        <div className="flex items-center gap-2 text-sm font-semibold">
-          <NetworkIcon size={15} />
-          Knowledge web
-        </div>
-        <div className="mt-2 flex flex-wrap gap-1.5 text-[10.5px] text-muted-foreground">
-          <span className="rounded-full border bg-muted/30 px-1.5 py-0.5">{graphData.nodes.length} concepts</span>
-          <span className="rounded-full border bg-muted/30 px-1.5 py-0.5">{graphData.links.length} links</span>
-          {selectedKey ? <span className="rounded-full border bg-muted/30 px-1.5 py-0.5">selected</span> : null}
-        </div>
-      </div>
+      {inspectedRecord ? (
+        <aside className="pointer-events-none absolute right-3 top-3 flex w-[min(22rem,calc(100%-1.5rem))] flex-col gap-2 rounded-[8px] border bg-background/92 px-3 py-2.5 text-sm shadow-sm backdrop-blur">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className={cn("size-2 shrink-0 rounded-full", hoveredKey ? "bg-primary" : "bg-muted-foreground/50")} />
+              <strong className="min-w-0 flex-1 truncate text-foreground">{inspectedRecord.title}</strong>
+            </div>
+            <p className="mt-1 line-clamp-3 text-xs leading-relaxed text-muted-foreground">
+              {inspectedRecord.summary || inspectedRecord.content || "No summary recorded yet."}
+            </p>
+          </div>
+          <div className="grid grid-cols-3 gap-2 border-t pt-2 text-[11px]">
+            <GraphMetric label="Level" value={`L${inspectedRecord.masteryLevel ?? 0}`} />
+            <GraphMetric label="Links" value={`${(inspectedRecord.relatedConcepts?.length ?? 0) + records.filter((record) => record.parentId === inspectedRecord.id).length}`} />
+            <GraphMetric label="Projects" value={`${inspectedRecord.projects?.length ?? 1}`} />
+          </div>
+          {inspectedConnections.length ? (
+            <div className="border-t pt-2">
+              <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Connected</div>
+              <div className="flex flex-col gap-1">
+                {inspectedConnections.slice(0, 5).map((connection) => (
+                  <div key={`${connection.kind}:${recordKey(connection.record)}`} className="flex min-w-0 items-center gap-2 text-xs">
+                    <span className="w-12 shrink-0 text-muted-foreground">{connection.kind}</span>
+                    <span className="min-w-0 flex-1 truncate text-foreground/90">{connection.record.title}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </aside>
+      ) : null}
+    </div>
+  );
+}
+
+function GraphMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className="truncate font-medium text-foreground">{value}</div>
     </div>
   );
 }
@@ -463,31 +598,30 @@ function ConceptDetail({
   onOpenProject: (projectId: string) => void;
   onSelectRecord: (record: SavedKnowledgeRecord) => void;
 }) {
-  const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
   const relatedRecords = (record.relatedConcepts ?? [])
     .map((id) => records.find((candidate) => candidate.id === id))
     .filter((candidate): candidate is SavedKnowledgeRecord => Boolean(candidate));
   const history = record.history?.length ? record.history : fallbackHistory(record);
   const orderedHistory = useMemo(() => history.slice().reverse(), [history]);
-  const selectedHistory = orderedHistory.find((event) => event.id === selectedHistoryId) ?? orderedHistory[0] ?? null;
-  const content = record.content || record.summary;
-
-  useEffect(() => {
-    setSelectedHistoryId(null);
-  }, [record.id, record.sourceProjectId]);
+  const content = record.content?.trim();
+  const projectRelations = record.projects?.length ? record.projects : [{
+    projectId: record.sourceProjectId,
+    projectTitle: record.sourceProjectTitle,
+    conceptId: record.id,
+    introducedAt: record.savedAt,
+    firstReferencedAt: record.savedAt,
+    lastReferencedAt: record.lastModifiedAt ?? record.savedAt,
+    masteryLevel: record.masteryLevel ?? 0,
+    lastEventKind: "introduced" as const,
+    eventIds: []
+  }];
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="shrink-0 border-b px-5 py-4">
-        <div className="mb-2 flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-          <span className="rounded-full border bg-muted/30 px-2 py-0.5">{record.language ?? "concept"}</span>
-          {record.technology ? <span className="rounded-full border bg-muted/30 px-2 py-0.5">{record.technology}</span> : null}
-          {record.confidence ? <span className="rounded-full border bg-muted/30 px-2 py-0.5">{confidenceLabel(record.confidence)}</span> : null}
-          {record.authoredBy ? <span className="rounded-full border bg-muted/30 px-2 py-0.5">authored by {record.authoredBy}</span> : null}
-        </div>
+      <div className="shrink-0 border-b px-4 py-3">
         <div className="flex min-w-0 items-start justify-between gap-4">
           <div className="min-w-0">
-            <h2 className="truncate text-xl font-semibold tracking-tight">{record.title}</h2>
+            <h2 className="truncate text-lg font-semibold tracking-tight">{record.title}</h2>
             <p className="mt-1 truncate font-mono text-xs text-muted-foreground">{record.id}</p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -512,50 +646,8 @@ function ConceptDetail({
       </div>
 
       <ShadcnScrollArea className="min-h-0 flex-1">
-        <div className="mx-auto flex w-full max-w-5xl flex-col gap-5 px-5 py-5">
-          <div className="grid grid-cols-4 gap-2 text-xs">
-            <ConceptStat label="Source" value={record.sourceProjectTitle} />
-            <ConceptStat label="Saved" value={formatDate(record.savedAt)} />
-            <ConceptStat label="Updated" value={formatDate(record.lastModifiedAt ?? record.savedAt)} />
-            <ConceptStat label="Opened" value={`${record.openCount} times`} />
-          </div>
-
-          <ConceptSection title="Summary">
-            <MarkdownBlock content={record.summary || "No summary recorded yet."} theme={theme} sources={record.sources} />
-          </ConceptSection>
-
-          <ConceptSection title="Project relations">
-            <div className="grid gap-2 md:grid-cols-2">
-              {(record.projects?.length ? record.projects : [{
-                projectId: record.sourceProjectId,
-                projectTitle: record.sourceProjectTitle,
-                conceptId: record.id,
-                introducedAt: record.savedAt,
-                firstReferencedAt: record.savedAt,
-                lastReferencedAt: record.lastModifiedAt ?? record.savedAt,
-                masteryLevel: record.masteryLevel ?? 0,
-                lastEventKind: "introduced" as const,
-                eventIds: []
-              }]).map((relation) => (
-                <button
-                  key={`${relation.projectId}:${relation.conceptId}`}
-                  type="button"
-                  className="rounded-[8px] border bg-muted/15 p-3 text-left hover:bg-muted"
-                  onClick={() => onOpenProject(relation.projectId)}
-                >
-                  <span className="block truncate text-sm font-medium">{relation.projectTitle}</span>
-                  <span className="mt-1 block text-xs text-muted-foreground">
-                    {relation.lastEventKind} · L{relation.masteryLevel} · {formatDate(relation.lastReferencedAt)}
-                  </span>
-                  <span className="mt-1 block truncate text-[11px] text-muted-foreground">
-                    {projectEventSummary(record, relation.projectId)}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </ConceptSection>
-
-          {content && content !== record.summary ? (
+        <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 px-4 py-4">
+          {content ? (
             <ConceptSection title="Concept text">
               <MarkdownBlock content={content} theme={theme} sources={record.sources} />
             </ConceptSection>
@@ -564,20 +656,6 @@ function ConceptDetail({
           {record.why ? (
             <ConceptSection title="Why it matters">
               <MarkdownBlock content={record.why} theme={theme} sources={record.sources} />
-            </ConceptSection>
-          ) : null}
-
-          {(record.lastChangeReason || record.confidenceReason || record.learnerEvidence?.length) ? (
-            <ConceptSection title="Evidence and why">
-              <div className="flex flex-col gap-2 text-sm leading-relaxed text-muted-foreground">
-                {record.lastChangeReason ? <p><strong className="text-foreground">Why updated:</strong> {record.lastChangeReason}</p> : null}
-                {record.confidenceReason ? <p><strong className="text-foreground">Learning state:</strong> {record.confidenceReason}</p> : null}
-                {record.learnerEvidence?.length ? (
-                  <ul className="flex flex-col gap-1 text-xs">
-                    {record.learnerEvidence.map((item, index) => <li key={`${index}:${item}`}>- {item}</li>)}
-                  </ul>
-                ) : null}
-              </div>
             </ConceptSection>
           ) : null}
 
@@ -593,9 +671,9 @@ function ConceptDetail({
 
           {relatedRecords.length ? (
             <ConceptSection title="Related concepts">
-              <div className="grid grid-cols-2 gap-2">
+              <div className="flex flex-col">
                 {relatedRecords.map((related) => (
-                  <button key={recordKey(related)} type="button" className="flex min-w-0 items-center gap-2 rounded-[8px] border bg-muted/20 px-3 py-2 text-left text-sm hover:bg-muted" onClick={() => onSelectRecord(related)}>
+                  <button key={recordKey(related)} type="button" className="flex min-w-0 items-center gap-2 rounded-[6px] px-2 py-1.5 text-left text-sm hover:bg-muted/45" onClick={() => onSelectRecord(related)}>
                     <GitBranchIcon size={14} className="shrink-0 text-muted-foreground" />
                     <span className="min-w-0 flex-1 truncate">{related.title}</span>
                     <ChevronRightIcon size={14} className="shrink-0 text-muted-foreground" />
@@ -605,62 +683,12 @@ function ConceptDetail({
             </ConceptSection>
           ) : null}
 
-          <ConceptSection title="History">
-            <div className="grid gap-4 md:grid-cols-[13rem_1fr] lg:grid-cols-[14rem_1fr]">
-              <div className="flex flex-col gap-1.5">
-                {orderedHistory.map((event) => {
-                  const active = selectedHistory?.id === event.id;
-                  return (
-                    <button
-                      key={event.id}
-                      type="button"
-                      className={`flex min-w-0 items-start gap-3 rounded-[8px] border px-3 py-2 text-left text-sm hover:bg-muted ${active ? "border-foreground/25 bg-muted" : "bg-muted/10"}`}
-                      onClick={() => setSelectedHistoryId(event.id)}
-                    >
-                      <HistoryIcon size={14} className="mt-0.5 shrink-0 text-muted-foreground" />
-                      <span className="min-w-0 flex-1">
-                        <span className="flex min-w-0 flex-wrap items-center gap-1.5">
-                          <strong className="capitalize">{event.kind}</strong>
-                          {event.changedFields?.length ? <span className="rounded-full border px-1.5 py-0.5 text-[10px] text-muted-foreground">{event.changedFields.length} fields</span> : null}
-                        </span>
-                        <time className="mt-1 block text-xs text-muted-foreground">{formatDate(event.createdAt)}</time>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-              {selectedHistory ? <HistoryEventDetails event={selectedHistory} /> : null}
-            </div>
-          </ConceptSection>
-
-          {record.docs.length ? (
-            <ConceptSection title="Docs">
-              <div className="flex flex-wrap gap-2">
-                {record.docs.map((link) => (
-                  <a key={link.url} className="inline-flex items-center gap-2 rounded-[8px] border px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground" href={link.url} target="_blank" rel="noreferrer">
-                    <ExternalLinkIcon size={14} />
-                    {link.title}
-                  </a>
-                ))}
-              </div>
-            </ConceptSection>
-          ) : null}
-
-          {record.sources?.length ? (
-            <ConceptSection title="Sources">
-              <div className="grid gap-2 md:grid-cols-2">
-                {record.sources.map((source) => (
-                  <a key={`${source.id}:${source.url}`} className="rounded-[8px] border bg-muted/15 p-3 text-sm text-muted-foreground hover:bg-muted hover:text-foreground" href={source.url} target="_blank" rel="noreferrer">
-                    <span className="flex min-w-0 items-center gap-2">
-                      <ExternalLinkIcon size={14} className="shrink-0" />
-                      <strong className="truncate text-foreground">{source.title}</strong>
-                    </span>
-                    {(source.quote || source.snippet) ? <span className="mt-2 block text-xs leading-relaxed">{source.quote || source.snippet}</span> : null}
-                  </a>
-                ))}
-              </div>
-            </ConceptSection>
-          ) : null}
+          <RecordDetails
+            orderedHistory={orderedHistory}
+            projectRelations={projectRelations}
+            record={record}
+            onOpenProject={onOpenProject}
+          />
         </div>
       </ShadcnScrollArea>
     </div>
@@ -676,154 +704,99 @@ function ConceptSection({ title, children }: { title: string; children: ReactNod
   );
 }
 
-function ConceptStat({ label, value }: { label: string; value: string }) {
+function RecordDetails({
+  orderedHistory,
+  projectRelations,
+  record,
+  onOpenProject
+}: {
+  orderedHistory: NonNullable<ConceptCard["history"]>;
+  projectRelations: NonNullable<SavedKnowledgeRecord["projects"]>;
+  record: SavedKnowledgeRecord;
+  onOpenProject: (projectId: string) => void;
+}) {
   return (
-    <div className="min-w-0 rounded-[8px] border bg-muted/20 px-3 py-2">
-      <span className="block text-[10px] uppercase tracking-wide text-muted-foreground">{label}</span>
-      <strong className="mt-1 block truncate font-medium">{value}</strong>
-    </div>
-  );
-}
+    <details className="border-t pt-3">
+      <summary className="cursor-pointer list-none text-xs font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
+        Record details
+      </summary>
+      <div className="mt-3 flex flex-col gap-4 text-sm text-muted-foreground">
+        <dl className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
+          <RecordDetailTerm label="Source" value={record.sourceProjectTitle} />
+          <RecordDetailTerm label="Saved" value={formatDate(record.savedAt)} />
+          <RecordDetailTerm label="Updated" value={formatDate(record.lastModifiedAt ?? record.savedAt)} />
+          <RecordDetailTerm label="Opened" value={`${record.openCount} times`} />
+        </dl>
 
-function projectEventSummary(record: SavedKnowledgeRecord, projectId: string): string {
-  const events = (record.projectEvents ?? []).filter((event) => event.projectId === projectId);
-  if (!events.length) return "Introduced from legacy concept history";
-  const counts = new Map<string, number>();
-  for (const event of events) {
-    counts.set(event.kind, (counts.get(event.kind) ?? 0) + 1);
-  }
-  return [...counts.entries()].map(([kind, count]) => `${kind} ${count}`).join(" · ");
-}
+        <RecordDetailGroup title="Projects">
+          {projectRelations.map((relation) => (
+            <button
+              key={`${relation.projectId}:${relation.conceptId}`}
+              type="button"
+              className="block min-w-0 truncate rounded-[6px] px-2 py-1 text-left hover:bg-muted/45 hover:text-foreground"
+              onClick={() => onOpenProject(relation.projectId)}
+            >
+              {relation.projectTitle}
+              <span className="ml-2 text-xs text-muted-foreground">
+                {relation.lastEventKind} · L{relation.masteryLevel}
+              </span>
+            </button>
+          ))}
+        </RecordDetailGroup>
 
-function HistoryEventDetails({ event }: { event: NonNullable<ConceptCard["history"]>[number] }) {
-  return (
-    <div className="min-w-0 rounded-[8px] border bg-muted/10 p-4 text-sm">
-      <div className="flex flex-wrap items-center gap-1.5">
-        <strong className="capitalize">{event.kind}</strong>
-        {event.confidence ? <span className="rounded-full border px-1.5 py-0.5 text-[10px] text-muted-foreground">{confidenceLabel(event.confidence)}</span> : null}
-        {event.authoredBy ? <span className="rounded-full border px-1.5 py-0.5 text-[10px] text-muted-foreground">{event.authoredBy}</span> : null}
-      </div>
-      {event.reason ? <p className="mt-2 leading-relaxed text-muted-foreground"><strong className="text-foreground">Why:</strong> {event.reason}</p> : null}
-      {event.confidenceReason ? <p className="mt-2 leading-relaxed text-muted-foreground"><strong className="text-foreground">Learning state:</strong> {event.confidenceReason}</p> : null}
-      {event.provenance ? (
-        <div className="mt-3 rounded-[8px] border bg-background/60 p-3 text-xs text-muted-foreground">
-          <p><strong className="text-foreground">Project:</strong> {event.provenance.projectTitle}</p>
-          {event.provenance.pathNodeTitle || event.provenance.pathNodeId ? <p className="mt-1"><strong className="text-foreground">Path:</strong> {event.provenance.pathNodeTitle ?? event.provenance.pathNodeId}</p> : null}
-          {event.provenance.taskTitle || event.provenance.taskId ? <p className="mt-1"><strong className="text-foreground">Task:</strong> {event.provenance.taskTitle ?? event.provenance.taskId}</p> : null}
-          {event.provenance.focusPath ? <p className="mt-1"><strong className="text-foreground">Focus:</strong> <code>{event.provenance.focusPath}</code></p> : null}
-          {event.provenance.taskFiles?.length ? <p className="mt-1"><strong className="text-foreground">Files:</strong> {event.provenance.taskFiles.join(", ")}</p> : null}
-        </div>
-      ) : null}
-      {event.fieldChanges?.length ? (
-        <div className="mt-3 divide-y divide-border/60">
-          {event.fieldChanges.map((change) => (
-            <div key={`${event.id}:${change.field}`} className="py-3 first:pt-0 last:pb-0">
-              <HistoryFieldChange change={change} />
+        {(record.lastChangeReason || record.confidenceReason || record.learnerEvidence?.length) ? (
+          <RecordDetailGroup title="Evidence">
+            {record.lastChangeReason ? <p><span className="text-foreground">Why:</span> {record.lastChangeReason}</p> : null}
+            {record.confidenceReason ? <p><span className="text-foreground">Learning state:</span> {record.confidenceReason}</p> : null}
+            {record.learnerEvidence?.length ? (
+              <ul className="flex flex-col gap-1 text-xs">
+                {record.learnerEvidence.map((item, index) => <li key={`${index}:${item}`}>- {item}</li>)}
+              </ul>
+            ) : null}
+          </RecordDetailGroup>
+        ) : null}
+
+        <RecordDetailGroup title="History">
+          {orderedHistory.map((event) => (
+            <div key={event.id} className="flex min-w-0 items-center gap-2 rounded-[6px] px-2 py-1">
+              <HistoryIcon size={13} className="shrink-0 text-muted-foreground" />
+              <span className="capitalize text-foreground">{event.kind}</span>
+              <time className="truncate text-xs">{formatDate(event.createdAt)}</time>
             </div>
           ))}
-        </div>
-      ) : event.changedFields?.length ? (
-        <p className="mt-3 text-xs text-muted-foreground"><strong className="text-foreground">Changed fields:</strong> {event.changedFields.map(fieldLabel).join(", ")}</p>
-      ) : null}
-      {event.evidence.length ? (
-        <div className="mt-4 border-t pt-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">Evidence</p>
-          <ul className="mt-1 flex flex-col gap-1 text-xs text-muted-foreground/90">
-            {event.evidence.map((item, index) => <li key={`${index}:${item}`}>- {item}</li>)}
-          </ul>
-        </div>
-      ) : null}
-    </div>
-  );
-}
+        </RecordDetailGroup>
 
-function HistoryFieldChange({ change }: { change: NonNullable<NonNullable<ConceptCard["history"]>[number]["fieldChanges"]>[number] }) {
-  if (change.field === "masteryLevel") {
-    return <HistoryMasteryChange before={change.before} after={change.after} />;
-  }
-  if (isConceptTextField(change.field)) {
-    return <HistoryTextChange field={change.field} before={change.before} after={change.after} />;
-  }
-  return (
-    <div>
-      <div className="font-semibold text-foreground/90 mb-1.5 text-xs">{fieldLabel(change.field)}</div>
-      <div className="grid gap-3 md:grid-cols-2">
-        <AuditValue label="Before" value={change.before} muted />
-        <AuditValue label="After" value={change.after} />
-      </div>
-    </div>
-  );
-}
-
-function HistoryMasteryChange({ before, after }: { before?: string; after?: string }) {
-  return (
-    <div className="rounded-[8px] bg-[color:var(--construct-success-soft)]/15 px-3 py-2.5 text-xs">
-      <div className="mb-1.5 flex items-center gap-1.5 font-semibold text-[color:var(--construct-success)]">
-        <SparklesIcon size={12} />
-        <span>Mastery Level Shifted</span>
-      </div>
-      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
-        <AuditValue label="Before" value={before} muted />
-        <ArrowRightIcon size={12} className="text-muted-foreground/40 mt-4" />
-        <AuditValue label="After" value={after} />
-      </div>
-    </div>
-  );
-}
-
-function HistoryTextChange({ field, before, after }: { field: string; before?: string; after?: string }) {
-  const beforeText = compactAuditText(before);
-  const afterText = compactAuditText(after);
-  const mode = beforeText && afterText ? "Replaced" : afterText ? "Added" : "Removed";
-  return (
-    <div className="text-xs">
-      <div className="flex items-center justify-between gap-2 mb-1.5">
-        <div className="font-semibold text-foreground/90">{fieldLabel(field)}</div>
-        <span className={cn(
-          "rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider border",
-          mode === "Added" && "bg-[color:var(--construct-success-soft)]/20 border-[color:var(--construct-success)]/30 text-[color:var(--construct-success)]",
-          mode === "Removed" && "bg-destructive/10 border-destructive/20 text-destructive",
-          mode === "Replaced" && "bg-amber-500/10 border-amber-500/20 text-amber-500"
-        )}>
-          {mode}
-        </span>
-      </div>
-      <div className="flex flex-col gap-1.5">
-        {beforeText ? (
-          <div className="rounded-[6px] bg-destructive/5 px-2 py-1.5 text-muted-foreground/80 line-through decoration-destructive/40 font-mono text-[10.5px] leading-relaxed">
-            {beforeText}
-          </div>
-        ) : null}
-        {afterText ? (
-          <div className="rounded-[6px] bg-[color:var(--construct-success-soft)]/10 px-2 py-1.5 text-foreground/90 font-mono text-[10.5px] leading-relaxed">
-            {afterText}
-          </div>
+        {(record.docs.length || record.sources?.length) ? (
+          <RecordDetailGroup title="Links">
+            {[...record.docs.map((link) => ({ title: link.title, url: link.url })), ...(record.sources ?? []).map((source) => ({ title: source.title, url: source.url }))].map((link) => (
+              <a key={link.url} className="inline-flex min-w-0 items-center gap-2 rounded-[6px] px-2 py-1 text-sm hover:bg-muted/45 hover:text-foreground" href={link.url} target="_blank" rel="noreferrer">
+                <ExternalLinkIcon size={13} className="shrink-0" />
+                <span className="truncate">{link.title}</span>
+              </a>
+            ))}
+          </RecordDetailGroup>
         ) : null}
       </div>
-    </div>
+    </details>
   );
 }
 
-function AuditValue({ label, value, muted }: { label: string; value?: string; muted?: boolean }) {
+function RecordDetailTerm({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0 text-xs">
-      <span className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">{label}</span>
-      <div className={cn("mt-1 font-medium leading-relaxed", muted ? "text-muted-foreground/80 line-through" : "text-foreground/90")}>
-        {compactAuditText(value) || "not set"}
-      </div>
+    <div className="min-w-0">
+      <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</dt>
+      <dd className="mt-0.5 truncate text-sm text-foreground">{value}</dd>
     </div>
   );
 }
 
-function isConceptTextField(field: string): boolean {
-  return ["title", "summary", "content", "why", "commonMistake", "example", "examples", "masteryText", "masteryReason", "confidenceReason"].includes(field);
-}
-
-function compactAuditText(value?: string): string {
-  if (!value) return "";
-  const normalized = value.replace(/\s+/g, " ").trim();
-  if (normalized.length <= 220) return normalized;
-  return `${normalized.slice(0, 208).trim()}...`;
+function RecordDetailGroup({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="border-t pt-3">
+      <h3 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{title}</h3>
+      <div className="flex flex-col gap-1">{children}</div>
+    </section>
+  );
 }
 
 function useElementSize<T extends HTMLElement>() {
@@ -926,7 +899,7 @@ function conceptSegmentLabel(segment: string): string {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-function buildKnowledgeGraph(records: SavedKnowledgeRecord[], selectedKey: string | null): GraphData<KnowledgeGraphNode, KnowledgeGraphLink> {
+function buildKnowledgeGraph(records: SavedKnowledgeRecord[]): GraphData<KnowledgeGraphNode, KnowledgeGraphLink> {
   const nodes: KnowledgeGraphNode[] = [];
   const links: KnowledgeGraphLink[] = [];
   const conceptIdToNodeId = new Map<string, string>();
@@ -939,12 +912,12 @@ function buildKnowledgeGraph(records: SavedKnowledgeRecord[], selectedKey: strin
     nodes.push({
       id: nodeId,
       label: `${record.title}\n${record.summary || record.sourceProjectTitle}`,
-      color: selectedKey === nodeId ? "#f8fafc" : colorForGraphGroup(group),
+      color: colorForGraphGroup(group),
       group,
       recordKey: nodeId,
       title: record.title,
       summary: record.summary,
-      val: selectedKey === nodeId ? 7 : Math.max(3, Math.min(8, (record.relatedConcepts?.length ?? 0) + 3))
+      val: Math.max(3, Math.min(8, (record.relatedConcepts?.length ?? 0) + 3))
     });
   }
 
@@ -975,6 +948,45 @@ function buildKnowledgeGraph(records: SavedKnowledgeRecord[], selectedKey: strin
   return { nodes, links };
 }
 
+function graphNodeLabel(node: KnowledgeGraphNode): string {
+  const summary = node.summary ? `\n${node.summary}` : "";
+  return `${node.title}${summary}`;
+}
+
+function graphNodeColor(node: KnowledgeGraphNode, selectedKey: string | null): string {
+  if (selectedKey !== node.recordKey) return node.color;
+  return "#ff1744";
+}
+
+function graphNodeValue(node: KnowledgeGraphNode, selectedKey: string | null, selectedPulse: number): number {
+  if (selectedKey !== node.recordKey) return node.val;
+  return node.val + 10 + selectedPulse * 12;
+}
+
+function graphRecordConnections(
+  record: SavedKnowledgeRecord,
+  records: SavedKnowledgeRecord[]
+): Array<{ kind: "parent" | "child" | "related"; record: SavedKnowledgeRecord }> {
+  const byId = new Map(records.map((candidate) => [candidate.id, candidate]));
+  const connections: Array<{ kind: "parent" | "child" | "related"; record: SavedKnowledgeRecord }> = [];
+  const seen = new Set<string>();
+
+  const add = (kind: "parent" | "child" | "related", candidate?: SavedKnowledgeRecord) => {
+    if (!candidate || candidate.id === record.id || seen.has(`${kind}:${candidate.id}`)) return;
+    seen.add(`${kind}:${candidate.id}`);
+    connections.push({ kind, record: candidate });
+  };
+
+  add("parent", record.parentId ? byId.get(record.parentId) : undefined);
+  for (const child of records) {
+    if (child.parentId === record.id) add("child", child);
+  }
+  for (const relatedId of record.relatedConcepts ?? []) {
+    add("related", byId.get(relatedId));
+  }
+  return connections;
+}
+
 function addKnowledgeGraphLink({
   links,
   linkIds,
@@ -995,6 +1007,160 @@ function addKnowledgeGraphLink({
   if (linkIds.has(id)) return;
   linkIds.add(id);
   links.push({ source, target, kind, label });
+}
+
+function graphLinkTouchesSelected(link: { source?: unknown; target?: unknown }, selectedKey: string | null): boolean {
+  if (!selectedKey) return false;
+  return graphLinkEndpointId(link.source) === selectedKey || graphLinkEndpointId(link.target) === selectedKey;
+}
+
+function graphLinkColor(link: KnowledgeGraphLink, selectedKey: string | null): string {
+  const selected = graphLinkTouchesSelected(link, selectedKey);
+  return selected ? "rgba(255, 23, 68, 0.86)" : link.kind === "parent" ? "rgba(125, 211, 252, 0.62)" : "rgba(196, 181, 253, 0.52)";
+}
+
+function graphLinkWidth(link: KnowledgeGraphLink, selectedKey: string | null): number {
+  const selected = graphLinkTouchesSelected(link, selectedKey);
+  return selected ? 3.2 : link.kind === "parent" ? 1.4 : 0.8;
+}
+
+function graphLinkParticles(link: KnowledgeGraphLink, selectedKey: string | null): number {
+  const selected = graphLinkTouchesSelected(link, selectedKey);
+  return selected ? 3 : link.kind === "parent" ? 1 : 0;
+}
+
+function graphLinkParticleWidth(link: KnowledgeGraphLink, selectedKey: string | null): number {
+  const selected = graphLinkTouchesSelected(link, selectedKey);
+  return selected ? 2.4 : 1.2;
+}
+
+function graphLinkEndpointId(endpoint: unknown): string | null {
+  if (typeof endpoint === "string") return endpoint;
+  if (endpoint && typeof endpoint === "object" && "id" in endpoint && typeof endpoint.id === "string") return endpoint.id;
+  return null;
+}
+
+function focusGraphCameraOnNode(
+  graph: ForceGraphMethods,
+  node: KnowledgeGraphRuntimeNode,
+  transitionMs: number,
+  fallbackDirection: 1 | -1
+): 1 | -1 | null {
+  const frame = graphCameraFocusFrame(node);
+  if (!frame) return null;
+  const direction = graphCameraApproachDirection(graph.camera().position, frame.position, frame.target, fallbackDirection);
+  graph.cameraPosition(frame.position, frame.target, transitionMs);
+  return direction;
+}
+
+function graphCameraFocusFrame(node: KnowledgeGraphRuntimeNode): { position: { x: number; y: number; z: number }; target: { x: number; y: number; z: number } } | null {
+  if (!Number.isFinite(node.x) || !Number.isFinite(node.y) || !Number.isFinite(node.z)) return null;
+  const target = {
+    x: node.x ?? 0,
+    y: node.y ?? 0,
+    z: node.z ?? 0
+  };
+  const distance = graphCameraFocusDistance(node);
+  const magnitude = Math.hypot(target.x, target.y, target.z);
+  if (magnitude < 1) {
+    return {
+      position: { x: target.x, y: target.y, z: target.z + distance },
+      target
+    };
+  }
+  const ratio = 1 + distance / magnitude;
+  return {
+    position: {
+      x: target.x * ratio,
+      y: target.y * ratio,
+      z: target.z * ratio
+    },
+    target
+  };
+}
+
+function orbitGraphCameraAroundNode(
+  graph: ForceGraphMethods,
+  node: KnowledgeGraphRuntimeNode,
+  orbitState: GraphCameraOrbitState,
+  timestamp: number
+): boolean {
+  if (!Number.isFinite(node.x) || !Number.isFinite(node.y) || !Number.isFinite(node.z)) return false;
+  const target = {
+    x: node.x ?? 0,
+    y: node.y ?? 0,
+    z: node.z ?? 0
+  };
+  const elapsed = timestamp - orbitState.startedAt;
+  const angle = orbitState.initialAngle + orbitState.direction * graphCameraOrbitAngleDelta(elapsed);
+  graph.cameraPosition({
+    x: target.x + Math.cos(angle) * orbitState.radius,
+    y: target.y + orbitState.yOffset + Math.sin(elapsed * 0.00003) * orbitState.yAmplitude,
+    z: target.z + Math.sin(angle) * orbitState.radius
+  }, target, 0);
+  return true;
+}
+
+function createGraphCameraOrbitState(
+  graph: ForceGraphMethods,
+  node: KnowledgeGraphRuntimeNode,
+  startedAt: number,
+  direction: 1 | -1
+): GraphCameraOrbitState | null {
+  if (!Number.isFinite(node.x) || !Number.isFinite(node.y) || !Number.isFinite(node.z)) return null;
+  const position = graph.camera().position;
+  const target = {
+    x: node.x ?? 0,
+    y: node.y ?? 0,
+    z: node.z ?? 0
+  };
+  const dx = position.x - target.x;
+  const dz = position.z - target.z;
+  const focusDistance = graphCameraFocusDistance(node);
+  const radius = Math.max(focusDistance * 0.72, Math.hypot(dx, dz));
+  return {
+    startedAt,
+    initialAngle: Math.atan2(dz, dx),
+    direction,
+    radius,
+    yOffset: position.y - target.y,
+    yAmplitude: Math.max(1.8, radius * 0.018)
+  };
+}
+
+function graphCameraApproachDirection(
+  start: { x: number; z: number },
+  end: { x: number; z: number },
+  target: { x: number; z: number },
+  fallbackDirection: 1 | -1
+): 1 | -1 {
+  const startAngle = Math.atan2(start.z - target.z, start.x - target.x);
+  const endAngle = Math.atan2(end.z - target.z, end.x - target.x);
+  const delta = normalizeGraphCameraAngle(endAngle - startAngle);
+  if (Math.abs(delta) < 0.02) return fallbackDirection;
+  return delta > 0 ? 1 : -1;
+}
+
+function normalizeGraphCameraAngle(angle: number): number {
+  return Math.atan2(Math.sin(angle), Math.cos(angle));
+}
+
+function graphCameraOrbitAngleDelta(elapsed: number): number {
+  const baseSpeed = 0.000045;
+  const rampMs = 2800;
+  const slowFraction = 0.18;
+  if (elapsed >= rampMs) {
+    const rampDistance = baseSpeed * rampMs * (slowFraction + (1 - slowFraction) * 0.5);
+    return rampDistance + baseSpeed * (elapsed - rampMs);
+  }
+  const progress = Math.max(0, Math.min(1, elapsed / rampMs));
+  const smoothstepIntegral = progress ** 3 - 0.5 * progress ** 4;
+  return baseSpeed * rampMs * (slowFraction * progress + (1 - slowFraction) * smoothstepIntegral);
+}
+
+function graphCameraFocusDistance(node: KnowledgeGraphRuntimeNode): number {
+  const radius = Math.max(6, node.val ?? 4);
+  return Math.max(180, radius * 28);
 }
 
 function colorForGraphGroup(group: string): string {
@@ -1051,14 +1217,6 @@ function fallbackHistory(record: SavedKnowledgeRecord): NonNullable<ConceptCard[
     agentContributionPercent: record.agentContributionPercent,
     createdAt: record.lastModifiedAt ?? record.savedAt
   }];
-}
-
-function confidenceLabel(value: string): string {
-  return value.replace(/-/g, " ");
-}
-
-function fieldLabel(value: string): string {
-  return value.replace(/([A-Z])/g, " $1").replace(/-/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function formatDate(value: string): string {
