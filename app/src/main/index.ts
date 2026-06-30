@@ -57,6 +57,16 @@ import { ConstructTerminalService } from "./terminal/ConstructTerminalService";
 import { ConstructFlowMemoryService } from "./flow/ConstructFlowMemoryService";
 import { ConstructFlowService } from "./flow/ConstructFlowService";
 
+try {
+  // @ts-ignore
+  if (typeof process.loadEnvFile === "function") {
+    // @ts-ignore
+    process.loadEnvFile();
+  }
+} catch {
+  // Ignore if .env does not exist.
+}
+
 let activeWebContents: Electron.WebContents | null = null;
 const logBridge = new MainProcessLogBridge({
   activeWebContents: () => activeWebContents
@@ -65,7 +75,7 @@ logBridge.install();
 
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
 const shouldOpenDevTools = process.env.CONSTRUCT_OPEN_DEVTOOLS === "1";
-configureConstructCloudProductionEndpointLock(app.isPackaged);
+configureConstructCloudProductionEndpointLock(true);
 
 function sendToRenderers(channel: string, payload: unknown): void {
   for (const window of BrowserWindow.getAllWindows()) {

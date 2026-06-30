@@ -1,12 +1,25 @@
 import { contextBridge, ipcRenderer } from "electron";
 
+import { resolveConstructCloudEndpoint } from "../shared/constructCloud";
+
+try {
+  // @ts-ignore
+  if (typeof process.loadEnvFile === "function") {
+    // @ts-ignore
+    process.loadEnvFile();
+  }
+} catch {
+  // Ignore if .env does not exist.
+}
+
 contextBridge.exposeInMainWorld("construct", {
   getRuntimeInfo: () => ({
     name: "Construct",
     electron: process.versions.electron,
     node: process.versions.node,
     chrome: process.versions.chrome,
-    platform: process.platform
+    platform: process.platform,
+    constructCloudEndpoint: resolveConstructCloudEndpoint(process.env)
   })
 });
 

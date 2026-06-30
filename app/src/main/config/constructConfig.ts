@@ -10,7 +10,7 @@ import {
   StorageTarget,
   type IStorageService
 } from "../storage/storage";
-import { CONSTRUCT_CLOUD_PRODUCTION_BASE_URL } from "../../shared/constructCloud";
+import { CONSTRUCT_CLOUD_PRODUCTION_BASE_URL, resolveConstructCloudEndpoint } from "../../shared/constructCloud";
 
 export type AiProvider = "openai" | "openrouter" | "github-copilot" | "opencode-zen" | "litellm";
 export type AiCallSource = "byok" | "construct-cloud";
@@ -81,7 +81,6 @@ const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
 const DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 const DEFAULT_LITELLM_BASE_URL = "http://localhost:4000/v1";
 const DEFAULT_OPENCODE_ZEN_BASE_URL = "https://opencode.ai/zen/v1";
-const DEFAULT_CONSTRUCT_CLOUD_BASE_URL = CONSTRUCT_CLOUD_PRODUCTION_BASE_URL;
 const SETTINGS_STORAGE_KEY = "construct.settings";
 let configuredDataPaths: ConstructDataPaths | null = null;
 let constructCloudProductionEndpointLocked = false;
@@ -140,25 +139,25 @@ export async function readConstructSettings(
       scope: APPLICATION_SCOPE,
       target: StorageTarget.USER,
       legacyPath: paths.configPath,
-      normalize: (value) => normalizeSettings(value, paths)
+      normalize: (value) => normalizeConstructCloudEndpoint(normalizeSettings(value, paths))
     });
     if (migratedConfig) {
-      return normalizeSettings(migratedConfig, paths);
+      return normalizeConstructCloudEndpoint(normalizeSettings(migratedConfig, paths));
     }
 
     const legacy = await readJsonFile<Partial<StoredSettings>>(paths.legacySettingsPath);
-    const settings = normalizeSettings(legacy, paths);
+    const settings = normalizeConstructCloudEndpoint(normalizeSettings(legacy, paths));
     storage.store(SETTINGS_STORAGE_KEY, settings, APPLICATION_SCOPE, StorageTarget.USER);
     return settings;
   }
 
   const config = await readJsonFile<Partial<StoredSettings>>(paths.configPath);
   if (config) {
-    return normalizeSettings(config, paths);
+    return normalizeConstructCloudEndpoint(normalizeSettings(config, paths));
   }
 
   const legacy = await readJsonFile<Partial<StoredSettings>>(paths.legacySettingsPath);
-  const settings = normalizeSettings(legacy, paths);
+  const settings = normalizeConstructCloudEndpoint(normalizeSettings(legacy, paths));
   await writeConstructSettings(settings, paths);
   return settings;
 }
@@ -168,7 +167,7 @@ export async function writeConstructSettings(
   paths = requireElectronDataPaths(),
   storage?: IStorageService
 ): Promise<StoredSettings> {
-  const normalized = normalizeSettings(settings, paths);
+  const normalized = normalizeConstructCloudEndpoint(normalizeSettings(settings, paths));
   if (storage) {
     storage.store(SETTINGS_STORAGE_KEY, normalized, APPLICATION_SCOPE, StorageTarget.USER);
     return normalized;
@@ -179,6 +178,10 @@ export async function writeConstructSettings(
   await writeFile(temporary, `${JSON.stringify(normalized, null, 2)}\n`, "utf8");
   await rename(temporary, paths.configPath);
   return normalized;
+}
+
+function normalizeConstructCloudEndpoint(settings: StoredSettings): StoredSettings {
+  return enforceConstructCloudProductionEndpoint(settings, constructCloudProductionEndpointLocked);
 }
 
 export function defaultConstructSettings(paths = getElectronDataPaths()): StoredSettings {
@@ -246,7 +249,8 @@ export function normalizeSettings(
 }
 
 export function enforceConstructCloudProductionEndpoint(settings: StoredSettings, locked: boolean): StoredSettings {
-  if (!locked || settings.ai.constructCloudBaseUrl === CONSTRUCT_CLOUD_PRODUCTION_BASE_URL) {
+  const configuredEndpoint = resolveConstructCloudEndpoint(process.env);
+  if (!locked || settings.ai.constructCloudBaseUrl === configuredEndpoint) {
     return settings;
   }
 
@@ -254,7 +258,7 @@ export function enforceConstructCloudProductionEndpoint(settings: StoredSettings
     ...settings,
     ai: {
       ...settings.ai,
-      constructCloudBaseUrl: CONSTRUCT_CLOUD_PRODUCTION_BASE_URL
+      constructCloudBaseUrl: configuredEndpoint
     }
   };
 }
@@ -285,7 +289,7 @@ function defaultAiSettings(): StoredAiSettings {
     opencodeZenBaseUrl: DEFAULT_OPENCODE_ZEN_BASE_URL,
     opencodeZenModel: "gpt-5.1-codex",
     githubCopilotModel: "github_copilot/gpt-4",
-    constructCloudBaseUrl: DEFAULT_CONSTRUCT_CLOUD_BASE_URL,
+    constructCloudBaseUrl: resolveConstructCloudEndpoint(process.env),
     constructCloudAccessToken: "",
     constructCloudModel: "deepseek/deepseek-v4-flash",
     tavilyApiKey: "",

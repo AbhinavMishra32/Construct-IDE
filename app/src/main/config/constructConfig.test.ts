@@ -16,6 +16,25 @@ import {
   writeConstructSettings
 } from "./constructConfig";
 
+function withConstructCloudEndpointEnv<T>(value: string | undefined, run: () => T): T {
+  const previous = process.env.CONSTRUCT_CLOUD_ENDPOINT;
+  if (value === undefined) {
+    delete process.env.CONSTRUCT_CLOUD_ENDPOINT;
+  } else {
+    process.env.CONSTRUCT_CLOUD_ENDPOINT = value;
+  }
+
+  try {
+    return run();
+  } finally {
+    if (previous === undefined) {
+      delete process.env.CONSTRUCT_CLOUD_ENDPOINT;
+    } else {
+      process.env.CONSTRUCT_CLOUD_ENDPOINT = previous;
+    }
+  }
+}
+
 test("sync agent settings use the configured Electron user-data path", async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "construct-config-"));
   const paths = createConstructDataPaths(root);
@@ -49,7 +68,9 @@ test("sync agent settings use the configured Electron user-data path", async (t)
 });
 
 test("settings normalize OpenCode Zen provider options", () => {
-  const settings = defaultConstructSettings(createConstructDataPaths("/tmp/construct-test"));
+  const settings = withConstructCloudEndpointEnv(undefined, () =>
+    defaultConstructSettings(createConstructDataPaths("/tmp/construct-test"))
+  );
   assert.equal(settings.app.showStatusBar, true);
   assert.equal(settings.ai.source, "byok");
   assert.equal(settings.ai.provider, "openai");
@@ -65,6 +86,13 @@ test("settings normalize OpenCode Zen provider options", () => {
   assert.equal(settings.ai.tavilyApiKey, "");
   assert.equal(settings.ai.conceptFirewallEnabled, true);
   assert.equal(settings.ai.flowSourceGroundingEnabled, true);
+});
+
+test("settings default Construct Cloud endpoint follows CONSTRUCT_CLOUD_ENDPOINT", () => {
+  const settings = withConstructCloudEndpointEnv("http://localhost:8787/", () =>
+    defaultConstructSettings(createConstructDataPaths("/tmp/construct-test"))
+  );
+  assert.equal(settings.ai.constructCloudBaseUrl, "http://localhost:8787");
 });
 
 test("settings normalize and persist hosted compute routing options", async (t) => {
@@ -106,31 +134,45 @@ test("production endpoint lock forces Construct Cloud to the release API", async
     rmSync(root, { recursive: true, force: true });
   });
 
-  const settings = defaultConstructSettings(paths);
-  const custom = {
-    ...settings,
-    ai: {
-      ...settings.ai,
-      constructCloudBaseUrl: "http://localhost:8787",
-      constructCloudAccessToken: "cct_test-token"
-    }
-  };
+  withConstructCloudEndpointEnv("https://api.tryconstruct.cc", () => {
+    const settings = defaultConstructSettings(paths);
+    const custom = {
+      ...settings,
+      ai: {
+        ...settings.ai,
+        constructCloudBaseUrl: "http://localhost:8787",
+        constructCloudAccessToken: "cct_test-token"
+      }
+    };
 
-  assert.equal(
-    enforceConstructCloudProductionEndpoint(custom, true).ai.constructCloudBaseUrl,
-    "https://api.tryconstruct.cc"
-  );
+    assert.equal(
+      enforceConstructCloudProductionEndpoint(custom, true).ai.constructCloudBaseUrl,
+      "https://api.tryconstruct.cc"
+    );
+  });
 
-  await writeConstructSettings(custom, paths);
-  assert.equal(readConstructAiSettingsSync().constructCloudBaseUrl, "https://api.tryconstruct.cc");
-  assert.equal(readConstructAiSettingsSync().constructCloudAccessToken, "cct_test-token");
+  await withConstructCloudEndpointEnv("https://api.tryconstruct.cc", async () => {
+    const settings = defaultConstructSettings(paths);
+    const custom = {
+      ...settings,
+      ai: {
+        ...settings.ai,
+        constructCloudBaseUrl: "http://localhost:8787",
+        constructCloudAccessToken: "cct_test-token"
+      }
+    };
 
-  const unlocked = await readConstructSettings(paths);
-  assert.equal(unlocked.ai.constructCloudBaseUrl, "http://localhost:8787");
-  assert.equal(
-    enforceConstructCloudProductionEndpoint(unlocked, true).ai.constructCloudBaseUrl,
-    "https://api.tryconstruct.cc"
-  );
+    await writeConstructSettings(custom, paths);
+    assert.equal(readConstructAiSettingsSync().constructCloudBaseUrl, "https://api.tryconstruct.cc");
+    assert.equal(readConstructAiSettingsSync().constructCloudAccessToken, "cct_test-token");
+
+    const unlocked = await readConstructSettings(paths);
+    assert.equal(unlocked.ai.constructCloudBaseUrl, "https://api.tryconstruct.cc");
+    assert.equal(
+      enforceConstructCloudProductionEndpoint(unlocked, true).ai.constructCloudBaseUrl,
+      "https://api.tryconstruct.cc"
+    );
+  });
 });
 
 test("settings normalize and persist source-grounded Flow preference", async (t) => {

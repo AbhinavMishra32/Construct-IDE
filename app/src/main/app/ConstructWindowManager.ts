@@ -24,7 +24,7 @@ export class ConstructWindowManager {
       transparent: true,
       vibrancy: isMac ? "sidebar" : undefined,
       visualEffectState: isMac ? "active" : undefined,
-      trafficLightPosition: { x: 22, y: 19 },
+      trafficLightPosition: { x: 16, y: 17 },
       roundedCorners: true,
       titleBarStyle: isMac ? "hiddenInset" : "default",
       title: "Construct",
