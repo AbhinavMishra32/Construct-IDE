@@ -879,3 +879,12 @@ export type LitellmState = {
   pid: number | null;
   error: string | null;
 };
+
+export type RuntimeInfo = {
+  name: string;
+  electron: string;
+  node: string;
+  chrome: string;
+  platform: string;
+  constructCloudEndpoint: string;
+};

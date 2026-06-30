@@ -46,18 +46,20 @@ describe("Construct project advanced settings", () => {
       fileURLToPath(new URL("./components/settings/ConstructCloudAccountPanel.tsx", import.meta.url)),
       "utf8",
     );
+    const preload = readFileSync(fileURLToPath(new URL("../../preload/index.ts", import.meta.url)), "utf8");
     const controller = readFileSync(fileURLToPath(new URL("../../main/ipc/ConstructSettingsIpcController.ts", import.meta.url)), "utf8");
 
     assert.match(source, /onSourceChange=\{updateAiSource\}/);
     assert.match(source, /onConstructCloudAccessTokenChange=\{\(constructCloudAccessToken: string\) => setAiSettingsDraft/);
     assert.match(aiSection, /LLM source/);
     assert.match(aiSection, /ConstructCloudAccountPanel/);
-    assert.match(source, /allowConstructCloudEndpointEditing=\{isConstructDevRuntime\(\)\}/);
+    assert.match(source, /allowConstructCloudEndpointEditing=\{false\}/);
     assert.match(aiSection, /allowEndpointEditing=\{allowConstructCloudEndpointEditing\}/);
     assert.match(cloudPanel, /allowEndpointEditing = false/);
     assert.match(cloudPanel, /createAuthClient\(\{[\s\S]*?baseURL: normalizedBaseUrl/);
     assert.match(cloudPanel, /authClient\.signOut\(\)/);
     assert.match(cloudPanel, /api\/cloud\/tokens/);
+    assert.match(preload, /constructCloudEndpoint: resolveConstructCloudEndpoint\(process\.env\)/);
     assert.match(controller, /input\?\.provider === "construct-cloud"/);
   });
 });

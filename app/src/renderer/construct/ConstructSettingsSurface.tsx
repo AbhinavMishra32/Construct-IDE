@@ -76,8 +76,14 @@ import type {
   ProjectSummary
 } from "./types";
 import type { ConstructFlowMemoryRead, FlowMemoryFileName } from "../../shared/constructFlow";
-import { CONSTRUCT_CLOUD_PRODUCTION_BASE_URL } from "../../shared/constructCloud";
+import { CONSTRUCT_CLOUD_PRODUCTION_BASE_URL, endpointFromRuntimeInfo } from "../../shared/constructCloud";
 import type { ThemeMode } from "./theme";
+
+function configuredConstructCloudEndpoint(): string {
+  return typeof window === "undefined"
+    ? CONSTRUCT_CLOUD_PRODUCTION_BASE_URL
+    : endpointFromRuntimeInfo(window.construct?.getRuntimeInfo?.());
+}
 
 const defaultAiSettings: AiSettings = {
   runtime: "mastra",
@@ -98,7 +104,7 @@ const defaultAiSettings: AiSettings = {
   opencodeZenBaseUrl: "https://opencode.ai/zen/v1",
   opencodeZenModel: "gpt-5.1-codex",
   githubCopilotModel: "github_copilot/gpt-4",
-  constructCloudBaseUrl: CONSTRUCT_CLOUD_PRODUCTION_BASE_URL,
+  constructCloudBaseUrl: configuredConstructCloudEndpoint(),
   constructCloudAccessToken: "",
   constructCloudModel: "deepseek/deepseek-v4-flash",
   tavilyApiKey: "",
@@ -863,7 +869,7 @@ export function ConstructSettingsSurface({
         litellmState={litellmState}
         onLitellmStart={handleLitellmStart}
         onLitellmStop={handleLitellmStop}
-        allowConstructCloudEndpointEditing={isConstructDevRuntime()}
+        allowConstructCloudEndpointEditing={false}
       />
     );
   }
@@ -1336,10 +1342,6 @@ function mergeFlowMemoryEntries(
     byFile.set(entry.file, entry);
   }
   return flowMemoryFiles.map((file) => byFile.get(file)).filter((entry): entry is ConstructFlowMemoryRead => Boolean(entry));
-}
-
-function isConstructDevRuntime(): boolean {
-  return window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
 }
 
 export function settingsTitle(itemId: string, projectId: string | undefined, projects: ProjectSummary[]) {

@@ -7,7 +7,13 @@ import { Button, Input } from "@opaline/ui";
 import { Auth } from "../../../components/auth/auth";
 import { AuthProvider } from "../../../components/auth/auth-provider";
 import { cleanAndNormalizeUrl } from "../../ConstructApplication";
-import { CONSTRUCT_CLOUD_PRODUCTION_BASE_URL } from "../../../../shared/constructCloud";
+import { CONSTRUCT_CLOUD_PRODUCTION_BASE_URL, endpointFromRuntimeInfo } from "../../../../shared/constructCloud";
+
+function configuredConstructCloudEndpoint(): string {
+  return typeof window === "undefined"
+    ? CONSTRUCT_CLOUD_PRODUCTION_BASE_URL
+    : endpointFromRuntimeInfo(window.construct?.getRuntimeInfo?.());
+}
 
 type ConstructCloudAccountPanelProps = {
   baseUrl: string;
@@ -112,7 +118,7 @@ export function ConstructCloudAccountPanel({
           <Input
             value={baseUrl}
             disabled={disabled}
-            placeholder={CONSTRUCT_CLOUD_PRODUCTION_BASE_URL}
+            placeholder={configuredConstructCloudEndpoint()}
             onChange={(event) => onBaseUrlChange(event.target.value)}
           />
         ) : null}
