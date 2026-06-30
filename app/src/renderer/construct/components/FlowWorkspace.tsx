@@ -3493,11 +3493,11 @@ function buildConceptExercisePart({
             {sourceText && (
               <div className="flex flex-col gap-1">
                 <span className={cn(
-                  "text-[10px] font-semibold text-muted-foreground uppercase tracking-wider",
+                  "text-[11px] font-semibold text-muted-foreground uppercase tracking-wider",
                   isPanel && "text-[9px]"
                 )}>Reference Code / Context:</span>
                 <pre className={cn(
-                  "max-h-52 overflow-y-auto overflow-x-auto rounded-[8px] border bg-muted/20 p-3 font-mono text-[10.5px] leading-relaxed text-foreground/90 select-text",
+                  "max-h-56 overflow-y-auto overflow-x-auto rounded-[10px] border bg-muted/25 p-3.5 font-mono text-xs leading-relaxed text-foreground/90 select-text shadow-inner",
                   isPanel && "max-h-40 p-2 rounded-md text-[10px]"
                 )}>
                   <code>{sourceText}</code>
@@ -3789,7 +3789,7 @@ function buildTaskCreatedPart({
       <button
         type="button"
         className={cn(
-          "construct-flow-event-card group flex w-full max-w-[32rem] min-w-0 items-center justify-between gap-2.5 rounded-[12px] border border-border/60 bg-muted/30 p-2.5 text-left text-foreground hover:bg-muted/65 active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 cursor-default",
+          "construct-flow-event-card group flex w-full max-w-[46rem] min-w-0 items-center justify-between gap-2.5 rounded-[12px] border border-border/60 bg-muted/30 p-2.5 text-left text-foreground hover:bg-muted/65 active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 cursor-default",
           isPanel && "p-2 gap-2 rounded-lg"
         )}
         disabled={!ready}
@@ -4413,7 +4413,7 @@ function buildConceptCardPart(
     type: "actions",
     id: `${sessionId}:concept:${eventId}`,
     content: (
-      <div className="flex w-full max-w-[32rem] min-w-0 flex-col" data-attention={shouldRequestAttention ? "true" : "false"}>
+      <div className="construct-flow-concept-event flex w-full max-w-[46rem] min-w-0 flex-col" data-attention={shouldRequestAttention ? "true" : "false"} data-flow-surface="concept-card">
         {status === "running" && toolName !== "remove-concept" ? (
           <ConceptCreationPreview
             payload={payload}
@@ -4439,7 +4439,7 @@ function buildConceptCardPart(
           />
         ) : (
           <div className={cn(
-            "construct-concept-summary-card flex w-full max-w-[32rem] min-w-0 items-center justify-between gap-2.5 rounded-[12px] border border-border/60 bg-muted/30 p-2.5 text-left text-foreground",
+            "construct-concept-summary-card flex w-full max-w-[46rem] min-w-0 items-center justify-between gap-2.5 rounded-[12px] border border-border/60 bg-muted/30 p-2.5 text-left text-foreground",
             isPanel && "p-2 gap-2 rounded-lg"
           )}>
             <div className="flex min-w-0 flex-1 items-center gap-2.5">
@@ -4527,7 +4527,7 @@ function ConceptCreationPreview({
 
   return (
     <div className={cn(
-      "construct-concept-summary-card flex w-full max-w-[32rem] min-w-0 items-center justify-between gap-2.5 rounded-[12px] border border-border/60 bg-muted/30 p-2.5 text-left text-foreground",
+      "construct-concept-summary-card flex w-full max-w-[46rem] min-w-0 items-center justify-between gap-2.5 rounded-[12px] border border-border/60 bg-muted/30 p-2.5 text-left text-foreground",
       isPanel && "p-2 gap-2 rounded-lg"
     )}>
       <div className="flex min-w-0 flex-1 items-center gap-2.5">
@@ -4916,11 +4916,11 @@ function FlowQuestionComposer({
 
   const containerClass = isPanel
     ? "mx-auto w-full max-w-[min(46rem,calc(100%-0.75rem))] rounded-xl border border-border/70 bg-card px-2.5 pb-2 pt-2.5 shadow-[0_4px_12px_color-mix(in_srgb,var(--foreground)_5%,transparent)] dark:shadow-none"
-    : "mx-auto w-full max-w-[min(46rem,calc(100%-0.75rem))] rounded-[22px] border border-border/70 bg-card px-3 pb-2.5 pt-3 shadow-[0_8px_24px_color-mix(in_srgb,var(--foreground)_6%,transparent)] dark:shadow-none";
+    : "construct-flow-question-composer mx-auto w-full max-w-[min(46rem,calc(100%-0.75rem))] rounded-[20px] border border-border/70 bg-card px-4 pb-3 pt-4 shadow-[0_10px_30px_color-mix(in_srgb,var(--foreground)_7%,transparent)] dark:shadow-none";
 
   const questionTextClass = isPanel
     ? "max-w-full text-[13px] font-medium leading-5 text-foreground"
-    : "max-w-[58rem] text-[14px] font-medium leading-6 text-foreground";
+    : "max-w-[58rem] text-[15px] font-semibold leading-7 text-foreground";
 
   const choicesContainerClass = isPanel ? "mt-3 grid grid-cols-1 gap-1" : "mt-3.5 grid grid-cols-1 gap-1.5";
 
@@ -4990,9 +4990,9 @@ function FlowQuestionComposer({
       ) : null}
       {allowOther ? (
         payload.answerMode === "code" ? (
-          <div className="mt-3 flex flex-col overflow-hidden rounded-xl border border-border/75 bg-background shadow-sm transition-all duration-200 focus-within:border-foreground/30 focus-within:ring-2 focus-within:ring-ring/20">
+          <div className="mt-4 flex flex-col overflow-hidden rounded-[14px] border border-border/75 bg-background shadow-sm transition-all duration-200 focus-within:border-foreground/30 focus-within:ring-2 focus-within:ring-ring/20">
             {/* Header / Meta bar */}
-            <div className="flex items-center justify-between border-b border-border/70 bg-muted/35 px-3.5 py-1.5 text-xs text-muted-foreground select-none">
+            <div className="flex items-center justify-between border-b border-border/70 bg-muted/35 px-4 py-2 text-xs text-muted-foreground select-none">
               <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wide text-foreground/70">
                 {payload.language ?? "typescript"}
               </span>
@@ -5000,14 +5000,14 @@ function FlowQuestionComposer({
             </div>
 
             {/* Editor container */}
-            <div className="relative min-h-[132px] w-full font-mono text-sm leading-relaxed">
+            <div className="relative min-h-[184px] w-full font-mono text-sm leading-relaxed">
               {/* Highlighted text layer (positioned absolutely underneath) */}
               <div
-                className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words p-3"
+                className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words p-4"
                 style={{
                   fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-                  fontSize: "13px",
-                  lineHeight: "1.5"
+                  fontSize: "14px",
+                  lineHeight: "1.55"
                 }}
               >
                 <SyntaxHighlighter
@@ -5040,11 +5040,11 @@ function FlowQuestionComposer({
               {/* Transparent Textarea overlay */}
               <textarea
                 ref={textareaRef}
-                className="block min-h-[132px] w-full resize-none border-0 bg-transparent p-3 font-mono text-sm leading-relaxed outline-none caret-foreground placeholder:text-muted-foreground/70 focus:ring-0"
+                className="block min-h-[184px] w-full resize-none border-0 bg-transparent p-4 font-mono text-sm leading-relaxed outline-none caret-foreground placeholder:text-muted-foreground/70 focus:ring-0"
                 style={{
                   fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-                  fontSize: "13px",
-                  lineHeight: "1.5",
+                  fontSize: "14px",
+                  lineHeight: "1.55",
                   caretColor: "var(--foreground)",
                   color: value ? "transparent" : "var(--muted-foreground)"
                 }}
@@ -5096,7 +5096,7 @@ function FlowQuestionComposer({
           </label>
         )
       ) : null}
-      <div className={isPanel ? "mt-2.5 flex items-center justify-end gap-3" : "mt-2.5 flex items-center justify-end gap-4"}>
+      <div className={isPanel ? "mt-2.5 flex items-center justify-end gap-3" : "mt-3 flex items-center justify-end gap-4"}>
         {payload.allowSkip !== false ? (
           <Button
             type="button"

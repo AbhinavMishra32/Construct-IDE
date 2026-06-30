@@ -610,6 +610,32 @@ html, body {
     max-width: 100%;
   }
 
+  .construct-flow-chat-stage.is-maximized .construct-flow-event-card,
+  .construct-flow-chat-stage.is-maximized .construct-concept-summary-card {
+    border-color: color-mix(in srgb, var(--border) 74%, transparent);
+    background: color-mix(in srgb, var(--card) 96%, var(--muted) 4%);
+    box-shadow:
+      0 1px 2px color-mix(in srgb, var(--foreground) 4%, transparent),
+      0 1px 0 color-mix(in srgb, var(--foreground) 4%, transparent) inset;
+  }
+
+  .construct-flow-chat-stage.is-maximized .construct-flow-exercise-card {
+    border-color: color-mix(in srgb, var(--border) 82%, transparent);
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--card) 98%, var(--muted) 2%),
+        color-mix(in srgb, var(--card) 94%, var(--muted) 6%)
+      );
+    box-shadow:
+      0 1px 2px color-mix(in srgb, var(--foreground) 5%, transparent),
+      0 1px 0 color-mix(in srgb, var(--foreground) 6%, transparent) inset;
+  }
+
+  .construct-flow-chat-stage.is-maximized .construct-flow-question-composer {
+    border-color: color-mix(in srgb, var(--border) 82%, transparent);
+  }
+
   .construct-flow-chat-concept-dock {
     width: 0;
     min-width: 0;
