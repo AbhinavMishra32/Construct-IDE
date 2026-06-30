@@ -586,6 +586,30 @@ html, body {
     gap: 0;
   }
 
+  .construct-flow-chat-stage.is-maximized .construct-flow-session [data-component="agent-session-timeline"] {
+    padding-left: 0.75rem !important;
+    padding-right: 0.75rem !important;
+  }
+
+  .construct-flow-chat-stage.is-maximized .construct-flow-session [data-component="agent-session-actions"] {
+    width: 100%;
+    max-width: 100%;
+    align-self: stretch;
+  }
+
+  .construct-flow-chat-stage.is-maximized .construct-flow-session [data-component="agent-session-actions"] > * {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .construct-flow-chat-stage.is-maximized .construct-flow-event-card,
+  .construct-flow-chat-stage.is-maximized .construct-flow-exercise-card,
+  .construct-flow-chat-stage.is-maximized .construct-flow-concept-event,
+  .construct-flow-chat-stage.is-maximized .construct-concept-summary-card {
+    width: 100%;
+    max-width: 100%;
+  }
+
   .construct-flow-chat-concept-dock {
     width: 0;
     min-width: 0;
