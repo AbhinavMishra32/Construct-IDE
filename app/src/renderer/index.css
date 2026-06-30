@@ -1,5 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "../../../opaline/packages/ui/src/theme.css";
 @source "../../../opaline/packages/ui/src";
 
 @keyframes opaline-agent-thinking-shimmer {
@@ -96,24 +98,60 @@
   to { --construct-concept-shimmer-angle: 360deg; }
 }
 
-html, body, #root {
-  height: 100%;
-  margin: 0;
-  padding: 0;
-}
-
-html, body {
-  background: transparent;
-  overflow: hidden;
-}
-
+html,
+body,
 #root {
-  border-radius: 1.125rem;
+  min-height: 100%;
+  margin: 0;
+  background: transparent;
+}
+
+body {
   overflow: hidden;
-  box-shadow:
-    0 0 0 1px rgba(0, 0, 0, 0.08),
-    0 2px 8px rgba(0, 0, 0, 0.08),
-    0 8px 32px rgba(0, 0, 0, 0.12);
+  background: transparent;
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+button {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+[data-construct-control="compact"] {
+  font-size: 11px !important;
+  line-height: 16px !important;
+}
+
+[data-construct-control="sidebar"],
+[data-construct-control="sidebar-account"] {
+  font-size: 12.5px !important;
+  line-height: 17px !important;
+}
+
+[data-construct-control="sidebar-account"] [data-slot="badge"] {
+  font-size: 9px !important;
+  line-height: 13px !important;
+}
+
+[data-construct-control="sidebar-account"] .text-xs {
+  font-size: 12px !important;
+  line-height: 16px !important;
+}
+
+[data-construct-control="question-choice"] {
+  font-size: 13px !important;
+  line-height: 18px !important;
+}
+
+[data-construct-control="question-action"] {
+  font-size: 13px !important;
+  line-height: 18px !important;
+}
+
+[data-tab-id] {
+  font-size: 13px !important;
+  line-height: 18px !important;
 }
 
 @theme inline {
@@ -147,7 +185,14 @@ html, body {
   --color-mist: #e2e8f0;
   --color-signal: #0f766e;
   --color-ember: #f97316;
-  --radius: 0.75rem;
+  --radius: 1rem;
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
@@ -187,6 +232,14 @@ html, body {
   --construct-success-soft: hsl(148 42% 94%);
   --construct-warning: hsl(38 86% 39%);
   --construct-warning-soft: hsl(42 100% 94%);
+  --radius: 1rem;
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
 }
 
 .dark {
@@ -225,6 +278,14 @@ html, body {
   --construct-success-soft: hsl(148 34% 18%);
   --construct-warning: hsl(42 92% 66%);
   --construct-warning-soft: hsl(38 38% 18%);
+  --radius: 1rem;
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
 }
 
 @layer base {
@@ -341,6 +402,58 @@ html, body {
     grid-template-rows: 1fr;
     opacity: 1;
     transform: translateY(0);
+  }
+
+  .construct-concept-tree-accordion__content {
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    transform: translateY(-0.125rem);
+    transition:
+      grid-template-rows 280ms cubic-bezier(0.16, 0.84, 0.22, 1),
+      opacity 180ms ease,
+      transform 280ms cubic-bezier(0.16, 0.84, 0.22, 1);
+  }
+
+  .construct-concept-tree-accordion__content > * {
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .construct-concept-tree-accordion__content.is-open {
+    grid-template-rows: 1fr;
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .construct-concept-card-accordion {
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-0.1875rem);
+    transition:
+      grid-template-rows 240ms cubic-bezier(0.16, 0.84, 0.22, 1),
+      opacity 160ms ease,
+      transform 240ms cubic-bezier(0.16, 0.84, 0.22, 1),
+      visibility 0s linear 240ms;
+  }
+
+  .construct-concept-card-accordion > * {
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .construct-concept-card-accordion.is-open {
+    grid-template-rows: 1fr;
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+    transition:
+      grid-template-rows 260ms cubic-bezier(0.16, 0.84, 0.22, 1),
+      opacity 180ms ease,
+      transform 260ms cubic-bezier(0.16, 0.84, 0.22, 1),
+      visibility 0s linear 0s;
   }
 
   /* ── Flow composer question / default crossfade transition ── */
@@ -643,7 +756,7 @@ html, body {
     overflow: hidden;
     opacity: 0;
     pointer-events: none;
-    transform: translateX(-1rem) scale(0.985);
+    transform: translateX(-1rem);
     transform-origin: left center;
     transition:
       flex-basis 280ms cubic-bezier(0.2, 0.9, 0.2, 1),
@@ -658,7 +771,7 @@ html, body {
     flex-basis: var(--construct-flow-concept-dock-width);
     opacity: 1;
     pointer-events: auto;
-    transform: translateX(0) scale(1);
+    transform: translateX(0);
   }
 
   .construct-flow-chat-concept-card {
@@ -672,6 +785,11 @@ html, body {
     box-shadow:
       0 20px 50px color-mix(in srgb, var(--background) 35%, transparent),
       0 1px 0 color-mix(in srgb, var(--foreground) 7%, transparent) inset;
+  }
+
+  .construct-flow-chat-concept-card:has([data-construct-explainable="concept-card"][data-collapsed="true"]) {
+    height: auto;
+    align-self: flex-start;
   }
 
   .construct-flow-chat-thread {
