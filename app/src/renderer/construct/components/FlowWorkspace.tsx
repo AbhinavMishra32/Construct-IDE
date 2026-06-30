@@ -3298,21 +3298,23 @@ function buildQuestionAnsweredPart(
     type: "actions",
     id: `${sessionId}:question-answer:${toolCall.id}`,
     content: (
-      <div className="group flex w-fit max-w-full min-w-0 items-start gap-2 rounded-[12px] border border-border/70 bg-muted/20 px-3 py-2 text-xs shadow-sm transition-[background-color,border-color] duration-150 hover:bg-muted/30">
-        <HelpCircleIcon size={15} className="mt-0.5 shrink-0 text-muted-foreground" />
+      <div className="construct-flow-event-card group flex w-full max-w-[46rem] min-w-0 items-start gap-2.5 rounded-[10px] border border-border/70 bg-card/90 px-3 py-2.5 text-[13px] shadow-sm transition-[background-color,border-color] duration-150 hover:bg-muted/20" data-flow-surface="question-answered">
+        <span className="grid size-6 shrink-0 place-items-center rounded-[7px] border border-border/70 bg-background/80 text-muted-foreground shadow-xs">
+          <HelpCircleIcon size={13} />
+        </span>
         <div className="min-w-0 flex-1 bg-transparent">
           <div className="flex flex-wrap items-center gap-1.5">
-            <strong className="font-medium text-foreground">Question answered</strong>
+            <strong className="font-semibold leading-5 text-foreground">Question answered</strong>
             <span className="rounded-full bg-background/80 px-1.5 py-0.5 text-[10px] leading-none text-muted-foreground ring-1 ring-border/60">
               {response?.skipped ? "Skipped" : "Answered"}
             </span>
           </div>
-          <div className="mt-1 max-w-[68ch] text-muted-foreground">
+          <div className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">
             <MarkdownBlock content={question} theme={theme} onOpenFile={onOpenFile} onOpenConcept={onOpenConcept} />
           </div>
           {answer ? (
             payload.answerMode === "code" && !response?.skipped ? (
-              <div className="mt-1.5 overflow-hidden rounded-md border bg-muted/30 max-w-[68ch] w-full font-mono">
+              <div className="mt-2 w-full overflow-hidden rounded-[10px] border bg-muted/30 font-mono">
                 <div className="border-b bg-muted/40 px-2 py-1 text-[10px] text-muted-foreground select-none flex items-center justify-between">
                   <span className="font-semibold uppercase tracking-wider">{payload.language ?? "typescript"}</span>
                 </div>
@@ -3322,12 +3324,12 @@ function buildQuestionAnsweredPart(
                   PreTag="div"
                   customStyle={{
                     margin: 0,
-                    padding: "8px 10px",
+                    padding: "10px 12px",
                     background: "transparent",
                     border: 0,
                     borderRadius: 0,
-                    fontSize: "11px",
-                    lineHeight: "1.4",
+                    fontSize: "12px",
+                    lineHeight: "1.5",
                     overflowX: "auto"
                   }}
                   codeTagProps={{
@@ -3340,7 +3342,7 @@ function buildQuestionAnsweredPart(
                 </SyntaxHighlighter>
               </div>
             ) : (
-              <p className="mt-1 max-w-[68ch] whitespace-pre-wrap break-words text-foreground/90">
+              <p className="mt-0.5 whitespace-pre-wrap break-words font-medium leading-relaxed text-foreground/90">
                 {answer}
               </p>
             )
@@ -5189,13 +5191,15 @@ function FlowMemoryUpdateCard({
     }
   };
   return (
-    <div className="flex w-full max-w-[min(39rem,100%)] min-w-0 items-center gap-2 rounded-[8px] border border-border/65 bg-background/55 px-2.5 py-1.5 text-xs text-muted-foreground transition-colors duration-150 hover:bg-muted/20">
-      <FileTextIcon size={15} className="shrink-0 text-muted-foreground" />
+    <div className="construct-flow-event-card flex w-full max-w-[46rem] min-w-0 items-center gap-2.5 rounded-[10px] border border-border/70 bg-card/90 px-3 py-2 text-[13px] text-muted-foreground shadow-sm transition-colors duration-150 hover:bg-muted/20" data-flow-surface="memory-updated">
+      <span className="grid size-6 shrink-0 place-items-center rounded-[7px] border border-border/70 bg-background/80 text-muted-foreground shadow-xs">
+        <FileTextIcon size={13} />
+      </span>
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-2">
-          <strong className="shrink-0 font-medium text-foreground/90">Memory updated</strong>
+          <strong className="shrink-0 font-semibold leading-5 text-foreground">Memory updated</strong>
           <button
-            className="min-w-0 truncate rounded-[6px] px-1 text-left font-mono text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35"
+            className="min-w-0 truncate rounded-[6px] px-1 py-0.5 text-left font-mono text-[12px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35"
             type="button"
             onClick={openSelectedFile}
           >
@@ -5203,11 +5207,11 @@ function FlowMemoryUpdateCard({
           </button>
         </div>
         {results[0]?.reason && results[0].reason !== "Flow Memory changed." ? (
-          <p className="mt-0.5 line-clamp-1 text-muted-foreground">{results[0].reason}</p>
+          <p className="mt-0.5 line-clamp-1 text-[12px] leading-relaxed text-muted-foreground">{results[0].reason}</p>
         ) : null}
       </div>
-      <Button className="h-7 shrink-0 px-2" size="sm" variant="ghost" onClick={() => setOpen(true)}>
-        <GitCompareIcon size={14} />
+      <Button className="h-7 shrink-0 rounded-full px-2.5 text-xs" size="sm" variant="ghost" onClick={() => setOpen(true)}>
+        <GitCompareIcon size={13} />
         View diff
       </Button>
       <ShadcnDialog open={open} onOpenChange={setOpen}>
