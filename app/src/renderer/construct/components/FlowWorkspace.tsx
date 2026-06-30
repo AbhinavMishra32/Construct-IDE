@@ -4973,6 +4973,7 @@ function FlowQuestionComposer({
             <button
               key={choice}
               type="button"
+              data-construct-control="question-choice"
               className={choiceButtonClass(choice)}
               onClick={() => {
                 setSelected(choice);
@@ -5100,8 +5101,9 @@ function FlowQuestionComposer({
         {payload.allowSkip !== false ? (
           <Button
             type="button"
+            data-construct-control="question-action"
             variant="ghost"
-            size={isPanel ? "default" : "lg"}
+            size={isPanel ? "sm" : "default"}
             className="rounded-full font-medium"
             onClick={onSkip}
             disabled={pending}
@@ -5111,8 +5113,9 @@ function FlowQuestionComposer({
         ) : null}
         <Button
           type="button"
+          data-construct-control="question-action"
           variant="default"
-          size={isPanel ? "default" : "lg"}
+          size={isPanel ? "sm" : "default"}
           className="rounded-full gap-1.5 font-medium"
           disabled={!canSubmit}
           onClick={submit}

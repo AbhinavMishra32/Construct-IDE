@@ -589,6 +589,7 @@ export function FileTree({
           {onCreateFile && (
             <button
               type="button"
+              data-construct-control="compact"
               onClick={() =>
                 setCreatingState({
                   type: "file",
@@ -610,6 +611,7 @@ export function FileTree({
           </p>
           <button
             type="button"
+            data-construct-control="compact"
             onClick={() => setSearchQuery("")}
             className="mt-3.5 flex h-7 items-center justify-center rounded-[6px] border border-input bg-background/50 px-3.5 text-[11px] font-medium hover:bg-muted transition-all duration-150 active:scale-95"
           >

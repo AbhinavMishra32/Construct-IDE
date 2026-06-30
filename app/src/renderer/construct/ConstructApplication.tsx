@@ -14,13 +14,11 @@ import { AuthProvider } from "../components/auth/auth-provider";
 import { UserAvatar } from "../components/auth/user/user-avatar";
 import type { AuthView } from "@better-auth-ui/core";
 import type { AiSettings } from "./types";
-import { CONSTRUCT_CLOUD_PRODUCTION_BASE_URL } from "../../shared/constructCloud";
+import { CONSTRUCT_CLOUD_PRODUCTION_BASE_URL, endpointFromRuntimeInfo } from "../../shared/constructCloud";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type ComponentPropsWithoutRef, type PropsWithChildren } from "react";
 import {
   BookOpen,
-  ArrowLeftIcon,
-  ArrowRightIcon,
   ChevronRightIcon,
   ChevronDownIcon,
   CloudIcon,
@@ -39,7 +37,6 @@ import {
   PanelRightIcon,
   SearchIcon,
   SettingsIcon,
-  SidebarIcon,
   TerminalSquareIcon,
   UserRoundIcon
 } from "lucide-react";
@@ -47,7 +44,6 @@ import {
 import {
   AppShell,
   AppShellChromeButton,
-  AppShellCollapsedSidebarTrigger,
   AppShellHeaderToolButton,
   Badge,
   BottomPanel,
@@ -142,6 +138,12 @@ type ConstructProjectShellUiState = {
 
 const SHELL_UI_STATE_KEY = "shell";
 const PROJECT_SHELL_UI_STATE_KEY = "project.shell";
+const PRIMARY_TERMINAL_TAB_ID = "terminal";
+const OUTPUT_TAB_ID = "logs";
+
+function isTerminalBottomTabId(tabId: string): boolean {
+  return tabId === PRIMARY_TERMINAL_TAB_ID || tabId.startsWith("terminal-");
+}
 
 function rightSlotTitle(slotId: string): string {
   if (slotId === "steps") return "Steps";
@@ -211,7 +213,6 @@ function AuthGateContent({
 }) {
   const { data: session, isPending, isError } = useSession(authClient);
   const [timedOut, setTimedOut] = useState(false);
-  const [customUrl, setCustomUrl] = useState(baseUrl);
 
   useEffect(() => {
     console.log("[auth] Checking account status...", { isPending, hasSession: !!session, isError });
@@ -236,7 +237,6 @@ function AuthGateContent({
   const connectFailed = isError || (timedOut && !session);
 
   if (connectFailed) {
-    const isDev = isConstructDevRuntime();
     const signOutAndReload = async () => {
       localStorage.removeItem("bearer_token");
       try {
@@ -256,83 +256,23 @@ function AuthGateContent({
             </svg>
           </div>
           <h2 className="text-xl font-bold tracking-tight">Construct Cloud is not reachable</h2>
-
-          {isDev ? (
-            <>
-              <p className="text-xs text-muted-foreground max-w-[320px]">
-                Construct is unable to connect to the authentication server. You can edit the URL below to target your local server:
-              </p>
-              <div className="w-full flex flex-col gap-2">
-                <input
-                  type="text"
-                  value={customUrl}
-                  onChange={(e) => setCustomUrl(e.target.value)}
-                  className="w-full px-3 py-1.5 text-xs rounded-lg border bg-background/50 text-foreground focus:ring-1 focus:ring-primary focus:outline-none"
-                  placeholder="http://localhost:8787"
-                />
-                <button
-                  onClick={() => {
-                    const cleanedUrl = cleanAndNormalizeUrl(customUrl);
-                    void getSettings().then((settings) => {
-                      settings.ai.constructCloudBaseUrl = cleanedUrl;
-                      return updateAiSettings({ ai: settings.ai });
-                    }).then(() => {
-                      window.location.reload();
-                    }).catch(err => {
-                      console.error("Failed to update base URL", err);
-                    });
-                  }}
-                  className="w-full px-4 py-2 text-xs font-semibold rounded-lg bg-primary text-primary-foreground hover:bg-primary/95 transition-colors"
-                >
-                  Save & Connect
-                </button>
-              </div>
-              <div className="w-full border-t border-muted/30 my-1"></div>
-              <div className="flex w-full gap-2">
-                <button
-                  onClick={() => window.location.reload()}
-                  className="flex-1 px-3 py-1.5 text-xs font-semibold rounded-lg border hover:bg-muted transition-colors"
-                >
-                  Retry
-                </button>
-                <button
-                  onClick={() => {
-                    void getSettings().then((settings) => {
-                      settings.ai.constructCloudBaseUrl = CONSTRUCT_CLOUD_PRODUCTION_BASE_URL;
-                      return updateAiSettings({ ai: settings.ai });
-                    }).then(() => {
-                      window.location.reload();
-                    }).catch(err => {
-                      console.error("Failed to reset base URL", err);
-                    });
-                  }}
-                  className="flex-1 px-3 py-1.5 text-xs font-semibold rounded-lg border hover:bg-muted transition-colors"
-                >
-                  Reset to Default
-                </button>
-              </div>
-            </>
-          ) : (
-            <>
-              <p className="text-xs text-muted-foreground max-w-[320px]">
-                Construct could not reach your account service. Check your connection, retry, or sign out and use another account.
-              </p>
-              <div className="flex w-full gap-2">
-                <button
-                  onClick={() => window.location.reload()}
-                  className="flex-1 px-4 py-2 text-xs font-semibold rounded-lg bg-primary text-primary-foreground hover:bg-primary/95 transition-colors"
-                >
-                  Retry
-                </button>
-                <button
-                  onClick={() => void signOutAndReload()}
-                  className="flex-1 px-4 py-2 text-xs font-semibold rounded-lg border hover:bg-muted transition-colors"
-                >
-                  Sign out
-                </button>
-              </div>
-            </>
-          )}
+          <p className="text-xs text-muted-foreground max-w-[320px]">
+            Construct could not reach your account service. Check your connection, retry, or sign out and use another account.
+          </p>
+          <div className="flex w-full gap-2">
+            <button
+              onClick={() => window.location.reload()}
+              className="flex-1 px-4 py-2 text-xs font-semibold rounded-lg bg-primary text-primary-foreground hover:bg-primary/95 transition-colors"
+            >
+              Retry
+            </button>
+            <button
+              onClick={() => void signOutAndReload()}
+              className="flex-1 px-4 py-2 text-xs font-semibold rounded-lg border hover:bg-muted transition-colors"
+            >
+              Sign out
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -443,6 +383,10 @@ function AuthGate({ children, aiSettings }: { children: React.ReactNode; aiSetti
   );
 }
 
+function configuredConstructCloudEndpoint(): string {
+  return endpointFromRuntimeInfo(window.construct?.getRuntimeInfo?.());
+}
+
 export default function ConstructApp() {
   const history = useShellHistory<ConstructHistoryEntry>([
     { id: "dashboard", title: "Home", type: "dashboard" }
@@ -464,8 +408,8 @@ export default function ConstructApp() {
   const [settingsSurface, setSettingsSurface] = useState<SettingsSurfaceState | null>(null);
   const [settingsQuery, setSettingsQuery] = useState("");
   const [activeRightSlotId, setActiveRightSlotId] = useState("guide");
-  const [activeBottomTabId, setActiveBottomTabId] = useState<string | null>("terminal");
-  const [openBottomTabIds, setOpenBottomTabIds] = useState<string[]>(["terminal", "logs"]);
+  const [activeBottomTabId, setActiveBottomTabId] = useState<string | null>(PRIMARY_TERMINAL_TAB_ID);
+  const [openBottomTabIds, setOpenBottomTabIds] = useState<string[]>([PRIMARY_TERMINAL_TAB_ID, OUTPUT_TAB_ID]);
   const [bottomPanelOpen, setBottomPanelOpen] = useState(false);
   const [bottomPanelExpanded, setBottomPanelExpanded] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(300);
@@ -476,6 +420,7 @@ export default function ConstructApp() {
   const [error, setError] = useState<string | null>(null);
   const [uiStateHydrated, setUiStateHydrated] = useState(false);
   const terminalRef = useRef<TerminalPanelHandle | null>(null);
+  const terminalTabSequenceRef = useRef(1);
   const applyingHistoryRef = useRef(false);
   const restoringUiStateRef = useRef(false);
   const restoringProjectUiStateRef = useRef(false);
@@ -726,9 +671,14 @@ export default function ConstructApp() {
     setActiveProject(project);
   }, []);
 
+  const createTerminalTabId = useCallback(() => {
+    terminalTabSequenceRef.current += 1;
+    return `terminal-${Date.now()}-${terminalTabSequenceRef.current}`;
+  }, []);
+
   const ensureBottomTerminalOpen = useCallback(() => {
-    setOpenBottomTabIds((current) => current.includes("terminal") ? current : ["terminal", ...current]);
-    setActiveBottomTabId("terminal");
+    setOpenBottomTabIds((current) => current.includes(PRIMARY_TERMINAL_TAB_ID) ? current : [PRIMARY_TERMINAL_TAB_ID, ...current]);
+    setActiveBottomTabId(PRIMARY_TERMINAL_TAB_ID);
     setBottomPanelOpen(true);
   }, []);
 
@@ -986,7 +936,7 @@ export default function ConstructApp() {
       // Toggle Terminal: Ctrl+` or Cmd+`
       if ((e.ctrlKey || e.metaKey) && e.key === "`") {
         e.preventDefault();
-        if (bottomPanelOpen && activeBottomTabId === "terminal") {
+        if (bottomPanelOpen && activeBottomTabId === PRIMARY_TERMINAL_TAB_ID) {
           setBottomPanelOpen(false);
         } else {
           ensureBottomTerminalOpen();
@@ -997,19 +947,19 @@ export default function ConstructApp() {
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "u") {
         e.preventDefault();
         setOpenBottomTabIds((prev) => {
-          const isLogsActive = activeBottomTabId === "logs";
-          if (prev.includes("logs") && isLogsActive) {
-            const next = prev.filter((id) => id !== "logs");
+          const isLogsActive = activeBottomTabId === OUTPUT_TAB_ID;
+          if (prev.includes(OUTPUT_TAB_ID) && isLogsActive) {
+            const next = prev.filter((id) => id !== OUTPUT_TAB_ID);
             if (next.length > 0) {
               setActiveBottomTabId(next[next.length - 1]);
             } else {
-              setActiveBottomTabId(null as any);
+              setActiveBottomTabId(null);
             }
             return next;
           } else {
-            setActiveBottomTabId("logs");
-            if (!prev.includes("logs")) {
-              return [...prev, "logs"];
+            setActiveBottomTabId(OUTPUT_TAB_ID);
+            if (!prev.includes(OUTPUT_TAB_ID)) {
+              return [...prev, OUTPUT_TAB_ID];
             }
             return prev;
           }
@@ -1098,8 +1048,8 @@ export default function ConstructApp() {
       inspectorExpanded: immersiveFlow,
       flowPanelView: "chat",
       activeRightSlotId: "guide",
-      activeBottomTabId: "terminal",
-      openBottomTabIds: ["terminal", "logs"],
+      activeBottomTabId: PRIMARY_TERMINAL_TAB_ID,
+      openBottomTabIds: [PRIMARY_TERMINAL_TAB_ID, OUTPUT_TAB_ID],
       bottomPanelOpen: true,
       bottomPanelExpanded: false,
       sidebarWidth: 300,
@@ -1470,35 +1420,41 @@ export default function ConstructApp() {
       return [];
     }
 
-    const terminalVisible = bottomPanelOpen && activeBottomTabId === "terminal";
-    const allTabs = [
-      {
-        id: "terminal",
-        title: "Terminal",
-        active: activeBottomTabId === "terminal",
-        icon: <FileTerminalIcon size={14} />,
-        closable: true,
-        content: (
-          <TerminalPanel
-            ref={terminalRef}
-            projectId={activeProject.id}
-            cwd={activeProject.workspacePath}
-            theme={theme}
-            visible={terminalVisible}
-          />
-        )
-      },
-      {
-        id: "logs",
-        title: "Output",
-        active: activeBottomTabId === "logs",
-        icon: <FileTextIcon size={14} />,
-        closable: true,
-        content: <LogsPanel theme={theme} />
+    return openBottomTabIds.flatMap((tabId, index) => {
+      if (isTerminalBottomTabId(tabId)) {
+        const isPrimaryTerminal = tabId === PRIMARY_TERMINAL_TAB_ID;
+        const terminalIndex = openBottomTabIds.slice(0, index + 1).filter(isTerminalBottomTabId).length;
+        return [{
+          id: tabId,
+          title: terminalIndex === 1 ? "Terminal" : `Terminal ${terminalIndex}`,
+          active: activeBottomTabId === tabId,
+          icon: <FileTerminalIcon size={14} />,
+          closable: true,
+          content: (
+            <TerminalPanel
+              ref={isPrimaryTerminal ? terminalRef : undefined}
+              projectId={activeProject.id}
+              cwd={activeProject.workspacePath}
+              theme={theme}
+              visible={bottomPanelOpen && activeBottomTabId === tabId}
+            />
+          )
+        }];
       }
-    ];
 
-    return allTabs.filter((tab) => openBottomTabIds.includes(tab.id));
+      if (tabId === OUTPUT_TAB_ID) {
+        return [{
+          id: OUTPUT_TAB_ID,
+          title: "Output",
+          active: activeBottomTabId === OUTPUT_TAB_ID,
+          icon: <FileTextIcon size={14} />,
+          closable: true,
+          content: <LogsPanel theme={theme} />
+        }];
+      }
+
+      return [];
+    });
   }, [activeProject, openBottomTabIds, activeBottomTabId, bottomPanelOpen, theme]);
 
   const headerTitle = settingsSurface
@@ -1519,7 +1475,7 @@ export default function ConstructApp() {
   }, []);
 
   const openBottomTerminal = useCallback((shellState: AppShellState) => {
-    if (shellState.isBottomPanelOpen && activeBottomTabId === "terminal") {
+    if (shellState.isBottomPanelOpen && activeBottomTabId === PRIMARY_TERMINAL_TAB_ID) {
       shellState.setBottomPanelOpen(false);
       return;
     }
@@ -1570,13 +1526,6 @@ export default function ConstructApp() {
             className="h-full"
           key={activeProject?.id ?? "dashboard"}
           history={history}
-          showSidebarChrome
-          sidebarChrome={(state) => (
-            <ConstructShellNavigationControls state={state} variant="sidebar" />
-          )}
-          collapsedSidebarTrigger={(state) => (
-            <ConstructShellNavigationControls state={state} variant="collapsed" />
-          )}
           defaultBottomPanelOpen={Boolean(activeProject && !settingsSurface && !knowledgeBaseOpen && !learningContextOpen)}
           defaultRightPanelOpen={Boolean(activeProject && !settingsSurface && !knowledgeBaseOpen && !learningContextOpen)}
           sidebarOpen={sidebarOpen}
@@ -1649,15 +1598,15 @@ export default function ConstructApp() {
                             }}
                             className="h-7"
                           >
-                            <TabsList className="h-7 gap-1 p-[2px] bg-muted/40">
-                              <TabsTrigger value="expanded" className="h-[22px] w-[26px] p-0" title="Expand chat">
-                                <Maximize2Icon size={13} />
+                            <TabsList className="h-7 gap-1 bg-transparent p-0">
+                              <TabsTrigger value="expanded" className="size-7 rounded-[8px] p-0 text-muted-foreground/85 shadow-none hover:bg-transparent hover:text-foreground data-active:bg-transparent data-active:text-foreground data-active:shadow-none" title="Expand chat">
+                                <Maximize2Icon size={16} strokeWidth={1.9} />
                               </TabsTrigger>
-                              <TabsTrigger value="normal" className="h-[22px] w-[26px] p-0" title="Normal chat">
-                                <MessageCircleIcon size={13} />
+                              <TabsTrigger value="normal" className="size-7 rounded-[8px] p-0 text-muted-foreground/85 shadow-none hover:bg-transparent hover:text-foreground data-active:bg-transparent data-active:text-foreground data-active:shadow-none" title="Normal chat">
+                                <MessageCircleIcon size={16} strokeWidth={1.9} />
                               </TabsTrigger>
-                              <TabsTrigger value="hidden" className="h-[22px] w-[26px] p-0" title="Hide chat">
-                                <MessageCircleOffIcon size={13} />
+                              <TabsTrigger value="hidden" className="size-7 rounded-[8px] p-0 text-muted-foreground/85 shadow-none hover:bg-transparent hover:text-foreground data-active:bg-transparent data-active:text-foreground data-active:shadow-none" title="Hide chat">
+                                <MessageCircleOffIcon size={16} strokeWidth={1.9} />
                               </TabsTrigger>
                             </TabsList>
                           </Tabs>
@@ -1679,7 +1628,7 @@ export default function ConstructApp() {
                             aria-label="Open Flow project map"
                             title="Project map"
                           >
-                            <ListChecksIcon size={15} />
+                            <ListChecksIcon size={16} strokeWidth={1.9} />
                           </AppShellHeaderToolButton>
                           <AppShellHeaderToolButton
                             data-active={state.isBottomPanelOpen ? "true" : "false"}
@@ -1753,7 +1702,7 @@ export default function ConstructApp() {
                           }}
                           aria-label="Open Construct Interact"
                         >
-                          <MessageCircleIcon size={15} />
+                          <MessageCircleIcon size={16} strokeWidth={1.9} />
                         </AppShellHeaderToolButton>
                         <AppShellHeaderToolButton
                           data-active={state.isRightPanelOpen ? "true" : "false"}
@@ -1890,6 +1839,7 @@ export default function ConstructApp() {
                 expanded={shellState.bottomPanelExpanded}
                 onExpandChange={shellState.setBottomPanelExpanded}
                 activeTabId={activeBottomTabId}
+                controlledTabs
                 syncTabs
                 keepMounted
                 height={300}
@@ -1907,15 +1857,17 @@ export default function ConstructApp() {
                   }
                 }}
                 onTabClose={(tabId) => {
-                  setOpenBottomTabIds((prev) => prev.filter((id) => id !== tabId));
-                  if (activeBottomTabId === tabId) {
-                    const remaining = openBottomTabIds.filter((id) => id !== tabId);
-                    if (remaining.length > 0) {
-                      setActiveBottomTabId(remaining[remaining.length - 1]);
-                    } else {
-                      setActiveBottomTabId(null as any);
+                  setOpenBottomTabIds((prev) => {
+                    const remaining = prev.filter((id) => id !== tabId);
+                    if (activeBottomTabId === tabId) {
+                      if (remaining.length > 0) {
+                        setActiveBottomTabId(remaining[remaining.length - 1]);
+                      } else {
+                        setActiveBottomTabId(null);
+                      }
                     }
-                  }
+                    return remaining;
+                  });
                 }}
                 onTabOpen={(tab) => {
                   setOpenBottomTabIds((prev) => {
@@ -1935,7 +1887,7 @@ export default function ConstructApp() {
                     icon: <FileTerminalIcon size={16} />,
                     shortcut: "⌃`",
                     createTab: () => ({
-                      id: `terminal-${Date.now()}`,
+                      id: createTerminalTabId(),
                       title: "Terminal",
                       icon: <FileTerminalIcon size={14} />,
                       closable: true,
@@ -1954,7 +1906,7 @@ export default function ConstructApp() {
                     description: "View LSP and system logs",
                     icon: <FileTextIcon size={16} />,
                     createTab: () => ({
-                      id: "logs",
+                      id: OUTPUT_TAB_ID,
                       title: "Output",
                       icon: <FileTextIcon size={14} />,
                       closable: true,
@@ -2113,6 +2065,7 @@ function ConstructSidebarFooter({
       <SidebarSettingsButton onClick={onOpenSettings} />
       <button
         type="button"
+        data-construct-control="sidebar-account"
         className="flex min-h-11 w-full min-w-0 items-center gap-2.5 rounded-[6px] px-2.5 py-1.5 text-left text-[12.5px] transition-all hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 border border-transparent hover:border-sidebar-border/10"
         onClick={onAccountClick}
       >
@@ -2160,7 +2113,7 @@ function ConstructAccountDialog({
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const plan = account.usage?.plan ?? account.account?.user?.plan ?? null;
-  const allowEndpointEditing = isConstructDevRuntime();
+  const allowEndpointEditing = false;
 
   useEffect(() => {
     if (!open) return;
@@ -2172,7 +2125,7 @@ function ConstructAccountDialog({
   async function saveHostedSettings(next?: { baseUrl?: string; token?: string }): Promise<boolean> {
     const baseUrl = allowEndpointEditing
       ? cleanAndNormalizeUrl(next?.baseUrl ?? baseUrlDraft)
-      : CONSTRUCT_CLOUD_PRODUCTION_BASE_URL;
+      : configuredConstructCloudEndpoint();
     const token = (next?.token ?? tokenDraft).trim();
 
     try {
@@ -2212,7 +2165,7 @@ function ConstructAccountDialog({
       if (token) {
         headers.Authorization = `Bearer ${token}`;
       }
-      const baseUrl = allowEndpointEditing ? cleanAndNormalizeUrl(baseUrlDraft) : CONSTRUCT_CLOUD_PRODUCTION_BASE_URL;
+      const baseUrl = allowEndpointEditing ? cleanAndNormalizeUrl(baseUrlDraft) : configuredConstructCloudEndpoint();
       const response = await fetch(`${baseUrl}/api/cloud/tokens`, {
         method: "POST",
         credentials: "include",
@@ -2427,7 +2380,7 @@ function ConstructAccountConnectionSection({
               <Input
                 value={baseUrlDraft}
                 disabled={busy}
-                placeholder={CONSTRUCT_CLOUD_PRODUCTION_BASE_URL}
+                placeholder={configuredConstructCloudEndpoint()}
                 onChange={(event) => onBaseUrlChange(event.target.value)}
               />
             ) : null}
@@ -2535,54 +2488,6 @@ function ConstructSidebarBrand() {
   );
 }
 
-function ConstructShellNavigationControls({
-  state,
-  variant,
-}: {
-  state: AppShellState;
-  variant: "collapsed" | "sidebar";
-}) {
-  const Control = variant === "collapsed" ? AppShellCollapsedSidebarTrigger : AppShellChromeButton;
-  const active = variant === "collapsed";
-
-  return (
-    <div className="flex items-center gap-1">
-      <Control
-        aria-label={state.sidebarOpen ? "Close sidebar" : "Open sidebar"}
-        className="rounded-[12px]"
-        onClick={state.toggleSidebar}
-      >
-        <SidebarIcon size={15} strokeWidth={1.8} />
-      </Control>
-      <Control
-        aria-label="Projects"
-        className="rounded-[12px]"
-        data-active={active ? "true" : undefined}
-        disabled={!state.canNavigateHome}
-        onClick={state.navigateHome}
-      >
-        <HomeIcon size={15} strokeWidth={1.8} />
-      </Control>
-      <Control
-        aria-label="Back"
-        className="rounded-[12px]"
-        disabled={!state.canNavigateBack}
-        onClick={state.navigateBack}
-      >
-        <ArrowLeftIcon size={15} strokeWidth={1.8} />
-      </Control>
-      <Control
-        aria-label="Forward"
-        className="rounded-[12px]"
-        disabled={!state.canNavigateForward}
-        onClick={state.navigateForward}
-      >
-        <ArrowRightIcon size={15} strokeWidth={1.8} />
-      </Control>
-    </div>
-  );
-}
-
 function ConstructProjectTitleMenu({
   activeProject,
   isSettingsSurface,
@@ -2673,7 +2578,7 @@ function ConstructProjectTitleMenu({
   );
 }
 
-export function cleanAndNormalizeUrl(url: string | null | undefined, fallback: string = CONSTRUCT_CLOUD_PRODUCTION_BASE_URL): string {
+export function cleanAndNormalizeUrl(url: string | null | undefined, fallback: string = configuredConstructCloudEndpoint()): string {
   if (!url || typeof url !== "string") return fallback;
   
   let cleaned = url.trim().replace(/\/$/, "");
@@ -2701,8 +2606,4 @@ export function cleanAndNormalizeUrl(url: string | null | undefined, fallback: s
   }
 
   return cleaned;
-}
-
-function isConstructDevRuntime(): boolean {
-  return window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
 }
