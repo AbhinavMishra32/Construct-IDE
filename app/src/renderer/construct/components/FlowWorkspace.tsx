@@ -3440,7 +3440,7 @@ function buildConceptExercisePart({
   const isPanel = chatMode === "panel";
 
   const containerClass = cn(
-    "flex w-full max-w-[38rem] min-w-0 flex-col gap-2.5 rounded-[12px] border border-border/70 bg-card/95 p-3 text-left text-foreground shadow-sm",
+    "construct-flow-exercise-card flex w-full max-w-[46rem] min-w-0 flex-col gap-2 rounded-[10px] border border-border/70 bg-card/95 p-3 text-left text-foreground shadow-sm",
     isPanel && "max-w-full p-2.5 rounded-xl gap-2"
   );
 
@@ -3448,10 +3448,10 @@ function buildConceptExercisePart({
     type: "actions",
     id: `${sessionId}:exercise:${eventId}`,
     content: (
-      <div className={containerClass}>
+      <div className={containerClass} data-flow-surface="concept-exercise">
         <div className={cn("flex min-w-0 items-center justify-between gap-2.5 border-b border-border/55 pb-2", isPanel && "pb-1.5 gap-2")}>
           <div className="flex min-w-0 items-center gap-2">
-            <span className={cn("grid size-7 shrink-0 place-items-center rounded-[6px] border shadow-xs bg-background/80", iconClass, isPanel && "size-6")}>
+            <span className={cn("grid size-6 shrink-0 place-items-center rounded-[7px] border shadow-xs bg-background/80", iconClass, isPanel && "size-6 rounded-[6px]")}>
               {failed ? (
                 <CircleAlertIcon size={isPanel ? 11 : 13} />
               ) : status === "running" ? (
@@ -3466,7 +3466,7 @@ function buildConceptExercisePart({
                 isPanel && "text-[9px]"
               )}>Concept Exercise</span>
               <strong className={cn(
-                "block truncate text-sm font-semibold tracking-tight text-foreground",
+                "block truncate text-[13px] font-semibold tracking-tight text-foreground",
                 isPanel && "text-xs"
               )}>
                 {exercise?.title ?? payload.title}
@@ -3483,9 +3483,9 @@ function buildConceptExercisePart({
         </div>
 
         {status !== "running" && (
-          <div className={cn("mt-1 flex flex-col gap-2.5 text-xs", isPanel && "gap-2 text-[11px]")}>
+          <div className={cn("flex flex-col gap-2 text-sm", isPanel && "gap-2 text-[11px]")}>
             {promptText && (
-              <div className={cn("text-[13px] font-medium leading-relaxed text-foreground", !isPanel && "text-sm")}>
+              <div className={cn("text-[13px] font-medium leading-relaxed text-foreground", isPanel && "text-[13px] leading-relaxed")}>
                 <MarkdownBlock content={promptText} theme={theme} onOpenFile={onOpenFile} />
               </div>
             )}
@@ -3592,7 +3592,7 @@ function buildPlanPathPart({
   const isPanel = chatMode === "panel";
 
   const containerClass = cn(
-    "flex w-full max-w-[32rem] min-w-0 flex-col gap-2 rounded-[12px] border border-border/60 bg-muted/30 p-3 text-left text-foreground",
+    "construct-flow-event-card flex w-full max-w-[46rem] min-w-0 flex-col gap-2 rounded-[10px] border border-border/70 bg-card/90 p-3 text-left text-foreground shadow-sm",
     isPanel && "p-2.5 rounded-xl gap-1.5"
   );
 
@@ -3600,12 +3600,12 @@ function buildPlanPathPart({
     type: "actions",
     id: `${sessionId}:plan-path:${eventId}`,
     content: (
-      <div className={containerClass}>
+      <div className={containerClass} data-flow-surface="path-plan">
         {/* Header */}
-        <div className="flex min-w-0 items-center justify-between gap-2.5 border-b border-border/40 pb-2">
+        <div className="flex min-w-0 items-center justify-between gap-2.5 border-b border-border/50 pb-2">
           <div className="flex min-w-0 items-center gap-2">
             <span className={cn(
-              "grid size-7 shrink-0 place-items-center rounded-[6px] border shadow-xs bg-background/80",
+              "grid size-6 shrink-0 place-items-center rounded-[7px] border shadow-xs bg-background/80",
               failed ? "border-destructive/15 text-destructive bg-destructive/5" : "border-border/70 text-muted-foreground",
               isPanel && "size-6"
             )}>
@@ -3619,7 +3619,7 @@ function buildPlanPathPart({
             </span>
             <div className="min-w-0">
               <strong className={cn(
-                "block truncate text-sm font-semibold tracking-tight",
+                "block truncate text-[13px] font-semibold tracking-tight",
                 running ? "opaline-agent-thinking-shimmer" : "text-foreground",
                 isPanel && "text-xs"
               )}>
@@ -3639,11 +3639,10 @@ function buildPlanPathPart({
         {/* Reason / Context */}
         {reason && (
           <div className={cn(
-            "mt-1 text-xs text-muted-foreground bg-background/40 rounded-md p-2 border border-border/20",
+            "text-[12px] text-muted-foreground bg-background/45 rounded-[8px] px-2.5 py-2 border border-border/40",
             isPanel && "text-[11px] p-1.5"
           )}>
-            <span className="font-semibold text-foreground/80 block mb-0.5">Objective:</span>
-            <p className="leading-relaxed select-text italic">"{reason}"</p>
+            <p className="line-clamp-2 leading-relaxed select-text"><span className="font-semibold text-foreground/80">Objective:</span> {reason}</p>
           </div>
         )}
 
@@ -3663,12 +3662,12 @@ function buildPlanPathPart({
 
         {/* Nodes List */}
         {nodes.length > 0 && !failed && (
-          <div className="mt-2 flex flex-col gap-1.5">
+          <div className="flex flex-col gap-1.5">
             <span className={cn(
               "text-[10px] font-semibold text-muted-foreground uppercase tracking-wider px-1",
               isPanel && "text-[9px]"
             )}>Planned Nodes ({nodes.length})</span>
-            <div className="flex flex-col gap-1 max-h-56 overflow-y-auto pr-1">
+            <div className="flex max-h-44 flex-col gap-1 overflow-y-auto pr-1">
               {nodes.map((node: any, idx: number) => {
                 const nodeStatus = node.status || "planned";
                 const isActive = nodeStatus === "active";
@@ -3677,7 +3676,7 @@ function buildPlanPathPart({
                   <div
                     key={node.id || idx}
                     className={cn(
-                      "flex items-start gap-2 rounded-md p-2 border transition-all text-xs",
+                      "flex items-start gap-2 rounded-[8px] px-2 py-1.5 border transition-all text-[12px]",
                       isActive
                         ? "border-primary/40 bg-primary/5 text-foreground ring-1 ring-primary/20"
                         : "border-border/30 bg-background/40 text-muted-foreground",
@@ -3709,7 +3708,7 @@ function buildPlanPathPart({
                         )}
                       </div>
                       <p className={cn(
-                        "text-[11px] text-muted-foreground leading-normal mt-0.5 line-clamp-2 select-text",
+                        "text-[11px] text-muted-foreground leading-snug mt-0.5 line-clamp-1 select-text",
                         isPanel && "text-[10px] mt-0"
                       )}>{node.summary}</p>
                     </div>
