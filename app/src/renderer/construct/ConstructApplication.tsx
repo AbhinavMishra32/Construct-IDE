@@ -397,6 +397,7 @@ export default function ConstructApp() {
   const [isSaving, setIsSaving] = useState(false);
   const [rightPanel, setRightPanel] = useState<ReactNode | null>(null);
   const [sidebarKnowledgePanel, setSidebarKnowledgePanel] = useState<ReactNode | null>(null);
+  const [conceptsSidebarPanel, setConceptsSidebarPanel] = useState<ReactNode | null>(null);
   const [flowPanelView, setFlowPanelView] = useState<"chat" | "project">("chat");
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -1360,7 +1361,7 @@ export default function ConstructApp() {
       }}
     />
   ) : knowledgeBaseOpen ? (
-    <KnowledgeBaseSurface activeProject={activeProject} theme={theme} onOpenProject={(projectId) => {
+    <KnowledgeBaseSurface activeProject={activeProject} theme={theme} onSidebarPanelChange={setConceptsSidebarPanel} onOpenProject={(projectId) => {
       setKnowledgeBaseOpen(false);
       void openProject(projectId);
     }} />
@@ -1466,6 +1467,27 @@ export default function ConstructApp() {
         : learningContextOpen
           ? "Context"
           : activeProject?.title ?? "Home";
+  const isDashboardHome =
+    !activeProject &&
+    !settingsSurface &&
+    !knowledgeBaseOpen &&
+    !learningContextOpen &&
+    !projectsViewOpen;
+  const shellHeaderTabs = isDashboardHome
+    ? []
+    : [
+        {
+          id: settingsSurface
+            ? `settings-${settingsSurface.itemId}`
+            : knowledgeBaseOpen
+              ? "concepts"
+              : learningContextOpen
+                ? "learner-context"
+                : activeProject?.id ?? "dashboard",
+          title: headerTitle,
+          active: true
+        }
+      ];
 
   const copyText = useCallback((text: string | undefined) => {
     if (!text) return;
@@ -1542,19 +1564,7 @@ export default function ConstructApp() {
           onSidebarWidthChange={setSidebarWidth}
           inspectorWidth={inspectorWidth}
           onInspectorWidthChange={setInspectorWidth}
-          headerTabs={[
-            {
-              id: settingsSurface
-                ? `settings-${settingsSurface.itemId}`
-                : knowledgeBaseOpen
-                  ? "concepts"
-                  : learningContextOpen
-                    ? "learner-context"
-                    : activeProject?.id ?? "dashboard",
-              title: headerTitle,
-              active: true
-            }
-          ]}
+          headerTabs={shellHeaderTabs}
           renderHeaderTab={(tab, shellState) => (
             <ConstructProjectTitleMenu
               activeProject={activeProject}
@@ -1748,6 +1758,45 @@ export default function ConstructApp() {
                 query={settingsQuery}
                 sections={settingsSections}
               />
+            ) : knowledgeBaseOpen ? (
+              <Sidebar
+                projects={[]}
+                items={[]}
+                primaryItems={activeProject ? undefined : [
+                  {
+                    id: "home",
+                    active: false,
+                    icon: <HomeIcon size={15} />,
+                    label: "Home",
+                    onClick: handleBack
+                  },
+                  {
+                    id: "knowledge-base",
+                    active: true,
+                    icon: <BookOpen size={15} />,
+                    label: "Concepts",
+                    onClick: openKnowledgeBase
+                  },
+                  {
+                    id: "projects",
+                    active: false,
+                    icon: <FolderOpenIcon size={15} />,
+                    label: "Projects",
+                    onClick: openProjectsView
+                  }
+                ]}
+                footer={
+                  <ConstructSidebarFooter
+                    aiSettings={aiSettings}
+                    onAccountClick={() => setAccountDialogOpen(true)}
+                    onOpenSettings={() => openSettingsSurface("workspace")}
+                  />
+                }
+              >
+                {conceptsSidebarPanel ?? (
+                  <div className="px-3 py-2 text-[12.5px] text-muted-foreground">Loading concepts...</div>
+                )}
+              </Sidebar>
             ) : activeProject ? (
               <Sidebar
                 projects={[]}
@@ -2066,7 +2115,7 @@ function ConstructSidebarFooter({
       <button
         type="button"
         data-construct-control="sidebar-account"
-        className="flex min-h-11 w-full min-w-0 items-center gap-2.5 rounded-[6px] px-2.5 py-1.5 text-left text-[12.5px] transition-all hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 border border-transparent hover:border-sidebar-border/10"
+        className="construct-sidebar-row flex"
         onClick={onAccountClick}
       >
         <UserAvatar className="size-7 shrink-0" />
@@ -2465,13 +2514,13 @@ function ConstructDashboardNavItem({ item }: { item: SidebarNavItem }) {
 
   return (
     <Button
-      className="h-[30px] w-full justify-start gap-2.5 rounded-[6px] px-2.5 text-[12.5px] font-medium transition-colors data-[active=true]:bg-sidebar-accent/85 data-[active=true]:text-foreground data-[active=true]:font-semibold hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+      className="construct-sidebar-row"
       data-active={item.active === true ? "true" : undefined}
       onClick={item.onClick}
       variant={item.id === "new-project" ? "default" : "ghost"}
     >
       {item.icon != null ? <span className="grid size-[18px] shrink-0 place-items-center" data-icon="inline-start" aria-hidden="true">{item.icon}</span> : null}
-      <span>{item.label}</span>
+      <span data-sidebar-row-label>{item.label}</span>
     </Button>
   );
 }
