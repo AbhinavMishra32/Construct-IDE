@@ -119,14 +119,14 @@ button {
 }
 
 [data-construct-control="compact"] {
-  font-size: 11px !important;
-  line-height: 16px !important;
+  font-size: 10.5px !important;
+  line-height: 15px !important;
 }
 
 [data-construct-control="sidebar"],
 [data-construct-control="sidebar-account"] {
-  font-size: 12.5px !important;
-  line-height: 17px !important;
+  font-size: 13px !important;
+  line-height: 18px !important;
 }
 
 [data-construct-control="sidebar-account"] [data-slot="badge"] {
@@ -220,8 +220,8 @@ button {
   --sidebar-foreground: hsl(240 10% 3.9%);
   --sidebar-primary: hsl(240 5% 15%);
   --sidebar-primary-foreground: hsl(0 0% 100%);
-  --sidebar-accent: rgba(255, 255, 255, 0.6);
-  --sidebar-accent-active: rgba(255, 255, 255, 0.9);
+  --sidebar-accent: color-mix(in srgb, var(--foreground) 4.5%, transparent);
+  --sidebar-accent-active: color-mix(in srgb, var(--foreground) 6.5%, transparent);
   --sidebar-accent-foreground: hsl(240 10% 3.9%);
   --sidebar-border: hsl(240 5% 90%);
   --sidebar-ring: hsl(240 5% 64%);
@@ -404,28 +404,6 @@ button {
     transform: translateY(0);
   }
 
-  .construct-concept-tree-accordion__content {
-    display: grid;
-    grid-template-rows: 0fr;
-    opacity: 0;
-    transform: translateY(-0.125rem);
-    transition:
-      grid-template-rows 280ms cubic-bezier(0.16, 0.84, 0.22, 1),
-      opacity 180ms ease,
-      transform 280ms cubic-bezier(0.16, 0.84, 0.22, 1);
-  }
-
-  .construct-concept-tree-accordion__content > * {
-    min-height: 0;
-    overflow: hidden;
-  }
-
-  .construct-concept-tree-accordion__content.is-open {
-    grid-template-rows: 1fr;
-    opacity: 1;
-    transform: translateY(0);
-  }
-
   .construct-concept-card-accordion {
     display: grid;
     grid-template-rows: 0fr;
@@ -597,6 +575,216 @@ button {
   .construct-flow-composer .agent-composer-submit-btn svg {
     width: 0.9375rem !important;
     height: 0.9375rem !important;
+  }
+
+  .construct-home-surface {
+    display: flex;
+    height: 100%;
+    min-height: 0;
+    flex-direction: column;
+    overflow: auto;
+    background: var(--background);
+    color: var(--foreground);
+  }
+
+  .construct-home-frame {
+    display: flex;
+    min-height: 100%;
+    width: 100%;
+    flex-direction: column;
+    margin: 0 auto;
+    padding: 22px 48px 48px;
+  }
+
+  .construct-home-actions {
+    display: flex;
+    min-height: 2rem;
+    align-items: flex-start;
+    justify-content: flex-end;
+  }
+
+  .construct-home-main {
+    display: flex;
+    min-height: 0;
+    flex: 1;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 96px 0 72px;
+  }
+
+  .construct-home-stack {
+    display: flex;
+    width: min(100%, 724px);
+    flex-direction: column;
+    align-items: center;
+    gap: 24px;
+  }
+
+  .construct-home-title {
+    margin: 0;
+    text-align: center;
+    font-size: 28px;
+    font-weight: 500;
+    line-height: 1.12;
+    color: color-mix(in srgb, var(--foreground) 96%, transparent);
+    letter-spacing: 0;
+  }
+
+  .construct-home-composer.construct-flow-composer {
+    width: 100%;
+    max-width: 724px !important;
+    border-radius: 22px !important;
+    background: color-mix(in srgb, var(--card) 98%, var(--background)) !important;
+    box-shadow:
+      0 18px 44px color-mix(in srgb, var(--foreground) 8%, transparent),
+      0 0 0 1px color-mix(in srgb, var(--border) 86%, transparent) !important;
+  }
+
+  .dark .construct-home-composer.construct-flow-composer {
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--border) 82%, transparent) !important;
+  }
+
+  .construct-home-composer.construct-flow-composer textarea {
+    min-height: 54px !important;
+    max-height: 96px !important;
+    padding: 13px 18px 0 !important;
+    font-size: 13px !important;
+    line-height: 20px !important;
+  }
+
+  .construct-home-composer.construct-flow-composer > div:last-child {
+    min-height: 34px;
+    padding: 0 8px 8px 12px !important;
+  }
+
+  .construct-home-composer.construct-flow-composer .agent-composer-submit-btn {
+    width: 28px !important;
+    height: 28px !important;
+    min-width: 28px !important;
+  }
+
+  .construct-home-composer-count {
+    display: inline-flex;
+    max-width: 10rem;
+    min-width: 0;
+    flex-shrink: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 0 0.25rem;
+    font-size: 13px;
+    line-height: 20px;
+    color: var(--muted-foreground);
+  }
+
+  .construct-home-error {
+    width: 100%;
+    max-width: 724px;
+    border: 1px solid color-mix(in srgb, var(--destructive) 24%, transparent);
+    border-radius: 0.5rem;
+    background: color-mix(in srgb, var(--destructive) 10%, transparent);
+    padding: 0.625rem 0.75rem;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    color: var(--destructive);
+  }
+
+  .construct-home-project-list {
+    width: 100%;
+    max-width: 724px;
+    overflow: hidden;
+    border: 1px solid color-mix(in srgb, var(--border) 92%, transparent);
+    border-radius: 0.5rem;
+    background: color-mix(in srgb, var(--background) 98%, var(--card));
+  }
+
+  .construct-home-project-row {
+    display: grid;
+    min-height: 52px;
+    width: 100%;
+    grid-template-columns: 22px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    border: 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 92%, transparent);
+    background: transparent;
+    padding: 7px 12px;
+    color: var(--foreground);
+    text-align: left;
+  }
+
+  .construct-home-project-row:last-child {
+    border-bottom: 0;
+  }
+
+  .construct-home-project-row:hover {
+    background: color-mix(in srgb, var(--muted) 42%, transparent);
+  }
+
+  .construct-home-project-row:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--ring) 45%, transparent);
+    outline-offset: -2px;
+  }
+
+  .construct-home-project-icon {
+    display: grid;
+    width: 22px;
+    height: 22px;
+    place-items: center;
+    color: var(--muted-foreground);
+  }
+
+  .construct-home-project-title {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 18px;
+    color: color-mix(in srgb, var(--foreground) 94%, transparent);
+  }
+
+  .construct-home-project-subtitle {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    line-height: 17px;
+    color: var(--muted-foreground);
+  }
+
+  .construct-home-project-time {
+    justify-self: end;
+    white-space: nowrap;
+    font-size: 12px;
+    line-height: 17px;
+    color: var(--muted-foreground);
+  }
+
+  @media (max-width: 760px) {
+    .construct-home-frame {
+      padding: 16px 16px 32px;
+    }
+
+    .construct-home-main {
+      padding: 56px 0 48px;
+    }
+
+    .construct-home-title {
+      font-size: 26px;
+    }
+
+    .construct-home-project-row {
+      grid-template-columns: 1.75rem minmax(0, 1fr);
+      gap: 0.75rem;
+    }
+
+    .construct-home-project-time {
+      display: none;
+    }
   }
 
   [data-component="agent-session-timeline"] [data-slot="text-part-body"],
@@ -1076,21 +1264,88 @@ button {
   border-color: color-mix(in srgb, var(--sidebar-border) 25%, transparent) !important;
 }
 
+.construct-sidebar-row {
+  height: 28px !important;
+  width: 100%;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 8px !important;
+  border: 0 !important;
+  border-radius: 6px !important;
+  padding: 0 7px !important;
+  background: transparent !important;
+  color: color-mix(in srgb, var(--foreground) 72%, transparent) !important;
+  font-size: 13px !important;
+  font-weight: 450 !important;
+  line-height: 18px !important;
+  text-align: left;
+  box-shadow: none !important;
+}
+
+.construct-sidebar-row:hover:not(:disabled),
+.construct-sidebar-row[data-active="true"],
+[data-active="true"] > .construct-sidebar-row {
+  background: var(--sidebar-accent) !important;
+  color: var(--foreground) !important;
+  font-weight: 450 !important;
+  box-shadow: none !important;
+}
+
+.construct-sidebar-row [data-icon="inline-start"],
+.construct-sidebar-row [data-sidebar-row-icon] {
+  display: grid;
+  width: 17px;
+  height: 17px;
+  flex: 0 0 17px;
+  place-items: center;
+  color: color-mix(in srgb, var(--foreground) 54%, transparent);
+}
+
+.construct-sidebar-row [data-sidebar-row-label] {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.construct-sidebar-row[data-sidebar-row-layout="split"] {
+  justify-content: space-between !important;
+}
+
+.construct-sidebar-row[data-inset="true"] {
+  padding-left: 27px !important;
+}
+
+.construct-sidebar-row[data-construct-control="sidebar-account"] {
+  height: auto !important;
+  min-height: 44px;
+  padding-top: 6px !important;
+  padding-bottom: 6px !important;
+}
+
 /* ── Smooth transitions for UI actions in the sidebar ── */
 .opaline-v2-sidebar-pane button,
 .opaline-v2-sidebar-pane a {
   transition: none !important;
 }
 
-.opaline-v2-sidebar-pane button:hover:not(:disabled),
-.opaline-v2-sidebar-pane a:hover:not(:disabled) {
+.opaline-v2-sidebar-pane button:not(.construct-sidebar-row):not(.construct-sidebar-action):hover:not(:disabled),
+.opaline-v2-sidebar-pane a:not(.construct-sidebar-row):hover:not(:disabled) {
   background-color: var(--sidebar-accent) !important;
   color: var(--sidebar-accent-foreground) !important;
+  border-color: transparent !important;
+  border-radius: 6px !important;
 }
 
-.opaline-v2-sidebar-pane [data-active="true"] {
+.opaline-v2-sidebar-pane .construct-sidebar-action:hover:not(:disabled) {
+  background: transparent !important;
+  color: var(--foreground) !important;
+}
+
+.opaline-v2-sidebar-pane [data-active="true"]:not(.construct-sidebar-row):not(:has(> .construct-sidebar-row)) {
   background-color: var(--sidebar-accent-active) !important;
   color: var(--sidebar-accent-foreground) !important;
+  border-radius: 6px !important;
 }
 
 /* ── Sleek Sidebar Section Headings ── */
@@ -1098,13 +1353,14 @@ button {
 .opaline-v2-sidebar-pane [data-sidebar="group-label"],
 .opaline-v2-sidebar-pane [data-sidebar="sidebar-section-heading"],
 .opaline-v2-sidebar-pane [data-slot="sidebar-group-label"] {
-  font-size: 10px !important;
-  font-weight: 700 !important;
-  text-transform: uppercase !important;
-  letter-spacing: 0.05em !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  line-height: 18px !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
   color: var(--muted-foreground) !important;
-  opacity: 0.6 !important;
-  padding-left: 0.625rem !important;
-  padding-top: 0.75rem !important;
-  padding-bottom: 0.25rem !important;
+  opacity: 0.68 !important;
+  padding-left: 8px !important;
+  padding-top: 8px !important;
+  padding-bottom: 5px !important;
 }

@@ -5,14 +5,6 @@ import { AgentSessionComposer, Button } from "@opaline/ui";
 import { formatLastOpened } from "../lib/projectStore";
 import type { ProjectSummary } from "../types";
 
-const HEADLINES = [
-  "What are you building today?",
-  "Ready to build the future?",
-  "What system shall we design today?",
-  "Let's build something from scratch.",
-  "Ready to build?"
-];
-
 export function Dashboard({
   projects,
   busy,
@@ -33,11 +25,6 @@ export function Dashboard({
   const [createError, setCreateError] = useState<string | null>(null);
   const recentProjects = useMemo(() => [...projects].sort(compareProjectActivity).slice(0, 3), [projects]);
 
-  const headline = useMemo(() => {
-    const randomIndex = Math.floor(Math.random() * HEADLINES.length);
-    return HEADLINES[randomIndex];
-  }, []);
-
   async function submitPrompt() {
     const trimmed = prompt.trim();
     if (!trimmed || creating) return;
@@ -54,27 +41,25 @@ export function Dashboard({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-auto bg-background text-foreground">
-      <div className="mx-auto flex min-h-full w-full max-w-[1120px] flex-col px-6 py-6">
-        <div className="flex items-center justify-end">
+    <div className="construct-home-surface">
+      <div className="construct-home-frame">
+        <div className="construct-home-actions">
           <Button size="small" variant="ghost" onClick={onRefresh} disabled={busy} aria-label="Refresh projects">
             <RefreshCcw data-icon="inline-start" className={busy ? "animate-spin" : undefined} />
             Refresh
           </Button>
         </div>
 
-        <main className="flex flex-1 flex-col items-center justify-center gap-7 pb-[8vh] pt-8">
-          <div className="flex w-full max-w-[920px] flex-col items-center gap-6">
-            <h1 className="text-center text-[28px] font-semibold leading-tight sm:text-[34px]">
-              {headline}
-            </h1>
+        <main className="construct-home-main">
+          <div className="construct-home-stack">
+            <h1 className="construct-home-title">What should we build in construct?</h1>
 
             <AgentSessionComposer
               aria-label="Describe the project to create"
-              className="construct-flow-composer max-w-[860px]"
+              className="construct-flow-composer construct-home-composer"
               disabled={busy}
               footerEnd={
-                <span className="truncate px-1 text-xs text-muted-foreground">
+                <span className="construct-home-composer-count">
                   {projects.length} project{projects.length === 1 ? "" : "s"}
                 </span>
               }
@@ -87,26 +72,28 @@ export function Dashboard({
             />
 
             {createError || error ? (
-              <div className="w-full max-w-[860px] rounded-[8px] border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              <div className="construct-home-error">
                 {createError ?? error}
               </div>
             ) : null}
 
             {recentProjects.length > 0 ? (
-              <div className="w-full max-w-[860px] overflow-hidden rounded-[8px] border">
+              <div className="construct-home-project-list">
                 {recentProjects.map((project) => (
                   <button
-                    className="grid min-h-11 w-full grid-cols-[1.25rem_minmax(0,1fr)_auto] items-center gap-3 border-b px-3 py-2 text-left last:border-b-0 hover:bg-muted/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                    className="construct-home-project-row"
                     key={project.id}
                     onClick={() => onOpenProject(project.id)}
                     type="button"
                   >
-                    <FolderOpen aria-hidden="true" className="text-muted-foreground" />
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-medium">{project.title}</span>
-                      <span className="block truncate text-xs text-muted-foreground">{projectSubtitle(project)}</span>
+                    <span className="construct-home-project-icon" aria-hidden="true">
+                      <FolderOpen size={20} strokeWidth={1.8} />
                     </span>
-                    <span className="text-xs text-muted-foreground">{formatLastOpened(project.lastOpenedAt)}</span>
+                    <span className="min-w-0">
+                      <span className="construct-home-project-title">{project.title}</span>
+                      <span className="construct-home-project-subtitle">{projectSubtitle(project)}</span>
+                    </span>
+                    <span className="construct-home-project-time">{formatLastOpened(project.lastOpenedAt)}</span>
                   </button>
                 ))}
               </div>
