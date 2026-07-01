@@ -14,33 +14,33 @@ export function HeaderBottomPanelIcon({ open }: { open: boolean }) {
 
 export function SidebarLearningButton({ onClick }: { onClick: () => void }) {
   return (
-    <Button data-construct-control="sidebar" className="h-[30px] w-full justify-start gap-2.5 rounded-[6px] px-2.5 text-[12.5px] font-medium transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground" onClick={onClick} variant="ghost">
+    <Button data-construct-control="sidebar" className="construct-sidebar-row" onClick={onClick} variant="ghost">
       <span className="grid size-[18px] shrink-0 place-items-center" data-icon="inline-start" aria-hidden="true">
         <Notebook className="size-[15px]" />
       </span>
-      <span>Context</span>
+      <span data-sidebar-row-label>Context</span>
     </Button>
   );
 }
 
 export function SidebarConceptsButton({ onClick }: { onClick: () => void }) {
   return (
-    <Button data-construct-control="sidebar" className="h-[30px] w-full justify-start gap-2.5 rounded-[6px] px-2.5 text-[12.5px] font-medium transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground" onClick={onClick} variant="ghost">
+    <Button data-construct-control="sidebar" className="construct-sidebar-row" onClick={onClick} variant="ghost">
       <span className="grid size-[18px] shrink-0 place-items-center" data-icon="inline-start" aria-hidden="true">
         <BookOpenIcon className="size-[15px]" />
       </span>
-      <span>Concepts</span>
+      <span data-sidebar-row-label>Concepts</span>
     </Button>
   );
 }
 
 export function SidebarSettingsButton({ onClick }: { onClick: () => void }) {
   return (
-    <Button data-construct-control="sidebar" className="h-[30px] w-full justify-start gap-2.5 rounded-[6px] px-2.5 text-[12.5px] font-medium transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground" onClick={onClick} variant="ghost">
+    <Button data-construct-control="sidebar" className="construct-sidebar-row" onClick={onClick} variant="ghost">
       <span className="grid size-[18px] shrink-0 place-items-center" data-icon="inline-start" aria-hidden="true">
         <GearSix className="size-[15px]" />
       </span>
-      <span>Settings</span>
+      <span data-sidebar-row-label>Settings</span>
     </Button>
   );
 }

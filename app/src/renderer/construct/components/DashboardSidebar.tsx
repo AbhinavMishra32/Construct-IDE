@@ -57,24 +57,24 @@ function DashboardSidebarProjectRow({
   title: string;
 }) {
   return (
-    <div className="group relative min-h-[30px] rounded-[6px] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-within:bg-sidebar-accent focus-within:text-sidebar-accent-foreground transition-colors">
-      <button className="flex h-[30px] w-full min-w-0 items-center rounded-[6px] px-2.5 py-1 text-left gap-2" onClick={onClick} type="button">
-        <span className="grid size-[18px] shrink-0 place-items-center text-muted-foreground/80" aria-hidden="true">
-          <Folder size={15} />
+    <div className="group relative min-h-7">
+      <button className="construct-sidebar-row flex" onClick={onClick} type="button">
+        <span className="text-muted-foreground/80" data-sidebar-row-icon aria-hidden="true">
+          <Folder size={14} />
         </span>
-        <span className="block min-w-0 flex-1 truncate pr-12 text-[12.5px] font-medium text-foreground/90">{title}</span>
+        <span className="block flex-1 pr-12" data-sidebar-row-label>{title}</span>
       </button>
       {meta ? (
-        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground/70 font-medium group-hover:opacity-0 group-focus-within:opacity-0 transition-opacity">
+        <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[12.5px] font-normal text-muted-foreground/65 transition-opacity group-hover:opacity-0 group-focus-within:opacity-0">
           {meta}
         </span>
       ) : null}
       <ShadcnDropdownMenu>
         <ShadcnDropdownMenuTrigger
-          className="absolute right-1.5 top-1/2 -translate-y-1/2 grid size-6 place-items-center rounded-[4px] text-muted-foreground/75 opacity-0 hover:bg-sidebar-accent hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100 transition-all cursor-pointer"
+          className="construct-sidebar-action absolute right-1 top-1/2 grid size-[22px] -translate-y-1/2 place-items-center rounded-[4px] text-muted-foreground/70 opacity-0 transition-opacity hover:bg-transparent hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100 cursor-pointer"
           aria-label={`Project actions for ${title}`}
         >
-          <DotsThree size={16} weight="bold" />
+          <DotsThree size={15} weight="bold" />
         </ShadcnDropdownMenuTrigger>
         <ShadcnDropdownMenuContent align="end" side="right" sideOffset={6}>
           <ShadcnDropdownMenuItem onClick={onClick}>

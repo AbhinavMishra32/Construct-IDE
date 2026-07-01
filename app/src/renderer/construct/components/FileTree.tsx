@@ -525,12 +525,12 @@ export function FileTree({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-transparent">
-      <div className="shrink-0 flex items-center gap-1.5 px-3 pb-2.5 pt-3">
-        <label className="flex h-[30px] flex-1 items-center gap-2 rounded-[6px] border bg-background/70 px-2.5 text-xs ring-offset-background focus-within:ring-2 focus-within:ring-ring/30">
+      <div className="shrink-0 flex items-center gap-1.5 px-3 pb-2 pt-3">
+        <label className="flex h-8 flex-1 items-center gap-2 rounded-[6px] border bg-background/70 px-2.5 ring-offset-background focus-within:border-primary/35 focus-within:ring-2 focus-within:ring-ring/25">
           <Search className="size-3.5 shrink-0 text-muted-foreground/50" />
           <input
             type="text"
-            className="min-w-0 flex-1 border-0 bg-transparent text-xs outline-none placeholder:text-muted-foreground/45"
+            className="min-w-0 flex-1 border-0 bg-transparent text-[12.5px] outline-none placeholder:text-muted-foreground/45"
             value={searchQuery}
             placeholder="Search files..."
             onChange={(event) => setSearchQuery(event.target.value)}
@@ -538,7 +538,7 @@ export function FileTree({
         </label>
         {onRefresh && (
           <button
-            className="flex size-[30px] items-center justify-center rounded-[6px] text-muted-foreground/60 hover:bg-muted hover:text-foreground transition-all duration-150 active:scale-95 shrink-0"
+            className="flex size-8 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
             type="button"
             onClick={onRefresh}
             title="Refresh Explorer"
