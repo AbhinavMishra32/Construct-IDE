@@ -210,12 +210,23 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     assert.ok(fetchResult.count >= 1);
     assert.equal(fetchedSwiftConcept?.content, "SwiftUI core structure covers App, state, and the first view tree.");
 
+    const treeResult = await fetchTool.execute({
+      includeTree: true,
+      query: "TypeScript interface placement"
+    });
+    assert.ok(treeResult.conceptTree.nodes.some((concept: any) => concept.id === "typescript.syntax.interface"));
+    assert.ok(treeResult.conceptTree.availableParents.some((concept: any) => concept.id === "typescript.syntax"));
+    assert.match(treeResult.conceptTree.outline.join("\n"), /typescript\.syntax\.interface/);
+
     // Verify parent stubs auto-created
     const state = await learningStore.getState();
     assert.ok(state.knowledgeBase.concepts["test-project:typescript.syntax"]);
     assert.ok(state.knowledgeBase.concepts["test-project:typescript"]);
+    assert.equal(state.knowledgeBase.concepts["test-project:typescript"]?.title, "TypeScript");
     assert.equal(state.knowledgeBase.concepts["test-project:typescript.syntax"]?.parentId, "typescript");
     assert.equal(state.knowledgeBase.concepts["test-project:typescript"]?.parentId, null);
+    assert.ok(state.projects["test-project"].conceptRelations?.["typescript.syntax"]?.introducedAt);
+    assert.ok(state.projects["test-project"].conceptRelations?.["typescript"]?.introducedAt);
 
     // 2. Test modify-concept tool
     const modifyTool = (service as any).createModifyConceptTool(project, () => {});
@@ -260,6 +271,66 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     });
     assert.equal(decreaseResult.concept.masteryLevel, 2);
     assert.equal(decreaseResult.concept.history?.at(-1)?.masteryDirection, "decreased");
+
+    await assert.rejects(
+      () => addTool.execute({
+        id: "typescript.types.alias",
+        title: "Type alias",
+        language: "typescript",
+        technology: "TypeScript",
+        content: "Type aliases give reusable names to TypeScript types.",
+        confidence: "unknown",
+        reason: "The learner asked how to name reusable TypeScript types.",
+        evidence: ["The learner asked how to reuse a union type without repeating it."]
+      }),
+      /would create new parent concept\(s\): typescript\.types/
+    );
+
+    const aliasResult = await addTool.execute({
+      id: "typescript.types.alias",
+      title: "Type alias",
+      parentId: "typescript.types",
+      placementRationale: "The existing syntax parent covers declarations, while this is specifically a reusable type-shaping concept under a new TypeScript types branch.",
+      language: "typescript",
+      technology: "TypeScript",
+      content: "Type aliases give reusable names to TypeScript types.",
+      confidence: "unknown",
+      reason: "The learner asked how to name reusable TypeScript types.",
+      evidence: ["The learner asked how to reuse a union type without repeating it."]
+    });
+    assert.equal(aliasResult.concept.parentId, "typescript.types");
+    const stateAfterAlias = await learningStore.getState();
+    assert.ok(stateAfterAlias.projects["test-project"].conceptRelations?.["typescript.types"]?.introducedAt);
+
+    await assert.rejects(
+      () => addTool.execute({
+        id: "typescript.syntax.protocol",
+        title: "Interface",
+        parentId: "typescript.syntax",
+        language: "typescript",
+        technology: "TypeScript",
+        content: "A duplicate interface title would make the concept tree ambiguous.",
+        confidence: "unknown",
+        reason: "Regression check for duplicate concept titles.",
+        evidence: ["A duplicate title was proposed."]
+      }),
+      /Concept title "Interface" already exists/
+    );
+
+    await assert.rejects(
+      () => addTool.execute({
+        id: "typescript.functions.arrow",
+        title: "Arrow functions",
+        parentId: "typescript.syntax",
+        language: "typescript",
+        technology: "TypeScript",
+        content: "Arrow functions use compact function syntax.",
+        confidence: "unknown",
+        reason: "Regression check for mismatched parent IDs.",
+        evidence: ["A mismatched parent was proposed."]
+      }),
+      /parentId must match the concept ID prefix/
+    );
 
     // 3. Test remove-concept tool
     const removeTool = (service as any).createRemoveConceptTool(project, () => {});

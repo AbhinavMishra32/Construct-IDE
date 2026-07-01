@@ -1064,10 +1064,12 @@ export class ConstructFlowService {
   ): ToolsInput[string] {
     return createTool({
       id: "add-concept",
-      description: `Introduce a new concept with a dot-notated hierarchical ID, title, content, and evidence-backed Mastery level. Parent concepts will be auto-created if they do not exist. Mastery scale: ${flowMasteryRubricDescription} New concepts normally start at Level 0 unless the learner's own answer or exercise evidence proves a higher level.`,
+      description: `Introduce a new concept with a dot-notated hierarchical ID, title, content, explicit parent placement, and evidence-backed Mastery level. Before creating, inspect the project concept tree with fetch-concepts includeTree when placement is not already visible. Prefer an existing narrow parent; only create a new parent branch when the placementRationale explains why the existing tree does not fit. Mastery scale: ${flowMasteryRubricDescription} New concepts normally start at Level 0 unless the learner's own answer or exercise evidence proves a higher level.`,
       inputSchema: z.object({
         id: z.string().min(1).describe("The dot-notated hierarchical ID, e.g., 'typescript.syntax.interface'"),
         title: z.string().min(1).describe("Short user-friendly title of the concept"),
+        parentId: z.string().min(1).nullable().optional().describe("Existing project-local parent concept ID, or null for a root concept. Must match the dot-notated ID prefix."),
+        placementRationale: z.string().min(1).max(700).optional().describe("Why this concept belongs under the chosen parent and why a new parent branch is necessary if one will be auto-created."),
         language: conceptLanguageSchema.default("unknown").describe("Primary programming language family for the concept. Use unknown only when it genuinely is not language-specific."),
         technology: z.string().min(1).max(80).optional().describe("Primary framework, library, API, or platform, e.g. SwiftUI, GLFW, OpenGL, React."),
         content: z.string().min(1).describe("Rich, detailed free-form markdown explanation of the concept"),
@@ -1106,69 +1108,102 @@ export class ConstructFlowService {
         const store = this.options.learningStore();
         const state = await store.getState();
         const conceptId = normalizeConceptId(toolInput.id, project);
+        const projectConcepts = await store.getProjectConceptRecords(project.id);
         const existingConcepts = uniqueKnowledgeConcepts(Object.values(state.knowledgeBase.concepts));
         const existingRecord = findKnowledgeConceptById(existingConcepts, conceptId);
         const masteryLevel = normalizeMasteryLevel(toolInput.masteryLevel ?? masteryLevelFromConfidence(toolInput.confidence));
         const masteryText = normalizeMasteryText(masteryLevel, toolInput.masteryText);
         const masteryReason = normalizeMasteryReason(toolInput.masteryReason, masteryLevel);
+        const explicitParentId = normalizeOptionalParentId(toolInput.parentId, project);
+        assertAddConceptPlacement({
+          project,
+          conceptId,
+          title: toolInput.title,
+          content: toolInput.content,
+          explicitParentId,
+          placementRationale: toolInput.placementRationale,
+          projectConcepts,
+          existingRecord
+        });
 
         const parts = conceptId.split(".");
+        const projectConceptIds = new Set(projectConcepts.map((concept) => concept.id));
         for (let i = 1; i < parts.length; i++) {
           const parentId = parts.slice(0, i).join(".");
-          const parentExists = existingConcepts.some((c) => c.id === parentId);
-          if (!parentExists) {
+          const parentIsInProject = projectConceptIds.has(parentId);
+          if (!parentIsInProject) {
+            const existingParentRecord = findKnowledgeConceptById(existingConcepts, parentId);
             const parentParts = parentId.split(".");
-            const parentTitle = parentParts[parentParts.length - 1];
-            const friendlyParentTitle = parentTitle.charAt(0).toUpperCase() + parentTitle.slice(1);
-            const parentStub: KnowledgeBaseRecord = {
-              id: parentId,
-              sourceProjectId: project.id,
-              sourceProjectTitle: project.title,
-              title: friendlyParentTitle,
-              kind: "concept",
-              language: toolInput.language,
-              technology: toolInput.technology,
-              tags: [],
-              summary: `Parent concept stub for ${parentId}`,
-              why: "",
-              examples: [],
-              docs: [],
-              sources: [],
-              content: "",
-              confidence: "unknown",
-              masteryLevel: 0,
-              masteryText: conceptMasteryRubricForLevel(0).text,
-              masteryUpdatedAt: now,
-              lastChangeReason: `Auto-created parent while adding ${conceptId}.`,
-              learnerEvidence: [`Parent concept required for hierarchy ${conceptId}.`],
-              authoredBy: "system",
-              agentContributionPercent: 100,
-              parentId: parentParts.length > 1 ? parentParts.slice(0, -1).join(".") : null,
-              savedAt: now,
-              openCount: 0,
-              usedInRecall: false,
-              lastModifiedAt: now
-            };
-            const parentFieldChanges = conceptFieldChanges(undefined, parentStub, introducedConceptFields(parentStub));
-            parentStub.history = [createConceptHistoryEntry({
-              kind: "system",
-              reason: `Auto-created parent while adding ${conceptId}.`,
-              evidence: [`Parent concept required for hierarchy ${conceptId}.`],
-              changedFields: parentFieldChanges.map((change) => change.field),
-              fieldChanges: parentFieldChanges,
-              provenance: createConceptHistoryProvenance(project, parentId, toolInput.pathNodeId, toolInput.taskId),
-              masteryLevel: 0,
-              masteryText: conceptMasteryRubricForLevel(0).text,
-              masteryDirection: "unchanged",
-              authoredBy: "system",
-              agentContributionPercent: 100,
+            if (!existingParentRecord) {
+              const parentStub: KnowledgeBaseRecord = {
+                id: parentId,
+                sourceProjectId: project.id,
+                sourceProjectTitle: project.title,
+                title: conceptTitleFromId(parentId, toolInput.language, toolInput.technology),
+                kind: "concept",
+                language: toolInput.language,
+                technology: toolInput.technology,
+                tags: parentParts.slice(0, -1),
+                summary: `Parent concept stub for ${parentId}`,
+                why: "",
+                examples: [],
+                docs: [],
+                sources: [],
+                content: "",
+                confidence: "unknown",
+                masteryLevel: 0,
+                masteryText: conceptMasteryRubricForLevel(0).text,
+                masteryUpdatedAt: now,
+                lastChangeReason: `Auto-created parent while adding ${conceptId}.`,
+                learnerEvidence: [`Parent concept required for hierarchy ${conceptId}.`],
+                authoredBy: "system",
+                agentContributionPercent: 100,
+                parentId: parentParts.length > 1 ? parentParts.slice(0, -1).join(".") : null,
+                savedAt: now,
+                openCount: 0,
+                usedInRecall: false,
+                lastModifiedAt: now
+              };
+              const parentFieldChanges = conceptFieldChanges(undefined, parentStub, introducedConceptFields(parentStub));
+              parentStub.history = [createConceptHistoryEntry({
+                kind: "system",
+                reason: `Auto-created parent while adding ${conceptId}.`,
+                evidence: [`Parent concept required for hierarchy ${conceptId}.`],
+                changedFields: parentFieldChanges.map((change) => change.field),
+                fieldChanges: parentFieldChanges,
+                provenance: createConceptHistoryProvenance(project, parentId, toolInput.pathNodeId, toolInput.taskId),
+                masteryLevel: 0,
+                masteryText: conceptMasteryRubricForLevel(0).text,
+                masteryDirection: "unchanged",
+                authoredBy: "system",
+                agentContributionPercent: 100,
+                createdAt: now
+              })];
+              await store.saveKnowledgeConcept(parentStub);
+            }
+            await store.recordConceptProjectEvent({
+              id: randomUUID(),
+              projectId: project.id,
+              projectTitle: project.title,
+              conceptId: parentId,
+              kind: "introduced",
+              masteryLevel: normalizeMasteryLevel(existingParentRecord?.masteryLevel),
+              reason: existingParentRecord
+                ? `Linked existing parent concept ${parentId} into this project while adding ${conceptId}.`
+                : `Auto-created parent concept while adding ${conceptId}.`,
+              evidence: existingParentRecord?.learnerEvidence?.length
+                ? existingParentRecord.learnerEvidence.slice(0, 3)
+                : [`Parent concept required for hierarchy ${conceptId}.`],
+              artifactKind: "teaching",
+              pathNodeId: toolInput.pathNodeId,
+              taskId: toolInput.taskId,
               createdAt: now
-            })];
-            await store.saveKnowledgeConcept(parentStub);
+            });
+            projectConceptIds.add(parentId);
           }
         }
 
-        const parentId = parts.length > 1 ? parts.slice(0, -1).join(".") : null;
+        const parentId = explicitParentId !== undefined ? explicitParentId : parts.length > 1 ? parts.slice(0, -1).join(".") : null;
         const provenance = createConceptHistoryProvenance(project, conceptId, toolInput.pathNodeId, toolInput.taskId);
 
         const newRecord: KnowledgeBaseRecord = {
@@ -1460,18 +1495,19 @@ export class ConstructFlowService {
   private createFetchConceptsTool(project: StoredFlowProject): ToolsInput[string] {
     return createTool({
       id: "fetch-concepts",
-      description: "Read the learner's global concept records by exact ID or search query before citing, updating, or teaching from them.",
+      description: "Read project-local concept records by exact ID, search query, or compact tree overview before citing, updating, teaching from, or placing new concepts. Use includeTree before add-concept when parent placement is not already obvious.",
       inputSchema: z.object({
         conceptIds: z.array(z.string().min(1)).max(8).optional().describe("Exact concept IDs to fetch when known"),
         query: z.string().min(1).max(160).optional().describe("Search query for concept ID, title, summary, content, evidence, tags, language, or technology"),
+        includeTree: z.boolean().default(false).describe("Include a compact project-wide concept tree, available parent IDs, and placement candidates."),
         includeContent: z.boolean().default(false).describe("Include full content/examples/evidence details when the summary is not enough"),
         limit: z.number().int().min(1).max(12).default(8).describe("Maximum number of concepts to return")
       }).strict().superRefine((input, ctx) => {
-        if (!input.conceptIds?.length && !input.query?.trim()) {
+        if (!input.conceptIds?.length && !input.query?.trim() && input.includeTree !== true) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
             path: ["query"],
-            message: "Provide conceptIds or query."
+            message: "Provide conceptIds, query, or includeTree."
           });
         }
       }),
@@ -1481,6 +1517,7 @@ export class ConstructFlowService {
         const selected = new Map<string, KnowledgeBaseRecord>();
         const limit = toolInput.limit ?? 8;
         const includeContent = toolInput.includeContent ?? false;
+        const includeTree = toolInput.includeTree ?? false;
         const normalizedIds = normalizeConceptIds(toolInput.conceptIds ?? [], project);
 
         for (const conceptId of normalizedIds) {
@@ -1511,7 +1548,11 @@ export class ConstructFlowService {
           count: results.length,
           query,
           requestedIds: normalizedIds,
-          concepts: results.map((concept) => serializeConceptForAgent(concept, includeContent))
+          concepts: results.map((concept) => serializeConceptForAgent(concept, includeContent)),
+          conceptTree: includeTree ? buildConceptTreeForAgent(concepts, {
+            query,
+            maxConcepts: 200
+          }) : undefined
         };
       }
     });
@@ -2326,6 +2367,284 @@ function serializeConceptForAgent(concept: KnowledgeBaseRecord, includeContent: 
   };
 }
 
+function buildConceptTreeForAgent(
+  concepts: KnowledgeBaseRecord[],
+  options: {
+    query?: string;
+    maxConcepts: number;
+  }
+) {
+  const records = uniqueKnowledgeConcepts(concepts);
+  const limited = records.slice(0, options.maxConcepts);
+  const byId = new Map(records.map((concept) => [concept.id, concept] as const));
+  const childrenByParent = new Map<string | null, string[]>();
+
+  for (const concept of records) {
+    const parentId = concept.parentId && byId.has(concept.parentId) ? concept.parentId : null;
+    childrenByParent.set(parentId, [...(childrenByParent.get(parentId) ?? []), concept.id]);
+  }
+
+  for (const [parentId, childIds] of childrenByParent.entries()) {
+    childrenByParent.set(parentId, childIds.sort((left, right) => left.localeCompare(right)));
+  }
+
+  const nodes = limited.map((concept) => {
+    const childIds = childrenByParent.get(concept.id) ?? [];
+    const depth = conceptDepth(concept);
+    return {
+      id: concept.id,
+      parentId: concept.parentId ?? null,
+      title: concept.title,
+      titlePath: conceptTitlePath(concept, byId),
+      depth,
+      childIds,
+      childCount: childIds.length,
+      canHaveChildren: depth < 2,
+      language: concept.language,
+      technology: concept.technology,
+      summary: compactAgentText(concept.summary || concept.content || "", 220),
+      masteryLevel: masteryLevelForConcept(concept),
+      isParentStub: isParentConceptStub(concept),
+      relatedConcepts: concept.relatedConcepts?.slice(0, 8) ?? []
+    };
+  });
+
+  const availableParents = nodes
+    .filter((node) => node.canHaveChildren)
+    .map((node) => ({
+      id: node.id,
+      title: node.title,
+      depth: node.depth,
+      childCount: node.childCount,
+      titlePath: node.titlePath,
+      summary: node.summary,
+      isParentStub: node.isParentStub
+    }))
+    .slice(0, 120);
+
+  return {
+    totalConcepts: records.length,
+    returnedConcepts: limited.length,
+    truncated: records.length > limited.length,
+    maxDepth: 3,
+    namingRules: [
+      "Use reusable dot-notated IDs shaped as domain.area.topic, never project/app-specific names.",
+      "Prefer an existing narrow parent from availableParents; create a new parent branch only with a concrete placement rationale.",
+      "Concept titles should read naturally inside the titlePath and name the capability, not the project."
+    ],
+    outline: buildConceptTreeOutline(records).slice(0, options.maxConcepts),
+    nodes,
+    availableParents,
+    suggestedParents: suggestedConceptParents(records, options.query).slice(0, 12)
+  };
+}
+
+function buildConceptTreeOutline(concepts: KnowledgeBaseRecord[]): string[] {
+  const records = uniqueKnowledgeConcepts(concepts);
+  const byId = new Map(records.map((concept) => [concept.id, concept] as const));
+  const childrenByParent = new Map<string | null, KnowledgeBaseRecord[]>();
+
+  for (const concept of records) {
+    const parentId = concept.parentId && byId.has(concept.parentId) ? concept.parentId : null;
+    childrenByParent.set(parentId, [...(childrenByParent.get(parentId) ?? []), concept]);
+  }
+
+  for (const [parentId, children] of childrenByParent.entries()) {
+    childrenByParent.set(parentId, children.sort((left, right) => left.id.localeCompare(right.id)));
+  }
+
+  const lines: string[] = [];
+  const visited = new Set<string>();
+  const visit = (concept: KnowledgeBaseRecord, depth: number) => {
+    if (visited.has(concept.id)) return;
+    visited.add(concept.id);
+    const marker = isParentConceptStub(concept) ? " [parent stub]" : "";
+    lines.push(`${"  ".repeat(depth)}- ${concept.id} — ${concept.title}${marker}`);
+    for (const child of childrenByParent.get(concept.id) ?? []) {
+      visit(child, depth + 1);
+    }
+  };
+
+  for (const root of childrenByParent.get(null) ?? []) {
+    visit(root, 0);
+  }
+  for (const concept of records) {
+    if (!visited.has(concept.id)) visit(concept, conceptDepth(concept));
+  }
+  return lines;
+}
+
+function suggestedConceptParents(concepts: KnowledgeBaseRecord[], query: string | undefined): Array<{
+  id: string;
+  title: string;
+  score: number;
+  childCount: number;
+  titlePath: string[];
+  reason: string;
+}> {
+  const normalizedQuery = query?.trim().toLowerCase();
+  const records = uniqueKnowledgeConcepts(concepts);
+  const byId = new Map(records.map((concept) => [concept.id, concept] as const));
+  const childCountById = new Map<string, number>();
+  for (const concept of records) {
+    if (!concept.parentId) continue;
+    childCountById.set(concept.parentId, (childCountById.get(concept.parentId) ?? 0) + 1);
+  }
+  const terms = normalizedQuery
+    ? normalizedQuery.split(/[^a-z0-9#.+-]+/i).filter((term) => term.length > 2)
+    : [];
+
+  return records
+    .filter((concept) => conceptDepth(concept) < 2)
+    .map((concept) => {
+      const score = normalizedQuery ? scoreParentCandidate(concept, normalizedQuery, terms) : childCountById.get(concept.id) ?? 0;
+      return {
+        id: concept.id,
+        title: concept.title,
+        score,
+        childCount: childCountById.get(concept.id) ?? 0,
+        titlePath: conceptTitlePath(concept, byId),
+        reason: normalizedQuery
+          ? "Matched query terms against parent id, title, summary, content, or existing child names."
+          : "Existing parent-capable concept in the project tree."
+      };
+    })
+    .filter((candidate) => candidate.score > 0)
+    .sort((left, right) => right.score - left.score || left.id.localeCompare(right.id));
+}
+
+function scoreParentCandidate(concept: KnowledgeBaseRecord, normalizedQuery: string, terms: string[]): number {
+  let score = scoreConceptMatch(concept, normalizedQuery, terms);
+  if (concept.id === normalizedQuery) score += 30;
+  if (normalizedQuery.startsWith(`${concept.id}.`)) score += 60;
+  if (concept.id.split(".")[0] === normalizedQuery.split(".")[0]) score += 16;
+  return score;
+}
+
+function conceptTitlePath(concept: KnowledgeBaseRecord, byId: Map<string, KnowledgeBaseRecord>): string[] {
+  const path: string[] = [];
+  const visited = new Set<string>();
+  let current: KnowledgeBaseRecord | undefined = concept;
+  while (current && !visited.has(current.id)) {
+    visited.add(current.id);
+    path.unshift(current.title);
+    current = current.parentId ? byId.get(current.parentId) : undefined;
+  }
+  return path;
+}
+
+function compactAgentText(value: string, maxChars: number): string {
+  const compact = value.replace(/\s+/g, " ").trim();
+  return compact.length > maxChars ? `${compact.slice(0, maxChars - 1).trimEnd()}…` : compact;
+}
+
+function conceptDepth(concept: Pick<KnowledgeBaseRecord, "id" | "parentId">): number {
+  return Math.max(0, concept.id.split(".").length - 1);
+}
+
+function isParentConceptStub(concept: KnowledgeBaseRecord): boolean {
+  return concept.authoredBy === "system" && concept.summary.trim().toLowerCase().startsWith("parent concept stub for ");
+}
+
+function normalizeOptionalParentId(parentId: string | null | undefined, project: StoredFlowProject): string | null | undefined {
+  if (parentId === undefined) return undefined;
+  if (parentId === null) return null;
+  const normalized = normalizeConceptId(parentId, project);
+  if (!normalized) {
+    throw new Error("parentId normalized to an empty concept ID.");
+  }
+  return normalized;
+}
+
+function assertAddConceptPlacement(input: {
+  project: StoredFlowProject;
+  conceptId: string;
+  title: string;
+  content: string;
+  explicitParentId: string | null | undefined;
+  placementRationale: string | undefined;
+  projectConcepts: KnowledgeBaseRecord[];
+  existingRecord: KnowledgeBaseRecord | undefined;
+}): void {
+  const parts = input.conceptId.split(".");
+  if (parts.length > 3) {
+    throw new Error(`Concept IDs may be at most 3 levels deep (domain.area.topic). Received ${input.conceptId}. Group smaller ideas inside the nearest existing parent concept instead.`);
+  }
+
+  const expectedParentId = parts.length > 1 ? parts.slice(0, -1).join(".") : null;
+  if (input.explicitParentId !== undefined && input.explicitParentId !== expectedParentId) {
+    throw new Error(
+      expectedParentId
+        ? `parentId must match the concept ID prefix. For ${input.conceptId}, parentId must be ${expectedParentId}.`
+        : `Root concept ${input.conceptId} must use parentId null or omit parentId.`
+    );
+  }
+
+  const projectConceptIds = new Set(input.projectConcepts.map((concept) => concept.id));
+  const titleKey = normalizeConceptTitleForComparison(input.title);
+  const titleConflict = input.projectConcepts.find((concept) => (
+    concept.id !== input.conceptId && normalizeConceptTitleForComparison(concept.title) === titleKey
+  ));
+  if (titleConflict) {
+    throw new Error(`Concept title "${input.title}" already exists as ${titleConflict.id}. Use modify-concept for that record or choose a more precise tree name.`);
+  }
+
+  const missingParentIds = conceptAncestorIds(input.conceptId).filter((parentId) => !projectConceptIds.has(parentId));
+  if (!missingParentIds.length || !input.projectConcepts.length || input.existingRecord) return;
+
+  const candidates = candidateExistingParentsForNewConcept(input.conceptId, input.title, input.content, input.projectConcepts);
+  if (!candidates.length) return;
+  if (isSpecificPlacementRationale(input.placementRationale)) return;
+
+  throw new Error([
+    `Adding ${input.conceptId} would create new parent concept(s): ${missingParentIds.join(", ")}.`,
+    `Existing parent candidates in this project: ${candidates.map((candidate) => `${candidate.id} (${candidate.title})`).join(", ")}.`,
+    "Fetch the concept tree with fetch-concepts includeTree, place the concept under the best existing parent by changing the ID, or retry with placementRationale explaining why the new parent branch is correct."
+  ].join(" "));
+}
+
+function conceptAncestorIds(conceptId: string): string[] {
+  const parts = conceptId.split(".");
+  const ancestors: string[] = [];
+  for (let index = 1; index < parts.length; index += 1) {
+    ancestors.push(parts.slice(0, index).join("."));
+  }
+  return ancestors;
+}
+
+function candidateExistingParentsForNewConcept(
+  conceptId: string,
+  title: string,
+  content: string,
+  concepts: KnowledgeBaseRecord[]
+): Array<{ id: string; title: string; score: number }> {
+  const normalizedQuery = `${conceptId} ${title} ${content.slice(0, 800)}`.toLowerCase();
+  const terms = normalizedQuery.split(/[^a-z0-9#.+-]+/i).filter((term) => term.length > 2);
+  const root = conceptId.split(".")[0];
+  return uniqueKnowledgeConcepts(concepts)
+    .filter((concept) => concept.id !== conceptId && conceptDepth(concept) < 2)
+    .map((concept) => {
+      let score = scoreParentCandidate(concept, normalizedQuery, terms);
+      if (concept.id === root || concept.id.startsWith(`${root}.`)) score += 60;
+      return { id: concept.id, title: concept.title, score };
+    })
+    .filter((candidate) => candidate.score >= 20)
+    .sort((left, right) => right.score - left.score || left.id.localeCompare(right.id))
+    .slice(0, 6);
+}
+
+function isSpecificPlacementRationale(value: string | undefined): boolean {
+  return (value?.trim().length ?? 0) >= 32;
+}
+
+function normalizeConceptTitleForComparison(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
 function normalizeExerciseSourceText(sourceText: string | undefined, concepts: KnowledgeBaseRecord[]): string {
   const explicit = sourceText?.trim();
   if (explicit) return explicit;
@@ -2619,6 +2938,55 @@ function normalizeConceptId(conceptId: string, project: StoredFlowProject): stri
   const projectTokens = projectSpecificConceptSegments(project);
   const cleaned = parts.filter((part, index) => index === 0 || !projectTokens.has(part));
   return (cleaned.length ? cleaned : parts).join(".");
+}
+
+function conceptTitleFromId(
+  conceptId: string,
+  language: ConstructConceptLanguage | undefined,
+  technology: string | undefined
+): string {
+  const segments = conceptId.split(".");
+  const segment = segments[segments.length - 1] ?? conceptId;
+  if (segments.length === 1) {
+    const technologyTitle = technology?.trim();
+    if (technologyTitle && normalizeConceptTitleSegment(technologyTitle) === segment) {
+      return technologyTitle;
+    }
+    const languageTitle = conceptLanguageTitle(language);
+    if (languageTitle && normalizeConceptTitleSegment(languageTitle) === segment) {
+      return languageTitle;
+    }
+  }
+  return segment
+    .split("-")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function normalizeConceptTitleSegment(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function conceptLanguageTitle(language: ConstructConceptLanguage | undefined): string | undefined {
+  switch (language) {
+    case "cpp":
+      return "C++";
+    case "javascript":
+      return "JavaScript";
+    case "typescript":
+      return "TypeScript";
+    case "swift":
+      return "Swift";
+    case "python":
+      return "Python";
+    default:
+      return undefined;
+  }
 }
 
 function projectSpecificConceptSegments(project: StoredFlowProject): Set<string> {
@@ -3628,6 +3996,11 @@ function buildMainPrompt(
       content: item.content.slice(0, 3_000)
     })), null, 2),
     "",
+    "Project concept tree for placement:",
+    JSON.stringify(buildConceptTreeForAgent(concepts, {
+      maxConcepts: 200
+    }), null, 2),
+    "",
     "Concepts taught in this project:",
     JSON.stringify(concepts.map((c) => ({
       id: c.id,
@@ -4528,6 +4901,7 @@ Concept-first tutoring:
 - Concept definitions may be reusable, but permission to use them is project-local. Every project has its own introduced, referenced, practiced, assessed, and leveled-up ledger.
 - Before explaining a topic, check the Concepts taught in this project. A matching global concept from another project is only a candidate to introduce here, never permission to use it.
 - Use fetch-concepts when you need exact concept content, examples, evidence, confidence, or related concepts. Use exact conceptIds when you know them and query search when you do not. Do not guess concept details from memory.
+- Before add-concept, inspect the current project concept tree. If the full tree and candidate parents are not already visible in the prompt or current tool output, call fetch-concepts with includeTree true and a query for the proposed concept. Treat concept placement as architecture: choose the narrowest existing parent that already owns the mental model, then make the new concept a child of that parent.
 - Before modifying or removing a concept, fetch it first unless the full current record is already visible in the prompt or current tool output.
 - If a reusable concept exists but is not in this project, introduce it here with add-concept before teaching from or using it. Then link it in chat with the inline markdown tag [[concept:concept.id|Concept title]].
 - Introducing a concept is only the start of the teaching journey. After add-concept/suggest-existing-concept, teach a small slice of the concept with a mental model, a tiny example, or a contrast chosen for the learner's current level. Do not dump the entire concept body into chat and do not jump straight from "introduced" to a project task.
@@ -4557,6 +4931,8 @@ When you teach or the learner demonstrates understanding, update Concepts with e
 - Use dot-notated hierarchical IDs for reusable concepts (e.g. 'typescript.types.interfaces', 'react.hooks.state', 'swiftui.core-structure'). Max 3 levels deep (domain.area.topic).
 - Do not include product/project/app names in concept IDs. For a notes app, use 'swiftui.core-structure', not 'swiftui.notesapp.core-structure'.
 - Do not create smaller and smaller concepts. Group related sub-concepts inside parent concepts logically.
+- For add-concept, set parentId explicitly when the concept has a parent. The parentId must match the dot-notated ID prefix. Prefer an existing project-local parent; do not create a new parent branch just because a new phrase appeared. If a new parent branch is truly needed, placementRationale must explain why existing parents from the fetched tree do not fit.
+- Concept titles must make sense when read as a tree path. Name the capability, not the app or lesson moment: use "Interfaces" or "State updates", not "Notes app interface thing" or "Today’s new concept". If the title would duplicate an existing concept title, modify that existing concept instead of creating another.
 - Keep concept content detailed, natural, and free-form markdown so it can be easily read and modified. Write detailed text explanations inside the concept record, but do not mirror that full reference text into the learner-facing chat.
 - When a learner struggles, modify the concept to note the specific confusion point.
 - Concepts are persistent memory of what the learner knows, where they are confused, and what the agent wrote. Preserve authoredBy, history, and evidence so future agents do not mistake agent-created content for learner mastery.
