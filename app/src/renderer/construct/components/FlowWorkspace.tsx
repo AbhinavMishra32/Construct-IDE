@@ -905,6 +905,8 @@ export function FlowWorkspace({
       theme={theme}
       onSubmitTask={submitTask}
       onOpenFile={openInlineFile}
+      onOpenConcept={openConceptById}
+      concepts={flowConcepts}
     />
   ) : (
     <div className="relative grid h-full min-h-0 grid-cols-[minmax(0,1fr)] bg-background">
@@ -2094,7 +2096,7 @@ function FlowMasteryDialog({
 
   return (
     <ShadcnDialog open={open} onOpenChange={onOpenChange}>
-      <ShadcnDialogContent className="flex h-[min(82vh,46rem)] w-[min(58rem,calc(100vw-2rem))] max-w-none flex-col overflow-hidden rounded-[10px] border border-border/70 bg-background p-0 shadow-2xl">
+      <ShadcnDialogContent className="flex h-[min(82vh,46rem)] w-[min(58rem,calc(100vw-2rem))] sm:max-w-none flex-col overflow-hidden rounded-[10px] border border-border/70 bg-background p-0 shadow-2xl">
         <ShadcnDialogHeader className="shrink-0 border-b px-4 py-3">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
@@ -2318,7 +2320,9 @@ function FlowTaskDetailsTab({
   current,
   theme,
   onSubmitTask,
-  onOpenFile
+  onOpenFile,
+  onOpenConcept,
+  concepts
 }: {
   task: ConstructFlowPracticeTask;
   node?: ConstructFlowPathNode;
@@ -2326,6 +2330,8 @@ function FlowTaskDetailsTab({
   theme: "light" | "dark" | "system";
   onSubmitTask: (task: ConstructFlowPracticeTask, note?: string, subtaskId?: string) => Promise<void>;
   onOpenFile: (reference: InlineFileRef) => void;
+  onOpenConcept?: (conceptId: string) => void;
+  concepts?: ConceptCard[];
 }) {
   const completedSubtasks = task.subtasks?.filter((subtask) => subtask.status === "completed").length ?? 0;
   const subtaskCount = task.subtasks?.length ?? 1;
@@ -2334,21 +2340,21 @@ function FlowTaskDetailsTab({
   return (
     <section className="h-full min-h-0 overflow-y-auto bg-background">
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 p-5">
-        <header className="rounded-[18px] border border-border/85 bg-card/90 p-4 shadow-sm">
+        <header className="border-b pb-4 mb-2">
           <div className="flex min-w-0 items-start gap-3">
-            <span className="grid size-10 shrink-0 place-items-center rounded-[14px] border bg-muted/45 text-muted-foreground shadow-sm">
-              <ListChecksIcon size={18} />
-            </span>
             <div className="min-w-0 flex-1">
-              <div className="mb-2 flex min-w-0 flex-wrap items-center gap-1.5">
+              <div className="mb-2.5 flex min-w-0 flex-wrap items-center gap-1.5">
                 {current ? <FlowTinyChip tone="current">Current</FlowTinyChip> : <FlowTinyChip>{taskStatusLabel(task.status)}</FlowTinyChip>}
                 {node ? <FlowTinyChip>{node.title}</FlowTinyChip> : null}
                 {node ? <FlowTinyChip>Path {node.order + 1}</FlowTinyChip> : null}
                 <FlowTinyChip>{completedSubtasks}/{subtaskCount} subtasks</FlowTinyChip>
                 {task.taskFiles?.length ? <FlowTinyChip>{task.taskFiles.length} files</FlowTinyChip> : null}
               </div>
-              <h2 className="truncate text-base font-semibold tracking-tight">{task.title}</h2>
-              <p className="mt-1 line-clamp-3 text-sm leading-6 text-muted-foreground">{active?.prompt ?? task.prompt}</p>
+              <h2 className="text-xl font-bold tracking-tight text-foreground flex items-center gap-2">
+                <ListChecksIcon size={20} className="text-muted-foreground/80 shrink-0" />
+                {task.title}
+              </h2>
+              <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground/85">{active?.prompt ?? task.prompt}</p>
             </div>
           </div>
         </header>
@@ -2358,6 +2364,9 @@ function FlowTaskDetailsTab({
           theme={theme}
           onSubmitTask={onSubmitTask}
           onOpenFile={onOpenFile}
+          onOpenConcept={onOpenConcept}
+          concepts={concepts}
+          hideHeader={true}
         />
       </div>
     </section>
@@ -2478,16 +2487,22 @@ function FlowTaskCard({
   onOpenTask,
   onSubmitTask,
   onOpenFile,
+  onOpenConcept,
+  concepts,
   compact = false,
-  chatMode
+  chatMode,
+  hideHeader = false
 }: {
   task: ConstructFlowPracticeTask;
   theme: "light" | "dark" | "system";
   onOpenTask?: (task: ConstructFlowPracticeTask) => void;
   onSubmitTask: (task: ConstructFlowPracticeTask, note?: string, subtaskId?: string) => Promise<void>;
   onOpenFile: (reference: InlineFileRef) => void;
+  onOpenConcept?: (conceptId: string) => void;
+  concepts?: ConceptCard[];
   compact?: boolean;
   chatMode?: FlowChatMode;
+  hideHeader?: boolean;
 }) {
   const [note, setNote] = useState("");
   const active = activeSubtask(task);
@@ -2497,112 +2512,132 @@ function FlowTaskCard({
   const isPanel = chatMode === "panel";
 
   return (
-    <article className={cn("grid min-w-0 gap-3 border-b py-4 text-xs last:border-b-0", isPanel && "py-3 gap-2.5 text-[11px]")}>
-      <aside className={cn("min-w-0 border-b pb-3", isPanel && "pb-2")}>
-        <div className="mb-3 min-w-0">
-          <div className="flex items-center justify-between gap-2">
-            <strong className={cn("truncate text-sm", isPanel && "text-xs")}>{task.title}</strong>
-            <span className="flex shrink-0 items-center gap-1.5">
-              <Badge variant={task.status === "completed" ? "secondary" : "outline"}>{taskStatusLabel(task.status)}</Badge>
-              {onOpenTask ? (
-                <Button size={isPanel ? "sm" : "default"} variant="ghost" onClick={() => onOpenTask(task)}>
-                  <ListChecksIcon size={isPanel ? 12 : 13} />
-                  Open
-                </Button>
-              ) : null}
-            </span>
+    <article className={cn("grid min-w-0 gap-4 text-xs", isPanel && "gap-3 text-[11px]")}>
+      {!hideHeader && (
+        <aside className={cn("min-w-0 border-b pb-3", isPanel && "pb-2")}>
+          <div className="mb-3 min-w-0">
+            <div className="flex items-center justify-between gap-2">
+              <strong className={cn("truncate text-sm", isPanel && "text-xs")}>{task.title}</strong>
+              <span className="flex shrink-0 items-center gap-1.5">
+                <Badge variant={task.status === "completed" ? "secondary" : "outline"}>{taskStatusLabel(task.status)}</Badge>
+                {onOpenTask ? (
+                  <Button size={isPanel ? "sm" : "default"} variant="ghost" onClick={() => onOpenTask(task)}>
+                    <ListChecksIcon size={isPanel ? 12 : 13} />
+                    Open
+                  </Button>
+                ) : null}
+              </span>
+            </div>
+            <p className={cn("mt-1 line-clamp-2 text-[11px] leading-4 text-muted-foreground", isPanel && "text-[10px] leading-3.5")}>{task.prompt}</p>
           </div>
-          <p className={cn("mt-1 line-clamp-2 text-[11px] leading-4 text-muted-foreground", isPanel && "text-[10px] leading-3.5")}>{task.prompt}</p>
-        </div>
+        </aside>
+      )}
 
-        {task.subtasks?.length ? (
-          <ol className="grid gap-1 sm:grid-cols-3">
-            {task.subtasks.map((subtask, index) => (
-              <li
-                key={subtask.id}
-                className={cn(
-                  "grid grid-cols-[1.5rem_minmax(0,1fr)] gap-2 rounded-[7px] px-1.5 py-1.5",
-                  isPanel && "gap-1.5 px-1 py-1 rounded-md",
-                  subtask.id === active?.id && "bg-muted/55 text-foreground",
-                  subtask.status === "completed" && "text-muted-foreground"
-                )}
-              >
-                <span className={cn(
-                  "inline-flex size-5 items-center justify-center rounded-[6px] bg-background text-[10px] font-semibold ring-1 ring-border/70",
-                  isPanel && "size-4 text-[9px] rounded-md"
-                )}>{index + 1}</span>
-                <span className="min-w-0">
-                  <span className="block truncate">{subtask.title}</span>
-                  <span className={cn("text-[10px] text-muted-foreground", isPanel && "text-[9px]")}>{subtaskStatusLabel(subtask.status)}</span>
-                </span>
-              </li>
-            ))}
-          </ol>
-        ) : null}
-      </aside>
-
-      <div className="min-w-0">
-        <div className="flex flex-col gap-3">
-          <div>
-            <span className={cn("mb-1 block text-[11px] font-medium uppercase tracking-wide text-muted-foreground", isPanel && "text-[10px]")}>Now</span>
+      <div className="flex flex-col gap-6 min-w-0">
+        {/* Section 1: Objective */}
+        <div>
+          <span className={cn("mb-2 block text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60", isPanel && "text-[9px]")}>Current Objective</span>
+          <div className="text-foreground/95 leading-relaxed text-[13px] px-0.5">
             <MarkdownBlock content={active?.nextInstructions || active?.prompt || task.prompt} theme={theme} onOpenFile={onOpenFile} />
           </div>
-
-          <TaskGuidanceList guidance={guidance} onOpenFile={onOpenFile} />
-
-          <div className="flex flex-wrap gap-1">
-            {task.taskFiles?.map((file) => (
-              <FlowFileChip key={file} path={file} onOpenFile={onOpenFile} compact />
-            ))}
-            {task.focus ? (
-              <FlowFileChip path={task.focus.path} line={task.focus.line} endLine={task.focus.endLine} onOpenFile={onOpenFile} compact />
-            ) : null}
-          </div>
-
-          {!compact && task.successCriteria?.length ? (
-            <div className={cn("grid gap-1.5 border-t pt-3", isPanel && "gap-1 border-t pt-2")}>
-              <span className={cn("text-[11px] font-medium uppercase tracking-wide text-muted-foreground", isPanel && "text-[10px]")}>Done means</span>
-              <ul className="grid gap-1 text-muted-foreground">
-                {task.successCriteria.map((item, index) => <li key={`${index}:${item}`}>{item}</li>)}
-              </ul>
-            </div>
-          ) : null}
-
-          {introducedConceptIds.length ? <TaskConceptChips conceptIds={introducedConceptIds} compact /> : null}
-
-          {task.preparedFiles?.length && !compact ? (
-            <details className={cn("group border-t pt-3", isPanel && "pt-2")}>
-              <summary className={cn("flex cursor-pointer list-none items-center justify-between gap-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground [&::-webkit-details-marker]:hidden", isPanel && "text-[10px]")}>
-                Prepared by Flow
-                <ChevronDownIcon size={13} className="transition-transform group-open:rotate-180" />
-              </summary>
-              <div className="mt-2 flex flex-wrap gap-1">
-                {task.preparedFiles.map((file) => (
-                  <FlowFileChip key={file.path} path={file.path} label={`${file.mode}: ${file.path}`} onOpenFile={onOpenFile} compact />
-                ))}
-              </div>
-            </details>
-          ) : null}
-
-          {canSubmit ? (
-            <div className="grid gap-2 border-t pt-3">
-              {!compact ? (
-                <Textarea
-                  className={cn("min-h-16 resize-y text-sm", isPanel && "min-h-12 text-xs")}
-                  value={note}
-                  placeholder="Optional note for Flow before submitting..."
-                  onChange={(event) => setNote(event.target.value)}
-                />
-              ) : null}
-              <div className="flex justify-end">
-                <Button size={isPanel ? "sm" : "default"} onClick={() => void onSubmitTask(task, note.trim() || undefined, active?.id)}>
-                  <SendIcon size={isPanel ? 12 : 14} />
-                  Submit {active ? "subtask" : "task"}
-                </Button>
-              </div>
-            </div>
-          ) : null}
         </div>
+
+        {/* Section 2: Subtasks Checklist Timeline */}
+        {task.subtasks?.length ? (
+          <div className="flex flex-col gap-3">
+            <span className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest">Subtasks</span>
+            <div className="relative pl-6 space-y-3.5 before:absolute before:left-[8px] before:top-2.5 before:bottom-2.5 before:w-0.5 before:bg-border/50">
+              {task.subtasks.map((subtask, index) => {
+                const isActive = subtask.id === active?.id;
+                const isCompleted = subtask.status === "completed";
+                return (
+                  <div key={subtask.id} className="relative flex items-start gap-3 text-xs">
+                    <span className={cn(
+                      "absolute left-[-22px] top-0.5 flex size-4.5 shrink-0 items-center justify-center rounded-full text-[9px] font-semibold transition-all border",
+                      isActive ? "bg-foreground text-background border-transparent font-bold shadow-xs scale-105" :
+                      isCompleted ? "bg-muted-foreground/15 text-muted-foreground/75 border-transparent" :
+                      "bg-muted text-muted-foreground/60 border-border/40"
+                    )}>{index + 1}</span>
+                    <div className="min-w-0 flex-1 flex items-baseline justify-between gap-3">
+                      <span className={cn("text-foreground/95 font-medium", isCompleted && "text-muted-foreground/55 line-through")}>{subtask.title}</span>
+                      <span className={cn("text-[9px] font-semibold text-muted-foreground/50 uppercase tracking-wider", isActive && "text-primary/70")}>{subtaskStatusLabel(subtask.status)}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+
+        {/* Section 3: Work Areas */}
+        <TaskGuidanceList guidance={guidance} onOpenFile={onOpenFile} />
+
+        {/* Section 4: Related Files */}
+        {task.taskFiles?.length ? (
+          <div className="flex flex-col gap-2">
+            <span className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest">Related Files</span>
+            <div className="flex flex-wrap gap-1.5">
+              {task.taskFiles.map((file) => (
+                <FlowFileChip key={file} path={file} onOpenFile={onOpenFile} compact />
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {/* Section 5: Done Means (Success Criteria) */}
+        {!compact && task.successCriteria?.length ? (
+          <div className="flex flex-col gap-2 pt-3 border-t border-border/60">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Done means</span>
+            <ul className="grid gap-2 text-muted-foreground/80 list-none pl-0.5 text-[11.5px] leading-relaxed">
+              {task.successCriteria.map((item, index) => (
+                <li key={`${index}:${item}`} className="flex items-start gap-2">
+                  <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-muted-foreground/35" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        {/* Section 6: Introduced Concepts */}
+        {introducedConceptIds.length ? (
+          <TaskConceptChips conceptIds={introducedConceptIds} onOpenConcept={onOpenConcept} concepts={concepts} compact />
+        ) : null}
+
+        {/* Section 7: Prepared by Flow */}
+        {task.preparedFiles?.length && !compact ? (
+          <details className="group border-t pt-4 border-border/60">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 [&::-webkit-details-marker]:hidden">
+              Prepared by Flow
+              <ChevronDownIcon size={13} className="transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="mt-2.5 flex flex-wrap gap-1.5">
+              {task.preparedFiles.map((file) => (
+                <FlowFileChip key={file.path} path={file.path} label={`${file.mode}: ${file.path}`} onOpenFile={onOpenFile} compact />
+              ))}
+            </div>
+          </details>
+        ) : null}
+
+        {/* Section 8: Submission Area */}
+        {canSubmit ? (
+          <div className="grid gap-2 border-t pt-4 border-border/60">
+            {!compact ? (
+              <Textarea
+                className="min-h-16 resize-y text-sm rounded-xl border-border/75 bg-card/65"
+                value={note}
+                placeholder="Optional note for Flow before submitting..."
+                onChange={(event) => setNote(event.target.value)}
+              />
+            ) : null}
+            <div className="flex justify-end">
+              <Button size={isPanel ? "sm" : "default"} onClick={() => void onSubmitTask(task, note.trim() || undefined, active?.id)} className="rounded-full">
+                <SendIcon size={isPanel ? 12 : 14} />
+                Submit {active ? "subtask" : "task"}
+              </Button>
+            </div>
+          </div>
+        ) : null}
       </div>
     </article>
   );
@@ -2618,9 +2653,9 @@ function TaskGuidanceList({
   if (!guidance.length) return null;
 
   return (
-    <div className="grid gap-1.5 border-y py-3">
-      <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Work areas</span>
-      <div className="grid gap-1.5">
+    <div className="flex flex-col gap-1.5 mt-1">
+      <span className="text-[10.5px] font-semibold text-muted-foreground uppercase tracking-wider">Work Areas</span>
+      <div className="flex flex-col gap-0.5">
         {guidance.map((item) => {
           const locator = formatFileReferenceLabel(item.path, item.line, item.endLine);
           const label = `${item.title}: ${item.instruction}`;
@@ -2628,21 +2663,19 @@ function TaskGuidanceList({
             <button
               key={item.id}
               type="button"
-              className="grid min-w-0 gap-2 rounded-[7px] px-2 py-2 text-left transition-colors hover:bg-muted/55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35"
-              title={item.instruction}
+              className="group flex items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-left transition-all duration-150 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35 cursor-pointer"
               onClick={() => onOpenFile(createInlineFileReference(item.path, label, item.line, item.endLine))}
             >
-              <span className="min-w-0">
-                <span className="block truncate text-xs font-medium">{item.title}</span>
-                <span className="block text-[11px] leading-4 text-muted-foreground">{item.instruction}</span>
-                {item.placeholder ? (
-                  <span className="mt-1 block truncate font-mono text-[10px] text-muted-foreground/80">{item.placeholder}</span>
-                ) : null}
-              </span>
-              <span className="inline-flex h-6 w-fit max-w-full items-center gap-1 rounded-[6px] border bg-background px-2 font-mono text-[10px] text-muted-foreground">
-                <FileTextIcon size={12} className="shrink-0" />
-                <span className="truncate">{locator}</span>
-              </span>
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                <FileTextIcon size={13} className="text-muted-foreground/60 shrink-0" />
+                <div className="min-w-0 flex-1 flex flex-wrap items-baseline gap-2">
+                  <span className="text-xs font-medium text-foreground truncate">{item.title}</span>
+                  <span className="text-[11px] text-muted-foreground/75 truncate">{item.instruction}</span>
+                </div>
+              </div>
+              <div className="font-mono text-[9px] text-muted-foreground/60 shrink-0 border border-border/40 bg-muted/20 px-1.5 py-0.5 rounded">
+                {locator}
+              </div>
             </button>
           );
         })}
@@ -2755,29 +2788,40 @@ function flowMemoryFilePath(file: string): string {
 
 function TaskConceptChips({
   conceptIds,
+  onOpenConcept,
+  concepts,
   compact = false
 }: {
   conceptIds: string[];
+  onOpenConcept?: (conceptId: string) => void;
+  concepts?: ConceptCard[];
   compact?: boolean;
 }) {
   return (
-    <div className="flex min-w-0 flex-col gap-1.5 border-t pt-3">
-      <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-foreground">
-        <BookOpenIcon size={13} />
+    <div className="flex min-w-0 flex-col gap-2 border-t pt-3 border-border/60">
+      <span className="inline-flex items-center gap-1.5 text-[10.5px] font-semibold text-muted-foreground uppercase tracking-wider">
+        <BookOpenIcon size={12} className="text-muted-foreground/70" />
         Introduced before this task
       </span>
-      <div className="flex flex-wrap gap-1">
-        {conceptIds.map((conceptId) => (
-          <span
-            key={conceptId}
-            className={cn(
-              "rounded-full border bg-background/70 px-2 py-0.5 font-mono text-[10px] text-muted-foreground",
-              compact && "max-w-[12rem] truncate"
-            )}
-          >
-            {conceptId}
-          </span>
-        ))}
+      <div className="flex flex-wrap gap-1.5 mt-0.5">
+        {conceptIds.map((conceptId) => {
+          const concept = concepts?.find((c) => c.id === conceptId);
+          const title = concept?.title ?? conceptId;
+          return (
+            <button
+              key={conceptId}
+              type="button"
+              className="group flex items-center gap-1.5 rounded-lg border border-border/75 bg-card/45 px-2.5 py-1 text-left transition-all duration-150 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35 cursor-pointer shadow-xs active:scale-[0.98]"
+              onClick={() => onOpenConcept?.(conceptId)}
+              title={conceptId}
+            >
+              <BookOpenIcon size={11} className="text-muted-foreground/60 group-hover:text-foreground transition-colors shrink-0" />
+              <span className="text-xs font-semibold text-foreground/90 truncate max-w-[16rem]">
+                {title}
+              </span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -3298,18 +3342,18 @@ function buildQuestionAnsweredPart(
     type: "actions",
     id: `${sessionId}:question-answer:${toolCall.id}`,
     content: (
-      <div className="construct-flow-event-card group flex w-full max-w-[46rem] min-w-0 items-start gap-2.5 rounded-[10px] border border-border/70 bg-card/90 px-3 py-2.5 text-[13px] shadow-sm transition-[background-color,border-color] duration-150 hover:bg-muted/20" data-flow-surface="question-answered">
-        <span className="grid size-6 shrink-0 place-items-center rounded-[7px] border border-border/70 bg-background/80 text-muted-foreground shadow-xs">
-          <HelpCircleIcon size={13} />
+      <div className="construct-flow-event-card group flex w-full max-w-[46rem] min-w-0 items-start gap-2 rounded-[10px] border border-border/70 bg-card/90 px-2.5 py-2 text-[12px] shadow-sm transition-[background-color,border-color] duration-150 hover:bg-muted/20" data-flow-surface="question-answered">
+        <span className="grid size-5 shrink-0 place-items-center rounded-[6px] border border-border/70 bg-background/80 text-muted-foreground shadow-xs">
+          <HelpCircleIcon size={11} />
         </span>
         <div className="min-w-0 flex-1 bg-transparent">
           <div className="flex flex-wrap items-center gap-1.5">
-            <strong className="font-semibold leading-5 text-foreground">Question answered</strong>
-            <span className="rounded-full bg-background/80 px-1.5 py-0.5 text-[10px] leading-none text-muted-foreground ring-1 ring-border/60">
+            <strong className="font-semibold text-[12px] leading-5 text-foreground">Question answered</strong>
+            <span className="rounded-full bg-background/80 px-1.5 py-0.5 text-[9px] leading-none text-muted-foreground ring-1 ring-border/60">
               {response?.skipped ? "Skipped" : "Answered"}
             </span>
           </div>
-          <div className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">
+          <div className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
             <MarkdownBlock content={question} theme={theme} onOpenFile={onOpenFile} onOpenConcept={onOpenConcept} />
           </div>
           {answer ? (
@@ -3627,22 +3671,21 @@ function buildPlanPathPart({
               </strong>
             </div>
           </div>
-          <span className={cn(
-            "rounded-full border bg-background/70 px-2 py-0.5 text-[10px] font-medium shadow-2xs",
-            statusColor,
-            isPanel && "text-[9px] px-1.5"
-          )}>
-            {statusText}
-          </span>
+          {(running || failed) && (
+            <span className={cn(
+              "rounded-full border bg-background/70 px-2 py-0.5 text-[10px] font-medium shadow-2xs",
+              statusColor,
+              isPanel && "text-[9px] px-1.5"
+            )}>
+              {statusText}
+            </span>
+          )}
         </div>
 
         {/* Reason / Context */}
         {reason && (
-          <div className={cn(
-            "text-[12px] text-muted-foreground bg-background/45 rounded-[8px] px-2.5 py-2 border border-border/40",
-            isPanel && "text-[11px] p-1.5"
-          )}>
-            <p className="line-clamp-2 leading-relaxed select-text"><span className="font-semibold text-foreground/80">Objective:</span> {reason}</p>
+          <div className="px-1 text-[12px] leading-relaxed text-muted-foreground select-text">
+            <span className="font-semibold text-foreground/80">Objective:</span> {reason}
           </div>
         )}
 
@@ -3662,65 +3705,161 @@ function buildPlanPathPart({
 
         {/* Nodes List */}
         {nodes.length > 0 && !failed && (
-          <div className="flex flex-col gap-1.5">
-            <span className={cn(
-              "text-[10px] font-semibold text-muted-foreground uppercase tracking-wider px-1",
-              isPanel && "text-[9px]"
-            )}>Planned Nodes ({nodes.length})</span>
-            <div className="flex max-h-44 flex-col gap-1 overflow-y-auto pr-1">
-              {nodes.map((node: any, idx: number) => {
-                const nodeStatus = node.status || "planned";
-                const isActive = nodeStatus === "active";
-                const isCompleted = nodeStatus === "completed";
-                return (
-                  <div
-                    key={node.id || idx}
-                    className={cn(
-                      "flex items-start gap-2 rounded-[8px] px-2 py-1.5 border transition-all text-[12px]",
-                      isActive
-                        ? "border-primary/40 bg-primary/5 text-foreground ring-1 ring-primary/20"
-                        : "border-border/30 bg-background/40 text-muted-foreground",
-                      isPanel && "p-1.5 text-[11px]"
-                    )}
-                  >
-                    <span className={cn(
-                      "mt-0.5 shrink-0 flex items-center justify-center size-4 rounded-full border border-border/60 text-[9px] font-semibold",
-                      isPanel && "size-3.5 text-[8px]"
-                    )}>
-                      {isCompleted ? (
-                        <CheckIcon size={isPanel ? 9 : 10} className="text-emerald-600 dark:text-emerald-400" />
-                      ) : (
-                        idx + 1
-                      )}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className={cn("font-medium truncate", isActive ? "text-foreground font-semibold" : "text-foreground/80")}>
-                          {node.title}
-                        </span>
-                        {node.kind && (
-                          <span className={cn(
-                            "text-[9px] px-1 rounded-sm bg-muted text-muted-foreground uppercase tracking-tight shrink-0 font-medium",
-                            isPanel && "text-[8px] px-0.5"
-                          )}>
-                            {node.kind}
-                          </span>
-                        )}
-                      </div>
-                      <p className={cn(
-                        "text-[11px] text-muted-foreground leading-snug mt-0.5 line-clamp-1 select-text",
-                        isPanel && "text-[10px] mt-0"
-                      )}>{node.summary}</p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          <PlanPathTimeline nodes={nodes} isPanel={isPanel} />
         )}
       </div>
     )
   };
+}
+
+function PlanPathTimeline({ nodes, isPanel }: { nodes: any[]; isPanel: boolean }) {
+  const [scrollState, setScrollState] = useState({
+    scrollTop: 0,
+    scrollHeight: 0,
+    clientHeight: 0
+  });
+
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    setScrollState({
+      scrollTop: el.scrollTop,
+      scrollHeight: el.scrollHeight,
+      clientHeight: el.clientHeight
+    });
+    
+    const observer = new ResizeObserver(() => {
+      setScrollState({
+        scrollTop: el.scrollTop,
+        scrollHeight: el.scrollHeight,
+        clientHeight: el.clientHeight
+      });
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [nodes]);
+
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    setScrollState({
+      scrollTop: el.scrollTop,
+      scrollHeight: el.scrollHeight,
+      clientHeight: el.clientHeight
+    });
+  };
+
+  const { scrollTop, scrollHeight, clientHeight } = scrollState;
+  const isScrollable = scrollHeight > clientHeight;
+  const isAtTop = scrollTop <= 1;
+  const isAtBottom = scrollTop + clientHeight >= scrollHeight - 1;
+
+  let mask = "none";
+  if (isScrollable) {
+    if (isAtTop && isAtBottom) {
+      mask = "none";
+    } else if (isAtTop) {
+      mask = "linear-gradient(to bottom, black, black calc(100% - 24px), transparent)";
+    } else if (isAtBottom) {
+      mask = "linear-gradient(to bottom, transparent, black 24px, black)";
+    } else {
+      mask = "linear-gradient(to bottom, transparent, black 24px, black calc(100% - 24px), transparent)";
+    }
+  }
+
+  return (
+    <div 
+      ref={ref}
+      className={cn(
+        "flex max-h-56 flex-col gap-4 overflow-y-auto pl-3 pr-2 py-2 mt-2 select-none",
+        isPanel && "gap-3 max-h-48 mt-1.5"
+      )}
+      style={{
+        maskImage: mask,
+        WebkitMaskImage: mask
+      }}
+      onScroll={handleScroll}
+    >
+      {nodes.map((node: any, idx: number) => {
+        const nodeStatus = node.status || "planned";
+        const isActive = nodeStatus === "active";
+        const isCompleted = nodeStatus === "completed";
+        return (
+          <div 
+            key={node.id || idx} 
+            className={cn(
+              "relative flex items-start pl-7 text-[12px] min-w-0 min-h-[38px]",
+              isPanel && "pl-6 text-[11px] min-h-[34px]"
+            )}
+          >
+            {/* Line segment connecting to next item */}
+            {idx < nodes.length - 1 && (
+              <span className={cn(
+                "absolute left-[9px] top-[22px] bottom-[-18px] w-0.5 bg-border/40",
+                isPanel && "left-[8.5px] top-[20px] bottom-[-14px]"
+              )} />
+            )}
+
+            {/* Pulsing ring for active node */}
+            {isActive && (
+              <span 
+                className={cn(
+                  "absolute left-0 top-0.5 size-5 rounded-full border border-foreground/50 bg-foreground/15 animate-ping z-10",
+                  isPanel && "size-4.5"
+                )}
+                style={{ animationDuration: "1.8s" }}
+              />
+            )}
+
+            {/* Circle Indicator */}
+            <span className={cn(
+              "absolute left-0 top-0.5 flex size-5 shrink-0 items-center justify-center rounded-full text-[10.5px] font-medium border transition-all z-10",
+              isPanel && "size-4.5 text-[9.5px]",
+              isActive ? "bg-foreground text-background border-transparent shadow-xs scale-105" :
+              isCompleted ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-transparent" :
+              "bg-muted text-muted-foreground/60 border-border/40"
+            )}>
+              {isCompleted ? (
+                <CheckIcon size={isPanel ? 9 : 10} className="stroke-[3]" />
+              ) : (
+                idx + 1
+              )}
+            </span>
+
+            {/* Node Details Container */}
+            <div className="min-w-0 flex-1 ml-1.5">
+              <div className="flex items-start justify-between gap-2.5">
+                <span className={cn(
+                  "font-medium text-foreground/90 leading-snug line-clamp-2", 
+                  isActive ? "text-foreground font-bold" : isCompleted && "text-muted-foreground/75"
+                )}>
+                  {node.title}
+                </span>
+                {node.kind && (
+                  <span className={cn(
+                    "text-[9px] px-1.5 py-0.5 rounded bg-muted/65 text-muted-foreground/90 uppercase tracking-wider font-semibold shrink-0 border border-border/40 mt-0.5",
+                    isPanel && "text-[8px] px-1 py-0"
+                  )}>
+                    {node.kind}
+                  </span>
+                )}
+              </div>
+              {node.summary && (
+                <p className={cn(
+                  "text-[11px] leading-relaxed mt-0.5 select-text line-clamp-1 text-muted-foreground/80",
+                  isCompleted ? "text-muted-foreground/55" : "text-muted-foreground/70",
+                  isPanel && "text-[10px] mt-0"
+                )}>
+                  {node.summary}
+                </p>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 type TaskToolPayload = {
@@ -5185,6 +5324,7 @@ function FlowMemoryUpdateCard({
 }) {
   const [open, setOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState(results[0]?.file ?? "research.md");
+  const [inlineDiff, setInlineDiff] = useState(true);
   const selected = results.find((result) => result.file === selectedFile) ?? results[0];
   const fileLabel = results.length ? results.map((result) => result.file).join(", ") : "Flow Memory";
   const openSelectedFile = () => {
@@ -5217,7 +5357,12 @@ function FlowMemoryUpdateCard({
         View diff
       </Button>
       <ShadcnDialog open={open} onOpenChange={setOpen}>
-        <ShadcnDialogContent className="flex h-[min(68vh,42rem)] w-[min(96rem,calc(100vw-2rem))] max-w-none grid-rows-none flex-col overflow-hidden rounded-[10px] border border-border/70 bg-background p-0 shadow-2xl">
+        <ShadcnDialogContent
+          className={cn(
+            "flex h-[min(68vh,42rem)] grid-rows-none flex-col overflow-hidden rounded-[10px] border border-border/70 bg-background p-0 shadow-2xl transition-all duration-200 sm:max-w-none",
+            inlineDiff ? "w-[min(42rem,calc(100vw-2rem))]" : "w-[min(68rem,calc(100vw-2rem))]"
+          )}
+        >
           <ShadcnDialogHeader className="shrink-0 border-b px-4 py-3">
             <div className="flex min-w-0 items-center justify-between gap-3 pr-7">
               <div className="min-w-0">
@@ -5236,10 +5381,33 @@ function FlowMemoryUpdateCard({
           </ShadcnDialogHeader>
           <div className="flex min-h-0 flex-1 flex-col p-3">
             <div className="mb-2 flex shrink-0 items-center justify-between gap-3">
-              <div className="flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
-                <span className="rounded-[6px] border bg-muted/45 px-2 py-1 font-medium text-foreground">Before</span>
-                <span className="rounded-[6px] border bg-muted/45 px-2 py-1 font-medium text-foreground">After</span>
-                <span className="truncate">{selected?.reason ?? "Memory changed"}</span>
+              <div className="flex items-center gap-0.5 border bg-muted/45 p-0.5" style={{ borderRadius: "8px" }}>
+                <button
+                  type="button"
+                  className={cn(
+                    "h-6 px-3 text-[11px] font-medium transition-all cursor-pointer",
+                    !inlineDiff
+                      ? "bg-background text-foreground shadow-xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                  style={{ borderRadius: "6px" }}
+                  onClick={() => setInlineDiff(false)}
+                >
+                  Side-by-side
+                </button>
+                <button
+                  type="button"
+                  className={cn(
+                    "h-6 px-3 text-[11px] font-medium transition-all cursor-pointer",
+                    inlineDiff
+                      ? "bg-background text-foreground shadow-xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                  style={{ borderRadius: "6px" }}
+                  onClick={() => setInlineDiff(true)}
+                >
+                  Inline
+                </button>
               </div>
               {results.length > 1 ? (
                 <div className="flex shrink-0 flex-wrap justify-end gap-1">
@@ -5259,7 +5427,7 @@ function FlowMemoryUpdateCard({
             </div>
             {selected ? (
               <div className="construct-memory-diff-editor min-h-0 flex-1 overflow-hidden rounded-[8px] border bg-muted/20">
-                <MemoryDiffViewer result={selected} theme={theme} />
+                <MemoryDiffViewer result={selected} theme={theme} inlineDiff={inlineDiff} />
               </div>
             ) : null}
           </div>
@@ -5291,10 +5459,12 @@ function readRenderableMemoryDiff(result: ConstructFlowMemoryPatchResult): strin
 
 function MemoryDiffViewer({
   result,
-  theme
+  theme,
+  inlineDiff
 }: {
   result: ConstructFlowMemoryPatchResult;
   theme: "light" | "dark" | "system";
+  inlineDiff: boolean;
 }) {
   const diff = readRenderableMemoryDiff(result);
   const parsed = useMemo(() => parseUnifiedDiffText(diff), [diff]);
@@ -5309,7 +5479,7 @@ function MemoryDiffViewer({
       modified={parsed.modified}
       options={{
         readOnly: true,
-        renderSideBySide: true,
+        renderSideBySide: !inlineDiff,
         minimap: { enabled: false },
         scrollbar: { useShadows: false },
         scrollBeyondLastLine: false,
@@ -5598,7 +5768,7 @@ function findLatestContextWindow(sessions: ConstructFlowSession[]): ConstructAge
   return undefined;
 }
 
-function flowFeatureModel(settings: AiSettings): string {
+export function flowFeatureModel(settings: AiSettings): string {
   const featureModel = settings.featureModels?.["construct-flow"]?.trim();
   if (featureModel) return featureModel;
   return globalModelForProvider(settings) || defaultFlowModelForProvider(settings.source === "construct-cloud" ? "construct-cloud" : settings.provider);
@@ -5622,7 +5792,7 @@ function defaultFlowModelForProvider(provider: AiSettings["provider"] | "constru
   return "gpt-5-mini";
 }
 
-function apiKeyForProvider(settings: AiSettings): string | undefined {
+export function apiKeyForProvider(settings: AiSettings): string | undefined {
   if (settings.source === "construct-cloud") return settings.constructCloudAccessToken || undefined;
   if (settings.provider === "openai") return settings.openAiApiKey || undefined;
   if (settings.provider === "openrouter") return settings.openRouterApiKey || undefined;
@@ -5631,7 +5801,7 @@ function apiKeyForProvider(settings: AiSettings): string | undefined {
   return undefined;
 }
 
-function ensureModelOption(
+export function ensureModelOption(
   models: ModelCatalogEntry[],
   model: string,
   provider?: AiSettings["provider"]
@@ -5917,7 +6087,7 @@ function FlowCircularContextMeter({ contextWindow }: { contextWindow?: Construct
   );
 }
 
-function FlowComposerRightControls({
+export function FlowComposerRightControls({
   contextWindow,
   settings,
   model,
@@ -5951,7 +6121,7 @@ function FlowComposerRightControls({
 
   return (
     <div className="flex items-center gap-1.5">
-      <FlowCircularContextMeter contextWindow={contextWindow} />
+      {contextWindow ? <FlowCircularContextMeter contextWindow={contextWindow} /> : null}
 
       {settings ? (
         <DropdownMenu>
