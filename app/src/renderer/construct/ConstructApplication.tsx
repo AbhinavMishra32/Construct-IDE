@@ -11,6 +11,7 @@ import { useAuth, useSession } from "@better-auth-ui/react";
 import { createAuthClient } from "better-auth/react";
 import { Auth } from "../components/auth/auth";
 import { AuthProvider } from "../components/auth/auth-provider";
+import { ConstructAuthLogo } from "../components/auth/construct-auth-logo";
 import { UserAvatar } from "../components/auth/user/user-avatar";
 import type { AuthView } from "@better-auth-ui/core";
 import type { AiSettings } from "./types";
@@ -38,7 +39,8 @@ import {
   SearchIcon,
   SettingsIcon,
   TerminalSquareIcon,
-  UserRoundIcon
+  UserRoundIcon,
+  XIcon
 } from "lucide-react";
 
 import {
@@ -198,6 +200,14 @@ function authViewFromPath(path: string): AuthView {
   return "signIn";
 }
 
+function ConstructSplashScreen() {
+  return (
+    <div className="construct-startup-splash" role="status" aria-label="Loading Construct">
+      <div className="construct-startup-splash__logo" aria-hidden="true" />
+    </div>
+  );
+}
+
 function AuthGateContent({
   children,
   authClient,
@@ -279,31 +289,18 @@ function AuthGateContent({
   }
 
   if (isPending) {
-    return (
-      <div className="flex h-screen w-screen items-center justify-center bg-background text-foreground font-sans">
-        <div className="flex flex-col items-center gap-3">
-          <div className="size-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-          <p className="text-sm text-muted-foreground">Checking account status...</p>
-        </div>
-      </div>
-    );
+    return <ConstructSplashScreen />;
   }
 
   if (!session) {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-background text-foreground font-sans">
-        <div className="w-[420px] p-8 rounded-2xl border bg-card/45 backdrop-blur-lg shadow-2xl flex flex-col gap-6">
+        <div className="flex w-[420px] max-w-[calc(100vw-3rem)] flex-col gap-7 px-8">
           <div className="flex flex-col items-center gap-2 text-center">
-            <div className="size-12 rounded-xl bg-primary flex items-center justify-center shadow-lg shadow-primary/25">
-              <span className="text-xl font-bold text-primary-foreground tracking-wider">C</span>
-            </div>
-            <h1 className="text-2xl font-bold tracking-tight mt-2">Construct</h1>
-            <p className="text-xs text-muted-foreground max-w-[280px]">
-              Sign in to your Construct account to continue.
-            </p>
+            <ConstructAuthLogo className="mb-1" markClassName="construct-auth-logo__mark--hero" />
           </div>
 
-          <Auth view={authView} socialLayout="vertical" className="w-full" />
+          <Auth view={authView} socialLayout="vertical" className="construct-auth-card w-full" />
         </div>
       </div>
     );
@@ -990,13 +987,33 @@ export default function ConstructApp() {
       console.error("[construct] unhandled rejection", event.reason);
     };
 
+    const scrollTimeouts = new Map<HTMLElement, number>();
+    const handleScroll = (event: Event) => {
+      const target = event.target;
+      if (target instanceof HTMLElement) {
+        target.setAttribute("data-scrolling", "true");
+        const existingTimeout = scrollTimeouts.get(target);
+        if (existingTimeout) {
+          window.clearTimeout(existingTimeout);
+        }
+        const timeout = window.setTimeout(() => {
+          target.removeAttribute("data-scrolling");
+          scrollTimeouts.delete(target);
+        }, 1000);
+        scrollTimeouts.set(target, timeout);
+      }
+    };
+
     window.addEventListener("error", handleWindowError);
     window.addEventListener("unhandledrejection", handleUnhandledRejection);
+    window.addEventListener("scroll", handleScroll, true);
     void restoreUiStateAndProjects();
 
     return () => {
       window.removeEventListener("error", handleWindowError);
       window.removeEventListener("unhandledrejection", handleUnhandledRejection);
+      window.removeEventListener("scroll", handleScroll, true);
+      scrollTimeouts.forEach((timeout) => window.clearTimeout(timeout));
     };
   }, []);
 
@@ -1084,7 +1101,7 @@ export default function ConstructApp() {
     return normalizeProjectShellUiState(saved);
   }
 
-  async function refresh() {
+  const refresh = useCallback(async () => {
     try {
       console.log("[construct] refresh projects");
       setBusy(true);
@@ -1098,7 +1115,7 @@ export default function ConstructApp() {
     } finally {
       setBusy(false);
     }
-  }
+  }, []);
 
   async function openProject(projectId: string, options: { filePath?: string; recordHistory?: boolean } = {}) {
     try {
@@ -1234,6 +1251,13 @@ export default function ConstructApp() {
     setInspectorExpanded(false);
     setSidebarOpen(true);
   }, []);
+
+  useEffect(() => {
+    const isHomeActive = !settingsSurface && !learningContextOpen && !projectsViewOpen && !knowledgeBaseOpen && !activeProject;
+    if (isHomeActive) {
+      void refresh();
+    }
+  }, [settingsSurface, learningContextOpen, projectsViewOpen, knowledgeBaseOpen, activeProject, refresh]);
 
   useEffect(() => {
     const entry = history.current;
@@ -1400,7 +1424,6 @@ export default function ConstructApp() {
       projects={projects}
       busy={busy}
       error={error}
-      onRefresh={() => void refresh()}
       onCreateProjectFromPrompt={createProjectFromHomePrompt}
       onOpenProject={(projectId) => void openProject(projectId)}
     />
@@ -1529,14 +1552,7 @@ export default function ConstructApp() {
   }, []);
 
   if (!aiSettings) {
-    return (
-      <div className="flex h-screen w-screen items-center justify-center bg-background text-foreground font-sans">
-        <div className="flex flex-col items-center gap-3">
-          <div className="size-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-          <p className="text-sm text-muted-foreground">Loading settings...</p>
-        </div>
-      </div>
-    );
+    return <ConstructSplashScreen />;
   }
 
   return (
@@ -2109,7 +2125,7 @@ function ConstructSidebarFooter({
   const plan = account.usage?.plan ?? account.account?.user?.plan ?? null;
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-0.5">
       {children}
       <SidebarSettingsButton onClick={onOpenSettings} />
       <button
@@ -2255,38 +2271,30 @@ function ConstructAccountDialog({
 
   return (
     <ShadcnDialog open={open} onOpenChange={onOpenChange}>
-      <ShadcnDialogContent className="sm:max-w-2xl">
-        <ShadcnDialogHeader>
-          <div className="mb-1 flex size-9 items-center justify-center rounded-md bg-muted text-foreground">
-            <UserRoundIcon size={18} />
+      <ShadcnDialogContent className="sm:max-w-md rounded-2xl p-0 overflow-hidden gap-0">
+        {/* ── Header with subtle gradient background ── */}
+        <div className="relative bg-gradient-to-b from-muted/60 to-transparent px-6 pt-7 pb-5">
+          <div className="flex flex-col items-center text-center">
+            <UserAvatar className="size-[56px] mb-3 ring-2 ring-border/30 ring-offset-2 ring-offset-background" />
+            <ShadcnDialogTitle className="text-[15px] font-semibold text-foreground tracking-[-0.01em]">{displayAccountName(user)}</ShadcnDialogTitle>
+            <ShadcnDialogDescription className="text-xs text-muted-foreground/70 mt-0.5">{user?.email ?? "Signed in"}</ShadcnDialogDescription>
+            {plan ? (
+              <Badge variant="secondary" className="mt-2.5 px-2.5 py-0.5 text-[10px] font-semibold tracking-wide uppercase rounded-full bg-foreground/10 text-foreground/70 border-0">
+                {formatPlan(plan)}
+              </Badge>
+            ) : null}
           </div>
-          <ShadcnDialogTitle>Your Account</ShadcnDialogTitle>
-          <ShadcnDialogDescription>Manage your account and AI compute balance.</ShadcnDialogDescription>
-        </ShadcnDialogHeader>
+        </div>
 
-        <div className="flex flex-col gap-3 py-1">
-          <div className="flex min-w-0 items-center gap-3 rounded-lg border bg-background p-3">
-            <UserAvatar className="size-10" />
-            <div className="min-w-0 flex-1">
-              <div className="flex min-w-0 items-center gap-2">
-                <span className="truncate text-sm font-medium">{displayAccountName(user)}</span>
-                {plan ? <Badge variant="secondary">{formatPlan(plan)}</Badge> : null}
-              </div>
-              <div className="mt-1 truncate text-xs text-muted-foreground">{user?.email ?? "Signed in"}</div>
-            </div>
-            <Button size="small" variant="secondary" disabled={busy} onClick={() => void signOut()}>
-              <LogOutIcon data-icon="inline-start" />
-              Sign out
-            </Button>
-          </div>
-
+        {/* ── Body ── */}
+        <div className="flex flex-col gap-0 px-6 pb-5">
           {account.usage ? (
-            <div className="rounded-lg border bg-background p-3">
-              <div className="mb-3 flex items-center gap-2 text-sm font-medium">
-                <CloudIcon size={16} />
-                AI Compute Balance
+            <div className="flex flex-col pt-1 pb-3">
+              <div className="mb-3 flex items-center gap-2 text-[11px] font-semibold text-muted-foreground/60 uppercase tracking-wider">
+                <CloudIcon size={13} className="shrink-0" />
+                <span>Usage</span>
               </div>
-              <div className="grid gap-2 sm:grid-cols-2">
+              <div className="grid gap-2.5 sm:grid-cols-2">
                 <ConstructAccountUsageMeter label="5-Hour Session" window={account.usage.windows.five_hour_all} />
                 <ConstructAccountUsageMeter label="Weekly Limit" window={account.usage.windows.weekly_all} />
                 {account.usage.windows.weekly_expensive ? (
@@ -2309,13 +2317,18 @@ function ConstructAccountDialog({
             onSave={() => void saveHostedSettings()}
             onClear={() => void saveHostedSettings({ token: "" })}
           />
-        </div>
 
-        <ShadcnDialogFooter>
-          <Button variant="secondary" onClick={() => onOpenChange(false)}>
-            Close
-          </Button>
-        </ShadcnDialogFooter>
+          <div className="flex justify-between items-center pt-3 mt-1 border-t border-border/30">
+            <span className="text-[11px] text-muted-foreground/60">Sign out on this device</span>
+            <Button
+              variant="ghost"
+              className="text-destructive hover:bg-destructive/10 hover:text-destructive h-7 px-3 rounded-lg text-xs"
+              onClick={() => void signOut()}
+            >
+              Sign out
+            </Button>
+          </div>
+        </div>
       </ShadcnDialogContent>
     </ShadcnDialog>
   );
@@ -2407,21 +2420,21 @@ function ConstructAccountConnectionSection({
   const connected = !!tokenDraft.trim();
 
   return (
-    <div className="rounded-lg border bg-background p-3">
+    <div className="border-t border-border/30 pt-4">
       <button
         type="button"
-        className="flex w-full items-center gap-2 text-left text-sm"
+        className="flex w-full items-center gap-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider"
         onClick={() => setExpanded((v) => !v)}
       >
-        <KeyRoundIcon size={16} className="shrink-0 text-muted-foreground" />
-        <span className="flex-1 font-medium">Connection</span>
-        <Badge variant={connected ? "secondary" : "outline"}>{connected ? "Connected" : "Not connected"}</Badge>
+        <KeyRoundIcon size={14} className="shrink-0" />
+        <span className="flex-1">Connection Settings</span>
+        <Badge variant={connected ? "secondary" : "outline"} className="rounded-md px-2 py-0.5 text-[10px] font-medium tracking-normal normal-case">{connected ? "Connected" : "Not connected"}</Badge>
         <ChevronRightIcon size={14} className={`shrink-0 text-muted-foreground transition-transform ${expanded ? "rotate-90" : ""}`} />
       </button>
 
       {expanded ? (
-        <div className="mt-3 flex flex-col gap-3 border-t pt-3">
-          <div className="text-xs text-muted-foreground">
+        <div className="mt-3 flex flex-col gap-3 pt-2">
+          <div className="text-xs text-muted-foreground/75 leading-relaxed">
             {allowEndpointEditing ? "Cloud endpoint and access token for AI compute." : "Construct Cloud uses the production endpoint managed by Construct."}
           </div>
           <div className={allowEndpointEditing ? "grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]" : "grid gap-2"}>
@@ -2431,6 +2444,7 @@ function ConstructAccountConnectionSection({
                 disabled={busy}
                 placeholder={configuredConstructCloudEndpoint()}
                 onChange={(event) => onBaseUrlChange(event.target.value)}
+                className="h-8 rounded-lg text-xs"
               />
             ) : null}
             <Input
@@ -2439,19 +2453,20 @@ function ConstructAccountConnectionSection({
               disabled={busy}
               placeholder="Access token"
               onChange={(event) => onTokenChange(event.target.value)}
+              className="h-8 rounded-lg text-xs"
             />
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Button size="small" disabled={busy || !hasUser} onClick={onMint}>
+            <Button size="small" disabled={busy || !hasUser} onClick={onMint} className="rounded-lg h-7 text-xs px-3">
               {busy ? "Working..." : "Mint token"}
             </Button>
             {allowEndpointEditing ? (
-              <Button size="small" variant="secondary" disabled={busy} onClick={onSave}>
+              <Button size="small" variant="secondary" disabled={busy} onClick={onSave} className="rounded-lg h-7 text-xs px-3">
                 Save
               </Button>
             ) : null}
             {tokenDraft ? (
-              <Button size="small" variant="secondary" disabled={busy} onClick={onClear}>
+              <Button size="small" variant="secondary" disabled={busy} onClick={onClear} className="rounded-lg h-7 text-xs px-3">
                 Clear token
               </Button>
             ) : null}
@@ -2474,18 +2489,19 @@ function ConstructAccountUsageMeter({ label, window }: { label: string; window: 
   const resetLabel = diffH > 24 ? `${Math.ceil(diffH / 24)}d` : diffH > 0 ? `${diffH}h ${diffM}m` : `${diffM}m`;
 
   const remainingPercent = Math.min(100, Math.max(0, 100 - window.percentage));
-  const barColor = remainingPercent > 50 ? "bg-emerald-500" : remainingPercent > 20 ? "bg-amber-400" : "bg-rose-500";
+
+  const barColor = remainingPercent > 50 ? "bg-emerald-500" : remainingPercent > 20 ? "bg-amber-500" : "bg-red-500";
 
   return (
-    <div className="rounded-md bg-muted/35 px-3 py-2.5 text-xs">
+    <div className="flex flex-col gap-1.5 rounded-xl bg-muted/30 px-3 py-2.5 text-xs">
       <div className="flex items-center justify-between gap-2">
-        <span className="font-medium text-foreground">{label}</span>
-        <span className="tabular-nums font-semibold text-foreground">{Math.round(remainingPercent)}%</span>
+        <span className="font-medium text-foreground/80 text-[11px]">{label}</span>
+        <span className="tabular-nums font-semibold text-foreground/70 text-[11px]">{Math.round(remainingPercent)}%</span>
       </div>
-      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-background">
+      <div className="h-1.5 overflow-hidden rounded-full bg-muted/60">
         <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${remainingPercent}%` }} />
       </div>
-      <div className="mt-2 flex items-center justify-between gap-2 text-muted-foreground">
+      <div className="flex items-center justify-between gap-2 text-[10px] text-muted-foreground/50">
         <span>{formatUsageUnits(window.remainingUnits)} remaining</span>
         <span>resets in {resetLabel}</span>
       </div>
@@ -2528,7 +2544,7 @@ function ConstructDashboardNavItem({ item }: { item: SidebarNavItem }) {
 function ConstructSidebarBrand() {
   return (
     <div className="flex min-w-0 items-center gap-2 px-2 py-2">
-      <div className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary text-sm font-semibold text-primary-foreground">C</div>
+      <ConstructAuthLogo markClassName="construct-auth-logo__mark--sidebar" />
       <div className="min-w-0">
         <div className="truncate text-sm font-semibold text-foreground">Construct</div>
         <div className="truncate text-xs text-muted-foreground">Learn by building</div>
