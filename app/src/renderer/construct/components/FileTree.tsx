@@ -5,6 +5,7 @@ import {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
+  Button,
 } from "@opaline/ui";
 import {
   FilePlus,
@@ -21,6 +22,7 @@ import {
   RotateCw,
   Search,
   FolderOpen,
+  Plus,
 } from "lucide-react";
 
 import type { WorkspaceTreeNode } from "../types";
@@ -581,42 +583,47 @@ export function FileTree({
 
       {showEmptyWorkspaceState ? (
         <div className="flex flex-col items-center justify-center pt-20 pb-12 px-5 text-center text-muted-foreground animate-in fade-in duration-300">
-          <FolderOpen className="size-7 text-muted-foreground/40 mb-2.5" />
-          <h3 className="text-xs font-medium text-foreground">No files in project</h3>
-          <p className="text-[11px] text-muted-foreground/50 mt-1 max-w-[190px] leading-relaxed">
+          <div className="flex size-12 items-center justify-center rounded-2xl bg-sidebar-accent/50 border border-sidebar-border/30 shadow-[inset_0_1px_2px_rgba(255,255,255,0.05),0_8px_16px_rgba(0,0,0,0.15)] mb-4">
+            <FolderOpen className="size-5 text-muted-foreground/80" />
+          </div>
+          <h3 className="text-[13px] font-semibold text-foreground tracking-tight">No files in project</h3>
+          <p className="text-[11.5px] text-muted-foreground/65 mt-1.5 max-w-[200px] leading-relaxed">
             Create a file to get started.
           </p>
           {onCreateFile && (
-            <button
-              type="button"
-              data-construct-control="compact"
+            <Button
+              variant="outline"
               onClick={() =>
                 setCreatingState({
                   type: "file",
                   parentPath: "",
                 })
               }
-              className="mt-3.5 flex h-7 items-center justify-center rounded-[6px] border border-border bg-background/50 px-3.5 text-[11px] font-medium text-foreground hover:bg-muted transition-all duration-150 active:scale-95"
+              className="mt-4 px-3 gap-1 active:scale-[0.97] transition-transform duration-150"
+              style={{ fontSize: "11px", borderRadius: "12px" }}
             >
-              Create File
-            </button>
+              <Plus className="size-3" />
+              <span>Create File</span>
+            </Button>
           )}
         </div>
       ) : showEmptySearchState ? (
         <div className="flex flex-col items-center justify-center pt-20 pb-12 px-5 text-center text-muted-foreground animate-in fade-in duration-300">
-          <Search className="size-7 text-muted-foreground/35 mb-2.5" />
-          <h3 className="text-xs font-medium text-foreground">No matches found</h3>
-          <p className="text-[11px] text-muted-foreground/50 mt-1 max-w-[190px] leading-relaxed">
+          <div className="flex size-12 items-center justify-center rounded-2xl bg-sidebar-accent/50 border border-sidebar-border/30 shadow-[inset_0_1px_2px_rgba(255,255,255,0.05),0_8px_16px_rgba(0,0,0,0.15)] mb-4">
+            <Search className="size-5 text-muted-foreground/80" />
+          </div>
+          <h3 className="text-[13px] font-semibold text-foreground tracking-tight">No matches found</h3>
+          <p className="text-[11.5px] text-muted-foreground/65 mt-1.5 max-w-[200px] leading-relaxed">
             No files match "{searchQuery}"
           </p>
-          <button
-            type="button"
-            data-construct-control="compact"
+          <Button
+            variant="outline"
             onClick={() => setSearchQuery("")}
-            className="mt-3.5 flex h-7 items-center justify-center rounded-[6px] border border-input bg-background/50 px-3.5 text-[11px] font-medium hover:bg-muted transition-all duration-150 active:scale-95"
+            className="mt-4 px-3 active:scale-[0.97] transition-transform duration-150"
+            style={{ fontSize: "11px", borderRadius: "12px" }}
           >
             Clear Search
-          </button>
+          </Button>
         </div>
       ) : (
         <div className="relative min-h-0 flex-1 overflow-hidden">
@@ -638,10 +645,6 @@ export function FileTree({
             showActions={true}
             variant="sidebar"
             renderRowContextMenu={renderRowContextMenu}
-          />
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-b from-transparent via-sidebar/80 to-sidebar"
           />
         </div>
       )}
