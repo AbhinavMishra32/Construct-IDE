@@ -10,8 +10,6 @@ import type {
   ReactNode
 } from "react"
 
-import { ErrorToaster } from "./error-toaster"
-
 declare module "@better-auth-ui/core" {
   interface AuthPluginRegister {
     constructReact: AuthPlugin
@@ -39,17 +37,16 @@ declare module "@better-auth-ui/core" {
 }
 
 /**
- * Provides an authentication context by rendering an auth provider with the sonner toast handler injected, forwarding remaining configuration and rendering `children` inside it.
+ * Provides an authentication context while preserving Better Auth's query hooks.
+ * Form-level auth failures render inline in the owning auth view instead of as global toasts.
  *
  * @param children - React nodes to render inside the authentication provider
- * @returns A React element that renders an authentication provider configured with the provided props and toast handler
+ * @returns A React element that renders an authentication provider configured with the provided props.
  */
 export function AuthProvider({ children, ...config }: AuthProviderProps) {
   return (
     <AuthProviderPrimitive {...config}>
       {children}
-
-      <ErrorToaster />
     </AuthProviderPrimitive>
   )
 }
