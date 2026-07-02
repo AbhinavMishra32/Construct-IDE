@@ -1,7 +1,7 @@
 import { BookOpenIcon, ChevronRightIcon, ExternalLinkIcon, GitBranchIcon, HistoryIcon, NetworkIcon, SearchIcon, Trash2Icon } from "lucide-react";
-import { Suspense, lazy, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { Button, FileTree as OpalineFileTree, ShadcnScrollArea, type FileTreeItem } from "@opaline/ui";
-import type { ForceGraphMethods, GraphData, NodeObject } from "react-force-graph-3d";
+import ForceGraph3D, { type ForceGraphMethods, type GraphData, type NodeObject } from "react-force-graph-3d";
 
 import { MarkdownBlock } from "./MarkdownBlock";
 import { readKnowledgeRecords, subscribeKnowledgeRecords, removeKnowledgeConcept, type SavedKnowledgeRecord } from "../lib/knowledgeStore";
@@ -50,12 +50,11 @@ type ConceptTreeRecordNode = {
   color: string;
 };
 
-const ForceGraph3D = lazy(() => import("react-force-graph-3d"));
 const GRAPH_CAMERA_FLIGHT_MS = 1850;
-const GRAPH_CAMERA_ORBIT_DELAY_MS = GRAPH_CAMERA_FLIGHT_MS + 150;
+const GRAPH_CAMERA_ORBIT_DELAY_MS = GRAPH_CAMERA_FLIGHT_MS + 350;
 const KNOWLEDGE_GRAPH_LINK_DISTANCE = 72;
-const KNOWLEDGE_GRAPH_CHARGE_STRENGTH = -140;
-const KNOWLEDGE_GRAPH_CENTER_STRENGTH = 0.14;
+const KNOWLEDGE_GRAPH_CHARGE_STRENGTH = -130;
+const KNOWLEDGE_GRAPH_CENTER_STRENGTH = 0.18;
 
 export function KnowledgeBaseSurface({
   activeProject,
@@ -74,8 +73,8 @@ export function KnowledgeBaseSurface({
   const [mainView, setMainView] = useState<ConceptsMainView>("content");
   const [graphCollapsed, setGraphCollapsed] = useState(false);
   const [graphPaneWidth, setGraphPaneWidth] = useState(540);
-  const [selectedKey, setSelectedKey] = useState<string | null>(() => records[0] ? recordKey(records[0]) : null);
-  const [selectedTreePath, setSelectedTreePath] = useState<string | null>(() => records[0] ? conceptRecordTreePath(records[0]) : null);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [selectedTreePath, setSelectedTreePath] = useState<string | null>(null);
   const [expandedTreePaths, setExpandedTreePaths] = useState<Set<string>>(() => new Set());
   const [mainRef, mainSize] = useElementSize<HTMLDivElement>();
 
@@ -392,12 +391,12 @@ function ConceptsSidebarPanel({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 flex-col gap-2 border-b px-3 pb-2.5 pt-3">
-        <label className="flex h-8 flex-1 items-center gap-2 rounded-[6px] border bg-background/70 px-2.5 ring-offset-background transition-colors focus-within:border-primary/35 focus-within:ring-2 focus-within:ring-ring/25">
-          <SearchIcon size={14} className="shrink-0 text-muted-foreground/55" />
+      <div className="flex shrink-0 flex-col gap-2 border-b pb-2 pt-0.5">
+        <label className="flex h-11 flex-1 items-center gap-2.5 rounded-[8px] border bg-background/70 px-3 ring-offset-background transition-colors focus-within:border-primary/35 focus-within:ring-2 focus-within:ring-ring/25">
+          <SearchIcon size={16} className="shrink-0 text-muted-foreground/55" />
           <input
             type="text"
-            className="min-w-0 flex-1 border-0 bg-transparent text-[12.5px] outline-none placeholder:text-muted-foreground/45"
+            className="min-w-0 flex-1 border-0 bg-transparent text-[13px] outline-none placeholder:text-muted-foreground/45"
             value={query}
             placeholder="Search concepts..."
             onChange={(event) => onQueryChange(event.target.value)}
@@ -548,7 +547,7 @@ function ConceptGroupIcon({ color }: { color: string }) {
   );
 }
 
-function KnowledgeGraphPanel({
+export function KnowledgeGraphPanel({
   records,
   selectedKey,
   onSelectRecord,
@@ -623,6 +622,17 @@ function KnowledgeGraphPanel({
   }, [graphData, selectedKey, size.height, size.width]);
 
   useEffect(() => {
+    if (selectedKey || !graphData.nodes.length || size.width <= 0 || size.height <= 0) return undefined;
+    const fitGraph = () => graphRef.current?.zoomToFit?.(650, 80);
+    const firstFit = window.setTimeout(fitGraph, 260);
+    const settledFit = window.setTimeout(fitGraph, 1150);
+    return () => {
+      window.clearTimeout(firstFit);
+      window.clearTimeout(settledFit);
+    };
+  }, [graphData, selectedKey, size.height, size.width]);
+
+  useEffect(() => {
     if (!selectedKey || size.width <= 0 || size.height <= 0) return undefined;
     let animationFrame = 0;
     let orbitDelay = 0;
@@ -647,7 +657,7 @@ function KnowledgeGraphPanel({
   }, [graphData, selectedKey, size.height, size.width]);
 
   useEffect(() => {
-    if (!selectedKey) return undefined;
+    if (!graphData.nodes.length || size.width <= 0 || size.height <= 0) return undefined;
     let animationFrame = 0;
     const tick = () => {
       selectedPulseRef.current = (Math.sin(performance.now() / 280) + 1) / 2;
@@ -656,7 +666,7 @@ function KnowledgeGraphPanel({
     };
     animationFrame = window.requestAnimationFrame(tick);
     return () => window.cancelAnimationFrame(animationFrame);
-  }, [selectedKey]);
+  }, [graphData, size.height, size.width]);
 
   if (!records.length) {
     return (
@@ -674,56 +684,53 @@ function KnowledgeGraphPanel({
         aria-hidden="true"
         className="pointer-events-none absolute inset-0"
         style={{
-          backgroundImage:
-            "linear-gradient(color-mix(in srgb, var(--border) 20%, transparent) 1px, transparent 1px), linear-gradient(90deg, color-mix(in srgb, var(--border) 18%, transparent) 1px, transparent 1px)",
-          backgroundSize: "44px 44px",
-          maskImage: "radial-gradient(circle at 50% 45%, black 0, transparent 72%)",
-          opacity: 0.28
+          background:
+            "radial-gradient(circle at 48% 42%, color-mix(in srgb, var(--foreground) 3%, transparent), transparent 42%), radial-gradient(circle at 82% 18%, color-mix(in srgb, var(--primary) 7%, transparent), transparent 30%)",
+          opacity: 0.55
         }}
       />
       {size.width > 0 && size.height > 0 ? (
-        <Suspense fallback={<GraphLoadingState />}>
-          <ForceGraph3D
-            ref={graphRef}
-            graphData={graphData}
-            width={size.width}
-            height={size.height}
-            backgroundColor="rgba(0,0,0,0)"
-            showNavInfo={false}
-            nodeId="id"
-            nodeLabel={(node) => graphNodeLabel(node as KnowledgeGraphNode)}
-            nodeColor={(node) => graphNodeColor(node as KnowledgeGraphNode, selectedKey)}
-            nodeVal={(node) => graphNodeValue(node as KnowledgeGraphNode, selectedKey, selectedPulseRef.current)}
-            nodeResolution={18}
-            nodeRelSize={4.8}
-            linkSource="source"
-            linkTarget="target"
-            linkLabel="label"
-            linkColor={(link) => graphLinkColor(link as KnowledgeGraphLink, selectedKey)}
-            linkOpacity={0.46}
-            linkWidth={(link) => graphLinkWidth(link as KnowledgeGraphLink, selectedKey)}
-            linkDirectionalParticles={(link) => graphLinkParticles(link as KnowledgeGraphLink, selectedKey)}
-            linkDirectionalParticleWidth={(link) => graphLinkParticleWidth(link as KnowledgeGraphLink, selectedKey)}
-            linkDirectionalParticleColor={(link) => graphLinkColor(link as KnowledgeGraphLink, selectedKey)}
-            cooldownTicks={110}
-            warmupTicks={70}
-            d3AlphaDecay={0.016}
-            d3VelocityDecay={0.22}
-            enableNodeDrag
-            enableNavigationControls
-            onNodeClick={(node) => {
-              const key = typeof node.recordKey === "string" ? node.recordKey : null;
-              const record = key ? recordByKey.get(key) : undefined;
-              if (record) onSelectRecord(record);
-            }}
-            onNodeHover={(node) => {
-              const key = node && typeof node.recordKey === "string" ? node.recordKey : null;
-              setHoveredKey(key);
-            }}
-            onLinkClick={clearGraphSelection}
-            onBackgroundClick={clearGraphSelection}
-          />
-        </Suspense>
+        <ForceGraph3D
+          ref={graphRef}
+          graphData={graphData}
+          width={size.width}
+          height={size.height}
+          backgroundColor="rgba(0,0,0,0)"
+          showNavInfo={false}
+          nodeId="id"
+          nodeLabel={(node) => graphNodeLabel(node as KnowledgeGraphNode)}
+          nodeColor={(node) => graphNodeColor(node as KnowledgeGraphNode, selectedKey)}
+          nodeVal={(node) => graphNodeValue(node as KnowledgeGraphNode, selectedKey, selectedPulseRef.current)}
+          nodeResolution={18}
+          nodeRelSize={4.8}
+          linkSource="source"
+          linkTarget="target"
+          linkLabel="label"
+          linkColor={(link) => graphLinkColor(link as KnowledgeGraphLink, selectedKey)}
+          linkOpacity={0.46}
+          linkWidth={(link) => graphLinkWidth(link as KnowledgeGraphLink, selectedKey)}
+          linkDirectionalParticles={(link) => graphLinkParticles(link as KnowledgeGraphLink, selectedKey)}
+          linkDirectionalParticleWidth={(link) => graphLinkParticleWidth(link as KnowledgeGraphLink, selectedKey)}
+          linkDirectionalParticleColor={(link) => graphLinkColor(link as KnowledgeGraphLink, selectedKey)}
+          cooldownTicks={160}
+          cooldownTime={15000}
+          warmupTicks={70}
+          d3AlphaDecay={0.016}
+          d3VelocityDecay={0.24}
+          enableNodeDrag
+          enableNavigationControls
+          onNodeClick={(node) => {
+            const key = typeof node.recordKey === "string" ? node.recordKey : null;
+            const record = key ? recordByKey.get(key) : undefined;
+            if (record) onSelectRecord(record);
+          }}
+          onNodeHover={(node) => {
+            const key = node && typeof node.recordKey === "string" ? node.recordKey : null;
+            setHoveredKey(key);
+          }}
+          onLinkClick={clearGraphSelection}
+          onBackgroundClick={clearGraphSelection}
+        />
       ) : <GraphLoadingState />}
 
       {hoveredRecord ? (
@@ -1054,13 +1061,35 @@ function useElementSize<T extends HTMLElement>() {
   useEffect(() => {
     const element = ref.current;
     if (!element) return undefined;
-    const observer = new ResizeObserver(([entry]) => {
-      const width = Math.max(1, Math.floor(entry.contentRect.width));
-      const height = Math.max(1, Math.floor(entry.contentRect.height));
+
+    let animationFrame = 0;
+    const commitSize = (width: number, height: number) => {
       setSize((current) => current.width === width && current.height === height ? current : { width, height });
+    };
+    const measureElementSize = () => {
+      const rect = element.getBoundingClientRect();
+      commitSize(Math.max(0, Math.floor(rect.width)), Math.max(0, Math.floor(rect.height)));
+    };
+    const scheduleMeasure = () => {
+      window.cancelAnimationFrame(animationFrame);
+      animationFrame = window.requestAnimationFrame(measureElementSize);
+    };
+
+    const observer = new ResizeObserver(([entry]) => {
+      commitSize(Math.max(0, Math.floor(entry.contentRect.width)), Math.max(0, Math.floor(entry.contentRect.height)));
+      scheduleMeasure();
     });
+
     observer.observe(element);
-    return () => observer.disconnect();
+    measureElementSize();
+    scheduleMeasure();
+    window.addEventListener("resize", scheduleMeasure);
+
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+      window.removeEventListener("resize", scheduleMeasure);
+      observer.disconnect();
+    };
   }, []);
 
   return [ref, size] as const;
@@ -1289,9 +1318,13 @@ function graphNodeColor(node: KnowledgeGraphNode, selectedKey: string | null): s
   return "#ff1744";
 }
 
-function graphNodeValue(node: KnowledgeGraphNode, selectedKey: string | null, selectedPulse: number): number {
-  if (selectedKey !== node.recordKey) return node.val;
-  return node.val + 10 + selectedPulse * 12;
+function graphNodeValue(
+  node: KnowledgeGraphNode,
+  selectedKey: string | null,
+  selectedPulse: number
+): number {
+  const selectedBoost = selectedKey === node.recordKey ? 10 + selectedPulse * 12 : 0;
+  return node.val + selectedBoost;
 }
 
 function graphRecordConnections(
@@ -1377,8 +1410,8 @@ function focusGraphCameraOnNode(
   transitionMs: number,
   fallbackDirection: 1 | -1
 ): GraphCameraFlight | null {
-  const frame = graphCameraFocusFrame(node);
-  if (!frame) return null;
+  const initialFrame = graphCameraFocusFrame(node);
+  if (!initialFrame) return null;
   const startPosition = {
     x: graph.camera().position.x,
     y: graph.camera().position.y,
@@ -1392,12 +1425,14 @@ function focusGraphCameraOnNode(
         z: controlsTarget.z
       }
     : { x: 0, y: 0, z: 0 };
-  const direction = graphCameraApproachDirection(startPosition, frame.position, frame.target, fallbackDirection);
+  const direction = graphCameraApproachDirection(startPosition, initialFrame.position, initialFrame.target, fallbackDirection);
   const startedAt = performance.now();
   let animationFrame = 0;
   let canceled = false;
   const tick = () => {
     if (canceled) return;
+    const frame = graphCameraFocusFrame(node);
+    if (!frame) return;
     const elapsed = performance.now() - startedAt;
     const progress = Math.min(1, elapsed / transitionMs);
     const eased = graphCameraFlightEase(progress);
