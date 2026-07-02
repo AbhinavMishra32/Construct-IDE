@@ -3,7 +3,6 @@
 import { useAuth, useResetPassword } from "@better-auth-ui/react"
 import { Eye, EyeOff } from "lucide-react"
 import { type SyntheticEvent, useEffect, useState } from "react"
-import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -22,6 +21,7 @@ import {
 import { Label } from "@/components/ui/label"
 import { Spinner } from "@/components/ui/spinner"
 import { cn } from "@/lib/utils"
+import { AuthFormAlert, authErrorMessage } from "./auth-form-alert"
 
 export type ResetPasswordProps = {
   className?: string
@@ -30,7 +30,7 @@ export type ResetPasswordProps = {
 /**
  * Render a password reset form that validates the reset token from the URL, accepts a new password (and optional confirmation), and submits it to the auth client.
  *
- * The component checks for a `token` query parameter on mount and, if missing, shows an error toast and navigates to the sign-in page. It exposes per-field validation messages, toggles for password visibility, and disables inputs while the reset request is pending.
+ * The component checks for a `token` query parameter on mount and, if missing, shows an inline error and navigates to the sign-in page. It exposes per-field validation messages, toggles for password visibility, and disables inputs while the reset request is pending.
  *
  * @returns The password reset form UI ready to be mounted in the app layout.
  */
@@ -45,9 +45,17 @@ export function ResetPassword({ className }: ResetPasswordProps) {
     Link
   } = useAuth()
 
+  const [formMessage, setFormMessage] = useState<{ type: "error" | "success"; text: string }>()
+
   const { mutate: resetPassword, isPending } = useResetPassword(authClient, {
+    onError: (error) => {
+      setFormMessage({
+        type: "error",
+        text: authErrorMessage(error, "Could not reset the password. Try the link again."),
+      })
+    },
     onSuccess: () => {
-      toast.success(localization.auth.passwordResetSuccess)
+      setFormMessage({ type: "success", text: localization.auth.passwordResetSuccess })
       navigate({ to: `${basePaths.auth}/${viewPaths.auth.signIn}` })
     }
   })
@@ -66,7 +74,7 @@ export function ResetPassword({ className }: ResetPasswordProps) {
     const token = searchParams.get("token") as string
 
     if (!token) {
-      toast.error(localization.auth.invalidResetPasswordToken)
+      setFormMessage({ type: "error", text: localization.auth.invalidResetPasswordToken })
       navigate({ to: `${basePaths.auth}/${viewPaths.auth.signIn}` })
     }
   }, [
@@ -83,7 +91,7 @@ export function ResetPassword({ className }: ResetPasswordProps) {
     const token = searchParams.get("token") as string
 
     if (!token) {
-      toast.error(localization.auth.invalidResetPasswordToken)
+      setFormMessage({ type: "error", text: localization.auth.invalidResetPasswordToken })
       navigate({ to: `${basePaths.auth}/${viewPaths.auth.signIn}` })
       return
     }
@@ -93,10 +101,11 @@ export function ResetPassword({ className }: ResetPasswordProps) {
     const confirmPassword = formData.get("confirmPassword") as string
 
     if (emailAndPassword?.confirmPassword && password !== confirmPassword) {
-      toast.error(localization.auth.passwordsDoNotMatch)
+      setFormMessage({ type: "error", text: localization.auth.passwordsDoNotMatch })
       return
     }
 
+    setFormMessage(undefined)
     resetPassword({ token, newPassword: password })
   }
 
@@ -111,6 +120,10 @@ export function ResetPassword({ className }: ResetPasswordProps) {
       <CardContent>
         <form onSubmit={handleSubmit}>
           <FieldGroup>
+            {formMessage && (
+              <AuthFormAlert variant={formMessage.type}>{formMessage.text}</AuthFormAlert>
+            )}
+
             <Field data-invalid={!!fieldErrors.password}>
               <Label htmlFor="password">{localization.auth.password}</Label>
 
@@ -126,6 +139,7 @@ export function ResetPassword({ className }: ResetPasswordProps) {
                   maxLength={emailAndPassword?.maxPasswordLength}
                   disabled={isPending}
                   onChange={() => {
+                    setFormMessage(undefined)
                     setFieldErrors((prev) => ({
                       ...prev,
                       password: undefined
@@ -198,6 +212,7 @@ export function ResetPassword({ className }: ResetPasswordProps) {
                     maxLength={emailAndPassword?.maxPasswordLength}
                     disabled={isPending}
                     onChange={() => {
+                      setFormMessage(undefined)
                       setFieldErrors((prev) => ({
                         ...prev,
                         confirmPassword: undefined

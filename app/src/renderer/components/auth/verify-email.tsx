@@ -1,12 +1,12 @@
 import { useAuth, useSendVerificationEmail } from "@better-auth-ui/react"
 import { useEffect, useState, useSyncExternalStore } from "react"
-import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { FieldDescription } from "@/components/ui/field"
 import { Spinner } from "@/components/ui/spinner"
 import { cn } from "@/lib/utils"
+import { AuthFormAlert, authErrorMessage } from "./auth-form-alert"
 import { OpenEmailButton } from "./open-email-button"
 
 export type VerifyEmailProps = {
@@ -60,6 +60,7 @@ export function VerifyEmail({ className }: VerifyEmailProps) {
     (isHydrated && sessionStorage.getItem("better-auth-ui.verify-email")) || ""
   )
   const [cooldown, setCooldown] = useState(RESEND_COOLDOWN_SECONDS)
+  const [formMessage, setFormMessage] = useState<{ type: "error" | "success"; text: string }>()
 
   useEffect(() => {
     setEmail(sessionStorage.getItem("better-auth-ui.verify-email") ?? "")
@@ -78,8 +79,14 @@ export function VerifyEmail({ className }: VerifyEmailProps) {
   const { mutate: sendVerificationEmail, isPending } = useSendVerificationEmail(
     authClient,
     {
+      onError: (error) => {
+        setFormMessage({
+          type: "error",
+          text: authErrorMessage(error, "Could not resend the verification email. Try again."),
+        })
+      },
       onSuccess: () => {
-        toast.success(localization.auth.verificationEmailSent)
+        setFormMessage({ type: "success", text: localization.auth.verificationEmailSent })
         setCooldown(RESEND_COOLDOWN_SECONDS)
       }
     }
@@ -97,6 +104,10 @@ export function VerifyEmail({ className }: VerifyEmailProps) {
 
       <CardContent>
         <div className="flex flex-col gap-4">
+          {formMessage && (
+            <AuthFormAlert variant={formMessage.type}>{formMessage.text}</AuthFormAlert>
+          )}
+
           <FieldDescription>
             {localization.auth.checkYourEmail}
           </FieldDescription>

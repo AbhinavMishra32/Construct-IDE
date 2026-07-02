@@ -6,7 +6,6 @@ import {
   useRequestPasswordReset
 } from "@better-auth-ui/react"
 import { type SyntheticEvent, useState } from "react"
-import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -20,6 +19,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Spinner } from "@/components/ui/spinner"
 import { cn } from "@/lib/utils"
+import { AuthFormAlert, authErrorMessage } from "./auth-form-alert"
 
 export type ForgotPasswordProps = {
   className?: string
@@ -29,7 +29,7 @@ export type ForgotPasswordProps = {
  * Render a card-based "Forgot Password" form that sends a password-reset email.
  *
  * The form displays an email input, submit button, and a link back to sign-in.
- * Toasts are displayed on success or error via the `useForgotPassword` hook.
+ * Inline form messages are displayed on success or error via the `useForgotPassword` hook.
  *
  * @param className - Optional additional CSS class names applied to the card
  * @returns The forgot-password form UI as a JSX element
@@ -46,19 +46,27 @@ export function ForgotPassword({ className }: ForgotPasswordProps) {
   } = useAuth()
 
   const { fetchOptions, resetFetchOptions } = useFetchOptions()
+  const [formMessage, setFormMessage] = useState<{ type: "error" | "success"; text: string }>()
 
   const { mutate: requestPasswordReset, isPending } = useRequestPasswordReset(
     authClient,
     {
-      onError: () => {
+      onError: (error) => {
+        setFormMessage({
+          type: "error",
+          text: authErrorMessage(error, "Could not send the reset link. Check the email and try again."),
+        })
         resetFetchOptions()
       },
-      onSuccess: () => toast.success(localization.auth.passwordResetEmailSent)
+      onSuccess: () => {
+        setFormMessage({ type: "success", text: localization.auth.passwordResetEmailSent })
+      }
     }
   )
 
   function handleSubmit(e: SyntheticEvent<HTMLFormElement>) {
     e.preventDefault()
+    setFormMessage(undefined)
     const formData = new FormData(e.currentTarget)
     requestPasswordReset({
       email: formData.get("email") as string,
@@ -86,6 +94,10 @@ export function ForgotPassword({ className }: ForgotPasswordProps) {
       <CardContent>
         <form onSubmit={handleSubmit}>
           <FieldGroup>
+            {formMessage && (
+              <AuthFormAlert variant={formMessage.type}>{formMessage.text}</AuthFormAlert>
+            )}
+
             <Field data-invalid={!!fieldErrors.email}>
               <Label htmlFor="email">{localization.auth.email}</Label>
 
@@ -98,6 +110,7 @@ export function ForgotPassword({ className }: ForgotPasswordProps) {
                 required
                 disabled={isPending}
                 onChange={() => {
+                  setFormMessage(undefined)
                   setFieldErrors((prev) => ({
                     ...prev,
                     email: undefined

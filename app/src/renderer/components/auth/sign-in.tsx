@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Spinner } from "@/components/ui/spinner"
 import { cn } from "@/lib/utils"
+import { AuthFormAlert, authErrorMessage } from "./auth-form-alert"
 import { ProviderButtons, type SocialLayout } from "./provider-buttons"
 
 export type SignInProps = {
@@ -54,6 +55,7 @@ export function SignIn({
   const { fetchOptions, resetFetchOptions } = useFetchOptions()
 
   const [password, setPassword] = useState("")
+  const [authError, setAuthError] = useState<string>()
 
   const { mutate: signInEmail, isPending: signInEmailPending } = useSignInEmail(
     authClient,
@@ -66,6 +68,8 @@ export function SignIn({
           navigate({
             to: `${basePaths.auth}/${viewPaths.auth.verifyEmail}`
           })
+        } else {
+          setAuthError(authErrorMessage(error, "Could not sign in. Check your email and password."))
         }
 
         resetFetchOptions()
@@ -93,6 +97,7 @@ export function SignIn({
 
   const handleSubmit = (e: SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault()
+    setAuthError(undefined)
 
     const formData = new FormData(e.currentTarget)
     const email = formData.get("email") as string
@@ -136,6 +141,8 @@ export function SignIn({
           {emailAndPassword?.enabled && (
             <form onSubmit={handleSubmit}>
               <FieldGroup>
+                {authError && <AuthFormAlert>{authError}</AuthFormAlert>}
+
                 <Field data-invalid={!!fieldErrors.email}>
                   <Label htmlFor="email">{localization.auth.email}</Label>
 
@@ -148,6 +155,7 @@ export function SignIn({
                     required
                     disabled={isPending}
                     onChange={() => {
+                      setAuthError(undefined)
                       setFieldErrors((prev) => ({
                         ...prev,
                         email: undefined
@@ -182,6 +190,7 @@ export function SignIn({
                     value={password}
                     onChange={(e) => {
                       setPassword(e.target.value)
+                      setAuthError(undefined)
 
                       setFieldErrors((prev) => ({
                         ...prev,

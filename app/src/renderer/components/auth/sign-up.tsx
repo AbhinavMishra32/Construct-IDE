@@ -6,7 +6,6 @@ import { useAuth, useFetchOptions, useSignUpEmail } from "@better-auth-ui/react"
 import { useIsMutating } from "@tanstack/react-query"
 import { Eye, EyeOff } from "lucide-react"
 import { type SyntheticEvent, useState } from "react"
-import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -27,6 +26,7 @@ import { Label } from "@/components/ui/label"
 import { Spinner } from "@/components/ui/spinner"
 import { cn } from "@/lib/utils"
 import { AdditionalField } from "./additional-field"
+import { AuthFormAlert, authErrorMessage } from "./auth-form-alert"
 import { ProviderButtons, type SocialLayout } from "./provider-buttons"
 
 export type SignUpProps = {
@@ -41,7 +41,7 @@ export type SignUpProps = {
  * Submits credentials to the configured auth client and handles the response:
  * - If email verification is required, shows a notification and navigates to sign-in
  * - On success, refreshes the session and navigates to the configured redirect path
- * - On failure, displays error toasts
+ * - On failure, displays inline form errors
  * - Manages a pending state while the request is in-flight
  *
  * @param className - Additional CSS classes applied to the outer container
@@ -72,13 +72,15 @@ export function SignUp({
 
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
+  const [authError, setAuthError] = useState<string>()
 
   const { mutate: signUpEmail, isPending: signUpEmailPending } = useSignUpEmail(
     authClient,
     {
-      onError: () => {
+      onError: (error) => {
         setPassword("")
         setConfirmPassword("")
+        setAuthError(authErrorMessage(error, "Could not create your account. Check the fields and try again."))
         resetFetchOptions()
       },
       onSuccess: (_data, { email }) => {
@@ -124,9 +126,10 @@ export function SignUp({
     // `emailAndPassword.name === false` hides the name field and submits "".
     const name = (formData.get("name") as string | null) ?? ""
     const email = formData.get("email") as string
+    setAuthError(undefined)
 
     if (emailAndPassword?.confirmPassword && password !== confirmPassword) {
-      toast.error(localization.auth.passwordsDoNotMatch)
+      setAuthError(localization.auth.passwordsDoNotMatch)
       setPassword("")
       setConfirmPassword("")
       return
@@ -145,7 +148,7 @@ export function SignUp({
         try {
           await field.validate(value)
         } catch (error) {
-          toast.error(error instanceof Error ? error.message : String(error))
+          setAuthError(error instanceof Error ? error.message : String(error))
           return
         }
       }
@@ -194,6 +197,8 @@ export function SignUp({
           {emailAndPassword?.enabled && (
             <form onSubmit={handleSubmit}>
               <FieldGroup>
+                {authError && <AuthFormAlert>{authError}</AuthFormAlert>}
+
                 {emailAndPassword.name !== false && (
                   <Field data-invalid={!!fieldErrors.name}>
                     <Label htmlFor="name">{localization.auth.name}</Label>
@@ -207,6 +212,7 @@ export function SignUp({
                       required
                       disabled={isPending}
                       onChange={() => {
+                        setAuthError(undefined)
                         setFieldErrors((prev) => ({
                           ...prev,
                           name: undefined
@@ -239,6 +245,7 @@ export function SignUp({
                     required
                     disabled={isPending}
                     onChange={() => {
+                      setAuthError(undefined)
                       setFieldErrors((prev) => ({
                         ...prev,
                         email: undefined
@@ -286,6 +293,7 @@ export function SignUp({
                       value={password}
                       onChange={(e) => {
                         setPassword(e.target.value)
+                        setAuthError(undefined)
                         setFieldErrors((prev) => ({
                           ...prev,
                           password: undefined
@@ -360,6 +368,7 @@ export function SignUp({
                         value={confirmPassword}
                         onChange={(e) => {
                           setConfirmPassword(e.target.value)
+                          setAuthError(undefined)
 
                           setFieldErrors((prev) => ({
                             ...prev,
