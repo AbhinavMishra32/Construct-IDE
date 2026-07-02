@@ -141,10 +141,10 @@ export function StatusBar({ theme, onThemeChange }: StatusBarProps) {
         {obsEnabled && (
           <div
             className="flex h-full items-center gap-1 px-1.5 text-emerald-500"
-            title="Arize Phoenix Telemetry is enabled and connected"
+            title="Langfuse tracing is enabled"
           >
             <Activity size={12} className="stroke-[2.5px]" />
-            <span>Phoenix Active</span>
+            <span>Langfuse Active</span>
           </div>
         )}
 

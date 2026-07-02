@@ -560,9 +560,12 @@ export type ModelCatalogEntry = {
 
 export type ObservabilitySettings = {
   enabled: boolean;
-  phoenixEndpoint: string;
-  phoenixApiKey: string;
-  phoenixProjectName: string;
+  langfuseBaseUrl: string;
+  langfusePublicKey: string;
+  langfuseSecretKey: string;
+  langfuseProjectName: string;
+  langfuseEnvironment: string;
+  capturePayloads: boolean;
   batch: boolean;
 };
 
@@ -720,6 +723,9 @@ export type ConstructProjectsApi = {
   }): Promise<ProjectSettings>;
   updateAppSettings(input: {
     app: Partial<AppSettings>;
+  }): Promise<ProjectSettings>;
+  updateObservabilitySettings(input: {
+    observability: Partial<ObservabilitySettings>;
   }): Promise<ProjectSettings>;
   listAiFeatures(): Promise<AiFeatureSettings[]>;
   listModels(input: {

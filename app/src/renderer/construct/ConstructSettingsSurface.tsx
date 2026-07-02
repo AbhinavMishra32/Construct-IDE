@@ -1,5 +1,5 @@
 import { useDeferredValue, useEffect, useRef, useState } from "react";
-import { PanelRight } from "lucide-react";
+import { Activity, PanelRight } from "lucide-react";
 import { Brain, FileCode, Folder, GearSix, Notebook, TerminalWindow, Trash } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import {
@@ -58,6 +58,7 @@ import {
   setWorkspaceRoot,
   updateAppSettings,
   updateAiSettings,
+  updateObservabilitySettings,
   updateProject,
   readFlowMemory,
   readProjectTape,
@@ -73,6 +74,7 @@ import type {
   DeleteProjectCheck,
   LitellmState,
   ModelCatalogEntry,
+  ObservabilitySettings,
   ProjectSummary
 } from "./types";
 import type { ConstructFlowMemoryRead, FlowMemoryFileName } from "../../shared/constructFlow";
@@ -112,6 +114,17 @@ const defaultAiSettings: AiSettings = {
   codeGhostEnabled: true,
   conceptFirewallEnabled: true,
   flowSourceGroundingEnabled: true
+};
+
+const defaultObservabilitySettings: ObservabilitySettings = {
+  enabled: false,
+  langfuseBaseUrl: "http://localhost:3000",
+  langfusePublicKey: "",
+  langfuseSecretKey: "",
+  langfuseProjectName: "construct",
+  langfuseEnvironment: "development",
+  capturePayloads: true,
+  batch: true
 };
 
 const flowMemoryFiles: FlowMemoryFileName[] = [
@@ -187,6 +200,9 @@ export function ConstructSettingsSurface({
   const [aiSettings, setAiSettings] = useState<AiSettings>(defaultAiSettings);
   const aiSettingsRef = useRef(aiSettings);
   aiSettingsRef.current = aiSettings;
+  const [observabilitySettings, setObservabilitySettings] = useState<ObservabilitySettings>(defaultObservabilitySettings);
+  const observabilitySettingsRef = useRef(observabilitySettings);
+  observabilitySettingsRef.current = observabilitySettings;
   const [aiFeatures, setAiFeatures] = useState<AiFeatureSettings[]>([]);
   const [modelOptions, setModelOptions] = useState<ModelCatalogEntry[]>([]);
   const [modelsBusy, setModelsBusy] = useState(false);
@@ -197,6 +213,7 @@ export function ConstructSettingsSurface({
   const [projectDescription, setProjectDescription] = useState(project?.description ?? "");
   const [busy, setBusy] = useState(false);
   const [appBusy, setAppBusy] = useState(false);
+  const [observabilityBusy, setObservabilityBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteCheck, setDeleteCheck] = useState<DeleteProjectCheck | null>(null);
@@ -217,6 +234,14 @@ export function ConstructSettingsSurface({
     setAiSettings((current) => {
       const next = typeof update === "function" ? update(current) : update;
       aiSettingsRef.current = next;
+      return next;
+    });
+  }
+
+  function setObservabilitySettingsDraft(update: ObservabilitySettings | ((current: ObservabilitySettings) => ObservabilitySettings)) {
+    setObservabilitySettings((current) => {
+      const next = typeof update === "function" ? update(current) : update;
+      observabilitySettingsRef.current = next;
       return next;
     });
   }
@@ -373,6 +398,10 @@ export function ConstructSettingsSurface({
         setAiSettingsDraft({
           ...defaultAiSettings,
           ...(settings.ai ?? {})
+        });
+        setObservabilitySettingsDraft({
+          ...defaultObservabilitySettings,
+          ...(settings.observability ?? {})
         });
         return listAiFeatures();
       })
@@ -639,6 +668,23 @@ export function ConstructSettingsSurface({
       setModelsError(caught instanceof Error ? caught.message : String(caught));
     } finally {
       setAiBusy(false);
+    }
+  }
+
+  async function saveObservabilityConfiguration() {
+    try {
+      setObservabilityBusy(true);
+      setError(null);
+      const settings = await updateObservabilitySettings({ observability: observabilitySettingsRef.current });
+      setObservabilitySettingsDraft({
+        ...defaultObservabilitySettings,
+        ...(settings.observability ?? {})
+      });
+      toast.success(settings.observability?.enabled ? "Langfuse tracing enabled" : "Langfuse tracing disabled");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setObservabilityBusy(false);
     }
   }
 
@@ -918,6 +964,95 @@ export function ConstructSettingsSurface({
           </SettingsCard>
         </SettingsSection>
         {error ? <Alert variant="destructive"><AlertTitle>Appearance settings error</AlertTitle><AlertDescription>{error}</AlertDescription></Alert> : null}
+      </SettingsPanel>
+    );
+  }
+
+  if (activeItemId === "observability") {
+    return (
+      <SettingsPanel title="Observability" subtitle="Langfuse tracing for agent runs, model calls, and hosted compute.">
+        <SettingsSection>
+          <SettingsCard>
+            <SettingsRow
+              title="Langfuse tracing"
+              description="Export Construct agent and model-call traces to Langfuse."
+              control={
+                <SettingsToggle
+                  checked={observabilitySettings.enabled}
+                  disabled={observabilityBusy}
+                  onCheckedChange={(enabled) => setObservabilitySettingsDraft((current) => ({ ...current, enabled }))}
+                />
+              }
+            />
+            <SettingsRow title="Base URL" description="Use http://localhost:3000 for the local Docker stack.">
+              <Input
+                value={observabilitySettings.langfuseBaseUrl}
+                onChange={(event) => setObservabilitySettingsDraft((current) => ({ ...current, langfuseBaseUrl: event.target.value }))}
+                placeholder="http://localhost:3000"
+              />
+            </SettingsRow>
+            <SettingsRow title="Project name" description="Used as Construct metadata on every trace.">
+              <Input
+                value={observabilitySettings.langfuseProjectName}
+                onChange={(event) => setObservabilitySettingsDraft((current) => ({ ...current, langfuseProjectName: event.target.value }))}
+                placeholder="construct"
+              />
+            </SettingsRow>
+            <SettingsRow title="Environment">
+              <Input
+                value={observabilitySettings.langfuseEnvironment}
+                onChange={(event) => setObservabilitySettingsDraft((current) => ({ ...current, langfuseEnvironment: event.target.value }))}
+                placeholder="development"
+              />
+            </SettingsRow>
+            <SettingsRow title="Public key" description="Project-scoped Langfuse public key.">
+              <Input
+                value={observabilitySettings.langfusePublicKey}
+                onChange={(event) => setObservabilitySettingsDraft((current) => ({ ...current, langfusePublicKey: event.target.value }))}
+                placeholder="pk-lf-..."
+              />
+            </SettingsRow>
+            <SettingsRow title="Secret key" description="Stored locally with the rest of Construct settings.">
+              <Input
+                type="password"
+                value={observabilitySettings.langfuseSecretKey}
+                onChange={(event) => setObservabilitySettingsDraft((current) => ({ ...current, langfuseSecretKey: event.target.value }))}
+                placeholder="sk-lf-..."
+              />
+            </SettingsRow>
+            <SettingsRow
+              title="Capture payloads"
+              description="Include bounded prompts, outputs, and request bodies after credential redaction."
+              control={
+                <SettingsToggle
+                  checked={observabilitySettings.capturePayloads}
+                  disabled={observabilityBusy}
+                  onCheckedChange={(capturePayloads) => setObservabilitySettingsDraft((current) => ({ ...current, capturePayloads }))}
+                />
+              }
+            />
+            <SettingsRow
+              title="Batch export"
+              description="Batch spans for long-running desktop sessions; disable for immediate local debugging."
+              control={
+                <SettingsToggle
+                  checked={observabilitySettings.batch}
+                  disabled={observabilityBusy}
+                  onCheckedChange={(batch) => setObservabilitySettingsDraft((current) => ({ ...current, batch }))}
+                />
+              }
+            />
+            <SettingsRow
+              title="Save tracing settings"
+              control={
+                <Button size="small" disabled={observabilityBusy} onClick={() => void saveObservabilityConfiguration()}>
+                  Save
+                </Button>
+              }
+            />
+          </SettingsCard>
+        </SettingsSection>
+        {error ? <Alert variant="destructive"><AlertTitle>Observability settings error</AlertTitle><AlertDescription>{error}</AlertDescription></Alert> : null}
       </SettingsPanel>
     );
   }
@@ -1261,6 +1396,7 @@ export function buildSettingsSections(projects: ProjectSummary[], projectId?: st
       items: [
         { id: "workspace", label: "General", icon: <Folder size={18} weight="duotone" /> },
         { id: "ai", label: "AI", icon: <Brain size={18} weight="duotone" /> },
+        { id: "observability", label: "Observability", icon: <Activity size={18} /> },
         { id: "appearance", label: "Appearance", icon: <GearSix size={18} weight="duotone" /> },
         { id: "lsp-settings", label: "Language Server", icon: <Notebook size={18} weight="duotone" /> }
       ]
@@ -1353,6 +1489,9 @@ export function settingsTitle(itemId: string, projectId: string | undefined, pro
   }
   if (itemId === "appearance") {
     return "Appearance";
+  }
+  if (itemId === "observability") {
+    return "Observability";
   }
   if (itemId === "lsp-settings") {
     return "Language Server";

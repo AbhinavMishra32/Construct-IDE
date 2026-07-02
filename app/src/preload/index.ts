@@ -51,6 +51,8 @@ contextBridge.exposeInMainWorld("constructProjects", {
     ipcRenderer.invoke("construct:settings:update-ai", input),
   updateAppSettings: (input: unknown) =>
     ipcRenderer.invoke("construct:settings:update-app", input),
+  updateObservabilitySettings: (input: unknown) =>
+    ipcRenderer.invoke("construct:settings:update-observability", input),
   listAiFeatures: () =>
     ipcRenderer.invoke("construct:settings:list-ai-features"),
   listModels: (input: unknown) =>
