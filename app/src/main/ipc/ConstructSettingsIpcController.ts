@@ -71,6 +71,17 @@ export class ConstructSettingsIpcController {
       });
     });
 
+    ipcMain.handle("construct:settings:update-observability", async (_event, input) => {
+      const current = await this.options.readSettings();
+      return this.options.writeSettings({
+        ...current,
+        observability: {
+          ...current.observability,
+          ...(typeof input?.observability === "object" && input.observability ? input.observability : {})
+        }
+      });
+    });
+
     ipcMain.handle("construct:settings:list-ai-features", async () => {
       return featureSettingsView((await this.options.readSettings()).ai);
     });

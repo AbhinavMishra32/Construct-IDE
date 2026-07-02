@@ -198,6 +198,31 @@ test("settings normalize and persist source-grounded Flow preference", async (t)
   assert.equal(persisted.flowSourceGroundingEnabled, false);
 });
 
+test("settings normalize Langfuse observability", () => {
+  const paths = createConstructDataPaths("/tmp/construct-test");
+  const normalized = normalizeSettings({
+    observability: {
+      enabled: true,
+      langfuseBaseUrl: "localhost:3000/",
+      langfusePublicKey: "pk-lf-test",
+      langfuseSecretKey: "sk-lf-test",
+      langfuseProjectName: "construct-local",
+      langfuseEnvironment: "local",
+      capturePayloads: false,
+      batch: false
+    }
+  }, paths);
+
+  assert.equal(normalized.observability.enabled, true);
+  assert.equal(normalized.observability.langfuseBaseUrl, "http://localhost:3000");
+  assert.equal(normalized.observability.langfusePublicKey, "pk-lf-test");
+  assert.equal(normalized.observability.langfuseSecretKey, "sk-lf-test");
+  assert.equal(normalized.observability.langfuseProjectName, "construct-local");
+  assert.equal(normalized.observability.langfuseEnvironment, "local");
+  assert.equal(normalized.observability.capturePayloads, false);
+  assert.equal(normalized.observability.batch, false);
+});
+
 test("settings normalize and persist app chrome options", async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "construct-config-"));
   const paths = createConstructDataPaths(root);

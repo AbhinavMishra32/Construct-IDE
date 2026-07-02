@@ -48,9 +48,12 @@ export type StoredAiSettings = {
 
 export type StoredObservabilitySettings = {
   enabled: boolean;
-  phoenixEndpoint: string;
-  phoenixApiKey: string;
-  phoenixProjectName: string;
+  langfuseBaseUrl: string;
+  langfusePublicKey: string;
+  langfuseSecretKey: string;
+  langfuseProjectName: string;
+  langfuseEnvironment: string;
+  capturePayloads: boolean;
   batch: boolean;
 };
 
@@ -240,9 +243,12 @@ export function normalizeSettings(
     },
     observability: {
       enabled: inputObservability.enabled === true,
-      phoenixEndpoint: normalizeBaseUrl(inputObservability.phoenixEndpoint, defaults.observability.phoenixEndpoint),
-      phoenixApiKey: normalizeString(inputObservability.phoenixApiKey, ""),
-      phoenixProjectName: normalizeString(inputObservability.phoenixProjectName, defaults.observability.phoenixProjectName),
+      langfuseBaseUrl: normalizeBaseUrl(inputObservability.langfuseBaseUrl, defaults.observability.langfuseBaseUrl),
+      langfusePublicKey: normalizeString(inputObservability.langfusePublicKey, ""),
+      langfuseSecretKey: normalizeString(inputObservability.langfuseSecretKey, ""),
+      langfuseProjectName: normalizeString(inputObservability.langfuseProjectName, defaults.observability.langfuseProjectName),
+      langfuseEnvironment: normalizeString(inputObservability.langfuseEnvironment, defaults.observability.langfuseEnvironment),
+      capturePayloads: inputObservability.capturePayloads !== false,
       batch: inputObservability.batch !== false
     }
   };
@@ -303,9 +309,12 @@ function defaultAiSettings(): StoredAiSettings {
 function defaultObservabilitySettings(): StoredObservabilitySettings {
   return {
     enabled: false,
-    phoenixEndpoint: "http://localhost:6006",
-    phoenixApiKey: "",
-    phoenixProjectName: "construct",
+    langfuseBaseUrl: process.env.LANGFUSE_BASE_URL?.trim() || "http://localhost:3000",
+    langfusePublicKey: process.env.LANGFUSE_PUBLIC_KEY?.trim() || "",
+    langfuseSecretKey: process.env.LANGFUSE_SECRET_KEY?.trim() || "",
+    langfuseProjectName: "construct",
+    langfuseEnvironment: process.env.LANGFUSE_TRACING_ENVIRONMENT?.trim() || process.env.NODE_ENV?.trim() || "development",
+    capturePayloads: true,
     batch: true
   };
 }

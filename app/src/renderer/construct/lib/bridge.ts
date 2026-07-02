@@ -135,6 +135,13 @@ export function updateAppSettings(input: Parameters<ConstructProjectsApi["update
   });
 }
 
+export function updateObservabilitySettings(input: Parameters<ConstructProjectsApi["updateObservabilitySettings"]>[0]) {
+  return api().updateObservabilitySettings(input).then((settings) => {
+    void apiTracker.refreshSettings();
+    return settings;
+  });
+}
+
 export function listAiFeatures() {
   return api().listAiFeatures();
 }

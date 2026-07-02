@@ -36,7 +36,7 @@ import { createConstructAgentRuntime } from "./constructAgentRuntime";
 import { ConstructConceptPolicyService } from "./learning/ConstructConceptPolicyService";
 import { ConstructLspService } from "./lsp/ConstructLspService";
 import { ProcessInspector } from "./infra/ProcessInspector";
-import { ConstructObservabilityService } from "./observability/ConstructObservabilityService";
+import { constructObservabilityService } from "./observability/ConstructObservabilityService";
 import { ConstructProjectGitService } from "./projects/ConstructProjectGitService";
 import { ConstructProjectRepository, type ProjectWriteOptions } from "./projects/ConstructProjectRepository";
 import {
@@ -85,7 +85,7 @@ function sendToRenderers(channel: string, payload: unknown): void {
 
 const agentLogService = new AgentLogService((channel, payload) => sendToRenderers(channel, payload));
 const litellmService = new ConstructLitellmService();
-const observabilityService = new ConstructObservabilityService();
+const observabilityService = constructObservabilityService;
 const workspaceService = new ConstructProjectWorkspaceService(
   () => defaultWorkspaceParent(),
   () => path.resolve(app.getAppPath(), "src")
@@ -210,11 +210,13 @@ async function readSettings(): Promise<StoredSettings> {
 }
 
 async function writeSettings(settings: StoredSettings): Promise<StoredSettings> {
-  return writeConstructSettings(
+  const written = await writeConstructSettings(
     enforceConstructCloudProductionEndpoint(settings, app.isPackaged),
     constructDataPaths(),
     storageService()
   );
+  await observabilityService.configure(written);
+  return written;
 }
 
 function storageService(): IStorageService {
@@ -354,7 +356,7 @@ app.whenReady().then(async () => {
   await storageService().initialize();
   await domainStorage().initialize();
   await new LegacyProjectDataMigrator(constructDataPaths()).migrateIfNeeded();
-  observabilityService.configure(await readSettings());
+  await observabilityService.configure(await readSettings());
   installConstructProjectIpcHandlers();
   windowManager.createWindow();
 
