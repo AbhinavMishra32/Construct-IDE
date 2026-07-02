@@ -21,7 +21,6 @@
     "test": "node --import tsx --test src/main/storage/storage.test.ts src/main/projects/ConstructProjectRepository.test.ts src/main/config/constructConfig.test.ts src/main/agent-tools/constructTapeTools.test.ts src/main/constructAgentRuntime.test.ts src/main/constructAgentModels.test.ts src/main/constructAiFeatures.test.ts src/main/constructInteractAgent.test.ts src/main/constructInteractTools.test.ts src/main/constructLearningStore.test.ts src/main/ipc/ConstructFlowIpcController.test.ts src/main/learning/ConstructConceptPolicyService.test.ts src/main/flow/ConstructFlowService.test.ts src/main/generatedLiveSteps.test.ts src/main/constructSelectionExplainAgent.test.ts src/renderer/construct/ConstructSettingsSurface.test.ts src/renderer/construct/components/ConstructInteractSession.test.ts src/renderer/construct/components/FlowWorkspace.taskLifecycle.test.ts src/renderer/construct/components/StepList.test.ts src/renderer/construct/components/Workspace.render-stability.test.ts src/renderer/construct/lib/documentSession.test.ts src/renderer/construct/lib/inlineRefs.test.ts src/renderer/construct/lib/parser.test.ts src/renderer/construct/lib/selectionContext.test.ts src/renderer/construct/compiler/parser.test.ts src/renderer/construct/compiler/pipeline.test.ts"
   },
   "dependencies": {
-    "@arizeai/phoenix-otel": "^1.0.2",
     "@base-ui/react": "^1.5.0",
     "@better-auth-ui/core": "^1.6.27",
     "@better-auth-ui/react": "^1.6.27",
@@ -32,9 +31,12 @@
     "@fortawesome/free-regular-svg-icons": "^7.2.0",
     "@fortawesome/free-solid-svg-icons": "^7.2.0",
     "@fortawesome/react-fontawesome": "^3.3.1",
+    "@langfuse/otel": "^5.9.1",
+    "@langfuse/tracing": "^5.9.1",
     "@mastra/core": "^1.37.1",
     "@monaco-editor/react": "^4.7.0",
     "@opaline/ui": "workspace:*",
+    "@opentelemetry/sdk-node": "^0.219.0",
     "@phosphor-icons/react": "^2.1.10",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-context-menu": "^2.3.0",
