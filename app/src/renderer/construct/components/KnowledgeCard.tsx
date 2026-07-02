@@ -7,10 +7,9 @@ import {
   ChevronUpIcon,
   CirclePlusIcon,
   ExternalLinkIcon,
-  FileTextIcon,
-  FolderIcon,
   HistoryIcon,
   InfoIcon,
+  NetworkIcon,
   User,
   XIcon
 } from "lucide-react";
@@ -18,7 +17,9 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { conceptMasteryRubricForLevel, type ConstructConceptMasteryLevel } from "../../../shared/constructLearning";
+import { KnowledgeGraphPanel } from "./KnowledgeBaseSurface";
 import { MarkdownBlock } from "./MarkdownBlock";
+import { readKnowledgeRecords, subscribeKnowledgeRecords, type SavedKnowledgeRecord } from "../lib/knowledgeStore";
 import type { ConceptCard } from "../types";
 import type { InlineFileRef } from "../lib/inlineRefs";
 import { cn } from "../../lib/utils";
@@ -76,11 +77,17 @@ export function KnowledgeCard({
   onOpenFile: (reference: InlineFileRef) => void;
   onSaveChange: (saved: boolean) => void;
 }) {
-  const related = buildConceptFiles(concept, relatedConcepts);
+  const [globalKnowledgeRecords, setGlobalKnowledgeRecords] = useState<SavedKnowledgeRecord[]>(() => readKnowledgeRecords());
+  const graphRecords = useMemo<SavedKnowledgeRecord[]>(
+    () => buildKnowledgeCardGraphRecords(concept, relatedConcepts, globalKnowledgeRecords),
+    [concept, globalKnowledgeRecords, relatedConcepts]
+  );
+  const currentGraphRecordKey = useMemo(() => knowledgeCardGraphRecordKeyForConcept(graphRecords, concept.id), [concept.id, graphRecords]);
   const history = useMemo(() => orderConceptHistory(concept.history?.length ? concept.history : buildFallbackHistory(concept)), [concept]);
   const guideBlocks = concept.guides.filter((guide) => guide.content || guide.sections.length);
   const [mode, setMode] = useState<ConceptRevisionMode>("latest");
   const [collapsed, setCollapsed] = useState(false);
+  const [graphOpen, setGraphOpen] = useState(false);
   const [selectedHistoryIndex, setSelectedHistoryIndex] = useState(() => Math.max(0, history.length - 1));
 
   useEffect(() => {
@@ -90,11 +97,14 @@ export function KnowledgeCard({
 
   useEffect(() => {
     setCollapsed(false);
+    setGraphOpen(false);
   }, [concept.id]);
 
   useEffect(() => {
     setSelectedHistoryIndex((index) => clamp(index, 0, Math.max(0, history.length - 1)));
   }, [history.length]);
+
+  useEffect(() => subscribeKnowledgeRecords(() => setGlobalKnowledgeRecords(readKnowledgeRecords())), []);
 
   const currentMasteryLevel = masteryLevelForConcept(concept);
   const selectedHistory = history[selectedHistoryIndex] ?? history.at(-1) ?? null;
@@ -126,6 +136,7 @@ export function KnowledgeCard({
     <motion.section
       className={cn(
         "opaline-overlay-shadow flex min-h-0 w-full flex-col overflow-hidden rounded-[18px] border border-border/80 bg-popover/94 text-sm text-popover-foreground backdrop-blur-xl backdrop-saturate-150",
+        "relative",
         collapsed ? "h-auto" : "h-full"
       )}
       data-construct-explainable="concept-card"
@@ -137,25 +148,25 @@ export function KnowledgeCard({
       animate={{ opacity: 1, y: 0 }}
       transition={cardSpring}
     >
-      <header className={cn("flex shrink-0 items-stretch bg-background/35", !collapsed && "border-b border-border/70")}>
-        <MasteryBadge
-          level={displayedMasteryLevel}
-          title={masteryRubric.title}
-          tooltip={masteryTooltip}
-          emphasized={levelUp}
-          newConcept={introduced && mode === "history"}
-          onClick={() => {
-            if (history.length) {
-              setMode("history");
-              setSelectedHistoryIndex(latestMasteryEventIndex);
-            }
-          }}
-        />
-        <div className="flex flex-1 flex-col py-2.5 pl-2.5 pr-3 min-w-0">
+      <header className={cn("flex shrink-0 bg-background/35", !collapsed && "border-b border-border/70")}>
+        <div className="flex min-w-0 flex-1 flex-col px-4 py-3">
           <div className="flex items-start justify-between gap-2.5">
             <div className="min-w-0">
               <div className="mb-0.5 flex min-w-0 flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
                 <span className="font-semibold uppercase tracking-wide">Concept</span>
+                <MasteryBadge
+                  level={displayedMasteryLevel}
+                  title={masteryRubric.title}
+                  tooltip={masteryTooltip}
+                  emphasized={levelUp}
+                  newConcept={introduced && mode === "history"}
+                  onClick={() => {
+                    if (history.length) {
+                      setMode("history");
+                      setSelectedHistoryIndex(latestMasteryEventIndex);
+                    }
+                  }}
+                />
                 {introduced ? (
                   <span className="rounded-full border border-[color:var(--construct-success)]/35 bg-[color:var(--construct-success-soft)] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-[color:var(--construct-success)]">
                     New
@@ -174,6 +185,22 @@ export function KnowledgeCard({
               <p className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground/75">{concept.id}</p>
             </div>
             <div className="flex shrink-0 items-center gap-1">
+              <button
+                type="button"
+                className={cn(
+                  "grid size-8 place-items-center rounded-[8px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+                  graphOpen && "bg-muted text-foreground"
+                )}
+                onClick={() => {
+                  setCollapsed(false);
+                  setGraphOpen((value) => !value);
+                }}
+                aria-pressed={graphOpen}
+                aria-label={graphOpen ? "Hide concept graph" : "Show concept graph"}
+                title={graphOpen ? "Hide concept graph" : "Show concept graph"}
+              >
+                <NetworkIcon size={15} />
+              </button>
               <button
                 type="button"
                 className={cn(
@@ -211,6 +238,17 @@ export function KnowledgeCard({
               </button>
             </div>
           </div>
+
+          <AnimatePresence>
+            {graphOpen ? (
+              <ConceptGraphOverlay
+                records={graphRecords}
+                selectedKey={currentGraphRecordKey}
+                onClose={() => setGraphOpen(false)}
+                onOpenConcept={onOpenConcept}
+              />
+            ) : null}
+          </AnimatePresence>
 
           <div className={cn("construct-concept-card-accordion shrink-0", !collapsed && "is-open")} aria-hidden={collapsed}>
             <div>
@@ -263,11 +301,10 @@ export function KnowledgeCard({
       </header>
 
       <div className={cn("construct-concept-card-accordion min-h-0 flex-1", !collapsed && "is-open")} aria-hidden={collapsed}>
-        <div>
-          <div className="min-h-0 overflow-y-auto px-4 py-3">
+        <div className="h-full flex flex-col min-h-0">
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
             <ConceptCardBody
               concept={concept}
-              related={related}
               guideBlocks={guideBlocks}
               revisionSnapshot={revisionSnapshot}
               theme={theme}
@@ -301,51 +338,44 @@ function MasteryBadge({
   const reduceMotion = useReducedMotion();
   const glow = emphasized
     ? [
-        "0 0 0 1px color-mix(in srgb,var(--construct-success)_46%,transparent), 0 8px 26px color-mix(in srgb,var(--construct-success)_16%,transparent)",
-        "0 0 0 1px color-mix(in srgb,var(--construct-success)_72%,transparent), 0 16px 44px color-mix(in srgb,var(--construct-success)_32%,transparent)"
+        "0 0 0 1px color-mix(in srgb,var(--construct-success)_42%,transparent), 0 6px 18px color-mix(in srgb,var(--construct-success)_12%,transparent)",
+        "0 0 0 1px color-mix(in srgb,var(--construct-success)_68%,transparent), 0 10px 24px color-mix(in srgb,var(--construct-success)_22%,transparent)"
       ]
     : newConcept
       ? [
-          "0 0 0 1px color-mix(in srgb,var(--primary)_24%,transparent), 0 8px 24px color-mix(in srgb,var(--primary)_10%,transparent)",
-          "0 0 0 1px color-mix(in srgb,var(--primary)_40%,transparent), 0 14px 36px color-mix(in srgb,var(--primary)_18%,transparent)"
+          "0 0 0 1px color-mix(in srgb,var(--primary)_22%,transparent), 0 5px 14px color-mix(in srgb,var(--primary)_8%,transparent)",
+          "0 0 0 1px color-mix(in srgb,var(--primary)_36%,transparent), 0 8px 20px color-mix(in srgb,var(--primary)_14%,transparent)"
         ]
-      : "0 1px 2px color-mix(in srgb,var(--foreground)_10%,transparent)";
+      : "0 1px 2px color-mix(in srgb,var(--foreground)_8%,transparent)";
 
   return (
-    <div className="group relative shrink-0 self-stretch">
+    <div className="group relative shrink-0">
       <motion.button
         type="button"
         className={cn(
-          "relative grid w-10 h-full place-items-center overflow-hidden rounded-none border-y-0 border-l-0 border-r border-border/70 bg-muted/20 text-foreground outline-none transition-all duration-150 focus-visible:ring-2 focus-visible:ring-ring/40",
-          emphasized && "border-foreground/35 bg-muted/40 font-semibold",
+          "relative inline-flex h-5 items-center gap-1 overflow-hidden rounded-full border border-border/70 bg-muted/20 px-1.5 text-[10px] font-semibold leading-none text-muted-foreground outline-none transition-all duration-150 hover:border-foreground/25 hover:bg-muted/45 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40",
+          emphasized && "border-[color:var(--construct-success)]/45 bg-[color:var(--construct-success-soft)] text-[color:var(--construct-success)]",
           newConcept && !emphasized && "bg-muted/30"
         )}
         onClick={onClick}
         aria-label={`Mastery level ${level}: ${title}`}
         key={level}
-        initial={reduceMotion ? false : { scale: 0.95, rotate: emphasized ? -2 : 0 }}
+        initial={reduceMotion ? false : { scale: 0.96 }}
         animate={{
           scale: 1,
-          rotate: 0,
           boxShadow: glow
         }}
         transition={emphasized || newConcept ? {
           scale: cardSpring,
-          rotate: cardSpring,
           boxShadow: reduceMotion ? { duration: 0.01 } : { duration: 1.5, repeat: Infinity, repeatType: "reverse" }
         } : cardSpring}
       >
-        <span className="absolute inset-0 bg-[radial-gradient(circle_at_35%_20%,color-mix(in_srgb,var(--foreground)_6%,transparent),transparent_45%)]" />
-        <span className="relative flex flex-col items-center leading-none">
-          <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground/80">Level</span>
-          <span className="mt-0.5 text-lg font-bold tabular-nums tracking-tight text-foreground">
-            {level}
-          </span>
-        </span>
+        <span className="relative uppercase tracking-wide">L</span>
+        <span className="relative font-mono tabular-nums text-foreground">{level}</span>
       </motion.button>
-      <div className="pointer-events-none absolute left-0 top-[calc(100%+0.5rem)] z-50 hidden w-64 rounded-[8px] border border-border bg-popover/98 p-2.5 text-xs leading-relaxed text-popover-foreground shadow-lg backdrop-blur-md group-hover:block group-focus-within:block">
+      <div className="pointer-events-none absolute left-0 top-[calc(100%+0.45rem)] z-50 hidden w-64 rounded-[8px] border border-border bg-popover/98 p-2.5 text-xs leading-relaxed text-popover-foreground shadow-lg backdrop-blur-md group-hover:block group-focus-within:block">
         <div className="mb-1 font-semibold text-foreground">
-          {title}
+          Level {level}: {title}
         </div>
         <p className="text-muted-foreground/90">{tooltip}</p>
       </div>
@@ -417,9 +447,56 @@ function HeaderConceptTitle({ title, event }: { title: string; event: ConceptHis
   );
 }
 
+function ConceptGraphOverlay({
+  records,
+  selectedKey,
+  onClose,
+  onOpenConcept
+}: {
+  records: SavedKnowledgeRecord[];
+  selectedKey: string | null;
+  onClose: () => void;
+  onOpenConcept: (conceptId: string) => void;
+}) {
+  return (
+    <motion.div
+      key="concept-graph"
+      initial={{ opacity: 0, height: 0, y: -6 }}
+      animate={{ opacity: 1, height: 288, y: 0 }}
+      exit={{ opacity: 0, height: 0, y: -6 }}
+      transition={{ duration: 0.22, ease: "easeInOut" }}
+      className="mt-3 overflow-hidden rounded-[12px] border border-border/65 bg-background/85 shadow-[0_18px_60px_color-mix(in_srgb,var(--background)_72%,transparent)] backdrop-blur-2xl"
+    >
+      <div className="flex h-9 items-center justify-between border-b border-border/50 bg-background/70 px-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <NetworkIcon size={14} className="shrink-0 text-muted-foreground" />
+          <span className="truncate text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Concept graph</span>
+          <span className="font-mono text-[10px] text-muted-foreground/60">{records.length} nodes</span>
+        </div>
+        <button
+          type="button"
+          className="grid size-7 place-items-center rounded-[7px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          onClick={onClose}
+          aria-label="Close concept graph"
+          title="Close concept graph"
+        >
+          <XIcon size={14} />
+        </button>
+      </div>
+      <div className="relative h-[calc(100%-2.25rem)] min-h-0 overflow-hidden bg-background">
+        <KnowledgeGraphPanel
+          records={records}
+          selectedKey={selectedKey}
+          onSelectRecord={(record) => onOpenConcept(record.id)}
+          onClearSelection={() => undefined}
+        />
+      </div>
+    </motion.div>
+  );
+}
+
 function ConceptCardBody({
   concept,
-  related,
   guideBlocks,
   revisionSnapshot,
   theme,
@@ -429,7 +506,6 @@ function ConceptCardBody({
   onOpenFile
 }: {
   concept: ConceptCard;
-  related: Array<{ id: string; title: string; depth: number; kind: "folder" | "file" }>;
   guideBlocks: ConceptCard["guides"];
   revisionSnapshot: ConceptRevisionSnapshot | null;
   theme: "light" | "dark" | "system";
@@ -438,7 +514,6 @@ function ConceptCardBody({
   onOpenConcept: (conceptId: string) => void;
   onOpenFile: (reference: InlineFileRef) => void;
 }) {
-  const [isTreeOpen, setIsTreeOpen] = useState(false);
   const visibleContent = revisionSnapshot?.content ?? concept.content ?? guideBlocks[0]?.content ?? "";
   const visibleWhy = revisionSnapshot?.why ?? concept.why;
   const visibleCommonMistake = revisionSnapshot?.commonMistake ?? concept.commonMistake;
@@ -451,58 +526,6 @@ function ConceptCardBody({
     <>
       {activeEvent ? (
         <InlineRevisionMarker event={activeEvent} masteryShift={masteryShift} />
-      ) : null}
-
-      {related.length ? (
-        <ConceptBlock>
-          <div className="flex flex-col">
-            <button
-              type="button"
-              className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground outline-none hover:text-foreground text-left"
-              onClick={() => setIsTreeOpen((open) => !open)}
-            >
-              <ChevronRightIcon
-                size={12}
-                className={cn(
-                  "shrink-0 text-muted-foreground/60 transition-transform duration-200",
-                  isTreeOpen && "rotate-90"
-                )}
-              />
-              <span>View concept tree</span>
-            </button>
-            <AnimatePresence initial={false}>
-              {isTreeOpen && (
-                <motion.div
-                  key="concept-tree-accordion"
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: "auto", opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.2, ease: "easeInOut" }}
-                  className="overflow-hidden"
-                >
-                  <div className="mt-2 flex flex-col gap-0.5 pl-1">
-                    {related.map((item) => (
-                      <button
-                        key={`${item.kind}:${item.id}`}
-                        type="button"
-                        className={cn(
-                          "flex min-w-0 items-center gap-2 rounded-[7px] px-2 py-1.5 text-left text-xs transition-colors hover:bg-muted",
-                          item.id === concept.id && "bg-muted/60 text-foreground"
-                        )}
-                        style={{ paddingLeft: `${8 + item.depth * 14}px` }}
-                        onClick={() => item.id !== concept.id && onOpenConcept(item.id)}
-                      >
-                        {item.kind === "folder" ? <FolderIcon size={14} className="shrink-0 text-muted-foreground" /> : <FileTextIcon size={14} className="shrink-0 text-muted-foreground" />}
-                        <span className="min-w-0 flex-1 truncate">{item.title}</span>
-                        {item.id !== concept.id ? <ChevronRightIcon size={13} className="shrink-0 text-muted-foreground" /> : null}
-                      </button>
-                    ))}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        </ConceptBlock>
       ) : null}
 
       {guideBlocks.length ? guideBlocks.map((guide) => {
@@ -795,46 +818,46 @@ function ConceptBlock({ title, changed, children }: { title?: string; changed?: 
   );
 }
 
-function buildConceptFiles(concept: ConceptCard, concepts: ConceptCard[]) {
-  const rows: Array<{ id: string; title: string; depth: number; kind: "folder" | "file" }> = [];
-  const segments = concept.id.split(".").filter(Boolean);
-  for (let index = 1; index < segments.length; index += 1) {
-    const id = segments.slice(0, index).join(".");
-    rows.push({
-      id,
-      title: concepts.find((item) => item.id === id)?.title ?? conceptTitleFromId(id),
-      depth: index - 1,
-      kind: "folder"
-    });
-  }
-  rows.push({ id: concept.id, title: concept.title, depth: Math.max(0, segments.length - 1), kind: "file" });
+function buildKnowledgeCardGraphRecords(
+  concept: ConceptCard,
+  localConcepts: ConceptCard[],
+  globalRecords: SavedKnowledgeRecord[]
+): SavedKnowledgeRecord[] {
+  const recordsByKey = new Map<string, SavedKnowledgeRecord>();
+  const addRecord = (record: SavedKnowledgeRecord) => {
+    const key = knowledgeCardGraphRecordKey(record);
+    if (recordsByKey.has(key)) return;
+    recordsByKey.set(key, record);
+  };
 
-  const childPrefix = `${concept.id}.`;
-  const directChildren = concepts
-    .filter((item) => item.id.startsWith(childPrefix))
-    .filter((item) => item.id.slice(childPrefix.length).split(".").filter(Boolean).length === 1)
-    .sort((a, b) => a.id.localeCompare(b.id));
-  for (const child of directChildren) {
-    rows.push({
-      id: child.id,
-      title: child.title,
-      depth: segments.length,
-      kind: "file"
-    });
-  }
+  for (const record of globalRecords) addRecord(record);
+  for (const item of localConcepts) addRecord(knowledgeCardSyntheticRecord(item));
+  addRecord(knowledgeCardSyntheticRecord(concept));
+  return [...recordsByKey.values()];
+}
 
-  for (const relatedId of concept.relatedConcepts ?? []) {
-    if (rows.some((row) => row.id === relatedId)) continue;
-    const related = concepts.find((item) => item.id === relatedId);
-    rows.push({
-      id: relatedId,
-      title: related?.title ?? conceptTitleFromId(relatedId),
-      depth: 0,
-      kind: "file"
-    });
-  }
+function knowledgeCardGraphRecordKey(record: Pick<SavedKnowledgeRecord, "id" | "sourceProjectId">): string {
+  return `${record.sourceProjectId}:${record.id}`;
+}
 
-  return rows;
+function knowledgeCardGraphRecordKeyForConcept(records: SavedKnowledgeRecord[], conceptId: string): string | null {
+  const record = records.find((candidate) => candidate.id === conceptId);
+  return record ? knowledgeCardGraphRecordKey(record) : null;
+}
+
+function knowledgeCardSyntheticRecord(concept: ConceptCard): SavedKnowledgeRecord {
+  const savedAt = concept.savedAt ?? concept.lastModifiedAt ?? new Date().toISOString();
+  return {
+    ...concept,
+    sourceProjectId: "__current__",
+    sourceProjectTitle: "Current project",
+    savedAt,
+    openedAt: concept.lastModifiedAt,
+    openCount: 0,
+    usedInRecall: false,
+    firstSeenAt: savedAt,
+    lastOpenedAt: concept.lastModifiedAt ?? savedAt
+  } as SavedKnowledgeRecord;
 }
 
 function buildFallbackHistory(concept: ConceptCard): NonNullable<ConceptCard["history"]> {

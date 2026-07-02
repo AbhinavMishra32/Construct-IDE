@@ -1974,6 +1974,7 @@ export function Workspace({
           <KnowledgeCard
             key={concept.id}
             concept={concept}
+            relatedConcepts={project.program.concepts}
             saved={savedConceptIds.includes(concept.id)}
             theme={theme}
             onClose={() => closeConceptCard(concept.id)}
