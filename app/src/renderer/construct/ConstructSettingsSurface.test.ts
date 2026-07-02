@@ -36,6 +36,64 @@ describe("Construct project advanced settings", () => {
     assert.match(controller, /ipcMain\.handle\("construct:settings:update-app"/);
   });
 
+  it("uses a transparent Construct logo splash for startup loading states", () => {
+    const app = readFileSync(fileURLToPath(new URL("./ConstructApplication.tsx", import.meta.url)), "utf8");
+    const css = readFileSync(fileURLToPath(new URL("../index.css", import.meta.url)), "utf8");
+    const logo = readFileSync(fileURLToPath(new URL("../components/auth/construct-auth-logo.tsx", import.meta.url)), "utf8");
+    const signIn = readFileSync(fileURLToPath(new URL("../components/auth/sign-in.tsx", import.meta.url)), "utf8");
+    const signUp = readFileSync(fileURLToPath(new URL("../components/auth/sign-up.tsx", import.meta.url)), "utf8");
+    const forgotPassword = readFileSync(fileURLToPath(new URL("../components/auth/forgot-password.tsx", import.meta.url)), "utf8");
+    const resetPassword = readFileSync(fileURLToPath(new URL("../components/auth/reset-password.tsx", import.meta.url)), "utf8");
+    const verifyEmail = readFileSync(fileURLToPath(new URL("../components/auth/verify-email.tsx", import.meta.url)), "utf8");
+    const signOut = readFileSync(fileURLToPath(new URL("../components/auth/sign-out.tsx", import.meta.url)), "utf8");
+    const authProvider = readFileSync(fileURLToPath(new URL("../components/auth/auth-provider.tsx", import.meta.url)), "utf8");
+    const authFormAlert = readFileSync(fileURLToPath(new URL("../components/auth/auth-form-alert.tsx", import.meta.url)), "utf8");
+
+    assert.match(app, /function ConstructSplashScreen\(\)/);
+    assert.match(app, /role="status" aria-label="Loading Construct"/);
+    assert.match(app, /<ConstructAuthLogo className="mb-1" markClassName="construct-auth-logo__mark--hero" \/>/);
+    assert.match(app, /<ConstructAuthLogo markClassName="construct-auth-logo__mark--sidebar" \/>/);
+    assert.match(app, /max-w-\[calc\(100vw-3rem\)\] flex-col gap-7 px-8/);
+    assert.match(app, /className="construct-auth-card w-full"/);
+    assert.doesNotMatch(app, /Sign in to your Construct account to continue/);
+    assert.doesNotMatch(app, /<h1 className="text-2xl font-bold tracking-tight mt-2">Construct<\/h1>/);
+    assert.match(app, /return <ConstructSplashScreen \/>;/);
+    assert.doesNotMatch(app, />Checking account status\.\.\.</);
+    assert.doesNotMatch(app, />Loading settings\.\.\.</);
+    assert.doesNotMatch(app, />C<\/div>/);
+    assert.match(logo, /export function ConstructAuthLogo/);
+    for (const source of [signIn, signUp, forgotPassword, resetPassword, verifyEmail, signOut]) {
+      assert.doesNotMatch(source, /ConstructAuthLogo/);
+      assert.doesNotMatch(source, /construct-auth-logo__mark--card/);
+    }
+    assert.doesNotMatch(authProvider, /ErrorToaster/);
+    assert.match(authFormAlert, /export function AuthFormAlert/);
+    assert.match(signIn, /AuthFormAlert/);
+    assert.match(signIn, /setAuthError\(authErrorMessage/);
+    assert.match(signUp, /AuthFormAlert/);
+    assert.match(forgotPassword, /AuthFormAlert/);
+    assert.match(resetPassword, /AuthFormAlert/);
+    assert.match(verifyEmail, /AuthFormAlert/);
+    for (const source of [signIn, signUp, forgotPassword, resetPassword, verifyEmail]) {
+      assert.doesNotMatch(source, /toast\.error/);
+    }
+    for (const source of [signIn, signUp, forgotPassword, resetPassword, verifyEmail]) {
+      assert.match(source, /<Card className=\{cn\("w-full max-w-sm", className\)\}>/);
+      assert.match(source, /<CardContent>/);
+    }
+    assert.match(css, /\.construct-startup-splash\s*\{[\s\S]*?background: transparent;/);
+    assert.match(css, /\.construct-auth-logo__mark\s*\{/);
+    assert.doesNotMatch(css, /construct-auth-logo__mark--card/);
+    assert.match(css, /\.construct-auth-card :where\(input, \[data-slot="input"\], \[data-slot="input-group"\], \[data-slot="button"\]\)/);
+    assert.match(css, /border-radius: 8px;/);
+    assert.match(css, /@keyframes construct-auth-alert-in/);
+    assert.match(css, /\.construct-auth-form-alert/);
+    assert.match(css, /box-shadow: 0 0 0 1px color-mix\(in srgb, var\(--destructive\) 18%, transparent\) !important;/);
+    assert.match(css, /construct-empty-watermark\.png/);
+    assert.match(css, /--construct-startup-logo-color/);
+    assert.match(css, /--construct-auth-logo-color/);
+  });
+
   it("wires Construct account hosted-compute UI through durable AI settings", () => {
     const source = readFileSync(fileURLToPath(new URL("./ConstructSettingsSurface.tsx", import.meta.url)), "utf8");
     const aiSection = readFileSync(

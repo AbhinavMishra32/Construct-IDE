@@ -63,6 +63,9 @@ describe("Construct Interact Codex-style UI", () => {
     const source = readFileSync(fileURLToPath(new URL("../../../../../opaline/packages/ui/src/slot-panel/SlotPanel.tsx", import.meta.url)), "utf8");
     assert.match(source, /className="flex min-h-0 flex-1 flex-col overflow-hidden"/);
     assert.match(source, /className="flex min-h-0 flex-1 flex-col overflow-hidden outline-none"/);
+    assert.match(source, /opaline-slot-panel-empty-watermark/);
+    assert.doesNotMatch(source, /No tabs open/);
+    assert.doesNotMatch(source, /Open a file from the sidebar to get started/);
   });
 
   it("keeps Flow projects inside the same file-tab shell without a sidebar knowledge block", () => {
