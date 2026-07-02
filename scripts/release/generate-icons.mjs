@@ -1,12 +1,17 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const source = path.join(root, "app", "assets", "icon.png");
+const runtimeIcon = path.join(root, "app", "assets", "runtime-icon.png");
 const outputDir = path.join(root, "app", "build", "icons");
 const pngDir = path.join(outputDir, "png");
+const maskTool = path.join(root, "scripts", "release", "mask-macos-icon.swift");
+const macOSReferenceApp = "/System/Applications/App Store.app";
+const macOSContentBoxScale = 824 / 1024;
 
 if (process.platform !== "darwin") {
   console.log("Skipping icon generation: 'sips' is a macOS-only tool. Using pre-generated icons.");
@@ -17,12 +22,14 @@ mkdirSync(outputDir, { recursive: true });
 mkdirSync(pngDir, { recursive: true });
 
 const pngSizes = [16, 24, 32, 48, 64, 128, 256, 512];
+const generatedPngs = buildMaskedPngs([...pngSizes, 1024]);
 for (const size of pngSizes) {
-  resizePng(source, path.join(pngDir, `${size}x${size}.png`), size);
+  copyPng(generatedPngs.get(size), path.join(pngDir, `${size}x${size}.png`));
 }
 
-resizePng(source, path.join(outputDir, "icon.png"), 512);
-resizePng(source, path.join(outputDir, "icon-1024.png"), 1024);
+copyPng(generatedPngs.get(512), path.join(outputDir, "icon.png"));
+copyPng(generatedPngs.get(1024), path.join(outputDir, "icon-1024.png"));
+copyPng(generatedPngs.get(512), runtimeIcon);
 
 writeFileSync(path.join(outputDir, "icon.ico"), buildIco([
   [16, path.join(pngDir, "16x16.png")],
@@ -43,12 +50,37 @@ writeFileSync(path.join(outputDir, "icon.icns"), buildIcns([
   ["ic10", path.join(outputDir, "icon-1024.png")]
 ]));
 
-function resizePng(input, output, size) {
-  const result = spawnSync("sips", ["-z", String(size), String(size), input, "--out", output], {
-    stdio: "ignore"
-  });
+function copyPng(input, output) {
+  writeFileSync(output, input);
+}
+
+function buildMaskedPngs(sizes) {
+  if (!existsSync(macOSReferenceApp)) {
+    throw new Error(`Missing macOS reference app at ${macOSReferenceApp}`);
+  }
+
+  const tempDir = mkdtempSync(path.join(os.tmpdir(), "construct-icons-"));
+  try {
+    const outputs = new Map();
+    for (const size of sizes) {
+      const output = path.join(tempDir, `icon-${size}.png`);
+      run(
+        "swift",
+        [maskTool, source, macOSReferenceApp, String(size), String(macOSContentBoxScale), output],
+        `apply macOS reference mask at ${size}px`
+      );
+      outputs.set(size, readFileSync(output));
+    }
+    return outputs;
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
+function run(command, args, action) {
+  const result = spawnSync(command, args, { stdio: "ignore" });
   if (result.status !== 0) {
-    throw new Error(`sips failed while resizing ${path.basename(output)} to ${size}px`);
+    throw new Error(`${command} failed while trying to ${action}`);
   }
 }
 
