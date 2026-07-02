@@ -1,8 +1,6 @@
 <p align="center">
-  <img src="app/assets/icon.png" alt="Construct" width="120">
+  <img src="docs/assets/construct-banner.png" alt="Construct" width="100%">
 </p>
-
-<h1 align="center">Construct</h1>
 
 <p align="center">
   <b>Become the developer who understands the system.</b><br>
