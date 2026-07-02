@@ -1,5 +1,9 @@
 import { BrowserWindow } from "electron";
 import { aiGateway } from "./ai/AIGateway";
+import {
+  constructObservabilityService,
+  updateGenerationSuccess
+} from "./observability/ConstructObservabilityService";
 
 export type CodeGhostStreamInput = {
   lineContent: string;
@@ -55,76 +59,105 @@ export async function fetchCodeGhostExplanation(
   signal?: AbortSignal,
   onTrace?: (entry: CodeGhostTraceEntry) => void
 ): Promise<string> {
-  const { model, response } = await aiGateway.chatCompletions({
-    purpose: "Code Ghost explanation",
-    featureId: "code-explain",
-    body: {
-      messages: buildMessages(input),
-      stream: true,
-      max_tokens: 120,
-      temperature: 0.3
-    },
-    signal,
-    trace: onTrace
-  });
-  onTrace?.({
-    title: "Resolved agent model",
-    level: "debug",
-    detail: `${model.providerId} | ${model.modelId} | ${model.url ?? "default"}`,
-    payload: {
-      provider: model.providerId,
-      model: model.modelId,
-      baseUrl: model.url
-    }
-  });
-  console.log("[code ghost] fetching through AI gateway", { provider: model.providerId, model: model.modelId });
-
-  if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    console.error("[code ghost] API error", response.status, body.slice(0, 200));
-    throw new Error(`API error (${response.status})`);
-  }
-
-  const reader = response.body?.getReader();
-  if (!reader) {
-    throw new Error("Failed to get response stream reader");
-  }
-
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let text = "";
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || !trimmed.startsWith("data: ")) continue;
-
-      const data = trimmed.slice(6);
-      if (data === "[DONE]") continue;
-
-      try {
-        const parsed = JSON.parse(data) as {
-          choices?: Array<{ delta?: { content?: string } }>;
-        };
-        const content = parsed.choices?.[0]?.delta?.content;
-        if (content) {
-          text += content;
-        }
-      } catch {
-        // Skip malformed JSON lines
+  const previewModel = await aiGateway.resolveModel("Code Ghost explanation", "code-explain");
+  return constructObservabilityService.traceGeneration(
+    {
+      name: "construct.codeGhost.model",
+      input,
+      model: previewModel.modelId,
+      modelParameters: {
+        maxTokens: 120,
+        temperature: 0.3
+      },
+      provider: previewModel.providerId,
+      metadata: {
+        featureId: "code-explain",
+        language: input.language,
+        purpose: "Code Ghost explanation"
       }
-    }
-  }
+    },
+    async (generation) => {
+      const { model, response } = await aiGateway.chatCompletions({
+        purpose: "Code Ghost explanation",
+        featureId: "code-explain",
+        body: {
+          messages: buildMessages(input),
+          stream: true,
+          max_tokens: 120,
+          temperature: 0.3
+        },
+        signal,
+        trace: onTrace
+      });
+      onTrace?.({
+        title: "Resolved agent model",
+        level: "debug",
+        detail: `${model.providerId} | ${model.modelId} | ${model.url ?? "default"}`,
+        payload: {
+          provider: model.providerId,
+          model: model.modelId,
+          baseUrl: model.url
+        }
+      });
+      console.log("[code ghost] fetching through AI gateway", { provider: model.providerId, model: model.modelId });
 
-  console.log("[code ghost] got response length:", text.length);
-  return text.trim();
+      if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        console.error("[code ghost] API error", response.status, body.slice(0, 200));
+        throw new Error(`API error (${response.status})`);
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error("Failed to get response stream reader");
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let text = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || !trimmed.startsWith("data: ")) continue;
+
+          const data = trimmed.slice(6);
+          if (data === "[DONE]") continue;
+
+          try {
+            const parsed = JSON.parse(data) as {
+              choices?: Array<{ delta?: { content?: string } }>;
+            };
+            const content = parsed.choices?.[0]?.delta?.content;
+            if (content) {
+              text += content;
+            }
+          } catch {
+            // Skip malformed JSON lines
+          }
+        }
+      }
+
+      console.log("[code ghost] got response length:", text.length);
+      const output = text.trim();
+      updateGenerationSuccess(generation, {
+        output,
+        metadata: {
+          provider: model.providerId,
+          responseStatus: response.status,
+          status: "completed"
+        }
+      });
+      return output;
+    }
+  );
 }
 
 export async function sendCodeGhostStreamToRenderer(

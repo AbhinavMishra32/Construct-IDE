@@ -11,6 +11,11 @@ import type { StoredAiSettings } from "./constructAiSettings";
 import type { ConstructAgentRunEvent } from "../shared/constructLearning";
 import { emitProviderLog } from "./ai/ProviderLogService";
 import { finalizeDanglingToolRunEvents, iterationDetail, type ObservedToolEventState } from "./constructAgentRuntimeStream";
+import {
+  constructObservabilityService,
+  updateGenerationSuccess,
+  usageDetailsFrom
+} from "./observability/ConstructObservabilityService";
 
 export type ConstructAgentTools = ToolsInput;
 
@@ -192,6 +197,26 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
     const observed = { text: "" };
     let completedSteps = 0;
 
+    return constructObservabilityService.traceGeneration(
+      {
+        name: "construct.agentic.model",
+        input: request.messages ?? request.prompt,
+        model: model.modelId,
+        modelParameters: {
+          maxSteps: request.maxSteps ?? (hasTools ? 16 : 1),
+          maxRetries: request.maxRetries ?? 1
+        },
+        provider: model.providerId,
+        metadata: {
+          featureId: request.featureId,
+          purpose: request.purpose,
+          requestId: request.id,
+          hasTools,
+          runtime: "mastra",
+          reasoningEffort: settings.reasoningEffort
+        }
+      },
+      async (generation) => {
     try {
       const streamInput = (request.messages ?? request.prompt) as ConstructAgentStreamInput;
       aiGateway.traceProviderCall({
@@ -295,6 +320,18 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
         `Agentic API call completed: ${result.stepCount} step(s) | Finish reason: ${finishReason} | Duration: ${formatDuration(result.durationMs)} | Text length: ${text.length}`,
         "info"
       );
+      updateGenerationSuccess(generation, {
+        output: {
+          finishReason: result.finishReason,
+          stepCount: result.stepCount,
+          text: result.text
+        },
+        usageDetails: usageDetailsFrom(totalUsage),
+        metadata: {
+          durationMs: result.durationMs,
+          status: "completed"
+        }
+      });
       return result;
     } catch (error) {
       if (internalAbort.signal.aborted && (!request.abortSignal || !request.abortSignal.aborted)) {
@@ -323,6 +360,17 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
           `Agentic API call suspended: ${result.stepCount} step(s) | Duration: ${formatDuration(result.durationMs)} | Text length: ${text.length}`,
           "info"
         );
+        updateGenerationSuccess(generation, {
+          output: {
+            finishReason: result.finishReason,
+            stepCount: result.stepCount,
+            text: result.text
+          },
+          metadata: {
+            durationMs: result.durationMs,
+            status: "suspended"
+          }
+        });
         return result;
       }
 
@@ -352,6 +400,8 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
       );
       throw error;
     }
+      }
+    );
   }
 
   async generateStructured<T>(request: ConstructAgentRuntimeRequest<T>): Promise<T> {
@@ -435,23 +485,42 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
     });
 
     new Mastra({ agents: { [request.id]: agent }, logger: false });
+    const hasTools = request.tools && Object.keys(request.tools).length > 0;
+    const runStartedAt = Date.now();
+    const runEventId = outputEventId(request.id);
+
+    emitProviderLog(
+      model.providerId,
+      `API call started: ${request.purpose} | Model: ${model.modelId} | Tools: ${hasTools ? "yes" : "no"} | Prompt length: ${request.prompt.length} chars`,
+      "info"
+    );
+
+    const effectivePrompt = model.providerId === "opencode-zen"
+      ? enhancePromptForJsonOutput(request.prompt, request.schema)
+      : request.prompt;
+
+    return constructObservabilityService.traceGeneration(
+      {
+        name: "construct.structured.model",
+        input: effectivePrompt,
+        model: model.modelId,
+        modelParameters: {
+          maxSteps: request.maxSteps ?? (hasTools ? 12 : 1),
+          maxRetries: request.maxRetries ?? 1
+        },
+        provider: model.providerId,
+        metadata: {
+          featureId: request.featureId,
+          purpose: request.purpose,
+          requestId: request.id,
+          hasTools,
+          runtime: "mastra",
+          reasoningEffort: settings.reasoningEffort,
+          structuredOutput: true
+        }
+      },
+      async (generation) => {
     try {
-      const hasTools = request.tools && Object.keys(request.tools).length > 0;
-      const runStartedAt = Date.now();
-      const runEventId = outputEventId(request.id);
-      
-      // Log API call start
-      emitProviderLog(
-        model.providerId,
-        `API call started: ${request.purpose} | Model: ${model.modelId} | Tools: ${hasTools ? "yes" : "no"} | Prompt length: ${request.prompt.length} chars`,
-        "info"
-      );
-      
-      // Enhance prompt for opencode-zen to ensure JSON output
-      const effectivePrompt = model.providerId === "opencode-zen" 
-        ? enhancePromptForJsonOutput(request.prompt, request.schema)
-        : request.prompt;
-      
       aiGateway.traceProviderCall({
         featureId: request.featureId,
         model,
@@ -608,6 +677,16 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
         purpose: request.purpose,
         trace: request.onTrace
       });
+      updateGenerationSuccess(generation, {
+        output: parsed,
+        usageDetails: usageDetailsFrom(totalUsage),
+        metadata: {
+          durationMs: Date.now() - runStartedAt,
+          finishReason,
+          status: "completed",
+          stepCount: steps.length
+        }
+      });
       
       return parsed;
     } catch (error) {
@@ -641,6 +720,8 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
       
       throw error;
     }
+      }
+    );
   }
 
   private async observeStream<T>(

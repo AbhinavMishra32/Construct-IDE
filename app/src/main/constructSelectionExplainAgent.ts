@@ -6,6 +6,11 @@ import { z } from "zod";
 import { aiGateway } from "./ai/AIGateway";
 import { createConstructAgentRuntime, type ConstructAgentTraceEntry } from "./constructAgentRuntime";
 import { resolveConstructAiSettings } from "./constructAiSettings";
+import {
+  constructObservabilityService,
+  updateGenerationSuccess,
+  usageDetailsFrom
+} from "./observability/ConstructObservabilityService";
 
 const execFileAsync = promisify(execFile);
 
@@ -212,41 +217,79 @@ async function runOpenAiWebExplanation(
   codebase: Awaited<ReturnType<typeof collectCodebaseContext>>,
   onTrace?: (entry: ConstructAgentTraceEntry) => void
 ): Promise<SelectionExplanationResult> {
-  const { response } = await aiGateway.openAiResponses({
-    purpose: "selection web research",
-    featureId: "selection-explain",
-    trace: onTrace,
-    body: {
-      tools: [{ type: "web_search" }],
-      tool_choice: "auto",
-      include: ["web_search_call.action.sources"],
-      input: buildExplanationPrompt(input, codebase.matches)
-    }
-  });
-
-  if (!response.ok) {
-    const detail = (await response.text()).slice(0, 800);
-    throw new Error(`Web search request failed (${response.status}): ${detail}`);
+  const requestBody = {
+    tools: [{ type: "web_search" }],
+    tool_choice: "auto",
+    include: ["web_search_call.action.sources"],
+    input: buildExplanationPrompt(input, codebase.matches)
+  };
+  const config = aiGateway.resolveOpenAiResponses("selection-explain");
+  if (!config) {
+    throw new Error("OpenAI Responses is not configured for BYOK web research.");
   }
 
-  const payload = await response.json() as OpenAiResponse;
-  const extracted = extractOpenAiExplanation(payload);
-  if (!extracted.text.trim()) throw new Error("The research agent returned no explanation.");
-  const webSources = extracted.citations.map((citation, index) => ({
-    id: `web:${index}:${citation.url}`,
-    kind: "web" as const,
-    title: citation.title || domainForUrl(citation.url),
-    url: citation.url,
-    domain: domainForUrl(citation.url)
-  }));
-  const sources = dedupeSources([...codebase.sources, ...webSources]);
-  return {
-    title: explanationTitle(input.selection.text),
-    summary: firstMeaningfulParagraph(extracted.text),
-    explanation: addInlineCitationLinks(extracted.text, extracted.citations),
-    sources,
-    researchMode: webSources.length > 0 ? "web-and-codebase" : "codebase-only"
-  };
+  return constructObservabilityService.traceGeneration(
+    {
+      name: "construct.selectionExplain.webResearch",
+      input: requestBody.input,
+      model: config.model,
+      provider: "openai",
+      metadata: {
+        featureId: "selection-explain",
+        projectId: input.projectId,
+        source: input.selection.source,
+        sourceLabel: input.selection.sourceLabel,
+        toolChoice: requestBody.tool_choice
+      }
+    },
+    async (generation) => {
+      const { response } = await aiGateway.openAiResponses({
+        purpose: "selection web research",
+        featureId: "selection-explain",
+        trace: onTrace,
+        body: requestBody
+      });
+
+      if (!response.ok) {
+        const detail = (await response.text()).slice(0, 800);
+        throw new Error(`Web search request failed (${response.status}): ${detail}`);
+      }
+
+      const payload = await response.json() as OpenAiResponse;
+      const extracted = extractOpenAiExplanation(payload);
+      if (!extracted.text.trim()) throw new Error("The research agent returned no explanation.");
+      const webSources = extracted.citations.map((citation, index) => ({
+        id: `web:${index}:${citation.url}`,
+        kind: "web" as const,
+        title: citation.title || domainForUrl(citation.url),
+        url: citation.url,
+        domain: domainForUrl(citation.url)
+      }));
+      const sources = dedupeSources([...codebase.sources, ...webSources]);
+      const result: SelectionExplanationResult = {
+        title: explanationTitle(input.selection.text),
+        summary: firstMeaningfulParagraph(extracted.text),
+        explanation: addInlineCitationLinks(extracted.text, extracted.citations),
+        sources,
+        researchMode: webSources.length > 0 ? "web-and-codebase" : "codebase-only"
+      };
+      updateGenerationSuccess(generation, {
+        output: {
+          title: result.title,
+          summary: result.summary,
+          researchMode: result.researchMode,
+          sourceCount: result.sources.length,
+          webSourceCount: webSources.length
+        },
+        usageDetails: usageDetailsFrom((payload as { usage?: unknown }).usage),
+        metadata: {
+          responseStatus: response.status,
+          status: "completed"
+        }
+      });
+      return result;
+    }
+  );
 }
 
 const FallbackExplanationSchema = z.object({
