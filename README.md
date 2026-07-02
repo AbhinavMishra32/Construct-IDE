@@ -14,11 +14,11 @@
   <a href="https://tryconstruct.cc"><b>Website</b></a> ·
   <a href="https://github.com/AbhinavMishra32/Construct-IDE/releases/latest"><b>Download</b></a> ·
   <a href="docs/construct-flow-projects-implementation-brief.md"><b>Architecture Brief</b></a> ·
-  <a href="docs/releases/0.5.0.md"><b>Release Notes</b></a>
+  <a href="docs/releases/0.6.1.md"><b>Release Notes</b></a>
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-0.5.2-000000?style=flat-square">
+  <img alt="Version" src="https://img.shields.io/badge/version-0.6.1-000000?style=flat-square">
   <img alt="Desktop" src="https://img.shields.io/badge/desktop-Electron-47848f?style=flat-square&logo=electron&logoColor=white">
   <img alt="Runtime" src="https://img.shields.io/badge/runtime-React%20%2B%20TypeScript-3178c6?style=flat-square&logo=typescript&logoColor=white">
   <img alt="Package manager" src="https://img.shields.io/badge/pnpm-10.23.0-f69220?style=flat-square&logo=pnpm&logoColor=white">
@@ -378,7 +378,7 @@ App workspace scripts:
 | [Construct Cloud architecture](docs/construct-cloud-architecture.md) | Cloud account and routing architecture direction. |
 | [AI usage gateway](docs/ai-usage-gateway.md) | AI usage gateway notes. |
 | [Opaline UI workflow](docs/opaline-ui-workflow.md) | Shared UI package workflow. |
-| [Release notes](docs/releases/0.5.0.md) | Recent release context. |
+| [Release notes](docs/releases/0.6.1.md) | Recent release context. |
 
 ## Contributing
 
