@@ -26,7 +26,9 @@
 
 ---
 
-![Construct desktop app](app/assets/construct-app.png)
+<p align="center">
+  <img src="docs/assets/construct-screenshots/ide-package-json.png" alt="Construct IDE showing package.json, project files, learning path, and guided task">
+</p>
 
 ## Overview
 
@@ -45,6 +47,41 @@ The current marketing frame is:
 > It researches the project, models what you already know, teaches
 > Socratically, and unlocks implementation only when the work can become your
 > own skill.
+
+## Product Screenshots
+
+These images are copied from the landing-page asset set so the README can render
+the same product story directly on GitHub.
+
+### Project Launcher
+
+Start from a project idea and turn curiosity into a learning run.
+
+![Construct project launcher](docs/assets/construct-screenshots/project-launcher.webp)
+
+### Agent Path
+
+Follow the agent-guided path from research to practice.
+
+![Construct agent path](docs/assets/construct-screenshots/agent-path.webp)
+
+### IDE Learning Flow
+
+Work inside the IDE while concepts, code, and tasks stay connected.
+
+![Construct IDE learning flow](docs/assets/construct-screenshots/ide-package-json.png)
+
+### Concept Graph
+
+Use the concept graph to see what is being taught and proven.
+
+![Construct concept graph](docs/assets/construct-screenshots/concept-graph-detail.png)
+
+### Projects List
+
+Keep multiple learning projects visible as durable workspaces.
+
+![Construct projects list](docs/assets/construct-screenshots/projects-list.webp)
 
 ## Why It Exists
 
