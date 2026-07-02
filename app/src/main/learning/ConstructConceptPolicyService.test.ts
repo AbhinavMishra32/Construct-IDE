@@ -440,9 +440,12 @@ describe("ConstructConceptPolicyService", () => {
         },
         observability: {
           enabled: false,
-          phoenixEndpoint: "",
-          phoenixApiKey: "",
-          phoenixProjectName: "",
+          langfuseBaseUrl: "",
+          langfusePublicKey: "",
+          langfuseSecretKey: "",
+          langfuseProjectName: "",
+          langfuseEnvironment: "",
+          capturePayloads: true,
           batch: true
         }
       })
