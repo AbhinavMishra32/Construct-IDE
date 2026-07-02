@@ -12,7 +12,7 @@ export class ConstructWindowManager {
   }) {}
 
   createWindow(): BrowserWindow {
-    const iconPath = path.join(this.options.bundleDir, "..", "assets", "icon.png");
+    const iconPath = this.resolveIconPath();
     const isMac = process.platform === "darwin";
 
     const window = new BrowserWindow({
@@ -90,5 +90,14 @@ export class ConstructWindowManager {
 
     void window.loadFile(path.join(this.options.bundleDir, "renderer", "index.html"));
     return window;
+  }
+
+  private resolveIconPath(): string {
+    const candidates = [
+      path.join(this.options.bundleDir, "..", "assets", "runtime-icon.png"),
+      path.join(this.options.bundleDir, "..", "build", "icons", "icon.png"),
+      path.join(this.options.bundleDir, "..", "assets", "icon.png")
+    ];
+    return candidates.find((candidate) => existsSync(candidate)) ?? candidates[candidates.length - 1];
   }
 }

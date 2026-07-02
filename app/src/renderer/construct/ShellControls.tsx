@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { GearSix, Notebook } from "@phosphor-icons/react";
 import { BookOpenIcon, PanelBottomIcon, PanelRightIcon } from "lucide-react";
-import { Button, Spinner } from "@opaline/ui";
+import { Button, Spinner, SidebarNavItemRow } from "@opaline/ui";
 
 
 export function HeaderGuidePanelIcon({ open }: { open: boolean }) {
@@ -14,34 +14,40 @@ export function HeaderBottomPanelIcon({ open }: { open: boolean }) {
 
 export function SidebarLearningButton({ onClick }: { onClick: () => void }) {
   return (
-    <Button data-construct-control="sidebar" className="construct-sidebar-row" onClick={onClick} variant="ghost">
-      <span className="grid size-[18px] shrink-0 place-items-center" data-icon="inline-start" aria-hidden="true">
-        <Notebook className="size-[15px]" />
-      </span>
-      <span data-sidebar-row-label>Context</span>
-    </Button>
+    <SidebarNavItemRow
+      onClick={onClick}
+      item={{
+        id: "learning-context",
+        label: "Context",
+        icon: <Notebook className="size-[15px]" />
+      }}
+    />
   );
 }
 
 export function SidebarConceptsButton({ onClick }: { onClick: () => void }) {
   return (
-    <Button data-construct-control="sidebar" className="construct-sidebar-row" onClick={onClick} variant="ghost">
-      <span className="grid size-[18px] shrink-0 place-items-center" data-icon="inline-start" aria-hidden="true">
-        <BookOpenIcon className="size-[15px]" />
-      </span>
-      <span data-sidebar-row-label>Concepts</span>
-    </Button>
+    <SidebarNavItemRow
+      onClick={onClick}
+      item={{
+        id: "concepts",
+        label: "Concepts",
+        icon: <BookOpenIcon className="size-[15px]" />
+      }}
+    />
   );
 }
 
 export function SidebarSettingsButton({ onClick }: { onClick: () => void }) {
   return (
-    <Button data-construct-control="sidebar" className="construct-sidebar-row" onClick={onClick} variant="ghost">
-      <span className="grid size-[18px] shrink-0 place-items-center" data-icon="inline-start" aria-hidden="true">
-        <GearSix className="size-[15px]" />
-      </span>
-      <span data-sidebar-row-label>Settings</span>
-    </Button>
+    <SidebarNavItemRow
+      onClick={onClick}
+      item={{
+        id: "settings",
+        label: "Settings",
+        icon: <GearSix className="size-[15px]" />
+      }}
+    />
   );
 }
 
