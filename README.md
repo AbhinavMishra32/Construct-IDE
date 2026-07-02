@@ -143,7 +143,7 @@ flowchart LR
 | Practice tasks | Task cards with baseline capture, learner submission, diff review, and mastery updates. | `app/src/renderer/construct/components/FlowWorkspace.tsx`, `docs/construct-flow-path-tasks-concepts-brief.md` |
 | Workspace tools | File reads, search, terminal, focus-code, edits, and project snapshots. | `app/src/main/agent-tools`, `app/src/main/projects`, `app/src/main/terminal` |
 | AI provider routing | Provider-agnostic model settings and per-feature routing. | `app/src/main/config`, `app/src/main/constructAiFeatures.ts` |
-| Observability | Phoenix/OpenInference-style tracing hooks and local logs. | `app/src/main/observability`, `app/src/renderer/construct/components/LogsPanel.tsx` |
+| Observability | Langfuse/OpenTelemetry tracing hooks and local logs. | `app/src/main/observability`, `app/src/renderer/construct/components/LogsPanel.tsx` |
 | Website | Lightweight marketing site in the monorepo. | `website/` |
 
 ## Architecture
@@ -310,7 +310,7 @@ Construct is designed around local project state:
 - Flow memory is stored in the workspace as markdown;
 - project, learner, concept, and task state are persisted locally;
 - outbound calls are the model/provider endpoints the user configures;
-- Phoenix/OpenInference tracing is optional and settings-controlled.
+- Langfuse/OpenTelemetry tracing is optional and settings-controlled.
 
 This README does not claim that the app is audited, hardened, or production
 certified. Treat the privacy model as an architectural direction implemented by

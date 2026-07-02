@@ -14,7 +14,7 @@ Turn Construct from a large prototype-shaped Electron app into a maintainable sy
 - Keep `opaline` as a nested repo and package Opaline changes before Construct depends on them.
 - Prefer explicit services, typed contracts, and small IPC handlers over broad utility bags.
 - Log and trace agent calls with useful request/progress/result payloads.
-- Do not put OpenTelemetry, OpenInference, or Phoenix complexity inside `fxpnt` yet.
+- Do not put OpenTelemetry or Langfuse complexity inside `fxpnt` yet.
 - Do not use Vercel AI SDK, LangChain, or Mastra inside `fxpnt`.
 
 ## Current Hotspots
@@ -74,8 +74,8 @@ Turn Construct from a large prototype-shaped Electron app into a maintainable sy
 - Stateful infrastructure is class-based: `ConstructLspService`, `ConstructTerminalService`, `ProcessInspector`, `ConstructWindowManager`, `MainProcessLogBridge`, `LegacyProjectDataMigrator`.
 - Project domain is no longer defined in the Electron entrypoint; project shape lives in `ConstructProjectTypes`, persistence in `ConstructProjectRepository`, workspace operations in `ConstructProjectWorkspaceService`, and git operations in `ConstructProjectGitService`.
 - Construct Interact moved into `ConstructInteractService`, which owns timeout/recovery, agent-selected tool wiring, tape `0.4.1` live-step gating, `0.4.2` provenance/resource behavior, live-step validation, concept engagement, learning-state writes, and structured agent logging.
-- Agent IPC no longer owns agent behavior. It delegates to dedicated AI services, and those services inherit from `ConstructLoggedAgentService` so OpenTelemetry/OpenInference hooks can land at the service/runtime layer instead of being sprinkled across handlers.
-- Construct-side observability is centralized in `ConstructObservabilityService`, which uses `@arizeai/phoenix-otel` when enabled in Construct config. Phoenix/OpenInference setup stays in Construct; `fxpnt` remains a low-level runtime without tracing complexity.
+- Agent IPC no longer owns agent behavior. It delegates to dedicated AI services, and those services inherit from `ConstructLoggedAgentService` so Langfuse/OpenTelemetry hooks can land at the service/runtime layer instead of being sprinkled across handlers.
+- Construct-side observability is centralized in `ConstructObservabilityService`, which uses Langfuse/OpenTelemetry when enabled in Construct config. Langfuse setup stays in Construct; `fxpnt` remains a low-level runtime without tracing complexity.
 - IPC registration is split by subsystem: LSP, terminal, system/dialogs, settings, learning, project/workspace, and agent commands.
 - Renderer workspace splitting started: `FileChooserContent` and `LiveStepPanel` moved out of `Workspace.tsx` into `components/workspace/*`, shared file icon rendering moved with the chooser module, and Construct Interact progress-log buffering moved into `useInteractProgressLogBuffer`.
 - Workspace pure logic is no longer buried below the component: `workspacePaths`, `workspaceTree`, `workspaceKnowledge`, `gitMilestoneState`, `editGuidance`, and `verificationLogSeed` own focused helper domains.
