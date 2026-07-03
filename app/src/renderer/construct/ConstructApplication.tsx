@@ -384,6 +384,18 @@ function configuredConstructCloudEndpoint(): string {
   return endpointFromRuntimeInfo(window.construct?.getRuntimeInfo?.());
 }
 
+function useRuntimePlatformAttribute() {
+  useEffect(() => {
+    const platform = window.construct?.getRuntimeInfo?.().platform;
+    if (!platform) return;
+
+    document.documentElement.dataset.constructPlatform = platform;
+    return () => {
+      delete document.documentElement.dataset.constructPlatform;
+    };
+  }, []);
+}
+
 export default function ConstructApp() {
   const history = useShellHistory<ConstructHistoryEntry>([
     { id: "dashboard", title: "Home", type: "dashboard" }
@@ -451,6 +463,8 @@ export default function ConstructApp() {
     sidebarWidth
   ]);
   const projectShellUiStateRef = useRef(projectShellUiState);
+
+  useRuntimePlatformAttribute();
 
   useEffect(() => {
     projectShellUiStateRef.current = projectShellUiState;
@@ -1561,7 +1575,7 @@ export default function ConstructApp() {
         <div className="flex h-screen flex-col overflow-hidden bg-transparent">
         <div className="flex-1 min-h-0 relative">
           <AppShell
-            className="h-full"
+            className="h-full construct-app-window"
           key={activeProject?.id ?? "dashboard"}
           history={history}
           defaultBottomPanelOpen={Boolean(activeProject && !settingsSurface && !knowledgeBaseOpen && !learningContextOpen)}
