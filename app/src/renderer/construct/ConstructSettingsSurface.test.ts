@@ -4,13 +4,13 @@ import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 
 describe("Construct project advanced settings", () => {
-  it("edits and validates the real project tape through a dedicated API", () => {
+  it("edits and validates the legacy project tape through a dedicated API", () => {
     const source = readFileSync(fileURLToPath(new URL("./ConstructSettingsSurface.tsx", import.meta.url)), "utf8");
     const preload = readFileSync(fileURLToPath(new URL("../../preload/index.ts", import.meta.url)), "utf8");
     const controller = readFileSync(fileURLToPath(new URL("../../main/ipc/ConstructProjectIpcController.ts", import.meta.url)), "utf8");
 
     assert.match(source, /id: "project-advanced"/);
-    assert.match(source, /Edit project tape/);
+    assert.match(source, /Edit legacy project tape/);
     assert.match(source, /validateConstructSource\(tapeSource\)/);
     assert.match(source, /updateProjectTape\(/);
     assert.match(source, /Save and reload tape/);
@@ -52,6 +52,7 @@ describe("Construct project advanced settings", () => {
     assert.match(app, /function ConstructSplashScreen\(\)/);
     assert.match(app, /role="status" aria-label="Loading Construct"/);
     assert.match(app, /<ConstructAuthLogo className="mb-1" markClassName="construct-auth-logo__mark--hero" \/>/);
+    assert.match(app, /Construct Cloud is not reachable/);
     assert.match(app, /<ConstructAuthLogo markClassName="construct-auth-logo__mark--sidebar" \/>/);
     assert.match(app, /max-w-\[calc\(100vw-3rem\)\] flex-col gap-7 px-8/);
     assert.match(app, /className="construct-auth-card w-full"/);

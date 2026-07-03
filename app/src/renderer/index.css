@@ -163,6 +163,11 @@ body {
   width: 1.5rem;
 }
 
+.construct-auth-logo__mark--agent-empty {
+  width: 2.625rem;
+  opacity: 0.62;
+}
+
 .construct-auth-logo__wordmark {
   font-size: 0.9375rem;
   font-weight: 700;
@@ -1041,6 +1046,18 @@ button {
   .construct-flow-session [data-component="agent-session-timeline"] {
     padding-left: 0.75rem !important;
     padding-right: 0.75rem !important;
+  }
+
+  .construct-flow-session [data-component="agent-session-timeline"]:has(.construct-flow-empty-state) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+  }
+
+  .construct-flow-session [data-component="agent-session-timeline"]:has(.construct-flow-empty-state) > div {
+    min-height: 0;
   }
 
   .construct-flow-session [data-slot="session-turn-content"] {

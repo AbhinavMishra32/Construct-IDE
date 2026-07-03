@@ -43,7 +43,7 @@ type SelectedConstructFile = {
 };
 
 const initialStages: ValidationStage[] = [
-  { id: "read", title: "Reading project tape", detail: "Waiting for a .construct source file.", status: "pending" },
+  { id: "read", title: "Reading legacy project tape", detail: "Waiting for a .construct source file.", status: "pending" },
   { id: "tree", title: "Building block tree", detail: "Fence-aware lexer and tolerant parser.", status: "pending" },
   { id: "grammar", title: "Checking grammar", detail: "Canonical rules for the declared tape spec.", status: "pending" },
   { id: "repair", title: "Applying safe repairs", detail: "Only deterministic source transforms are automatic.", status: "pending" },
@@ -251,19 +251,19 @@ export function NewProjectDialog({ open, onOpenChange, onProjectCreated }: {
         <ShadcnDialogHeader className="shrink-0">
           <span className="mb-1 flex size-8 items-center justify-center rounded-[8px] bg-muted text-muted-foreground"><ProjectorScreenChart size={18} weight="duotone" /></span>
           <div>
-            <ShadcnDialogTitle>{selectedFile ? "Create project" : flowMode ? "New Flow project" : "New project"}</ShadcnDialogTitle>
-            <ShadcnDialogDescription>{selectedFile ? "Construct checks and safely repairs the tape before opening it." : flowMode ? "Set the project intent and startup controls." : "Create a Flow workspace or import a .construct tape."}</ShadcnDialogDescription>
+            <ShadcnDialogTitle>{selectedFile ? "Create legacy tape project" : flowMode ? "New Construct project" : "New project"}</ShadcnDialogTitle>
+            <ShadcnDialogDescription>{selectedFile ? "Construct checks and safely repairs the legacy tape before opening it." : flowMode ? "Set the project intent and startup controls." : "Create a Construct project or import a legacy .construct tape."}</ShadcnDialogDescription>
           </div>
         </ShadcnDialogHeader>
         <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto py-1 pr-1">
           {!selectedFile && !flowMode ? (
             <div className="grid gap-3 sm:grid-cols-2">
               <Card className="cursor-pointer bg-card/70 shadow-none transition-colors hover:bg-muted/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40" size="sm" role="button" tabIndex={busy ? -1 : 0} onClick={() => { if (!busy) setFlowMode(true); }} onKeyDown={(event) => { if (!busy && (event.key === "Enter" || event.key === " ")) setFlowMode(true); }}>
-                <CardHeader><span><MagicWand size={18} weight="duotone" /></span><CardTitle>Construct Flow</CardTitle><CardDescription>Natural coding mentor workspace with Flow Memory, tool calls, and practice tasks.</CardDescription></CardHeader>
-                <CardContent><span className="text-xs font-medium text-primary">Create Flow project</span></CardContent>
+                <CardHeader><span><MagicWand size={18} weight="duotone" /></span><CardTitle>Construct</CardTitle><CardDescription>Natural coding mentor workspace with project memory, tool calls, and practice tasks.</CardDescription></CardHeader>
+                <CardContent><span className="text-xs font-medium text-primary">Create Construct project</span></CardContent>
               </Card>
               <Card className="cursor-pointer bg-card/70 shadow-none transition-colors hover:bg-muted/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40" size="sm" role="button" tabIndex={busy ? -1 : 0} onClick={() => { if (!busy) void chooseConstructFile(); }} onKeyDown={(event) => { if (!busy && (event.key === "Enter" || event.key === " ")) void chooseConstructFile(); }}>
-                <CardHeader><span><FilePlus size={18} weight="duotone" /></span><CardTitle>Open .construct file</CardTitle><CardDescription>Read, repair, preview patches, and validate before opening.</CardDescription></CardHeader>
+                <CardHeader><span><FilePlus size={18} weight="duotone" /></span><CardTitle>Open legacy .construct tape</CardTitle><CardDescription>Read, repair, preview patches, and validate before opening.</CardDescription></CardHeader>
                 <CardContent><span className="text-xs font-medium text-primary">Choose file</span></CardContent>
               </Card>
             </div>
@@ -292,7 +292,7 @@ export function NewProjectDialog({ open, onOpenChange, onProjectCreated }: {
                 <div className="flex items-center justify-between gap-4 rounded-[8px] border bg-card/70 p-4">
                   <div className="min-w-0">
                     <h3 className="truncate text-sm font-semibold">Research</h3>
-                    <p className="text-xs text-muted-foreground">Let Flow research the project before the mentor starts.</p>
+                    <p className="text-xs text-muted-foreground">Let Construct research the project before the mentor starts.</p>
                   </div>
                   <Switch checked={flowResearchFirst} onCheckedChange={setFlowResearchFirst} />
                 </div>
@@ -316,7 +316,7 @@ export function NewProjectDialog({ open, onOpenChange, onProjectCreated }: {
               ) : null}
             </div>
           ) : selectedFile && rawEditing ? (
-            <div className="flex min-h-[420px] flex-col overflow-hidden rounded-[8px] border"><header className="flex items-start justify-between gap-4 border-b p-3"><div><strong className="block text-sm font-medium">Raw tape editor</strong><span className="text-xs text-muted-foreground">Advanced mode - edits are recompiled before the project can open.</span></div><code className="max-w-64 truncate rounded-full bg-muted px-2 py-1 font-mono text-[10px]">{selectedFile.path}</code></header><textarea className="min-h-0 flex-1 resize-none bg-background p-4 font-mono text-xs outline-none" spellCheck={false} value={rawSource} onChange={(event) => setRawSource(event.target.value)} /><footer className="flex justify-end gap-2 border-t p-3"><Button variant="secondary" onClick={() => setRawEditing(false)}>Cancel</Button><Button onClick={applyRawSource}>Revalidate source</Button></footer></div>
+            <div className="flex min-h-[420px] flex-col overflow-hidden rounded-[8px] border"><header className="flex items-start justify-between gap-4 border-b p-3"><div><strong className="block text-sm font-medium">Raw legacy tape editor</strong><span className="text-xs text-muted-foreground">Advanced mode - edits are recompiled before the project can open.</span></div><code className="max-w-64 truncate rounded-full bg-muted px-2 py-1 font-mono text-[10px]">{selectedFile.path}</code></header><textarea className="min-h-0 flex-1 resize-none bg-background p-4 font-mono text-xs outline-none" spellCheck={false} value={rawSource} onChange={(event) => setRawSource(event.target.value)} /><footer className="flex justify-end gap-2 border-t p-3"><Button variant="secondary" onClick={() => setRawEditing(false)}>Cancel</Button><Button onClick={applyRawSource}>Revalidate source</Button></footer></div>
           ) : selectedFile ? (
             <>
               <div className="flex items-center gap-3 rounded-[8px] border bg-muted/25 p-3"><span className="flex size-8 shrink-0 items-center justify-center rounded-[8px] bg-background"><FilePlus size={16} /></span><div className="min-w-0 flex-1"><strong className="block truncate text-sm font-medium">{selectedFile.program?.title ?? fileNameStem(selectedFile.path)}</strong><small className="block truncate text-xs text-muted-foreground">{selectedFile.path}</small></div><code className="rounded-full bg-background px-2 py-1 font-mono text-[10px]">{selectedFile.validation.document.spec}</code></div>
@@ -331,7 +331,7 @@ export function NewProjectDialog({ open, onOpenChange, onProjectCreated }: {
         <ShadcnDialogFooter className="shrink-0">
           <Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
           {flowMode ? (
-            <Button disabled={!flowGoal.trim() || busy} onClick={() => void createFlow()}>{busy ? "Creating Flow..." : "Start Flow"}</Button>
+            <Button disabled={!flowGoal.trim() || busy} onClick={() => void createFlow()}>{busy ? "Creating Construct..." : "Start Construct"}</Button>
           ) : null}
           {selectedFile && !rawEditing ? <Button disabled={!selectedFile.validation.valid || !selectedFile.program || !workspacePath.trim() || busy} onClick={() => void createProject()}>{busy ? "Creating project..." : "Start project"}</Button> : null}
         </ShadcnDialogFooter>
@@ -343,12 +343,12 @@ export function NewProjectDialog({ open, onOpenChange, onProjectCreated }: {
 function finalizeStages(result: ConstructValidationResult): ValidationStage[] {
   const errorCount = result.diagnostics.filter((item) => item.severity === "error").length;
   return [
-    { id: "read", title: "Reading project tape", detail: `${result.document.tokens.length} lexical tokens found.`, status: "completed" },
+    { id: "read", title: "Reading legacy project tape", detail: `${result.document.tokens.length} lexical tokens found.`, status: "completed" },
     { id: "tree", title: "Building block tree", detail: `${result.document.root.children.length} top-level blocks recovered.`, status: "completed" },
     { id: "grammar", title: "Checking grammar", detail: errorCount > 0 ? `${errorCount} structural error${errorCount === 1 ? "" : "s"} remain.` : `${result.document.spec} grammar accepted.`, status: errorCount > 0 ? "error" : "completed" },
     { id: "repair", title: "Applying safe repairs", detail: result.appliedFixes.length > 0 ? `${result.appliedFixes.length} deterministic repair${result.appliedFixes.length === 1 ? "" : "s"} applied.` : "No automatic changes needed.", status: "completed" },
     { id: "suggest", title: "Preparing suggestions", detail: result.suggestions.length > 0 ? `${result.suggestions.length} patch${result.suggestions.length === 1 ? "" : "es"} need review.` : "No ambiguous compiler patches remain.", status: result.suggestions.length > 0 ? "warning" : "completed" },
-    { id: "final", title: "Final validation", detail: result.valid ? "Runtime parser accepted the repaired tape." : "Resolve compiler errors or edit the source manually.", status: result.valid ? "completed" : "error" }
+    { id: "final", title: "Final validation", detail: result.valid ? "Runtime parser accepted the repaired legacy tape." : "Resolve compiler errors or edit the source manually.", status: result.valid ? "completed" : "error" }
   ];
 }
 
@@ -357,21 +357,21 @@ function updateStage(stages: ValidationStage[], id: string, status: ValidationSt
 }
 
 function flowCreationLabel(stage: "idle" | "memory" | "opening"): string {
-  if (stage === "opening") return "Finishing Flow project";
-  return "Creating Flow project";
+  if (stage === "opening") return "Finishing Construct project";
+  return "Creating Construct project";
 }
 
 function flowCreationEntries(stage: "idle" | "memory" | "opening"): AgentActivityEntry[] {
   return [
     {
       id: "memory",
-      title: "Create Flow Memory",
+      title: "Create project memory",
       detail: "Ensuring research.md, project.md, path.md, and learner.md.",
       status: stage === "memory" ? "active" : "complete"
     },
     {
       id: "opening",
-      title: "Finish Flow project",
+      title: "Finish Construct project",
       detail: "Preparing the natural mentor workspace.",
       status: stage === "opening" ? "active" : "pending"
     }

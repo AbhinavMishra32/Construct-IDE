@@ -258,13 +258,9 @@ function AuthGateContent({
     };
 
     return (
-      <div className="flex h-screen w-screen items-center justify-center bg-background text-foreground font-sans">
-        <div className="w-[420px] p-8 rounded-2xl border bg-card/45 backdrop-blur-lg shadow-2xl flex flex-col gap-5 text-center items-center">
-          <div className="size-12 rounded-xl bg-destructive/15 flex items-center justify-center text-destructive">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="size-6">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
-            </svg>
-          </div>
+      <div className="flex h-screen w-screen items-center justify-center bg-background px-6 text-foreground font-sans">
+        <div className="construct-auth-card flex w-full max-w-[420px] flex-col items-center gap-5 rounded-[14px] border border-border/70 bg-card/88 p-8 text-center shadow-[0_18px_44px_color-mix(in_srgb,var(--foreground)_8%,transparent)] backdrop-blur-xl dark:shadow-none">
+          <ConstructAuthLogo className="mb-1" markClassName="construct-auth-logo__mark--hero" />
           <h2 className="text-xl font-bold tracking-tight">Construct Cloud is not reachable</h2>
           <p className="text-xs text-muted-foreground max-w-[320px]">
             Construct could not reach your account service. Check your connection, retry, or sign out and use another account.
@@ -2616,7 +2612,7 @@ function ConstructProjectTitleMenu({
             <>
               <ShadcnDropdownMenuItem onClick={onOpenRightPanel}>
                 <PanelRightIcon size={14} />
-                {isFlow ? "Open Flow agent" : "Open guide panel"}
+                {isFlow ? "Open Construct agent" : "Open legacy guide panel"}
               </ShadcnDropdownMenuItem>
               <ShadcnDropdownMenuItem onClick={onOpenTerminal}>
                 <TerminalSquareIcon size={14} />

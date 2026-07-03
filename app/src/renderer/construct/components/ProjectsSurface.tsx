@@ -68,7 +68,7 @@ export function ProjectsSurface({
               const isExpanded = expandedId === project.id;
               const concepts = project.learnedConcepts ?? [];
               const conceptCount = concepts.length || project.conceptCount || 0;
-              const kind = project.kind === "flow" ? "Flow" : "Tape";
+              const kind = project.kind === "flow" ? "Construct" : "Legacy tape";
 
               return (
                 <div

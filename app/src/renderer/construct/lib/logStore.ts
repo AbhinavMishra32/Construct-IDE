@@ -25,10 +25,10 @@ export const PROVIDER_CHANNELS: Array<{ id: ProviderLogChannel; label: string; d
 
 export const AGENT_CHANNELS: Array<{ id: AgentLogChannel; label: string; description: string }> = [
   { id: "verifier", label: "Verifier", description: "Recall block verification" },
-  { id: "authoring-review", label: "Authoring Review", description: "Tape authoring review" },
+  { id: "authoring-review", label: "Authoring Review", description: "Legacy tape authoring review" },
   { id: "selection-explain", label: "Selection Explain", description: "Text selection explanation" },
   { id: "interact", label: "Interact", description: "Interactive Q&A" },
-  { id: "flow", label: "Flow", description: "Flow agent sessions" },
+  { id: "flow", label: "Construct Agent", description: "Construct agent sessions" },
   { id: "code-ghost", label: "Code Ghost", description: "Code ghost completions" },
   { id: "tools", label: "Tools", description: "Tool calls input and output logs" }
 ];

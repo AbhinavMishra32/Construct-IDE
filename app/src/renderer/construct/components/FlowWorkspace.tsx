@@ -64,6 +64,7 @@ import {
 import { KnowledgeCard } from "./KnowledgeCard";
 import { ConceptSummaryCard } from "./ConceptSummaryCard";
 import { iconForFile } from "./workspace/FileChooserContent";
+import { ConstructAuthLogo } from "../../components/auth/construct-auth-logo";
 import type { InlineFileRef } from "../lib/inlineRefs";
 import { Badge } from "../../components/ui/badge";
 import {
@@ -1491,7 +1492,7 @@ function FlowAgentPanel({
           <AgentSessionSurface
             className="construct-flow-session min-h-0 flex-1 bg-transparent"
             messages={messages}
-            emptyState={<div className="flex flex-col items-center gap-2 text-center"><BotIcon size={18} /><span>Ask Flow what to build or learn next.</span></div>}
+            emptyState={<div className="construct-flow-empty-state flex flex-col items-center gap-3 text-center"><ConstructAuthLogo markClassName="construct-auth-logo__mark--agent-empty" /><span>Ask the Construct agent what to build or learn next.</span></div>}
             scrollKey={`${messages.length}:${liveSession?.updatedAt ?? "idle"}`}
             timelineScrollTop={chatScrollTop}
             onTimelineScroll={(state) => {
@@ -1528,7 +1529,7 @@ function FlowAgentPanel({
                     onSubmit={submitComposer}
                     pending={pending}
                     submitLabel="Send"
-                    placeholder={activeTask ? `Message Flow about: ${activeTask.title}` : "Ask for follow-up changes"}
+                    placeholder={activeTask ? `Message the Construct agent about: ${activeTask.title}` : "Ask for follow-up changes"}
                     header={
                       chatMode === "panel" && activeComposerItem ? (
                         <ActiveComposerItemIndicator
@@ -1764,7 +1765,7 @@ function FlowModelDropdown({
             variant="secondary"
             type="button"
             disabled={disabled}
-            title="Select Flow model"
+            title="Select Construct agent model"
           >
             <span className="flex min-w-0 items-center gap-1.5">
               <ModelBrandMark brand={activeBrand} />
@@ -1996,7 +1997,7 @@ function FlowProjectDataPanel({
             <FlowPathOutline nodes={pathNodes} currentNodeId={currentPathNode?.id ?? project.flow.currentPathNodeId ?? undefined} />
           ) : (
             <div className="border border-dashed p-4 text-center text-xs text-muted-foreground">
-              Flow will build the learning path after learner profiling.
+              Construct will build the learning path after learner profiling.
             </div>
           )}
         </section>
@@ -2604,11 +2605,11 @@ function FlowTaskCard({
           <TaskConceptChips conceptIds={introducedConceptIds} onOpenConcept={onOpenConcept} concepts={concepts} compact />
         ) : null}
 
-        {/* Section 7: Prepared by Flow */}
+        {/* Section 7: Prepared by Construct */}
         {task.preparedFiles?.length && !compact ? (
           <details className="group border-t pt-4 border-border/60">
             <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 [&::-webkit-details-marker]:hidden">
-              Prepared by Flow
+              Prepared by Construct
               <ChevronDownIcon size={13} className="transition-transform group-open:rotate-180" />
             </summary>
             <div className="mt-2.5 flex flex-wrap gap-1.5">
@@ -2626,7 +2627,7 @@ function FlowTaskCard({
               <Textarea
                 className="min-h-16 resize-y text-sm rounded-xl border-border/75 bg-card/65"
                 value={note}
-                placeholder="Optional note for Flow before submitting..."
+                placeholder="Optional note for the Construct agent before submitting..."
                 onChange={(event) => setNote(event.target.value)}
               />
             ) : null}
@@ -5326,7 +5327,7 @@ function FlowMemoryUpdateCard({
   const [selectedFile, setSelectedFile] = useState(results[0]?.file ?? "research.md");
   const [inlineDiff, setInlineDiff] = useState(true);
   const selected = results.find((result) => result.file === selectedFile) ?? results[0];
-  const fileLabel = results.length ? results.map((result) => result.file).join(", ") : "Flow Memory";
+  const fileLabel = results.length ? results.map((result) => result.file).join(", ") : "Project Memory";
   const openSelectedFile = () => {
     if (selected) {
       onOpenFile(createInlineFileReference(flowMemoryFilePath(selected.file), selected.file));
@@ -5366,9 +5367,9 @@ function FlowMemoryUpdateCard({
           <ShadcnDialogHeader className="shrink-0 border-b px-4 py-3">
             <div className="flex min-w-0 items-center justify-between gap-3 pr-7">
               <div className="min-w-0">
-                <ShadcnDialogTitle>Flow Memory diff</ShadcnDialogTitle>
+                <ShadcnDialogTitle>Project Memory diff</ShadcnDialogTitle>
                 <ShadcnDialogDescription className="mt-1 truncate font-mono text-xs">
-                  {selected?.path ?? "Changed Flow Memory file"}
+                  {selected?.path ?? "Changed project memory file"}
                 </ShadcnDialogDescription>
               </div>
               {selected ? (
@@ -5556,7 +5557,7 @@ function readPatchReason(input: unknown, file: string): string {
   const match = patches.find((patch): patch is { file: string; reason?: string } => (
     typeof patch === "object" && patch !== null && (patch as { file?: unknown }).file === file
   ));
-  return match?.reason ?? "Flow Memory changed.";
+  return match?.reason ?? "Project Memory changed.";
 }
 
 function parseJsonValue(value: string | undefined): unknown {

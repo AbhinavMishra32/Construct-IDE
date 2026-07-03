@@ -1150,14 +1150,14 @@ export function ConstructSettingsSurface({
         ) : null}
 
         {activeItemId === "project-flow-memory" && isFlowProject ? (
-          <SettingsSection title="Flow Memory">
+          <SettingsSection title="Project Memory">
             <SettingsCard>
               <SettingsRow
                 title="Memory directory"
-                description=".construct keeps Flow's durable context readable, editable, and source-control friendly."
+                description=".construct keeps Construct's durable context readable, editable, and source-control friendly."
               />
               {flowMemoryBusy && !flowMemoryLoaded ? (
-                <SettingsRow title="Loading memory" description="Reading the current Flow memory files." />
+                <SettingsRow title="Loading memory" description="Reading the current project memory files." />
               ) : null}
               {flowMemoryFiles.map((file) => {
                 const entry = flowMemory.find((item) => item.file === file);
@@ -1202,25 +1202,25 @@ export function ConstructSettingsSurface({
           <SettingsSection title="Advanced">
             <SettingsCard>
               <SettingsRow
-                title="Tape source"
+                title="Legacy tape source"
                 description={project.sourcePath ?? "Managed inside this Construct project"}
                 control={
                   <Button size="small" variant="secondary" onClick={() => void openTapeEditor()}>
                     <FileCode size={14} weight="duotone" style={{ marginRight: 4 }} />
-                    Edit tape
+                    Edit legacy tape
                   </Button>
                 }
               />
               <SettingsRow
                 title="What saving changes"
-                description="Validates the tape, reloads the active project structure, updates the managed tape artifact, and writes the imported .construct file when present. Existing workspace edits are preserved."
+                description="Validates the legacy tape, reloads the active project structure, updates the managed tape artifact, and writes the imported .construct file when present. Existing workspace edits are preserved."
               />
             </SettingsCard>
           </SettingsSection>
         ) : null}
 
         {error ? <Alert variant="destructive"><AlertTitle>Project settings error</AlertTitle><AlertDescription>{error}</AlertDescription></Alert> : null}
-        {flowMemoryError ? <Alert variant="destructive"><AlertTitle>Flow memory error</AlertTitle><AlertDescription>{flowMemoryError}</AlertDescription></Alert> : null}
+        {flowMemoryError ? <Alert variant="destructive"><AlertTitle>Project memory error</AlertTitle><AlertDescription>{flowMemoryError}</AlertDescription></Alert> : null}
         {deleteError ? <Alert variant="destructive"><AlertTitle>Could not delete project</AlertTitle><AlertDescription>{deleteError}</AlertDescription></Alert> : null}
 
         <ShadcnDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
@@ -1292,16 +1292,16 @@ export function ConstructSettingsSurface({
           <ShadcnDialogContent className="flex max-h-[88vh] flex-col sm:max-w-4xl">
             <ShadcnDialogHeader>
               <div className="mb-1 flex size-9 items-center justify-center rounded-md bg-muted text-foreground"><FileCode size={20} weight="duotone" /></div>
-              <ShadcnDialogTitle>Edit project tape</ShadcnDialogTitle>
-              <ShadcnDialogDescription>{tapeSourcePath ?? "Managed project tape"}</ShadcnDialogDescription>
+              <ShadcnDialogTitle>Edit legacy project tape</ShadcnDialogTitle>
+              <ShadcnDialogDescription>{tapeSourcePath ?? "Managed legacy project tape"}</ShadcnDialogDescription>
             </ShadcnDialogHeader>
 
             <div className="min-h-0 flex-1 space-y-3 overflow-y-auto py-2">
               {tapeBusy && !tapeLoaded ? (
-                <div className="animate-pulse rounded-md border bg-muted/25 p-4 text-sm text-muted-foreground">Loading tape source...</div>
+                <div className="animate-pulse rounded-md border bg-muted/25 p-4 text-sm text-muted-foreground">Loading legacy tape source...</div>
               ) : (
                 <Textarea
-                  aria-label="Project tape source"
+                  aria-label="Legacy project tape source"
                   className="min-h-[26rem] resize-y font-mono text-xs leading-5"
                   value={tapeSource}
                   onChange={(event) => {
@@ -1315,16 +1315,16 @@ export function ConstructSettingsSurface({
               {tapeLoaded && tapeValidation ? (
                 tapeValidation.valid ? (
                   <Alert>
-                    <AlertTitle>Valid tape</AlertTitle>
+                    <AlertTitle>Valid legacy tape</AlertTitle>
                     <AlertDescription>
                       {tapeValidation.appliedFixes.length > 0
                         ? `${tapeValidation.appliedFixes.length} safe repair${tapeValidation.appliedFixes.length === 1 ? "" : "s"} will be applied when saved.`
-                        : "The tape is ready to save."}
+                        : "The legacy tape is ready to save."}
                     </AlertDescription>
                   </Alert>
                 ) : (
                   <Alert variant="destructive">
-                    <AlertTitle>{tapeErrors.length} tape error{tapeErrors.length === 1 ? "" : "s"}</AlertTitle>
+                    <AlertTitle>{tapeErrors.length} legacy tape error{tapeErrors.length === 1 ? "" : "s"}</AlertTitle>
                     <AlertDescription>
                       <ul className="list-disc space-y-1 pl-5">
                         {tapeErrors.slice(0, 6).map((diagnostic) => (
@@ -1428,7 +1428,7 @@ export function buildSettingsSections(projects: ProjectSummary[], projectId?: st
           ? [
               {
                 id: "project-flow-memory",
-                label: "Flow Memory",
+                label: "Project Memory",
                 icon: <FileCode size={18} weight="duotone" />
               }
             ]

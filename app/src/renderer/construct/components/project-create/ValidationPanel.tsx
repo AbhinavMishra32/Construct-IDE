@@ -42,12 +42,12 @@ export function ValidationPanel({
     status: stage.status === "completed" ? "complete" : stage.status,
   }));
   const activityLabel = activeStage
-    ? "Checking project tape"
+    ? "Checking legacy project tape"
     : result.valid
       ? result.appliedFixes.length > 0
-        ? `Checked project tape · ${result.appliedFixes.length} safe repair${result.appliedFixes.length === 1 ? "" : "s"}`
-        : "Checked project tape"
-      : "Project tape needs attention";
+        ? `Checked legacy project tape · ${result.appliedFixes.length} safe repair${result.appliedFixes.length === 1 ? "" : "s"}`
+        : "Checked legacy project tape"
+      : "Legacy project tape needs attention";
 
   return (
     <div className="space-y-3">

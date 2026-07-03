@@ -268,7 +268,7 @@ export function ConstructAiSettingsSection({
               <ToggleTile
                 checked={settings.flowSourceGroundingEnabled !== false}
                 icon={<NetworkIcon size={15} />}
-                title="Flow research"
+                title="Construct research"
                 onChange={(checked) => onFlowSourceGroundingEnabledChange?.(checked)}
               />
             </div>

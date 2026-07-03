@@ -267,11 +267,11 @@ export function runConstructInteract(input: Parameters<ConstructProjectsApi["run
 }
 
 export function runConstructFlowAgent(input: Parameters<ConstructProjectsApi["runConstructFlowAgent"]>[0]) {
-  return trackPromise("flow-agent", "Running Flow agent", api().runConstructFlowAgent(input));
+  return trackPromise("construct-agent", "Running Construct agent", api().runConstructFlowAgent(input));
 }
 
 export function runConstructFlowResearch(input: Parameters<ConstructProjectsApi["runConstructFlowResearch"]>[0]) {
-  return trackPromise("flow-research", "Running Flow research", api().runConstructFlowResearch(input));
+  return trackPromise("construct-research", "Running Construct research", api().runConstructFlowResearch(input));
 }
 
 export function readFlowMemory(input: Parameters<ConstructProjectsApi["readFlowMemory"]>[0]) {

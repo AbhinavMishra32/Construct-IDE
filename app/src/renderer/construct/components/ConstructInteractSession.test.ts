@@ -113,7 +113,7 @@ describe("Construct Interact Codex-style UI", () => {
     assert.match(flow, /technology: readString\(conceptObj\.technology\) \?\? readString\(inputObj\.technology\) \?\? readString\(outputObj\.technology\)/);
     assert.match(flow, /<ConceptSummaryCard[\s\S]*variant="chat"/);
     assert.match(flow, /taskMessage: \{ taskId: activeTask\.id, pathNodeId: activeTask\.pathNodeId \}/);
-    assert.match(flow, /placeholder=\{activeTask \? `Message Flow about: \$\{activeTask\.title\}`/);
+    assert.match(flow, /placeholder=\{activeTask \? `Message the Construct agent about: \$\{activeTask\.title\}`/);
     assert.match(flow, /<ActiveComposerItemIndicator\s+activeItem=\{activeComposerItem\}/);
     assert.match(flow, /onOpenFile=\{onOpenFile\}/);
     assert.match(flow, /function FlowFileChip/);

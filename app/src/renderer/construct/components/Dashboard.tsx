@@ -176,7 +176,7 @@ export function Dashboard({
                 onValueChange={setPrompt}
                 pending={creating}
                 placeholder="Build a local-first drawing app that teaches canvas architecture as we go..."
-                submitLabel="Create Flow project"
+                submitLabel="Create Construct project"
                 value={prompt}
               />
             </div>
