@@ -494,7 +494,7 @@ button {
 
   html[data-construct-platform="win32"] .construct-app-window {
     --construct-win-titlebar-reserve: 150px;
-    --construct-win-window-radius: 12px;
+    --construct-win-window-radius: 16px;
     width: 100% !important;
     height: 100% !important;
     margin: 0;
