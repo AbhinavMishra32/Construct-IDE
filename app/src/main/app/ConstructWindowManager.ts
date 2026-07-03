@@ -21,9 +21,9 @@ export class ConstructWindowManager {
       height: 780,
       minWidth: 860,
       minHeight: 560,
-      backgroundColor: isWindows ? "#101010" : "#00000000",
-      backgroundMaterial: isWindows ? "mica" : undefined,
-      transparent: !isWindows,
+      backgroundColor: "#00000000",
+      backgroundMaterial: isWindows ? "acrylic" : undefined,
+      transparent: true,
       vibrancy: isMac ? "sidebar" : undefined,
       visualEffectState: isMac ? "active" : undefined,
       trafficLightPosition: { x: 16, y: 17 },
@@ -31,7 +31,7 @@ export class ConstructWindowManager {
       titleBarStyle: isMac ? "hiddenInset" : isWindows ? "hidden" : "default",
       titleBarOverlay: isWindows
         ? {
-            color: "#171717",
+            color: "#00000000",
             symbolColor: "#f5f5f5",
             height: 30
           }
@@ -49,7 +49,7 @@ export class ConstructWindowManager {
 
     if (isWindows) {
       try {
-        window.setBackgroundMaterial("mica");
+        window.setBackgroundMaterial("acrylic");
       } catch (err) {
         console.warn("Failed to set Windows background material:", err);
       }
