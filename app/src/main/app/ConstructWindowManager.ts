@@ -23,11 +23,14 @@ export class ConstructWindowManager {
       minHeight: 560,
       backgroundColor: "#00000000",
       backgroundMaterial: isWindows ? "acrylic" : undefined,
-      transparent: !isWindows,
+      frame: isWindows ? false : undefined,
+      hasShadow: true,
+      roundedCorners: true,
+      thickFrame: isWindows ? true : undefined,
+      transparent: true,
       vibrancy: isMac ? "sidebar" : undefined,
       visualEffectState: isMac ? "active" : undefined,
       trafficLightPosition: { x: 16, y: 17 },
-      roundedCorners: true,
       titleBarStyle: isMac ? "hiddenInset" : isWindows ? "hidden" : "default",
       titleBarOverlay: isWindows
         ? {
