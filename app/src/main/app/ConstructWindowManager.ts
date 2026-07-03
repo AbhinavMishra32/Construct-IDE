@@ -14,19 +14,28 @@ export class ConstructWindowManager {
   createWindow(): BrowserWindow {
     const iconPath = this.resolveIconPath();
     const isMac = process.platform === "darwin";
+    const isWindows = process.platform === "win32";
 
     const window = new BrowserWindow({
       width: 1180,
       height: 780,
       minWidth: 860,
       minHeight: 560,
-      backgroundColor: "#00000000",
-      transparent: true,
+      backgroundColor: isWindows ? "#101010" : "#00000000",
+      backgroundMaterial: isWindows ? "mica" : undefined,
+      transparent: !isWindows,
       vibrancy: isMac ? "sidebar" : undefined,
       visualEffectState: isMac ? "active" : undefined,
       trafficLightPosition: { x: 16, y: 17 },
       roundedCorners: true,
-      titleBarStyle: isMac ? "hiddenInset" : "default",
+      titleBarStyle: isMac ? "hiddenInset" : isWindows ? "hidden" : "default",
+      titleBarOverlay: isWindows
+        ? {
+            color: "#171717",
+            symbolColor: "#f5f5f5",
+            height: 30
+          }
+        : undefined,
       title: "Construct",
       icon: iconPath,
       webPreferences: {
@@ -37,6 +46,14 @@ export class ConstructWindowManager {
       },
       show: false
     });
+
+    if (isWindows) {
+      try {
+        window.setBackgroundMaterial("mica");
+      } catch (err) {
+        console.warn("Failed to set Windows background material:", err);
+      }
+    }
 
     if (process.platform === "darwin" && app.dock && existsSync(iconPath)) {
       try {
