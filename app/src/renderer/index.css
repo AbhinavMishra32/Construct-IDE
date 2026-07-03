@@ -494,14 +494,17 @@ button {
 
   html[data-construct-platform="win32"] .construct-app-window {
     --construct-win-titlebar-reserve: 150px;
+    --construct-win-window-radius: 12px;
     width: 100% !important;
     height: 100% !important;
     margin: 0;
     overflow: hidden;
     border: 0;
-    border-radius: 0;
+    border-radius: var(--construct-win-window-radius);
     background: color-mix(in srgb, var(--background) 62%, transparent);
-    box-shadow: none;
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--foreground) 8%, transparent) inset,
+      0 1px 0 color-mix(in srgb, var(--foreground) 7%, transparent) inset;
   }
 
   html[data-construct-platform="win32"] body,
@@ -510,16 +513,21 @@ button {
   }
 
   html[data-construct-platform="win32"] .construct-app-window > .opaline-v2-sidebar-pane {
+    border-top-left-radius: var(--construct-win-window-radius);
+    border-bottom-left-radius: var(--construct-win-window-radius);
     background: color-mix(in srgb, var(--sidebar) 46%, transparent) !important;
     -webkit-backdrop-filter: blur(34px) saturate(1.8);
     backdrop-filter: blur(34px) saturate(1.8);
   }
 
   html[data-construct-platform="win32"] .construct-app-window > section {
+    border-top-right-radius: var(--construct-win-window-radius);
+    border-bottom-right-radius: var(--construct-win-window-radius);
     background: color-mix(in srgb, var(--background) 58%, transparent) !important;
   }
 
   html[data-construct-platform="win32"] .construct-app-window > section > header {
+    border-top-right-radius: var(--construct-win-window-radius);
     -webkit-app-region: drag;
     app-region: drag;
     min-height: 30px;

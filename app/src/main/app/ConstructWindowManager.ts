@@ -52,6 +52,7 @@ export class ConstructWindowManager {
 
     if (isWindows) {
       try {
+        window.setBackgroundColor("#00000000");
         window.setBackgroundMaterial("acrylic");
       } catch (err) {
         console.warn("Failed to set Windows background material:", err);
