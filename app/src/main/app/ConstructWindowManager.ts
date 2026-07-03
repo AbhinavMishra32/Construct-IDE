@@ -23,7 +23,7 @@ export class ConstructWindowManager {
       minHeight: 560,
       backgroundColor: "#00000000",
       backgroundMaterial: isWindows ? "acrylic" : undefined,
-      transparent: true,
+      transparent: !isWindows,
       vibrancy: isMac ? "sidebar" : undefined,
       visualEffectState: isMac ? "active" : undefined,
       trafficLightPosition: { x: 16, y: 17 },
