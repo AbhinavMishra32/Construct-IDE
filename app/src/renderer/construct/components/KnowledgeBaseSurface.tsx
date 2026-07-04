@@ -565,23 +565,19 @@ export function KnowledgeGraphPanel({
   const selectedPulseRef = useRef(0);
   const approachDirectionRef = useRef<1 | -1>(1);
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
-  const [graphReady, setGraphReady] = useState(false);
   const graphData = useMemo(() => buildKnowledgeGraph(records), [records]);
   const recordByKey = useMemo(() => new Map(records.map((record) => [recordKey(record), record])), [records]);
   const hoveredRecord = hoveredKey ? recordByKey.get(hoveredKey) : undefined;
   const hoveredConnections = hoveredRecord ? graphRecordConnections(hoveredRecord, records) : [];
-  const graphWidth = size.width || Math.max(360, containerRef.current?.clientWidth ?? 540);
-  const graphHeight = size.height || Math.max(420, containerRef.current?.clientHeight ?? 560);
+  const graphWidth = size.width;
+  const graphHeight = size.height;
+  const graphCanMount = graphWidth > 0 && graphHeight > 0;
   const clearGraphSelection = () => {
     cameraFlightCancelRef.current?.();
     cameraFlightCancelRef.current = null;
     setHoveredKey(null);
     onClearSelection();
   };
-
-  useEffect(() => {
-    setGraphReady(false);
-  }, [graphData]);
 
   useEffect(() => {
     const graph = graphRef.current as (ForceGraphMethods & {
@@ -688,50 +684,49 @@ export function KnowledgeGraphPanel({
 
   return (
     <div ref={containerRef} className="relative h-full min-h-0 overflow-hidden bg-background">
-      <ForceGraph3D
-        ref={graphRef}
-        graphData={graphData}
-        width={graphWidth}
-        height={graphHeight}
-        backgroundColor="rgba(0,0,0,0)"
-        showNavInfo={false}
-        nodeId="id"
-        nodeLabel={(node) => graphNodeLabel(node as KnowledgeGraphNode)}
-        nodeColor={(node) => graphNodeColor(node as KnowledgeGraphNode, selectedKey)}
-        nodeVal={(node) => graphNodeValue(node as KnowledgeGraphNode, selectedKey, selectedPulseRef.current)}
-        nodeResolution={18}
-        nodeRelSize={4.8}
-        linkSource="source"
-        linkTarget="target"
-        linkLabel="label"
-        linkColor={(link) => graphLinkColor(link as KnowledgeGraphLink, selectedKey)}
-        linkOpacity={0.46}
-        linkWidth={(link) => graphLinkWidth(link as KnowledgeGraphLink, selectedKey)}
-        linkDirectionalParticles={(link) => graphLinkParticles(link as KnowledgeGraphLink, selectedKey)}
-        linkDirectionalParticleWidth={(link) => graphLinkParticleWidth(link as KnowledgeGraphLink, selectedKey)}
-        linkDirectionalParticleColor={(link) => graphLinkColor(link as KnowledgeGraphLink, selectedKey)}
-        cooldownTicks={160}
-        cooldownTime={15000}
-        warmupTicks={70}
-        d3AlphaDecay={0.016}
-        d3VelocityDecay={0.24}
-        enableNodeDrag
-        enableNavigationControls
-        onEngineTick={() => setGraphReady(true)}
-        onEngineStop={() => setGraphReady(true)}
-        onNodeClick={(node) => {
-          const key = typeof node.recordKey === "string" ? node.recordKey : null;
-          const record = key ? recordByKey.get(key) : undefined;
-          if (record) onSelectRecord(record);
-        }}
-        onNodeHover={(node) => {
-          const key = node && typeof node.recordKey === "string" ? node.recordKey : null;
-          setHoveredKey(key);
-        }}
-        onLinkClick={clearGraphSelection}
-        onBackgroundClick={clearGraphSelection}
-      />
-      {graphReady && size.width > 0 && size.height > 0 ? null : <GraphLoadingState />}
+      {graphCanMount ? (
+        <ForceGraph3D
+          ref={graphRef}
+          graphData={graphData}
+          width={graphWidth}
+          height={graphHeight}
+          backgroundColor="rgba(0,0,0,0)"
+          showNavInfo={false}
+          nodeId="id"
+          nodeLabel={(node) => graphNodeLabel(node as KnowledgeGraphNode)}
+          nodeColor={(node) => graphNodeColor(node as KnowledgeGraphNode, selectedKey)}
+          nodeVal={(node) => graphNodeValue(node as KnowledgeGraphNode, selectedKey, selectedPulseRef.current)}
+          nodeResolution={18}
+          nodeRelSize={4.8}
+          linkSource="source"
+          linkTarget="target"
+          linkLabel="label"
+          linkColor={(link) => graphLinkColor(link as KnowledgeGraphLink, selectedKey)}
+          linkOpacity={0.46}
+          linkWidth={(link) => graphLinkWidth(link as KnowledgeGraphLink, selectedKey)}
+          linkDirectionalParticles={(link) => graphLinkParticles(link as KnowledgeGraphLink, selectedKey)}
+          linkDirectionalParticleWidth={(link) => graphLinkParticleWidth(link as KnowledgeGraphLink, selectedKey)}
+          linkDirectionalParticleColor={(link) => graphLinkColor(link as KnowledgeGraphLink, selectedKey)}
+          cooldownTicks={160}
+          cooldownTime={15000}
+          warmupTicks={70}
+          d3AlphaDecay={0.016}
+          d3VelocityDecay={0.24}
+          enableNodeDrag
+          enableNavigationControls
+          onNodeClick={(node) => {
+            const key = typeof node.recordKey === "string" ? node.recordKey : null;
+            const record = key ? recordByKey.get(key) : undefined;
+            if (record) onSelectRecord(record);
+          }}
+          onNodeHover={(node) => {
+            const key = node && typeof node.recordKey === "string" ? node.recordKey : null;
+            setHoveredKey(key);
+          }}
+          onLinkClick={clearGraphSelection}
+          onBackgroundClick={clearGraphSelection}
+        />
+      ) : <GraphLoadingState />}
 
       {hoveredRecord ? (
         <aside className="pointer-events-none absolute right-3 top-3 flex w-[min(22rem,calc(100%-1.5rem))] flex-col gap-2 rounded-[8px] border bg-background/92 px-3 py-2.5 text-sm shadow-sm backdrop-blur">

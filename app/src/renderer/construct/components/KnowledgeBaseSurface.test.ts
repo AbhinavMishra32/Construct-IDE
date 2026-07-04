@@ -42,11 +42,13 @@ test("Concepts surface renders saved concepts as an expandable tree", () => {
   assert.match(source, /startGraphResize/);
   assert.match(source, /Resize knowledge web/);
   assert.match(source, /graphRef/);
-  assert.match(source, /graphReady/);
+  assert.match(source, /graphCanMount/);
   assert.match(source, /ConstructAuthLogo/);
   assert.match(source, /construct-auth-logo__mark--knowledge-web-loading/);
-  assert.match(source, /const graphWidth = size\.width \|\| Math\.max\(360, containerRef\.current\?\.clientWidth \?\? 540\)/);
-  assert.match(source, /const graphHeight = size\.height \|\| Math\.max\(420, containerRef\.current\?\.clientHeight \?\? 560\)/);
+  assert.match(source, /const graphWidth = size\.width/);
+  assert.match(source, /const graphHeight = size\.height/);
+  assert.match(source, /const graphCanMount = graphWidth > 0 && graphHeight > 0/);
+  assert.match(source, /graphCanMount \? \(/);
   assert.match(source, /width=\{graphWidth\}/);
   assert.match(source, /height=\{graphHeight\}/);
   assert.match(source, /import ForceGraph3D, \{ type ForceGraphMethods/);
@@ -75,8 +77,9 @@ test("Concepts surface renders saved concepts as an expandable tree", () => {
   assert.match(source, /normalizeGraphCameraAngle/);
   assert.match(source, /graphCameraFocusFrame/);
   assert.match(source, /cameraPosition/);
-  assert.match(source, /onEngineTick=\{\(\) => setGraphReady\(true\)\}/);
-  assert.match(source, /onEngineStop=\{\(\) => setGraphReady\(true\)\}/);
+  assert.doesNotMatch(source, /setGraphReady/);
+  assert.doesNotMatch(source, /onEngineTick=\{\(\) => setGraphReady\(true\)\}/);
+  assert.doesNotMatch(source, /onEngineStop=\{\(\) => setGraphReady\(true\)\}/);
   assert.match(source, /requestAnimationFrame/);
   assert.match(source, /selectedPulse/);
   assert.match(source, /graphNodeColor/);
