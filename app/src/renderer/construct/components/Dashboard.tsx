@@ -104,6 +104,32 @@ export function Dashboard({
     }
   }, [aiSettings]);
 
+  const updateFlowModel = useCallback(async (model: string) => {
+    if (!aiSettings) return;
+    const key = aiSettings.source === "construct-cloud"
+      ? "constructCloudModel"
+      : aiSettings.provider === "openrouter"
+      ? "openRouterModel"
+      : aiSettings.provider === "opencode-zen"
+      ? "opencodeZenModel"
+      : aiSettings.provider === "github-copilot"
+      ? "githubCopilotModel"
+      : aiSettings.provider === "litellm"
+      ? "liteLlmModel"
+      : "openAiModel";
+
+    const optimistic = { ...aiSettings, [key]: model };
+    setAiSettings(optimistic);
+    setModelsError(null);
+    try {
+      const settings = await updateAiSettings({ ai: { [key]: model } });
+      setAiSettings(settings.ai);
+    } catch (error) {
+      setModelsError(error instanceof Error ? error.message : String(error));
+      void getSettings().then((settings) => setAiSettings(settings.ai));
+    }
+  }, [aiSettings]);
+
   const headline = useMemo(() => {
     const randomIndex = Math.floor(Math.random() * HEADLINES.length);
     return HEADLINES[randomIndex];
@@ -150,6 +176,7 @@ export function Dashboard({
                     modelsBusy={modelsBusy}
                     modelsError={modelsError}
                     reasoningEffort={aiSettings?.reasoningEffort ?? "auto"}
+                    onModelChange={updateFlowModel}
                     onReasoningEffortChange={updateReasoningEffort}
                   />
                 }

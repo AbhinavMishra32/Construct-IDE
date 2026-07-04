@@ -1382,6 +1382,22 @@ function FlowAgentPanel({
     }
   }, [aiSettings]);
 
+  const updateFlowModel = useCallback(async (model: string) => {
+    if (!aiSettings) return;
+    const key = modelSettingsKeyForProvider(aiSettings.source === "construct-cloud" ? "construct-cloud" : aiSettings.provider);
+    const optimistic = { ...aiSettings, [key]: model };
+    setAiSettings(optimistic);
+    setModelsError(null);
+    try {
+      const settings = await updateAiSettings({ ai: { [key]: model } });
+      setAiSettings(settings.ai);
+    } catch (error) {
+      setModelsError(error instanceof Error ? error.message : String(error));
+      const settings = await getSettings();
+      setAiSettings(settings.ai);
+    }
+  }, [aiSettings]);
+
   useEffect(() => {
     setDraft("");
   }, [activeQuestion?.id]);
@@ -1543,6 +1559,7 @@ function FlowAgentPanel({
                         modelsBusy={modelsBusy}
                         modelsError={modelsError}
                         reasoningEffort={aiSettings?.reasoningEffort ?? "auto"}
+                        onModelChange={updateFlowModel}
                         onReasoningEffortChange={updateReasoningEffort}
                       />
                     }
@@ -1657,14 +1674,14 @@ function FlowReasoningEffortDropdown({
         <TooltipTrigger asChild>
           <DropdownMenuTrigger asChild>
             <Button
-                className="h-6 gap-1 rounded-full px-2 text-[11px]"
+                className="h-6 gap-1 rounded-full px-1.5 text-[10.5px]"
                 size="sm"
                 variant="secondary"
                 type="button"
                 disabled={disabled}
                 title="Thinking effort"
               >
-                <BrainCircuitIcon size={13} />
+                <BrainCircuitIcon size={12} />
                 <span className="hidden sm:inline">{active.short}</span>
             </Button>
           </DropdownMenuTrigger>
@@ -1745,7 +1762,7 @@ function FlowModelDropdown({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
-            className="h-6 min-w-0 max-w-[12rem] justify-between gap-1.5 rounded-full px-2 text-[11px]"
+            className="h-6 min-w-0 max-w-[10.5rem] justify-between gap-1 rounded-full px-1.5 text-[10.5px]"
             size="sm"
             variant="secondary"
             type="button"
@@ -1756,7 +1773,7 @@ function FlowModelDropdown({
               <ModelBrandMark brand={activeBrand} />
               <span className="truncate">{activeModel?.name || readableModelName(value) || "Select model"}</span>
             </span>
-            <ChevronDownIcon size={13} className="shrink-0 text-muted-foreground" />
+            <ChevronDownIcon size={12} className="shrink-0 text-muted-foreground" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
@@ -1888,10 +1905,10 @@ function FlowContextMeter({ contextWindow }: { contextWindow?: ConstructAgentCon
     <Tooltip>
       <TooltipTrigger asChild>
         <span
-          className="inline-flex h-6 shrink-0 items-center gap-1 rounded-full bg-muted/45 px-1.5 text-[11px] text-muted-foreground ring-1 ring-border/25"
+          className="inline-flex h-6 shrink-0 items-center gap-1 rounded-full bg-muted/45 px-1.5 text-[10.5px] text-muted-foreground ring-1 ring-border/25"
           title="Context window"
         >
-          <GaugeIcon size={13} />
+          <GaugeIcon size={12} />
           <span className="tabular-nums">{percent == null ? "--" : `${percent}%`}</span>
         </span>
       </TooltipTrigger>
@@ -5826,6 +5843,15 @@ function providerLabel(provider: AiSettings["provider"] | "construct-cloud"): st
   return "OpenAI";
 }
 
+function modelSettingsKeyForProvider(provider: AiSettings["provider"] | "construct-cloud"): "openAiModel" | "openRouterModel" | "opencodeZenModel" | "githubCopilotModel" | "liteLlmModel" | "constructCloudModel" {
+  if (provider === "construct-cloud") return "constructCloudModel";
+  if (provider === "openrouter") return "openRouterModel";
+  if (provider === "opencode-zen") return "opencodeZenModel";
+  if (provider === "github-copilot") return "githubCopilotModel";
+  if (provider === "litellm") return "liteLlmModel";
+  return "openAiModel";
+}
+
 const modelBrandOrder: ModelBrandKey[] = [
   "openai",
   "anthropic",
@@ -6095,6 +6121,7 @@ export function FlowComposerRightControls({
   modelsBusy,
   modelsError,
   reasoningEffort,
+  onModelChange,
   onReasoningEffortChange
 }: {
   contextWindow?: ConstructAgentContextWindow;
@@ -6104,6 +6131,7 @@ export function FlowComposerRightControls({
   modelsBusy: boolean;
   modelsError: string | null;
   reasoningEffort: AiSettings["reasoningEffort"];
+  onModelChange: (model: string) => void;
   onReasoningEffortChange: (effort: AiSettings["reasoningEffort"]) => void;
 }) {
   const activeModel = models.find((m) => m.id === model) ?? null;
@@ -6185,10 +6213,9 @@ export function FlowComposerRightControls({
                             <DropdownMenuItem
                               key={m.id}
                               className="flex items-center justify-between gap-2 rounded-[7px] text-xs"
-                              disabled
+                              onSelect={() => onModelChange(m.id)}
                             >
                               <span className="truncate">{m.name || readableModelName(m.id)}</span>
-                              {m.id === m.id ? null : null /* dummy to keep structure */}
                               {m.id === model ? <CheckIcon size={13} className="text-foreground shrink-0" /> : null}
                             </DropdownMenuItem>
                           ))}

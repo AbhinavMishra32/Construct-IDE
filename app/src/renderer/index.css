@@ -764,7 +764,7 @@ button {
     min-height: 3.25rem !important;
     max-height: 7rem !important;
     padding: 0.75rem 1.25rem 0.25rem !important;
-    font-size: 14px !important;
+    font-size: 12.5px !important;
     line-height: 1.5 !important;
     background: transparent !important;
   }
@@ -784,7 +784,7 @@ button {
   }
 
   .construct-flow-composer.is-panel textarea {
-    font-size: 13px !important;
+    font-size: 12px !important;
     padding-left: 1rem !important;
     padding-right: 1rem !important;
     padding-top: 0.6rem !important;
@@ -1061,6 +1061,7 @@ button {
   [data-component="agent-session-timeline"] [data-slot="user-message-text"],
   .construct-flow-session [data-slot="text-part-body"],
   .construct-flow-session [data-slot="user-message-text"] {
+    font-size: 12.5px !important;
     line-height: 1.55;
   }
 
@@ -1074,6 +1075,7 @@ button {
   [data-component="agent-session-timeline"] textarea,
   .construct-flow-session textarea,
   .opaline-agent-session-compose textarea {
+    font-size: 12.5px !important;
     line-height: 1.5 !important;
   }
 
@@ -1132,12 +1134,12 @@ button {
   .construct-flow-session [data-slot="text-part-meta"],
   .construct-flow-session table,
   .construct-flow-session .construct-concept-summary-card strong {
-    font-size: 13px !important;
+    font-size: 11.5px !important;
   }
 
   .construct-flow-session .construct-concept-summary-card *[class*="text-[10px]"],
   .construct-flow-session .construct-concept-summary-card *[class*="text-xs"] {
-    font-size: 11px !important;
+    font-size: 10.5px !important;
   }
 
   .construct-flow-session [data-component="text-part"],

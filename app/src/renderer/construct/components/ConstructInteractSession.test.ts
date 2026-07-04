@@ -71,6 +71,7 @@ describe("Construct Interact Codex-style UI", () => {
   it("keeps Flow projects inside the same file-tab shell without a sidebar knowledge block", () => {
     const flow = readFileSync(fileURLToPath(new URL("./FlowWorkspace.tsx", import.meta.url)), "utf8");
     const app = readFileSync(fileURLToPath(new URL("../ConstructApplication.tsx", import.meta.url)), "utf8");
+    const dashboard = readFileSync(fileURLToPath(new URL("./Dashboard.tsx", import.meta.url)), "utf8");
     const slotPanel = readFileSync(fileURLToPath(new URL("../../../../../opaline/packages/ui/src/slot-panel/SlotPanel.tsx", import.meta.url)), "utf8");
 
     assert.match(flow, /createDocumentSession\(project\.activeFilePath\)/);
@@ -82,6 +83,7 @@ describe("Construct Interact Codex-style UI", () => {
     assert.match(flow, /collectFlowConcepts/);
     assert.match(app, /onKnowledgePanelChange=\{setSidebarKnowledgePanel\}/);
     assert.match(app, /sidebarKnowledgePanel && !isFlowProjectRecord\(activeProject\)/);
+    assert.match(dashboard, /onModelChange=\{updateFlowModel\}/);
     assert.match(slotPanel, /rounded-\[8px\]/);
     assert.match(slotPanel, /data-\[state=active\]:bg-muted/);
     assert.doesNotMatch(slotPanel, /after:bg-primary/);
@@ -165,6 +167,7 @@ describe("Construct Interact Codex-style UI", () => {
     assert.match(flow, /<FlowComposerControls/);
     assert.match(flow, /FlowContextMeter/);
     assert.match(flow, /FlowModelDropdown/);
+    assert.match(flow, /onModelChange=\{updateFlowModel\}/);
     assert.match(flow, /modelOptionsForActiveAgent/);
     assert.doesNotMatch(flow, /"construct-flow": model/);
     assert.match(flow, /collectAnsweredQuestionKeys/);
@@ -183,6 +186,8 @@ describe("Construct Interact Codex-style UI", () => {
     assert.match(flow, /return parts\.sort\(compareTimelineParts\)/);
     assert.match(flow, /type: "activity"/);
     assert.match(flow, /onOpenFile: \(path\) => onOpenFile\(createInlineFileReference\(path\)\)/);
+    assert.match(flow, /onSelect=\{\(\) => onModelChange\(m\.id\)\}/);
+    assert.doesNotMatch(flow, /brandModels\.map\(\(m\) => \([\s\S]{0,240}DropdownMenuItem[\s\S]{0,120}disabled/);
     assert.match(flow, /findActiveFlowQuestion\(mergedSessions\)/);
     assert.match(flow, /<FlowQuestionComposer/);
     assert.match(flow, /questionResponse/);
