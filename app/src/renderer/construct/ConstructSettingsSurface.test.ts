@@ -118,10 +118,13 @@ describe("Construct project advanced settings", () => {
     assert.match(source, /onSourceChange=\{updateAiSource\}/);
     assert.match(source, /onConstructCloudAccessTokenChange=\{\(constructCloudAccessToken: string\) => setAiSettingsDraft/);
     assert.match(aiSection, /Model Source/);
-    assert.match(aiSection, /Search models/);
-    assert.match(aiSection, /readOnly=\{usesConstructCloud\}/);
+    assert.match(aiSection, /Construct Cloud models load automatically after the Cloud source is selected/);
+    assert.match(aiSection, /function ModelSelectionControl/);
+    assert.match(aiSection, /readOnlyCatalog=\{usesConstructCloud\}/);
     assert.match(aiSection, /constructCloudModelAvailable/);
     assert.match(aiSection, /ConstructCloudAccountPanel/);
+    assert.doesNotMatch(aiSection, /ProviderModelPicker/);
+    assert.doesNotMatch(aiSection, /Search models/);
     assert.match(source, /allowConstructCloudEndpointEditing=\{false\}/);
     assert.match(aiSection, /allowEndpointEditing=\{allowConstructCloudEndpointEditing\}/);
     assert.match(cloudPanel, /allowEndpointEditing = false/);

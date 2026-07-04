@@ -2,7 +2,7 @@ import path from "node:path";
 import os from "node:os";
 import { mkdir, readFile } from "node:fs/promises";
 
-import type { IpcMain } from "electron";
+import { app, shell, type IpcMain } from "electron";
 
 import { featureSettingsView } from "../constructAiFeatures";
 import { fetchProviderModels } from "../config/modelCatalog";
@@ -27,6 +27,12 @@ export class ConstructSettingsIpcController {
 
     ipcMain.handle("construct:settings:get", async () => {
       return this.options.readSettings();
+    });
+
+    ipcMain.handle("construct:settings:open-config-file", async () => {
+      const configPath = path.join(app.getPath("userData"), "construct.config.json");
+      await shell.showItemInFolder(configPath);
+      return configPath;
     });
 
     ipcMain.handle("construct:settings:set-workspace-root", async (_event, input) => {

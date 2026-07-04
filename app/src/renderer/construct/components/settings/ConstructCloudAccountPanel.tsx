@@ -22,6 +22,7 @@ type ConstructCloudAccountPanelProps = {
   allowEndpointEditing?: boolean;
   onBaseUrlChange: (baseUrl: string) => void;
   onAccessTokenChange: (accessToken: string) => void;
+  onUsageLoaded?: (usage: any) => void;
 };
 
 type CloudUsageWindow = {
@@ -57,7 +58,8 @@ export function ConstructCloudAccountPanel({
   disabled,
   allowEndpointEditing = false,
   onBaseUrlChange,
-  onAccessTokenChange
+  onAccessTokenChange,
+  onUsageLoaded
 }: ConstructCloudAccountPanelProps) {
   const normalizedBaseUrl = normalizeCloudBaseUrl(baseUrl);
   const authClient = useMemo(() => createAuthClient({
@@ -113,12 +115,13 @@ export function ConstructCloudAccountPanel({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className={allowEndpointEditing ? "grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]" : "grid gap-2"}>
+      <div className={allowEndpointEditing ? "grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] mt-1" : "grid gap-3 mt-1"}>
         {allowEndpointEditing ? (
           <Input
             value={baseUrl}
             disabled={disabled}
             placeholder={configuredConstructCloudEndpoint()}
+            className="bg-background border-border hover:border-border/80 focus-visible:ring-2 focus-visible:ring-ring/30 text-foreground placeholder-muted-foreground/60 rounded-lg text-xs h-[34px] px-3 py-2 w-full transition-all"
             onChange={(event) => onBaseUrlChange(event.target.value)}
           />
         ) : null}
@@ -127,6 +130,7 @@ export function ConstructCloudAccountPanel({
           value={accessToken}
           disabled={disabled}
           placeholder="cct_..."
+          className="bg-background border-border hover:border-border/80 focus-visible:ring-2 focus-visible:ring-ring/30 text-foreground placeholder-muted-foreground/60 rounded-lg text-xs h-[34px] px-3 py-2 w-full transition-all"
           onChange={(event) => onAccessTokenChange(event.target.value)}
         />
       </div>
@@ -147,6 +151,7 @@ export function ConstructCloudAccountPanel({
             disabled={disabled}
             authClient={authClient}
             onAccessTokenChange={onAccessTokenChange}
+            onUsageLoaded={onUsageLoaded}
           />
         </div>
       </AuthProvider>
@@ -159,13 +164,15 @@ function ConstructCloudTokenPanel({
   accessToken,
   disabled,
   authClient,
-  onAccessTokenChange
+  onAccessTokenChange,
+  onUsageLoaded
 }: {
   baseUrl: string;
   accessToken: string;
   disabled?: boolean;
   authClient: ReturnType<typeof createAuthClient>;
   onAccessTokenChange: (accessToken: string) => void;
+  onUsageLoaded?: (usage: any) => void;
 }) {
   const { data: session, isPending, refetch } = useSession(authClient);
   const [busy, setBusy] = useState(false);
@@ -175,6 +182,7 @@ function ConstructCloudTokenPanel({
   useEffect(() => {
     if (!session) {
       setUsage(null);
+      onUsageLoaded?.(null);
       return;
     }
 
@@ -194,7 +202,10 @@ function ConstructCloudTokenPanel({
         return await response.json() as CloudUsageResponse;
       })
       .then((payload) => {
-        if (!cancelled) setUsage(payload.usage ?? null);
+        if (!cancelled) {
+          setUsage(payload.usage ?? null);
+          onUsageLoaded?.(payload.usage ?? null);
+        }
       })
       .catch((error) => {
         if (!cancelled) setStatus(error instanceof Error ? error.message : String(error));
@@ -203,7 +214,7 @@ function ConstructCloudTokenPanel({
     return () => {
       cancelled = true;
     };
-  }, [baseUrl, session]);
+  }, [baseUrl, session, onUsageLoaded]);
 
   async function mintToken() {
     try {
@@ -239,30 +250,35 @@ function ConstructCloudTokenPanel({
   const user = session?.user;
 
   return (
-    <div className="flex min-w-0 flex-col gap-3 rounded-lg border bg-background p-3">
+    <div className="flex min-w-0 flex-col gap-4 rounded-lg border border-border bg-background/40 p-4">
       <div>
-        <div className="text-sm font-medium">
-          {user ? (user.email ?? user.name ?? "Signed in") : isPending ? "Checking account" : "No Construct account"}
+        <div className="text-[13px] font-semibold text-foreground">
+          {user ? (user.email ?? user.name ?? "Signed in") : isPending ? "Checking account..." : "No Construct account"}
         </div>
-        <div className="mt-1 text-xs text-muted-foreground">
-          {usage ? `${usage.plan.toUpperCase()} plan` : accessToken ? "Construct Cloud token is present." : "Sign in to mint a Construct Cloud token."}
+        <div className="mt-1 text-xs text-muted-foreground font-normal">
+          {usage ? `${usage.plan.toUpperCase()} plan` : accessToken ? "Construct Cloud token is configured." : "Sign in to mint a Construct Cloud token."}
         </div>
       </div>
 
-      {usage ? (
-        <div className="grid gap-2 text-xs text-muted-foreground">
-          <UsageMeter label="5 hour" window={usage.windows.five_hour_all} />
-          <UsageMeter label="Weekly" window={usage.windows.weekly_all} />
-          {usage.windows.weekly_expensive ? <UsageMeter label="Expensive models" window={usage.windows.weekly_expensive} /> : null}
-        </div>
-      ) : null}
+
 
       <div className="flex flex-wrap items-center gap-2">
-        <Button size="small" disabled={disabled || busy || !user} onClick={() => void mintToken()}>
+        <Button
+          size="small"
+          disabled={disabled || busy || !user}
+          className="bg-primary hover:bg-primary/90 text-primary-foreground disabled:bg-muted disabled:text-muted-foreground font-medium text-xs px-3.5 py-1.5 h-[34px] rounded-lg transition-colors cursor-pointer border-none"
+          onClick={() => void mintToken()}
+        >
           {busy ? "Minting..." : "Mint hosted token"}
         </Button>
         {accessToken ? (
-          <Button size="small" variant="secondary" disabled={disabled} onClick={() => onAccessTokenChange("")}>
+          <Button
+            size="small"
+            variant="secondary"
+            disabled={disabled}
+            className="bg-secondary hover:bg-secondary/80 text-secondary-foreground border border-border/80 font-medium text-xs px-3.5 py-1.5 h-[34px] rounded-lg transition-colors cursor-pointer"
+            onClick={() => onAccessTokenChange("")}
+          >
             Clear token
           </Button>
         ) : null}
@@ -270,6 +286,7 @@ function ConstructCloudTokenPanel({
           size="small"
           variant="secondary"
           disabled={disabled || busy}
+          className="bg-secondary hover:bg-secondary/80 text-secondary-foreground border border-border/80 font-medium text-xs px-3.5 py-1.5 h-[34px] rounded-lg transition-colors cursor-pointer"
           onClick={async () => {
             localStorage.removeItem("bearer_token");
             await authClient.signOut();
@@ -280,35 +297,7 @@ function ConstructCloudTokenPanel({
         </Button>
       </div>
 
-      {status ? <div className="text-xs text-muted-foreground">{status}</div> : null}
-    </div>
-  );
-}
-
-function UsageMeter({ label, window }: { label: string; window: CloudUsageWindow }) {
-  const resetDate = new Date(window.resetAt ?? window.windowEnd);
-  const now = new Date();
-  const diffMs = resetDate.getTime() - now.getTime();
-  const diffH = Math.max(0, Math.floor(diffMs / 3_600_000));
-  const diffM = Math.max(0, Math.floor((diffMs % 3_600_000) / 60_000));
-  const resetLabel = diffH > 24 ? `${Math.ceil(diffH / 24)}d` : diffH > 0 ? `${diffH}h ${diffM}m` : `${diffM}m`;
-
-  const remainingPercent = Math.min(100, Math.max(0, 100 - window.percentage));
-  const barColor = remainingPercent > 50 ? "bg-emerald-500" : remainingPercent > 20 ? "bg-amber-400" : "bg-rose-500";
-
-  return (
-    <div className="rounded-md bg-muted/40 px-2 py-1.5">
-      <div className="flex items-center justify-between gap-2">
-        <span>{label}</span>
-        <span className="tabular-nums font-semibold">{Math.round(remainingPercent)}%</span>
-      </div>
-      <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-background">
-        <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${remainingPercent}%` }} />
-      </div>
-      <div className="mt-1.5 flex items-center justify-between gap-2 truncate">
-        <span>{formatUsageUnits(window.remainingUnits)} remaining</span>
-        <span>resets in {resetLabel}</span>
-      </div>
+      {status ? <div className="text-xs text-muted-foreground font-normal">{status}</div> : null}
     </div>
   );
 }
@@ -324,10 +313,4 @@ function authViewFromPath(path: string): AuthView {
 
 function normalizeCloudBaseUrl(baseUrl: string): string {
   return cleanAndNormalizeUrl(baseUrl);
-}
-
-function formatUsageUnits(units: number): string {
-  if (units >= 1_000_000) return `${(units / 1_000_000).toFixed(1)}M`;
-  if (units >= 1_000) return `${(units / 1_000).toFixed(units >= 10_000 ? 0 : 1)}k`;
-  return String(units);
 }

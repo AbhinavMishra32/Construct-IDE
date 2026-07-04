@@ -1,18 +1,21 @@
-import { type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { DownloadSimple } from "@phosphor-icons/react";
-import { BotIcon, CloudIcon, Code2Icon, KeyRoundIcon, NetworkIcon, PlugZapIcon, ShieldCheckIcon, SparklesIcon } from "lucide-react";
+import { BotIcon, CloudIcon } from "lucide-react";
 import {
   Button,
   Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   SettingsCard,
-  SettingsOptionCard,
   SettingsRow,
   SettingsSection,
   SettingsToggle
 } from "@opaline/ui";
 
 import type { AiSettings, ModelCatalogEntry } from "../../types";
-import { ProviderModelPicker } from "./ProviderModelPicker";
 import { ConstructCloudAccountPanel } from "./ConstructCloudAccountPanel";
 
 const RECOMMENDED_OPENAI_MODELS = [
@@ -48,14 +51,6 @@ const RECOMMENDED_OPENCODE_ZEN_MODELS: ModelCatalogEntry[] = [
 type AiProvider = AiSettings["provider"];
 type AiSource = AiSettings["source"];
 type AiRuntime = AiSettings["runtime"];
-type ModelLookupProvider = AiProvider | "construct-cloud";
-type ChoiceOption<T extends string> = {
-  badge?: string;
-  description?: string;
-  icon?: ReactNode;
-  title: string;
-  value: T;
-};
 
 export function ConstructAiSettingsSection({
   settings,
@@ -83,7 +78,6 @@ export function ConstructAiSettingsSection({
   onConstructCloudBaseUrlChange,
   onConstructCloudAccessTokenChange,
   onConstructCloudModelChange,
-  onRefreshModels,
   onSave,
   onImportOpencodeAuth,
   allowConstructCloudEndpointEditing = false
@@ -113,13 +107,12 @@ export function ConstructAiSettingsSection({
   onConstructCloudBaseUrlChange: (baseUrl: string) => void;
   onConstructCloudAccessTokenChange: (accessToken: string) => void;
   onConstructCloudModelChange: (model: string) => void;
-  onRefreshModels: (provider: ModelLookupProvider) => void;
   onSave: () => void;
   onImportOpencodeAuth?: () => Promise<string | null>;
   allowConstructCloudEndpointEditing?: boolean;
 }) {
+  const [cloudUsage, setCloudUsage] = useState<any>(null);
   const usesConstructCloud = settings.source === "construct-cloud";
-  const activeModelProvider: ModelLookupProvider = usesConstructCloud ? "construct-cloud" : settings.provider;
 
   const recommended = settings.provider === "openrouter"
     ? RECOMMENDED_OPENROUTER_MODELS
@@ -168,97 +161,92 @@ export function ConstructAiSettingsSection({
               allowEndpointEditing={allowConstructCloudEndpointEditing}
               onBaseUrlChange={onConstructCloudBaseUrlChange}
               onAccessTokenChange={onConstructCloudAccessTokenChange}
+              onUsageLoaded={setCloudUsage}
             />
           </SettingsRow>
         </SettingsCard>
       </SettingsSection>
 
+      {cloudUsage ? (
+        <SettingsSection title="General usage limits">
+          <SettingsCard>
+            <UsageRow label="5 hour usage limit" window={cloudUsage.windows.five_hour_all} isFiveHour={true} />
+            <UsageRow label="Weekly usage limit" window={cloudUsage.windows.weekly_all} isFiveHour={false} />
+            {cloudUsage.windows.weekly_expensive ? (
+              <UsageRow label="Expensive models limit" window={cloudUsage.windows.weekly_expensive} isFiveHour={false} />
+            ) : null}
+          </SettingsCard>
+        </SettingsSection>
+      ) : null}
+
       <SettingsSection title="Runtime">
         <SettingsCard>
-          <SettingsRow title="Agent runtime" description="Runtime adapter used by Construct agents.">
-            <CompactChoiceGroup<AiRuntime>
-              value={settings.runtime}
-              options={[
-                { value: "mastra", label: "Mastra" },
-                { value: "fxpnt", label: "FXPNT" }
-              ]}
-              onChange={onRuntimeChange}
-            />
-          </SettingsRow>
-          <SettingsRow title="Thinking effort" description="Auto leaves the provider default unchanged.">
-            <CompactChoiceGroup<AiSettings["reasoningEffort"]>
-              value={settings.reasoningEffort}
-              options={[
-                { value: "auto", label: "Auto" },
-                { value: "none", label: "None" },
-                { value: "low", label: "Low" },
-                { value: "medium", label: "Medium" },
-                { value: "high", label: "High" }
-              ]}
-              onChange={(value) => onReasoningEffortChange(normalizeReasoningEffort(value))}
-            />
-          </SettingsRow>
-          <SettingsRow title="Agent behavior" description="Project safeguards and optional helper surfaces.">
-            <div className="grid gap-2 md:grid-cols-3">
-              <ToggleTile
-                checked={settings.codeGhostEnabled}
-                icon={<SparklesIcon size={15} />}
-                title="Code Ghost"
-                onChange={onCodeGhostEnabledChange}
-              />
-              <ToggleTile
+          <SettingsRow
+            title="Concept Firewall"
+            description="Project safeguards to prevent undesired behaviors."
+            control={
+              <SettingsToggle
                 checked={settings.conceptFirewallEnabled !== false}
-                icon={<ShieldCheckIcon size={15} />}
-                title="Concept Firewall"
-                onChange={(checked) => onConceptFirewallEnabledChange?.(checked)}
+                onCheckedChange={(checked) => onConceptFirewallEnabledChange?.(checked)}
               />
-              <ToggleTile
-                checked={settings.flowSourceGroundingEnabled !== false}
-                icon={<NetworkIcon size={15} />}
-                title="Construct research"
-                onChange={(checked) => onFlowSourceGroundingEnabledChange?.(checked)}
-              />
-            </div>
-          </SettingsRow>
+            }
+          />
         </SettingsCard>
       </SettingsSection>
 
       <SettingsSection title="Model Source">
         <SettingsCard>
-          <SettingsRow title="Source" description="BYOK uses your local provider key. Construct Cloud uses your Construct account.">
-            <ChoiceGrid<AiSource>
-              value={settings.source}
-              options={[
-                {
-                  value: "byok",
-                  title: "BYOK",
-                  description: "Use a provider key stored locally.",
-                  icon: <KeyRoundIcon size={16} />
-                },
-                {
-                  value: "construct-cloud",
-                  title: "Construct Cloud",
-                  description: "Use Construct account model access.",
-                  icon: <CloudIcon size={16} />
-                }
-              ]}
-              onChange={(value) => onSourceChange(value === "construct-cloud" ? "construct-cloud" : "byok")}
-            />
-          </SettingsRow>
+          <SettingsRow
+            title="Source"
+            description="BYOK uses your local provider key. Construct Cloud uses your Construct account."
+            control={
+              <Select
+                value={settings.source}
+                onValueChange={(value) => onSourceChange(value === "construct-cloud" ? "construct-cloud" : "byok")}
+              >
+                <SelectTrigger className="h-[34px] w-44 text-xs">
+                  <SelectValue placeholder="Select source">
+                    {settings.source === "construct-cloud" ? "Construct Cloud" : "BYOK"}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="byok">BYOK</SelectItem>
+                  <SelectItem value="construct-cloud">Construct Cloud</SelectItem>
+                </SelectContent>
+              </Select>
+            }
+          />
 
           {!usesConstructCloud ? (
-            <SettingsRow title="Provider" description="The BYOK provider for the Construct agent.">
-              <ChoiceGrid<AiProvider>
-                columns="md:grid-cols-3"
-                value={settings.provider}
-                options={[
-                  { value: "openai", title: "OpenAI", description: "Direct OpenAI-compatible key.", icon: <BotIcon size={16} /> },
-                  { value: "openrouter", title: "OpenRouter", description: "Route through OpenRouter.", icon: <PlugZapIcon size={16} /> },
-                  { value: "opencode-zen", title: "OpenCode Zen", description: "Use OpenCode Zen auth.", icon: <Code2Icon size={16} /> }
-                ]}
-                onChange={onProviderChange}
-              />
-            </SettingsRow>
+            <SettingsRow
+              title="Provider"
+              description="The BYOK provider for the Construct agent."
+              control={
+                <Select
+                  value={settings.provider}
+                  onValueChange={(value) => onProviderChange(
+                    value === "openrouter" || value === "opencode-zen" ? value : "openai"
+                  )}
+                >
+                  <SelectTrigger className="h-[34px] w-44 text-xs">
+                    <SelectValue placeholder="Select provider">
+                      {settings.provider === "openai"
+                        ? "OpenAI"
+                        : settings.provider === "openrouter"
+                        ? "OpenRouter"
+                        : settings.provider === "opencode-zen"
+                        ? "OpenCode Zen"
+                        : settings.provider}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="openai">OpenAI</SelectItem>
+                    <SelectItem value="openrouter">OpenRouter</SelectItem>
+                    <SelectItem value="opencode-zen">OpenCode Zen</SelectItem>
+                  </SelectContent>
+                </Select>
+              }
+            />
           ) : (
             <SettingsRow
               title="Construct Cloud"
@@ -278,6 +266,7 @@ export function ConstructAiSettingsSection({
                   type="password"
                   value={settings.openAiApiKey}
                   placeholder="sk-..."
+                  className="bg-background border-border hover:border-border/80 focus-visible:ring-2 focus-visible:ring-ring/30 text-foreground placeholder-muted-foreground/60 rounded-lg text-xs h-[34px] px-3 py-2 w-full transition-all mt-1"
                   onChange={(event) => onOpenAiApiKeyChange(event.target.value)}
                 />
               </SettingsRow>
@@ -285,6 +274,7 @@ export function ConstructAiSettingsSection({
                 <Input
                   value={settings.openAiBaseUrl}
                   placeholder="https://api.openai.com/v1"
+                  className="bg-background border-border hover:border-border/80 focus-visible:ring-2 focus-visible:ring-ring/30 text-foreground placeholder-muted-foreground/60 rounded-lg text-xs h-[34px] px-3 py-2 w-full transition-all mt-1"
                   onChange={(event) => onOpenAiBaseUrlChange(event.target.value)}
                 />
               </SettingsRow>
@@ -298,6 +288,7 @@ export function ConstructAiSettingsSection({
                   type="password"
                   value={settings.openRouterApiKey}
                   placeholder="sk-or-..."
+                  className="bg-background border-border hover:border-border/80 focus-visible:ring-2 focus-visible:ring-ring/30 text-foreground placeholder-muted-foreground/60 rounded-lg text-xs h-[34px] px-3 py-2 w-full transition-all mt-1"
                   onChange={(event) => onOpenRouterApiKeyChange(event.target.value)}
                 />
               </SettingsRow>
@@ -305,6 +296,7 @@ export function ConstructAiSettingsSection({
                 <Input
                   value={settings.openRouterBaseUrl}
                   placeholder="https://openrouter.ai/api/v1"
+                  className="bg-background border-border hover:border-border/80 focus-visible:ring-2 focus-visible:ring-ring/30 text-foreground placeholder-muted-foreground/60 rounded-lg text-xs h-[34px] px-3 py-2 w-full transition-all mt-1"
                   onChange={(event) => onOpenRouterBaseUrlChange(event.target.value)}
                 />
               </SettingsRow>
@@ -314,10 +306,10 @@ export function ConstructAiSettingsSection({
           {!usesConstructCloud && settings.provider === "opencode-zen" ? (
             <>
               <SettingsRow title="OpenCode Zen API key" description="Get yours at opencode.ai/auth">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 mt-1">
                   <Input
                     type="password"
-                    className="flex-1"
+                    className="flex-1 bg-background border-border hover:border-border/80 focus-visible:ring-2 focus-visible:ring-ring/30 text-foreground placeholder-muted-foreground/60 rounded-lg text-xs h-[34px] px-3 py-2 transition-all"
                     value={settings.opencodeZenApiKey}
                     placeholder="sk-..."
                     onChange={(event) => onOpencodeZenApiKeyChange(event.target.value)}
@@ -327,9 +319,10 @@ export function ConstructAiSettingsSection({
                       size="small"
                       variant="secondary"
                       title="Import API key from opencode CLI auth file"
+                      className="bg-secondary hover:bg-secondary/80 text-secondary-foreground border border-border/80 font-medium text-xs px-3.5 py-1.5 h-[34px] rounded-lg transition-colors cursor-pointer flex items-center shrink-0"
                       onClick={() => { void onImportOpencodeAuth(); }}
                     >
-                      <DownloadSimple size={14} className="mr-1" />
+                      <DownloadSimple size={14} className="mr-1.5" />
                       Import
                     </Button>
                   ) : null}
@@ -339,6 +332,7 @@ export function ConstructAiSettingsSection({
                 <Input
                   value={settings.opencodeZenBaseUrl}
                   placeholder="https://opencode.ai/zen/v1"
+                  className="bg-background border-border hover:border-border/80 focus-visible:ring-2 focus-visible:ring-ring/30 text-foreground placeholder-muted-foreground/60 rounded-lg text-xs h-[34px] px-3 py-2 w-full transition-all mt-1"
                   onChange={(event) => onOpencodeZenBaseUrlChange(event.target.value)}
                 />
               </SettingsRow>
@@ -350,6 +344,7 @@ export function ConstructAiSettingsSection({
               type="password"
               value={settings.tavilyApiKey}
               placeholder="tvly-..."
+              className="bg-background border-border hover:border-border/80 focus-visible:ring-2 focus-visible:ring-ring/30 text-foreground placeholder-muted-foreground/60 rounded-lg text-xs h-[34px] px-3 py-2 w-full transition-all mt-1"
               onChange={(event) => onTavilyApiKeyChange(event.target.value)}
             />
           </SettingsRow>
@@ -360,35 +355,29 @@ export function ConstructAiSettingsSection({
         <SettingsCard>
           <SettingsRow
             title="Available models"
-            description={modelOptions.length > 0 ? `${modelOptions.length} models loaded from ${providerLabel}` : "Search to load the model catalog."}
-            control={
-              <Button
-                variant="secondary"
-                size="small"
-                disabled={modelsBusy}
-                onClick={() => onRefreshModels(activeModelProvider)}
-              >
-                {modelsBusy ? "Searching..." : "Search models"}
-              </Button>
-            }
+            description={modelsBusy
+              ? `Loading ${providerLabel} models...`
+              : modelOptions.length > 0
+                ? `${modelOptions.length} models loaded from ${providerLabel}`
+                : usesConstructCloud
+                  ? "Construct Cloud models load automatically after the Cloud source is selected."
+                  : "Provider models load automatically when credentials are configured."}
           />
 
           <SettingsRow
             title="Construct agent model"
             description={usesConstructCloud && !constructCloudModelAvailable
-              ? "This Construct Cloud model is not available. Search models and choose one from the returned list."
+              ? "This Construct Cloud model is not available. Choose one from the loaded catalog."
               : "The single model used by Construct agent flows."}
             control={
-              <div className="flex items-center gap-2">
-                <Input
-                  className="h-8 w-56 text-xs"
-                  value={globalModel}
-                  placeholder="model-id"
-                  readOnly={usesConstructCloud}
-                  onChange={(event) => onGlobalModelChange(event.target.value)}
-                />
-                <ProviderModelPicker provider={activeModelProvider} value={globalModel} models={baseModels} disabled={modelsBusy || baseModels.length === 0} onChange={onGlobalModelChange} />
-              </div>
+              <ModelSelectionControl
+                disabled={modelsBusy}
+                model={globalModel}
+                models={baseModels}
+                providerLabel={providerLabel}
+                readOnlyCatalog={usesConstructCloud}
+                onModelChange={onGlobalModelChange}
+              />
             }
           />
 
@@ -396,8 +385,42 @@ export function ConstructAiSettingsSection({
             title="Save AI settings"
             description={modelsError ?? ""}
             control={
-              <Button size="small" disabled={!canSave} onClick={onSave}>
+              <Button
+                size="small"
+                disabled={!canSave}
+                className="bg-primary hover:bg-primary/95 text-primary-foreground disabled:bg-muted disabled:text-muted-foreground font-medium text-xs px-5 py-1.5 h-[34px] rounded-lg transition-colors cursor-pointer border-none"
+                onClick={onSave}
+              >
                 {aiBusy ? "Saving..." : "Save"}
+              </Button>
+            }
+          />
+        </SettingsCard>
+      </SettingsSection>
+
+      <SettingsSection title="Configuration">
+        <SettingsCard>
+          <SettingsRow
+            title="Edit configuration file"
+            description="Directly open and modify the raw construct.config.json file in your system file explorer."
+            control={
+              <Button
+                variant="secondary"
+                size="small"
+                className="bg-secondary hover:bg-secondary/80 text-secondary-foreground border border-border/80 font-medium text-xs px-3.5 py-1.5 h-[34px] rounded-lg transition-colors cursor-pointer"
+                onClick={async () => {
+                  try {
+                    await window.constructProjects.openConfigFile();
+                  } catch (err) {
+                    console.error("Failed to open configuration file:", err);
+                  }
+                }}
+              >
+                {window.construct?.getRuntimeInfo()?.platform === "darwin"
+                  ? "Open in Finder"
+                  : window.construct?.getRuntimeInfo()?.platform === "win32"
+                  ? "Open in Explorer"
+                  : "Open in File Manager"}
               </Button>
             }
           />
@@ -407,33 +430,62 @@ export function ConstructAiSettingsSection({
   );
 }
 
-function ChoiceGrid<T extends string>({
-  columns = "md:grid-cols-2",
-  onChange,
-  options,
-  value
+function ModelSelectionControl({
+  disabled,
+  model,
+  models,
+  providerLabel,
+  readOnlyCatalog,
+  onModelChange
 }: {
-  columns?: string;
-  onChange: (value: T) => void;
-  options: ChoiceOption<T>[];
-  value: T;
+  disabled: boolean;
+  model: string;
+  models: ModelCatalogEntry[];
+  providerLabel: string;
+  readOnlyCatalog: boolean;
+  onModelChange: (model: string) => void;
 }) {
+  const selectedModel = models.find((entry) => entry.id === model);
   return (
-    <div className={`grid gap-2 ${columns}`}>
-      {options.map((option) => (
-        <SettingsOptionCard
-          key={option.value}
-          title={option.title}
-          description={option.description}
-          icon={option.icon}
-          badge={option.badge}
-          selected={value === option.value}
-          onClick={() => onChange(option.value)}
+    <div className="flex min-w-0 items-center gap-2">
+      {!readOnlyCatalog ? (
+        <Input
+          className="bg-background border-border hover:border-border/80 focus-visible:ring-2 focus-visible:ring-ring/30 text-foreground placeholder-muted-foreground/60 rounded-lg text-xs h-[34px] w-56 px-3 py-1.5"
+          value={model}
+          placeholder="model-id"
+          onChange={(event) => onModelChange(event.target.value)}
         />
-      ))}
+      ) : null}
+      <Select
+        value={selectedModel?.id ?? ""}
+        onValueChange={(value) => {
+          if (value) onModelChange(value);
+        }}
+        disabled={disabled || models.length === 0}
+      >
+        <SelectTrigger
+          className="h-[34px] min-w-[14rem] max-w-[22rem] rounded-lg border-border bg-background text-xs"
+          title={`Choose ${providerLabel} model`}
+        >
+          <BotIcon size={14} className="text-muted-foreground" />
+          <SelectValue placeholder={disabled ? "Loading models..." : "Choose model"} />
+        </SelectTrigger>
+        <SelectContent align="end" className="max-h-80 min-w-[20rem]">
+          {models.map((entry) => (
+            <SelectItem key={entry.id} value={entry.id}>
+              <span className="flex min-w-0 flex-col">
+                <span className="truncate font-medium">{entry.name || entry.id}</span>
+                <span className="truncate text-[11px] text-muted-foreground">{entry.id}</span>
+              </span>
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
   );
 }
+
+
 
 function CompactChoiceGroup<T extends string>({
   onChange,
@@ -445,43 +497,28 @@ function CompactChoiceGroup<T extends string>({
   value: T;
 }) {
   return (
-    <div className="inline-flex flex-wrap rounded-lg border bg-muted/20 p-1">
-      {options.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          className="h-7 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors data-[active=true]:bg-background data-[active=true]:text-foreground data-[active=true]:shadow-sm"
-          data-active={value === option.value ? "true" : undefined}
-          onClick={() => onChange(option.value)}
-        >
-          {option.label}
-        </button>
-      ))}
+    <div className="inline-flex items-center gap-0.5 rounded-lg bg-muted/40 p-0.5 border border-border/60">
+      {options.map((option) => {
+        const isActive = value === option.value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            className={`h-[28px] rounded-md px-3 text-xs font-semibold transition-all duration-150 cursor-pointer ${
+              isActive
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground bg-transparent"
+            }`}
+            onClick={() => onChange(option.value)}
+          >
+            {option.label}
+          </button>
+        );
+      })}
     </div>
   );
 }
 
-function ToggleTile({
-  checked,
-  icon,
-  onChange,
-  title
-}: {
-  checked: boolean;
-  icon: ReactNode;
-  onChange: (checked: boolean) => void;
-  title: string;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-3 rounded-lg border bg-background px-3 py-2">
-      <div className="flex min-w-0 items-center gap-2">
-        <span className="grid size-7 shrink-0 place-items-center rounded-md bg-muted text-muted-foreground">{icon}</span>
-        <span className="truncate text-sm font-medium">{title}</span>
-      </div>
-      <SettingsToggle checked={checked} onCheckedChange={onChange} />
-    </div>
-  );
-}
 
 function normalizeReasoningEffort(value: string): AiSettings["reasoningEffort"] {
   return value === "none"
@@ -491,4 +528,57 @@ function normalizeReasoningEffort(value: string): AiSettings["reasoningEffort"] 
     || value === "auto"
     ? value
     : "auto";
+}
+
+type CloudUsageWindow = {
+  windowStart: string;
+  windowEnd: string;
+  resetAt?: string;
+  usedUnits: number;
+  reservedUnits: number;
+  limitUnits: number;
+  remainingUnits: number;
+  percentage: number;
+};
+
+function formatResetLabel(resetAt: string, isFiveHour: boolean): string {
+  const date = new Date(resetAt);
+  if (isNaN(date.getTime())) return "";
+
+  if (isFiveHour) {
+    const hours = String(date.getHours()).padStart(2, "0");
+    const minutes = String(date.getMinutes()).padStart(2, "0");
+    return `Resets ${hours}:${minutes}`;
+  } else {
+    const day = date.getDate();
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const month = monthNames[date.getMonth()];
+    return `Resets ${day} ${month}`;
+  }
+}
+
+function UsageRow({ label, window, isFiveHour }: { label: string; window: CloudUsageWindow; isFiveHour: boolean }) {
+  const remainingPercent = Math.min(100, Math.max(0, 100 - window.percentage));
+  const resetAt = window.resetAt ?? window.windowEnd;
+  const resetLabel = formatResetLabel(resetAt, isFiveHour);
+
+  return (
+    <div className="flex items-center justify-between px-5 py-4">
+      <div className="flex flex-col min-w-0">
+        <span className="text-sm font-medium text-foreground">{label}</span>
+        <span className="text-xs text-muted-foreground mt-0.5">{resetLabel}</span>
+      </div>
+      <div className="flex items-center shrink-0">
+        <div className="h-1.5 w-24 rounded-full bg-muted overflow-hidden mr-3">
+          <div
+            className="h-full bg-foreground transition-all duration-300"
+            style={{ width: `${remainingPercent}%` }}
+          />
+        </div>
+        <span className="text-xs text-muted-foreground w-12 text-right tabular-nums">
+          {Math.round(remainingPercent)}% left
+        </span>
+      </div>
+    </div>
+  );
 }

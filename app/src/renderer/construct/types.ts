@@ -712,6 +712,7 @@ export type ConstructProjectsApi = {
     defaultPath?: string;
   }): Promise<string | null>;
   getSettings(): Promise<ProjectSettings>;
+  openConfigFile(): Promise<string>;
   setWorkspaceRoot(input: {
     workspaceRoot: string;
   }): Promise<{

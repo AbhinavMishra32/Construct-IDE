@@ -45,6 +45,7 @@ contextBridge.exposeInMainWorld("constructProjects", {
   selectWorkspaceDirectory: (input: unknown) =>
     ipcRenderer.invoke("construct:dialog:select-workspace-directory", input),
   getSettings: () => ipcRenderer.invoke("construct:settings:get"),
+  openConfigFile: () => ipcRenderer.invoke("construct:settings:open-config-file"),
   setWorkspaceRoot: (input: unknown) =>
     ipcRenderer.invoke("construct:settings:set-workspace-root", input),
   updateAiSettings: (input: unknown) =>

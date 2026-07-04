@@ -388,8 +388,13 @@ export function ConstructSettingsSurface({
   }, [onShowStatusBarChange]);
 
   useEffect(() => {
-    if (aiSettings.source === "construct-cloud" || aiSettings.provider === "opencode-zen") {
-      void refreshModels(aiSettings.source === "construct-cloud" ? "construct-cloud" : aiSettings.provider);
+    if (aiSettings.source === "construct-cloud") {
+      void refreshModels("construct-cloud", aiSettings.constructCloudAccessToken);
+      return;
+    }
+
+    if (aiSettings.provider === "opencode-zen") {
+      void refreshModels("opencode-zen", aiSettings.opencodeZenApiKey);
       return;
     }
 
@@ -399,11 +404,19 @@ export function ConstructSettingsSurface({
 
     if (!apiKey) {
       setModelOptions([]);
+      setModelsError(null);
       return;
     }
 
     void refreshModels(aiSettings.provider, apiKey);
-  }, []);
+  }, [
+    aiSettings.constructCloudAccessToken,
+    aiSettings.opencodeZenApiKey,
+    aiSettings.openAiApiKey,
+    aiSettings.openRouterApiKey,
+    aiSettings.provider,
+    aiSettings.source
+  ]);
 
   useEffect(() => {
     setProjectTitle(project?.title ?? "");
@@ -791,7 +804,6 @@ export function ConstructSettingsSurface({
         onOpenAiModelChange={updateGlobalModel}
         onOpencodeZenModelChange={updateGlobalModel}
         onConstructCloudModelChange={updateGlobalModel}
-        onRefreshModels={(provider) => { void refreshModels(provider); }}
         onSave={() => { void saveAiConfiguration(); }}
         onImportOpencodeAuth={async (): Promise<string | null> => {
           try {
