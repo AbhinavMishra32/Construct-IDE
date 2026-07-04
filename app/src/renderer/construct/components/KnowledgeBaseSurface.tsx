@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointer
 import { Button, FileTree as OpalineFileTree, ShadcnScrollArea, type FileTreeItem } from "@opaline/ui";
 import ForceGraph3D, { type ForceGraphMethods, type GraphData, type NodeObject } from "react-force-graph-3d";
 
+import { ConstructAuthLogo } from "../../components/auth/construct-auth-logo";
 import { MarkdownBlock } from "./MarkdownBlock";
 import { readKnowledgeRecords, subscribeKnowledgeRecords, removeKnowledgeConcept, type SavedKnowledgeRecord } from "../lib/knowledgeStore";
 import type { AnyProjectRecord, ConceptCard } from "../types";
@@ -568,6 +569,8 @@ export function KnowledgeGraphPanel({
   const recordByKey = useMemo(() => new Map(records.map((record) => [recordKey(record), record])), [records]);
   const hoveredRecord = hoveredKey ? recordByKey.get(hoveredKey) : undefined;
   const hoveredConnections = hoveredRecord ? graphRecordConnections(hoveredRecord, records) : [];
+  const graphWidth = size.width || Math.max(360, containerRef.current?.clientWidth ?? 540);
+  const graphHeight = size.height || Math.max(420, containerRef.current?.clientHeight ?? 560);
   const clearGraphSelection = () => {
     cameraFlightCancelRef.current?.();
     cameraFlightCancelRef.current = null;
@@ -593,7 +596,7 @@ export function KnowledgeGraphPanel({
   }, [graphData]);
 
   useEffect(() => {
-    if (!selectedKey || size.width <= 0 || size.height <= 0) return undefined;
+    if (!selectedKey || graphWidth <= 0 || graphHeight <= 0) return undefined;
     let animationFrame = 0;
     let attempts = 0;
     cameraFlightCancelRef.current?.();
@@ -619,10 +622,10 @@ export function KnowledgeGraphPanel({
       cameraFlightCancelRef.current?.();
       cameraFlightCancelRef.current = null;
     };
-  }, [graphData, selectedKey, size.height, size.width]);
+  }, [graphData, graphHeight, graphWidth, selectedKey]);
 
   useEffect(() => {
-    if (selectedKey || !graphData.nodes.length || size.width <= 0 || size.height <= 0) return undefined;
+    if (selectedKey || !graphData.nodes.length || graphWidth <= 0 || graphHeight <= 0) return undefined;
     const fitGraph = () => graphRef.current?.zoomToFit?.(650, 80);
     const firstFit = window.setTimeout(fitGraph, 260);
     const settledFit = window.setTimeout(fitGraph, 1150);
@@ -630,10 +633,10 @@ export function KnowledgeGraphPanel({
       window.clearTimeout(firstFit);
       window.clearTimeout(settledFit);
     };
-  }, [graphData, selectedKey, size.height, size.width]);
+  }, [graphData, graphHeight, graphWidth, selectedKey]);
 
   useEffect(() => {
-    if (!selectedKey || size.width <= 0 || size.height <= 0) return undefined;
+    if (!selectedKey || graphWidth <= 0 || graphHeight <= 0) return undefined;
     let animationFrame = 0;
     let orbitDelay = 0;
     let orbitState: GraphCameraOrbitState | null = null;
@@ -654,10 +657,10 @@ export function KnowledgeGraphPanel({
       window.clearTimeout(orbitDelay);
       window.cancelAnimationFrame(animationFrame);
     };
-  }, [graphData, selectedKey, size.height, size.width]);
+  }, [graphData, graphHeight, graphWidth, selectedKey]);
 
   useEffect(() => {
-    if (!graphData.nodes.length || size.width <= 0 || size.height <= 0) return undefined;
+    if (!graphData.nodes.length || graphWidth <= 0 || graphHeight <= 0) return undefined;
     let animationFrame = 0;
     const tick = () => {
       selectedPulseRef.current = (Math.sin(performance.now() / 280) + 1) / 2;
@@ -666,7 +669,7 @@ export function KnowledgeGraphPanel({
     };
     animationFrame = window.requestAnimationFrame(tick);
     return () => window.cancelAnimationFrame(animationFrame);
-  }, [graphData, size.height, size.width]);
+  }, [graphData, graphHeight, graphWidth]);
 
   if (!records.length) {
     return (
@@ -680,58 +683,48 @@ export function KnowledgeGraphPanel({
 
   return (
     <div ref={containerRef} className="relative h-full min-h-0 overflow-hidden bg-background">
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0"
-        style={{
-          background:
-            "radial-gradient(circle at 48% 42%, color-mix(in srgb, var(--foreground) 3%, transparent), transparent 42%), radial-gradient(circle at 82% 18%, color-mix(in srgb, var(--primary) 7%, transparent), transparent 30%)",
-          opacity: 0.55
+      <ForceGraph3D
+        ref={graphRef}
+        graphData={graphData}
+        width={graphWidth}
+        height={graphHeight}
+        backgroundColor="rgba(0,0,0,0)"
+        showNavInfo={false}
+        nodeId="id"
+        nodeLabel={(node) => graphNodeLabel(node as KnowledgeGraphNode)}
+        nodeColor={(node) => graphNodeColor(node as KnowledgeGraphNode, selectedKey)}
+        nodeVal={(node) => graphNodeValue(node as KnowledgeGraphNode, selectedKey, selectedPulseRef.current)}
+        nodeResolution={18}
+        nodeRelSize={4.8}
+        linkSource="source"
+        linkTarget="target"
+        linkLabel="label"
+        linkColor={(link) => graphLinkColor(link as KnowledgeGraphLink, selectedKey)}
+        linkOpacity={0.46}
+        linkWidth={(link) => graphLinkWidth(link as KnowledgeGraphLink, selectedKey)}
+        linkDirectionalParticles={(link) => graphLinkParticles(link as KnowledgeGraphLink, selectedKey)}
+        linkDirectionalParticleWidth={(link) => graphLinkParticleWidth(link as KnowledgeGraphLink, selectedKey)}
+        linkDirectionalParticleColor={(link) => graphLinkColor(link as KnowledgeGraphLink, selectedKey)}
+        cooldownTicks={160}
+        cooldownTime={15000}
+        warmupTicks={70}
+        d3AlphaDecay={0.016}
+        d3VelocityDecay={0.24}
+        enableNodeDrag
+        enableNavigationControls
+        onNodeClick={(node) => {
+          const key = typeof node.recordKey === "string" ? node.recordKey : null;
+          const record = key ? recordByKey.get(key) : undefined;
+          if (record) onSelectRecord(record);
         }}
+        onNodeHover={(node) => {
+          const key = node && typeof node.recordKey === "string" ? node.recordKey : null;
+          setHoveredKey(key);
+        }}
+        onLinkClick={clearGraphSelection}
+        onBackgroundClick={clearGraphSelection}
       />
-      {size.width > 0 && size.height > 0 ? (
-        <ForceGraph3D
-          ref={graphRef}
-          graphData={graphData}
-          width={size.width}
-          height={size.height}
-          backgroundColor="rgba(0,0,0,0)"
-          showNavInfo={false}
-          nodeId="id"
-          nodeLabel={(node) => graphNodeLabel(node as KnowledgeGraphNode)}
-          nodeColor={(node) => graphNodeColor(node as KnowledgeGraphNode, selectedKey)}
-          nodeVal={(node) => graphNodeValue(node as KnowledgeGraphNode, selectedKey, selectedPulseRef.current)}
-          nodeResolution={18}
-          nodeRelSize={4.8}
-          linkSource="source"
-          linkTarget="target"
-          linkLabel="label"
-          linkColor={(link) => graphLinkColor(link as KnowledgeGraphLink, selectedKey)}
-          linkOpacity={0.46}
-          linkWidth={(link) => graphLinkWidth(link as KnowledgeGraphLink, selectedKey)}
-          linkDirectionalParticles={(link) => graphLinkParticles(link as KnowledgeGraphLink, selectedKey)}
-          linkDirectionalParticleWidth={(link) => graphLinkParticleWidth(link as KnowledgeGraphLink, selectedKey)}
-          linkDirectionalParticleColor={(link) => graphLinkColor(link as KnowledgeGraphLink, selectedKey)}
-          cooldownTicks={160}
-          cooldownTime={15000}
-          warmupTicks={70}
-          d3AlphaDecay={0.016}
-          d3VelocityDecay={0.24}
-          enableNodeDrag
-          enableNavigationControls
-          onNodeClick={(node) => {
-            const key = typeof node.recordKey === "string" ? node.recordKey : null;
-            const record = key ? recordByKey.get(key) : undefined;
-            if (record) onSelectRecord(record);
-          }}
-          onNodeHover={(node) => {
-            const key = node && typeof node.recordKey === "string" ? node.recordKey : null;
-            setHoveredKey(key);
-          }}
-          onLinkClick={clearGraphSelection}
-          onBackgroundClick={clearGraphSelection}
-        />
-      ) : <GraphLoadingState />}
+      {size.width > 0 && size.height > 0 ? null : <GraphLoadingState />}
 
       {hoveredRecord ? (
         <aside className="pointer-events-none absolute right-3 top-3 flex w-[min(22rem,calc(100%-1.5rem))] flex-col gap-2 rounded-[8px] border bg-background/92 px-3 py-2.5 text-sm shadow-sm backdrop-blur">
@@ -779,8 +772,8 @@ function GraphMetric({ label, value }: { label: string; value: string }) {
 
 function GraphLoadingState() {
   return (
-    <div className="flex h-full min-h-[20rem] items-center justify-center text-xs text-muted-foreground">
-      Loading knowledge web...
+    <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+      <ConstructAuthLogo markClassName="construct-auth-logo__mark--knowledge-web-loading" />
     </div>
   );
 }

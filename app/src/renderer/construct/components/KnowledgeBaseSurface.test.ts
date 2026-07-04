@@ -42,6 +42,12 @@ test("Concepts surface renders saved concepts as an expandable tree", () => {
   assert.match(source, /startGraphResize/);
   assert.match(source, /Resize knowledge web/);
   assert.match(source, /graphRef/);
+  assert.match(source, /ConstructAuthLogo/);
+  assert.match(source, /construct-auth-logo__mark--knowledge-web-loading/);
+  assert.match(source, /const graphWidth = size\.width \|\| Math\.max\(360, containerRef\.current\?\.clientWidth \?\? 540\)/);
+  assert.match(source, /const graphHeight = size\.height \|\| Math\.max\(420, containerRef\.current\?\.clientHeight \?\? 560\)/);
+  assert.match(source, /width=\{graphWidth\}/);
+  assert.match(source, /height=\{graphHeight\}/);
   assert.match(source, /import ForceGraph3D, \{ type ForceGraphMethods/);
   assert.match(source, /getBoundingClientRect/);
   assert.match(source, /requestAnimationFrame\(measureElementSize\)/);
@@ -89,11 +95,15 @@ test("Concepts surface renders saved concepts as an expandable tree", () => {
   assert.match(source, /hideChevron: isConceptRecord/);
   assert.match(source, /children: hasChildren \?/);
   assert.match(source, /isParentConceptStub/);
+  assert.match(css, /\.construct-auth-logo__mark--knowledge-web-loading\s*\{/);
+  assert.match(css, /animation: opaline-agent-thinking-shimmer 1\.25s linear infinite/);
   assert.match(fileTreeSource, /placeholder="Search files\.\.\."/);
   assert.match(opalineFileTreeSource, /gridTemplateRows: isExpanded \? "1fr" : "0fr"/);
   assert.match(opalineFileTreeSource, /pointerEvents: isExpanded \? undefined : "none"/);
   assert.match(opalineFileTreeSource, /grid-template-rows 240ms cubic-bezier/);
   assert.doesNotMatch(source, /circle at 46% 42%/);
+  assert.doesNotMatch(source, /Loading knowledge web/);
+  assert.doesNotMatch(source, /radial-gradient/);
   assert.match(source, /nodeResolution=\{18\}/);
   assert.doesNotMatch(fileTreeSource, /searchPlaceholder/);
   assert.doesNotMatch(fileTreeSource, /onSearchQueryChange/);

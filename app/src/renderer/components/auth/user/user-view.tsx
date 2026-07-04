@@ -52,10 +52,10 @@ export function UserView({
       <div className={cn("flex items-center gap-2 min-w-0", className)}>
         <UserAvatar isPending />
 
-        <div className="grid flex-1 gap-1 text-left text-sm">
-          <Skeleton className="h-4 w-24" />
+      <div className="grid flex-1 gap-1 text-left text-sm">
+          <Skeleton className="construct-user-loading-line h-4 w-24" />
 
-          {!hideSubtitle && <Skeleton className="h-3 w-32" />}
+          {!hideSubtitle && <Skeleton className="construct-user-loading-line h-3 w-32" />}
         </div>
       </div>
     )

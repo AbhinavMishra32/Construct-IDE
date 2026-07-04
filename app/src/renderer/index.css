@@ -168,6 +168,40 @@ body {
   opacity: 0.62;
 }
 
+.construct-startup-splash__logo,
+.construct-auth-logo__mark--knowledge-web-loading,
+.construct-auth-logo__mark--user-loading,
+.construct-user-loading-line {
+  --construct-loading-shimmer-base: color-mix(in srgb, var(--muted-foreground) 58%, var(--background));
+  --construct-loading-shimmer-glint: color-mix(in srgb, var(--foreground) 72%, var(--background));
+  background-image: linear-gradient(
+    100deg,
+    var(--construct-loading-shimmer-base) 0%,
+    var(--construct-loading-shimmer-base) 39%,
+    var(--construct-loading-shimmer-glint) 50%,
+    var(--construct-loading-shimmer-base) 61%,
+    var(--construct-loading-shimmer-base) 100%
+  );
+  background-size: 260% 100%;
+  animation: opaline-agent-thinking-shimmer 1.25s linear infinite;
+}
+
+.construct-auth-logo__mark--knowledge-web-loading {
+  width: 3rem;
+  opacity: 0.66;
+}
+
+.construct-auth-logo__mark--user-loading {
+  width: 1.5rem;
+  opacity: 0.72;
+  filter: none;
+}
+
+.construct-user-loading-line {
+  opacity: 0.82;
+  animation: opaline-agent-thinking-shimmer 1.25s linear infinite;
+}
+
 .construct-auth-logo__wordmark {
   font-size: 0.9375rem;
   font-weight: 700;

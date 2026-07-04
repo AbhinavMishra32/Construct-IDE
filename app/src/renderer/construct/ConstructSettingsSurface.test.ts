@@ -48,6 +48,8 @@ describe("Construct project advanced settings", () => {
     const signOut = readFileSync(fileURLToPath(new URL("../components/auth/sign-out.tsx", import.meta.url)), "utf8");
     const authProvider = readFileSync(fileURLToPath(new URL("../components/auth/auth-provider.tsx", import.meta.url)), "utf8");
     const authFormAlert = readFileSync(fileURLToPath(new URL("../components/auth/auth-form-alert.tsx", import.meta.url)), "utf8");
+    const userAvatar = readFileSync(fileURLToPath(new URL("../components/auth/user/user-avatar.tsx", import.meta.url)), "utf8");
+    const userView = readFileSync(fileURLToPath(new URL("../components/auth/user/user-view.tsx", import.meta.url)), "utf8");
 
     assert.match(app, /function ConstructSplashScreen\(\)/);
     assert.match(app, /role="status" aria-label="Loading Construct"/);
@@ -69,6 +71,9 @@ describe("Construct project advanced settings", () => {
     }
     assert.doesNotMatch(authProvider, /ErrorToaster/);
     assert.match(authFormAlert, /export function AuthFormAlert/);
+    assert.match(userAvatar, /ConstructAuthLogo/);
+    assert.match(userAvatar, /construct-auth-logo__mark--user-loading/);
+    assert.match(userView, /construct-user-loading-line/);
     assert.match(signIn, /AuthFormAlert/);
     assert.match(signIn, /setAuthError\(authErrorMessage/);
     assert.match(signUp, /AuthFormAlert/);
@@ -84,6 +89,8 @@ describe("Construct project advanced settings", () => {
     }
     assert.match(css, /\.construct-startup-splash\s*\{[\s\S]*?background: transparent;/);
     assert.match(css, /\.construct-auth-logo__mark\s*\{/);
+    assert.match(css, /\.construct-startup-splash__logo,\s*\.construct-auth-logo__mark--knowledge-web-loading,\s*\.construct-auth-logo__mark--user-loading,\s*\.construct-user-loading-line/);
+    assert.match(css, /--construct-loading-shimmer-base: color-mix\(in srgb, var\(--muted-foreground\) 58%, var\(--background\)\)/);
     assert.doesNotMatch(css, /construct-auth-logo__mark--card/);
     assert.match(css, /\.construct-auth-card :where\(input, \[data-slot="input"\], \[data-slot="input-group"\], \[data-slot="button"\]\)/);
     assert.match(css, /border-radius: 8px;/);

@@ -10,8 +10,8 @@ import { User2 } from "lucide-react"
 import type { ReactNode } from "react"
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
+import { ConstructAuthLogo } from "../construct-auth-logo"
 
 export type UserAvatarProps = {
   className?: string
@@ -45,7 +45,12 @@ export function UserAvatar({
   )
 
   if ((isPending || sessionPending) && !user) {
-    return <Skeleton className={cn("size-8 rounded-full", className)} />
+    return (
+      <ConstructAuthLogo
+        className={cn("size-8", className)}
+        markClassName="construct-auth-logo__mark--user-loading"
+      />
+    )
   }
 
   const resolvedUser = user ?? session?.user
