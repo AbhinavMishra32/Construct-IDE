@@ -565,6 +565,7 @@ export function KnowledgeGraphPanel({
   const selectedPulseRef = useRef(0);
   const approachDirectionRef = useRef<1 | -1>(1);
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
+  const [graphReady, setGraphReady] = useState(false);
   const graphData = useMemo(() => buildKnowledgeGraph(records), [records]);
   const recordByKey = useMemo(() => new Map(records.map((record) => [recordKey(record), record])), [records]);
   const hoveredRecord = hoveredKey ? recordByKey.get(hoveredKey) : undefined;
@@ -577,6 +578,10 @@ export function KnowledgeGraphPanel({
     setHoveredKey(null);
     onClearSelection();
   };
+
+  useEffect(() => {
+    setGraphReady(false);
+  }, [graphData]);
 
   useEffect(() => {
     const graph = graphRef.current as (ForceGraphMethods & {
@@ -712,6 +717,8 @@ export function KnowledgeGraphPanel({
         d3VelocityDecay={0.24}
         enableNodeDrag
         enableNavigationControls
+        onEngineTick={() => setGraphReady(true)}
+        onEngineStop={() => setGraphReady(true)}
         onNodeClick={(node) => {
           const key = typeof node.recordKey === "string" ? node.recordKey : null;
           const record = key ? recordByKey.get(key) : undefined;
@@ -724,7 +731,7 @@ export function KnowledgeGraphPanel({
         onLinkClick={clearGraphSelection}
         onBackgroundClick={clearGraphSelection}
       />
-      {size.width > 0 && size.height > 0 ? null : <GraphLoadingState />}
+      {graphReady && size.width > 0 && size.height > 0 ? null : <GraphLoadingState />}
 
       {hoveredRecord ? (
         <aside className="pointer-events-none absolute right-3 top-3 flex w-[min(22rem,calc(100%-1.5rem))] flex-col gap-2 rounded-[8px] border bg-background/92 px-3 py-2.5 text-sm shadow-sm backdrop-blur">

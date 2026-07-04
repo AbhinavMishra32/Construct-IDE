@@ -42,6 +42,7 @@ test("Concepts surface renders saved concepts as an expandable tree", () => {
   assert.match(source, /startGraphResize/);
   assert.match(source, /Resize knowledge web/);
   assert.match(source, /graphRef/);
+  assert.match(source, /graphReady/);
   assert.match(source, /ConstructAuthLogo/);
   assert.match(source, /construct-auth-logo__mark--knowledge-web-loading/);
   assert.match(source, /const graphWidth = size\.width \|\| Math\.max\(360, containerRef\.current\?\.clientWidth \?\? 540\)/);
@@ -74,6 +75,8 @@ test("Concepts surface renders saved concepts as an expandable tree", () => {
   assert.match(source, /normalizeGraphCameraAngle/);
   assert.match(source, /graphCameraFocusFrame/);
   assert.match(source, /cameraPosition/);
+  assert.match(source, /onEngineTick=\{\(\) => setGraphReady\(true\)\}/);
+  assert.match(source, /onEngineStop=\{\(\) => setGraphReady\(true\)\}/);
   assert.match(source, /requestAnimationFrame/);
   assert.match(source, /selectedPulse/);
   assert.match(source, /graphNodeColor/);
