@@ -100,6 +100,10 @@ function flowTaskTabId(taskId: string): string {
   return `${FLOW_TASK_TAB_PREFIX}${taskId}`;
 }
 
+function isTerminalFlowSession(session: Pick<ConstructFlowSession, "status">): boolean {
+  return session.status === "completed" || session.status === "error" || session.status === "waiting";
+}
+
 function taskIdFromFlowTab(tabId: string): string | null {
   return tabId.startsWith(FLOW_TASK_TAB_PREFIX) ? tabId.slice(FLOW_TASK_TAB_PREFIX.length) : null;
 }
@@ -684,7 +688,7 @@ export function FlowWorkspace({
   useEffect(() => {
     const unsubscribe = onConstructFlowSessionEvent((event: ConstructFlowSessionEvent) => {
       if (event.projectId !== project.id) return;
-      if (event.type === "started" || event.type === "updated") {
+      if ((event.type === "started" || event.type === "updated") && !isTerminalFlowSession(event.session)) {
         setLiveSession(event.session);
         return;
       }
@@ -705,7 +709,7 @@ export function FlowWorkspace({
           updatedAt
         }
       });
-      if (event.type === "completed" || event.type === "error" || event.type === "waiting") {
+      if (event.type === "completed" || event.type === "error" || event.type === "waiting" || isTerminalFlowSession(event.session)) {
         setPending(false);
         setLiveSession(undefined);
       } else {

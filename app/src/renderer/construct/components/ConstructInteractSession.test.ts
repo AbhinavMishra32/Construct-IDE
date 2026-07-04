@@ -188,6 +188,9 @@ describe("Construct Interact Codex-style UI", () => {
     assert.match(flow, /questionResponse/);
     assert.match(flow, /markQuestionAnswered/);
     assert.match(flow, /session\.origin === "question-response"/);
+    assert.match(flow, /function isTerminalFlowSession/);
+    assert.match(flow, /\(event\.type === "started" \|\| event\.type === "updated"\) && !isTerminalFlowSession\(event\.session\)/);
+    assert.match(flow, /event\.type === "completed" \|\| event\.type === "error" \|\| event\.type === "waiting" \|\| isTerminalFlowSession\(event\.session\)/);
     assert.match(flow, /setPending\(false\);\s*setLiveSession\(undefined\);/);
     assert.match(flow, /pending=\{pending && !activeQuestion\}/);
     assert.match(flow, /Custom answer/);
