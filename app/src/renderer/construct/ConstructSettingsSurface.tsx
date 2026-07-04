@@ -43,17 +43,10 @@ import { logStore, type LogChannel, type LogEntry } from "./lib/logStore";
 import {
   deleteProject,
   getSettings,
-  listAiFeatures,
   listProjects,
   listModels,
   importOpencodeAuth,
-  litellmCheckInstall,
-  litellmInstall,
-  litellmStart,
-  litellmStatus,
-  litellmStop,
   onAgentLog,
-  onLitellmStatusChange,
   selectWorkspaceDirectory,
   setWorkspaceRoot,
   updateAppSettings,
@@ -68,11 +61,9 @@ import {
 import { parseConstructSource } from "./lib/parser";
 import { showProviderUpdateToast } from "./components/ProviderUpdateToast";
 import type {
-  AiFeatureSettings,
   AiSettings,
   AnyProjectRecord,
   DeleteProjectCheck,
-  LitellmState,
   ModelCatalogEntry,
   ObservabilitySettings,
   ProjectSummary
@@ -145,15 +136,6 @@ function modelSettingsKeyForProvider(provider: ModelLookupProvider): "openAiMode
   return "openAiModel";
 }
 
-function defaultModelForFeature(provider: ModelLookupProvider, feature: AiFeatureSettings): string {
-  if (provider === "construct-cloud") return feature.defaultConstructCloudModel;
-  if (provider === "openrouter") return feature.defaultOpenRouterModel;
-  if (provider === "opencode-zen") return feature.defaultOpenCodeZenModel;
-  if (provider === "github-copilot") return feature.defaultGithubCopilotModel;
-  if (provider === "litellm") return feature.defaultLiteLlmModel;
-  return feature.defaultOpenAiModel;
-}
-
 const flowMemoryLabels: Record<FlowMemoryFileName, { title: string; description: string }> = {
   "research.md": {
     title: "Research",
@@ -203,12 +185,10 @@ export function ConstructSettingsSurface({
   const [observabilitySettings, setObservabilitySettings] = useState<ObservabilitySettings>(defaultObservabilitySettings);
   const observabilitySettingsRef = useRef(observabilitySettings);
   observabilitySettingsRef.current = observabilitySettings;
-  const [aiFeatures, setAiFeatures] = useState<AiFeatureSettings[]>([]);
   const [modelOptions, setModelOptions] = useState<ModelCatalogEntry[]>([]);
   const [modelsBusy, setModelsBusy] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
   const [modelsError, setModelsError] = useState<string | null>(null);
-  const [litellmState, setLitellmState] = useState<LitellmState>({ status: "stopped", port: 4000, pid: null, error: null });
   const [projectTitle, setProjectTitle] = useState(project?.title ?? "");
   const [projectDescription, setProjectDescription] = useState(project?.description ?? "");
   const [busy, setBusy] = useState(false);
@@ -403,14 +383,12 @@ export function ConstructSettingsSurface({
           ...defaultObservabilitySettings,
           ...(settings.observability ?? {})
         });
-        return listAiFeatures();
       })
-      .then((features) => setAiFeatures(features))
       .catch((caught) => setError(caught instanceof Error ? caught.message : String(caught)));
   }, [onShowStatusBarChange]);
 
   useEffect(() => {
-    if (aiSettings.provider === "opencode-zen" || aiSettings.provider === "github-copilot" || aiSettings.provider === "litellm") {
+    if (aiSettings.source === "construct-cloud" || aiSettings.provider === "opencode-zen") {
       void refreshModels(aiSettings.source === "construct-cloud" ? "construct-cloud" : aiSettings.provider);
       return;
     }
@@ -431,56 +409,6 @@ export function ConstructSettingsSurface({
     setProjectTitle(project?.title ?? "");
     setProjectDescription(project?.description ?? "");
   }, [project?.description, project?.title]);
-
-  useEffect(() => {
-    void litellmStatus().then(setLitellmState).catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    const unsubscribe = onLitellmStatusChange((state) => {
-      setLitellmState(state);
-    });
-    return unsubscribe;
-  }, []);
-
-  function extractPort(baseUrl: string): number {
-    try {
-      const url = new URL(baseUrl);
-      return Number(url.port) || 4000;
-    } catch {
-      return 4000;
-    }
-  }
-
-  async function handleLitellmStart() {
-    const port = extractPort(aiSettings.liteLlmBaseUrl);
-    const installed = await litellmCheckInstall();
-    if (!installed) {
-      const ok = window.confirm(
-        "litellm is not installed. Install it now via pip3? (requires Python 3)"
-      );
-      if (!ok) return;
-      const success = await litellmInstall();
-      if (!success) {
-        setLitellmState((prev) => ({ ...prev, status: "error", error: "Failed to install litellm. Try: pip3 install litellm" }));
-        return;
-      }
-    }
-    const state = await litellmStart({
-      port,
-      openAiApiKey: aiSettings.openAiApiKey || undefined,
-      openRouterApiKey: aiSettings.openRouterApiKey || undefined
-    });
-    setLitellmState(state);
-    if (state.status === "running") {
-      void refreshModels("litellm");
-    }
-  }
-
-  async function handleLitellmStop() {
-    const state = await litellmStop();
-    setLitellmState(state);
-  }
 
   useEffect(() => {
     if (activeItemId !== "project-flow-memory" || !projectId || !isFlowProject) {
@@ -585,7 +513,7 @@ export function ConstructSettingsSurface({
       return;
     }
     if (!usesLiteLlm && !resolvedKey && (provider === "openai" || provider === "construct-cloud")) {
-      setModelsError(provider === "construct-cloud" ? "Enter your Construct account hosted-compute token first." : "Enter your OpenAI API key first.");
+      setModelsError(provider === "construct-cloud" ? "Enter your Construct Cloud token first." : "Enter your OpenAI API key first.");
       setModelOptions([]);
       return;
     }
@@ -633,14 +561,9 @@ export function ConstructSettingsSurface({
     }));
     setModelOptions([]);
     setModelsError(null);
-    setAiFeatures((features) => features.map((feature) => {
-      const model = defaultModelForFeature(provider, feature);
-      return { ...feature, model };
-    }));
   }
 
   function updateAiSource(source: AiSettings["source"]) {
-    const provider = source === "construct-cloud" ? "construct-cloud" : aiSettingsRef.current.provider;
     setAiSettingsDraft((current) => ({
       ...current,
       source,
@@ -648,9 +571,6 @@ export function ConstructSettingsSurface({
     }));
     setModelOptions([]);
     setModelsError(null);
-    setAiFeatures((features) => features.map((feature) => {
-      return { ...feature, model: defaultModelForFeature(provider, feature) };
-    }));
   }
 
   async function saveAiConfiguration() {
@@ -662,7 +582,6 @@ export function ConstructSettingsSurface({
         ...defaultAiSettings,
         ...(settings.ai ?? {})
       });
-      setAiFeatures(await listAiFeatures());
       toast.success("AI settings saved");
     } catch (caught) {
       setModelsError(caught instanceof Error ? caught.message : String(caught));
@@ -688,19 +607,6 @@ export function ConstructSettingsSurface({
     }
   }
 
-  function updateFeatureModel(featureId: string, model: string) {
-    setAiSettingsDraft((current) => ({
-      ...current,
-      featureModels: {
-        ...current.featureModels,
-        [featureId]: model
-      }
-    }));
-    setAiFeatures((current) => current.map((feature) => (
-      feature.id === featureId ? { ...feature, model } : feature
-    )));
-  }
-
   function updateGlobalModel(model: string) {
     setAiSettingsDraft((current) => {
       const key = modelSettingsKeyForProvider(current.source === "construct-cloud" ? "construct-cloud" : current.provider);
@@ -710,10 +616,6 @@ export function ConstructSettingsSurface({
         featureModels: {}
       };
     });
-    setAiFeatures((current) => current.map((feature) => ({
-      ...feature,
-      model: model || defaultModelForFeature(aiSettingsRef.current.source === "construct-cloud" ? "construct-cloud" : aiSettingsRef.current.provider, feature)
-    })));
   }
 
   async function handleDeleteClick() {
@@ -865,7 +767,6 @@ export function ConstructSettingsSurface({
     return (
       <ConstructAiSettingsSection
         settings={aiSettings}
-        features={aiFeatures}
         modelOptions={modelOptions}
         modelsBusy={modelsBusy}
         aiBusy={aiBusy}
@@ -881,8 +782,6 @@ export function ConstructSettingsSurface({
         onOpenAiBaseUrlChange={(openAiBaseUrl: string) => setAiSettingsDraft((current) => ({ ...current, openAiBaseUrl }))}
         onOpenRouterApiKeyChange={(openRouterApiKey: string) => setAiSettingsDraft((current) => ({ ...current, openRouterApiKey }))}
         onOpenRouterBaseUrlChange={(openRouterBaseUrl: string) => setAiSettingsDraft((current) => ({ ...current, openRouterBaseUrl }))}
-        onLiteLlmApiKeyChange={(liteLlmApiKey: string) => setAiSettingsDraft((current) => ({ ...current, liteLlmApiKey }))}
-        onLiteLlmBaseUrlChange={(liteLlmBaseUrl: string) => setAiSettingsDraft((current) => ({ ...current, liteLlmBaseUrl }))}
         onOpencodeZenApiKeyChange={(opencodeZenApiKey: string) => setAiSettingsDraft((current) => ({ ...current, opencodeZenApiKey }))}
         onOpencodeZenBaseUrlChange={(opencodeZenBaseUrl: string) => setAiSettingsDraft((current) => ({ ...current, opencodeZenBaseUrl }))}
         onTavilyApiKeyChange={(tavilyApiKey: string) => setAiSettingsDraft((current) => ({ ...current, tavilyApiKey }))}
@@ -891,11 +790,8 @@ export function ConstructSettingsSurface({
         onOpenRouterModelChange={updateGlobalModel}
         onOpenAiModelChange={updateGlobalModel}
         onOpencodeZenModelChange={updateGlobalModel}
-        onGithubCopilotModelChange={updateGlobalModel}
-        onLiteLlmModelChange={updateGlobalModel}
         onConstructCloudModelChange={updateGlobalModel}
         onRefreshModels={(provider) => { void refreshModels(provider); }}
-        onFeatureModelChange={updateFeatureModel}
         onSave={() => { void saveAiConfiguration(); }}
         onImportOpencodeAuth={async (): Promise<string | null> => {
           try {
@@ -912,9 +808,6 @@ export function ConstructSettingsSurface({
             return null;
           }
         }}
-        litellmState={litellmState}
-        onLitellmStart={handleLitellmStart}
-        onLitellmStop={handleLitellmStop}
         allowConstructCloudEndpointEditing={false}
       />
     );
@@ -922,7 +815,7 @@ export function ConstructSettingsSurface({
 
   if (activeItemId === "ai") {
     return (
-      <SettingsPanel title="AI" subtitle="Provider routing, model defaults, feature overrides, and hosted compute.">
+      <SettingsPanel title="AI" subtitle="Choose one Construct agent source, provider, and model.">
         {renderAiSettingsSection()}
         {error ? <Alert variant="destructive"><AlertTitle>AI settings error</AlertTitle><AlertDescription>{error}</AlertDescription></Alert> : null}
       </SettingsPanel>
@@ -970,7 +863,7 @@ export function ConstructSettingsSurface({
 
   if (activeItemId === "observability") {
     return (
-      <SettingsPanel title="Observability" subtitle="Langfuse tracing for agent runs, model calls, and hosted compute.">
+      <SettingsPanel title="Observability" subtitle="Langfuse tracing for agent runs, model calls, and Construct Cloud.">
         <SettingsSection>
           <SettingsCard>
             <SettingsRow

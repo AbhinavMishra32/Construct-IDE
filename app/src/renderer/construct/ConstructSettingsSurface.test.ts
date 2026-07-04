@@ -102,7 +102,7 @@ describe("Construct project advanced settings", () => {
     assert.match(css, /--construct-auth-logo-color/);
   });
 
-  it("wires Construct account hosted-compute UI through durable AI settings", () => {
+  it("wires Construct Cloud UI through durable AI settings", () => {
     const source = readFileSync(fileURLToPath(new URL("./ConstructSettingsSurface.tsx", import.meta.url)), "utf8");
     const aiSection = readFileSync(
       fileURLToPath(new URL("./components/settings/ConstructAiSettingsSection.tsx", import.meta.url)),
@@ -117,7 +117,10 @@ describe("Construct project advanced settings", () => {
 
     assert.match(source, /onSourceChange=\{updateAiSource\}/);
     assert.match(source, /onConstructCloudAccessTokenChange=\{\(constructCloudAccessToken: string\) => setAiSettingsDraft/);
-    assert.match(aiSection, /LLM source/);
+    assert.match(aiSection, /Model Source/);
+    assert.match(aiSection, /Search models/);
+    assert.match(aiSection, /readOnly=\{usesConstructCloud\}/);
+    assert.match(aiSection, /constructCloudModelAvailable/);
     assert.match(aiSection, /ConstructCloudAccountPanel/);
     assert.match(source, /allowConstructCloudEndpointEditing=\{false\}/);
     assert.match(aiSection, /allowEndpointEditing=\{allowConstructCloudEndpointEditing\}/);

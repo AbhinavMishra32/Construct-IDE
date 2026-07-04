@@ -23,7 +23,7 @@ type ProviderModelPickerProps = {
 const providerOrder: ModelProvider[] = ["construct-cloud", "litellm", "opencode-zen", "github-copilot", "openrouter", "openai"];
 
 const providerMeta: Record<ModelProvider, { label: string; icon: Icon }> = {
-  "construct-cloud": { label: "Hosted Compute", icon: ConstructCloudIcon },
+  "construct-cloud": { label: "Construct Cloud", icon: ConstructCloudIcon },
   openai: { label: "OpenAI", icon: OpenAIIcon },
   openrouter: { label: "OpenRouter", icon: OpenRouterIcon },
   "github-copilot": { label: "GitHub Copilot", icon: GithubCopilotIcon },

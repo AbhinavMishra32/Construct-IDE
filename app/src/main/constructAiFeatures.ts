@@ -136,17 +136,16 @@ export function isModelValidForProvider(modelId: string, provider: string): bool
 
 export function modelForAiFeature(settings: StoredAiSettings, featureId: ConstructAiFeatureId): string {
   const feature = constructAiFeatures.find((item) => item.id === featureId);
-  const saved = settings.featureModels?.[featureId]?.trim();
   const provider = settings.source === "construct-cloud" ? "construct-cloud" : settings.provider;
-
-  if (saved && isModelValidForProvider(saved, provider)) {
-    return saved;
-  }
-
   const globalModel = globalModelForProvider(settings);
 
   if (globalModel && isModelValidForProvider(globalModel, provider)) {
     return globalModel;
+  }
+
+  const legacySaved = settings.featureModels?.[featureId]?.trim();
+  if (legacySaved && isModelValidForProvider(legacySaved, provider)) {
+    return legacySaved;
   }
 
   if (settings.source === "construct-cloud") {

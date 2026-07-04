@@ -46,7 +46,7 @@ test("registered AI features expose user-facing metadata", () => {
   assert.ok(constructAiFeatures.every((feature) => feature.title && feature.description));
 });
 
-test("feature models use provider defaults and saved per-feature overrides", () => {
+test("feature models use the configured Construct agent model before legacy overrides", () => {
   assert.equal(modelForAiFeature(baseSettings, "verification"), "gpt-5-mini");
 
   assert.equal(
@@ -78,22 +78,31 @@ test("feature models use provider defaults and saved per-feature overrides", () 
       ...baseSettings,
       featureModels: { verification: "gpt-5.1" }
     }, "verification"),
-    "gpt-5.1"
+    "gpt-5-mini"
   );
 });
 
-test("modelForAiFeature ignores incompatible overrides and falls back", () => {
-  // Overrides from opencode-zen (deepseek-v4-flash-free) should be ignored for openai provider
+test("modelForAiFeature uses legacy overrides only when the global model is unavailable", () => {
   assert.equal(
     modelForAiFeature({
       ...baseSettings,
       provider: "openai",
+      openAiModel: "",
+      featureModels: { verification: "gpt-5.1" }
+    }, "verification"),
+    "gpt-5.1"
+  );
+
+  assert.equal(
+    modelForAiFeature({
+      ...baseSettings,
+      provider: "openai",
+      openAiModel: "",
       featureModels: { verification: "deepseek-v4-flash-free" }
     }, "verification"),
     "gpt-5-mini"
   );
 
-  // Overrides from opencode-zen should be ignored for construct-cloud source
   assert.equal(
     modelForAiFeature({
       ...baseSettings,
@@ -104,11 +113,11 @@ test("modelForAiFeature ignores incompatible overrides and falls back", () => {
     "deepseek/deepseek-v4-flash"
   );
 
-  // Overrides from opencode-zen are valid when provider is opencode-zen
   assert.equal(
     modelForAiFeature({
       ...baseSettings,
       provider: "opencode-zen",
+      opencodeZenModel: "",
       featureModels: { verification: "deepseek-v4-flash-free" }
     }, "verification"),
     "deepseek-v4-flash-free"
@@ -121,6 +130,6 @@ test("settings view returns the active model for each feature", () => {
     featureModels: { "selection-explain": "gpt-5.1-mini" }
   });
 
-  assert.equal(rows.find((row) => row.id === "selection-explain")?.model, "gpt-5.1-mini");
+  assert.equal(rows.find((row) => row.id === "selection-explain")?.model, "gpt-5-mini");
   assert.equal(rows.find((row) => row.id === "code-explain")?.model, "gpt-5-mini");
 });

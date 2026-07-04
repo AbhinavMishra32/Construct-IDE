@@ -245,7 +245,7 @@ function ConstructCloudTokenPanel({
           {user ? (user.email ?? user.name ?? "Signed in") : isPending ? "Checking account" : "No Construct account"}
         </div>
         <div className="mt-1 text-xs text-muted-foreground">
-          {usage ? `${usage.plan.toUpperCase()} plan` : accessToken ? "Hosted compute token is present." : "Sign in to mint a hosted compute token."}
+          {usage ? `${usage.plan.toUpperCase()} plan` : accessToken ? "Construct Cloud token is present." : "Sign in to mint a Construct Cloud token."}
         </div>
       </div>
 
