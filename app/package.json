@@ -1,7 +1,7 @@
 {
   "name": "@construct/app",
   "private": true,
-  "version": "0.6.5-alpha",
+  "version": "0.6.6-alpha",
   "type": "module",
   "main": "dist/main.cjs",
   "description": "Construct desktop IDE for agentic project work.",

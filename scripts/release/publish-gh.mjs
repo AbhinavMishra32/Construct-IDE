@@ -9,7 +9,10 @@ const tag = process.env.TAG?.trim() || `v${packageJson.version}`;
 const version = tag.replace(/^v/, "");
 const releaseDir = path.resolve(root, process.env.RELEASE_ARTIFACT_DIR || path.join("app", "release", version));
 const notesFile = path.join(root, "docs", "releases", `${version}.md`);
-const isPrerelease = process.env.IS_PRERELEASE === "true" || /-(alpha|beta|canary|dev|next|rc)(?:[.-]|$)/i.test(version);
+const explicitPrerelease = process.env.IS_PRERELEASE?.trim();
+const isPrerelease = explicitPrerelease
+  ? explicitPrerelease === "true"
+  : /-(alpha|beta|canary|dev|next|rc)(?:[.-]|$)/i.test(version);
 const title = `Construct ${version}`;
 
 ensureGhAuth();
