@@ -9,8 +9,8 @@ const tag = process.env.TAG?.trim() || `v${packageJson.version}`;
 const version = tag.replace(/^v/, "");
 const releaseDir = path.resolve(root, process.env.RELEASE_ARTIFACT_DIR || path.join("app", "release", version));
 const notesFile = path.join(root, "docs", "releases", `${version}.md`);
-const isPrerelease = process.env.IS_PRERELEASE === "true" || /-(alpha|beta|canary|dev|next|rc)[.-]/i.test(version);
-const title = isPrerelease ? `Construct Canary ${version}` : `Construct ${version}`;
+const isPrerelease = process.env.IS_PRERELEASE === "true" || /-(alpha|beta|canary|dev|next|rc)(?:[.-]|$)/i.test(version);
+const title = `Construct ${version}`;
 
 ensureGhAuth();
 
@@ -96,7 +96,7 @@ function uniqueArtifactsByName(files) {
 
 function upsertRelease() {
   const metadataArgs = ["--title", title];
-  if (existsSync(notesFile) && !isPrerelease) {
+  if (existsSync(notesFile)) {
     metadataArgs.push("--notes-file", notesFile);
   } else if (isPrerelease) {
     metadataArgs.push("--notes", "Automated canary pre-release build.");
