@@ -19,6 +19,9 @@ describe("construct agent runtime stream lifecycle", () => {
     assert.match(gatewaySource, /\/responses/);
     assert.match(runtimeSource, /aiGateway\.resolveModel/);
     assert.match(runtimeSource, /aiGateway\.preflightModelEndpoint/);
+    assert.match(gatewaySource, /preflightConstructCloudModel/);
+    assert.match(gatewaySource, /available\.has\(model\.modelId\)/);
+    assert.match(gatewaySource, /Open Settings > AI, search Construct Cloud models/);
     assert.match(runtimeSource, /aiGateway\.traceProviderCall/);
     assert.match(codeGhostSource, /aiGateway\.chatCompletions/);
     assert.match(selectionExplainSource, /aiGateway\.openAiResponses/);

@@ -75,7 +75,7 @@ export async function fetchProviderModels(input: {
 async function fetchConstructCloudModels(apiKey: string | undefined, baseUrl: string): Promise<ModelCatalogEntry[]> {
   const token = apiKey?.trim();
   if (!token) {
-    throw new Error("Enter your Construct account hosted-compute token first.");
+    throw new Error("Enter your Construct Cloud token first.");
   }
 
   const response = await fetch(`${constructCloudApiBaseUrl(baseUrl)}/models`, {
@@ -85,7 +85,7 @@ async function fetchConstructCloudModels(apiKey: string | undefined, baseUrl: st
   });
 
   if (!response.ok) {
-    throw new Error(`Hosted compute model lookup failed (${response.status}).`);
+    throw new Error(`Construct Cloud model lookup failed (${response.status}).`);
   }
 
   const payload = await response.json() as {
@@ -107,7 +107,7 @@ async function fetchConstructCloudModels(apiKey: string | undefined, baseUrl: st
       id: model.id,
       name: model.name?.trim() || model.id,
       providerId: "construct-cloud",
-      providerName: "Hosted Compute",
+      providerName: "Construct Cloud",
       subProvider: model.owned_by ?? (model.id.includes("/") ? model.id.split("/")[0] : null),
       description: model.description ?? null,
       contextLength: model.context_length ?? null,

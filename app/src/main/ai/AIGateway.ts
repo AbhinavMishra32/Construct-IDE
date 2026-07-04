@@ -35,6 +35,7 @@ class ConstructAIGateway {
     trace?: AIGatewayTraceSink;
   }): Promise<AIGatewayFetchResult> {
     const model = await this.resolveModel(input.purpose, input.featureId);
+    await this.preflightModelEndpoint({ model, purpose: input.purpose, trace: input.trace });
     const requestId = randomUUID();
     const baseUrl = model.url?.replace(/\/$/, "");
     if (!baseUrl) {
@@ -125,6 +126,11 @@ class ConstructAIGateway {
     purpose: string;
     trace?: AIGatewayTraceSink;
   }): Promise<void> {
+    if (input.model.providerId === "construct-cloud") {
+      await preflightConstructCloudModel(input.model, input.purpose, input.trace);
+      return;
+    }
+
     if (!isLiteLlmBackedProvider(input.model.providerId)) {
       return;
     }
@@ -193,4 +199,62 @@ export const aiGateway = new ConstructAIGateway();
 
 function isLiteLlmBackedProvider(providerId: string): boolean {
   return providerId === "github-copilot" || providerId === "litellm";
+}
+
+async function preflightConstructCloudModel(
+  model: ConstructAgentModel,
+  purpose: string,
+  trace?: AIGatewayTraceSink
+): Promise<void> {
+  const baseUrl = model.url?.trim();
+  if (!baseUrl) {
+    throw new Error(`Construct Cloud base URL is required for ${purpose}.`);
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 4000);
+  const modelsUrl = `${baseUrl.replace(/\/$/, "")}/models`;
+
+  try {
+    const response = await fetch(modelsUrl, {
+      method: "GET",
+      headers: model.apiKey ? { Authorization: `Bearer ${model.apiKey}` } : undefined,
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      throw new Error(`model catalog returned ${response.status}`);
+    }
+
+    const payload = await response.json() as { data?: Array<{ id?: unknown }> };
+    const available = new Set((payload.data ?? [])
+      .map((entry) => typeof entry.id === "string" ? entry.id : "")
+      .filter(Boolean));
+
+    trace?.({
+      title: "Construct Cloud model preflight",
+      level: available.has(model.modelId) ? "debug" : "error",
+      detail: `GET ${modelsUrl} returned ${available.size} available models.`,
+      payload: {
+        model: model.modelId,
+        provider: model.providerId,
+        url: modelsUrl
+      }
+    });
+
+    if (!available.has(model.modelId)) {
+      throw new Error(`Construct Cloud model "${model.modelId}" is not available. Open Settings > AI, search Construct Cloud models, and choose one from the list.`);
+    }
+  } catch (error) {
+    const cause = error instanceof Error && error.name === "AbortError"
+      ? "request timed out"
+      : error instanceof Error && error.message
+        ? error.message
+        : String(error);
+    if (cause.startsWith("Construct Cloud model")) {
+      throw new Error(cause);
+    }
+    throw new Error(`Construct Cloud model catalog is unreachable at ${baseUrl}. ${purpose} cannot run until available models are loaded. (${cause})`);
+  } finally {
+    clearTimeout(timeout);
+  }
 }

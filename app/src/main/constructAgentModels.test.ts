@@ -38,19 +38,19 @@ const settings: StoredAiSettings = {
   flowSourceGroundingEnabled: true
 };
 
-test("agent model resolution uses the selected OpenRouter credentials and feature model", () => {
+test("agent model resolution uses the selected OpenRouter credentials and Construct agent model", () => {
   assert.deepEqual(
     resolveConstructAgentModelFromSettings(settings, "Construct Interact evaluation", "construct-interact"),
     {
       providerId: "openrouter",
-      modelId: "deepseek/deepseek-v4-flash",
+      modelId: "deepseek/deepseek-chat",
       url: "https://openrouter.ai/api/v1",
       apiKey: "test-openrouter-key"
     }
   );
 });
 
-test("hosted compute source resolves through the hosted proxy with a desktop token", () => {
+test("Construct Cloud source resolves through the cloud proxy with a desktop token", () => {
   assert.deepEqual(
     resolveConstructAgentModelFromSettings(
       {
@@ -74,7 +74,7 @@ test("hosted compute source resolves through the hosted proxy with a desktop tok
   );
 });
 
-test("hosted compute source requires a desktop token", () => {
+test("Construct Cloud source requires a desktop token", () => {
   assert.throws(
     () => resolveConstructAgentModelFromSettings(
       {

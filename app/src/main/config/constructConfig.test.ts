@@ -95,7 +95,7 @@ test("settings default Construct Cloud endpoint follows CONSTRUCT_CLOUD_ENDPOINT
   assert.equal(settings.ai.constructCloudBaseUrl, "http://localhost:8787");
 });
 
-test("settings normalize and persist hosted compute routing options", async (t) => {
+test("settings normalize and persist Construct Cloud routing options", async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "construct-config-"));
   const paths = createConstructDataPaths(root);
   configureConstructDataPaths(paths);
