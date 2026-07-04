@@ -165,7 +165,8 @@ describe("Construct Interact Codex-style UI", () => {
     assert.match(flow, /<FlowComposerControls/);
     assert.match(flow, /FlowContextMeter/);
     assert.match(flow, /FlowModelDropdown/);
-    assert.match(flow, /"construct-flow": model/);
+    assert.match(flow, /modelOptionsForActiveAgent/);
+    assert.doesNotMatch(flow, /"construct-flow": model/);
     assert.match(flow, /collectAnsweredQuestionKeys/);
     assert.match(flow, /answeredQuestionKeys\.has\(questionKey\(session\.id, candidate\.id\)\)/);
     assert.match(flow, /buildFlowAgentParts/);

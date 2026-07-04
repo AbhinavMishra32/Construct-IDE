@@ -6,7 +6,7 @@ import { getSettings, listModels, updateAiSettings } from "../lib/bridge";
 import {
   apiKeyForProvider,
   flowFeatureModel,
-  ensureModelOption,
+  modelOptionsForActiveAgent,
   FlowComposerRightControls
 } from "./FlowWorkspace";
 
@@ -50,7 +50,7 @@ export function Dashboard({
     setModelsError(null);
     try {
       const models = await listModels({
-        provider: resolvedSettings.provider,
+        provider: resolvedSettings.source === "construct-cloud" ? "construct-cloud" : resolvedSettings.provider,
         apiKey: apiKeyForProvider(resolvedSettings)
       });
       setModelOptions(models);
@@ -87,26 +87,8 @@ export function Dashboard({
   ), [aiSettings]);
 
   const flowModelOptions = useMemo(() => (
-    ensureModelOption(modelOptions, activeFlowModel, aiSettings?.provider)
-  ), [activeFlowModel, aiSettings?.provider, modelOptions]);
-
-  const updateFlowModel = useCallback(async (model: string) => {
-    if (!aiSettings) return;
-    const featureModels = {
-      ...(aiSettings.featureModels ?? {}),
-      "construct-flow": model
-    };
-    const optimistic = { ...aiSettings, featureModels };
-    setAiSettings(optimistic);
-    setModelsError(null);
-    try {
-      const settings = await updateAiSettings({ ai: { featureModels } });
-      setAiSettings(settings.ai);
-    } catch (error) {
-      setModelsError(error instanceof Error ? error.message : String(error));
-      void getSettings().then((settings) => setAiSettings(settings.ai));
-    }
-  }, [aiSettings]);
+    modelOptionsForActiveAgent(modelOptions, activeFlowModel, aiSettings?.source === "construct-cloud" ? "construct-cloud" : aiSettings?.provider)
+  ), [activeFlowModel, aiSettings?.provider, aiSettings?.source, modelOptions]);
 
   const updateReasoningEffort = useCallback(async (effort: AiSettings["reasoningEffort"]) => {
     if (!aiSettings) return;
@@ -168,7 +150,6 @@ export function Dashboard({
                     modelsBusy={modelsBusy}
                     modelsError={modelsError}
                     reasoningEffort={aiSettings?.reasoningEffort ?? "auto"}
-                    onModelChange={updateFlowModel}
                     onReasoningEffortChange={updateReasoningEffort}
                   />
                 }
@@ -192,6 +173,3 @@ export function Dashboard({
     </div>
   );
 }
-
-
-

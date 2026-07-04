@@ -1324,7 +1324,7 @@ function FlowAgentPanel({
     setModelsError(null);
     try {
       const models = await listModels({
-        provider: resolvedSettings.provider,
+        provider: resolvedSettings.source === "construct-cloud" ? "construct-cloud" : resolvedSettings.provider,
         apiKey: apiKeyForProvider(resolvedSettings)
       });
       setModelOptions(models);
@@ -1360,27 +1360,8 @@ function FlowAgentPanel({
     aiSettings ? flowFeatureModel(aiSettings) : latestContextWindow?.modelId ?? ""
   ), [aiSettings, latestContextWindow?.modelId]);
   const flowModelOptions = useMemo(() => (
-    ensureModelOption(modelOptions, activeFlowModel, aiSettings?.provider)
-  ), [activeFlowModel, aiSettings?.provider, modelOptions]);
-
-  const updateFlowModel = useCallback(async (model: string) => {
-    if (!aiSettings) return;
-    const featureModels = {
-      ...(aiSettings.featureModels ?? {}),
-      "construct-flow": model
-    };
-    const optimistic = { ...aiSettings, featureModels };
-    setAiSettings(optimistic);
-    setModelsError(null);
-    try {
-      const settings = await updateAiSettings({ ai: { featureModels } });
-      setAiSettings(settings.ai);
-    } catch (error) {
-      setModelsError(error instanceof Error ? error.message : String(error));
-      const settings = await getSettings();
-      setAiSettings(settings.ai);
-    }
-  }, [aiSettings]);
+    modelOptionsForActiveAgent(modelOptions, activeFlowModel, aiSettings?.source === "construct-cloud" ? "construct-cloud" : aiSettings?.provider)
+  ), [activeFlowModel, aiSettings?.provider, aiSettings?.source, modelOptions]);
 
   const updateReasoningEffort = useCallback(async (reasoningEffort: AiSettings["reasoningEffort"]) => {
     if (!aiSettings) return;
@@ -1558,7 +1539,6 @@ function FlowAgentPanel({
                         modelsBusy={modelsBusy}
                         modelsError={modelsError}
                         reasoningEffort={aiSettings?.reasoningEffort ?? "auto"}
-                        onModelChange={updateFlowModel}
                         onReasoningEffortChange={updateReasoningEffort}
                       />
                     }
@@ -1717,6 +1697,7 @@ type ModelBrandKey =
   | "xai"
   | "perplexity"
   | "github-copilot"
+  | "construct-cloud"
   | "openrouter"
   | "opencode-zen"
   | "litellm"
@@ -5770,8 +5751,6 @@ function findLatestContextWindow(sessions: ConstructFlowSession[]): ConstructAge
 }
 
 export function flowFeatureModel(settings: AiSettings): string {
-  const featureModel = settings.featureModels?.["construct-flow"]?.trim();
-  if (featureModel) return featureModel;
   return globalModelForProvider(settings) || defaultFlowModelForProvider(settings.source === "construct-cloud" ? "construct-cloud" : settings.provider);
 }
 
@@ -5805,7 +5784,7 @@ export function apiKeyForProvider(settings: AiSettings): string | undefined {
 export function ensureModelOption(
   models: ModelCatalogEntry[],
   model: string,
-  provider?: AiSettings["provider"]
+  provider?: AiSettings["provider"] | "construct-cloud"
 ): ModelCatalogEntry[] {
   if (!model || models.some((entry) => entry.id === model)) return models;
   return [{
@@ -5816,6 +5795,16 @@ export function ensureModelOption(
   }, ...models];
 }
 
+export function modelOptionsForActiveAgent(
+  models: ModelCatalogEntry[],
+  model: string,
+  provider?: AiSettings["provider"] | "construct-cloud"
+): ModelCatalogEntry[] {
+  if (!model) return models;
+  if (models.some((entry) => entry.id === model)) return models;
+  return ensureModelOption([], model, provider);
+}
+
 function readableModelName(model: string): string {
   const leaf = model.split("/").pop() || model;
   return leaf
@@ -5824,7 +5813,8 @@ function readableModelName(model: string): string {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-function providerLabel(provider: AiSettings["provider"]): string {
+function providerLabel(provider: AiSettings["provider"] | "construct-cloud"): string {
+  if (provider === "construct-cloud") return "Construct Cloud";
   if (provider === "openrouter") return "OpenRouter";
   if (provider === "opencode-zen") return "OpenCode Zen";
   if (provider === "github-copilot") return "GitHub Copilot";
@@ -5843,6 +5833,7 @@ const modelBrandOrder: ModelBrandKey[] = [
   "xai",
   "perplexity",
   "github-copilot",
+  "construct-cloud",
   "opencode-zen",
   "openrouter",
   "litellm",
@@ -5851,7 +5842,7 @@ const modelBrandOrder: ModelBrandKey[] = [
 
 function bucketModelsByBrand(
   models: ModelCatalogEntry[],
-  provider: AiSettings["provider"]
+  provider: AiSettings["provider"] | "construct-cloud"
 ): Map<ModelBrandKey, ModelCatalogEntry[]> {
   const buckets = new Map<ModelBrandKey, ModelCatalogEntry[]>();
   for (const model of models) {
@@ -5868,7 +5859,10 @@ function sortModelBrands(brands: ModelBrandKey[]): ModelBrandKey[] {
   return brands.sort((a, b) => (order.get(a) ?? 999) - (order.get(b) ?? 999));
 }
 
-function modelBrandFor(model: ModelCatalogEntry | null, fallbackProvider: AiSettings["provider"]): ModelBrandKey {
+function modelBrandFor(model: ModelCatalogEntry | null, fallbackProvider: AiSettings["provider"] | "construct-cloud"): ModelBrandKey {
+  if (model?.providerId === "construct-cloud" || fallbackProvider === "construct-cloud") {
+    return "construct-cloud";
+  }
   const haystack = [
     model?.id,
     model?.name,
@@ -5923,6 +5917,7 @@ function modelBrandMeta(brand: ModelBrandKey): {
   if (brand === "xai") return { label: "xAI", short: "xA", Icon: BrainCircuitIcon, markClass: "bg-foreground text-background" };
   if (brand === "perplexity") return { label: "Perplexity", short: "Px", Icon: SearchIcon, markClass: "bg-secondary text-secondary-foreground" };
   if (brand === "github-copilot") return { label: "Copilot", short: "Gh", Icon: BotIcon, markClass: "bg-primary/10 text-primary" };
+  if (brand === "construct-cloud") return { label: "Construct Cloud", short: "CC", Icon: RouteIcon, markClass: "bg-primary/10 text-primary" };
   if (brand === "openrouter") return { label: "OpenRouter", short: "Or", Icon: RouteIcon, markClass: "bg-secondary text-secondary-foreground" };
   if (brand === "opencode-zen") return { label: "OpenCode Zen", short: "Oz", Icon: RouteIcon, markClass: "bg-[color:var(--construct-warning-soft)] text-[color:var(--construct-warning)]" };
   if (brand === "litellm") return { label: "LiteLLM", short: "Lt", Icon: Layers3Icon, markClass: "bg-muted text-muted-foreground" };
@@ -6096,7 +6091,6 @@ export function FlowComposerRightControls({
   modelsBusy,
   modelsError,
   reasoningEffort,
-  onModelChange,
   onReasoningEffortChange
 }: {
   contextWindow?: ConstructAgentContextWindow;
@@ -6106,19 +6100,18 @@ export function FlowComposerRightControls({
   modelsBusy: boolean;
   modelsError: string | null;
   reasoningEffort: AiSettings["reasoningEffort"];
-  onModelChange: (model: string) => void;
   onReasoningEffortChange: (effort: AiSettings["reasoningEffort"]) => void;
 }) {
   const activeModel = models.find((m) => m.id === model) ?? null;
-  const provider = settings?.provider ?? "openai";
-  const activeBrand = modelBrandFor(activeModel, provider);
+  const provider = settings?.source === "construct-cloud" ? "construct-cloud" : (settings?.provider ?? "openai");
   const buckets = useMemo(() => bucketModelsByBrand(models, provider), [models, provider]);
   const visibleBrandKeys = useMemo(() => sortModelBrands([...buckets.keys()]), [buckets]);
 
   const shortModel = getShortModelName(activeModel?.name || readableModelName(model) || "Model");
   const activeEffort = reasoningEffortMeta(reasoningEffort);
-  const shortEffort = activeEffort.value === "auto" ? "Extra High" : activeEffort.value === "none" ? "Off" : activeEffort.label;
+  const shortEffort = activeEffort.value === "auto" ? "Auto" : activeEffort.value === "none" ? "Off" : activeEffort.label;
   const triggerLabel = `${shortModel} ${shortEffort}`;
+  const hasCatalogModel = models.some((entry) => entry.id === model);
 
   return (
     <div className="flex items-center gap-1.5">
@@ -6143,7 +6136,7 @@ export function FlowComposerRightControls({
             <DropdownMenuGroup>
               <DropdownMenuLabel className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Reasoning</DropdownMenuLabel>
               {reasoningEffortOptions.map((option) => {
-                const displayLabel = option.value === "auto" ? "Extra High" : option.label;
+                const displayLabel = option.label;
                 return (
                   <DropdownMenuItem
                     key={option.value}
@@ -6161,6 +6154,14 @@ export function FlowComposerRightControls({
 
             <DropdownMenuGroup>
               <DropdownMenuLabel className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Model</DropdownMenuLabel>
+              <div className="px-2 pb-1 text-[10px] leading-snug text-muted-foreground">
+                Change models in AI settings.
+              </div>
+              {!hasCatalogModel && model ? (
+                <div className="mx-1 mb-1 rounded-[7px] border border-border/70 bg-muted/35 px-2 py-1.5 text-[10px] leading-snug text-muted-foreground">
+                  Custom model from settings.
+                </div>
+              ) : null}
               {visibleBrandKeys.map((brand) => {
                 const meta = modelBrandMeta(brand);
                 const brandModels = buckets.get(brand) ?? [];
@@ -6180,7 +6181,7 @@ export function FlowComposerRightControls({
                             <DropdownMenuItem
                               key={m.id}
                               className="flex items-center justify-between gap-2 rounded-[7px] text-xs"
-                              onClick={() => onModelChange(m.id)}
+                              disabled
                             >
                               <span className="truncate">{m.name || readableModelName(m.id)}</span>
                               {m.id === m.id ? null : null /* dummy to keep structure */}

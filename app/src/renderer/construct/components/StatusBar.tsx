@@ -49,16 +49,19 @@ export function StatusBar({ theme, onThemeChange }: StatusBarProps) {
     return unsubscribe;
   }, []);
 
-  const provider = settings?.ai?.provider ?? "openai";
-  const modelRaw = provider === "openrouter"
-    ? (settings?.ai?.openRouterModel ?? "deepseek/deepseek-v4-flash")
-    : provider === "opencode-zen"
-      ? (settings?.ai?.opencodeZenModel ?? "gpt-5.1-codex")
-      : provider === "github-copilot"
-        ? (settings?.ai?.githubCopilotModel ?? "github_copilot/gpt-4")
-        : provider === "litellm"
-          ? (settings?.ai?.liteLlmModel ?? "openai/gpt-5-mini")
-          : (settings?.ai?.openAiModel ?? "gpt-5-mini");
+  const source = settings?.ai?.source ?? "byok";
+  const provider = source === "construct-cloud" ? "construct-cloud" : (settings?.ai?.provider ?? "openai");
+  const modelRaw = provider === "construct-cloud"
+    ? (settings?.ai?.constructCloudModel ?? "deepseek/deepseek-v4-flash")
+    : provider === "openrouter"
+      ? (settings?.ai?.openRouterModel ?? "deepseek/deepseek-v4-flash")
+      : provider === "opencode-zen"
+        ? (settings?.ai?.opencodeZenModel ?? "gpt-5.1-codex")
+        : provider === "github-copilot"
+          ? (settings?.ai?.githubCopilotModel ?? "github_copilot/gpt-4")
+          : provider === "litellm"
+            ? (settings?.ai?.liteLlmModel ?? "openai/gpt-5-mini")
+            : (settings?.ai?.openAiModel ?? "gpt-5-mini");
 
   const formatModelName = (name: string): string => {
     if (!name) return "";
@@ -77,15 +80,17 @@ export function StatusBar({ theme, onThemeChange }: StatusBarProps) {
   };
 
   const formattedModel = formatModelName(modelRaw);
-  const providerLabel = provider === "openrouter"
-    ? "OpenRouter"
-    : provider === "opencode-zen"
-      ? "OpenCode Zen"
-      : provider === "github-copilot"
-        ? "GitHub Copilot"
-        : provider === "litellm"
-          ? "LiteLLM"
-          : "OpenAI";
+  const providerLabel = provider === "construct-cloud"
+    ? "Construct Cloud"
+    : provider === "openrouter"
+      ? "OpenRouter"
+      : provider === "opencode-zen"
+        ? "OpenCode Zen"
+        : provider === "github-copilot"
+          ? "GitHub Copilot"
+          : provider === "litellm"
+            ? "LiteLLM"
+            : "OpenAI";
   const obsEnabled = settings?.observability?.enabled ?? false;
 
   const handleThemeToggle = () => {
