@@ -12,7 +12,7 @@ import {
   Spinner
 } from "@opaline/ui";
 
-import { lspLanguageOrder, type LspServerStatus, type LspStatusReport } from "./lspSettingsModel";
+import { lspLanguageOrder, type LspLanguageId, type LspServerStatus, type LspStatusReport } from "./lspSettingsModel";
 
 export function ConstructLspSettingsPanel({
   enabled,
@@ -34,7 +34,7 @@ export function ConstructLspSettingsPanel({
   logs: string[];
   error: string | null;
   onToggle: (enabled: boolean) => void;
-  onInstall: () => void;
+  onInstall: (language?: LspLanguageId) => void;
   onStart: () => void;
   onStop: () => void;
   onRestart: () => void;
@@ -74,6 +74,16 @@ export function ConstructLspSettingsPanel({
                       <small>{server.resolvedPath ?? server.installCommand}</small>
                     </div>
                   }
+                  control={
+                    <Button
+                      variant="secondary"
+                      size="small"
+                      disabled={installBusy || server.status === "installing"}
+                      onClick={() => onInstall(language)}
+                    >
+                      {server.installed ? "Update" : "Install"}
+                    </Button>
+                  }
                 />
               );
             })}
@@ -103,7 +113,7 @@ export function ConstructLspSettingsPanel({
                       Start
                     </Button>
                   )}
-                  <Button variant="secondary" size="small" disabled={installBusy} onClick={onInstall}>
+                  <Button variant="secondary" size="small" disabled={installBusy} onClick={() => onInstall()}>
                     {aggregateStatus === "not-installed" ? "Download & Install" : "Reinstall / Update"}
                   </Button>
                 </div>
