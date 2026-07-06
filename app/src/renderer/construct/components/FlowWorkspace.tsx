@@ -1,5 +1,6 @@
-import { DiffEditor } from "@monaco-editor/react";
+import Editor, { DiffEditor } from "@monaco-editor/react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import type { editor as MonacoEditor } from "monaco-editor";
 import { ArrowDownIcon, ArrowUpIcon, BadgeCheckIcon, BookOpenIcon, BotIcon, BrainCircuitIcon, CheckCircle2Icon, CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleAlertIcon, CircleIcon, CornerDownLeftIcon, CpuIcon, FileTextIcon, GaugeIcon, GitCompareIcon, HelpCircleIcon, Layers3Icon, ListChecksIcon, Loader2Icon, PencilIcon, PlusCircleIcon, RotateCcwIcon, RouteIcon, SearchIcon, SendIcon, StarIcon, TerminalIcon, Trash2Icon, PlusIcon, MicIcon, type LucideIcon } from "lucide-react";
 import {
   AdaptiveSidecarLayout,
@@ -56,11 +57,13 @@ import {
 } from "../lib/bridge";
 import { EditorPane } from "./EditorPane";
 import { MarkdownBlock } from "./MarkdownBlock";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { monaco } from "../../monaco";
 import {
-  oneDark,
-  oneLight
-} from "react-syntax-highlighter/dist/esm/styles/prism";
+  CONSTRUCT_DARK,
+  CONSTRUCT_LIGHT,
+  registerConstructThemes
+} from "../editorThemes";
+import { ConstructCodeBlock } from "./ConstructCode";
 import { KnowledgeCard } from "./KnowledgeCard";
 import { ConceptSummaryCard } from "./ConceptSummaryCard";
 import { iconForFile } from "./workspace/FileChooserContent";
@@ -93,6 +96,8 @@ import {
   normalizeDocumentPath,
   replaceDocumentPath
 } from "../lib/documentSession";
+
+registerConstructThemes();
 
 const FLOW_TASK_TAB_PREFIX = "flow-task:";
 
@@ -207,7 +212,8 @@ export function FlowWorkspace({
   onRunCommand,
   onFileOpened,
   onTreeChange,
-  onSavingChange
+  onSavingChange,
+  onLearningMaterialsHiddenChange
 }: {
   project: FlowProjectRecord;
   activePanelView: "chat" | "project";
@@ -233,6 +239,7 @@ export function FlowWorkspace({
     refreshTreeFn: () => Promise<void>
   ) => void;
   onSavingChange: (saving: boolean) => void;
+  onLearningMaterialsHiddenChange?: (hidden: boolean) => void;
 }) {
   const [tree, setTree] = useState<WorkspaceTreeNode[]>([]);
   const [documentSession, setDocumentSession] = useState(() => createDocumentSession(project.activeFilePath));
@@ -633,7 +640,13 @@ export function FlowWorkspace({
 
   const submitTask = useCallback(async (task: ConstructFlowPracticeTask, note?: string, subtaskId?: string) => {
     const submission = await submitFlowTask({ projectId: project.id, taskId: task.id, note, subtaskId });
-    await runAgent("Review my practice task submission.", { taskSubmission: submission });
+    const subtask = subtaskId ? task.subtasks?.find((candidate) => candidate.id === subtaskId) : undefined;
+    const subtaskIndex = subtask ? task.subtasks?.findIndex((candidate) => candidate.id === subtask.id) ?? -1 : -1;
+    const subtaskCount = task.subtasks?.length ?? 0;
+    const message = subtask && subtaskIndex >= 0
+      ? `Please review subtask ${subtaskIndex + 1}/${subtaskCount}: ${subtask.title}.`
+      : "Please review my practice task submission.";
+    await runAgent(message, { taskSubmission: submission });
   }, [project.id, runAgent]);
 
   const rewindUserSession = useCallback(async (sessionId: string) => {
@@ -689,6 +702,11 @@ export function FlowWorkspace({
     const unsubscribe = onConstructFlowSessionEvent((event: ConstructFlowSessionEvent) => {
       if (event.projectId !== project.id) return;
       if ((event.type === "started" || event.type === "updated") && !isTerminalFlowSession(event.session)) {
+        const existingSession = sessionsRef.current.find((session) => session.id === event.session.id);
+        if (existingSession && isTerminalFlowSession(existingSession)) {
+          setLiveSession((current) => current?.id === event.session.id ? undefined : current);
+          return;
+        }
         setLiveSession(event.session);
         return;
       }
@@ -771,11 +789,21 @@ export function FlowWorkspace({
     setOpenTaskTabIds((current) => current.includes(task.id) ? current : [...current, task.id]);
     setActiveWorkspaceTabId(flowTaskTabId(task.id));
   }, []);
+  const learningMaterialsHidden = useMemo(() => (
+    findActiveFlowQuestion(mergeSessions(sessions, liveSession))?.payload.hideLearningMaterials === true
+  ), [liveSession, sessions]);
+
+  useEffect(() => {
+    onLearningMaterialsHiddenChange?.(learningMaterialsHidden);
+    return () => onLearningMaterialsHiddenChange?.(false);
+  }, [learningMaterialsHidden, onLearningMaterialsHiddenChange]);
+
   const openConceptById = useCallback((conceptId: string) => {
+    if (learningMaterialsHidden) return;
     const concept = flowConcepts.find((candidate) => candidate.id === conceptId)
       ?? buildInlineConceptPlaceholder(conceptId);
     setOpenConcept(concept);
-  }, [flowConcepts]);
+  }, [flowConcepts, learningMaterialsHidden]);
 
   const updateChatScrollTop = useCallback((scrollTop: number | null) => {
     pendingChatScrollTopRef.current = scrollTop;
@@ -809,7 +837,9 @@ export function FlowWorkspace({
         onRunAgent={runAgent}
         onSubmitTask={submitTask}
         onCloseConceptDetails={() => setOpenConcept(null)}
-        onOpenConceptDetails={(concept) => setOpenConcept(concept)}
+        onOpenConceptDetails={(concept) => {
+          if (!learningMaterialsHidden) setOpenConcept(concept);
+        }}
         onOpenConceptById={openConceptById}
         onOpenTask={openTaskTab}
         onOpenFile={openInlineFile}
@@ -822,7 +852,7 @@ export function FlowWorkspace({
       />
     );
     return () => onGuidePanelChange(null);
-  }, [activePanelView, chatMode, liveSession, onGuidePanelChange, onPanelViewChange, openConcept, openConceptById, openInlineFile, openTaskTab, pending, project, rewindUserSession, runAgent, sessions, submitTask, theme, updateChatScrollTop, setOpenConcept]);
+  }, [activePanelView, chatMode, learningMaterialsHidden, liveSession, onGuidePanelChange, onPanelViewChange, openConcept, openConceptById, openInlineFile, openTaskTab, pending, project, rewindUserSession, runAgent, sessions, submitTask, theme, updateChatScrollTop, setOpenConcept]);
 
   useEffect(() => {
     onKnowledgePanelChange?.(null);
@@ -842,6 +872,7 @@ export function FlowWorkspace({
         onOpenConcept={openConceptById}
         onOpenFile={openInlineFile}
         onSaveChange={() => {}}
+        materialHidden={learningMaterialsHidden}
       />
     </div>
   ) : null;
@@ -1215,6 +1246,7 @@ function FlowAgentPanel({
   const currentPathNode = useMemo(() => currentFlowPathNode(pathNodes, project.flow.currentPathNodeId), [pathNodes, project.flow.currentPathNodeId]);
   const activeTask = useMemo(() => findActiveTaskForNode(flowTasks, currentPathNode?.id), [currentPathNode?.id, flowTasks]);
   const activeQuestion = useMemo(() => findActiveFlowQuestion(mergedSessions), [mergedSessions]);
+  const learningMaterialsHidden = activeQuestion?.payload.hideLearningMaterials === true;
   const activeConceptExercise = useMemo(() => {
     const waitingExercises = flowExercises.filter((ex) => ex.status === "waiting");
     return waitingExercises.length > 0 ? waitingExercises[waitingExercises.length - 1] : undefined;
@@ -1399,7 +1431,7 @@ function FlowAgentPanel({
   }, [aiSettings]);
 
   useEffect(() => {
-    setDraft("");
+    setDraft(activeQuestion?.payload.initialAnswer ?? "");
   }, [activeQuestion?.id]);
 
   const submitComposer = useCallback(() => {
@@ -1453,7 +1485,9 @@ function FlowAgentPanel({
           concepts={flowConcepts}
           theme={theme}
           chatMode={chatMode}
-          onOpenConcept={onOpenConceptDetails}
+          onOpenConcept={(concept) => {
+            if (!learningMaterialsHidden) onOpenConceptDetails(concept);
+          }}
           onOpenTask={onOpenTask}
           onSubmitTask={onSubmitTask}
           onOpenFile={onOpenFile}
@@ -1465,6 +1499,7 @@ function FlowAgentPanel({
             chatMode === "maximized" && "is-maximized",
             showMaximizedConceptDock && "has-concept"
           )}
+          data-learning-materials-hidden={learningMaterialsHidden ? "true" : undefined}
         >
           <div
             className={cn(
@@ -1485,6 +1520,7 @@ function FlowAgentPanel({
                   onOpenConcept={onOpenConceptById}
                   onOpenFile={onOpenFile}
                   onSaveChange={() => {}}
+                  materialHidden={learningMaterialsHidden}
                 />
               </div>
             ) : null}
@@ -1504,6 +1540,7 @@ function FlowAgentPanel({
                 <FlowQuestionComposer
                   key={activeQuestion.id}
                   question={activeQuestion}
+                  workspacePath={project.workspacePath}
                   theme={theme}
                   chatMode={chatMode}
                   value={draft}
@@ -2473,7 +2510,7 @@ function FloatingFlowTaskCard({
                 </Button>
                 <Button size={isPanel ? "sm" : "default"} onClick={() => void onSubmitTask(task, undefined, active?.id)} disabled={pending}>
                   <SendIcon size={isPanel ? 12 : 14} />
-                  Submit
+                  Submit {active && task.subtasks?.length ? `${(task.subtasks.findIndex((subtask) => subtask.id === active.id) ?? 0) + 1}/${task.subtasks.length}` : "task"}
                 </Button>
               </span>
             </div>
@@ -2550,9 +2587,10 @@ function FlowTaskCard({
           <div className="flex flex-col gap-3">
             <span className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest">Subtasks</span>
             <div className="relative pl-6 space-y-3.5 before:absolute before:left-[8px] before:top-2.5 before:bottom-2.5 before:w-0.5 before:bg-border/50">
-              {task.subtasks.map((subtask, index) => {
+            {task.subtasks.map((subtask, index) => {
                 const isActive = subtask.id === active?.id;
                 const isCompleted = subtask.status === "completed";
+                const canSubmitSubtask = subtask.status === "active" || subtask.status === "ready" || subtask.status === "needs-work" || subtask.status === "submitted";
                 return (
                   <div key={subtask.id} className="relative flex items-start gap-3 text-xs">
                     <span className={cn(
@@ -2563,7 +2601,20 @@ function FlowTaskCard({
                     )}>{index + 1}</span>
                     <div className="min-w-0 flex-1 flex items-baseline justify-between gap-3">
                       <span className={cn("text-foreground/95 font-medium", isCompleted && "text-muted-foreground/55 line-through")}>{subtask.title}</span>
-                      <span className={cn("text-[9px] font-semibold text-muted-foreground/50 uppercase tracking-wider", isActive && "text-primary/70")}>{subtaskStatusLabel(subtask.status)}</span>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <span className={cn("text-[9px] font-semibold text-muted-foreground/50 uppercase tracking-wider", isActive && "text-primary/70")}>{subtaskStatusLabel(subtask.status)}</span>
+                        {canSubmitSubtask ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 rounded-full px-2 text-[10px]"
+                            onClick={() => void onSubmitTask(task, note.trim() || undefined, subtask.id)}
+                          >
+                            <SendIcon size={10} />
+                            Submit {index + 1}/{task.subtasks?.length ?? 1}
+                          </Button>
+                        ) : null}
+                      </div>
                     </div>
                   </div>
                 );
@@ -2633,12 +2684,14 @@ function FlowTaskCard({
                 onChange={(event) => setNote(event.target.value)}
               />
             ) : null}
-            <div className="flex justify-end">
-              <Button size={isPanel ? "sm" : "default"} onClick={() => void onSubmitTask(task, note.trim() || undefined, active?.id)} className="rounded-full">
-                <SendIcon size={isPanel ? 12 : 14} />
-                Submit {active ? "subtask" : "task"}
-              </Button>
-            </div>
+            {!task.subtasks?.length ? (
+              <div className="flex justify-end">
+                <Button size={isPanel ? "sm" : "default"} onClick={() => void onSubmitTask(task, note.trim() || undefined, active?.id)} className="rounded-full">
+                  <SendIcon size={isPanel ? 12 : 14} />
+                  Submit task
+                </Button>
+              </div>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -2943,11 +2996,8 @@ function buildFlowMessages({
               {submittedTask.learnerNote}
             </div>
           ) : null}
-          <div>
-            <span className="mb-1 block font-medium">Changes</span>
-            <pre className="max-h-80 overflow-y-auto overflow-x-auto rounded-[8px] border bg-background/80 p-3 font-mono text-[10px] leading-relaxed">
-              <code className="text-foreground">{submittedTask.submission.compactDiff}</code>
-            </pre>
+          <div className="rounded-[8px] border bg-background/60 p-2 text-muted-foreground">
+            The Construct agent will inspect the workspace, run validation when useful, and review the requested task evidence.
           </div>
         </div>
       );
@@ -3336,11 +3386,6 @@ function buildQuestionAnsweredPart(
   const question = response?.question || payload.question || "Flow question";
   const answer = response?.answer || "";
 
-  const isDark = theme === "system"
-    ? window.matchMedia("(prefers-color-scheme: dark)").matches
-    : theme === "dark";
-  const codeTheme = isDark ? oneDark : oneLight;
-
   return {
     type: "actions",
     id: `${sessionId}:question-answer:${toolCall.id}`,
@@ -3361,33 +3406,13 @@ function buildQuestionAnsweredPart(
           </div>
           {answer ? (
             payload.answerMode === "code" && !response?.skipped ? (
-              <div className="mt-2 w-full overflow-hidden rounded-[10px] border bg-muted/30 font-mono">
-                <div className="border-b bg-muted/40 px-2 py-1 text-[10px] text-muted-foreground select-none flex items-center justify-between">
-                  <span className="font-semibold uppercase tracking-wider">{payload.language ?? "typescript"}</span>
-                </div>
-                <SyntaxHighlighter
-                  style={codeTheme}
-                  language={payload.language ?? "typescript"}
-                  PreTag="div"
-                  customStyle={{
-                    margin: 0,
-                    padding: "10px 12px",
-                    background: "transparent",
-                    border: 0,
-                    borderRadius: 0,
-                    fontSize: "12px",
-                    lineHeight: "1.5",
-                    overflowX: "auto"
-                  }}
-                  codeTagProps={{
-                    style: {
-                      fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
-                    }
-                  }}
-                >
-                  {answer}
-                </SyntaxHighlighter>
-              </div>
+              <ConstructCodeBlock
+                className="mt-2 w-full"
+                code={answer}
+                compact
+                language={payload.language ?? "typescript"}
+                theme={theme}
+              />
             ) : (
               <p className="mt-0.5 whitespace-pre-wrap break-words font-medium leading-relaxed text-foreground/90">
                 {answer}
@@ -3538,18 +3563,12 @@ function buildConceptExercisePart({
             )}
 
             {sourceText && (
-              <div className="flex flex-col gap-1">
-                <span className={cn(
-                  "text-[11px] font-semibold text-muted-foreground uppercase tracking-wider",
-                  isPanel && "text-[9px]"
-                )}>Reference Code / Context:</span>
-                <pre className={cn(
-                  "max-h-56 overflow-y-auto overflow-x-auto rounded-[10px] border bg-muted/25 p-3.5 font-mono text-xs leading-relaxed text-foreground/90 select-text shadow-inner",
-                  isPanel && "max-h-40 p-2 rounded-md text-[10px]"
-                )}>
-                  <code>{sourceText}</code>
-                </pre>
-              </div>
+              <ConceptExerciseReference
+                isPanel={isPanel}
+                onOpenFile={onOpenFile}
+                sourceText={sourceText}
+                theme={theme}
+              />
             )}
 
             {exercise?.status === "reviewed" && exercise.reviewNote && (
@@ -3571,6 +3590,67 @@ function buildConceptExercisePart({
       </div>
     )
   };
+}
+
+function ConceptExerciseReference({
+  isPanel,
+  onOpenFile,
+  sourceText,
+  theme
+}: {
+  isPanel: boolean;
+  onOpenFile: (reference: InlineFileRef) => void;
+  sourceText: string;
+  theme: "light" | "dark" | "system";
+}) {
+  const [open, setOpen] = useState(false);
+  const contentId = useMemo(() => `concept-exercise-reference-${stableHash(sourceText)}`, [sourceText]);
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <button
+        type="button"
+        className={cn(
+          "flex w-full items-center justify-between gap-2 rounded-[7px] border border-border/60 bg-muted/15 px-2.5 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground transition-colors hover:bg-muted/35 hover:text-foreground",
+          isPanel && "rounded-[6px] px-2 py-1 text-[9px]"
+        )}
+        aria-controls={contentId}
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <span>Reference Code / Context</span>
+        <ChevronDownIcon size={isPanel ? 12 : 14} className={cn("shrink-0 transition-transform duration-200", open && "rotate-180")} />
+      </button>
+      <div
+        id={contentId}
+        className={cn(
+          "construct-flow-accordion__content",
+          open ? "is-open visible" : "invisible pointer-events-none"
+        )}
+        aria-hidden={!open}
+      >
+        <div className={cn(
+          "max-h-56 overflow-y-auto pt-1.5 text-foreground/90 [&_.my-3:first-child]:mt-0 [&_.my-3:last-child]:mb-0",
+          isPanel && "max-h-40 pt-1 text-[10px]"
+        )}>
+          <MarkdownBlock
+            className="space-y-2 text-[12px] [&_p]:text-muted-foreground [&_p]:leading-relaxed"
+            content={sourceText}
+            theme={theme}
+            onOpenFile={onOpenFile}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function stableHash(value: string): string {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = ((hash << 5) - hash + value.charCodeAt(index)) | 0;
+  }
+  return Math.abs(hash).toString(36);
 }
 
 function parsePlanPathInput(input: unknown) {
@@ -4991,6 +5071,7 @@ function conceptMutationLabel(kind: ConceptMutationKind): string {
 
 function FlowQuestionComposer({
   question,
+  workspacePath,
   theme,
   value,
   onValueChange,
@@ -5002,6 +5083,7 @@ function FlowQuestionComposer({
   onOpenConcept
 }: {
   question: ActiveFlowQuestion;
+  workspacePath: string;
   theme: "light" | "dark" | "system";
   value: string;
   onValueChange: (value: string) => void;
@@ -5013,34 +5095,7 @@ function FlowQuestionComposer({
   onOpenConcept?: (conceptId: string) => void;
 }) {
   const payload = question.payload;
-  const [isDark, setIsDark] = useState(() => {
-    if (theme === "system") {
-      return window.matchMedia("(prefers-color-scheme: dark)").matches;
-    }
-    return theme === "dark";
-  });
-
-  useEffect(() => {
-    if (theme === "system") {
-      const mql = window.matchMedia("(prefers-color-scheme: dark)");
-      const handler = (event: MediaQueryListEvent) => setIsDark(event.matches);
-      mql.addEventListener("change", handler);
-      setIsDark(mql.matches);
-      return () => mql.removeEventListener("change", handler);
-    }
-
-    setIsDark(theme === "dark");
-  }, [theme]);
-
-  const codeTheme = isDark ? oneDark : oneLight;
-
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  useLayoutEffect(() => {
-    const textarea = textareaRef.current;
-    if (!textarea || payload.answerMode !== "code") return;
-    textarea.style.height = "auto";
-    textarea.style.height = `${textarea.scrollHeight}px`;
-  }, [value, payload.answerMode]);
+  const editorTheme = useConstructMonacoTheme(theme);
   const choices = payload.choices ?? [];
   const allowOther = payload.allowOther !== false;
   const [selected, setSelected] = useState<string | null>(choices[0] ?? (allowOther ? "__other__" : null));
@@ -5048,6 +5103,11 @@ function FlowQuestionComposer({
   const answer = usingOther ? value.trim() : selected?.trim() ?? "";
   const canSubmit = !pending && Boolean(answer);
   const questionText = payload.question || "I need one more detail before continuing.";
+  const codeLanguage = normalizeCodeAnswerLanguage(payload.language);
+  const answerEditorPath = useMemo(
+    () => `${workspacePath.replace(/\/+$/, "")}/.construct/flow-answers/${safePathSegment(question.id)}.${extensionForCodeAnswerLanguage(codeLanguage)}`,
+    [codeLanguage, question.id, workspacePath]
+  );
 
   function submit() {
     if (!canSubmit) return;
@@ -5134,83 +5194,27 @@ function FlowQuestionComposer({
       {allowOther ? (
         payload.answerMode === "code" ? (
           <div className="mt-4 flex flex-col overflow-hidden rounded-[14px] border border-border/75 bg-background shadow-sm transition-all duration-200 focus-within:border-foreground/30 focus-within:ring-2 focus-within:ring-ring/20">
-            {/* Header / Meta bar */}
             <div className="flex items-center justify-between border-b border-border/70 bg-muted/35 px-4 py-2 text-xs text-muted-foreground select-none">
               <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wide text-foreground/70">
-                {payload.language ?? "typescript"}
+                {codeLanguage}
               </span>
               <span className="font-mono text-[10px] text-muted-foreground">Shift + Enter to submit</span>
             </div>
-
-            {/* Editor container */}
-            <div className="relative min-h-[184px] w-full font-mono text-sm leading-relaxed">
-              {/* Highlighted text layer (positioned absolutely underneath) */}
-              <div
-                className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words p-4"
-                style={{
-                  fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-                  fontSize: "14px",
-                  lineHeight: "1.55"
-                }}
-              >
-                <SyntaxHighlighter
-                  style={codeTheme}
-                  language={payload.language ?? "typescript"}
-                  PreTag="div"
-                  customStyle={{
-                    margin: 0,
-                    padding: 0,
-                    background: "transparent",
-                    border: 0,
-                    borderRadius: 0,
-                    fontSize: "inherit",
-                    lineHeight: "inherit",
-                    whiteSpace: "pre-wrap",
-                    wordBreak: "break-word",
-                  }}
-                  codeTagProps={{
-                    style: {
-                      fontFamily: "inherit",
-                      whiteSpace: "inherit",
-                      wordBreak: "inherit"
-                    }
-                  }}
-                >
-                  {value}
-                </SyntaxHighlighter>
-              </div>
-
-              {/* Transparent Textarea overlay */}
-              <textarea
-                ref={textareaRef}
-                className="block min-h-[184px] w-full resize-none border-0 bg-transparent p-4 font-mono text-sm leading-relaxed outline-none caret-foreground placeholder:text-muted-foreground/70 focus:ring-0"
-                style={{
-                  fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-                  fontSize: "14px",
-                  lineHeight: "1.55",
-                  caretColor: "var(--foreground)",
-                  color: value ? "transparent" : "var(--muted-foreground)"
-                }}
-                value={value}
-                placeholder="Write your code here..."
-                onFocus={() => setSelected("__other__")}
-                onChange={(event) => {
-                  setSelected("__other__");
-                  onValueChange(event.target.value);
-                }}
-                onKeyDown={(event) => {
-                  if ((event.nativeEvent as KeyboardEvent).isComposing) return;
-                  if (event.key === "Enter" && !event.shiftKey) {
-                    // Normal Enter key inserts newline (default behavior of textarea)
-                  } else if (event.key === "Enter" && event.shiftKey && canSubmit) {
-                    event.preventDefault();
-                    submit();
-                  }
-                }}
-                disabled={pending}
-                spellCheck={false}
-              />
-            </div>
+            <InlineCodeAnswerEditor
+              path={answerEditorPath}
+              value={value}
+              language={codeLanguage}
+              theme={editorTheme}
+              pending={pending}
+              canSubmit={canSubmit}
+              onFocus={() => setSelected("__other__")}
+              onValueChange={(nextValue) => {
+                setSelected("__other__");
+                onValueChange(nextValue);
+              }}
+              onSubmit={submit}
+              compact={isPanel}
+            />
           </div>
         ) : (
           <label className={otherLabelClass}>
@@ -5285,7 +5289,174 @@ function FlowQuestionComposer({
   );
 }
 
-function readAskUserPayload(input: unknown, outputPreview?: string): { question?: string; reason?: string; choices?: string[]; allowOther?: boolean; allowSkip?: boolean; blocksProgress?: boolean; answerMode?: string; language?: string } {
+function InlineCodeAnswerEditor({
+  path,
+  value,
+  language,
+  theme,
+  pending,
+  canSubmit,
+  compact,
+  onFocus,
+  onValueChange,
+  onSubmit
+}: {
+  path: string;
+  value: string;
+  language: string;
+  theme: string;
+  pending: boolean;
+  canSubmit: boolean;
+  compact: boolean;
+  onFocus: () => void;
+  onValueChange: (value: string) => void;
+  onSubmit: () => void;
+}) {
+  const editorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
+  const submitRef = useRef(onSubmit);
+  const canSubmitRef = useRef(canSubmit);
+
+  submitRef.current = onSubmit;
+  canSubmitRef.current = canSubmit;
+
+  useEffect(() => {
+    editorRef.current?.updateOptions({ readOnly: pending });
+  }, [pending]);
+
+  return (
+    <div className={cn("relative w-full overflow-hidden bg-background", compact ? "h-[176px]" : "h-[218px]")}>
+      <Editor
+        path={path}
+        value={value}
+        language={language}
+        theme={theme}
+        className="h-full"
+        height="100%"
+        loading={<div className="flex h-full items-center px-4 font-mono text-[12px] text-muted-foreground">Loading editor...</div>}
+        options={{
+          acceptSuggestionOnEnter: "on",
+          automaticLayout: true,
+          bracketPairColorization: { enabled: true },
+          contextmenu: true,
+          cursorBlinking: "smooth",
+          cursorSmoothCaretAnimation: "on",
+          cursorStyle: "line",
+          cursorWidth: 2,
+          detectIndentation: true,
+          fixedOverflowWidgets: true,
+          folding: false,
+          fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
+          fontLigatures: true,
+          fontSize: compact ? 13 : 14,
+          glyphMargin: false,
+          lineDecorationsWidth: compact ? 8 : 12,
+          lineHeight: compact ? 20 : 22,
+          lineNumbers: "off",
+          lineNumbersMinChars: 0,
+          minimap: { enabled: false },
+          overviewRulerBorder: false,
+          overviewRulerLanes: 0,
+          padding: { top: compact ? 8 : 10, bottom: compact ? 8 : 10 },
+          quickSuggestions: true,
+          readOnly: pending,
+          renderLineHighlight: "none",
+          renderValidationDecorations: "editable",
+          renderWhitespace: "selection",
+          roundedSelection: true,
+          scrollbar: {
+            alwaysConsumeMouseWheel: false,
+            horizontalScrollbarSize: 8,
+            useShadows: false,
+            verticalScrollbarSize: 8
+          },
+          scrollBeyondLastLine: false,
+          smoothScrolling: true,
+          stickyScroll: { enabled: false },
+          suggest: { showInlineDetails: true },
+          tabSize: 2,
+          wordBasedSuggestions: "off",
+          wordWrap: "off"
+        }}
+        onChange={(nextValue) => onValueChange(nextValue ?? "")}
+        onMount={(editor) => {
+          editorRef.current = editor;
+          editor.onDidFocusEditorText(onFocus);
+          editor.addCommand(monaco.KeyMod.Shift | monaco.KeyCode.Enter, () => {
+            if (canSubmitRef.current) {
+              submitRef.current();
+            }
+          });
+        }}
+      />
+    </div>
+  );
+}
+
+function useConstructMonacoTheme(appTheme: "light" | "dark" | "system") {
+  const [dark, setDark] = useState(() => {
+    if (appTheme === "system") {
+      return window.matchMedia("(prefers-color-scheme: dark)").matches;
+    }
+    return appTheme === "dark";
+  });
+
+  useEffect(() => {
+    if (appTheme === "system") {
+      const mql = window.matchMedia("(prefers-color-scheme: dark)");
+      const handler = (event: MediaQueryListEvent) => setDark(event.matches);
+      mql.addEventListener("change", handler);
+      setDark(mql.matches);
+      return () => mql.removeEventListener("change", handler);
+    }
+
+    setDark(appTheme === "dark");
+  }, [appTheme]);
+
+  return dark ? CONSTRUCT_DARK : CONSTRUCT_LIGHT;
+}
+
+function normalizeCodeAnswerLanguage(language: string | undefined): string {
+  const normalized = language?.trim().toLowerCase();
+  if (!normalized) return "typescript";
+  if (normalized === "ts") return "typescript";
+  if (normalized === "tsx") return "typescript";
+  if (normalized === "js") return "javascript";
+  if (normalized === "jsx") return "javascript";
+  if (normalized === "py") return "python";
+  if (normalized === "rs") return "rust";
+  if (normalized === "c++") return "cpp";
+  if (normalized === "c#") return "csharp";
+  if (normalized === "sh" || normalized === "bash" || normalized === "zsh") return "shell";
+  return normalized;
+}
+
+function extensionForCodeAnswerLanguage(language: string): string {
+  const extensionMap: Record<string, string> = {
+    typescript: "ts",
+    javascript: "js",
+    json: "json",
+    python: "py",
+    rust: "rs",
+    cpp: "cpp",
+    c: "c",
+    csharp: "cs",
+    go: "go",
+    java: "java",
+    swift: "swift",
+    shell: "sh",
+    html: "html",
+    css: "css",
+    markdown: "md"
+  };
+
+  return extensionMap[language] ?? "txt";
+}
+
+function safePathSegment(value: string): string {
+  return value.replace(/[^a-z0-9._-]+/gi, "-").replace(/^-+|-+$/g, "") || "answer";
+}
+
+function readAskUserPayload(input: unknown, outputPreview?: string): { question?: string; reason?: string; choices?: string[]; allowOther?: boolean; allowSkip?: boolean; blocksProgress?: boolean; answerMode?: string; language?: string; initialAnswer?: string; hideLearningMaterials?: boolean } {
   const parsedOutput = parseJsonObject(outputPreview);
   const source = parsedOutput ?? (typeof input === "object" && input !== null ? input as Record<string, unknown> : {});
   return {
@@ -5293,10 +5464,12 @@ function readAskUserPayload(input: unknown, outputPreview?: string): { question?
     reason: typeof source.reason === "string" ? source.reason : undefined,
     choices: Array.isArray(source.choices) ? source.choices.filter((choice): choice is string => typeof choice === "string") : undefined,
     allowOther: typeof source.allowOther === "boolean" ? source.allowOther : true,
-    allowSkip: typeof source.allowSkip === "boolean" ? source.allowSkip : true,
+    allowSkip: typeof source.allowSkip === "boolean" ? source.allowSkip : false,
     blocksProgress: typeof source.blocksProgress === "boolean" ? source.blocksProgress : false,
     answerMode: typeof source.answerMode === "string" ? source.answerMode : undefined,
-    language: typeof source.language === "string" ? source.language : undefined
+    language: typeof source.language === "string" ? source.language : undefined,
+    initialAnswer: typeof source.initialAnswer === "string" ? source.initialAnswer : undefined,
+    hideLearningMaterials: typeof source.hideLearningMaterials === "boolean" ? source.hideLearningMaterials : false
   };
 }
 
@@ -5471,13 +5644,13 @@ function MemoryDiffViewer({
 }) {
   const diff = readRenderableMemoryDiff(result);
   const parsed = useMemo(() => parseUnifiedDiffText(diff), [diff]);
-  const isDark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  const editorTheme = useConstructMonacoTheme(theme);
 
   return (
     <DiffEditor
       height="100%"
       language="markdown"
-      theme={isDark ? "vs-dark" : "vs"}
+      theme={editorTheme}
       original={parsed.original}
       modified={parsed.modified}
       options={{
@@ -5755,6 +5928,10 @@ function stringify(value: unknown): string | undefined {
 
 function mergeSessions(sessions: ConstructFlowSession[], liveSession?: ConstructFlowSession): ConstructFlowSession[] {
   if (!liveSession) return sessions;
+  const existingSession = sessions.find((session) => session.id === liveSession.id);
+  if (existingSession && isTerminalFlowSession(existingSession) && !isTerminalFlowSession(liveSession)) {
+    return sessions;
+  }
   return upsertSession(sessions, liveSession);
 }
 
