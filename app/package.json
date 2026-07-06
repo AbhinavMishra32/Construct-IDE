@@ -5,7 +5,6 @@
   "type": "module",
   "description": "Construct desktop IDE for agentic project work.",
   "productName": "Construct",
-  "desktopName": "cc.tryconstruct.desktop.desktop",
   "author": "Abhinav Mishra <abhinav@tryconstruct.cc>",
   "homepage": "https://github.com/AbhinavMishra32/Construct-IDE#readme",
   "scripts": {
