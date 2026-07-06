@@ -889,13 +889,13 @@ function ConceptDetail({
         <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 px-4 py-4">
           {content ? (
             <section>
-              <MarkdownBlock content={content} theme={theme} sources={record.sources} />
+              <MarkdownBlock content={content} theme={theme} sources={record.sources} defaultCodeLanguage={record.language} />
             </section>
           ) : null}
 
           {record.why ? (
             <ConceptSection title="Why it matters">
-              <MarkdownBlock content={record.why} theme={theme} sources={record.sources} />
+              <MarkdownBlock content={record.why} theme={theme} sources={record.sources} defaultCodeLanguage={record.language} />
             </ConceptSection>
           ) : null}
 
@@ -903,7 +903,7 @@ function ConceptDetail({
             <ConceptSection title="Examples">
               <div className="flex flex-col gap-3">
                 {(record.examples?.length ? record.examples : [record.example]).filter(Boolean).map((example, index) => (
-                  <MarkdownBlock key={`${index}:${example}`} content={`\`\`\`${exampleLanguage(record)}\n${example}\n\`\`\``} theme={theme} />
+                  <MarkdownBlock key={`${index}:${example}`} content={`\`\`\`${exampleLanguage(record)}\n${example}\n\`\`\``} theme={theme} defaultCodeLanguage={record.language} />
                 ))}
               </div>
             </ConceptSection>

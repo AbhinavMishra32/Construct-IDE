@@ -11,6 +11,7 @@ import {
   InfoIcon,
   NetworkIcon,
   User,
+  EyeOffIcon,
   XIcon
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
@@ -66,7 +67,8 @@ export function KnowledgeCard({
   onClose,
   onOpenConcept,
   onOpenFile,
-  onSaveChange
+  onSaveChange,
+  materialHidden = false
 }: {
   concept: ConceptCard;
   relatedConcepts?: ConceptCard[];
@@ -76,6 +78,7 @@ export function KnowledgeCard({
   onOpenConcept: (conceptId: string) => void;
   onOpenFile: (reference: InlineFileRef) => void;
   onSaveChange: (saved: boolean) => void;
+  materialHidden?: boolean;
 }) {
   const [globalKnowledgeRecords, setGlobalKnowledgeRecords] = useState<SavedKnowledgeRecord[]>(() => readKnowledgeRecords());
   const graphRecords = useMemo<SavedKnowledgeRecord[]>(
@@ -144,6 +147,7 @@ export function KnowledgeCard({
       data-collapsed={collapsed ? "true" : "false"}
       data-saved={saved ? "true" : "false"}
       data-revision-mode={mode}
+      data-material-hidden={materialHidden ? "true" : undefined}
       initial={{ opacity: 0, y: 18 }}
       animate={{ opacity: 1, y: 0 }}
       transition={cardSpring}
@@ -302,17 +306,25 @@ export function KnowledgeCard({
 
       <div className={cn("construct-concept-card-accordion min-h-0 flex-1", !collapsed && "is-open")} aria-hidden={collapsed}>
         <div className="h-full flex flex-col min-h-0">
-          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-            <ConceptCardBody
-              concept={concept}
-              guideBlocks={guideBlocks}
-              revisionSnapshot={revisionSnapshot}
-              theme={theme}
-              activeEvent={activeHistoryEvent}
-              masteryShift={masteryShift}
-              onOpenConcept={onOpenConcept}
-              onOpenFile={onOpenFile}
-            />
+          <div className="relative flex min-h-0 flex-1 overflow-hidden">
+            {materialHidden ? (
+              <div className="pointer-events-none absolute inset-x-4 top-3 z-10 flex items-center gap-2 rounded-[8px] border border-border/75 bg-background/95 px-3 py-2 text-[11px] font-medium text-muted-foreground shadow-sm">
+                <EyeOffIcon size={14} className="shrink-0" />
+                <span>Concept material is hidden for this answer. Use your own recall, then submit the question.</span>
+              </div>
+            ) : null}
+            <div className="construct-concept-card-material min-h-0 flex-1 overflow-y-auto px-4 py-3">
+              <ConceptCardBody
+                concept={concept}
+                guideBlocks={guideBlocks}
+                revisionSnapshot={revisionSnapshot}
+                theme={theme}
+                activeEvent={activeHistoryEvent}
+                masteryShift={masteryShift}
+                onOpenConcept={materialHidden ? () => {} : onOpenConcept}
+                onOpenFile={materialHidden ? () => {} : onOpenFile}
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -544,10 +556,11 @@ function ConceptCardBody({
                 sources={concept.sources}
                 onOpenConcept={onOpenConcept}
                 onOpenFile={onOpenFile}
+                defaultCodeLanguage={concept.language}
               />
             ) : null}
             {guide.sections.map((section) => (
-              <MarkdownBlock key={section.kind} content={section.content} theme={theme} sources={concept.sources} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
+              <MarkdownBlock key={section.kind} content={section.content} theme={theme} sources={concept.sources} defaultCodeLanguage={concept.language} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
             ))}
           </ConceptBlock>
         );
@@ -561,6 +574,7 @@ function ConceptCardBody({
             sources={concept.sources}
             onOpenConcept={onOpenConcept}
             onOpenFile={onOpenFile}
+            defaultCodeLanguage={concept.language}
           />
         </ConceptBlock>
       ) : null}
@@ -575,6 +589,7 @@ function ConceptCardBody({
             sources={concept.sources}
             onOpenConcept={onOpenConcept}
             onOpenFile={onOpenFile}
+            defaultCodeLanguage={concept.language}
           />
         </ConceptBlock>
       ) : null}
@@ -589,6 +604,7 @@ function ConceptCardBody({
             sources={concept.sources}
             onOpenConcept={onOpenConcept}
             onOpenFile={onOpenFile}
+            defaultCodeLanguage={concept.language}
           />
         </ConceptBlock>
       ) : null}
@@ -601,7 +617,7 @@ function ConceptCardBody({
               after={(fieldChangeFor(activeEvent, "example") ?? fieldChangeFor(activeEvent, "examples"))?.after ?? visibleExample}
             />
           ) : (
-            <MarkdownBlock content={`\`\`\`${exampleLanguage(concept)}\n${visibleExample}\n\`\`\``} theme={theme} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
+            <MarkdownBlock content={`\`\`\`${exampleLanguage(concept)}\n${visibleExample}\n\`\`\``} theme={theme} defaultCodeLanguage={concept.language} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
           )}
         </ConceptBlock>
       ) : null}
@@ -685,7 +701,8 @@ function ConceptMarkdownOrDiff({
   theme,
   sources,
   onOpenConcept,
-  onOpenFile
+  onOpenFile,
+  defaultCodeLanguage
 }: {
   field: string;
   content: string;
@@ -694,12 +711,13 @@ function ConceptMarkdownOrDiff({
   sources: ConceptCard["sources"];
   onOpenConcept: (conceptId: string) => void;
   onOpenFile: (reference: InlineFileRef) => void;
+  defaultCodeLanguage?: string;
 }) {
   const change = fieldChangeFor(event, field);
   if (change) {
     return <InlineConceptDiff before={change.before} after={change.after ?? content} />;
   }
-  return <MarkdownBlock content={content} theme={theme} sources={sources} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />;
+  return <MarkdownBlock content={content} theme={theme} sources={sources} defaultCodeLanguage={defaultCodeLanguage} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />;
 }
 
 function InlineConceptDiff({ before, after }: { before?: string; after?: string }) {

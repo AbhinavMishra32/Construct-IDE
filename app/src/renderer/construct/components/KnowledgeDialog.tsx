@@ -49,11 +49,11 @@ export function KnowledgeDialog({
         <ShadcnScrollArea className="min-h-0 flex-1"><div className="space-y-3 pr-3">
           {concept.why ? <Card className="bg-card/70 shadow-none" size="sm"><CardContent>
             <p className="mb-2 text-xs font-medium text-muted-foreground">Why it matters</p>
-            <MarkdownBlock content={concept.why} theme={theme} sources={concept.sources} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
+            <MarkdownBlock content={concept.why} theme={theme} sources={concept.sources} defaultCodeLanguage={concept.language} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
           </CardContent></Card> : null}
           {concept.commonMistake ? <Card className="bg-card/70 shadow-none" size="sm"><CardContent>
             <p className="mb-2 text-xs font-medium text-muted-foreground">Common mistake</p>
-            <MarkdownBlock content={concept.commonMistake} theme={theme} sources={concept.sources} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
+            <MarkdownBlock content={concept.commonMistake} theme={theme} sources={concept.sources} defaultCodeLanguage={concept.language} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
           </CardContent></Card> : null}
           {concept.guides.map((guide) => {
             const label = guideLabel(guide.guideKind);
@@ -64,15 +64,15 @@ export function KnowledgeDialog({
                   {showTitle ? (
                     <p className="mb-2 text-xs font-medium text-muted-foreground">{label}</p>
                   ) : null}
-                  {guide.content ? <MarkdownBlock content={guide.content} theme={theme} sources={concept.sources} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} /> : null}
-                  {guide.sections.map((section) => <MarkdownBlock key={section.kind} content={section.content} theme={theme} sources={concept.sources} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />)}
+                  {guide.content ? <MarkdownBlock content={guide.content} theme={theme} sources={concept.sources} defaultCodeLanguage={concept.language} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} /> : null}
+                  {guide.sections.map((section) => <MarkdownBlock key={section.kind} content={section.content} theme={theme} sources={concept.sources} defaultCodeLanguage={concept.language} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />)}
                 </CardContent>
               </Card>
             );
           })}
           {concept.example ? <Card className="bg-card/70 shadow-none" size="sm"><CardContent>
             <p className="mb-2 text-xs font-medium text-muted-foreground">Example</p>
-            <MarkdownBlock content={`\`\`\`ts\n${concept.example}\n\`\`\``} theme={theme} onOpenConcept={() => undefined} />
+            <MarkdownBlock content={`\`\`\`${concept.language ?? "ts"}\n${concept.example}\n\`\`\``} theme={theme} defaultCodeLanguage={concept.language} onOpenConcept={() => undefined} />
           </CardContent></Card> : null}
           {concept.docs.length > 0 ? <Card className="bg-card/70 shadow-none" size="sm"><CardContent>
             <p className="mb-2 text-xs font-medium text-muted-foreground">Resources</p>
