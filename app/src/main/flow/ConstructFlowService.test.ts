@@ -11,6 +11,7 @@ import { ConstructFlowMemoryService } from "./ConstructFlowMemoryService";
 import { AgentLogService } from "../ai/AgentLogService";
 import { ConstructLearningStore } from "../constructLearningStore";
 import { createConstructProtocolTools } from "../agent-tools/constructProtocolTools";
+import { ConstructConceptPolicyService } from "../learning/ConstructConceptPolicyService";
 import type { StoredFlowProject } from "../projects/ConstructProjectTypes";
 import type { ConstructFlowSession } from "../../shared/constructFlow";
 
@@ -38,6 +39,20 @@ function createFlowTestProject(workspaceRoot: string, id: string, goal = "Test F
       updatedAt: new Date().toISOString()
     }
   };
+}
+
+async function rejectAfter<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(message)), ms);
+      })
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 describe("ConstructFlowService Concept and Task Tools", () => {
@@ -542,6 +557,28 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     assert.equal(task.subtasks?.[0]?.status, "completed");
     assert.equal(task.status, "submitted");
     task.status = "waiting";
+    if (task.subtasks?.[0]) {
+      task.subtasks[0].status = "active";
+      task.subtasks[0].completedAt = undefined;
+      task.subtasks[0].evidence = undefined;
+      task.subtasks[0].reviewedAt = undefined;
+      task.subtasks[0].reviewNote = undefined;
+      task.subtasks[0].nextInstructions = undefined;
+    }
+
+    const noDiffSubmission = await service.submitPracticeTask(project, task.id, "I completed this in the terminal.", task.subtasks?.[0]?.id);
+    assert.equal(noDiffSubmission.nothingChanged, true);
+    await reviewTool.execute({
+      taskId: task.id,
+      subtaskId: task.subtasks?.[0]?.id,
+      outcome: "done",
+      evidence: "Concrete workspace or terminal evidence can satisfy this subtask even when the formal diff is empty."
+    });
+    assert.equal(task.subtasks?.[0]?.status, "completed");
+    task.status = "waiting";
+    task.submission = undefined;
+    task.submittedAt = undefined;
+    task.learnerNote = undefined;
     if (task.subtasks?.[0]) {
       task.subtasks[0].status = "active";
       task.subtasks[0].completedAt = undefined;
@@ -1322,6 +1359,123 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     assert.equal(result.session.timeline.find((part) => part.id === "reasoning-left-open")?.status, "completed");
     assert.equal(result.session.agentEvents.find((event) => event.id === "reasoning-left-open")?.status, "completed");
     assert.equal(result.session.timeline.some((part) => part.status === "running"), false);
+  });
+
+  it("does not hold Flow completion behind semantic next-step auditing", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "construct-flow-test-terminal-audit-"));
+    const workspaceRoot = path.join(dir, "workspaces");
+    await mkdir(workspaceRoot, { recursive: true });
+    const workspace = new ConstructProjectWorkspaceService(
+      () => workspaceRoot,
+      () => dir
+    );
+    const flowMemory = new ConstructFlowMemoryService(workspace);
+    const logs = new AgentLogService(() => {});
+    const learningStore = new ConstructLearningStore(path.join(dir, "learning-state.json"));
+    let semanticAuditStarted = false;
+    const service = new ConstructFlowService({
+      workspace,
+      flowMemory,
+      latestTerminalOutput: () => "",
+      logs,
+      learningStore: () => learningStore,
+      conceptPolicy: () => new ConstructConceptPolicyService({
+        learningStore: () => learningStore,
+        agentRuntime: () => ({
+          generateStructured: async () => {
+            semanticAuditStarted = true;
+            await new Promise(() => {});
+          }
+        }) as any
+      }),
+      agentRuntime: () => ({
+        runAgentic: async (input: any) => {
+          input.onTrace?.({
+            title: "Agent response completed",
+            level: "debug",
+            detail: "The model stream ended normally.",
+            event: {
+              id: "streamed-reply",
+              type: "message",
+              status: "completed",
+              title: "Assistant response",
+              text: "We can keep this as a short mentor step.",
+              createdAt: "2026-06-24T05:00:01.000Z"
+            }
+          });
+          return { text: "We can keep this as a short mentor step.", stepCount: 1, finishReason: "stop", durationMs: 1 };
+        }
+      }) as any
+    });
+    const project = createFlowTestProject(workspaceRoot, "terminal-audit-project");
+    await mkdir(project.workspacePath, { recursive: true });
+
+    const result = await rejectAfter(
+      service.runMainAgent(project, {
+        projectId: project.id,
+        message: "continue"
+      }),
+      250,
+      "Flow stayed pending behind semantic next-step audit"
+    );
+
+    assert.equal(result.session.status, "completed");
+    assert.equal(result.session.finishReason, "stop");
+    assert.equal(result.session.timeline.some((part) => part.status === "running"), false);
+    assert.equal(semanticAuditStarted, false);
+  });
+
+  it("keeps the final audited reply authoritative over streamed message parts", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "construct-flow-test-audited-reply-"));
+    const workspaceRoot = path.join(dir, "workspaces");
+    await mkdir(workspaceRoot, { recursive: true });
+    const workspace = new ConstructProjectWorkspaceService(
+      () => workspaceRoot,
+      () => dir
+    );
+    const flowMemory = new ConstructFlowMemoryService(workspace);
+    const logs = new AgentLogService(() => {});
+    const learningStore = new ConstructLearningStore(path.join(dir, "learning-state.json"));
+    const streamedReply = "Use const double = (value) => value * 2; as the next step.";
+    const service = new ConstructFlowService({
+      workspace,
+      flowMemory,
+      latestTerminalOutput: () => "",
+      logs,
+      learningStore: () => learningStore,
+      agentRuntime: () => ({
+        runAgentic: async (input: any) => {
+          input.onTrace?.({
+            title: "Agent response completed",
+            level: "debug",
+            detail: "The model stream ended normally.",
+            event: {
+              id: "streamed-reply",
+              type: "message",
+              status: "completed",
+              title: "Assistant response",
+              text: streamedReply,
+              createdAt: "2026-06-24T05:00:01.000Z"
+            }
+          });
+          return { text: streamedReply, stepCount: 1, finishReason: "stop", durationMs: 1 };
+        }
+      }) as any
+    });
+    const project = createFlowTestProject(workspaceRoot, "audited-reply-project");
+    await mkdir(project.workspacePath, { recursive: true });
+
+    const result = await service.runMainAgent(project, {
+      projectId: project.id,
+      message: "continue"
+    });
+
+    const messageParts = result.session.timeline.filter((part) => part.kind === "message");
+    assert.equal(result.session.finishReason, "concept-policy");
+    assert.notEqual(result.reply, streamedReply);
+    assert.equal(messageParts.length, 1);
+    assert.equal(messageParts[0]?.text, result.reply);
+    assert.doesNotMatch(messageParts[0]?.text ?? "", /const double/);
   });
 
   it("sends the persisted Flow transcript as the model message array", async () => {
@@ -2379,6 +2533,174 @@ describe("ConstructFlowService Concept and Task Tools", () => {
       () => taskTool.execute(taskInput),
       /Project concept firewall blocked this practice task/
     );
+  });
+
+  it("persists a practice-task concept firewall review across the next Flow turn", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "construct-flow-task-firewall-review-persist-"));
+    const learningStorePath = path.join(dir, "learning-state.json");
+    const workspaceRoot = path.join(dir, "workspaces");
+    await mkdir(workspaceRoot, { recursive: true });
+
+    const learningStore = new ConstructLearningStore(learningStorePath);
+    const workspace = new ConstructProjectWorkspaceService(
+      () => workspaceRoot,
+      () => dir
+    );
+    const flowMemory = new ConstructFlowMemoryService(workspace);
+    const logs = new AgentLogService(() => {});
+    let runCount = 0;
+    const taskInput = {
+      title: "Read a callback",
+      prompt: "Read const double = (value) => value * 2; and explain what value stores.",
+      language: "javascript",
+      taskFiles: ["src/callback.js"],
+      introducedConceptIds: ["js.variables"],
+      learnerReadiness: [{
+        conceptId: "js.variables",
+        evidence: "The learner explained variables as named values.",
+        source: "learner-chat"
+      }],
+      successCriteria: ["The learner explains the variable value."]
+    };
+    const service = new ConstructFlowService({
+      workspace,
+      flowMemory,
+      latestTerminalOutput: () => "",
+      logs,
+      learningStore: () => learningStore,
+      agentRuntime: () => ({
+        runAgentic: async (request: any) => {
+          runCount += 1;
+          if (runCount === 1) {
+            await assert.rejects(
+              () => request.tools["practice-task"].execute(taskInput),
+              /Project concept firewall blocked this practice task/
+            );
+            return { text: "I need to teach this first.", finishReason: "stop", stepCount: 1 };
+          }
+
+          const result = await request.tools["practice-task"].execute({
+            ...taskInput,
+            title: "Read the callback value",
+            prompt: `${taskInput.prompt} Then say which value the callback receives.`
+          });
+          assert.equal(result.created, true);
+          return { text: "Task is ready.", finishReason: "stop", stepCount: 1 };
+        }
+      }) as any
+    });
+    const project = createFlowTestProject(workspaceRoot, "task-firewall-review-persist-project", "Practice JavaScript safely");
+    await mkdir(project.workspacePath, { recursive: true });
+
+    const addTool = (service as any).createAddConceptTool(project, () => {});
+    await addTool.execute({
+      id: "js.variables",
+      title: "JavaScript variables",
+      language: "javascript",
+      technology: "JavaScript",
+      content: "A variable stores a named value that code can read later.",
+      masteryLevel: 3,
+      masteryReason: "The learner explained variables as named stored values.",
+      reason: "Seed a ready concept that does not cover callbacks.",
+      evidence: ["The learner explained variable storage in chat."]
+    });
+
+    await service.runMainAgent(project, {
+      projectId: project.id,
+      message: "Create the callback practice task."
+    });
+    assert.equal(project.flow.sessions.at(-1)?.pendingConceptFirewallReviews?.length, 1);
+
+    await service.runMainAgent(project, {
+      projectId: project.id,
+      message: "go ahead"
+    });
+
+    assert.equal(runCount, 2);
+    assert.equal(project.flow.sessions.flatMap((session) => session.pendingConceptFirewallReviews ?? []).length, 0);
+    assert.equal(project.flow.sessions.flatMap((session) => session.practiceTasks).length, 1);
+  });
+
+  it("persists a concept-exercise firewall review across the next Flow turn", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "construct-flow-exercise-firewall-review-persist-"));
+    const learningStorePath = path.join(dir, "learning-state.json");
+    const workspaceRoot = path.join(dir, "workspaces");
+    await mkdir(workspaceRoot, { recursive: true });
+
+    const learningStore = new ConstructLearningStore(learningStorePath);
+    const workspace = new ConstructProjectWorkspaceService(
+      () => workspaceRoot,
+      () => dir
+    );
+    const flowMemory = new ConstructFlowMemoryService(workspace);
+    const logs = new AgentLogService(() => {});
+    let runCount = 0;
+    const exerciseInput = {
+      conceptIds: ["js.variables"],
+      title: "Read a callback value",
+      prompt: "Read const double = (value) => value * 2; and explain what value stores.",
+      masteryGoalLevel: 2,
+      successCriteria: ["The learner explains the variable value."],
+      expectedSignals: ["The learner identifies value as the callback parameter."],
+      sourceText: "A variable stores a named value that code can read later.",
+      reason: "Check whether the learner can track variable values."
+    };
+    const service = new ConstructFlowService({
+      workspace,
+      flowMemory,
+      latestTerminalOutput: () => "",
+      logs,
+      learningStore: () => learningStore,
+      agentRuntime: () => ({
+        runAgentic: async (request: any) => {
+          runCount += 1;
+          if (runCount === 1) {
+            await assert.rejects(
+              () => request.tools["concept-exercise"].execute(exerciseInput),
+              /Project concept firewall blocked this concept exercise/
+            );
+            return { text: "I need to teach this first.", finishReason: "stop", stepCount: 1 };
+          }
+
+          const result = await request.tools["concept-exercise"].execute({
+            ...exerciseInput,
+            title: "Read the callback parameter"
+          });
+          assert.equal(result.created, true);
+          return { text: "Exercise is ready.", finishReason: "stop", stepCount: 1 };
+        }
+      }) as any
+    });
+    const project = createFlowTestProject(workspaceRoot, "exercise-firewall-review-persist-project", "Practice JavaScript safely");
+    await mkdir(project.workspacePath, { recursive: true });
+
+    const addTool = (service as any).createAddConceptTool(project, () => {});
+    await addTool.execute({
+      id: "js.variables",
+      title: "JavaScript variables",
+      language: "javascript",
+      technology: "JavaScript",
+      content: "A variable stores a named value that code can read later.",
+      masteryLevel: 2,
+      masteryReason: "The learner has started explaining variables.",
+      reason: "Seed a concept that does not cover callbacks.",
+      evidence: ["The learner explained variable storage in chat."]
+    });
+
+    await service.runMainAgent(project, {
+      projectId: project.id,
+      message: "Create the callback concept exercise."
+    });
+    assert.equal(project.flow.sessions.at(-1)?.pendingConceptFirewallReviews?.length, 1);
+
+    await service.runMainAgent(project, {
+      projectId: project.id,
+      message: "go ahead"
+    });
+
+    assert.equal(runCount, 2);
+    assert.equal(project.flow.sessions.flatMap((session) => session.pendingConceptFirewallReviews ?? []).length, 0);
+    assert.equal(project.flow.sessions.flatMap((session) => session.conceptExercises ?? []).length, 1);
   });
 
   it("keeps concept teaching conversational instead of reference-dump shaped", () => {
