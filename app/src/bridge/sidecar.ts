@@ -9,6 +9,7 @@
  */
 import { bridgeTransport } from "./transport";
 import { app } from "./electron-shim";
+import { resolveConstructCloudEndpoint } from "../shared/constructCloud";
 
 // Importing the main process registers its `app.whenReady()` handler (still
 // pending) and constructs all services. It must be imported before we mark the
@@ -16,6 +17,18 @@ import { app } from "./electron-shim";
 import "../main/index";
 
 async function main(): Promise<void> {
+  // Reserved bridge channel that replaces the Electron preload's synchronous
+  // getRuntimeInfo(). The renderer fetches this once during bootstrap.
+  bridgeTransport.registerInvoke("__bridge:runtime-info", () => ({
+    name: "Construct",
+    // Tauri build: no Electron/Chromium runtime; kept for RuntimeInfo shape.
+    electron: "",
+    chrome: "",
+    node: process.versions.node,
+    platform: process.platform,
+    constructCloudEndpoint: resolveConstructCloudEndpoint(process.env)
+  }));
+
   const port = await bridgeTransport.listen("127.0.0.1");
 
   // Resolve `app.whenReady()`, which triggers IPC handler registration in
