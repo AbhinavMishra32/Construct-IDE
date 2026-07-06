@@ -1,5 +1,4 @@
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { readTextFile } from "@tauri-apps/plugin-fs";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
@@ -179,7 +178,10 @@ export async function installConstructBridge(): Promise<void> {
         ]
       });
       if (typeof selected !== "string") return null;
-      return { path: selected, source: await readTextFile(selected) };
+      // Read the picked file in the sidecar (Node fs), matching the original
+      // Electron dialog handler and avoiding fs-plugin path-scope friction.
+      const source = await invoke<string>("__bridge:read-file-abs", selected);
+      return { path: selected, source };
     },
     selectWorkspaceDirectory: async (input?: { defaultPath?: string }) => {
       const selected = await openDialog({

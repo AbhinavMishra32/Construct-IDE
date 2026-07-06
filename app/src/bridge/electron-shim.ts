@@ -249,3 +249,12 @@ const nativeImage = {
 
 export { app, BrowserWindow, ipcMain, dialog, nativeTheme, shell, nativeImage };
 export { VirtualBrowserWindow };
+
+// Type aliases so `import type { IpcMain, WebContents } from "electron"` in the
+// existing main-process code keeps resolving once the electron dependency is
+// dropped (tsconfig maps "electron" to this module).
+export type IpcMain = typeof ipcMain;
+export type WebContents = VirtualWebContents;
+export type IpcMainInvokeEvent = { sender: VirtualWebContents };
+export type IpcMainEvent = { sender: VirtualWebContents };
+

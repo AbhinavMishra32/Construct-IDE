@@ -7,6 +7,8 @@
  * bundle time `"electron"` is aliased to `./electron-shim`, so `ipcMain`,
  * `BrowserWindow`, `app`, etc. are backed by the transport instead of Electron.
  */
+import { readFile } from "node:fs/promises";
+
 import { bridgeTransport } from "./transport";
 import { app } from "./electron-shim";
 import { resolveConstructCloudEndpoint } from "../shared/constructCloud";
@@ -28,6 +30,15 @@ async function main(): Promise<void> {
     platform: process.platform,
     constructCloudEndpoint: resolveConstructCloudEndpoint(process.env)
   }));
+
+  // Read an absolute path the renderer obtained from a native Tauri dialog.
+  // Mirrors the original Electron dialog handler, which read files in Node.
+  bridgeTransport.registerInvoke("__bridge:read-file-abs", async (_event, filePath) => {
+    if (typeof filePath !== "string" || !filePath) {
+      throw new Error("A file path is required.");
+    }
+    return readFile(filePath, "utf8");
+  });
 
   const port = await bridgeTransport.listen("127.0.0.1");
 
