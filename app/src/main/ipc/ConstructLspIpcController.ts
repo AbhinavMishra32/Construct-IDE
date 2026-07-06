@@ -18,11 +18,13 @@ export class ConstructLspIpcController {
       return this.options.lsp.getStatus(projectId);
     });
 
-    ipcMain.handle("construct:lsp:install", async (_event, projectId: string) => {
+    ipcMain.handle("construct:lsp:install", async (_event, input: string | { projectId: string; language?: string }) => {
       try {
+        const projectId = typeof input === "string" ? input : input.projectId;
+        const language = typeof input === "string" ? undefined : input.language as Parameters<ConstructLspService["install"]>[1];
         const project = await this.options.findProject(projectId);
         this.activate(_event.sender);
-        return await this.options.lsp.install(project.workspacePath);
+        return await this.options.lsp.install(project.workspacePath, language);
       } catch (err) {
         console.error("[LSP Installer] Error:", err);
         return false;

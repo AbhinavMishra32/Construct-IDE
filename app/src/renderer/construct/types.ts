@@ -235,7 +235,7 @@ export type GitActionResult = {
   commitHash?: string;
 };
 
-export type LspLanguageId = "typescript" | "python";
+export type LspLanguageId = "typescript" | "python" | "rust" | "go" | "java" | "cpp" | "csharp" | "html" | "css" | "json";
 
 export type LspStartResult = {
   languages: LspLanguageId[];
@@ -571,6 +571,8 @@ export type ObservabilitySettings = {
 
 export type AppSettings = {
   showStatusBar: boolean;
+  codeThemeId: string;
+  customCodeThemeJson: string;
 };
 
 export type ProjectSettings = {
@@ -851,10 +853,10 @@ export type ConstructProjectsApi = {
   onVerifyLog(callback: (event: { entry: VerificationLogEntry }) => void): () => void;
   lspRequest(payload: unknown): Promise<unknown>;
   onLspNotification(callback: (payload: any) => void): () => void;
-  onLspStderr(callback: (payload: string | { language: "typescript" | "python"; level: "info" | "warn" | "error"; text: string }) => void): () => void;
+  onLspStderr(callback: (payload: string | { language: LspLanguageId; level: "info" | "warn" | "error"; text: string }) => void): () => void;
   onMainLog(callback: (payload: { level: string; message: string; timestamp: string }) => void): () => void;
-  onLspInstallProgress(callback: (payload: { language?: "all" | "typescript" | "python"; type: "stdout" | "stderr"; text: string }) => void): () => void;
-  lspGetStatus(projectId: string): Promise<Record<"typescript" | "python", {
+  onLspInstallProgress(callback: (payload: { language?: "all" | LspLanguageId; type: "stdout" | "stderr"; text: string }) => void): () => void;
+  lspGetStatus(projectId: string): Promise<Record<LspLanguageId, {
     command: string;
     installCommand: string;
     installed: boolean;
@@ -862,7 +864,7 @@ export type ConstructProjectsApi = {
     resolvedPath: string | null;
     status: "not-installed" | "running" | "stopped" | "installing";
   }>>;
-  lspInstall(projectId: string): Promise<boolean>;
+  lspInstall(input: string | { projectId: string; language?: LspLanguageId }): Promise<boolean>;
   lspStart(projectId: string): Promise<LspStartResult>;
   lspStop(): Promise<void>;
   litellmStart(input: { port: number; openAiApiKey?: string; openRouterApiKey?: string }): Promise<LitellmState>;

@@ -208,7 +208,7 @@ contextBridge.exposeInMainWorld("constructProjects", {
     return () => ipcRenderer.off("construct:lsp:install-progress", listener);
   },
   lspGetStatus: (projectId: string) => ipcRenderer.invoke("construct:lsp:get-status", projectId),
-  lspInstall: (projectId: string) => ipcRenderer.invoke("construct:lsp:install", projectId),
+  lspInstall: (input: string | { projectId: string; language?: string }) => ipcRenderer.invoke("construct:lsp:install", input),
   lspStart: (projectId: string) => ipcRenderer.invoke("construct:lsp:start-server", projectId),
   lspStop: () => ipcRenderer.invoke("construct:lsp:stop-server"),
   litellmStart: (input: { port: number; openAiApiKey?: string; openRouterApiKey?: string }) =>
