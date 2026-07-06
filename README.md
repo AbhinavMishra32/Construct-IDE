@@ -17,7 +17,7 @@
 
 <p align="center">
   <img alt="Version" src="https://img.shields.io/badge/version-0.6.1-000000?style=flat-square">
-  <img alt="Desktop" src="https://img.shields.io/badge/desktop-Electron-47848f?style=flat-square&logo=electron&logoColor=white">
+  <img alt="Desktop" src="https://img.shields.io/badge/desktop-Tauri-24c8b8?style=flat-square&logo=tauri&logoColor=white">
   <img alt="Runtime" src="https://img.shields.io/badge/runtime-React%20%2B%20TypeScript-3178c6?style=flat-square&logo=typescript&logoColor=white">
   <img alt="Package manager" src="https://img.shields.io/badge/pnpm-10.23.0-f69220?style=flat-square&logo=pnpm&logoColor=white">
 </p>
@@ -146,14 +146,20 @@ flowchart LR
 
 ## Architecture
 
-Construct is a pnpm + Turbo monorepo. The main product is an Electron desktop
-app with a TypeScript main process and a React renderer.
+Construct is a pnpm + Turbo monorepo. The main product is a Tauri desktop app:
+a Rust/Tauri shell hosts the React renderer (built with Vite) and spawns the
+TypeScript backend as a Node.js sidecar. The sidecar runs the same services the
+Electron main process used to; a localhost WebSocket bridge (with a per-launch
+auth token) replaces Electron IPC, and `"electron"` is aliased at bundle time to
+a small transport shim so the backend code is unchanged.
 
 ```text
 .
 ├── app/                         # Desktop app workspace
 │   ├── assets/                  # App icon and README screenshot
-│   ├── src/main/                # Electron main process and agent services
+│   ├── src-tauri/               # Rust/Tauri shell (spawns the Node sidecar)
+│   ├── src/bridge/              # Node sidecar entry, transport, electron shim
+│   ├── src/main/                # Backend services (run in the Node sidecar)
 │   │   ├── agent-tools/         # Tool contracts exposed to agents
 │   │   ├── ai/                  # AI services, logged agents, feature services
 │   │   ├── config/              # Settings, provider catalog, model routing
@@ -182,7 +188,7 @@ flowchart TB
     FlowUI["Flow workspace, concepts, tasks, logs"]
   end
 
-  subgraph Main["Electron main process"]
+  subgraph Main["Node.js sidecar (Tauri)"]
     IPC["IPC controllers"]
     Flow["ConstructFlowService"]
     Tools["Agent tools"]
@@ -192,8 +198,9 @@ flowchart TB
     Providers["AI provider gateway"]
   end
 
-  UI --> IPC
-  FlowUI --> IPC
+  UI --> Bridge["WebSocket bridge (token-gated)"]
+  FlowUI --> Bridge
+  Bridge --> IPC
   IPC --> Flow
   Flow --> Tools
   Flow --> Learning
@@ -320,6 +327,8 @@ local storage and explicit provider routing, not as a formal compliance claim.
 
 - Node.js 25+
 - pnpm 10.23.0
+- Rust (stable) + the Tauri v2 system dependencies for your platform
+  (e.g. WebKitGTK on Linux) — see https://v2.tauri.app/start/prerequisites/
 
 Install dependencies:
 
@@ -358,10 +367,10 @@ App workspace scripts:
 
 | Script | Purpose |
 | --- | --- |
-| `pnpm --filter @construct/app dev` | Run renderer, main-process build watch, and Electron together. |
-| `pnpm --filter @construct/app dev:renderer` | Start Vite for the renderer. |
-| `pnpm --filter @construct/app dev:main` | Watch/build Electron main and preload code with tsup. |
-| `pnpm --filter @construct/app dev:electron` | Launch Electron once renderer and main artifacts are ready. |
+| `pnpm --filter @construct/app dev` | Launch the app with `tauri dev` (Vite renderer + Node sidecar + Rust shell). |
+| `pnpm --filter @construct/app dev:renderer` | Start Vite for the renderer only. |
+| `pnpm --filter @construct/app build:sidecar` | Bundle the Node.js sidecar (electron aliased to the transport shim). |
+| `pnpm --filter @construct/app tauri:build` | Build the packaged desktop installers with Tauri. |
 | `pnpm --filter @construct/app typecheck` | Typecheck the app. |
 | `pnpm --filter @construct/app test` | Run the app's Node test suite. |
 
@@ -392,7 +401,7 @@ Before changing Flow behavior, ask:
   thinking inside the model?
 - What evidence proves the learner understands the concept?
 - Can the behavior be tested at the tool/service boundary without needing a full
-  Electron build?
+  Tauri build?
 
 Contribution guidelines:
 
