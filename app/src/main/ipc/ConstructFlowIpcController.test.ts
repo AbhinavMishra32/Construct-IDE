@@ -193,6 +193,80 @@ describe("ConstructFlowIpcController", () => {
 
     await invocation;
   });
+
+  it("starts the main mentor after research-first project creation completes", async () => {
+    const handlers = new Map<string, (event: unknown, input: unknown) => Promise<unknown>>();
+    const sentEvents: Array<{ channel: string; payload: unknown }> = [];
+    const mainStarted = createDeferred<unknown>();
+    const controller = new ConstructFlowIpcController({
+      ipcMain: {
+        handle: (channel: string, handler: (event: unknown, input: unknown) => Promise<unknown>) => {
+          handlers.set(channel, handler);
+        }
+      } as any,
+      readSettings: async () => ({ workspaceRoot: "/tmp/construct-workspace" }) as any,
+      readProject: async () => null,
+      readProjectSummaries: async () => [],
+      writeProject: async () => {},
+      workspace: {
+        isInsidePath: () => false
+      } as any,
+      flowMemory: {
+        ensure: async () => {}
+      } as any,
+      flow: {
+        runResearchAgent: async (project: StoredFlowProject, onSessionEvent?: (event: ConstructFlowSessionEvent) => void) => {
+          const session = {
+            ...flowSession(project, "research-session", "completed", "Research saved."),
+            threadId: `${project.flow.threadId}:research`
+          };
+          onSessionEvent?.(event(project, "completed", session));
+          return {
+            session,
+            reply: "Research saved.",
+            actions: []
+          } satisfies ConstructFlowAgentResult;
+        },
+        runMainAgent: async (project: StoredFlowProject, input: unknown, onSessionEvent?: (event: ConstructFlowSessionEvent) => void) => {
+          const session = {
+            ...flowSession(project, "mentor-session", "completed", "Hello, let's begin."),
+            origin: "system" as const
+          };
+          onSessionEvent?.(event(project, "completed", session));
+          mainStarted.resolve(input);
+          return {
+            session,
+            reply: "Hello, let's begin.",
+            actions: []
+          } satisfies ConstructFlowAgentResult;
+        }
+      } as any,
+      workspacePathForProject: (projectId: string) => `/tmp/${projectId}`,
+      setActiveWebContents: () => {},
+      getAppSourceRoot: () => "/tmp/source"
+    });
+    controller.register();
+
+    const createFlow = handlers.get("construct:flow:create");
+    assert.ok(createFlow);
+    const project = await createFlow({
+      sender: {
+        isDestroyed: () => false,
+        send: (channel: string, payload: unknown) => sentEvents.push({ channel, payload })
+      }
+    }, {
+      title: "Research Chain",
+      goal: "Learn rendering architecture",
+      researchFirst: true
+    }) as StoredFlowProject;
+    const mainInput = await mainStarted.promise as { message?: string; startReason?: string };
+
+    assert.equal(project.flow.researchEnabled, true);
+    assert.equal(mainInput.startReason, "new-project");
+    assert.match(mainInput.message ?? "", /after research completed/);
+    assert.match(mainInput.message ?? "", /Greet the learner briefly/);
+    assert.equal(sentEvents.some((entry) => entry.channel === "construct:flow:session-event"), true);
+  });
 });
 
 function createDeferred<T>(): {

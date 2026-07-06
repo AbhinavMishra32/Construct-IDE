@@ -13,6 +13,7 @@ import type { ProjectSummary, StoredFlowProject, StoredProject } from "../projec
 import { isFlowProject } from "../projects/ConstructProjectTypes";
 import { ConstructProjectWorkspaceService } from "../projects/ConstructProjectWorkspaceService";
 import type {
+  ConstructFlowAgentResult,
   ConstructFlowAgentInput,
   ConstructFlowProjectSettings,
   ConstructFlowRewindInput,
@@ -99,18 +100,13 @@ export class ConstructFlowIpcController {
 
       if (project.flow.researchEnabled) {
         const publishSessionEvent = this.createPersistedSessionEventSink(event.sender, project);
-        this.options.flow.runResearchAgent(project, publishSessionEvent)
-          .then(async () => this.queueProjectWrite(project, "research-completed"))
+        this.runResearchThenStartProject(project, publishSessionEvent)
           .catch((error) => {
-            console.error("[construct-flow] background research failed", error);
+            console.error("[construct-flow] background research startup failed", error);
           });
       } else {
         const publishSessionEvent = this.createPersistedSessionEventSink(event.sender, project);
-        await this.options.flow.runMainAgent(project, {
-          projectId: project.id,
-          startReason: "new-project",
-          message: "Start this new Flow project. Use the project goal, project settings, and current workspace context to decide the next helpful mentor step."
-        }, publishSessionEvent);
+        await this.runNewProjectMainAgent(project, publishSessionEvent, "without prior research");
         await this.queueProjectWrite(project, "new-project-main-agent");
       }
 
@@ -214,6 +210,31 @@ export class ConstructFlowIpcController {
       throw new Error(`Project "${projectId}" is not a Flow project.`);
     }
     return project;
+  }
+
+  private async runResearchThenStartProject(
+    project: StoredFlowProject,
+    publishSessionEvent: (event: ConstructFlowSessionEvent) => void
+  ): Promise<void> {
+    const research = await this.options.flow.runResearchAgent(project, publishSessionEvent);
+    void this.queueProjectWrite(project, "research-completed");
+    if (research.session.status === "error") {
+      return;
+    }
+    await this.runNewProjectMainAgent(project, publishSessionEvent, "after research completed");
+    void this.queueProjectWrite(project, "research-handoff-main-agent");
+  }
+
+  private runNewProjectMainAgent(
+    project: StoredFlowProject,
+    publishSessionEvent: (event: ConstructFlowSessionEvent) => void,
+    handoffReason: string
+  ): Promise<ConstructFlowAgentResult> {
+    return this.options.flow.runMainAgent(project, {
+      projectId: project.id,
+      startReason: "new-project",
+      message: `Start this new Flow project ${handoffReason}. Greet the learner briefly, use the project goal, Flow Memory, project settings, and current workspace context, then begin the next helpful mentor step without waiting for another learner prompt.`
+    }, publishSessionEvent);
   }
 
   private createPersistedSessionEventSink(
