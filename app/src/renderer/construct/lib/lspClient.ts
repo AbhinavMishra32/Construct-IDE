@@ -1,7 +1,7 @@
 import { monaco } from "../../monaco";
 import { logStore } from "./logStore";
 
-type LspLanguage = "typescript" | "python";
+type LspLanguage = "typescript" | "python" | "rust" | "go" | "java" | "cpp" | "csharp" | "html" | "css" | "json";
 
 disableDefaultTypeScriptFeatures();
 
@@ -13,6 +13,7 @@ class LspClientClass {
   private modelListeners = new Map<string, monaco.IDisposable[]>();
   private initializedLanguages = new Set<LspLanguage>();
   private workspaceFiles: string[] = [];
+  private initializationToken = 0;
 
   async initialize(workspacePath: string, options: { force?: boolean; languages?: LspLanguage[] } = {}) {
     if (!options.force && this.isInitialized && this.activeWorkspacePath === workspacePath) {
@@ -20,6 +21,7 @@ class LspClientClass {
     }
 
     this.dispose();
+    const token = ++this.initializationToken;
     this.activeWorkspacePath = workspacePath;
     this.isInitialized = true;
 
@@ -29,10 +31,20 @@ class LspClientClass {
       const languages = options.languages?.length ? options.languages : (["typescript"] as LspLanguage[]);
       for (const language of languages) {
         try {
-          await this.initializeLanguage(language, workspacePath);
+          await this.initializeLanguage(language, workspacePath, token);
+          if (token !== this.initializationToken) {
+            return;
+          }
         } catch (err) {
+          if (token !== this.initializationToken) {
+            return;
+          }
           logStore.addLog("lsp-server", `[${language}] ${err instanceof Error ? err.message : String(err)}`, "warn");
         }
+      }
+
+      if (token !== this.initializationToken) {
+        return;
       }
 
       console.log("[LSP Client] Handshake completed successfully.");
@@ -69,7 +81,7 @@ class LspClientClass {
     }
   }
 
-  private async initializeLanguage(language: LspLanguage, workspacePath: string) {
+  private async initializeLanguage(language: LspLanguage, workspacePath: string, token: number) {
     await this.sendRequest("initialize", {
       processId: null,
       clientInfo: { name: "Construct-Monaco-LSP", version: "1.0.0" },
@@ -147,6 +159,10 @@ class LspClientClass {
       }]
     }, language);
 
+    if (token !== this.initializationToken) {
+      return;
+    }
+
     this.sendNotification("initialized", {}, language);
     this.initializedLanguages.add(language);
     logStore.addLog("lsp-server", `[${language}] initialized`, "info");
@@ -157,15 +173,15 @@ class LspClientClass {
     const id = this.nextRequestId++;
     const payload = { jsonrpc: "2.0", id, languageId: language, method, params };
     
-    logStore.addLog("lsp-protocol", `--> ${language} Request: ${method} (id: ${id})\n${JSON.stringify(params, null, 2)}`, "info");
+    logStore.addLog("lsp-protocol", `--> ${language} Request: ${method} (id: ${id})\n${formatLspLogValue(params)}`, "info");
     
     try {
       const response: any = await window.constructProjects.lspRequest(payload);
       if (response && response.error) {
-        logStore.addLog("lsp-protocol", `<-- Error Response: ${method} (id: ${id})\n${JSON.stringify(response.error, null, 2)}`, "error");
+        logStore.addLog("lsp-protocol", `<-- Error Response: ${method} (id: ${id})\n${formatLspLogValue(response.error)}`, "error");
         throw new Error(response.error.message || JSON.stringify(response.error));
       }
-      logStore.addLog("lsp-protocol", `<-- Response: ${method} (id: ${id})\n${JSON.stringify(response ? response.result : null, null, 2)}`, "info");
+      logStore.addLog("lsp-protocol", `<-- Response: ${method} (id: ${id})\n${formatLspLogValue(response ? response.result : null)}`, "info");
       return response ? response.result : null;
     } catch (err) {
       logStore.addLog("lsp-protocol", `[Request Failed] ${method} (id: ${id}): ${err instanceof Error ? err.message : String(err)}`, "error");
@@ -176,7 +192,7 @@ class LspClientClass {
   // JSON-RPC notifications
   sendNotification(method: string, params: any, language: LspLanguage = "typescript") {
     const payload = { jsonrpc: "2.0", languageId: language, method, params };
-    logStore.addLog("lsp-protocol", `--> ${language} Notification: ${method}\n${JSON.stringify(params, null, 2)}`, "info");
+    logStore.addLog("lsp-protocol", `--> ${language} Notification: ${method}\n${formatLspLogValue(params)}`, "info");
     
     window.constructProjects.lspRequest(payload).catch((err) => {
       console.error("[LSP Client] Notification error:", err);
@@ -274,7 +290,7 @@ class LspClientClass {
 
   private setupDiagnostics() {
     const cleanup = window.constructProjects.onLspNotification((notification: any) => {
-      logStore.addLog("lsp-protocol", `<-- Notification: ${notification.method}\n${JSON.stringify(notification.params, null, 2)}`, "info");
+      logStore.addLog("lsp-protocol", `<-- Notification: ${notification.method}\n${formatLspLogValue(notification.params)}`, "info");
       
       if (notification.method === "textDocument/publishDiagnostics") {
         const { uri, diagnostics } = notification.params;
@@ -306,7 +322,7 @@ class LspClientClass {
   }
 
   private registerProviders() {
-    const languages = ["typescript", "javascript", "json", "python"];
+    const languages = ["typescript", "javascript", "json", "python", "rust", "go", "java", "cpp", "c", "csharp", "html", "css", "scss", "less"];
 
     languages.forEach((lang) => {
       // 1. Hover
@@ -521,6 +537,7 @@ class LspClientClass {
   }
 
   dispose() {
+    this.initializationToken++;
     this.isInitialized = false;
     this.activeWorkspacePath = "";
     this.initializedLanguages.clear();
@@ -567,6 +584,71 @@ function toMonacoRange(lspRange: any): monaco.Range {
     lspRange.end.line + 1,
     lspRange.end.character + 1
   );
+}
+
+const MAX_LSP_LOG_STRING_LENGTH = 240;
+const MAX_LSP_LOG_ARRAY_ITEMS = 20;
+const MAX_LSP_LOG_DEPTH = 4;
+
+function formatLspLogValue(value: unknown): string {
+  try {
+    return JSON.stringify(summarizeLspLogValue(value), null, 2);
+  } catch {
+    return "[Unserializable LSP payload]";
+  }
+}
+
+function summarizeLspLogValue(value: unknown, depth = 0): unknown {
+  if (depth >= MAX_LSP_LOG_DEPTH) {
+    return "[Max log depth reached]";
+  }
+
+  if (typeof value === "string") {
+    return summarizeLogString(value);
+  }
+
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    const items = value.slice(0, MAX_LSP_LOG_ARRAY_ITEMS).map((item) => summarizeLspLogValue(item, depth + 1));
+    if (value.length > MAX_LSP_LOG_ARRAY_ITEMS) {
+      items.push(`[${value.length - MAX_LSP_LOG_ARRAY_ITEMS} more item(s)]`);
+    }
+    return items;
+  }
+
+  const result: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(value)) {
+    if (key === "text" && typeof child === "string") {
+      result[key] = `[${child.length} chars omitted]`;
+    } else if (key === "contentChanges" && Array.isArray(child)) {
+      result[key] = child.map((change) => {
+        if (!change || typeof change !== "object") {
+          return summarizeLspLogValue(change, depth + 1);
+        }
+        const summarizedChange: Record<string, unknown> = {};
+        for (const [changeKey, changeValue] of Object.entries(change)) {
+          summarizedChange[changeKey] = changeKey === "text" && typeof changeValue === "string"
+            ? `[${changeValue.length} chars omitted]`
+            : summarizeLspLogValue(changeValue, depth + 1);
+        }
+        return summarizedChange;
+      });
+    } else {
+      result[key] = summarizeLspLogValue(child, depth + 1);
+    }
+  }
+  return result;
+}
+
+function summarizeLogString(value: string): string {
+  if (value.length <= MAX_LSP_LOG_STRING_LENGTH) {
+    return value;
+  }
+
+  return `${value.slice(0, MAX_LSP_LOG_STRING_LENGTH)}... [${value.length - MAX_LSP_LOG_STRING_LENGTH} chars omitted]`;
 }
 
 function disableDefaultTypeScriptFeatures() {
@@ -623,6 +705,34 @@ function languageForModel(model: monaco.editor.ITextModel): { languageId: string
   const languageId = model.getLanguageId();
   const ext = model.uri.path.split(".").pop()?.toLowerCase() ?? "";
 
+  if (languageId === "rust" || ext === "rs") {
+    return { languageId: "rust", server: "rust" };
+  }
+
+  if (languageId === "go" || ext === "go") {
+    return { languageId: "go", server: "go" };
+  }
+
+  if (languageId === "java" || ext === "java") {
+    return { languageId: "java", server: "java" };
+  }
+
+  if (languageId === "csharp" || ext === "cs" || ext === "csx") {
+    return { languageId: "csharp", server: "csharp" };
+  }
+
+  if (languageId === "cpp" || languageId === "c" || ["c", "cc", "cpp", "cxx", "h", "hh", "hpp", "hxx"].includes(ext)) {
+    return { languageId: languageId === "c" ? "c" : "cpp", server: "cpp" };
+  }
+
+  if (languageId === "html" || ext === "html" || ext === "htm") {
+    return { languageId: "html", server: "html" };
+  }
+
+  if (languageId === "css" || languageId === "scss" || languageId === "less" || ["css", "scss", "sass", "less"].includes(ext)) {
+    return { languageId: languageId === "scss" || ext === "scss" ? "scss" : languageId === "less" || ext === "less" ? "less" : "css", server: "css" };
+  }
+
   if (languageId === "python" || ext === "py" || ext === "pyi") {
     return { languageId: "python", server: "python" };
   }
@@ -632,7 +742,7 @@ function languageForModel(model: monaco.editor.ITextModel): { languageId: string
   }
 
   if (languageId === "json" || ext === "json") {
-    return { languageId: "json", server: "typescript" };
+    return { languageId: "json", server: "json" };
   }
 
   if (languageId === "typescript" || ext === "ts" || ext === "tsx") {

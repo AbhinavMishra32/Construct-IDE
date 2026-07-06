@@ -10,6 +10,8 @@ type LspProject = Pick<ProjectRecord, "id" | "workspacePath"> | null;
 
 export function useProjectLspLifecycle(project: LspProject): void {
   useEffect(() => {
+    let cancelled = false;
+
     if (project) {
       const enabled = localStorage.getItem("construct.lsp.enabled") !== "false";
       if (enabled) {
@@ -17,9 +19,12 @@ export function useProjectLspLifecycle(project: LspProject): void {
         apiTracker.setLspStatus("Starting");
         void window.constructProjects.lspStart(project.id)
           .then((result) => {
+            if (cancelled) {
+              return;
+            }
             if (result.languages.length > 0) {
               const label = result.languages
-                .map((l) => (l === "typescript" ? "TS" : "PY"))
+                .map(lspStatusLabel)
                 .join("/");
               apiTracker.setLspStatus(label);
               void lspClient.initialize(project.workspacePath, { languages: result.languages });
@@ -29,6 +34,9 @@ export function useProjectLspLifecycle(project: LspProject): void {
             }
           })
           .catch(() => {
+            if (cancelled) {
+              return;
+            }
             apiTracker.setLspStatus("Failed");
           });
       } else {
@@ -43,6 +51,7 @@ export function useProjectLspLifecycle(project: LspProject): void {
     }
 
     return () => {
+      cancelled = true;
       lspClient.dispose();
     };
   }, [project?.id, project?.workspacePath]);
@@ -53,16 +62,18 @@ export function useProjectLspLifecycle(project: LspProject): void {
     }
 
     let refreshTimer: number | null = null;
-    let lastRefreshAt = 0;
+    let refreshInFlight = false;
+    let lastRefreshAt = Date.now();
+    const mountedAt = Date.now();
 
     const refreshLsp = () => {
       const enabled = localStorage.getItem("construct.lsp.enabled") !== "false";
-      if (!enabled || document.visibilityState !== "visible") {
+      if (!enabled || document.visibilityState !== "visible" || refreshInFlight) {
         return;
       }
 
       const now = Date.now();
-      if (now - lastRefreshAt < 10_000) {
+      if (now - mountedAt < 10_000 || now - lastRefreshAt < 10_000) {
         return;
       }
       lastRefreshAt = now;
@@ -72,15 +83,20 @@ export function useProjectLspLifecycle(project: LspProject): void {
       }
 
       refreshTimer = window.setTimeout(() => {
+        refreshInFlight = true;
         logStore.addLog("lsp-server", "Refreshing language server after app focus.", "info");
-        void restartProjectLsp(project.id).then((result) => {
-          if (result.languages.length > 0) {
-            void lspClient.initialize(project.workspacePath, {
-              force: true,
-              languages: result.languages
-            });
-          }
-        });
+        void restartProjectLsp(project.id)
+          .then(async (result) => {
+            if (result.languages.length > 0) {
+              await lspClient.initialize(project.workspacePath, {
+                force: true,
+                languages: result.languages
+              });
+            }
+          })
+          .finally(() => {
+            refreshInFlight = false;
+          });
       }, 250);
     };
 
@@ -95,4 +111,20 @@ export function useProjectLspLifecycle(project: LspProject): void {
       document.removeEventListener("visibilitychange", refreshLsp);
     };
   }, [project?.id, project?.workspacePath]);
+}
+
+function lspStatusLabel(language: string): string {
+  const labels: Record<string, string> = {
+    typescript: "TS",
+    python: "PY",
+    rust: "RS",
+    go: "GO",
+    java: "Java",
+    cpp: "C++",
+    csharp: "C#",
+    html: "HTML",
+    css: "CSS",
+    json: "JSON"
+  };
+  return labels[language] ?? language;
 }
