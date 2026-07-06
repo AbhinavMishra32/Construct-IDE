@@ -1,21 +1,18 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ExternalLinkIcon, GlobeIcon, QuoteIcon } from "lucide-react";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import {
-  oneDark,
-  oneLight
-} from "react-syntax-highlighter/dist/esm/styles/prism";
 import { decodeInlineRefHref, renderInlineRefsAsMarkdown, type InlineFileRef } from "../lib/inlineRefs";
 import { cn } from "../../lib/utils";
 import type { ConstructCitationSource } from "../../../shared/constructLearning";
+import { ConstructCodeBlock, ConstructInlineCode, normalizeConstructCodeLanguage } from "./ConstructCode";
 
 export function MarkdownBlock({
   content,
   theme,
   className,
   sources,
+  defaultCodeLanguage,
   onOpenConcept,
   onOpenFile
 }: {
@@ -23,73 +20,26 @@ export function MarkdownBlock({
   theme: "light" | "dark" | "system";
   className?: string;
   sources?: ConstructCitationSource[];
+  defaultCodeLanguage?: string;
   onOpenConcept?: (conceptId: string) => void;
   onOpenFile?: (reference: InlineFileRef) => void;
 }) {
-  const [isDark, setIsDark] = useState(() => {
-    if (theme === "system") {
-      return window.matchMedia("(prefers-color-scheme: dark)").matches;
-    }
-    return theme === "dark";
-  });
-
-  useEffect(() => {
-    if (theme === "system") {
-      const mql = window.matchMedia("(prefers-color-scheme: dark)");
-      const handler = (event: MediaQueryListEvent) => setIsDark(event.matches);
-      mql.addEventListener("change", handler);
-      setIsDark(mql.matches);
-      return () => mql.removeEventListener("change", handler);
-    }
-
-    setIsDark(theme === "dark");
-  }, [theme]);
-
-  const codeTheme = isDark ? oneDark : oneLight;
-
   const markdownComponents: Components = {
-    code({ className, children, ...props }) {
+    code({ className, children }) {
       const languageMatch = /language-([\w-]+)/.exec(className ?? "");
       const rawCode = String(children);
       const code = rawCode.replace(/\n$/, "");
       const isInlineLike = !languageMatch && !rawCode.includes("\n");
+      const codeLanguage = normalizeConstructCodeLanguage(languageMatch?.[1]) ?? normalizeConstructCodeLanguage(defaultCodeLanguage);
 
       if (isInlineLike) {
         return (
-          <code className="rounded border bg-muted px-1 py-0.5 font-mono text-[0.9em]" {...props}>
-            {children}
-          </code>
+          <ConstructInlineCode code={code} language={codeLanguage} theme={theme} />
         );
       }
 
       return (
-        <div className="my-3 overflow-hidden rounded-lg border bg-muted/30">
-          <div className="border-b bg-muted/50 px-3 py-1.5">
-            <span>{languageMatch?.[1] ?? "code"}</span>
-          </div>
-          <SyntaxHighlighter
-            style={codeTheme}
-            language={languageMatch?.[1] ?? "text"}
-            PreTag="div"
-            className="font-mono"
-            customStyle={{
-              margin: 0,
-              padding: "12px 14px",
-              background: "transparent",
-              borderRadius: 0,
-              fontSize: "12px",
-              lineHeight: "1.6",
-              overflowX: "auto"
-            }}
-            codeTagProps={{
-              style: {
-                fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
-              }
-            }}
-          >
-            {code}
-          </SyntaxHighlighter>
-        </div>
+        <ConstructCodeBlock code={code} language={codeLanguage} theme={theme} />
       );
     },
     a({ className, ...props }) {

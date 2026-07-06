@@ -35,6 +35,7 @@ import {
   aggregateLspStatus,
   createEmptyLspStatusReport,
   lspLanguageOrder,
+  type LspLanguageId,
   type LspStatusReport
 } from "./components/settings/lspSettingsModel";
 import { lspClient } from "./lib/lspClient";
@@ -60,6 +61,14 @@ import {
 } from "./lib/bridge";
 import { parseConstructSource } from "./lib/parser";
 import { showProviderUpdateToast } from "./components/ProviderUpdateToast";
+import {
+  codeThemePresets,
+  normalizeCodeThemeId,
+  parseCodeThemeJson,
+  presetCodeThemeJson,
+  resolveCodeThemeDefinition,
+  type CodeThemeId
+} from "./codeThemes";
 import type {
   AiSettings,
   AnyProjectRecord,
@@ -160,8 +169,11 @@ export function ConstructSettingsSurface({
   projectId,
   projects,
   theme,
+  codeThemeId,
+  customCodeThemeJson,
   showStatusBar,
   onThemeChange,
+  onCodeThemeChange,
   onShowStatusBarChange,
   onProjectsChange,
   onActiveProjectChange
@@ -170,8 +182,11 @@ export function ConstructSettingsSurface({
   projectId?: string;
   projects: ProjectSummary[];
   theme: ThemeMode;
+  codeThemeId: CodeThemeId;
+  customCodeThemeJson: string;
   showStatusBar: boolean;
   onThemeChange: (theme: ThemeMode) => void;
+  onCodeThemeChange: (codeThemeId: CodeThemeId, customCodeThemeJson: string) => void;
   onShowStatusBarChange: (showStatusBar: boolean) => void;
   onProjectsChange: (projects: ProjectSummary[]) => void;
   onActiveProjectChange: (project: AnyProjectRecord | null | ((current: AnyProjectRecord | null) => AnyProjectRecord | null)) => void;
@@ -306,20 +321,21 @@ export function ConstructSettingsSurface({
     }
   }
 
-  async function handleInstallLsp() {
+  async function handleInstallLsp(language?: LspLanguageId) {
     if (!projectId) return;
     setInstallBusy(true);
     setLspStatus((current) => {
       const next = { ...current };
-      for (const language of lspLanguageOrder) {
-        next[language] = { ...next[language], status: "installing" };
+      const installing = language ? [language] : lspLanguageOrder;
+      for (const currentLanguage of installing) {
+        next[currentLanguage] = { ...next[currentLanguage], status: "installing" };
       }
       return next;
     });
     setLspLogs([]);
 
     try {
-      const success = await window.constructProjects.lspInstall(projectId);
+      const success = await window.constructProjects.lspInstall(language ? { projectId, language } : projectId);
       if (success) {
         const startResult = await restartProjectLsp(projectId);
         setLspStatus(await window.constructProjects.lspGetStatus(projectId));
@@ -506,6 +522,53 @@ export function ConstructSettingsSurface({
     } catch (caught) {
       onShowStatusBarChange(previous);
       setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setAppBusy(false);
+    }
+  }
+
+  async function handleCodeThemeIdChange(value: string) {
+    const nextId = normalizeCodeThemeId(value);
+    const nextJson = nextId === "custom"
+      ? (customCodeThemeJson.trim() ? customCodeThemeJson : presetCodeThemeJson("construct"))
+      : customCodeThemeJson;
+    onCodeThemeChange(nextId, nextJson);
+    setAppBusy(true);
+    setError(null);
+    try {
+      const settings = await updateAppSettings({
+        app: {
+          codeThemeId: nextId,
+          customCodeThemeJson: nextJson
+        }
+      });
+      onCodeThemeChange(normalizeCodeThemeId(settings.app?.codeThemeId), settings.app?.customCodeThemeJson ?? "");
+      toast.success(nextId === "custom" ? "Custom code theme enabled" : `${codeThemeLabel(nextId)} code theme enabled`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      onCodeThemeChange(codeThemeId, customCodeThemeJson);
+    } finally {
+      setAppBusy(false);
+    }
+  }
+
+  async function handleCustomCodeThemeJsonChange(value: string) {
+    onCodeThemeChange("custom", value);
+    if (!parseCodeThemeJson(value)) {
+      return;
+    }
+    setAppBusy(true);
+    setError(null);
+    try {
+      const settings = await updateAppSettings({
+        app: {
+          codeThemeId: "custom",
+          customCodeThemeJson: value
+        }
+      });
+      onCodeThemeChange(normalizeCodeThemeId(settings.app?.codeThemeId), settings.app?.customCodeThemeJson ?? "");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setAppBusy(false);
     }
@@ -835,6 +898,8 @@ export function ConstructSettingsSurface({
   }
 
   if (activeItemId === "appearance") {
+    const selectedCodeTheme = normalizeCodeThemeId(codeThemeId);
+    const customThemeValid = Boolean(parseCodeThemeJson(customCodeThemeJson));
     return (
       <SettingsPanel title="Appearance" subtitle="Theme source for Construct and the embedded editor shell.">
         <SettingsSection>
@@ -855,6 +920,56 @@ export function ConstructSettingsSurface({
                 </Select>
               }
             />
+            <SettingsRow
+              title="Code theme"
+              description="Controls markdown code, inline code, the concept exercise editor, and the main editor."
+              control={
+                <Select value={selectedCodeTheme} onValueChange={(value) => void handleCodeThemeIdChange(value ?? "construct")}>
+                  <SelectTrigger className="h-8 w-44 text-xs">
+                    <SelectValue placeholder="Select code theme" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {codeThemePresets.map((preset) => (
+                      <SelectItem key={preset.id} value={preset.id}>{preset.label}</SelectItem>
+                    ))}
+                    <SelectItem value="custom">Custom JSON</SelectItem>
+                  </SelectContent>
+                </Select>
+              }
+            />
+            {selectedCodeTheme === "custom" ? (
+              <SettingsRow
+                title="Custom code theme JSON"
+                description="Partial JSON is allowed. Missing values inherit from Construct."
+                control={
+                  <div className="grid min-w-[24rem] gap-2">
+                    <div className="flex flex-wrap gap-1">
+                      {codeThemePresets.map((preset) => (
+                        <Button
+                          key={preset.id}
+                          size="small"
+                          variant="secondary"
+                          onClick={() => void handleCustomCodeThemeJsonChange(presetCodeThemeJson(preset.id))}
+                        >
+                          Load {preset.label}
+                        </Button>
+                      ))}
+                    </div>
+                    <Textarea
+                      className="min-h-64 font-mono text-[11px]"
+                      value={customCodeThemeJson}
+                      onChange={(event) => void handleCustomCodeThemeJsonChange(event.target.value)}
+                      spellCheck={false}
+                    />
+                    <p className={customThemeValid ? "text-xs text-muted-foreground" : "text-xs text-destructive"}>
+                      {customThemeValid
+                        ? `Using ${resolveCodeThemeDefinition("custom", customCodeThemeJson).name || "Custom"} with Construct fallback values.`
+                        : "Invalid JSON. Fix it to apply the custom code theme."}
+                    </p>
+                  </div>
+                }
+              />
+            ) : null}
             <SettingsRow
               title="Bottom status bar"
               description="Show git, runtime, model, telemetry, and theme quick controls at the bottom of the window."
@@ -1383,6 +1498,11 @@ function mergeFlowMemoryEntries(
     byFile.set(entry.file, entry);
   }
   return flowMemoryFiles.map((file) => byFile.get(file)).filter((entry): entry is ConstructFlowMemoryRead => Boolean(entry));
+}
+
+function codeThemeLabel(id: CodeThemeId): string {
+  if (id === "custom") return "Custom";
+  return codeThemePresets.find((preset) => preset.id === id)?.label ?? "Construct";
 }
 
 export function settingsTitle(itemId: string, projectId: string | undefined, projects: ProjectSummary[]) {

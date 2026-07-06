@@ -232,18 +232,33 @@ test("settings normalize and persist app chrome options", async (t) => {
 
   const defaults = defaultConstructSettings(paths);
   assert.equal(defaults.app.showStatusBar, true);
+  assert.equal(defaults.app.codeThemeId, "construct");
+  assert.equal(defaults.app.customCodeThemeJson, "");
   assert.equal(normalizeSettings({}, paths).app.showStatusBar, true);
-  assert.equal(normalizeSettings({ ...defaults, app: { showStatusBar: false } }, paths).app.showStatusBar, false);
+  assert.equal(normalizeSettings({}, paths).app.codeThemeId, "construct");
+  assert.equal(normalizeSettings({ ...defaults, app: { ...defaults.app, showStatusBar: false } }, paths).app.showStatusBar, false);
+  assert.equal(
+    normalizeSettings({ ...defaults, app: { showStatusBar: true, codeThemeId: "github", customCodeThemeJson: "{\"name\":\"Custom\"}" } }, paths).app.codeThemeId,
+    "github"
+  );
+  assert.equal(
+    normalizeSettings({ ...defaults, app: { showStatusBar: true, codeThemeId: "bad", customCodeThemeJson: "" } }, paths).app.codeThemeId,
+    "construct"
+  );
 
   await writeConstructSettings({
     ...defaults,
     app: {
-      showStatusBar: false
+      showStatusBar: false,
+      codeThemeId: "custom",
+      customCodeThemeJson: "{\"name\":\"Workbench\"}"
     }
   }, paths);
 
   const resolved = await readConstructSettings(paths);
   assert.equal(resolved.app.showStatusBar, false);
+  assert.equal(resolved.app.codeThemeId, "custom");
+  assert.equal(resolved.app.customCodeThemeJson, "{\"name\":\"Workbench\"}");
 });
 
 test("settings preserve LiteLLM-backed provider selections", async (t) => {

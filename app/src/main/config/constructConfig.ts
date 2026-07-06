@@ -59,6 +59,8 @@ export type StoredObservabilitySettings = {
 
 export type StoredAppSettings = {
   showStatusBar: boolean;
+  codeThemeId: string;
+  customCodeThemeJson: string;
 };
 
 export type StoredSettings = {
@@ -211,7 +213,9 @@ export function normalizeSettings(
     workspaceRoot: normalizeString(input?.workspaceRoot, defaults.workspaceRoot),
     releaseVersion: normalizeString(input?.releaseVersion, defaults.releaseVersion),
     app: {
-      showStatusBar: inputApp.showStatusBar !== false
+      showStatusBar: inputApp.showStatusBar !== false,
+      codeThemeId: normalizeCodeThemeId(inputApp.codeThemeId),
+      customCodeThemeJson: normalizeString(inputApp.customCodeThemeJson, "")
     },
     ai: {
       runtime: inputAi.runtime === "fxpnt" ? "fxpnt" : "mastra",
@@ -271,8 +275,14 @@ export function enforceConstructCloudProductionEndpoint(settings: StoredSettings
 
 function defaultAppSettings(): StoredAppSettings {
   return {
-    showStatusBar: true
+    showStatusBar: true,
+    codeThemeId: "construct",
+    customCodeThemeJson: ""
   };
+}
+
+function normalizeCodeThemeId(value: unknown): string {
+  return value === "github" || value === "solarized" || value === "custom" ? value : "construct";
 }
 
 function defaultAiSettings(): StoredAiSettings {
