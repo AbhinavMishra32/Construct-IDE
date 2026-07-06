@@ -13,7 +13,8 @@ const explicitPrerelease = process.env.IS_PRERELEASE?.trim();
 const isPrerelease = explicitPrerelease
   ? explicitPrerelease === "true"
   : /-(alpha|beta|canary|dev|next|rc)(?:[.-]|$)/i.test(version);
-const title = `Construct ${version}`;
+const title = version;
+const existingRelease = loadExistingReleaseState();
 
 ensureGhAuth();
 
@@ -107,14 +108,38 @@ function upsertRelease() {
     metadataArgs.push("--notes", title);
   }
 
-  const stateArgs = isPrerelease ? ["--prerelease", "--latest=false"] : ["--latest"];
-  const view = spawnSync("gh", ["release", "view", tag], { cwd: root, stdio: "ignore" });
-  if (view.status === 0) {
+  const stateArgs = isPrerelease
+    ? ["--prerelease", "--latest=false"]
+    : [
+        existingRelease?.isDraft ? "--draft=false" : null,
+        existingRelease?.isPrerelease ? "--prerelease=false" : null,
+        "--latest"
+      ].filter(Boolean);
+
+  if (existingRelease) {
     run("gh", ["release", "edit", tag, ...metadataArgs, ...stateArgs]);
     return;
   }
 
   run("gh", ["release", "create", tag, ...metadataArgs, ...stateArgs]);
+}
+
+function loadExistingReleaseState() {
+  const result = spawnSync("gh", ["release", "view", tag, "--json", "isDraft,isPrerelease"], {
+    cwd: root,
+    stdio: "pipe",
+    encoding: "utf8"
+  });
+
+  if (result.status !== 0) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(result.stdout);
+  } catch {
+    return null;
+  }
 }
 
 function run(command, args) {

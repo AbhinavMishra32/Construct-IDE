@@ -96,7 +96,7 @@ export function ConstructLspSettingsPanel({
           <SettingsCard>
             <SettingsRow
               title="Server lifecycle"
-              description="Starts every installed language server for the active workspace. Install adds TypeScript language server, TypeScript, and Pyright when missing."
+              description="Starts every installed language server for the active workspace. Install runs the configured installer for the selected server."
               control={
                 <div className="flex items-center gap-2">
                   {aggregateStatus === "running" ? (
@@ -124,7 +124,7 @@ export function ConstructLspSettingsPanel({
               <Alert>
                 <AlertTitle className="flex items-center justify-between gap-2">
                   <span>Installation output</span>
-                  {installBusy ? <span className="flex items-center gap-1"><Spinner /> Running npm install...</span> : null}
+                  {installBusy ? <span className="flex items-center gap-1"><Spinner /> Running installer...</span> : null}
                 </AlertTitle>
                 <AlertDescription>
                   <pre className="max-h-64 overflow-auto whitespace-pre-wrap">

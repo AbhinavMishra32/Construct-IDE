@@ -1,4 +1,5 @@
 import path from "node:path";
+import os from "node:os";
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, readdirSync, statSync } from "node:fs";
 
@@ -40,6 +41,20 @@ type LspServerConfig = {
 };
 
 const lspLanguageOrder: LspLanguage[] = ["typescript", "python", "rust", "go", "java", "cpp", "csharp", "html", "css", "json"];
+const rustAnalyzerInstallScript = [
+  "if command -v rustup >/dev/null 2>&1; then",
+  "rustup component add rust-analyzer;",
+  "elif command -v brew >/dev/null 2>&1; then",
+  "brew install rust-analyzer;",
+  "else",
+  "echo \"rustup or Homebrew is required to install rust-analyzer.\" >&2;",
+  "exit 127;",
+  "fi"
+].join(" ");
+
+export function isLspLanguage(value: unknown): value is LspLanguage {
+  return typeof value === "string" && (lspLanguageOrder as string[]).includes(value);
+}
 
 const lspConfigs: Record<LspLanguage, LspServerConfig> = {
   typescript: {
@@ -124,6 +139,24 @@ const lspConfigs: Record<LspLanguage, LspServerConfig> = {
   }
 };
 
+export function resolveLspInstallCommand(language?: LspLanguage): string | null {
+  const configs = language ? [lspConfigs[language]] : Object.values(lspConfigs);
+  const packages = Array.from(new Set(configs.flatMap((config) => config.installPackages ?? [])));
+
+  if (language && packages.length === 0) {
+    if (language === "rust") {
+      return rustAnalyzerInstallScript;
+    }
+    return lspConfigs[language].installCommand;
+  }
+
+  if (packages.length > 0) {
+    return `npm install --save-dev ${packages.join(" ")}`;
+  }
+
+  return null;
+}
+
 export class ConstructLspService {
   private readonly servers: Record<LspLanguage, LspServerState> = {
     typescript: { buffer: "", pendingRequests: new Map(), process: null, workspacePath: null },
@@ -139,6 +172,7 @@ export class ConstructLspService {
   };
   private activeWebContents: WebContents | null = null;
   private installingLanguage: LspLanguage | "all" | null = null;
+  private installCommand: string | null = null;
   private installProcess: ChildProcess | null = null;
 
   constructor(private readonly options: {
@@ -241,51 +275,60 @@ export class ConstructLspService {
       return false;
     }
     this.installingLanguage = language ?? "all";
-    console.log("[LSP Installer] Starting language-server install in workspace:", workspacePath);
+    const installTarget = language ? lspConfigs[language].label : "managed language servers";
+    console.log(`[LSP Installer] Starting ${installTarget} install in workspace:`, workspacePath);
 
-    const configs = language ? [lspConfigs[language]] : Object.values(lspConfigs);
-    const packages = Array.from(new Set(configs.flatMap((config) => config.installPackages ?? [])));
-    const command = packages.length > 0
-      ? `npm install --save-dev ${packages.join(" ")}`
-      : language
-        ? lspConfigs[language].installCommand
-        : "";
+    const command = resolveLspInstallCommand(language);
     if (!command) {
       this.installingLanguage = null;
       return false;
     }
+    this.installCommand = command;
 
     return new Promise((resolve) => {
       const shell = process.env.SHELL || "/bin/zsh";
-      const npmProcess = spawn(shell, ["-c", command], {
+      const installerProcess = spawn(shell, ["-c", command], {
         cwd: workspacePath,
-        env: {
-          ...process.env
-        }
+        env: this.envWithExecutableSearchPath(workspacePath)
       });
-      this.installProcess = npmProcess;
+      this.installProcess = installerProcess;
 
-      npmProcess.stdout?.on("data", (data: Buffer) => {
+      installerProcess.stdout?.on("data", (data: Buffer) => {
         const text = data.toString("utf8");
         console.log("[LSP Installer stdout]:", text);
         this.activeWebContents?.send("construct:lsp:install-progress", { language: language ?? "all", type: "stdout", text });
       });
 
-      npmProcess.stderr?.on("data", (data: Buffer) => {
+      installerProcess.stderr?.on("data", (data: Buffer) => {
         const text = data.toString("utf8");
         console.warn("[LSP Installer stderr]:", text);
         this.activeWebContents?.send("construct:lsp:install-progress", { language: language ?? "all", type: "stderr", text });
       });
 
-      npmProcess.on("close", (code) => {
+      installerProcess.on("close", (code) => {
         this.installingLanguage = null;
+        this.installCommand = null;
         this.installProcess = null;
         console.log(`[LSP Installer] Process finished with exit code: ${code}`);
-        resolve(code === 0);
+        if (code !== 0) {
+          resolve(false);
+          return;
+        }
+
+        if (language && !this.resolveServerCommand(workspacePath, language)) {
+          const text = `${lspConfigs[language].label} install command completed, but ${lspConfigs[language].command.split(/\s+/)[0]} was not found on PATH.`;
+          console.warn("[LSP Installer] " + text);
+          this.activeWebContents?.send("construct:lsp:install-progress", { language, type: "stderr", text });
+          resolve(false);
+          return;
+        }
+
+        resolve(true);
       });
 
-      npmProcess.on("error", (err) => {
+      installerProcess.on("error", (err) => {
         this.installingLanguage = null;
+        this.installCommand = null;
         this.installProcess = null;
         console.error("[LSP Installer] Process spawn error:", err);
         resolve(false);
@@ -343,7 +386,7 @@ export class ConstructLspService {
         label: "LSP dependency installer",
         pid: this.installProcess.pid ?? null,
         status: "running",
-        command: "npm install language servers"
+        command: this.installCommand ?? "install language servers"
       });
     }
 
@@ -379,16 +422,37 @@ export class ConstructLspService {
   }
 
   private findExecutable(workspacePath: string, executable: string): string | null {
-    const candidates = [
-      path.join(workspacePath, "node_modules", ".bin", executable),
-      ...((process.env.PATH ?? "").split(path.delimiter).filter(Boolean).map((directory) => path.join(directory, executable)))
-    ];
+    const candidates = this.executableSearchPaths(workspacePath).map((directory) => path.join(directory, executable));
     for (const candidate of candidates) {
       if (isExecutableFile(candidate)) {
         return candidate;
       }
     }
     return null;
+  }
+
+  private executableSearchPaths(workspacePath: string): string[] {
+    const paths = [
+      path.join(workspacePath, "node_modules", ".bin"),
+      path.join(os.homedir(), ".cargo", "bin"),
+      path.join(os.homedir(), ".local", "bin"),
+      "/opt/homebrew/bin",
+      "/usr/local/bin",
+      "/usr/bin",
+      "/bin",
+      "/usr/sbin",
+      "/sbin",
+      ...(process.env.PATH ?? "").split(path.delimiter).filter(Boolean)
+    ];
+
+    return [...new Set(paths)];
+  }
+
+  private envWithExecutableSearchPath(workspacePath: string): NodeJS.ProcessEnv {
+    return {
+      ...process.env,
+      PATH: this.executableSearchPaths(workspacePath).join(path.delimiter)
+    };
   }
 
   private languageForPath(filePath: string): LspLanguage | null {
@@ -485,7 +549,7 @@ export class ConstructLspService {
     server.process = spawn(command, args, {
       cwd: workspacePath,
       env: {
-        ...process.env,
+        ...this.envWithExecutableSearchPath(workspacePath),
         ELECTRON_RUN_AS_NODE: "1"
       }
     });

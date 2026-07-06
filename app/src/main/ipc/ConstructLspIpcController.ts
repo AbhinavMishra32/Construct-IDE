@@ -1,6 +1,6 @@
 import type { IpcMain, WebContents } from "electron";
 
-import { ConstructLspService } from "../lsp/ConstructLspService";
+import { ConstructLspService, isLspLanguage } from "../lsp/ConstructLspService";
 import type { StoredProject } from "../projects/ConstructProjectTypes";
 
 export class ConstructLspIpcController {
@@ -21,7 +21,16 @@ export class ConstructLspIpcController {
     ipcMain.handle("construct:lsp:install", async (_event, input: string | { projectId: string; language?: string }) => {
       try {
         const projectId = typeof input === "string" ? input : input.projectId;
-        const language = typeof input === "string" ? undefined : input.language as Parameters<ConstructLspService["install"]>[1];
+        const requestedLanguage = typeof input === "string" ? undefined : input.language;
+        const language = requestedLanguage === undefined
+          ? undefined
+          : isLspLanguage(requestedLanguage)
+            ? requestedLanguage
+            : null;
+        if (language === null) {
+          console.error("[LSP Installer] Unsupported language:", requestedLanguage);
+          return false;
+        }
         const project = await this.options.findProject(projectId);
         this.activate(_event.sender);
         return await this.options.lsp.install(project.workspacePath, language);

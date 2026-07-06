@@ -1087,7 +1087,7 @@ export function ConstructSettingsSurface({
         logs={lspLogs}
         error={error}
         onToggle={(enabled) => void handleToggleLsp(enabled)}
-        onInstall={() => void handleInstallLsp()}
+        onInstall={(language) => void handleInstallLsp(language)}
         onStart={() => void handleStartLsp()}
         onStop={() => void handleStopLsp()}
         onRestart={() => void handleRestartLsp()}

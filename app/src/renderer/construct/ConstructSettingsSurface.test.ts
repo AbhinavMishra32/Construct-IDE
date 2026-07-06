@@ -36,6 +36,18 @@ describe("Construct project advanced settings", () => {
     assert.match(controller, /ipcMain\.handle\("construct:settings:update-app"/);
   });
 
+  it("passes selected language-server installs through settings callbacks", () => {
+    const source = readFileSync(fileURLToPath(new URL("./ConstructSettingsSurface.tsx", import.meta.url)), "utf8");
+    const panel = readFileSync(
+      fileURLToPath(new URL("./components/settings/ConstructLspSettingsPanel.tsx", import.meta.url)),
+      "utf8",
+    );
+
+    assert.match(panel, /onClick=\{\(\) => onInstall\(language\)\}/);
+    assert.match(source, /onInstall=\{\(language\) => void handleInstallLsp\(language\)\}/);
+    assert.doesNotMatch(source, /onInstall=\{\(\) => void handleInstallLsp\(\)\}/);
+  });
+
   it("uses a transparent Construct logo splash for startup loading states", () => {
     const app = readFileSync(fileURLToPath(new URL("./ConstructApplication.tsx", import.meta.url)), "utf8");
     const css = readFileSync(fileURLToPath(new URL("../index.css", import.meta.url)), "utf8");
