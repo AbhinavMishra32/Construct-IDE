@@ -573,16 +573,18 @@ export function createConstructProtocolTools(options: ConstructProtocolToolsOpti
 
   const createQuestionTool = (id: "ask-question" | "askQuestion" | "ask-user" | "askUser") => createTool({
     id,
-    description: "Ask the learner a direct tracked question when their answer is useful for learner modeling or required to choose the next step. The question field should be the short direct question only; put any brief setup in normal chat before the tool call. Reason is internal and should stay concise. Use for learner background, preferences, constraints, goals, confidence, clarification, design choices, blockers, or approvals. Do not use this for quizzes, recap prompts, or questions whose answer can be taught in chat or encoded in task guidance. Questions pause the Flow session until answered unless the caller explicitly resumes later.",
+    description: "Ask the learner a direct tracked question when their answer is useful for learner modeling or required to choose the next step. The question field should be the short direct question only; put any brief setup in normal chat before the tool call. Reason is internal and should stay concise. Use for learner background, preferences, constraints, goals, confidence, clarification, design choices, blockers, or approvals. Do not use this for quizzes, recap prompts, or questions whose answer can be taught in chat or encoded in task guidance. Questions pause the Flow session until answered unless the caller explicitly resumes later. Most questions should be answered, so allowSkip defaults to false; enable it only for genuinely optional or repetitive follow-ups. For code answers, initialAnswer may prefill the Monaco input only when the learner already wrote most of the code and the question asks for a small iteration. Set hideLearningMaterials when the answer should come from learner memory rather than currently visible concept material.",
     inputSchema: z.object({
       question: z.string().min(1),
       reason: z.string().optional(),
       choices: z.array(z.string()).max(6).optional(),
       allowOther: z.boolean().default(true),
-      allowSkip: z.boolean().default(true),
+      allowSkip: z.boolean().default(false),
       blocksProgress: z.boolean().default(true),
       answerMode: z.enum(["text", "code"]).default("text"),
-      language: z.string().optional()
+      language: z.string().optional(),
+      initialAnswer: z.string().max(20_000).optional(),
+      hideLearningMaterials: z.boolean().default(false)
     }).strict(),
     execute: async (toolInput) => recordToolCall(
       id,

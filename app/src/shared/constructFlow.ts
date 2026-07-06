@@ -319,6 +319,11 @@ export type ConstructFlowSession = {
   actions: ConstructFlowAction[];
   practiceTasks: ConstructFlowPracticeTask[];
   conceptExercises?: ConstructFlowConceptExercise[];
+  pendingConceptFirewallReviews?: Array<{
+    id: string;
+    kind: "file-write" | "file-edit" | "practice-task" | "concept-exercise";
+    createdAt: string;
+  }>;
   createdAt: string;
   updatedAt: string;
   durationMs?: number;
