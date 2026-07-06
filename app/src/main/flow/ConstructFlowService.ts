@@ -97,7 +97,13 @@ type ConceptFirewallReviewRecord =
   | {
       kind: "practice-task";
       createdAt: string;
+    }
+  | {
+      kind: "concept-exercise";
+      createdAt: string;
     };
+
+type ConceptFirewallReviewKind = ConceptFirewallReviewRecord["kind"];
 
 type FlowModelMessage = ConstructAgentRuntimeMessage & {
   id: string;
@@ -284,7 +290,7 @@ export class ConstructFlowService {
     publish("started");
 
     const actionsFromTools: ConstructFlowAction[] = [];
-    const conceptFirewallReviews = new Map<string, ConceptFirewallReviewRecord>();
+    const conceptFirewallReviews = collectPendingConceptFirewallReviews(project);
     const protocol = createConstructProtocolTools({
       project,
       workspace: this.options.workspace,
@@ -299,6 +305,7 @@ export class ConstructFlowService {
         const reviewId = findLatestConceptFirewallReviewId(conceptFirewallReviews, mutation.kind);
         if (reviewId) {
           consumeConceptFirewallToolReview(conceptFirewallReviews, reviewId, mutation.kind);
+          clearPendingConceptFirewallReview(project, reviewId);
           return;
         }
         const decision = await this.conceptPolicy().authorize({
@@ -313,6 +320,7 @@ export class ConstructFlowService {
             kind: mutation.kind,
             createdAt: new Date().toISOString()
           });
+          persistPendingConceptFirewallReview(session, decision.auditId, conceptFirewallReviews.get(decision.auditId));
           throw new Error(buildConceptFirewallMutationBlockedMessage(decision));
         }
         assertConceptPolicyAllowed(decision);
@@ -426,7 +434,7 @@ export class ConstructFlowService {
     const removeConcept = this.createRemoveConceptTool(project, publish);
     const fetchConcepts = this.createFetchConceptsTool(project);
     const suggestConcept = this.createSuggestConceptTool(project, concepts, actionsFromTools, publish);
-    const conceptExercise = this.createConceptExerciseTool(project, session, publish);
+    const conceptExercise = this.createConceptExerciseTool(project, session, publish, conceptFirewallReviews);
     const reviewConceptExercise = this.createReviewConceptExerciseTool(project, publish);
     const reviewSubtask = this.createReviewSubtaskTool(project, publish);
     const completeTask = this.createCompleteTaskTool(project, publish);
@@ -508,7 +516,8 @@ export class ConstructFlowService {
         project,
         artifactKind: "next-step",
         artifactRef: `Flow reply ${session.id}`,
-        content: reply
+        content: reply,
+        semanticAudit: false
       });
       if (!replyDecision.allowed) {
         reply = buildConceptPolicyBlockedReply(replyDecision);
@@ -525,16 +534,7 @@ export class ConstructFlowService {
       content: reply,
       createdAt: new Date().toISOString()
     });
-    if (!session.timeline.some((part) => part.kind === "message" && part.text.trim())) {
-      upsertTimelinePart(session.timeline, {
-        id: `${session.id}:reply`,
-        kind: "message",
-        status: runError ? "error" : "completed",
-        text: reply,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      });
-    }
+    finalizeAssistantReplyTrace(session, reply, runError ? "error" : "completed");
     session.status = runError ? "error" : waiting ? "waiting" : "completed";
     session.finishReason = runFinishReason;
     session.stepCount = runStepCount;
@@ -738,7 +738,7 @@ export class ConstructFlowService {
             id: randomUUID(),
             role: "user" as const,
             content: input.taskSubmission
-              ? `${input.message}\n\nTask submission:\n${input.taskSubmission.compactDiff}${input.taskSubmission.note ? `\n\nLearner note: ${input.taskSubmission.note}` : ""}`
+              ? formatTaskSubmissionUserMessage(input.message, input.taskSubmission)
               : input.message,
             createdAt: now
           }];
@@ -948,6 +948,7 @@ export class ConstructFlowService {
         const conceptDecision = reviewId && conceptFirewallReviews
           ? (() => {
               consumeConceptFirewallToolReview(conceptFirewallReviews, reviewId, "practice-task");
+              clearPendingConceptFirewallReview(project, reviewId);
               return {
                 allowed: true,
                 declaredConceptIds: introducedConceptIds,
@@ -970,6 +971,7 @@ export class ConstructFlowService {
             kind: "practice-task",
             createdAt: new Date().toISOString()
           });
+          persistPendingConceptFirewallReview(session, conceptDecision.auditId, conceptFirewallReviews.get(conceptDecision.auditId));
           throw new Error(buildConceptFirewallTaskBlockedMessage(conceptDecision));
         }
         assertConceptPolicyAllowed(conceptDecision);
@@ -1601,7 +1603,8 @@ export class ConstructFlowService {
   private createConceptExerciseTool(
     project: StoredFlowProject,
     session: ConstructFlowSession,
-    publish: (type: ConstructFlowSessionEvent["type"]) => void
+    publish: (type: ConstructFlowSessionEvent["type"]) => void,
+    conceptFirewallReviews?: Map<string, ConceptFirewallReviewRecord>
   ): ToolsInput[string] {
     return createTool({
       id: "concept-exercise",
@@ -1632,19 +1635,42 @@ export class ConstructFlowService {
         if (!sourceText) {
           throw new Error("Concept exercises must be answerable from the concept text. Add concept content first or provide sourceText.");
         }
-        const conceptDecision = await this.conceptPolicy().authorize({
-          project,
-          artifactKind: "assessment",
-          artifactRef: toolInput.title,
-          declaredConceptIds: conceptIds,
-          content: JSON.stringify({
-            title: toolInput.title,
-            prompt: toolInput.prompt,
-            successCriteria: toolInput.successCriteria,
-            expectedSignals: toolInput.expectedSignals,
-            sourceText
-          }, null, 2)
-        });
+        const conceptAuditContent = JSON.stringify({
+          title: toolInput.title,
+          prompt: toolInput.prompt,
+          successCriteria: toolInput.successCriteria,
+          expectedSignals: toolInput.expectedSignals,
+          sourceText
+        }, null, 2);
+        const reviewId = findLatestConceptFirewallReviewId(conceptFirewallReviews, "concept-exercise");
+        const conceptDecision = reviewId && conceptFirewallReviews
+          ? (() => {
+              consumeConceptFirewallToolReview(conceptFirewallReviews, reviewId, "concept-exercise");
+              clearPendingConceptFirewallReview(project, reviewId);
+              return {
+                allowed: true,
+                declaredConceptIds: conceptIds,
+                matchedConceptIds: conceptIds,
+                blockedCapabilities: [],
+                reason: "Concept exercise approved by one-shot concept firewall tool review.",
+                auditId: reviewId
+              };
+            })()
+          : await this.conceptPolicy().authorize({
+              project,
+              artifactKind: "assessment",
+              artifactRef: toolInput.title,
+              declaredConceptIds: conceptIds,
+              content: conceptAuditContent
+            });
+        if (!conceptDecision.allowed && conceptFirewallReviews) {
+          conceptFirewallReviews.set(conceptDecision.auditId, {
+            kind: "concept-exercise",
+            createdAt: new Date().toISOString()
+          });
+          persistPendingConceptFirewallReview(session, conceptDecision.auditId, conceptFirewallReviews.get(conceptDecision.auditId));
+          throw new Error(buildConceptFirewallExerciseBlockedMessage(conceptDecision));
+        }
         assertConceptPolicyAllowed(conceptDecision);
         const exercise: ConstructFlowConceptExercise = {
           id: randomUUID(),
@@ -1778,9 +1804,6 @@ export class ConstructFlowService {
         if (reviewingLatestSubmission && submission?.subtaskId && submission.subtaskId !== subtask.id) {
           throw new Error("Cannot review a different subtask from the latest learner submission.");
         }
-        if (reviewingLatestSubmission && toolInput.outcome === "done" && submission?.nothingChanged) {
-          throw new Error("Cannot mark a subtask done from a learner submission with no file changes.");
-        }
         const agentEditedPaths = reviewingLatestSubmission ? findAgentEditedTaskFilesAfterSubmission(project, task) : [];
         if (reviewingLatestSubmission && toolInput.outcome === "done" && agentEditedPaths.length > 0) {
           throw new Error(`Cannot mark learner work done because Flow edited task files after the learner submission: ${agentEditedPaths.join(", ")}. Ask the learner to review and resubmit.`);
@@ -1863,9 +1886,6 @@ export class ConstructFlowService {
         const submission = task.submission?.authoredBy?.actor === "learner" ? task.submission : undefined;
         if (task.status === "completed" || task.status === "cancelled") {
           throw new Error(`Cannot complete a task that is already ${task.status}.`);
-        }
-        if (submission?.nothingChanged) {
-          throw new Error("Cannot complete a task from a learner submission with no file changes.");
         }
         const agentEditedPaths = submission ? findAgentEditedTaskFilesAfterSubmission(project, task) : [];
         if (submission && agentEditedPaths.length > 0) {
@@ -3890,7 +3910,7 @@ function buildMainPrompt(
         ? "New project kickoff:"
         : "Latest learner message:";
   const latestInput = input.taskSubmission
-    ? JSON.stringify(input.taskSubmission, null, 2)
+    ? JSON.stringify(summarizeTaskSubmissionForPrompt(input.taskSubmission), null, 2)
     : input.taskMessage
       ? JSON.stringify({
           taskMessage: input.taskMessage,
@@ -4042,7 +4062,7 @@ function buildMainPrompt(
       "Task-submission review mode:",
       "The learner submitted work. Review it; do not repair it for them.",
       "Workspace write/edit/practice-task/plan-learning-path tools are intentionally unavailable in this run.",
-      "Use the compact diff, task success criteria, read/grep, and validation-only terminal output as review evidence.",
+      "Use task success criteria, submission metadata, read/grep, workspace inspection, and validation-only terminal output as review evidence. A clean terminal-created project or command-only milestone can be completed even when the submitted diff is empty.",
       "If validation fails, explain the failure as the next learner-facing correction and use review-subtask with needs-work when appropriate.",
       "Do not delete, move, rewrite, or replace learner files while reviewing a submission."
     ].join("\n") : null,
@@ -4134,6 +4154,64 @@ function applyTrace(session: ConstructFlowSession, entry: ConstructAgentTraceEnt
       upsertTimelinePart(session.timeline, part);
     }
   }
+}
+
+function finalizeAssistantReplyTrace(
+  session: ConstructFlowSession,
+  reply: string,
+  status: "completed" | "error"
+): void {
+  const updatedAt = new Date().toISOString();
+  const normalizedReply = reply.trim();
+  const messageEvents = session.agentEvents.filter((event) => event.type === "message");
+  const eventText = messageEvents.map((event) => event.text ?? "").join("").trim();
+  if (messageEvents.length === 0 || eventText !== normalizedReply) {
+    session.agentEvents = [
+      ...session.agentEvents.filter((event) => event.type !== "message"),
+      {
+        id: `${session.id}:reply`,
+        type: "message",
+        status,
+        title: "Assistant response",
+        text: reply,
+        createdAt: updatedAt
+      }
+    ];
+  } else {
+    session.agentEvents = session.agentEvents.map((event) => (
+      event.type === "message"
+        ? { ...event, status: event.status === "error" ? "error" : status }
+        : event
+    ));
+  }
+
+  const messagePartIndex = session.timeline.findIndex((part) => part.kind === "message");
+  const messageParts = session.timeline.filter((part): part is Extract<ConstructFlowTimelinePart, { kind: "message" }> => part.kind === "message");
+  const timelineText = messageParts.map((part) => part.text).join("").trim();
+  if (messageParts.length === 0 || timelineText !== normalizedReply) {
+    const replyPart: ConstructFlowTimelinePart = {
+      id: `${session.id}:reply`,
+      kind: "message",
+      status,
+      text: reply,
+      createdAt: messageParts[0]?.createdAt ?? updatedAt,
+      updatedAt
+    };
+    if (messagePartIndex < 0) {
+      session.timeline.push(replyPart);
+    } else {
+      const before = session.timeline.slice(0, messagePartIndex).filter((part) => part.kind !== "message");
+      const after = session.timeline.slice(messagePartIndex).filter((part) => part.kind !== "message");
+      session.timeline = [...before, replyPart, ...after];
+    }
+    return;
+  }
+
+  session.timeline = session.timeline.map((part) => (
+    part.kind === "message"
+      ? { ...part, status: part.status === "error" ? "error" : status, updatedAt }
+      : part
+  ));
 }
 
 function settleRunningSessionTrace(session: ConstructFlowSession, status: ConstructFlowSession["status"]): void {
@@ -4514,7 +4592,7 @@ function availableFlowToolNames(policy: FlowRunToolPolicy): string[] {
 function consumeConceptFirewallToolReview(
   reviews: Map<string, ConceptFirewallReviewRecord>,
   reviewId: string,
-  kind: ConceptFirewallReviewRecord["kind"]
+  kind: ConceptFirewallReviewKind
 ): void {
   const review = reviews.get(reviewId);
   if (!review) {
@@ -4528,13 +4606,53 @@ function consumeConceptFirewallToolReview(
 
 function findLatestConceptFirewallReviewId(
   reviews: Map<string, ConceptFirewallReviewRecord> | undefined,
-  kind: ConceptFirewallReviewRecord["kind"]
+  kind: ConceptFirewallReviewKind
 ): string | undefined {
   if (!reviews) return undefined;
   return [...reviews.entries()]
     .filter(([, review]) => review.kind === kind)
     .sort(([, a], [, b]) => b.createdAt.localeCompare(a.createdAt))
     .at(0)?.[0];
+}
+
+function collectPendingConceptFirewallReviews(project: StoredFlowProject): Map<string, ConceptFirewallReviewRecord> {
+  const reviews = new Map<string, ConceptFirewallReviewRecord>();
+  for (const session of project.flow.sessions) {
+    for (const review of session.pendingConceptFirewallReviews ?? []) {
+      reviews.set(review.id, {
+        kind: review.kind,
+        createdAt: review.createdAt
+      });
+    }
+  }
+  return reviews;
+}
+
+function persistPendingConceptFirewallReview(
+  session: ConstructFlowSession,
+  id: string,
+  review: ConceptFirewallReviewRecord | undefined
+): void {
+  if (!review) return;
+  const pending = session.pendingConceptFirewallReviews?.filter((entry) => entry.id !== id) ?? [];
+  pending.push({
+    id,
+    kind: review.kind,
+    createdAt: review.createdAt
+  });
+  session.pendingConceptFirewallReviews = pending;
+}
+
+function clearPendingConceptFirewallReview(project: StoredFlowProject, id: string): void {
+  for (const session of project.flow.sessions) {
+    if (!session.pendingConceptFirewallReviews?.length) continue;
+    const pending = session.pendingConceptFirewallReviews.filter((entry) => entry.id !== id);
+    if (pending.length > 0) {
+      session.pendingConceptFirewallReviews = pending;
+    } else {
+      delete session.pendingConceptFirewallReviews;
+    }
+  }
 }
 
 function buildConceptFirewallMutationBlockedMessage(decision: {
@@ -4564,6 +4682,21 @@ function buildConceptFirewallTaskBlockedMessage(decision: {
       ? `Uncovered capabilities: ${decision.blockedCapabilities.join("; ")}`
       : null,
     "Flow queued a one-shot internal firewall token for the next practice-task call in this run. Teach and record the missing capability or adjust the task input, then call practice-task again; the token is applied automatically and cannot be reused."
+  ].filter(Boolean).join(" ");
+}
+
+function buildConceptFirewallExerciseBlockedMessage(decision: {
+  auditId: string;
+  reason: string;
+  blockedCapabilities: string[];
+}): string {
+  return [
+    "Project concept firewall blocked this concept exercise.",
+    decision.reason,
+    decision.blockedCapabilities.length
+      ? `Uncovered capabilities: ${decision.blockedCapabilities.join("; ")}`
+      : null,
+    "Flow queued a one-shot internal firewall token for the next concept-exercise call in this run or the next Flow turn. Teach and record the missing capability or adjust the exercise input, then call concept-exercise again; the token is applied automatically and cannot be reused."
   ].filter(Boolean).join(" ");
 }
 
@@ -4764,16 +4897,39 @@ function normalizeQuestionForComparison(value: string): string {
     .toLowerCase();
 }
 
-function readQuestionPayload(toolCall: ConstructFlowToolCallRecord): { choices?: string[]; answerMode?: string; language?: string } {
+function readQuestionPayload(toolCall: ConstructFlowToolCallRecord): { choices?: string[]; answerMode?: string; language?: string; initialAnswer?: string; hideLearningMaterials?: boolean; allowSkip?: boolean } {
   const source = typeof toolCall.input === "object" && toolCall.input !== null
-    ? toolCall.input as { choices?: unknown; answerMode?: unknown; language?: unknown }
+    ? toolCall.input as { choices?: unknown; answerMode?: unknown; language?: unknown; initialAnswer?: unknown; hideLearningMaterials?: unknown; allowSkip?: unknown }
     : {};
   return {
     choices: Array.isArray(source.choices)
       ? source.choices.filter((choice): choice is string => typeof choice === "string")
       : undefined,
     answerMode: typeof source.answerMode === "string" ? source.answerMode : undefined,
-    language: typeof source.language === "string" ? source.language : undefined
+    language: typeof source.language === "string" ? source.language : undefined,
+    initialAnswer: typeof source.initialAnswer === "string" ? source.initialAnswer : undefined,
+    hideLearningMaterials: typeof source.hideLearningMaterials === "boolean" ? source.hideLearningMaterials : undefined,
+    allowSkip: typeof source.allowSkip === "boolean" ? source.allowSkip : undefined
+  };
+}
+
+function formatTaskSubmissionUserMessage(message: string, submission: ConstructFlowTaskSubmission): string {
+  return [
+    message.trim() || "Please review my task submission.",
+    submission.subtaskId ? `Subtask: ${submission.subtaskId}` : null,
+    submission.note?.trim() ? `Learner note: ${submission.note.trim()}` : null
+  ].filter(Boolean).join("\n\n");
+}
+
+function summarizeTaskSubmissionForPrompt(submission: ConstructFlowTaskSubmission): Record<string, unknown> {
+  return {
+    taskId: submission.taskId,
+    subtaskId: submission.subtaskId,
+    note: submission.note,
+    touchedFiles: submission.touchedFiles,
+    submittedAt: submission.submittedAt,
+    authoredBy: submission.authoredBy,
+    diff: submission.touchedFiles.length > 0 ? submission.compactDiff : undefined
   };
 }
 
@@ -4853,6 +5009,7 @@ The available Flow tools are run-mode dependent. The prompt includes a Current F
 File mutation follows the Claude Code shape: write creates or overwrites a file; edit replaces one exact string in an existing file. Every write/edit call must include conceptIds from this project's taught concept ledger. The runtime independently audits the proposed content against those exact concept bodies and blocks uncovered syntax, APIs, patterns, tooling, or hidden prerequisites. A global concept or a concept taught in another project does not count. Use write/edit only to help the learner move through a project-taught concept, repair tiny scaffold/setup blockers, update simple docs, or make clearly requested support edits. Do not use write/edit to implement code whose concept has not been introduced in this project yet. Even after a concept is introduced, do not implement it; instead, create a practice task for the learner.
 If write/edit is blocked by the concept firewall, Flow queues a one-shot internal token for the next matching write/edit tool call in this run. You do not see or pass the token. Teach and record the missing capability or adjust the tool input, then call the tool again; the token is applied automatically and cannot be reused.
 If practice-task is blocked by the concept firewall, Flow queues a one-shot internal token for the next practice-task call in this run. You do not see or pass the token. Teach and record the missing capability or adjust the task input, then call practice-task again. The task wording can change naturally after teaching; the runtime treats the reviewed tool boundary as the permission boundary.
+If concept-exercise is blocked by the concept firewall, Flow queues a one-shot internal token for the next concept-exercise call in this run or the next Flow turn. You do not see or pass the token. Teach and record the missing capability or adjust the exercise input, then call concept-exercise again; the token is applied automatically and cannot be reused.
 Before using write/edit for a learning-acceleration support edit, ask the learner first with ask-question and wait for the answer. This includes edits because the learner is stuck, because a scaffold bug is blocking progress, or because the edit would make learning faster. The question must name the file, describe the exact change, explain why it would speed progress, and say what learning remains for the learner. Example shape: "Should I edit [[file:src/core/index.ts|src/core/index.ts]] to remove the broken export so you can focus on module barrels instead of setup friction? You will still implement the public API yourself." If the learner says no or skips, do not edit; teach or create a learner task instead. If the learner explicitly asks in the current message for a concrete file edit, that counts as consent for that requested edit only.
 
 Project kickoff and path:
@@ -4962,7 +5119,7 @@ Clickable file protocol:
 
 Do not build whole apps for the learner by hand. Flow terminal commands are validation-only because generators can write unaudited code containing untaught concepts. Prepare only small concept-audited files through write/edit or practice-task preparations. Never hand-write a whole package.json, Xcode project, or broad app tree as a substitute for a learner-owned, concept-scoped task.
 
-When the latest input is a learner message inside an active task, treat it as task-scoped chat. Answer in the context of the active task and do not create a new task unless the path genuinely changes. If the active subtask can be judged from concrete task evidence, workspace reads/grep, validation output, or the learner's task-scoped message, call review-subtask with outcome "done" or "needs-work" even when the learner has not pressed Submit. When the latest input includes a task submission, act as a task-review mentor: inspect the compact diff and authoredBy metadata, compare it against the active subtask success criteria, update concepts only with evidence, and apply the same review-subtask outcomes. Use task.submission.authoredBy when reviewing a formal submission; otherwise use concrete workspace evidence, task-scoped learner messages, preparedFiles.authoredBy, and recent write/edit tool records as the authorship source of truth. Call complete-task after every subtask has been reviewed as completed; complete-task.evidence must be an array of concrete learner or workspace evidence strings. Agent writes, scaffold repairs, terminal checks, and prepared files can support review, but agent-authored edits alone are not learner completion evidence. If Flow edited a task file after a learner submission and the submission is the evidence being reviewed, do not mark the task done from that stale submission; ask the learner to review and resubmit. If evidence is insufficient or ambiguous in a way that blocks review, ask-question with one focused follow-up; do not ask conceptual quiz questions as review blockers.
+When the latest input is a learner message inside an active task, treat it as task-scoped chat. Answer in the context of the active task and do not create a new task unless the path genuinely changes. If the active subtask can be judged from concrete task evidence, workspace reads/grep, validation output, or the learner's task-scoped message, call review-subtask with outcome "done" or "needs-work" even when the learner has not pressed Submit. When the latest input includes a task submission, act as a task-review mentor: inspect workspace reality, submission metadata, task success criteria, and authoredBy metadata; use compact diffs only when files actually changed. A terminal-created project, command-only milestone, or explanation-only subtask can still be completed from concrete workspace/tool/learner evidence. Use task.submission.authoredBy when reviewing a formal submission; otherwise use concrete workspace evidence, task-scoped learner messages, preparedFiles.authoredBy, and recent write/edit tool records as the authorship source of truth. Call complete-task after every subtask has been reviewed as completed; complete-task.evidence must be an array of concrete learner or workspace evidence strings. Agent writes, scaffold repairs, terminal checks, and prepared files can support review, but agent-authored edits alone are not learner completion evidence. If Flow edited a task file after a learner submission and the submission is the evidence being reviewed, do not mark the task done from that stale submission; ask the learner to review and resubmit. If evidence is insufficient or ambiguous in a way that blocks review, ask-question with one focused follow-up; do not ask conceptual quiz questions as review blockers. After reviewing a subtask, keep the learner-facing reply concise: state the evidence, mark the outcome, and name the next subtask or next thinking move. Do not paste full solution code, broad hints, or code reminders just because the next subtask exists; only give a targeted correction when the review outcome is needs-work or the learner asks for help.
 
 If you need learner input, decision, choice, or response, you MUST use the ask-question tool. Treat ask-question as a finish reason and long-running wait state: after calling it, do not continue teaching, ask follow-up questions in prose, inspect files, create tasks, or run tools until the learner answers. You are strictly prohibited from executing subsequent tools (such as read, write, edit, or runTerminalCommand) in the same turn after asking a question. The ask-question.question field must be the direct question only, ideally one sentence. Do not duplicate the context in both prose and the tool question. Keep ask-question.reason short and internal; the learner UI does not show it. Do not put tracked learner-modeling or required learner questions only in prose. Never write "Choose one", a numbered option list, or the full question again in normal chat after calling ask-question; the UI renders choices. After ask-question, stop with a short acknowledgement if you need any prose at all. When the learner answers, patch learner.md if the answer contains durable learner information.
 
