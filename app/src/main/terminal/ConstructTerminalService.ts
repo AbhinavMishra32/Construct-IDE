@@ -32,6 +32,7 @@ export class ConstructTerminalService {
   private readonly sessions = new Map<string, pty.IPty>();
   private readonly sessionMeta = new Map<string, TerminalSessionMeta>();
   private readonly latestOutputByProject = new Map<string, string>();
+  private readonly pendingOutput = new Map<string, { chunks: string[]; projectId: string; timer: NodeJS.Timeout | null }>();
 
   constructor(private readonly sendToRenderers: (channel: string, payload: unknown) => void) {}
 
@@ -98,14 +99,11 @@ export class ConstructTerminalService {
     });
 
     child.onData((data) => {
-      this.appendOutput(input.project.id, data);
-      this.sendToRenderers("construct:project:terminal-data", {
-        sessionId: input.sessionId,
-        data
-      });
+      this.queueOutput(input.sessionId, input.project.id, data);
     });
 
     child.onExit(({ exitCode }) => {
+      this.flushOutput(input.sessionId);
       this.sessions.delete(input.sessionId);
       this.sessionMeta.delete(input.sessionId);
       this.sendToRenderers("construct:project:terminal-exit", {
@@ -133,9 +131,36 @@ export class ConstructTerminalService {
   }
 
   kill(sessionId: string): void {
+    this.flushOutput(sessionId);
     this.sessions.get(sessionId)?.kill();
     this.sessions.delete(sessionId);
     this.sessionMeta.delete(sessionId);
+  }
+
+  queueOutput(sessionId: string, projectId: string, data: string): void {
+    const pending = this.pendingOutput.get(sessionId) ?? { chunks: [], projectId, timer: null };
+    pending.projectId = projectId;
+    pending.chunks.push(data);
+    if (!pending.timer) {
+      pending.timer = setTimeout(() => this.flushOutput(sessionId), 8);
+    }
+    this.pendingOutput.set(sessionId, pending);
+  }
+
+  flushOutput(sessionId: string): void {
+    const pending = this.pendingOutput.get(sessionId);
+    if (!pending) return;
+    if (pending.timer) {
+      clearTimeout(pending.timer);
+    }
+    this.pendingOutput.delete(sessionId);
+    const data = pending.chunks.join("");
+    if (!data) return;
+    this.appendOutput(pending.projectId, data);
+    this.sendToRenderers("construct:project:terminal-data", {
+      sessionId,
+      data
+    });
   }
 
   appendOutput(projectId: string, data: string): void {

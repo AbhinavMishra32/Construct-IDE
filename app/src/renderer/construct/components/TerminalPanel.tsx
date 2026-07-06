@@ -43,6 +43,8 @@ export const TerminalPanel = forwardRef<
   const pendingCommandsRef = useRef<string[]>([]);
   const cleanupRef = useRef<(() => void) | null>(null);
   const startingRef = useRef(false);
+  const pendingWriteChunksRef = useRef<string[]>([]);
+  const writeFrameRef = useRef<number | null>(null);
   const [status, setStatus] = useState("starting");
 
   useImperativeHandle(ref, () => ({
@@ -136,6 +138,21 @@ export const TerminalPanel = forwardRef<
       });
     }
 
+    function flushTerminalWrites() {
+      writeFrameRef.current = null;
+      const data = pendingWriteChunksRef.current.join("");
+      pendingWriteChunksRef.current = [];
+      if (data) {
+        terminal.write(data);
+      }
+    }
+
+    function enqueueTerminalWrite(data: string) {
+      pendingWriteChunksRef.current.push(data);
+      if (writeFrameRef.current != null) return;
+      writeFrameRef.current = window.requestAnimationFrame(flushTerminalWrites);
+    }
+
     try {
       terminal.open(containerRef.current);
       fitAndResize();
@@ -166,7 +183,7 @@ export const TerminalPanel = forwardRef<
 
     const removeDataListener = onTerminalData((event) => {
       if (event.sessionId === sessionIdRef.current) {
-        terminal.write(event.data);
+        enqueueTerminalWrite(event.data);
       }
     });
     const removeExitListener = onTerminalExit((event) => {
@@ -197,6 +214,11 @@ export const TerminalPanel = forwardRef<
       if (resizeFrame != null) {
         window.cancelAnimationFrame(resizeFrame);
       }
+      if (writeFrameRef.current != null) {
+        window.cancelAnimationFrame(writeFrameRef.current);
+        writeFrameRef.current = null;
+      }
+      pendingWriteChunksRef.current = [];
       const sessionId = sessionIdRef.current;
       if (sessionId) {
         void terminalKill(sessionId);
