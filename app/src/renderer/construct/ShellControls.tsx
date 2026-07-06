@@ -25,10 +25,21 @@ export function SidebarLearningButton({ onClick }: { onClick: () => void }) {
   );
 }
 
-export function SidebarConceptsButton({ onClick }: { onClick: () => void }) {
+export function SidebarConceptsButton({
+  disabled = false,
+  disabledReason,
+  onClick
+}: {
+  disabled?: boolean;
+  disabledReason?: string;
+  onClick: () => void;
+}) {
   return (
     <SidebarNavItemRow
-      onClick={onClick}
+      aria-label={disabled && disabledReason ? disabledReason : "Open Concepts"}
+      disabled={disabled}
+      onClick={disabled ? undefined : onClick}
+      title={disabledReason}
       item={{
         id: "concepts",
         label: "Concepts",

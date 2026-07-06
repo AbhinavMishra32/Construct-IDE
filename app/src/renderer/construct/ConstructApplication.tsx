@@ -3,6 +3,13 @@ import { ConstructSettingsSurface, buildSettingsSections, settingsTitle } from "
 import { LearningContextSurface } from "./LearningContextSurface";
 import { HeaderBottomPanelIcon, HeaderGuidePanelIcon, SavingIndicator, SidebarConceptsButton, SidebarLearningButton, SidebarSettingsButton } from "./ShellControls";
 import { applyDocumentTheme, getInitialTheme, resolveActiveTheme, type ThemeMode } from "./theme";
+import {
+  applyCodeThemeToDocument,
+  normalizeCodeThemeId,
+  resolveCodeThemeDefinition,
+  type CodeThemeId
+} from "./codeThemes";
+import { registerConstructThemes } from "./editorThemes";
 import { useConstructLogBridge } from "./lib/useConstructLogBridge";
 import { useProjectLspLifecycle } from "./lib/useProjectLspLifecycle";
 import { StatusBar } from "./components/StatusBar";
@@ -14,7 +21,7 @@ import { AuthProvider } from "../components/auth/auth-provider";
 import { ConstructAuthLogo } from "../components/auth/construct-auth-logo";
 import { UserAvatar } from "../components/auth/user/user-avatar";
 import type { AuthView } from "@better-auth-ui/core";
-import type { AiSettings } from "./types";
+import type { AiSettings, AppSettings } from "./types";
 import { CONSTRUCT_CLOUD_PRODUCTION_BASE_URL, endpointFromRuntimeInfo } from "../../shared/constructCloud";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type ComponentPropsWithoutRef, type PropsWithChildren } from "react";
@@ -121,6 +128,8 @@ type ConstructAppUiState = {
   version: 1;
   theme: ThemeMode;
   showStatusBar: boolean;
+  codeThemeId?: CodeThemeId;
+  customCodeThemeJson?: string;
 };
 
 type ConstructProjectShellUiState = {
@@ -160,7 +169,9 @@ function normalizeAppUiState(value: unknown): ConstructAppUiState | null {
   return {
     version: 1,
     theme: input.theme === "light" || input.theme === "dark" || input.theme === "system" ? input.theme : getInitialTheme(),
-    showStatusBar: input.showStatusBar !== false
+    showStatusBar: input.showStatusBar !== false,
+    codeThemeId: normalizeCodeThemeId(input.codeThemeId),
+    customCodeThemeJson: typeof input.customCodeThemeJson === "string" ? input.customCodeThemeJson : ""
   };
 }
 
@@ -403,6 +414,7 @@ export default function ConstructApp() {
   const [rightPanel, setRightPanel] = useState<ReactNode | null>(null);
   const [sidebarKnowledgePanel, setSidebarKnowledgePanel] = useState<ReactNode | null>(null);
   const [conceptsSidebarPanel, setConceptsSidebarPanel] = useState<ReactNode | null>(null);
+  const [flowLearningMaterialsHidden, setFlowLearningMaterialsHidden] = useState(false);
   const [flowPanelView, setFlowPanelView] = useState<"chat" | "project">("chat");
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -421,6 +433,8 @@ export default function ConstructApp() {
   const [sidebarWidth, setSidebarWidth] = useState(300);
   const [inspectorWidth, setInspectorWidth] = useState(320);
   const [theme, setTheme] = useState<ThemeMode>(() => getInitialTheme());
+  const [codeThemeId, setCodeThemeId] = useState<CodeThemeId>("construct");
+  const [customCodeThemeJson, setCustomCodeThemeJson] = useState("");
   const [showStatusBar, setShowStatusBar] = useState(true);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -521,6 +535,8 @@ export default function ConstructApp() {
       .then((settings) => {
         if (!cancelled) {
           setShowStatusBar(settings.app?.showStatusBar !== false);
+          setCodeThemeId(normalizeCodeThemeId(settings.app?.codeThemeId));
+          setCustomCodeThemeJson(settings.app?.customCodeThemeJson ?? "");
         }
       })
       .catch(() => {
@@ -862,6 +878,9 @@ export default function ConstructApp() {
   useEffect(() => {
     const active = resolveActiveTheme(theme);
     applyDocumentTheme(active);
+    const codeThemeDefinition = resolveCodeThemeDefinition(codeThemeId, customCodeThemeJson);
+    registerConstructThemes(codeThemeDefinition);
+    applyCodeThemeToDocument(codeThemeDefinition, active);
     localStorage.setItem("construct.theme", theme);
     if (!uiStateHydrated) {
       return;
@@ -869,7 +888,7 @@ export default function ConstructApp() {
     void Promise.resolve().then(() => setThemeSource(theme)).catch(() => {
       // The Vite renderer can be opened without Electron preload during local smoke checks.
     });
-  }, [theme, uiStateHydrated]);
+  }, [codeThemeId, customCodeThemeJson, theme, uiStateHydrated]);
 
   useEffect(() => {
     if (!uiStateHydrated || restoringUiStateRef.current) {
@@ -879,7 +898,9 @@ export default function ConstructApp() {
     const state: ConstructAppUiState = {
       version: 1,
       theme,
-      showStatusBar
+      showStatusBar,
+      codeThemeId,
+      customCodeThemeJson
     };
     const timeout = window.setTimeout(() => {
       void setUiState({ key: SHELL_UI_STATE_KEY, value: state }).catch(() => {
@@ -888,7 +909,7 @@ export default function ConstructApp() {
     }, 1_500);
 
     return () => window.clearTimeout(timeout);
-  }, [showStatusBar, theme, uiStateHydrated]);
+  }, [codeThemeId, customCodeThemeJson, showStatusBar, theme, uiStateHydrated]);
 
   useEffect(() => {
     if (!uiStateHydrated || restoringUiStateRef.current || restoringProjectUiStateRef.current || !activeProject) {
@@ -1048,6 +1069,8 @@ export default function ConstructApp() {
   function applyAppUiState(state: ConstructAppUiState): void {
     setTheme(state.theme);
     setShowStatusBar(state.showStatusBar);
+    setCodeThemeId(normalizeCodeThemeId(state.codeThemeId));
+    setCustomCodeThemeJson(state.customCodeThemeJson ?? "");
   }
 
   function applyProjectShellUiState(state: ConstructProjectShellUiState): void {
@@ -1216,12 +1239,12 @@ export default function ConstructApp() {
     });
   }
 
-  async function createProjectFromHomePrompt(prompt: string): Promise<void> {
+  async function createProjectFromHomePrompt(prompt: string): Promise<FlowProjectRecord> {
     const goal = prompt.trim();
     if (!goal) {
-      return;
+      throw new Error("Describe what you want to build first.");
     }
-    const project = await createFlowProject({
+    return createFlowProject({
       title: inferFlowTitle(goal),
       goal,
       researchFirst: true,
@@ -1229,7 +1252,14 @@ export default function ConstructApp() {
       permissionsPreference: defaultFlowProjectSettings.agentEdits,
       projectSettings: defaultFlowProjectSettings
     });
-    handleCreatedProject(project);
+  }
+
+  async function openHomeCreatedFlowProject(project: FlowProjectRecord): Promise<void> {
+    const saved = await openSavedProject(project.id).catch(() => null);
+    const latest = isFlowProjectRecord(saved)
+      ? mergeFlowProjectLiveSnapshot(saved, project)
+      : project;
+    handleCreatedProject(latest);
   }
 
   async function refreshActiveProjectSnapshot(projectId: string): Promise<AnyProjectRecord | null> {
@@ -1374,8 +1404,14 @@ export default function ConstructApp() {
         projectId={settingsSurface.projectId}
         projects={projects}
         theme={theme}
+        codeThemeId={codeThemeId}
+        customCodeThemeJson={customCodeThemeJson}
         showStatusBar={showStatusBar}
         onThemeChange={setTheme}
+        onCodeThemeChange={(nextId, nextJson) => {
+          setCodeThemeId(nextId);
+          setCustomCodeThemeJson(nextJson);
+        }}
         onShowStatusBarChange={setShowStatusBar}
         onProjectsChange={setProjects}
         onActiveProjectChange={setActiveProject}
@@ -1414,6 +1450,7 @@ export default function ConstructApp() {
         onFileOpened={handleFileOpened}
         onTreeChange={handleWorkspaceTreeChange}
         onSavingChange={setIsSaving}
+        onLearningMaterialsHiddenChange={setFlowLearningMaterialsHidden}
       />
   ) : activeProject ? (
       <Workspace
@@ -1435,6 +1472,7 @@ export default function ConstructApp() {
       busy={busy}
       error={error}
       onCreateProjectFromPrompt={createProjectFromHomePrompt}
+      onProjectReady={openHomeCreatedFlowProject}
       onOpenProject={(projectId) => void openProject(projectId)}
     />
   );
@@ -1834,7 +1872,11 @@ export default function ConstructApp() {
                     onOpenSettings={() => openSettingsSurface("workspace")}
                   >
                     {isFlowProjectRecord(activeProject) ? (
-                      <SidebarConceptsButton onClick={openKnowledgeBase} />
+                      <SidebarConceptsButton
+                        disabled={flowLearningMaterialsHidden}
+                        disabledReason="Concepts are hidden while Flow is asking for recall."
+                        onClick={openKnowledgeBase}
+                      />
                     ) : (
                       <SidebarLearningButton onClick={openLearningContext} />
                     )}
@@ -2018,6 +2060,36 @@ function upsertProjectSummary(projects: ProjectSummary[], summary: ProjectSummar
     summary,
     ...projects.filter((project) => project.id !== summary.id)
   ].sort(compareProjectSummaryActivity);
+}
+
+type FlowSessionRecord = FlowProjectRecord["flow"]["sessions"][number];
+
+function mergeFlowProjectLiveSnapshot(saved: FlowProjectRecord, live: FlowProjectRecord): FlowProjectRecord {
+  const sessions = live.flow.sessions.reduce(upsertFlowSessionRecord, saved.flow.sessions);
+  const updatedAt = latestIso(saved.flow.updatedAt, live.flow.updatedAt, sessions.at(-1)?.updatedAt);
+  return {
+    ...saved,
+    flow: {
+      ...saved.flow,
+      researchEnabled: saved.flow.researchEnabled || live.flow.researchEnabled,
+      researchCompletedAt: saved.flow.researchCompletedAt ?? live.flow.researchCompletedAt,
+      sessions,
+      updatedAt
+    }
+  };
+}
+
+function upsertFlowSessionRecord(sessions: FlowSessionRecord[], session: FlowSessionRecord): FlowSessionRecord[] {
+  const index = sessions.findIndex((candidate) => candidate.id === session.id);
+  if (index < 0) return [...sessions, session];
+  return sessions.map((candidate, candidateIndex) => candidateIndex === index ? session : candidate);
+}
+
+function latestIso(...values: Array<string | null | undefined>): string {
+  return values.reduce<string>((latest, value) => {
+    if (!value) return latest;
+    return Date.parse(value) > Date.parse(latest) ? value : latest;
+  }, new Date(0).toISOString());
 }
 
 function compareProjectSummaryActivity(left: ProjectSummary, right: ProjectSummary): number {
