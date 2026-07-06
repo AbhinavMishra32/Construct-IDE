@@ -8,7 +8,7 @@ import type { StoredSettings } from "../config/constructConfig";
 import { applyLiveFlowProjectSnapshot } from "../flow/ConstructFlowProjectSnapshotStore";
 import { ConstructProjectGitService } from "../projects/ConstructProjectGitService";
 import { isFlowProject, isTapeProject, type ProjectSummary, type StoredProject } from "../projects/ConstructProjectTypes";
-import { ConstructProjectWorkspaceService } from "../projects/ConstructProjectWorkspaceService";
+import { ConstructProjectWorkspaceService, isIgnoredWorkspacePath } from "../projects/ConstructProjectWorkspaceService";
 
 export class ConstructProjectIpcController {
   private activeWatcher: FSWatcher | null = null;
@@ -48,12 +48,7 @@ export class ConstructProjectIpcController {
     try {
       this.activeWatcher = watch(workspacePath, { recursive: true }, (eventType, filename) => {
         const relativePath = typeof filename === "string" ? filename.replace(/\\/g, "/") : null;
-        if (relativePath && (
-          relativePath.includes("node_modules") ||
-          relativePath.includes(".git") ||
-          relativePath.includes(".turbo") ||
-          relativePath.includes(".DS_Store")
-        )) {
+        if (isIgnoredWorkspacePath(relativePath)) {
           return;
         }
 

@@ -32,6 +32,7 @@ export type ConstructConceptPolicyInput = {
   content: string;
   declaredConceptIds?: string[];
   requireTaskReady?: boolean;
+  semanticAudit?: boolean;
 };
 
 export type ConstructConceptPolicyDecision = {
@@ -190,7 +191,7 @@ export class ConstructConceptPolicyService {
     };
 
     let semanticAuditUnavailableReason: string | null = null;
-    if (this.options.agentRuntime) {
+    if (input.semanticAudit !== false && this.options.agentRuntime) {
       try {
         const generatedAudit = await this.options.agentRuntime().generateStructured({
           id: `concept-policy-${randomUUID()}`,
@@ -547,7 +548,7 @@ function detectCapabilities(content: string): DetectedCapability[] {
     { name: "Async and await", aliases: ["async", "await", "asynchronous"], pattern: /\b(?:async|await)\b/m },
     { name: "Generic types or templates", aliases: ["generic", "generics", "template"], pattern: /\btemplate\s*<|<[A-Z][A-Za-z0-9_,\s]*>\s*(?:\(|\{|[A-Za-z_$])/m },
     { name: "Classes and object construction", aliases: ["class", "object", "constructor"], pattern: /\bclass\s+[A-Za-z_]\w*|\bnew\s+[A-Z_$][\w$]*/m },
-    { name: "Pointers or address semantics", aliases: ["pointer", "address", "dereference"], pattern: /(?:\b[A-Za-z_]\w*\s*\*\s*[A-Za-z_]\w*|\&[A-Za-z_]\w*|\*[A-Za-z_]\w*)/m },
+    { name: "Pointers or address semantics", aliases: ["pointer", "address", "dereference"], pattern: /(?:\b[A-Za-z_]\w*(?:::\w+)?\s*\*\s*[A-Za-z_]\w*(?=\s*(?:[=,;)\[\]{}]|$))|\&[A-Za-z_]\w*|(?:[=({[,;:+\-\/!~<>]|\breturn\b)\s*\*\s*[A-Za-z_]\w*)/m },
     { name: "Exception handling", aliases: ["exception", "try catch", "error handling"], pattern: /\btry\s*\{|\bcatch\s*\(|\bthrow\b/m },
     { name: "React hooks", aliases: ["react hook", "hooks", "usestate", "useeffect"], pattern: /\buse(?:State|Effect|Memo|Callback|Ref|Reducer|Context)\s*\(/m },
     { name: "Python comprehensions", aliases: ["comprehension", "list comprehension", "dictionary comprehension"], pattern: /[\[\{][^\]\}\n]+\bfor\b[^\]\}\n]+\bin\b[^\]\}\n]+[\]\}]/m },

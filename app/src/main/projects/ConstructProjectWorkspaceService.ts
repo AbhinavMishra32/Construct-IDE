@@ -13,13 +13,44 @@ import {
   type WorkspaceTreeNode
 } from "./ConstructProjectTypes";
 
-const ignoredWorkspaceEntries = new Set([
+const ignoredWorkspaceDirectoryNames = new Set([
   ".git",
   ".construct",
+  ".mypy_cache",
   ".next",
+  ".pytest_cache",
+  ".ruff_cache",
+  ".turbo",
+  ".venv",
+  "__pycache__",
   "dist",
-  "node_modules"
+  "env",
+  "node_modules",
+  "venv"
 ]);
+
+const ignoredWorkspaceFileNames = new Set([
+  ".DS_Store"
+]);
+
+export function isIgnoredWorkspaceEntry(entry: { name: string; directory?: boolean; isDirectory?: () => boolean }): boolean {
+  const isDirectory = entry.directory ?? entry.isDirectory?.() ?? false;
+  if (isDirectory && ignoredWorkspaceDirectoryNames.has(entry.name)) {
+    return true;
+  }
+
+  return ignoredWorkspaceFileNames.has(entry.name);
+}
+
+export function isIgnoredWorkspacePath(relativePath: string | null | undefined): boolean {
+  if (!relativePath) {
+    return false;
+  }
+
+  const normalized = relativePath.replace(/\\/g, "/");
+  const segments = normalized.split("/").filter(Boolean);
+  return segments.some((segment) => ignoredWorkspaceDirectoryNames.has(segment) || ignoredWorkspaceFileNames.has(segment));
+}
 
 export class ConstructProjectWorkspaceService {
   constructor(
@@ -157,7 +188,7 @@ export class ConstructProjectWorkspaceService {
     const artifactRoot = this.absolutePathArtifactRoot(project);
     const nodes = await Promise.all(
       entries
-        .filter((entry) => !ignoredWorkspaceEntries.has(entry.name))
+        .filter((entry) => !isIgnoredWorkspaceEntry(entry))
         .filter((entry) => !(root === "" && artifactRoot === entry.name))
         .sort((a, b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name))
         .map(async (entry) => {

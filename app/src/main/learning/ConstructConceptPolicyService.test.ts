@@ -402,6 +402,65 @@ describe("ConstructConceptPolicyService", () => {
     assert.match(decision.reason, /Semantic concept audit unavailable/i);
   });
 
+  it("does not mistake Markdown emphasis in a NumPy exercise for pointer syntax", async () => {
+    const { store, project } = await projectHarness("python-project", "Python Project");
+    await teach(store, project, concept({
+      id: "python.numpy-arrays",
+      title: "NumPy arrays",
+      content: "NumPy arrays support element-wise math, vectorized operations, array shape, and broadcasting.",
+      examples: [
+        "arr = np.array([10, 20, 30]); arr / 2",
+        "np.array([[1, 2, 3], [4, 5, 6]]).shape"
+      ],
+      masteryLevel: 3
+    }));
+    const policy = new ConstructConceptPolicyService({ learningStore: () => store });
+
+    const decision = await policy.authorize({
+      project,
+      artifactKind: "assessment",
+      artifactRef: "NumPy shapes quick check",
+      declaredConceptIds: ["python.numpy-arrays"],
+      semanticAudit: false,
+      content: [
+        "**Shape refresher**",
+        "",
+        "*Q1* If I write `np.array([[1, 2, 3], [4, 5, 6]])`, what is shape?",
+        "",
+        "The shape is **not** `(3, 2)`; it is `(2, 3)`.",
+        "",
+        "*Shape* and broadcasting are NumPy concepts here, not C++ pointer syntax."
+      ].join("\n")
+    });
+
+    assert.equal(decision.allowed, true);
+    assert.doesNotMatch(decision.blockedCapabilities.join("\n"), /pointer|dereference/i);
+  });
+
+  it("still blocks real pointer syntax without requiring Markdown fences", async () => {
+    const { store, project } = await projectHarness("cpp-project", "C++ Project");
+    await teach(store, project, concept({
+      id: "cpp.variables",
+      title: "C++ variables",
+      content: "A variable has a type, a name, and a value.",
+      masteryLevel: 3
+    }));
+    const policy = new ConstructConceptPolicyService({ learningStore: () => store });
+
+    const decision = await policy.authorize({
+      project,
+      artifactKind: "task",
+      artifactRef: "Pointer read",
+      declaredConceptIds: ["cpp.variables"],
+      requireTaskReady: true,
+      semanticAudit: false,
+      content: "Fill in this C++ line: int value = *ptr;"
+    });
+
+    assert.equal(decision.allowed, false);
+    assert.match(decision.blockedCapabilities.join("\n"), /pointer|dereference/i);
+  });
+
   it("allows everything without restrictions if the firewall is disabled in settings", async () => {
     const { store, project } = await projectHarness("cpp-project", "C++ Project");
     const policy = new ConstructConceptPolicyService({
@@ -409,7 +468,7 @@ describe("ConstructConceptPolicyService", () => {
       readSettings: async () => ({
         workspaceRoot: "",
         releaseVersion: "",
-        app: { showStatusBar: true },
+        app: { showStatusBar: true, codeThemeId: "construct", customCodeThemeJson: "" },
         ai: {
           runtime: "mastra",
           source: "byok",
