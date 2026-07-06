@@ -271,7 +271,8 @@ export async function installConstructBridge(): Promise<void> {
     onLitellmStatusChange: subscribe("construct:litellm:status-change"),
     importOpencodeAuth: () => invoke("construct:settings:import-opencode-auth"),
     onProviderLog: subscribe("construct:provider:log"),
-    onFileChanged: subscribe("construct:project:file-changed"),
+    onFileChanged: (callback: (payload: unknown) => void) =>
+      client.on("construct:project:file-changed", (payload) => callback(payload ?? {})),
     closeProject: () => invoke("construct:project:close")
   };
 

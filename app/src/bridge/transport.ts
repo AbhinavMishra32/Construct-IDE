@@ -69,6 +69,7 @@ export class BridgeTransport {
 
   private handleConnection(socket: WebSocket): void {
     this.clients.add(socket);
+    console.log(`[bridge] renderer connected (${this.clients.size} active)`);
     socket.on("close", () => this.clients.delete(socket));
     socket.on("error", () => this.clients.delete(socket));
     socket.on("message", (raw) => {

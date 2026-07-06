@@ -17,19 +17,19 @@ import { bridgeTransport, type InvokeHandler, type SendHandler } from "./transpo
 class VirtualWebContents extends EventEmitter {
   private destroyed = false;
 
-  send(channel: string, payload?: unknown): void {
-    bridgeTransport.broadcast(channel, payload);
+  send(channel: string, ...args: any[]): void {
+    bridgeTransport.broadcast(channel, args[0]);
   }
 
   isDestroyed(): boolean {
     return this.destroyed;
   }
 
-  openDevTools(): void {
+  openDevTools(..._args: any[]): void {
     // No-op: Tauri owns devtools.
   }
 
-  setWindowOpenHandler(): void {
+  setWindowOpenHandler(_handler?: (details: { url: string }) => unknown): void {
     // External-link handling lives in the renderer (Tauri opener plugin).
   }
 
@@ -45,9 +45,11 @@ bridgeTransport.senderProvider = () => sharedWebContents;
 
 // --- BrowserWindow --------------------------------------------------------
 
-const openWindows = new Set<VirtualBrowserWindow>();
+const openWindows = new Set<BrowserWindow>();
 
-class VirtualBrowserWindow extends EventEmitter {
+// Named `BrowserWindow` so `import { BrowserWindow } from "electron"` resolves
+// as both a value and a type (Electron's class is used both ways).
+class BrowserWindow extends EventEmitter {
   readonly webContents = sharedWebContents;
 
   constructor(_options?: unknown) {
@@ -58,19 +60,19 @@ class VirtualBrowserWindow extends EventEmitter {
     queueMicrotask(() => this.emit("ready-to-show"));
   }
 
-  static getAllWindows(): VirtualBrowserWindow[] {
+  static getAllWindows(): BrowserWindow[] {
     return [...openWindows];
   }
 
   show(): void {}
   focus(): void {}
-  loadURL(): Promise<void> {
+  loadURL(_url?: string): Promise<void> {
     return Promise.resolve();
   }
-  loadFile(): Promise<void> {
+  loadFile(_path?: string): Promise<void> {
     return Promise.resolve();
   }
-  setBackgroundMaterial(): void {}
+  setBackgroundMaterial(_material?: string): void {}
   isDestroyed(): boolean {
     return false;
   }
@@ -80,39 +82,41 @@ class VirtualBrowserWindow extends EventEmitter {
   }
 }
 
-// Exported under the Electron name.
-const BrowserWindow = VirtualBrowserWindow;
-
 // --- ipcMain --------------------------------------------------------------
 
+// Electron-compatible listener signatures: `any` args so the existing handlers
+// can annotate their input types (e.g. `(event, input: FooInput) => ...`).
+type InvokeListener = (event: IpcMainInvokeEvent, ...args: any[]) => unknown | Promise<unknown>;
+type SendListener = (event: IpcMainEvent, ...args: any[]) => void;
+
 const ipcMain = {
-  handle(channel: string, handler: InvokeHandler): void {
-    bridgeTransport.registerInvoke(channel, handler);
+  handle(channel: string, listener: InvokeListener): void {
+    bridgeTransport.registerInvoke(channel, listener as InvokeHandler);
   },
-  handleOnce(channel: string, handler: InvokeHandler): void {
+  handleOnce(channel: string, listener: InvokeListener): void {
     const wrapped: InvokeHandler = (event, ...args) => {
       bridgeTransport.removeInvoke(channel);
-      return handler(event, ...args);
+      return (listener as InvokeHandler)(event, ...args);
     };
     bridgeTransport.registerInvoke(channel, wrapped);
   },
   removeHandler(channel: string): void {
     bridgeTransport.removeInvoke(channel);
   },
-  on(channel: string, handler: SendHandler) {
-    bridgeTransport.registerSend(channel, handler);
+  on(channel: string, listener: SendListener) {
+    bridgeTransport.registerSend(channel, listener as SendHandler);
     return ipcMain;
   },
-  once(channel: string, handler: SendHandler) {
+  once(channel: string, listener: SendListener) {
     const wrapped: SendHandler = (event, ...args) => {
       bridgeTransport.removeSend(channel, wrapped);
-      handler(event, ...args);
+      (listener as SendHandler)(event, ...args);
     };
     bridgeTransport.registerSend(channel, wrapped);
     return ipcMain;
   },
-  off(channel: string, handler: SendHandler) {
-    bridgeTransport.removeSend(channel, handler);
+  off(channel: string, listener: SendListener) {
+    bridgeTransport.removeSend(channel, listener as SendHandler);
     return ipcMain;
   },
   removeAllListeners(channel?: string) {
@@ -213,10 +217,10 @@ const app = new AppShim();
 // --- dialog (native dialogs handled by the renderer via Tauri plugins) ----
 
 const dialog = {
-  async showOpenDialog(): Promise<{ canceled: boolean; filePaths: string[] }> {
+  async showOpenDialog(_options?: unknown): Promise<{ canceled: boolean; filePaths: string[] }> {
     return { canceled: true, filePaths: [] };
   },
-  async showSaveDialog(): Promise<{ canceled: boolean; filePath?: string }> {
+  async showSaveDialog(_options?: unknown): Promise<{ canceled: boolean; filePath?: string }> {
     return { canceled: true };
   },
   showErrorBox(_title: string, _content: string): void {}
@@ -248,13 +252,16 @@ const nativeImage = {
 };
 
 export { app, BrowserWindow, ipcMain, dialog, nativeTheme, shell, nativeImage };
-export { VirtualBrowserWindow };
 
 // Type aliases so `import type { IpcMain, WebContents } from "electron"` in the
 // existing main-process code keeps resolving once the electron dependency is
 // dropped (tsconfig maps "electron" to this module).
 export type IpcMain = typeof ipcMain;
 export type WebContents = VirtualWebContents;
-export type IpcMainInvokeEvent = { sender: VirtualWebContents };
-export type IpcMainEvent = { sender: VirtualWebContents };
+export interface IpcMainInvokeEvent {
+  sender: VirtualWebContents;
+}
+export interface IpcMainEvent {
+  sender: VirtualWebContents;
+}
 

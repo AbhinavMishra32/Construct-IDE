@@ -2,7 +2,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 
-import type { IpcMain } from "electron";
+import type { IpcMain, WebContents } from "electron";
 
 import type { StoredSettings } from "../config/constructConfig";
 import { ConstructFlowMemoryService, FLOW_MEMORY_FILES } from "../flow/ConstructFlowMemoryService";
@@ -36,7 +36,7 @@ export class ConstructFlowIpcController {
     flowMemory: ConstructFlowMemoryService;
     flow: ConstructFlowService;
     workspacePathForProject: (projectId: string) => string;
-    setActiveWebContents: (webContents: Electron.WebContents) => void;
+    setActiveWebContents: (webContents: WebContents) => void;
     getAppSourceRoot: () => string;
   }) {}
 
@@ -238,7 +238,7 @@ export class ConstructFlowIpcController {
   }
 
   private createPersistedSessionEventSink(
-    webContents: Electron.WebContents,
+    webContents: WebContents,
     project: StoredFlowProject
   ) {
     let pendingRendererPayload: ConstructFlowSessionEvent | null = null;

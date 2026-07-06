@@ -3,19 +3,15 @@
   "private": true,
   "version": "0.6.7-alpha",
   "type": "module",
-  "main": "dist/main.cjs",
   "description": "Construct desktop IDE for agentic project work.",
   "productName": "Construct",
   "desktopName": "cc.tryconstruct.desktop.desktop",
   "author": "Abhinav Mishra <abhinav@tryconstruct.cc>",
   "homepage": "https://github.com/AbhinavMishra32/Construct-IDE#readme",
   "scripts": {
-    "dev": "concurrently -k -n renderer,main,electron \"pnpm dev:renderer\" \"pnpm dev:main\" \"pnpm dev:electron\"",
+    "dev": "tauri dev",
     "dev:renderer": "vite",
-    "dev:main": "tsup --watch",
-    "dev:electron": "wait-on tcp:5173 file:dist/main.cjs file:dist/preload.cjs && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .",
-    "build": "pnpm build:main && pnpm build:renderer",
-    "build:main": "tsup",
+    "build": "pnpm build:renderer && pnpm build:sidecar",
     "build:renderer": "vite build",
     "build:sidecar": "tsup --config tsup.sidecar.config.ts",
     "sidecar:prepare": "pnpm build:sidecar && node scripts/prepare-sidecar.mjs",
@@ -94,10 +90,6 @@
     "@types/react-dom": "^19.2.3",
     "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^4.3.4",
-    "concurrently": "^9.1.2",
-    "cross-env": "^7.0.3",
-    "electron": "^42.1.0",
-    "electron-builder": "^26.15.3",
     "postcss": "^8.5.3",
     "pyright": "^1.1.410",
     "tailwindcss": "^4.3.1",
@@ -105,7 +97,6 @@
     "tsx": "^4.19.2",
     "typescript": "^5.8.2",
     "typescript-language-server": "^5.3.0",
-    "vite": "^6.2.2",
-    "wait-on": "^8.0.3"
+    "vite": "^6.2.2"
   }
 }

@@ -16,7 +16,6 @@ allowBuilds:
   sharp: true
 
 onlyBuiltDependencies:
-  - electron
   - esbuild
   - node-pty
 

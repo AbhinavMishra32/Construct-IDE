@@ -9,7 +9,7 @@ const fileTreeSource = readFileSync(fileURLToPath(new URL("./FileTree.tsx", impo
 const appSource = readFileSync(fileURLToPath(new URL("../ConstructApplication.tsx", import.meta.url)), "utf8");
 const slotPanelSource = readFileSync(fileURLToPath(new URL("../../../../../opaline/packages/ui/src/slot-panel/SlotPanel.tsx", import.meta.url)), "utf8");
 const projectIpcSource = readFileSync(fileURLToPath(new URL("../../../main/ipc/ConstructProjectIpcController.ts", import.meta.url)), "utf8");
-const preloadSource = readFileSync(fileURLToPath(new URL("../../../preload/index.ts", import.meta.url)), "utf8");
+const bridgeSource = readFileSync(fileURLToPath(new URL("../lib/tauriBridge.ts", import.meta.url)), "utf8");
 const flowMemorySource = readFileSync(fileURLToPath(new URL("../../../main/flow/ConstructFlowMemoryService.ts", import.meta.url)), "utf8");
 
 describe("Workspace render stability", () => {
@@ -127,7 +127,7 @@ describe("Workspace render stability", () => {
     assert.match(projectIpcSource, /const relativePath = typeof filename === "string" \? filename\.replace/);
     assert.match(projectIpcSource, /webContents\.send\("construct:project:file-changed", \{/);
     assert.match(projectIpcSource, /paths/);
-    assert.match(preloadSource, /callback\(payload \?\? \{\}\);/);
+    assert.match(bridgeSource, /callback\(payload \?\? \{\}\)/);
 
     assert.match(flowWorkspaceSource, /function isOnlyFlowMemoryChange\(payload: ProjectFileChangePayload\)/);
     assert.match(flowWorkspaceSource, /if \(!isOnlyFlowMemoryChange\(payload\)\) \{\s*requestWorkbenchLayout\("file-system-change"\);/);
