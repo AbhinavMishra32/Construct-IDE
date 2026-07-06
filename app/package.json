@@ -15,6 +15,7 @@
     "build:renderer": "vite build",
     "build:sidecar": "tsup --config tsup.sidecar.config.ts",
     "sidecar:prepare": "pnpm build:sidecar && node scripts/prepare-sidecar.mjs",
+    "bridge:smoke": "pnpm build:sidecar && node scripts/bridge-smoke.mjs",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
