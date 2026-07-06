@@ -61,7 +61,11 @@ pub fn run() {
                 .expect("failed to create sidecar command")
                 .args([js_arg]);
             if let Some(app_path) = resolve_app_path(&handle) {
-                command = command.env("CONSTRUCT_APP_PATH", app_path);
+                // Run from the app root so process.loadEnvFile(), process.cwd()
+                // (LSP), and relative paths resolve exactly as under Electron.
+                command = command
+                    .current_dir(PathBuf::from(&app_path))
+                    .env("CONSTRUCT_APP_PATH", app_path);
             }
             if !cfg!(debug_assertions) {
                 command = command.env("CONSTRUCT_PACKAGED", "1");
