@@ -7,7 +7,7 @@ const failures = [];
 
 const packageJson = readJson("package.json");
 const appPackageJson = readJson("app/package.json");
-const builderConfig = read("app/electron-builder.yml");
+const tauriConfig = readJson("app/src-tauri/tauri.conf.json");
 const viteConfig = read("app/vite.config.ts");
 const ciWorkflow = read(".github/workflows/ci.yml");
 const releaseWorkflow = read(".github/workflows/release.yml");
@@ -23,12 +23,31 @@ check(packageJson.version === appPackageJson.version, "Root and app package vers
 check(exists("opaline/packages/ui/src"), "opaline/packages/ui/src exists for the @opaline/ui CSS copy step.");
 check(
   /base:\s*["']\.\/["']/.test(viteConfig),
-  "Vite renderer build uses relative asset URLs so Electron loadFile can load packaged assets."
+  "Vite renderer build uses relative asset URLs so the Tauri webview can load packaged assets."
 );
 check(
   copyCss.includes("dirname(dirname(fileURLToPath(import.meta.url)))") && !copyCss.includes(".replace(/\\/scripts$/"),
   "Opaline CSS copy script derives packageRoot with platform-safe path helpers."
 );
+
+// --- Tauri packaging configuration ----------------------------------------
+check(exists("app/src-tauri/tauri.conf.json"), "Tauri config exists at app/src-tauri/tauri.conf.json.");
+check(exists("app/src-tauri/Cargo.toml"), "Tauri Rust crate exists at app/src-tauri/Cargo.toml.");
+check(tauriConfig.version === appPackageJson.version, "tauri.conf.json version stays aligned with app/package.json.");
+check(tauriConfig.identifier === "cc.tryconstruct.desktop", "tauri.conf.json keeps the cc.tryconstruct.desktop identifier.");
+check(
+  Array.isArray(tauriConfig.bundle?.externalBin) && tauriConfig.bundle.externalBin.includes("binaries/construct-sidecar"),
+  "tauri.conf.json bundles the Node sidecar as an external binary."
+);
+check(
+  tauriConfig.build?.beforeBuildCommand?.includes("tauri:before-build"),
+  "tauri.conf.json beforeBuildCommand runs the before-build step that stages the sidecar."
+);
+check(
+  appPackageJson.scripts?.["tauri:before-build"]?.includes("sidecar:prepare"),
+  "app tauri:before-build stages the sidecar before packaging."
+);
+check(exists("app/scripts/prepare-sidecar.mjs"), "prepare-sidecar.mjs exists to stage the Node runtime + sidecar bundle.");
 
 check(gitmodules.includes('path = opaline'), ".gitmodules still declares the opaline submodule.");
 check(
@@ -59,20 +78,14 @@ check(releaseWorkflow.includes("actions/upload-artifact@v5"), "Release uses acti
 check(releaseWorkflow.includes("actions/download-artifact@v5"), "Release uses actions/download-artifact@v5.");
 check(releaseWorkflow.includes("node scripts/release/preflight.mjs"), "Release workflow runs the no-build preflight before packaging.");
 check(releaseWorkflow.includes("node scripts/release/publish-gh.mjs"), "Release workflow delegates GitHub publishing to the idempotent publish script.");
-check(releaseWorkflow.includes("shell: bash"), "Release package step explicitly uses bash for cross-platform shell cleanup.");
-check(
-  releaseWorkflow.includes('if [ -z "$CSC_LINK" ]; then unset CSC_LINK CSC_KEY_PASSWORD; fi') &&
-    releaseWorkflow.includes('if [ -z "$APPLE_ID" ]; then unset APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; fi'),
-  "Release package step unsets empty macOS signing secrets before invoking electron-builder."
-);
+check(releaseWorkflow.includes("shell: bash"), "Release package step explicitly uses bash for cross-platform shell steps.");
 
-const topArtifactName = getScalar(builderConfig, "artifactName");
-const nsisArtifactName = getSectionScalar(builderConfig, "nsis", "artifactName");
-const portableArtifactName = getSectionScalar(builderConfig, "portable", "artifactName");
-check(Boolean(nsisArtifactName), "electron-builder config gives NSIS a target-specific artifactName.");
-check(Boolean(portableArtifactName), "electron-builder config gives portable Windows builds a target-specific artifactName.");
-check(nsisArtifactName !== portableArtifactName, "NSIS and portable Windows artifacts cannot resolve to the same .exe asset name.");
-checkUniquePlannedArtifacts({ topArtifactName, nsisArtifactName, portableArtifactName });
+// --- Tauri release workflow -----------------------------------------------
+check(releaseWorkflow.includes("dtolnay/rust-toolchain"), "Release installs a Rust toolchain for the Tauri build.");
+check(releaseWorkflow.includes("pnpm tauri build"), "Release packages the desktop app with `pnpm tauri build`.");
+check(releaseWorkflow.includes("libwebkit2gtk-4.1-dev"), "Release installs the Linux WebKitGTK dependency Tauri needs.");
+check(releaseWorkflow.includes("target/release/bundle"), "Release uploads artifacts from the Tauri bundle directory.");
+check(!releaseWorkflow.includes("electron-builder"), "Release no longer invokes electron-builder.");
 
 check(publishScript.includes("--clobber"), "GitHub release publisher uploads assets with --clobber.");
 check(!/gh release create "\\$TAG" \\$FILES/.test(releaseWorkflow), "Release workflow does not upload assets through gh release create.");
@@ -103,71 +116,4 @@ function check(condition, message) {
   if (!condition) {
     failures.push(message);
   }
-}
-
-function getScalar(source, key) {
-  const match = source.match(new RegExp(`^${escapeRegExp(key)}:\\s*(.+)$`, "m"));
-  return match?.[1]?.trim() ?? null;
-}
-
-function getSectionScalar(source, section, key) {
-  const lines = source.split(/\r?\n/);
-  let inSection = false;
-  for (const line of lines) {
-    if (!line.trim() || line.trimStart().startsWith("#")) {
-      continue;
-    }
-    if (!line.startsWith(" ") && line.endsWith(":")) {
-      inSection = line.slice(0, -1) === section;
-      continue;
-    }
-    if (inSection) {
-      const match = line.match(new RegExp(`^\\s{2}${escapeRegExp(key)}:\\s*(.+)$`));
-      if (match) {
-        return match[1].trim();
-      }
-    }
-  }
-  return null;
-}
-
-function checkUniquePlannedArtifacts({ topArtifactName, nsisArtifactName, portableArtifactName }) {
-  const version = packageJson.version;
-  const planned = [
-    ["mac-dmg", topArtifactName, { version, os: "mac", arch: "arm64", ext: "dmg" }],
-    ["mac-zip", topArtifactName, { version, os: "mac", arch: "arm64", ext: "zip" }],
-    ["win-nsis", nsisArtifactName, { version, os: "win", arch: "x64", ext: "exe" }],
-    ["win-portable", portableArtifactName, { version, os: "win", arch: "x64", ext: "exe" }],
-    ["win-zip", topArtifactName, { version, os: "win", arch: "x64", ext: "zip" }],
-    ["linux-AppImage", topArtifactName, { version, os: "linux", arch: "x64", ext: "AppImage" }],
-    ["linux-deb", topArtifactName, { version, os: "linux", arch: "x64", ext: "deb" }],
-    ["linux-tar.gz", topArtifactName, { version, os: "linux", arch: "x64", ext: "tar.gz" }],
-  ];
-  const seen = new Map();
-  for (const [label, pattern, values] of planned) {
-    if (!pattern) {
-      continue;
-    }
-    const name = expandArtifactPattern(pattern, values);
-    const previous = seen.get(name);
-    check(!previous, `Planned release asset name "${name}" is shared by ${previous ?? "unknown"} and ${label}.`);
-    seen.set(name, label);
-  }
-}
-
-function expandArtifactPattern(pattern, values) {
-  return pattern.replace(/\${([_a-zA-Z./*+]+)}/g, (match, key) => {
-    if (key in values) {
-      return values[key];
-    }
-    if (key === "productName" || key === "name") {
-      return "Construct";
-    }
-    failures.push(`Unsupported artifactName macro ${match} in "${pattern}".`);
-    return match;
-  });
-}
-
-function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
