@@ -149,6 +149,19 @@ export async function installConstructBridge(): Promise<void> {
     client.invoke<T>(channel, ...args);
   const subscribe = (channel: string) => (callback: (payload: unknown) => void) =>
     client.on(channel, callback);
+  const nativeSubscribe = (channel: string) => (callback: (payload: unknown) => void) => {
+    let disposed = false;
+    let unlisten: (() => void) | null = null;
+    void listenNative(channel, (event) => callback(event.payload))
+      .then((stop) => {
+        if (disposed) stop();
+        else unlisten = stop;
+      });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  };
 
   const api = {
     setThemeSource: async (theme: "light" | "dark" | "system") => {
@@ -250,13 +263,13 @@ export async function installConstructBridge(): Promise<void> {
     gitStatus: (projectId: string) => invokeNative("rust_git_status", { projectId }),
     gitCommit: (input: unknown) => invokeNative("rust_git_commit", { input }),
     gitPush: (projectId: string) => invokeNative("rust_git_push", { projectId }),
-    terminalCreate: (input: unknown) => invoke("construct:project:terminal-create", input),
-    terminalInput: (input: unknown) => invoke("construct:project:terminal-input", input),
-    terminalResize: (input: unknown) => invoke("construct:project:terminal-resize", input),
-    terminalKill: (input: unknown) => invoke("construct:project:terminal-kill", input),
+    terminalCreate: (input: unknown) => invokeNative("rust_terminal_create", { input }),
+    terminalInput: (input: unknown) => invokeNative("rust_terminal_input", { input }),
+    terminalResize: (input: unknown) => invokeNative("rust_terminal_resize", { input }),
+    terminalKill: (input: unknown) => invokeNative("rust_terminal_kill", { input }),
     debugProcesses: () => invoke("construct:debug:processes"),
-    onTerminalData: subscribe("construct:project:terminal-data"),
-    onTerminalExit: subscribe("construct:project:terminal-exit"),
+    onTerminalData: nativeSubscribe("construct:project:terminal-data"),
+    onTerminalExit: nativeSubscribe("construct:project:terminal-exit"),
     onVerifyLog: subscribe("construct:project:verify-log"),
     onSelectionExplanationLog: subscribe("construct:project:explain-selection-log"),
     onAgentLog: subscribe("construct:project:agent-log"),

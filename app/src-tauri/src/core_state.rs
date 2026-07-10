@@ -3,6 +3,7 @@ use crate::git::GitService;
 use crate::paths::DataPaths;
 use crate::projects::ProjectStore;
 use crate::storage::{Database, UiStateStore};
+use crate::terminal::TerminalService;
 use crate::workspace::{WorkspaceService, WorkspaceWatcher};
 
 pub struct CoreState {
@@ -11,6 +12,7 @@ pub struct CoreState {
     pub workspace: WorkspaceService,
     pub watcher: WorkspaceWatcher,
     pub git: GitService,
+    pub terminal: TerminalService,
 }
 
 impl CoreState {
@@ -19,12 +21,14 @@ impl CoreState {
         let database = Database::open(&paths.database)?;
         let projects = ProjectStore::new(Database::open(&paths.database)?);
         let git = GitService::new(ProjectStore::new(Database::open(&paths.database)?));
+        let terminal = TerminalService::new(ProjectStore::new(Database::open(&paths.database)?));
         Ok(Self {
             paths,
             ui_state: UiStateStore::new(database),
             workspace: WorkspaceService::new(projects),
             watcher: WorkspaceWatcher::default(),
             git,
+            terminal,
         })
     }
 }

@@ -7,6 +7,7 @@ mod paths;
 mod process;
 mod projects;
 mod storage;
+mod terminal;
 mod window;
 mod workspace;
 
@@ -26,6 +27,10 @@ pub fn run() {
             commands::git::rust_git_status,
             commands::git::rust_git_commit,
             commands::git::rust_git_push,
+            commands::terminal::rust_terminal_create,
+            commands::terminal::rust_terminal_input,
+            commands::terminal::rust_terminal_resize,
+            commands::terminal::rust_terminal_kill,
             commands::workspace::rust_workspace_list,
             commands::workspace::rust_workspace_read,
             commands::workspace::rust_workspace_write,
@@ -55,6 +60,7 @@ pub fn run() {
             if let RunEvent::Exit = event {
                 if let Some(state) = app.try_state::<core_state::CoreState>() {
                     let _ = state.watcher.stop();
+                    state.terminal.stop_all();
                 }
                 legacy_sidecar::stop(app);
             }
