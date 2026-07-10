@@ -1,8 +1,10 @@
 mod commands;
 mod core_state;
 mod error;
+mod git;
 mod legacy_sidecar;
 mod paths;
+mod process;
 mod projects;
 mod storage;
 mod window;
@@ -21,6 +23,9 @@ pub fn run() {
             commands::system::rust_ui_state_set,
             commands::system::rust_storage_flush,
             commands::system::rust_storage_metrics,
+            commands::git::rust_git_status,
+            commands::git::rust_git_commit,
+            commands::git::rust_git_push,
             commands::workspace::rust_workspace_list,
             commands::workspace::rust_workspace_read,
             commands::workspace::rust_workspace_write,
