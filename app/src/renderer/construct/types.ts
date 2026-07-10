@@ -240,6 +240,13 @@ export type LspLanguageId = "typescript" | "python" | "rust" | "go" | "java" | "
 export type LspStartResult = {
   languages: LspLanguageId[];
   workspacePath: string;
+  projectRoots?: Partial<Record<LspLanguageId, string>>;
+  skipped?: Partial<Record<LspLanguageId, {
+    blockedUntil?: string;
+    memoryLimitMb?: number;
+    message: string;
+    reason: "no-cargo-project" | "resource-cooldown" | "not-installed";
+  }>>;
 };
 
 export type ConstructLintWarning = {
@@ -784,6 +791,7 @@ export type ConstructProjectsApi = {
   }): Promise<ProjectRecord>;
   listFiles(projectId: string): Promise<WorkspaceTreeNode[]>;
   readFile(input: { projectId: string; path: string }): Promise<WorkspaceFile>;
+  readLspSourceFile(input: { projectId: string; path: string }): Promise<WorkspaceFile>;
   writeFile(input: {
     projectId: string;
     path: string;
@@ -857,12 +865,16 @@ export type ConstructProjectsApi = {
   onMainLog(callback: (payload: { level: string; message: string; timestamp: string }) => void): () => void;
   onLspInstallProgress(callback: (payload: { language?: "all" | LspLanguageId; type: "stdout" | "stderr"; text: string }) => void): () => void;
   lspGetStatus(projectId: string): Promise<Record<LspLanguageId, {
+    blockedUntil?: string;
     command: string;
+    detail?: string;
     installCommand: string;
     installed: boolean;
     label: string;
+    memoryLimitMb?: number;
+    memoryMb?: number;
     resolvedPath: string | null;
-    status: "not-installed" | "running" | "stopped" | "installing";
+    status: "not-installed" | "running" | "stopped" | "installing" | "blocked";
   }>>;
   lspInstall(input: string | { projectId: string; language?: LspLanguageId }): Promise<boolean>;
   lspStart(projectId: string): Promise<LspStartResult>;

@@ -1,6 +1,7 @@
 import path from "node:path";
 import { existsSync, watch, type FSWatcher } from "node:fs";
 import { cp, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 
 import type { IpcMain, WebContents } from "electron";
 
@@ -9,6 +10,8 @@ import { applyLiveFlowProjectSnapshot } from "../flow/ConstructFlowProjectSnapsh
 import { ConstructProjectGitService } from "../projects/ConstructProjectGitService";
 import { isFlowProject, isTapeProject, type ProjectSummary, type StoredProject } from "../projects/ConstructProjectTypes";
 import { ConstructProjectWorkspaceService, isIgnoredWorkspacePath } from "../projects/ConstructProjectWorkspaceService";
+
+const LSP_EXTERNAL_SOURCE_MAX_BYTES = 10 * 1024 * 1024;
 
 export class ConstructProjectIpcController {
   private activeWatcher: FSWatcher | null = null;
@@ -346,6 +349,31 @@ export class ConstructProjectIpcController {
       };
     });
 
+    ipcMain.handle("construct:lsp:read-source-file", async (_event, input) => {
+      const project = await this.projectById(input.projectId);
+      if (!input || typeof input.path !== "string" || !input.path) {
+        throw new Error("A source file path is required.");
+      }
+
+      const target = path.resolve(input.path);
+      if (!isAllowedLspSourcePath(project.workspacePath, target)) {
+        throw new Error(`LSP source path is outside allowed source roots: ${input.path}`);
+      }
+
+      const fileStat = await stat(target);
+      if (!fileStat.isFile()) {
+        throw new Error(`Not a file: ${input.path}`);
+      }
+      if (fileStat.size > LSP_EXTERNAL_SOURCE_MAX_BYTES) {
+        throw new Error(`LSP source file is too large to open safely: ${input.path}`);
+      }
+
+      return {
+        path: target,
+        content: await readFile(target, "utf8")
+      };
+    });
+
     ipcMain.handle("construct:project:write-file", async (_event, input) => {
       const project = await this.projectById(input.projectId);
       const target = this.options.workspace.safeProjectPath(project, input.path);
@@ -440,4 +468,33 @@ export class ConstructProjectIpcController {
     }
     return project;
   }
+}
+
+function isAllowedLspSourcePath(workspacePath: string, target: string): boolean {
+  if (isPathInside(workspacePath, target)) {
+    return true;
+  }
+
+  if (path.extname(target) !== ".rs") {
+    return false;
+  }
+
+  return lspExternalSourceRoots().some((root) => isPathInside(root, target));
+}
+
+function lspExternalSourceRoots(): string[] {
+  const cargoHome = process.env.CARGO_HOME || path.join(homedir(), ".cargo");
+  const rustupHome = process.env.RUSTUP_HOME || path.join(homedir(), ".rustup");
+  return [
+    path.join(cargoHome, "registry", "src"),
+    path.join(cargoHome, "git", "checkouts"),
+    path.join(rustupHome, "toolchains")
+  ];
+}
+
+function isPathInside(root: string, target: string): boolean {
+  const resolvedRoot = path.resolve(root);
+  const resolvedTarget = path.resolve(target);
+  const relative = path.relative(resolvedRoot, resolvedTarget);
+  return relative === "" || (!!relative && !relative.startsWith("..") && !path.isAbsolute(relative));
 }

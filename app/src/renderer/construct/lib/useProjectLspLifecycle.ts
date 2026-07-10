@@ -3,10 +3,10 @@ import { useEffect } from "react";
 import type { ProjectRecord } from "../types";
 import { logStore } from "./logStore";
 import { lspClient } from "./lspClient";
-import { restartProjectLsp } from "./lspRuntime";
 import { apiTracker } from "./apiTracker";
 
 type LspProject = Pick<ProjectRecord, "id" | "workspacePath"> | null;
+type SkippedLanguageMap = Partial<Record<string, { message: string; reason: string }>>;
 
 export function useProjectLspLifecycle(project: LspProject): void {
   useEffect(() => {
@@ -22,14 +22,18 @@ export function useProjectLspLifecycle(project: LspProject): void {
             if (cancelled) {
               return;
             }
+            logSkippedLanguages(result.skipped);
             if (result.languages.length > 0) {
               const label = result.languages
                 .map(lspStatusLabel)
                 .join("/");
               apiTracker.setLspStatus(label);
-              void lspClient.initialize(project.workspacePath, { languages: result.languages });
+              void lspClient.initialize(project.workspacePath, {
+                languages: result.languages,
+                projectRoots: result.projectRoots
+              });
             } else {
-              apiTracker.setLspStatus("Inactive");
+              apiTracker.setLspStatus(hasResourceCooldown(result.skipped) ? "Blocked" : "Inactive");
               console.log("[LSP Client] No supported language servers were started for this project.");
             }
           })
@@ -56,61 +60,23 @@ export function useProjectLspLifecycle(project: LspProject): void {
     };
   }, [project?.id, project?.workspacePath]);
 
-  useEffect(() => {
-    if (!project) {
-      return;
+}
+
+function logSkippedLanguages(result?: SkippedLanguageMap): void {
+  if (!result) {
+    return;
+  }
+
+  for (const [language, skip] of Object.entries(result)) {
+    if (!skip) {
+      continue;
     }
+    logStore.addLog("lsp-server", `[${language}] ${skip.message}`, "warn");
+  }
+}
 
-    let refreshTimer: number | null = null;
-    let refreshInFlight = false;
-    let lastRefreshAt = Date.now();
-    const mountedAt = Date.now();
-
-    const refreshLsp = () => {
-      const enabled = localStorage.getItem("construct.lsp.enabled") !== "false";
-      if (!enabled || document.visibilityState !== "visible" || refreshInFlight) {
-        return;
-      }
-
-      const now = Date.now();
-      if (now - mountedAt < 10_000 || now - lastRefreshAt < 10_000) {
-        return;
-      }
-      lastRefreshAt = now;
-
-      if (refreshTimer !== null) {
-        window.clearTimeout(refreshTimer);
-      }
-
-      refreshTimer = window.setTimeout(() => {
-        refreshInFlight = true;
-        logStore.addLog("lsp-server", "Refreshing language server after app focus.", "info");
-        void restartProjectLsp(project.id)
-          .then(async (result) => {
-            if (result.languages.length > 0) {
-              await lspClient.initialize(project.workspacePath, {
-                force: true,
-                languages: result.languages
-              });
-            }
-          })
-          .finally(() => {
-            refreshInFlight = false;
-          });
-      }, 250);
-    };
-
-    window.addEventListener("focus", refreshLsp);
-    document.addEventListener("visibilitychange", refreshLsp);
-
-    return () => {
-      if (refreshTimer !== null) {
-        window.clearTimeout(refreshTimer);
-      }
-      window.removeEventListener("focus", refreshLsp);
-      document.removeEventListener("visibilitychange", refreshLsp);
-    };
-  }, [project?.id, project?.workspacePath]);
+function hasResourceCooldown(result?: SkippedLanguageMap): boolean {
+  return Object.values(result ?? {}).some((skip) => skip?.reason === "resource-cooldown");
 }
 
 function lspStatusLabel(language: string): string {

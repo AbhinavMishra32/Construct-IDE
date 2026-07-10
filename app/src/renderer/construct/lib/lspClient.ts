@@ -1,4 +1,5 @@
 import { monaco } from "../../monaco";
+import { rustAnalyzerConfigurationForWorkspace } from "../../../shared/constructLsp";
 import { logStore } from "./logStore";
 
 type LspLanguage = "typescript" | "python" | "rust" | "go" | "java" | "cpp" | "csharp" | "html" | "css" | "json";
@@ -12,10 +13,12 @@ class LspClientClass {
   private activeWorkspacePath = "";
   private modelListeners = new Map<string, monaco.IDisposable[]>();
   private initializedLanguages = new Set<LspLanguage>();
+  private openedDocuments = new Set<string>();
   private workspaceFiles: string[] = [];
   private initializationToken = 0;
+  private projectRoots: Partial<Record<LspLanguage, string>> = {};
 
-  async initialize(workspacePath: string, options: { force?: boolean; languages?: LspLanguage[] } = {}) {
+  async initialize(workspacePath: string, options: { force?: boolean; languages?: LspLanguage[]; projectRoots?: Partial<Record<LspLanguage, string>> } = {}) {
     if (!options.force && this.isInitialized && this.activeWorkspacePath === workspacePath) {
       return;
     }
@@ -23,6 +26,7 @@ class LspClientClass {
     this.dispose();
     const token = ++this.initializationToken;
     this.activeWorkspacePath = workspacePath;
+    this.projectRoots = options.projectRoots ?? {};
     this.isInitialized = true;
 
     console.log("[LSP Client] Initializing handshake for:", workspacePath);
@@ -31,7 +35,8 @@ class LspClientClass {
       const languages = options.languages?.length ? options.languages : (["typescript"] as LspLanguage[]);
       for (const language of languages) {
         try {
-          await this.initializeLanguage(language, workspacePath, token);
+          const rootPath = this.projectRoots[language] ?? workspacePath;
+          await this.initializeLanguage(language, rootPath, token);
           if (token !== this.initializationToken) {
             return;
           }
@@ -152,7 +157,9 @@ class LspClientClass {
               includeCompletionsForModuleExports: true
             }
           }
-        : undefined,
+        : language === "rust"
+          ? rustAnalyzerConfigurationForWorkspace(workspacePath)
+          : undefined,
       workspaceFolders: [{
         uri: "file://" + workspacePath,
         name: workspacePath.split("/").pop() || "workspace"
@@ -225,8 +232,8 @@ class LspClientClass {
     if (listeners) {
       listeners.forEach((l) => l.dispose());
       this.modelListeners.delete(uri);
+      this.closeModel(model);
     }
-    this.closeModel(model);
   }
 
   private openModel(model: monaco.editor.ITextModel) {
@@ -244,6 +251,7 @@ class LspClientClass {
         text: model.getValue()
       }
     }, language.server);
+    this.openedDocuments.add(uri);
   }
 
   private changeModel(model: monaco.editor.ITextModel) {
@@ -268,10 +276,12 @@ class LspClientClass {
 
     const language = languageForModel(model);
     if (!language || !this.initializedLanguages.has(language.server)) return;
+    if (!this.openedDocuments.has(uri)) return;
 
     this.sendNotification("textDocument/didClose", {
       textDocument: { uri }
     }, language.server);
+    this.openedDocuments.delete(uri);
 
     monaco.editor.setModelMarkers(model, "lsp", []);
   }
@@ -541,6 +551,7 @@ class LspClientClass {
     this.isInitialized = false;
     this.activeWorkspacePath = "";
     this.initializedLanguages.clear();
+    this.openedDocuments.clear();
     this.workspaceFiles = [];
 
     this.disposables.forEach((d) => {

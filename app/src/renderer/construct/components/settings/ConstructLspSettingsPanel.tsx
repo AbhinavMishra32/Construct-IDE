@@ -67,11 +67,18 @@ export function ConstructLspSettingsPanel({
                   title={server.label}
                   description={
                     <div className="flex flex-col items-start gap-1">
-                      <Badge variant={server.status === "running" ? "default" : server.status === "not-installed" ? "destructive" : "secondary"}>
+                      <Badge variant={server.status === "running" ? "default" : server.status === "not-installed" || server.status === "blocked" ? "destructive" : "secondary"}>
                         {server.status.replace("-", " ")}
                       </Badge>
                       <code>{server.command}</code>
                       <small>{server.resolvedPath ?? server.installCommand}</small>
+                      {server.memoryLimitMb ? (
+                        <small>
+                          Memory guard: {server.memoryLimitMb} MB{server.memoryMb ? `, last seen ${server.memoryMb} MB` : ""}
+                        </small>
+                      ) : null}
+                      {server.detail ? <small>{server.detail}</small> : null}
+                      {server.blockedUntil ? <small>Retry after {new Date(server.blockedUntil).toLocaleTimeString()}</small> : null}
                     </div>
                   }
                   control={

@@ -11,6 +11,8 @@ const slotPanelSource = readFileSync(fileURLToPath(new URL("../../../../../opali
 const projectIpcSource = readFileSync(fileURLToPath(new URL("../../../main/ipc/ConstructProjectIpcController.ts", import.meta.url)), "utf8");
 const bridgeSource = readFileSync(fileURLToPath(new URL("../lib/tauriBridge.ts", import.meta.url)), "utf8");
 const flowMemorySource = readFileSync(fileURLToPath(new URL("../../../main/flow/ConstructFlowMemoryService.ts", import.meta.url)), "utf8");
+const lspClientSource = readFileSync(fileURLToPath(new URL("../lib/lspClient.ts", import.meta.url)), "utf8");
+const lspLifecycleSource = readFileSync(fileURLToPath(new URL("../lib/useProjectLspLifecycle.ts", import.meta.url)), "utf8");
 
 describe("Workspace render stability", () => {
   it("uses stable empty arrays for optional project data read during render", () => {
@@ -138,5 +140,30 @@ describe("Workspace render stability", () => {
     assert.match(flowMemorySource, /legacyMemoryFilePath/);
     assert.match(flowWorkspaceSource, /return `\.construct\/\$\{file\}`;/);
     assert.doesNotMatch(flowWorkspaceSource, /return `\.construct\/flow-memory\/\$\{file\}`;/);
+  });
+
+  it("keeps LSP lifecycle stable after project open", () => {
+    assert.doesNotMatch(lspLifecycleSource, /restartProjectLsp/);
+    assert.doesNotMatch(lspLifecycleSource, /addEventListener\("focus"/);
+    assert.doesNotMatch(lspLifecycleSource, /visibilitychange/);
+
+    assert.match(lspClientSource, /private openedDocuments = new Set<string>\(\);/);
+    assert.match(lspClientSource, /if \(listeners\) \{[\s\S]*this\.closeModel\(model\);[\s\S]*\}/);
+    assert.match(lspClientSource, /this\.openedDocuments\.add\(uri\);/);
+    assert.match(lspClientSource, /if \(!this\.openedDocuments\.has\(uri\)\) return;/);
+    assert.match(lspClientSource, /this\.openedDocuments\.delete\(uri\);/);
+  });
+
+  it("opens LSP dependency source files as read-only external documents", () => {
+    assert.match(workspaceSource, /function resolveNavigableFilePath\(rawPath: string, workspacePath: string\): string \| null/);
+    assert.match(workspaceSource, /relativeWorkspacePath\(workspacePath, withoutFileScheme\) \?\? withoutFileScheme/);
+    assert.match(workspaceSource, /const externalSource = isExternalSourcePath\(nextPath, project\.workspacePath\);/);
+    assert.match(workspaceSource, /readLspSourceFile\(\{ projectId: project\.id, path: nextPath \}\)/);
+    assert.match(workspaceSource, /!externalSource && options\.persist !== false/);
+    assert.match(projectIpcSource, /construct:lsp:read-source-file/);
+    assert.match(projectIpcSource, /LSP_EXTERNAL_SOURCE_MAX_BYTES/);
+    assert.match(projectIpcSource, /path\.join\(cargoHome, "registry", "src"\)/);
+    assert.match(projectIpcSource, /path\.join\(rustupHome, "toolchains"\)/);
+    assert.match(lspClientSource, /rustAnalyzerConfigurationForWorkspace\(workspacePath\)/);
   });
 });

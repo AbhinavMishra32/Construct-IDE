@@ -218,6 +218,7 @@ export async function installConstructBridge(): Promise<void> {
     updateProjectTape: (input: unknown) => invoke("construct:project:update-tape", input),
     listFiles: (projectId: string) => invoke("construct:project:list-files", projectId),
     readFile: (input: unknown) => invoke("construct:project:read-file", input),
+    readLspSourceFile: (input: unknown) => invoke("construct:lsp:read-source-file", input),
     writeFile: (input: unknown) => invoke("construct:project:write-file", input),
     deleteFile: (input: unknown) => invoke("construct:project:delete-file", input),
     renameFile: (input: unknown) => invoke("construct:project:rename-file", input),

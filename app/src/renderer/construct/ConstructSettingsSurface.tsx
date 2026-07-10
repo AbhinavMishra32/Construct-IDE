@@ -308,7 +308,11 @@ export function ConstructSettingsSurface({
             const startResult = await restartProjectLsp(projectId);
             setLspStatus(await window.constructProjects.lspGetStatus(projectId));
             if (startResult.languages.length > 0) {
-              void lspClient.initialize(project?.workspacePath || "", { force: true, languages: startResult.languages });
+              void lspClient.initialize(project?.workspacePath || "", {
+                force: true,
+                languages: startResult.languages,
+                projectRoots: startResult.projectRoots
+              });
             }
           }
         }
@@ -340,7 +344,11 @@ export function ConstructSettingsSurface({
         const startResult = await restartProjectLsp(projectId);
         setLspStatus(await window.constructProjects.lspGetStatus(projectId));
         if (startResult.languages.length > 0) {
-          void lspClient.initialize(project?.workspacePath || "", { force: true, languages: startResult.languages });
+          void lspClient.initialize(project?.workspacePath || "", {
+            force: true,
+            languages: startResult.languages,
+            projectRoots: startResult.projectRoots
+          });
         }
       } else {
         setLspStatus(await window.constructProjects.lspGetStatus(projectId));
@@ -359,7 +367,11 @@ export function ConstructSettingsSurface({
       const startResult = await restartProjectLsp(projectId);
       setLspStatus(await window.constructProjects.lspGetStatus(projectId));
       if (startResult.languages.length > 0) {
-        void lspClient.initialize(project?.workspacePath || "", { force: true, languages: startResult.languages });
+        void lspClient.initialize(project?.workspacePath || "", {
+          force: true,
+          languages: startResult.languages,
+          projectRoots: startResult.projectRoots
+        });
       }
     } catch {}
   }
@@ -380,7 +392,11 @@ export function ConstructSettingsSurface({
       const startResult = await restartProjectLsp(projectId);
       setLspStatus(await window.constructProjects.lspGetStatus(projectId));
       if (startResult.languages.length > 0) {
-        void lspClient.initialize(project?.workspacePath || "", { force: true, languages: startResult.languages });
+        void lspClient.initialize(project?.workspacePath || "", {
+          force: true,
+          languages: startResult.languages,
+          projectRoots: startResult.projectRoots
+        });
       }
     } catch {}
   }

@@ -48,8 +48,10 @@ import {
 } from "./workspace/workspaceKnowledge";
 import {
   generateCopyPath,
+  isAbsoluteFilesystemPath,
   normalizeOptionalWorkspacePath,
-  normalizeWorkspacePath
+  normalizeWorkspacePath,
+  relativeWorkspacePath
 } from "./workspace/workspacePaths";
 import { flattenTree } from "./workspace/workspaceTree";
 import {
@@ -65,6 +67,7 @@ import {
   onVerifyLog,
   onConstructInteractSessionEvent,
   readFile,
+  readLspSourceFile,
   renameFile,
   runConstructInteract,
   updateProject,
@@ -113,6 +116,20 @@ const EMPTY_GENERATED_LIVE_STEPS: GeneratedLiveStep[] = [];
 const EMPTY_GIT_MILESTONES: GitMilestone[] = [];
 const EMPTY_REFERENCE_CARDS: ReferenceCardData[] = [];
 const EMPTY_TARGETS: ConstructTarget[] = [];
+
+function resolveNavigableFilePath(rawPath: string, workspacePath: string): string | null {
+  const withoutFileScheme = rawPath.replace(/^file:\/\//, "");
+  if (isAbsoluteFilesystemPath(withoutFileScheme)) {
+    return relativeWorkspacePath(workspacePath, withoutFileScheme) ?? withoutFileScheme;
+  }
+
+  const normalized = normalizeWorkspacePath(withoutFileScheme);
+  return normalized || null;
+}
+
+function isExternalSourcePath(filePath: string, workspacePath: string): boolean {
+  return isAbsoluteFilesystemPath(filePath) && relativeWorkspacePath(workspacePath, filePath) == null;
+}
 
 export function Workspace({
   project,
@@ -883,17 +900,20 @@ export function Workspace({
   }
 
   async function navigateToFile(rawPath: string, options: { persist?: boolean } = {}) {
-    const nextPath = normalizeOptionalWorkspacePath(rawPath, project.workspacePath);
+    const nextPath = resolveNavigableFilePath(rawPath, project.workspacePath);
     if (!nextPath) {
       return;
     }
+    const externalSource = isExternalSourcePath(nextPath, project.workspacePath);
 
     const sequence = fileLoadSequenceRef.current + 1;
     fileLoadSequenceRef.current = sequence;
     let file = fileContentsRef.current[nextPath];
     if (file == null) {
       try {
-        file = (await readFile({ projectId: project.id, path: nextPath })).content;
+        file = externalSource
+          ? (await readLspSourceFile({ projectId: project.id, path: nextPath })).content
+          : (await readFile({ projectId: project.id, path: nextPath })).content;
       } catch (error) {
         logStore.addLog(
           "main",
@@ -913,7 +933,7 @@ export function Workspace({
     fileContentsRef.current = { ...fileContentsRef.current, [nextPath]: file };
     setActiveFileContent(file);
     setDocumentSession((session) => activateDocument(session, nextPath));
-    if (options.persist !== false && project.activeFilePath !== nextPath) {
+    if (!externalSource && options.persist !== false && project.activeFilePath !== nextPath) {
       await persistProject({ activeFilePath: nextPath });
     }
   }

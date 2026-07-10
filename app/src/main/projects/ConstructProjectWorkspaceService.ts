@@ -26,6 +26,7 @@ const ignoredWorkspaceDirectoryNames = new Set([
   "dist",
   "env",
   "node_modules",
+  "target",
   "venv"
 ]);
 
