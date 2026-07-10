@@ -11,6 +11,12 @@ pub struct OkResponse {
     ok: bool,
 }
 
+impl OkResponse {
+    pub fn ok() -> Self {
+        Self { ok: true }
+    }
+}
+
 #[tauri::command]
 pub fn rust_ui_state_get(state: State<'_, CoreState>, input: UiStateInput) -> CommandResult<Value> {
     state.ui_state.get(&input)
@@ -22,13 +28,13 @@ pub fn rust_ui_state_set(
     input: UiStateInput,
 ) -> CommandResult<OkResponse> {
     state.ui_state.set(&input)?;
-    Ok(OkResponse { ok: true })
+    Ok(OkResponse::ok())
 }
 
 #[tauri::command]
 pub fn rust_storage_flush(state: State<'_, CoreState>) -> CommandResult<OkResponse> {
     state.ui_state.flush()?;
-    Ok(OkResponse { ok: true })
+    Ok(OkResponse::ok())
 }
 
 #[tauri::command]

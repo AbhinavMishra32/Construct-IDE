@@ -3,8 +3,10 @@ mod core_state;
 mod error;
 mod legacy_sidecar;
 mod paths;
+mod projects;
 mod storage;
 mod window;
+mod workspace;
 
 use tauri::{Manager, RunEvent};
 
@@ -18,7 +20,14 @@ pub fn run() {
             commands::system::rust_ui_state_get,
             commands::system::rust_ui_state_set,
             commands::system::rust_storage_flush,
-            commands::system::rust_storage_metrics
+            commands::system::rust_storage_metrics,
+            commands::workspace::rust_workspace_list,
+            commands::workspace::rust_workspace_read,
+            commands::workspace::rust_workspace_write,
+            commands::workspace::rust_workspace_remove,
+            commands::workspace::rust_workspace_rename,
+            commands::workspace::rust_workspace_create_folder,
+            commands::workspace::rust_workspace_duplicate
         ])
         .setup(|app| {
             let handle = app.handle().clone();
