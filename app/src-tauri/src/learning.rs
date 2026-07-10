@@ -1,8 +1,8 @@
 use diesel::prelude::*;
-use serde_json::{json, Map, Value};
+use serde_json::{json, Value};
 use uuid::Uuid;
 
-use crate::error::{CommandError, CommandResult};
+use crate::error::CommandResult;
 use crate::storage::schema::*;
 use crate::storage::Database;
 
@@ -440,17 +440,8 @@ fn parse(value: &str, fallback: Value) -> Value {
     serde_json::from_str(value).unwrap_or(fallback)
 }
 fn now() -> String {
-    format!(
-        "{}",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis()
-    )
+    chrono::Utc::now().to_rfc3339()
 }
 fn escape(value: &str) -> String {
     value.replace('~', "~0").replace('/', "~1")
-}
-fn db_error(error: diesel::result::Error) -> CommandError {
-    CommandError::new("learning.database", error.to_string())
 }

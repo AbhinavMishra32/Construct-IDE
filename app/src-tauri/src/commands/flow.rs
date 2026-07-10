@@ -71,6 +71,7 @@ async fn run(
     let worker_app = app.clone();
     let worker_project = project.clone();
     let worker_message = message.clone();
+    let worker_settings = state.settings.read()?["ai"].clone();
     let method = if research {
         "flow.research"
     } else {
@@ -80,7 +81,7 @@ async fn run(
         worker.request(
             worker_app,
             method,
-            json!({"project":worker_project,"memory":memory,"message":worker_message}),
+            json!({"project":worker_project,"memory":memory,"message":worker_message,"settings":worker_settings}),
         )
     })
     .await

@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use diesel::{Insertable, Queryable, Selectable};
 
 use crate::storage::schema::*;

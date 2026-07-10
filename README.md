@@ -146,20 +146,19 @@ flowchart LR
 
 ## Architecture
 
-Construct is a pnpm + Turbo monorepo. The main product is a Tauri desktop app:
-a Rust/Tauri shell hosts the React renderer (built with Vite) and spawns the
-TypeScript backend as a Node.js sidecar. The sidecar runs the same services the
-Electron main process used to; a localhost WebSocket bridge (with a per-launch
-auth token) replaces Electron IPC, and `"electron"` is aliased at bundle time to
-a small transport shim so the backend code is unchanged.
+Construct is a pnpm + Turbo monorepo. The desktop product is a Rust/Tauri
+application hosting a React renderer built with Vite. Rust owns persistence,
+projects, workspaces, Git, PTYs, LSPs, settings, learning state, Flow state, and
+tool execution. A private Node worker starts on the first AI request and runs
+Mastra only; it communicates with Rust over versioned stdio messages.
 
 ```text
 .
 ├── app/                         # Desktop app workspace
 │   ├── assets/                  # App icon and README screenshot
-│   ├── src-tauri/               # Rust/Tauri shell (spawns the Node sidecar)
-│   ├── src/bridge/              # Node sidecar entry, transport, electron shim
-│   ├── src/main/                # Backend services (run in the Node sidecar)
+│   ├── src-tauri/               # Rust application core and Tauri commands
+│   ├── src/mastra-worker.ts     # Lazy model/Mastra worker
+│   ├── src/main/                # Mastra prompts and retained AI modules
 │   │   ├── agent-tools/         # Tool contracts exposed to agents
 │   │   ├── ai/                  # AI services, logged agents, feature services
 │   │   ├── config/              # Settings, provider catalog, model routing
@@ -188,32 +187,30 @@ flowchart TB
     FlowUI["Flow workspace, concepts, tasks, logs"]
   end
 
-  subgraph Main["Node.js sidecar (Tauri)"]
-    IPC["IPC controllers"]
-    Flow["ConstructFlowService"]
-    Tools["Agent tools"]
-    Learning["Concept policy + learner store"]
-    Storage["Local storage"]
-    Terminal["Terminal service"]
-    Providers["AI provider gateway"]
+  subgraph Core["Rust core (Tauri)"]
+    Commands["Typed commands + native events"]
+    Flow["Flow state + host tools"]
+    Learning["Learning + project repositories"]
+    Storage["Diesel + SQLite"]
+    Processes["PTY, LSP, Git, watcher"]
   end
-
-  UI --> Bridge["WebSocket bridge (token-gated)"]
-  FlowUI --> Bridge
-  Bridge --> IPC
-  IPC --> Flow
-  Flow --> Tools
+  subgraph Worker["Lazy Mastra worker"]
+    Mastra["Model execution + stream decoding"]
+  end
+  UI --> Commands
+  FlowUI --> Commands
+  Commands --> Flow
   Flow --> Learning
-  Flow --> Providers
-  Tools --> Terminal
-  Tools --> Storage
   Learning --> Storage
+  Commands --> Processes
+  Flow -->|stdio request| Mastra
+  Mastra -->|host tool call| Flow
 ```
 
 The important architectural rule: prompts guide the mentor, but host-side
 services enforce durable behavior. Concept placement, task readiness, local
-storage, project state, and tool permissions should be validated in TypeScript
-services, not trusted to model wording alone.
+storage, project state, and tool permissions are validated in Rust, not trusted
+to model wording alone.
 
 ## Construct Flow
 
@@ -367,9 +364,9 @@ App workspace scripts:
 
 | Script | Purpose |
 | --- | --- |
-| `pnpm --filter @construct/app dev` | Launch the app with `tauri dev` (Vite renderer + Node sidecar + Rust shell). |
+| `pnpm --filter @construct/app dev` | Launch the Rust/Tauri app with the Vite renderer. |
 | `pnpm --filter @construct/app dev:renderer` | Start Vite for the renderer only. |
-| `pnpm --filter @construct/app build:sidecar` | Bundle the Node.js sidecar (electron aliased to the transport shim). |
+| `pnpm --filter @construct/app build:mastra` | Bundle the on-demand Mastra worker. |
 | `pnpm --filter @construct/app tauri:build` | Build the packaged desktop installers with Tauri. |
 | `pnpm --filter @construct/app typecheck` | Typecheck the app. |
 | `pnpm --filter @construct/app test` | Run the app's Node test suite. |

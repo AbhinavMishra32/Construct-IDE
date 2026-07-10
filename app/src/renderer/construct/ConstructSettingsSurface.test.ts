@@ -7,33 +7,33 @@ describe("Construct project advanced settings", () => {
   it("edits and validates the legacy project tape through a dedicated API", () => {
     const source = readFileSync(fileURLToPath(new URL("./ConstructSettingsSurface.tsx", import.meta.url)), "utf8");
     const bridge = readFileSync(fileURLToPath(new URL("./lib/tauriBridge.ts", import.meta.url)), "utf8");
-    const controller = readFileSync(fileURLToPath(new URL("../../main/ipc/ConstructProjectIpcController.ts", import.meta.url)), "utf8");
+    const commands = readFileSync(fileURLToPath(new URL("../../../src-tauri/src/commands/projects.rs", import.meta.url)), "utf8");
 
     assert.match(source, /id: "project-advanced"/);
     assert.match(source, /Edit legacy project tape/);
     assert.match(source, /validateConstructSource\(tapeSource\)/);
     assert.match(source, /updateProjectTape\(/);
     assert.match(source, /Save and reload tape/);
-    assert.match(bridge, /construct:project:read-tape/);
-    assert.match(bridge, /construct:project:update-tape/);
-    assert.match(controller, /Tape project id must remain/);
-    assert.match(controller, /await writeFile\(project\.sourcePath, project\.source/);
-    assert.match(controller, /materializeInitialFiles\(project\)/);
+    assert.match(bridge, /rust_project_read_tape/);
+    assert.match(bridge, /rust_project_update_tape/);
+    assert.match(commands, /Tape project id must remain/);
+    assert.match(commands, /std::fs::write\(&source_path, source\)/);
+    assert.match(commands, /materialize\(&state, &project\)/);
   });
 
   it("wires the bottom status bar preference through durable app settings", () => {
     const source = readFileSync(fileURLToPath(new URL("./ConstructSettingsSurface.tsx", import.meta.url)), "utf8");
     const app = readFileSync(fileURLToPath(new URL("./ConstructApplication.tsx", import.meta.url)), "utf8");
     const bridge = readFileSync(fileURLToPath(new URL("./lib/tauriBridge.ts", import.meta.url)), "utf8");
-    const controller = readFileSync(fileURLToPath(new URL("../../main/ipc/ConstructSettingsIpcController.ts", import.meta.url)), "utf8");
+    const commands = readFileSync(fileURLToPath(new URL("../../../src-tauri/src/commands/settings.rs", import.meta.url)), "utf8");
 
     assert.match(source, /Bottom status bar/);
     assert.match(source, /updateAppSettings\(\{\s*app:\s*\{\s*showStatusBar: showStatusBarNext/s);
     assert.match(app, /getSettings\(\)\s*\.then\(\(settings\)/);
     assert.match(app, /setShowStatusBar\(settings\.app\?\.showStatusBar !== false\)/);
     assert.match(app, /\{showStatusBar \? <StatusBar theme=\{theme\} onThemeChange=\{setTheme\} \/> : null\}/);
-    assert.match(bridge, /construct:settings:update-app/);
-    assert.match(controller, /ipcMain\.handle\("construct:settings:update-app"/);
+    assert.match(bridge, /rust_settings_update_app/);
+    assert.match(commands, /pub fn rust_settings_update_app/);
   });
 
   it("uses a transparent Construct logo splash for startup loading states", () => {
@@ -112,8 +112,8 @@ describe("Construct project advanced settings", () => {
       fileURLToPath(new URL("./components/settings/ConstructCloudAccountPanel.tsx", import.meta.url)),
       "utf8",
     );
-    const sidecar = readFileSync(fileURLToPath(new URL("../../bridge/sidecar.ts", import.meta.url)), "utf8");
-    const controller = readFileSync(fileURLToPath(new URL("../../main/ipc/ConstructSettingsIpcController.ts", import.meta.url)), "utf8");
+    const settingsCommand = readFileSync(fileURLToPath(new URL("../../../src-tauri/src/commands/settings.rs", import.meta.url)), "utf8");
+    const mastraWorker = readFileSync(fileURLToPath(new URL("../../mastra-worker.ts", import.meta.url)), "utf8");
 
     assert.match(source, /onSourceChange=\{updateAiSource\}/);
     assert.match(source, /onConstructCloudAccessTokenChange=\{\(constructCloudAccessToken: string\) => setAiSettingsDraft/);
@@ -131,7 +131,7 @@ describe("Construct project advanced settings", () => {
     assert.match(cloudPanel, /createAuthClient\(\{[\s\S]*?baseURL: normalizedBaseUrl/);
     assert.match(cloudPanel, /authClient\.signOut\(\)/);
     assert.match(cloudPanel, /api\/cloud\/tokens/);
-    assert.match(sidecar, /constructCloudEndpoint: resolveConstructCloudEndpoint\(process\.env\)/);
-    assert.match(controller, /input\?\.provider === "construct-cloud"/);
+    assert.match(settingsCommand, /"construct-cloud"/);
+    assert.match(mastraWorker, /createConstructAgentRuntime/);
   });
 });

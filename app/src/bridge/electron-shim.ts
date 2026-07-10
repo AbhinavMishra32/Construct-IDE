@@ -2,14 +2,15 @@ import { EventEmitter } from "node:events";
 import path from "node:path";
 import { homedir } from "node:os";
 
-import { bridgeTransport, type InvokeHandler, type SendHandler } from "./transport";
+type InvokeHandler = (event: IpcMainInvokeEvent, ...args: any[]) => unknown | Promise<unknown>;
+type SendHandler = (event: IpcMainEvent, ...args: any[]) => void;
+const invokeHandlers = new Map<string, InvokeHandler>();
+const sendHandlers = new Map<string, Set<SendHandler>>();
 
 /**
- * Drop-in replacement for the subset of the Electron main-process API used by
- * Construct. At bundle time `"electron"` is aliased to this module, so the
- * entire existing main process runs unchanged inside a plain Node.js sidecar
- * while Tauri owns the native window. Only the surface actually referenced by
- * `src/main` and consumed at runtime is implemented here.
+ * Compile-time compatibility for retained Mastra modules that still reference
+ * Electron types. This module is isolated to the AI worker bundle; it does not
+ * host application commands, persistence, processes, or renderer transport.
  */
 
 // --- WebContents ----------------------------------------------------------
@@ -18,7 +19,8 @@ class VirtualWebContents extends EventEmitter {
   private destroyed = false;
 
   send(channel: string, ...args: any[]): void {
-    bridgeTransport.broadcast(channel, args[0]);
+    void channel;
+    void args;
   }
 
   isDestroyed(): boolean {
@@ -41,7 +43,6 @@ class VirtualWebContents extends EventEmitter {
 // A single virtual webContents represents the one Tauri webview. Broadcasts
 // reach every connected renderer, matching this app's single-window model.
 const sharedWebContents = new VirtualWebContents();
-bridgeTransport.senderProvider = () => sharedWebContents;
 
 // --- BrowserWindow --------------------------------------------------------
 
@@ -91,36 +92,40 @@ type SendListener = (event: IpcMainEvent, ...args: any[]) => void;
 
 const ipcMain = {
   handle(channel: string, listener: InvokeListener): void {
-    bridgeTransport.registerInvoke(channel, listener as InvokeHandler);
+    invokeHandlers.set(channel, listener as InvokeHandler);
   },
   handleOnce(channel: string, listener: InvokeListener): void {
     const wrapped: InvokeHandler = (event, ...args) => {
-      bridgeTransport.removeInvoke(channel);
+      invokeHandlers.delete(channel);
       return (listener as InvokeHandler)(event, ...args);
     };
-    bridgeTransport.registerInvoke(channel, wrapped);
+    invokeHandlers.set(channel, wrapped);
   },
   removeHandler(channel: string): void {
-    bridgeTransport.removeInvoke(channel);
+    invokeHandlers.delete(channel);
   },
   on(channel: string, listener: SendListener) {
-    bridgeTransport.registerSend(channel, listener as SendHandler);
+    const listeners = sendHandlers.get(channel) ?? new Set<SendHandler>();
+    listeners.add(listener as SendHandler);
+    sendHandlers.set(channel, listeners);
     return ipcMain;
   },
   once(channel: string, listener: SendListener) {
     const wrapped: SendHandler = (event, ...args) => {
-      bridgeTransport.removeSend(channel, wrapped);
+      sendHandlers.get(channel)?.delete(wrapped);
       (listener as SendHandler)(event, ...args);
     };
-    bridgeTransport.registerSend(channel, wrapped);
+    const listeners = sendHandlers.get(channel) ?? new Set<SendHandler>();
+    listeners.add(wrapped);
+    sendHandlers.set(channel, listeners);
     return ipcMain;
   },
   off(channel: string, listener: SendListener) {
-    bridgeTransport.removeSend(channel, listener as SendHandler);
+    sendHandlers.get(channel)?.delete(listener as SendHandler);
     return ipcMain;
   },
   removeAllListeners(channel?: string) {
-    if (channel) bridgeTransport.removeSend(channel);
+    if (channel) sendHandlers.delete(channel);
     return ipcMain;
   }
 };
@@ -145,7 +150,7 @@ function resolveAppPath(): string {
   if (process.env.CONSTRUCT_APP_PATH) {
     return process.env.CONSTRUCT_APP_PATH;
   }
-  // Bundled sidecar lives at <appRoot>/dist/sidecar.cjs -> app root is one up.
+  // The bundled worker lives at <appRoot>/dist/mastra-worker.cjs.
   return path.resolve(__dirname, "..");
 }
 
@@ -196,7 +201,7 @@ class AppShim extends EventEmitter {
     process.exit(0);
   }
 
-  /** Called by the sidecar entry once the transport is listening. */
+  /** Compatibility hook for legacy AI modules; the Rust host owns readiness. */
   markReady(): void {
     readyResolve();
   }
@@ -264,4 +269,3 @@ export interface IpcMainInvokeEvent {
 export interface IpcMainEvent {
   sender: VirtualWebContents;
 }
-

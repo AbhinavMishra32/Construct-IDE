@@ -72,9 +72,16 @@ pub fn rust_project_read_tape(
             "Flow projects do not have a project tape",
         ));
     }
-    Ok(
-        json!({"projectId":project_id,"sourcePath":project.get("sourcePath"),"source":project.get("source").cloned().unwrap_or(json!(""))}),
-    )
+    let source = project
+        .get("sourcePath")
+        .and_then(Value::as_str)
+        .filter(|path| std::path::Path::new(path).is_file())
+        .map(std::fs::read_to_string)
+        .transpose()
+        .map_err(|error| CommandError::new("project.read-tape", error.to_string()))?
+        .map(Value::String)
+        .unwrap_or_else(|| project.get("source").cloned().unwrap_or(json!("")));
+    Ok(json!({"projectId":project_id,"sourcePath":project.get("sourcePath"),"source":source}))
 }
 
 #[tauri::command]
@@ -93,6 +100,12 @@ pub fn rust_project_update_tape(state: State<'_, CoreState>, input: Value) -> Co
             "Flow projects do not have a project tape",
         ));
     }
+    if input.pointer("/program/id").and_then(Value::as_str) != Some(project_id) {
+        return Err(CommandError::new(
+            "project.tape-id",
+            format!("Tape project id must remain \"{project_id}\"."),
+        ));
+    }
     for key in ["source", "originalSource", "authoringFixes", "program"] {
         if let Some(value) = input.get(key) {
             project[key] = value.clone();
@@ -106,8 +119,22 @@ pub fn rust_project_update_tape(state: State<'_, CoreState>, input: Value) -> Co
     if let Some(description) = next_description {
         project["description"] = description;
     }
-    state.projects.write(&project)?;
+    clamp_tape_progress(&mut project);
+    if let Some(source_path) = project.get("sourcePath").and_then(Value::as_str) {
+        let source_path = std::path::Path::new(source_path);
+        if let Some(parent) = source_path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|error| CommandError::new("project.write-tape", error.to_string()))?;
+        }
+        let source = project
+            .get("source")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        std::fs::write(&source_path, source)
+            .map_err(|error| CommandError::new("project.write-tape", error.to_string()))?;
+    }
     materialize(&state, &project)?;
+    state.projects.write(&project)?;
     Ok(project)
 }
 
@@ -253,13 +280,51 @@ fn materialize(state: &CoreState, project: &Value) -> CommandResult<()> {
     Ok(())
 }
 fn now() -> String {
-    format!(
-        "{}",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis()
-    )
+    chrono::Utc::now().to_rfc3339()
+}
+fn clamp_tape_progress(project: &mut Value) {
+    let steps = project
+        .pointer("/program/steps")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let step_index = project
+        .get("currentStepIndex")
+        .and_then(Value::as_u64)
+        .unwrap_or_default() as usize;
+    let step_index = step_index.min(steps.len().saturating_sub(1));
+    let block_count = steps
+        .get(step_index)
+        .and_then(|step| step.get("blocks"))
+        .and_then(Value::as_array)
+        .map(Vec::len)
+        .unwrap_or(1);
+    let block_index = project
+        .get("currentBlockIndex")
+        .and_then(Value::as_u64)
+        .unwrap_or_default() as usize;
+    let completed = project
+        .get("completedBlocks")
+        .and_then(Value::as_object)
+        .map(|blocks| {
+            blocks
+                .values()
+                .filter(|value| value.as_bool() == Some(true))
+                .count()
+        })
+        .unwrap_or_default();
+    let total = steps
+        .iter()
+        .filter_map(|step| step.get("blocks").and_then(Value::as_array))
+        .map(Vec::len)
+        .sum::<usize>();
+    project["currentStepIndex"] = json!(step_index);
+    project["currentBlockIndex"] = json!(block_index.min(block_count.saturating_sub(1)));
+    project["progress"] = json!(if total == 0 {
+        0
+    } else {
+        ((completed as f64 / total as f64) * 100.0).round() as u64
+    });
 }
 fn slug(value: &str) -> String {
     value

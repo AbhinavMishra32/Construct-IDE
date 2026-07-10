@@ -129,7 +129,7 @@ describe("Workspace render stability", () => {
     assert.match(projectIpcSource, /const relativePath = typeof filename === "string" \? filename\.replace/);
     assert.match(projectIpcSource, /webContents\.send\("construct:project:file-changed", \{/);
     assert.match(projectIpcSource, /paths/);
-    assert.match(bridgeSource, /callback\(payload \?\? \{\}\)/);
+    assert.match(bridgeSource, /callback\(event\.payload \?\? \{\}\)/);
 
     assert.match(flowWorkspaceSource, /function isOnlyFlowMemoryChange\(payload: ProjectFileChangePayload\)/);
     assert.match(flowWorkspaceSource, /if \(!isOnlyFlowMemoryChange\(payload\)\) \{\s*requestWorkbenchLayout\("file-system-change"\);/);

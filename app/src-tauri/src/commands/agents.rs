@@ -10,8 +10,10 @@ async fn call(
     app: AppHandle,
     worker: Arc<crate::ai::MastraWorker>,
     method: &'static str,
-    payload: Value,
+    mut payload: Value,
+    settings: Value,
 ) -> CommandResult<Value> {
+    payload["settings"] = settings;
     tauri::async_runtime::spawn_blocking(move || worker.request(app, method, payload))
         .await
         .map_err(|error| CommandError::new("agent.worker", error.to_string()))?
@@ -31,6 +33,7 @@ pub async fn rust_verify_recall(
         Arc::clone(&state.mastra),
         "verification.run",
         payload,
+        state.settings.read()?["ai"].clone(),
     )
     .await?;
     let _ = app.emit(
@@ -55,6 +58,7 @@ pub async fn rust_interact(
         Arc::clone(&state.mastra),
         "interact.run",
         input,
+        state.settings.read()?["ai"].clone(),
     )
     .await?;
     let _ = app.emit(
@@ -70,7 +74,14 @@ pub async fn rust_authoring_review(
     state: State<'_, CoreState>,
     input: Value,
 ) -> CommandResult<Value> {
-    call(app, Arc::clone(&state.mastra), "authoring.review", input).await
+    call(
+        app,
+        Arc::clone(&state.mastra),
+        "authoring.review",
+        input,
+        state.settings.read()?["ai"].clone(),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -89,6 +100,7 @@ pub async fn rust_selection_explain(
         Arc::clone(&state.mastra),
         "selection.explain",
         input.clone(),
+        state.settings.read()?["ai"].clone(),
     )
     .await?;
     let _=app.emit("construct:project:explain-selection-log",json!({"requestId":input.get("requestId"),"entry":{"status":"done","message":"Explanation completed"}}));
@@ -108,6 +120,7 @@ pub async fn rust_code_ghost(
         Arc::clone(&state.mastra),
         "code-ghost.run",
         input,
+        state.settings.read()?["ai"].clone(),
     )
     .await
     {

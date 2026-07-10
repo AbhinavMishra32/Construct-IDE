@@ -25,6 +25,6 @@
     "src/**/*.tsx",
     "src/**/*.d.ts",
     "vite.config.ts",
-    "tsup.sidecar.config.ts"
+    "tsup.mastra.config.ts"
   ]
 }

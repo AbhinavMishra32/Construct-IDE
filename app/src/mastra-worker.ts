@@ -5,6 +5,7 @@ import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 
 import { createConstructAgentRuntime } from "./main/constructAgentRuntime";
+import { configureConstructAiSettings, type StoredAiSettings } from "./main/config/constructConfig";
 import { FLOW_MAIN_AGENT_PROMPT } from "./main/flow/ConstructFlowService";
 import { runConstructVerifierAgent } from "./main/constructVerifierAgent";
 import { runConstructInteract } from "./main/constructInteractAgent";
@@ -44,6 +45,7 @@ const tools = {
 
 async function execute(request: RequestMessage): Promise<unknown> {
   const payload = request.payload ?? {};
+  configureConstructAiSettings((payload.settings as StoredAiSettings | undefined) ?? null);
   const trace = (entry: unknown) => send({ kind: "event", requestId: request.id, event: "trace", payload: entry });
   if (request.method === "verification.run") return runConstructVerifierAgent(payload, trace);
   if (request.method === "interact.run") return runConstructInteract(payload, trace, tools);

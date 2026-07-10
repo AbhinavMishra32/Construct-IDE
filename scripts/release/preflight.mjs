@@ -36,18 +36,20 @@ check(exists("app/src-tauri/Cargo.toml"), "Tauri Rust crate exists at app/src-ta
 check(tauriConfig.version === appPackageJson.version, "tauri.conf.json version stays aligned with app/package.json.");
 check(tauriConfig.identifier === "cc.tryconstruct.desktop", "tauri.conf.json keeps the cc.tryconstruct.desktop identifier.");
 check(
-  Array.isArray(tauriConfig.bundle?.externalBin) && tauriConfig.bundle.externalBin.includes("binaries/construct-sidecar"),
-  "tauri.conf.json bundles the Node sidecar as an external binary."
+  Array.isArray(tauriConfig.bundle?.externalBin) && tauriConfig.bundle.externalBin.includes("binaries/construct-mastra"),
+  "tauri.conf.json bundles only the on-demand Mastra runtime."
 );
 check(
   tauriConfig.build?.beforeBuildCommand?.includes("tauri:before-build"),
-  "tauri.conf.json beforeBuildCommand runs the before-build step that stages the sidecar."
+  "tauri.conf.json beforeBuildCommand runs the before-build step that stages Mastra."
 );
 check(
-  appPackageJson.scripts?.["tauri:before-build"]?.includes("sidecar:prepare"),
-  "app tauri:before-build stages the sidecar before packaging."
+  appPackageJson.scripts?.["tauri:before-build"]?.includes("mastra:prepare"),
+  "app tauri:before-build stages Mastra before packaging."
 );
-check(exists("app/scripts/prepare-sidecar.mjs"), "prepare-sidecar.mjs exists to stage the Node runtime + sidecar bundle.");
+check(exists("app/scripts/prepare-mastra.mjs"), "prepare-mastra.mjs stages the minimal Mastra worker.");
+check(!exists("app/src/bridge/transport.ts"), "the localhost WebSocket bridge has been removed.");
+check(!exists("app/src/bridge/sidecar.ts"), "the full Node backend sidecar has been removed.");
 
 check(gitmodules.includes('path = opaline'), ".gitmodules still declares the opaline submodule.");
 check(

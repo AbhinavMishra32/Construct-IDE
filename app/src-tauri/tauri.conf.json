@@ -30,9 +30,9 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "externalBin": ["binaries/construct-sidecar"],
+    "externalBin": ["binaries/construct-mastra"],
     "resources": {
-      "resources/sidecar.cjs": "resources/sidecar.cjs"
+      "resources/mastra-worker.cjs": "resources/mastra-worker.cjs"
     }
   }
 }

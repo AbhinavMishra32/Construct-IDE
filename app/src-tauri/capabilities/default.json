@@ -12,7 +12,7 @@
       "identifier": "shell:allow-spawn",
       "allow": [
         {
-          "name": "binaries/construct-sidecar",
+          "name": "binaries/construct-mastra",
           "sidecar": true,
           "args": true
         }

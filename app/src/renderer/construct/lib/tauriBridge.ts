@@ -50,7 +50,7 @@ export async function installConstructBridge(): Promise<void> {
 
   const api = {
     setThemeSource: async (theme: "light" | "dark" | "system") => {
-      // Persist through the sidecar and apply the native window theme.
+      // Persist through Rust and apply the native window theme.
       await invokeNative("rust_theme_set", { theme });
       try {
         await getCurrentWindow().setTheme(theme === "system" ? null : theme);
@@ -78,8 +78,7 @@ export async function installConstructBridge(): Promise<void> {
         ]
       });
       if (typeof selected !== "string") return null;
-      // Read the picked file in the sidecar (Node fs), matching the original
-      // Electron dialog handler and avoiding fs-plugin path-scope friction.
+      // Read the user-selected file through Tauri's scoped filesystem plugin.
       const source = await readTextFile(selected);
       return { path: selected, source };
     },

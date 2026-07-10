@@ -61,8 +61,7 @@ if (window.constructProjects && typeof window.constructProjects.onMainLog === "f
 }
 
 async function bootstrap(): Promise<void> {
-  // Connect to the Node sidecar and install window.construct* before anything
-  // touches the bridge (replaces the always-present Electron preload).
+  // Install the native Tauri-backed compatibility API before React renders.
   await installConstructBridge();
 
   // 3. Capture LSP installation progress logs

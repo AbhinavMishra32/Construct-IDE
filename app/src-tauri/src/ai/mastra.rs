@@ -81,7 +81,7 @@ impl MastraWorker {
         let script = resolve_worker_script(app)?;
         let (mut events, child) = app
             .shell()
-            .sidecar("construct-sidecar")
+            .sidecar("construct-mastra")
             .map_err(|error| CommandError::new("mastra.sidecar", error.to_string()))?
             .args([script.to_string_lossy().to_string()])
             .current_dir(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".."))
