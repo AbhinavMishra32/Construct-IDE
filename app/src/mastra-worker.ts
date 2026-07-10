@@ -6,6 +6,11 @@ import { z } from "zod";
 
 import { createConstructAgentRuntime } from "./main/constructAgentRuntime";
 import { FLOW_MAIN_AGENT_PROMPT } from "./main/flow/ConstructFlowService";
+import { runConstructVerifierAgent } from "./main/constructVerifierAgent";
+import { runConstructInteract } from "./main/constructInteractAgent";
+import { runConstructAuthoringReviewAgent } from "./main/constructAuthoringReviewAgent";
+import { runConstructSelectionExplainAgent } from "./main/constructSelectionExplainAgent";
+import { fetchCodeGhostExplanation } from "./main/constructCodeGhostAgent";
 
 type RequestMessage = { kind: "request"; id: string; method: string; payload: any };
 type ToolResultMessage = { kind: "tool-result"; id: string; ok: boolean; value?: unknown; error?: string };
@@ -38,10 +43,14 @@ const tools = {
 };
 
 async function execute(request: RequestMessage): Promise<unknown> {
-  if (request.method !== "flow.run" && request.method !== "flow.research") {
-    throw new Error(`Unsupported Mastra worker method: ${request.method}`);
-  }
   const payload = request.payload ?? {};
+  const trace = (entry: unknown) => send({ kind: "event", requestId: request.id, event: "trace", payload: entry });
+  if (request.method === "verification.run") return runConstructVerifierAgent(payload, trace);
+  if (request.method === "interact.run") return runConstructInteract(payload, trace, tools);
+  if (request.method === "authoring.review") return runConstructAuthoringReviewAgent(payload, trace);
+  if (request.method === "selection.explain") return runConstructSelectionExplainAgent(payload, (entry) => send({ kind: "event", requestId: request.id, event: "selection-progress", payload: entry }), trace);
+  if (request.method === "code-ghost.run") return fetchCodeGhostExplanation(payload, undefined, trace);
+  if (request.method !== "flow.run" && request.method !== "flow.research") throw new Error(`Unsupported Mastra worker method: ${request.method}`);
   const runtime = createConstructAgentRuntime();
   const research = request.method === "flow.research";
   const instructions = research
@@ -62,7 +71,7 @@ async function execute(request: RequestMessage): Promise<unknown> {
     messages: [{ role: "user", content: prompt }],
     tools: research ? undefined : tools,
     maxSteps: research ? 8 : 24,
-    onTrace: (entry) => send({ kind: "event", requestId: request.id, event: "trace", payload: entry })
+    onTrace: trace
   });
 }
 

@@ -1,3 +1,4 @@
+pub(crate) mod agents;
 pub(crate) mod flow;
 pub(crate) mod git;
 pub(crate) mod learning;

@@ -3,135 +3,24 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke as invokeNative } from "@tauri-apps/api/core";
 import { listen as listenNative } from "@tauri-apps/api/event";
+import { readTextFile } from "@tauri-apps/plugin-fs";
 
 import { resolveConstructCloudEndpoint } from "../../../shared/constructCloud";
 import type { ConstructProjectsApi, RuntimeInfo } from "../types";
 
 /**
  * Renderer-side replacement for the Electron preload. It reconstructs the exact
- * `window.construct` / `window.constructProjects` API the app expects, but backs
- * it with the localhost WebSocket bridge to the Node sidecar instead of Electron
- * IPC. Native concerns (file dialogs, reading picked files, opening links) use
- * the official Tauri plugins.
+ * `window.construct` / `window.constructProjects` API the app expects and maps
+ * it to typed Rust commands and native Tauri events.
  */
-
-type Pending = { resolve: (value: unknown) => void; reject: (err: Error) => void };
-type EventListener = (payload: unknown) => void;
-
-interface BridgeGlobal {
-  port: number;
-  token: string;
-}
-
-declare global {
-  interface Window {
-    __CONSTRUCT_BRIDGE__?: BridgeGlobal;
-  }
-}
-
-class BridgeClient {
-  private socket: WebSocket | null = null;
-  private nextId = 1;
-  private readonly pending = new Map<number, Pending>();
-  private readonly listeners = new Map<string, Set<EventListener>>();
-  private readonly outbox: string[] = [];
-  private connected = false;
-
-  constructor(private readonly config: BridgeGlobal) {}
-
-  async connect(): Promise<void> {
-    await new Promise<void>((resolve, reject) => {
-      const url = `ws://127.0.0.1:${this.config.port}/?token=${encodeURIComponent(this.config.token)}`;
-      const socket = new WebSocket(url);
-      this.socket = socket;
-
-      socket.addEventListener("open", () => {
-        this.connected = true;
-        for (const message of this.outbox.splice(0)) socket.send(message);
-        resolve();
-      });
-      socket.addEventListener("error", () => {
-        if (!this.connected) reject(new Error("Failed to connect to Construct bridge."));
-      });
-      socket.addEventListener("close", () => {
-        this.connected = false;
-        for (const { reject: rejectPending } of this.pending.values()) {
-          rejectPending(new Error("Construct bridge connection closed."));
-        }
-        this.pending.clear();
-      });
-      socket.addEventListener("message", (event) => this.onMessage(String(event.data)));
-    });
-  }
-
-  private onMessage(raw: string): void {
-    let message: { k: string; id?: number; ok?: boolean; value?: unknown; error?: { message?: string }; channel?: string; payload?: unknown };
-    try {
-      message = JSON.parse(raw);
-    } catch {
-      return;
-    }
-
-    if (message.k === "result" && typeof message.id === "number") {
-      const pending = this.pending.get(message.id);
-      if (!pending) return;
-      this.pending.delete(message.id);
-      if (message.ok) pending.resolve(message.value);
-      else pending.reject(new Error(message.error?.message ?? "Bridge invoke failed."));
-      return;
-    }
-
-    if (message.k === "event" && typeof message.channel === "string") {
-      const set = this.listeners.get(message.channel);
-      if (set) for (const listener of set) listener(message.payload);
-    }
-  }
-
-  private ship(message: string): void {
-    if (this.connected && this.socket) this.socket.send(message);
-    else this.outbox.push(message);
-  }
-
-  invoke<T = unknown>(channel: string, ...args: unknown[]): Promise<T> {
-    const id = this.nextId++;
-    return new Promise<T>((resolve, reject) => {
-      this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject });
-      this.ship(JSON.stringify({ k: "invoke", id, channel, args }));
-    });
-  }
-
-  send(channel: string, ...args: unknown[]): void {
-    this.ship(JSON.stringify({ k: "send", channel, args }));
-  }
-
-  on(channel: string, listener: EventListener): () => void {
-    const set = this.listeners.get(channel) ?? new Set<EventListener>();
-    set.add(listener);
-    this.listeners.set(channel, set);
-    return () => {
-      set.delete(listener);
-    };
-  }
-}
 
 let runtimeInfo: RuntimeInfo | null = null;
 
 /**
- * Connect to the sidecar bridge and install the global API objects. Must be
- * awaited before the React app renders (mirrors preload availability).
+ * Install the compatibility globals before React renders.
  */
 export async function installConstructBridge(): Promise<void> {
-  const config = window.__CONSTRUCT_BRIDGE__;
-  if (!config) {
-    throw new Error(
-      "Construct bridge configuration is missing. The app must be launched through Tauri."
-    );
-  }
-
-  const client = new BridgeClient(config);
-  await client.connect();
-
-  runtimeInfo = await client.invoke<RuntimeInfo>("__bridge:runtime-info");
+  runtimeInfo = await invokeNative<RuntimeInfo>("rust_runtime_info");
 
   window.construct = {
     getRuntimeInfo: (): RuntimeInfo =>
@@ -145,10 +34,6 @@ export async function installConstructBridge(): Promise<void> {
       }
   };
 
-  const invoke = <T = unknown>(channel: string, ...args: unknown[]): Promise<T> =>
-    client.invoke<T>(channel, ...args);
-  const subscribe = (channel: string) => (callback: (payload: unknown) => void) =>
-    client.on(channel, callback);
   const nativeSubscribe = (channel: string) => (callback: (payload: unknown) => void) => {
     let disposed = false;
     let unlisten: (() => void) | null = null;
@@ -166,7 +51,7 @@ export async function installConstructBridge(): Promise<void> {
   const api = {
     setThemeSource: async (theme: "light" | "dark" | "system") => {
       // Persist through the sidecar and apply the native window theme.
-      await invoke("construct:theme:set", theme);
+      await invokeNative("rust_theme_set", { theme });
       try {
         await getCurrentWindow().setTheme(theme === "system" ? null : theme);
       } catch {
@@ -195,7 +80,7 @@ export async function installConstructBridge(): Promise<void> {
       if (typeof selected !== "string") return null;
       // Read the picked file in the sidecar (Node fs), matching the original
       // Electron dialog handler and avoiding fs-plugin path-scope friction.
-      const source = await invoke<string>("__bridge:read-file-abs", selected);
+      const source = await readTextFile(selected);
       return { path: selected, source };
     },
     selectWorkspaceDirectory: async (input?: { defaultPath?: string }) => {
@@ -237,14 +122,14 @@ export async function installConstructBridge(): Promise<void> {
     updateProjectTape: (input: unknown) => invokeNative("rust_project_update_tape", { input }),
     listFiles: (projectId: string) => invokeNative("rust_workspace_list", { projectId }),
     readFile: (input: unknown) => invokeNative("rust_workspace_read", { input }),
-    readLspSourceFile: (input: unknown) => invoke("construct:lsp:read-source-file", input),
+    readLspSourceFile: (input: unknown) => invokeNative("rust_read_lsp_source", { input }),
     writeFile: (input: unknown) => invokeNative("rust_workspace_write", { input }),
     deleteFile: (input: unknown) => invokeNative("rust_workspace_remove", { input }),
     renameFile: (input: unknown) => invokeNative("rust_workspace_rename", { input }),
     createFolder: (input: unknown) => invokeNative("rust_workspace_create_folder", { input }),
     duplicateFile: (input: unknown) => invokeNative("rust_workspace_duplicate", { input }),
-    verifyRecall: (input: unknown) => invoke("construct:project:verify-recall", input),
-    runConstructInteract: (input: unknown) => invoke("construct:project:interact", input),
+    verifyRecall: (input: unknown) => invokeNative("rust_verify_recall", { input }),
+    runConstructInteract: (input: unknown) => invokeNative("rust_interact", { input }),
     runConstructFlowAgent: (input: unknown) => invokeNative("rust_flow_run", { input }),
     runConstructFlowResearch: (input: unknown) => invokeNative("rust_flow_research", { input }),
     readFlowMemory: (input: unknown) => invokeNative("rust_flow_memory_read", { input }),
@@ -252,13 +137,13 @@ export async function installConstructBridge(): Promise<void> {
     submitFlowTask: (input: unknown) => invokeNative("rust_flow_submit_task", { input }),
     rewindFlowSession: (input: unknown) => invokeNative("rust_flow_rewind", { input }),
     onConstructFlowSessionEvent: nativeSubscribe("construct:flow:session-event"),
-    onConstructInteractSessionEvent: subscribe("construct:project:interact-session-event"),
-    reviewConstructAuthoring: (input: unknown) => invoke("construct:project:review-authoring", input),
-    explainSelection: (input: unknown) => invoke("construct:project:explain-selection", input),
+    onConstructInteractSessionEvent: nativeSubscribe("construct:project:interact-session-event"),
+    reviewConstructAuthoring: (input: unknown) => invokeNative("rust_authoring_review", { input }),
+    explainSelection: (input: unknown) => invokeNative("rust_selection_explain", { input }),
     startCodeGhostStream: (input: unknown) => {
-      client.send("construct:project:code-ghost:explain", input);
+      void invokeNative("rust_code_ghost", { input });
     },
-    onCodeGhostToken: subscribe("construct:project:code-ghost:token"),
+    onCodeGhostToken: nativeSubscribe("construct:project:code-ghost:token"),
     deleteProject: (input: unknown) => invokeNative("rust_project_delete", { input }),
     gitStatus: (projectId: string) => invokeNative("rust_git_status", { projectId }),
     gitCommit: (input: unknown) => invokeNative("rust_git_commit", { input }),
@@ -267,30 +152,30 @@ export async function installConstructBridge(): Promise<void> {
     terminalInput: (input: unknown) => invokeNative("rust_terminal_input", { input }),
     terminalResize: (input: unknown) => invokeNative("rust_terminal_resize", { input }),
     terminalKill: (input: unknown) => invokeNative("rust_terminal_kill", { input }),
-    debugProcesses: () => invoke("construct:debug:processes"),
+    debugProcesses: () => invokeNative("rust_debug_processes"),
     onTerminalData: nativeSubscribe("construct:project:terminal-data"),
     onTerminalExit: nativeSubscribe("construct:project:terminal-exit"),
-    onVerifyLog: subscribe("construct:project:verify-log"),
-    onSelectionExplanationLog: subscribe("construct:project:explain-selection-log"),
-    onAgentLog: subscribe("construct:project:agent-log"),
+    onVerifyLog: nativeSubscribe("construct:project:verify-log"),
+    onSelectionExplanationLog: nativeSubscribe("construct:project:explain-selection-log"),
+    onAgentLog: nativeSubscribe("construct:project:agent-log"),
     lspRequest: (payload: unknown) => invokeNative("rust_lsp_request", { payload }),
     onLspNotification: nativeSubscribe("construct:lsp:notification"),
     onLspStderr: nativeSubscribe("construct:lsp:stderr"),
-    onMainLog: subscribe("construct:main:log"),
+    onMainLog: nativeSubscribe("construct:main:log"),
     onLspInstallProgress: nativeSubscribe("construct:lsp:install-progress"),
     lspGetStatus: (projectId: string) => invokeNative("rust_lsp_status", { projectId }),
     lspInstall: (input: unknown) => invokeNative("rust_lsp_install", { input }),
     lspStart: (projectId: string) => invokeNative("rust_lsp_start", { projectId }),
     lspStop: () => invokeNative("rust_lsp_stop"),
-    litellmStart: (input: unknown) => invoke("construct:litellm:start", input),
-    litellmStop: () => invoke("construct:litellm:stop"),
-    litellmStatus: () => invoke("construct:litellm:status"),
-    litellmCheckInstall: () => invoke("construct:litellm:check-install"),
-    litellmInstall: () => invoke("construct:litellm:install"),
-    onLitellmLog: subscribe("construct:litellm:log"),
-    onLitellmStatusChange: subscribe("construct:litellm:status-change"),
+    litellmStart: (_input: unknown) => invokeNative("rust_litellm_state"),
+    litellmStop: () => invokeNative("rust_litellm_state"),
+    litellmStatus: () => invokeNative("rust_litellm_state"),
+    litellmCheckInstall: () => invokeNative("rust_litellm_check"),
+    litellmInstall: () => Promise.resolve(false),
+    onLitellmLog: nativeSubscribe("construct:litellm:log"),
+    onLitellmStatusChange: nativeSubscribe("construct:litellm:status-change"),
     importOpencodeAuth: () => invokeNative("rust_settings_import_opencode_auth"),
-    onProviderLog: subscribe("construct:provider:log"),
+    onProviderLog: nativeSubscribe("construct:provider:log"),
     onFileChanged: (callback: (payload: unknown) => void) => {
       let disposed = false;
       let unlisten: (() => void) | null = null;
@@ -306,7 +191,7 @@ export async function installConstructBridge(): Promise<void> {
     },
     closeProject: async () => {
       await invokeNative("rust_workspace_watch_stop");
-      return invoke("construct:project:close");
+      return { success: true };
     }
   };
 

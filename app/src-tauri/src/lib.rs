@@ -4,7 +4,6 @@ mod core_state;
 mod error;
 mod git;
 mod learning;
-mod legacy_sidecar;
 mod lsp;
 mod paths;
 mod process;
@@ -28,6 +27,12 @@ pub fn run() {
             commands::system::rust_ui_state_set,
             commands::system::rust_storage_flush,
             commands::system::rust_storage_metrics,
+            commands::system::rust_runtime_info,
+            commands::system::rust_theme_set,
+            commands::system::rust_debug_processes,
+            commands::system::rust_litellm_state,
+            commands::system::rust_litellm_check,
+            commands::system::rust_read_lsp_source,
             commands::git::rust_git_status,
             commands::git::rust_git_commit,
             commands::git::rust_git_push,
@@ -72,6 +77,11 @@ pub fn run() {
             commands::flow::rust_flow_memory_update,
             commands::flow::rust_flow_rewind,
             commands::flow::rust_flow_submit_task,
+            commands::agents::rust_verify_recall,
+            commands::agents::rust_interact,
+            commands::agents::rust_authoring_review,
+            commands::agents::rust_selection_explain,
+            commands::agents::rust_code_ghost,
             commands::workspace::rust_workspace_list,
             commands::workspace::rust_workspace_read,
             commands::workspace::rust_workspace_write,
@@ -85,14 +95,7 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle().clone();
             app.manage(core_state::CoreState::initialize()?);
-            let (port, token) = legacy_sidecar::spawn(&handle);
-            let initialization_script = format!(
-                "window.__CONSTRUCT_BRIDGE__ = {{ port: {}, token: {} }};",
-                port,
-                serde_json::to_string(&token).expect("token is serializable")
-            );
-            window::create_main_window(&handle, &initialization_script)
-                .expect("failed to build main window");
+            window::create_main_window(&handle, "").expect("failed to build main window");
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -105,7 +108,6 @@ pub fn run() {
                     state.lsp.stop_all();
                     state.mastra.stop();
                 }
-                legacy_sidecar::stop(app);
             }
         });
 }
