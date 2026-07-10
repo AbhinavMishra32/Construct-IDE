@@ -1,5 +1,6 @@
 mod error;
 mod legacy_sidecar;
+mod storage;
 mod window;
 
 use tauri::RunEvent;
