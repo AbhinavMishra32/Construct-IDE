@@ -177,9 +177,9 @@ export async function installConstructBridge(): Promise<void> {
     setUiState: (input: unknown) => invokeNative("rust_ui_state_set", { input }),
     flushStorage: () => invokeNative("rust_storage_flush"),
     storageMetrics: () => invokeNative("rust_storage_metrics"),
-    ensureProject: (input: unknown) => invoke("construct:project:ensure", input),
-    importProject: (input: unknown) => invoke("construct:project:import", input),
-    createFlowProject: (input: unknown) => invoke("construct:flow:create", input),
+    ensureProject: (input: unknown) => invokeNative("rust_project_ensure", { input }),
+    importProject: (input: unknown) => invokeNative("rust_project_import", { input }),
+    createFlowProject: (input: unknown) => invokeNative("rust_flow_create", { input }),
 
     // Native dialogs via Tauri plugins (replaces Electron dialog in the sidecar).
     openConstructFile: async () => {
@@ -226,15 +226,15 @@ export async function installConstructBridge(): Promise<void> {
     openKnowledgeConcept: (input: unknown) => invoke("construct:learning:knowledge-open", input),
     recordConceptOpen: (input: unknown) => invoke("construct:learning:concept-open", input),
     removeKnowledgeConcept: (input: unknown) => invoke("construct:learning:knowledge-remove", input),
-    listProjects: () => invoke("construct:project:list"),
+    listProjects: () => invokeNative("rust_projects_list"),
     openProject: async (id: string) => {
-      const project = await invoke("construct:project:open", id);
+      const project = await invokeNative("rust_project_open", { id });
       await invokeNative("rust_workspace_watch_start", { projectId: id });
       return project;
     },
-    updateProject: (input: unknown) => invoke("construct:project:update", input),
-    readProjectTape: (projectId: string) => invoke("construct:project:read-tape", projectId),
-    updateProjectTape: (input: unknown) => invoke("construct:project:update-tape", input),
+    updateProject: (input: unknown) => invokeNative("rust_project_update", { input }),
+    readProjectTape: (projectId: string) => invokeNative("rust_project_read_tape", { projectId }),
+    updateProjectTape: (input: unknown) => invokeNative("rust_project_update_tape", { input }),
     listFiles: (projectId: string) => invokeNative("rust_workspace_list", { projectId }),
     readFile: (input: unknown) => invokeNative("rust_workspace_read", { input }),
     readLspSourceFile: (input: unknown) => invoke("construct:lsp:read-source-file", input),
@@ -259,7 +259,7 @@ export async function installConstructBridge(): Promise<void> {
       client.send("construct:project:code-ghost:explain", input);
     },
     onCodeGhostToken: subscribe("construct:project:code-ghost:token"),
-    deleteProject: (input: unknown) => invoke("construct:project:delete", input),
+    deleteProject: (input: unknown) => invokeNative("rust_project_delete", { input }),
     gitStatus: (projectId: string) => invokeNative("rust_git_status", { projectId }),
     gitCommit: (input: unknown) => invokeNative("rust_git_commit", { input }),
     gitPush: (projectId: string) => invokeNative("rust_git_push", { projectId }),

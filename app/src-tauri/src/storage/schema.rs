@@ -9,6 +9,115 @@ diesel::table! {
 }
 
 diesel::table! {
+    construct_project_documents (project_id) {
+        project_id -> Text,
+        payload_json -> Text,
+        updated_at -> Text,
+    }
+}
+
+diesel::table! {
+    construct_flow_path_nodes (id) {
+        id -> Text, original_id -> Nullable<Text>, project_id -> Text, title -> Text, summary -> Text,
+        status -> Text, node_order -> Integer, kind -> Nullable<Text>, learner_level -> Nullable<Text>,
+        concepts_json -> Nullable<Text>, task_ids_json -> Nullable<Text>, entry_criteria_json -> Nullable<Text>,
+        exit_criteria_json -> Nullable<Text>, research_notes_json -> Nullable<Text>, created_at -> Text,
+        updated_at -> Text, completed_at -> Nullable<Text>,
+    }
+}
+
+diesel::table! {
+    construct_flow_sessions (id) {
+        id -> Text, project_id -> Text, thread_id -> Text, origin -> Nullable<Text>,
+        question_response_json -> Nullable<Text>, status -> Text, citations_json -> Nullable<Text>,
+        context_compaction_json -> Nullable<Text>, context_window_json -> Nullable<Text>, created_at -> Text,
+        updated_at -> Text, duration_ms -> Nullable<Integer>, step_count -> Nullable<Integer>,
+        finish_reason -> Nullable<Text>, error_message -> Nullable<Text>,
+    }
+}
+
+diesel::table! {
+    construct_flow_messages (id) {
+        id -> Text, original_id -> Nullable<Text>, project_id -> Text, session_id -> Text,
+        role -> Text, content -> Text, created_at -> Text, position -> Integer,
+    }
+}
+
+diesel::table! {
+    construct_flow_tool_calls (id) {
+        id -> Text, original_id -> Nullable<Text>, project_id -> Text, session_id -> Text,
+        name -> Text, title -> Text, reason -> Text, input_json -> Nullable<Text>, output_preview -> Nullable<Text>,
+        response_json -> Nullable<Text>, status -> Text, created_at -> Text, completed_at -> Nullable<Text>, position -> Integer,
+    }
+}
+
+diesel::table! {
+    construct_flow_timeline_parts (id) {
+        id -> Text, original_id -> Nullable<Text>, project_id -> Text, session_id -> Text, kind -> Text,
+        status -> Text, title -> Nullable<Text>, detail -> Nullable<Text>, text -> Nullable<Text>,
+        tool_call_id -> Nullable<Text>, name -> Nullable<Text>, reason -> Nullable<Text>, input_json -> Nullable<Text>,
+        output_preview -> Nullable<Text>, summary -> Nullable<Text>, before_tokens -> Nullable<Integer>,
+        after_tokens -> Nullable<Integer>, summarized_message_count -> Nullable<Integer>,
+        preserved_message_count -> Nullable<Integer>, created_at -> Text, completed_at -> Nullable<Text>,
+        updated_at -> Nullable<Text>, position -> Integer,
+    }
+}
+
+diesel::table! {
+    construct_flow_agent_events (id) {
+        id -> Text, project_id -> Text, session_id -> Text, payload_json -> Text, position -> Integer,
+    }
+}
+
+diesel::table! {
+    construct_flow_actions (id) {
+        id -> Text, project_id -> Text, session_id -> Text, payload_json -> Text, position -> Integer,
+    }
+}
+
+diesel::table! {
+    construct_flow_practice_tasks (id) {
+        id -> Text, original_id -> Nullable<Text>, project_id -> Text, session_id -> Text,
+        path_node_id -> Nullable<Text>, language -> Nullable<Text>, title -> Text, prompt -> Text,
+        status -> Text, created_at -> Text, submitted_at -> Nullable<Text>, payload_json -> Text, position -> Integer,
+    }
+}
+
+diesel::table! {
+    construct_flow_concept_exercises (id) {
+        id -> Text, original_id -> Nullable<Text>, project_id -> Text, session_id -> Text,
+        title -> Text, status -> Text, created_at -> Text, payload_json -> Text, position -> Integer,
+    }
+}
+
+diesel::joinable!(construct_project_documents -> construct_projects (project_id));
+diesel::joinable!(construct_flow_path_nodes -> construct_projects (project_id));
+diesel::joinable!(construct_flow_sessions -> construct_projects (project_id));
+diesel::joinable!(construct_flow_messages -> construct_flow_sessions (session_id));
+diesel::joinable!(construct_flow_tool_calls -> construct_flow_sessions (session_id));
+diesel::joinable!(construct_flow_timeline_parts -> construct_flow_sessions (session_id));
+diesel::joinable!(construct_flow_agent_events -> construct_flow_sessions (session_id));
+diesel::joinable!(construct_flow_actions -> construct_flow_sessions (session_id));
+diesel::joinable!(construct_flow_practice_tasks -> construct_flow_sessions (session_id));
+diesel::joinable!(construct_flow_concept_exercises -> construct_flow_sessions (session_id));
+
+diesel::allow_tables_to_appear_in_same_query!(
+    construct_projects,
+    construct_project_documents,
+    construct_flow_path_nodes,
+    construct_flow_sessions,
+    construct_flow_messages,
+    construct_flow_tool_calls,
+    construct_flow_timeline_parts,
+    construct_flow_agent_events,
+    construct_flow_actions,
+    construct_flow_practice_tasks,
+    construct_flow_concept_exercises,
+    storage_items,
+    storage_sync_queue,
+);
+
+diesel::table! {
     storage_sync_queue (id) {
         id -> Text,
         provider_id -> Text,

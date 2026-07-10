@@ -1,3 +1,13 @@
+DROP TABLE IF EXISTS construct_project_documents;
+DROP TABLE IF EXISTS construct_flow_concept_exercises;
+DROP TABLE IF EXISTS construct_flow_practice_tasks;
+DROP TABLE IF EXISTS construct_flow_actions;
+DROP TABLE IF EXISTS construct_flow_agent_events;
+DROP TABLE IF EXISTS construct_flow_timeline_parts;
+DROP TABLE IF EXISTS construct_flow_tool_calls;
+DROP TABLE IF EXISTS construct_flow_messages;
+DROP TABLE IF EXISTS construct_flow_sessions;
+DROP TABLE IF EXISTS construct_flow_path_nodes;
 DROP TABLE IF EXISTS construct_projects;
 DROP TABLE IF EXISTS storage_sync_queue;
 DROP TABLE IF EXISTS storage_items;

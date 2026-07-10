@@ -15,6 +15,7 @@ pub struct CoreState {
     pub git: GitService,
     pub terminal: TerminalService,
     pub lsp: LspService,
+    pub projects: ProjectStore,
 }
 
 impl CoreState {
@@ -25,6 +26,7 @@ impl CoreState {
         let git = GitService::new(ProjectStore::new(Database::open(&paths.database)?));
         let terminal = TerminalService::new(ProjectStore::new(Database::open(&paths.database)?));
         let lsp = LspService::new(ProjectStore::new(Database::open(&paths.database)?));
+        let project_repository = ProjectStore::new(Database::open(&paths.database)?);
         Ok(Self {
             paths,
             ui_state: UiStateStore::new(database),
@@ -33,6 +35,7 @@ impl CoreState {
             git,
             terminal,
             lsp,
+            projects: project_repository,
         })
     }
 }

@@ -1,3 +1,5 @@
+mod legacy;
+mod models;
 mod store;
 
 #[cfg(test)]

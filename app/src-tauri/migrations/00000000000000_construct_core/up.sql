@@ -67,3 +67,71 @@ CREATE TABLE IF NOT EXISTS construct_projects (
 );
 CREATE INDEX IF NOT EXISTS idx_construct_projects_kind
   ON construct_projects(kind, last_opened_at);
+
+CREATE TABLE IF NOT EXISTS construct_flow_path_nodes (
+  id TEXT PRIMARY KEY, original_id TEXT, project_id TEXT NOT NULL REFERENCES construct_projects(id) ON DELETE CASCADE,
+  title TEXT NOT NULL, summary TEXT NOT NULL, status TEXT NOT NULL, node_order INTEGER NOT NULL,
+  kind TEXT, learner_level TEXT, concepts_json TEXT, task_ids_json TEXT, entry_criteria_json TEXT,
+  exit_criteria_json TEXT, research_notes_json TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, completed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_construct_flow_path_nodes_project ON construct_flow_path_nodes(project_id, node_order);
+
+CREATE TABLE IF NOT EXISTS construct_flow_sessions (
+  id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES construct_projects(id) ON DELETE CASCADE,
+  thread_id TEXT NOT NULL, origin TEXT, question_response_json TEXT, status TEXT NOT NULL,
+  citations_json TEXT, context_compaction_json TEXT, context_window_json TEXT,
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL, duration_ms INTEGER, step_count INTEGER,
+  finish_reason TEXT, error_message TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_construct_flow_sessions_project_time ON construct_flow_sessions(project_id, created_at, id);
+
+CREATE TABLE IF NOT EXISTS construct_flow_messages (
+  id TEXT PRIMARY KEY, original_id TEXT, project_id TEXT NOT NULL,
+  session_id TEXT NOT NULL REFERENCES construct_flow_sessions(id) ON DELETE CASCADE,
+  role TEXT NOT NULL, content TEXT NOT NULL, created_at TEXT NOT NULL, position INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_construct_flow_messages_session ON construct_flow_messages(session_id, position);
+
+CREATE TABLE IF NOT EXISTS construct_flow_tool_calls (
+  id TEXT PRIMARY KEY, original_id TEXT, project_id TEXT NOT NULL,
+  session_id TEXT NOT NULL REFERENCES construct_flow_sessions(id) ON DELETE CASCADE,
+  name TEXT NOT NULL, title TEXT NOT NULL, reason TEXT NOT NULL, input_json TEXT, output_preview TEXT,
+  response_json TEXT, status TEXT NOT NULL, created_at TEXT NOT NULL, completed_at TEXT, position INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_construct_flow_tool_calls_session ON construct_flow_tool_calls(session_id, position);
+
+CREATE TABLE IF NOT EXISTS construct_flow_timeline_parts (
+  id TEXT PRIMARY KEY, original_id TEXT, project_id TEXT NOT NULL,
+  session_id TEXT NOT NULL REFERENCES construct_flow_sessions(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL, status TEXT NOT NULL, title TEXT, detail TEXT, text TEXT, tool_call_id TEXT,
+  name TEXT, reason TEXT, input_json TEXT, output_preview TEXT, summary TEXT,
+  before_tokens INTEGER, after_tokens INTEGER, summarized_message_count INTEGER, preserved_message_count INTEGER,
+  created_at TEXT NOT NULL, completed_at TEXT, updated_at TEXT, position INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_construct_flow_timeline_session ON construct_flow_timeline_parts(session_id, position);
+
+CREATE TABLE IF NOT EXISTS construct_flow_agent_events (
+  id TEXT PRIMARY KEY, project_id TEXT NOT NULL, session_id TEXT NOT NULL REFERENCES construct_flow_sessions(id) ON DELETE CASCADE,
+  payload_json TEXT NOT NULL, position INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS construct_flow_actions (
+  id TEXT PRIMARY KEY, project_id TEXT NOT NULL, session_id TEXT NOT NULL REFERENCES construct_flow_sessions(id) ON DELETE CASCADE,
+  payload_json TEXT NOT NULL, position INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS construct_flow_practice_tasks (
+  id TEXT PRIMARY KEY, original_id TEXT, project_id TEXT NOT NULL,
+  session_id TEXT NOT NULL REFERENCES construct_flow_sessions(id) ON DELETE CASCADE,
+  path_node_id TEXT, language TEXT, title TEXT NOT NULL, prompt TEXT NOT NULL, status TEXT NOT NULL,
+  created_at TEXT NOT NULL, submitted_at TEXT, payload_json TEXT NOT NULL, position INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS construct_flow_concept_exercises (
+  id TEXT PRIMARY KEY, original_id TEXT, project_id TEXT NOT NULL,
+  session_id TEXT NOT NULL REFERENCES construct_flow_sessions(id) ON DELETE CASCADE,
+  title TEXT NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL, payload_json TEXT NOT NULL, position INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS construct_project_documents (
+  project_id TEXT PRIMARY KEY REFERENCES construct_projects(id) ON DELETE CASCADE,
+  payload_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
