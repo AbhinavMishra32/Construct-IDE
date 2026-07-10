@@ -135,3 +135,20 @@ CREATE TABLE IF NOT EXISTS construct_project_documents (
   payload_json TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS construct_learning_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS construct_learning_global_concepts (concept_id TEXT PRIMARY KEY, payload_json TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS construct_learning_assistance_events (id TEXT PRIMARY KEY, project_id TEXT, kind TEXT NOT NULL, created_at TEXT NOT NULL, payload_json TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS construct_learning_projects (project_id TEXT PRIMARY KEY, current_step_index INTEGER, current_block_index INTEGER, current_block_id TEXT);
+CREATE TABLE IF NOT EXISTS construct_project_concept_understanding (project_id TEXT NOT NULL, concept_id TEXT NOT NULL, payload_json TEXT NOT NULL, PRIMARY KEY(project_id, concept_id));
+CREATE TABLE IF NOT EXISTS construct_project_concept_relations (project_id TEXT NOT NULL, concept_id TEXT NOT NULL, last_referenced_at TEXT, payload_json TEXT NOT NULL, PRIMARY KEY(project_id, concept_id));
+CREATE TABLE IF NOT EXISTS construct_project_concept_events (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, concept_id TEXT NOT NULL, created_at TEXT NOT NULL, payload_json TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS construct_project_artifact_audits (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, created_at TEXT NOT NULL, payload_json TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS construct_knowledge_concepts (project_id TEXT NOT NULL, concept_id TEXT NOT NULL, title TEXT NOT NULL, kind TEXT NOT NULL, language TEXT, technology TEXT, saved_at TEXT, updated_at TEXT, payload_json TEXT NOT NULL, PRIMARY KEY(project_id, concept_id));
+CREATE TABLE IF NOT EXISTS construct_project_concept_engagement (project_id TEXT NOT NULL, concept_id TEXT NOT NULL, first_opened_at TEXT NOT NULL, last_opened_at TEXT NOT NULL, open_count INTEGER NOT NULL, PRIMARY KEY(project_id, concept_id));
+CREATE TABLE IF NOT EXISTS construct_project_interact_sessions (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT, payload_json TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS construct_project_recall_attempts (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, created_at TEXT NOT NULL, payload_json TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS construct_project_planned_overlays (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, payload_json TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS construct_project_generated_live_steps (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT, payload_json TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS construct_project_generated_live_step_runs (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, created_at TEXT NOT NULL, payload_json TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS construct_learning_documents (singleton INTEGER PRIMARY KEY CHECK(singleton = 1), payload_json TEXT NOT NULL, updated_at TEXT NOT NULL);

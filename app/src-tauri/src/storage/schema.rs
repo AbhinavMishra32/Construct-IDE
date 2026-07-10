@@ -90,6 +90,23 @@ diesel::table! {
     }
 }
 
+diesel::table! { construct_learning_meta (key) { key -> Text, value -> Text, } }
+diesel::table! { construct_learning_global_concepts (concept_id) { concept_id -> Text, payload_json -> Text, } }
+diesel::table! { construct_learning_assistance_events (id) { id -> Text, project_id -> Nullable<Text>, kind -> Text, created_at -> Text, payload_json -> Text, } }
+diesel::table! { construct_learning_projects (project_id) { project_id -> Text, current_step_index -> Nullable<Integer>, current_block_index -> Nullable<Integer>, current_block_id -> Nullable<Text>, } }
+diesel::table! { construct_project_concept_understanding (project_id, concept_id) { project_id -> Text, concept_id -> Text, payload_json -> Text, } }
+diesel::table! { construct_project_concept_relations (project_id, concept_id) { project_id -> Text, concept_id -> Text, last_referenced_at -> Nullable<Text>, payload_json -> Text, } }
+diesel::table! { construct_project_concept_events (id) { id -> Text, project_id -> Text, concept_id -> Text, created_at -> Text, payload_json -> Text, } }
+diesel::table! { construct_project_artifact_audits (id) { id -> Text, project_id -> Text, created_at -> Text, payload_json -> Text, } }
+diesel::table! { construct_knowledge_concepts (project_id, concept_id) { project_id -> Text, concept_id -> Text, title -> Text, kind -> Text, language -> Nullable<Text>, technology -> Nullable<Text>, saved_at -> Nullable<Text>, updated_at -> Nullable<Text>, payload_json -> Text, } }
+diesel::table! { construct_project_concept_engagement (project_id, concept_id) { project_id -> Text, concept_id -> Text, first_opened_at -> Text, last_opened_at -> Text, open_count -> Integer, } }
+diesel::table! { construct_project_interact_sessions (id) { id -> Text, project_id -> Text, created_at -> Text, updated_at -> Nullable<Text>, payload_json -> Text, } }
+diesel::table! { construct_project_recall_attempts (id) { id -> Text, project_id -> Text, created_at -> Text, payload_json -> Text, } }
+diesel::table! { construct_project_planned_overlays (id) { id -> Text, project_id -> Text, payload_json -> Text, } }
+diesel::table! { construct_project_generated_live_steps (id) { id -> Text, project_id -> Text, status -> Text, created_at -> Text, updated_at -> Nullable<Text>, payload_json -> Text, } }
+diesel::table! { construct_project_generated_live_step_runs (id) { id -> Text, project_id -> Text, created_at -> Text, payload_json -> Text, } }
+diesel::table! { construct_learning_documents (singleton) { singleton -> Integer, payload_json -> Text, updated_at -> Text, } }
+
 diesel::joinable!(construct_project_documents -> construct_projects (project_id));
 diesel::joinable!(construct_flow_path_nodes -> construct_projects (project_id));
 diesel::joinable!(construct_flow_sessions -> construct_projects (project_id));
@@ -115,6 +132,22 @@ diesel::allow_tables_to_appear_in_same_query!(
     construct_flow_concept_exercises,
     storage_items,
     storage_sync_queue,
+    construct_learning_meta,
+    construct_learning_global_concepts,
+    construct_learning_assistance_events,
+    construct_learning_projects,
+    construct_project_concept_understanding,
+    construct_project_concept_relations,
+    construct_project_concept_events,
+    construct_project_artifact_audits,
+    construct_knowledge_concepts,
+    construct_project_concept_engagement,
+    construct_project_interact_sessions,
+    construct_project_recall_attempts,
+    construct_project_planned_overlays,
+    construct_project_generated_live_steps,
+    construct_project_generated_live_step_runs,
+    construct_learning_documents,
 );
 
 diesel::table! {

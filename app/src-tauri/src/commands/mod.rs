@@ -1,6 +1,8 @@
 pub(crate) mod git;
+pub(crate) mod learning;
 pub(crate) mod lsp;
 pub(crate) mod projects;
+pub(crate) mod settings;
 pub(crate) mod system;
 pub(crate) mod terminal;
 pub(crate) mod workspace;

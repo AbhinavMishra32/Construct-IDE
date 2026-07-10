@@ -208,24 +208,24 @@ export async function installConstructBridge(): Promise<void> {
       return typeof selected === "string" ? selected : null;
     },
 
-    getSettings: () => invoke("construct:settings:get"),
-    openConfigFile: () => invoke("construct:settings:open-config-file"),
-    setWorkspaceRoot: (input: unknown) => invoke("construct:settings:set-workspace-root", input),
-    updateAiSettings: (input: unknown) => invoke("construct:settings:update-ai", input),
-    updateAppSettings: (input: unknown) => invoke("construct:settings:update-app", input),
+    getSettings: () => invokeNative("rust_settings_get"),
+    openConfigFile: () => invokeNative("rust_settings_open_config"),
+    setWorkspaceRoot: (input: unknown) => invokeNative("rust_settings_set_workspace_root", { input }),
+    updateAiSettings: (input: unknown) => invokeNative("rust_settings_update_ai", { input }),
+    updateAppSettings: (input: unknown) => invokeNative("rust_settings_update_app", { input }),
     updateObservabilitySettings: (input: unknown) =>
-      invoke("construct:settings:update-observability", input),
-    listAiFeatures: () => invoke("construct:settings:list-ai-features"),
-    listModels: (input: unknown) => invoke("construct:settings:list-models", input),
-    getLearningState: () => invoke("construct:learning:get-state"),
+      invokeNative("rust_settings_update_observability", { input }),
+    listAiFeatures: () => invokeNative("rust_settings_features"),
+    listModels: (input: unknown) => invokeNative("rust_settings_list_models", { input }),
+    getLearningState: () => invokeNative("rust_learning_get"),
     getProjectLearningState: (projectId: string) =>
-      invoke("construct:learning:get-project", projectId),
-    applyLearningPatch: (input: unknown) => invoke("construct:learning:apply-patch", input),
-    getWeakConcepts: (input: unknown) => invoke("construct:learning:weak-concepts", input),
-    saveKnowledgeConcept: (input: unknown) => invoke("construct:learning:knowledge-save", input),
-    openKnowledgeConcept: (input: unknown) => invoke("construct:learning:knowledge-open", input),
-    recordConceptOpen: (input: unknown) => invoke("construct:learning:concept-open", input),
-    removeKnowledgeConcept: (input: unknown) => invoke("construct:learning:knowledge-remove", input),
+      invokeNative("rust_learning_project", { projectId }),
+    applyLearningPatch: (patch: unknown) => invokeNative("rust_learning_patch", { patch }),
+    getWeakConcepts: (input: unknown) => invokeNative("rust_learning_weak", { input }),
+    saveKnowledgeConcept: (input: unknown) => invokeNative("rust_learning_save", { input }),
+    openKnowledgeConcept: (input: unknown) => invokeNative("rust_learning_open", { input }),
+    recordConceptOpen: (input: unknown) => invokeNative("rust_learning_concept_open", { input }),
+    removeKnowledgeConcept: (input: unknown) => invokeNative("rust_learning_remove", { input }),
     listProjects: () => invokeNative("rust_projects_list"),
     openProject: async (id: string) => {
       const project = await invokeNative("rust_project_open", { id });
@@ -289,7 +289,7 @@ export async function installConstructBridge(): Promise<void> {
     litellmInstall: () => invoke("construct:litellm:install"),
     onLitellmLog: subscribe("construct:litellm:log"),
     onLitellmStatusChange: subscribe("construct:litellm:status-change"),
-    importOpencodeAuth: () => invoke("construct:settings:import-opencode-auth"),
+    importOpencodeAuth: () => invokeNative("rust_settings_import_opencode_auth"),
     onProviderLog: subscribe("construct:provider:log"),
     onFileChanged: (callback: (payload: unknown) => void) => {
       let disposed = false;

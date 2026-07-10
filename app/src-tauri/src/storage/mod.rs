@@ -1,3 +1,4 @@
+mod json_store;
 mod models;
 pub(crate) mod schema;
 mod ui_state;
@@ -11,6 +12,7 @@ use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 
 use crate::error::{CommandError, CommandResult};
 
+pub use json_store::JsonStore;
 pub use ui_state::{StorageMetrics, UiStateInput, UiStateStore};
 
 const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations");

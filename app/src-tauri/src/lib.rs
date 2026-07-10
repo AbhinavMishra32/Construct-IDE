@@ -2,11 +2,13 @@ mod commands;
 mod core_state;
 mod error;
 mod git;
+mod learning;
 mod legacy_sidecar;
 mod lsp;
 mod paths;
 mod process;
 mod projects;
+mod settings;
 mod storage;
 mod terminal;
 mod window;
@@ -46,6 +48,23 @@ pub fn run() {
             commands::projects::rust_project_update_tape,
             commands::projects::rust_flow_create,
             commands::projects::rust_project_delete,
+            commands::settings::rust_settings_get,
+            commands::settings::rust_settings_update_ai,
+            commands::settings::rust_settings_update_app,
+            commands::settings::rust_settings_update_observability,
+            commands::settings::rust_settings_set_workspace_root,
+            commands::settings::rust_settings_open_config,
+            commands::settings::rust_settings_features,
+            commands::settings::rust_settings_import_opencode_auth,
+            commands::settings::rust_settings_list_models,
+            commands::learning::rust_learning_get,
+            commands::learning::rust_learning_project,
+            commands::learning::rust_learning_patch,
+            commands::learning::rust_learning_weak,
+            commands::learning::rust_learning_save,
+            commands::learning::rust_learning_open,
+            commands::learning::rust_learning_concept_open,
+            commands::learning::rust_learning_remove,
             commands::workspace::rust_workspace_list,
             commands::workspace::rust_workspace_read,
             commands::workspace::rust_workspace_write,
