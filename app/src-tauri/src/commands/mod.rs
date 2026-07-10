@@ -1,6 +1,8 @@
 pub(crate) mod agents;
 pub(crate) mod flow;
+mod flow_trace;
 pub(crate) mod git;
+mod interact_trace;
 pub(crate) mod learning;
 pub(crate) mod lsp;
 pub(crate) mod projects;

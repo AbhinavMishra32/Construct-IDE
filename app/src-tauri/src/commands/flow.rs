@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use chrono::Utc;
 use serde_json::{json, Value};
@@ -7,6 +7,8 @@ use uuid::Uuid;
 
 use crate::core_state::CoreState;
 use crate::error::{CommandError, CommandResult};
+
+use super::flow_trace;
 
 const MEMORY_FILES: [&str; 4] = ["research.md", "project.md", "path.md", "learner.md"];
 
@@ -72,20 +74,56 @@ async fn run(
     let worker_project = project.clone();
     let worker_message = message.clone();
     let worker_settings = state.settings.read()?["ai"].clone();
+    let live_session = Arc::new(Mutex::new(session.clone()));
+    let event_session = Arc::clone(&live_session);
+    let event_app = app.clone();
+    let event_project_id = project_id.clone();
     let method = if research {
         "flow.research"
     } else {
         "flow.run"
     };
     let response = tauri::async_runtime::spawn_blocking(move || {
-        worker.request(
+        worker.request_with_events(
             worker_app,
             method,
             json!({"project":worker_project,"memory":memory,"message":worker_message,"settings":worker_settings}),
+            move |trace| {
+                let Ok(mut session) = event_session.lock() else {
+                    return;
+                };
+                if flow_trace::apply(&mut session, &trace) {
+                    let _ = event_app.emit(
+                        "construct:flow:session-event",
+                        json!({"type":"updated","projectId":event_project_id,"session":session.clone()}),
+                    );
+                }
+            },
         )
     })
     .await
-    .map_err(|error| CommandError::new("flow.worker", error.to_string()))??;
+    .map_err(|error| CommandError::new("flow.worker", error.to_string()))?;
+    session = live_session
+        .lock()
+        .map_err(|_| CommandError::new("flow.stream", "live Flow session lock was poisoned"))?
+        .clone();
+    let response = match response {
+        Ok(response) => response,
+        Err(error) => {
+            let updated = timestamp();
+            session["status"] = json!("error");
+            session["updatedAt"] = json!(updated);
+            flow_trace::finalize_reply(&mut session, "", "error");
+            replace_session(&mut project, &session_id, session.clone());
+            project["flow"]["updatedAt"] = json!(updated);
+            state.projects.write(&project)?;
+            let _ = app.emit(
+                "construct:flow:session-event",
+                json!({"type":"error","projectId":project_id,"session":session}),
+            );
+            return Err(error);
+        }
+    };
     let reply = response
         .get("text")
         .and_then(Value::as_str)
@@ -101,7 +139,7 @@ async fn run(
         .cloned()
         .unwrap_or(json!("stop"));
     session["messages"].as_array_mut().unwrap().push(json!({"id":Uuid::new_v4().to_string(),"role":"assistant","content":reply,"createdAt":updated}));
-    session["timeline"].as_array_mut().unwrap().push(json!({"id":Uuid::new_v4().to_string(),"kind":"message","status":"completed","text":reply,"createdAt":updated}));
+    flow_trace::finalize_reply(&mut session, &reply, "completed");
     replace_session(&mut project, &session_id, session.clone());
     project["flow"]["updatedAt"] = json!(updated);
     if research {

@@ -1,10 +1,14 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
+use chrono::Utc;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, State};
+use uuid::Uuid;
 
 use crate::core_state::CoreState;
 use crate::error::{CommandError, CommandResult};
+
+use super::interact_trace;
 
 async fn call(
     app: AppHandle,
@@ -49,21 +53,95 @@ pub async fn rust_interact(
     state: State<'_, CoreState>,
     mut input: Value,
 ) -> CommandResult<Value> {
-    input["learningState"] = state.learning.read()?;
-    if let Some(id) = input.get("projectId").and_then(Value::as_str) {
-        input["project"] = state.projects.read(id)?.unwrap_or(Value::Null);
-    }
-    let result = call(
-        app.clone(),
-        Arc::clone(&state.mastra),
-        "interact.run",
-        input,
-        state.settings.read()?["ai"].clone(),
-    )
-    .await?;
+    let project_id = input
+        .get("projectId")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let block_id = input
+        .get("blockId")
+        .and_then(Value::as_str)
+        .unwrap_or("general")
+        .to_string();
+    let mode = input
+        .get("mode")
+        .and_then(Value::as_str)
+        .unwrap_or("lesson-check")
+        .to_string();
+    let thread_id = input
+        .get("threadId")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .unwrap_or_else(|| {
+            if mode == "general" {
+                format!("general:{project_id}")
+            } else {
+                format!("{block_id}:lesson")
+            }
+        });
+    let learning_state = state.learning.read()?;
+    input["learningState"] = learning_state.clone();
+    input["project"] = state.projects.read(&project_id)?.unwrap_or(Value::Null);
+    input["settings"] = state.settings.read()?["ai"].clone();
+    let run_id = Uuid::new_v4().to_string();
+    let now = Utc::now().to_rfc3339();
+    let session = json!({
+        "id":Uuid::new_v4().to_string(),"threadId":thread_id,"mode":mode,
+        "projectId":project_id,"blockId":block_id,"prompt":input.get("prompt"),"answer":input.get("answer"),
+        "status":"continue","confidence":"low","reply":"","coveredConceptIds":[],"missingConceptIds":[],
+        "assistanceLevel":"none","createdAt":now,"updatedAt":now,"runStatus":"running",
+        "actions":[],"dynamicSteps":[],"dynamicStepValidation":[],"generatedLiveSteps":[],
+        "liveStepValidation":[],"toolCalls":[],"agentEvents":[],"durationMs":0
+    });
+    let live_session = Arc::new(Mutex::new(session));
+    let event_session = Arc::clone(&live_session);
+    let event_app = app.clone();
+    let event_run_id = run_id.clone();
+    let event_project_id = project_id.clone();
+    let event_block_id = block_id.clone();
+    let event_thread_id = thread_id.clone();
     let _ = app.emit(
         "construct:project:interact-session-event",
-        json!({"type":"completed","result":result}),
+        json!({"type":"started","runId":run_id,"projectId":project_id,"blockId":block_id,"threadId":thread_id,"session":live_session.lock().map_err(|_| CommandError::new("interact.stream","live session lock was poisoned"))?.clone()}),
+    );
+    let worker = Arc::clone(&state.mastra);
+    let worker_app = app.clone();
+    let response = tauri::async_runtime::spawn_blocking(move || {
+        worker.request_with_events(worker_app, "interact.run", input, move |trace| {
+            let Ok(mut session) = event_session.lock() else {
+                return;
+            };
+            if interact_trace::apply(&mut session, &trace) {
+                let _ = event_app.emit(
+                    "construct:project:interact-session-event",
+                    json!({"type":"updated","runId":event_run_id,"projectId":event_project_id,"blockId":event_block_id,"threadId":event_thread_id,"session":session.clone()}),
+                );
+            }
+        })
+    })
+    .await
+    .map_err(|error| CommandError::new("interact.worker", error.to_string()))?;
+    let mut session = live_session
+        .lock()
+        .map_err(|_| CommandError::new("interact.stream", "live session lock was poisoned"))?
+        .clone();
+    let mut result = match response {
+        Ok(result) => result,
+        Err(error) => {
+            interact_trace::complete(&mut session, &json!({}), "error");
+            let _ = app.emit(
+                "construct:project:interact-session-event",
+                json!({"type":"error","runId":run_id,"projectId":project_id,"blockId":block_id,"threadId":thread_id,"session":session,"learningState":learning_state}),
+            );
+            return Err(error);
+        }
+    };
+    interact_trace::complete(&mut session, &result, "completed");
+    result["session"] = session.clone();
+    result["learningState"] = learning_state.clone();
+    let _ = app.emit(
+        "construct:project:interact-session-event",
+        json!({"type":"completed","runId":run_id,"projectId":project_id,"blockId":block_id,"threadId":thread_id,"session":session,"result":result,"learningState":learning_state}),
     );
     Ok(result)
 }

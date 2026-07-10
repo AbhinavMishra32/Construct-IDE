@@ -15,10 +15,16 @@ use crate::ai::tools::ToolHost;
 use crate::error::{CommandError, CommandResult};
 
 type Reply = Result<Value, String>;
+type EventHandler = Arc<dyn Fn(Value) + Send + Sync>;
+
+struct PendingRequest {
+    reply: Sender<Reply>,
+    events: Option<EventHandler>,
+}
 
 struct WorkerState {
     child: Arc<Mutex<Option<CommandChild>>>,
-    pending: Arc<Mutex<HashMap<String, Sender<Reply>>>>,
+    pending: Arc<Mutex<HashMap<String, PendingRequest>>>,
 }
 
 pub struct MastraWorker {
@@ -40,6 +46,26 @@ impl MastraWorker {
         method: &str,
         payload: Value,
     ) -> CommandResult<Value> {
+        self.request_inner(app, method, payload, None)
+    }
+
+    pub fn request_with_events(
+        &self,
+        app: tauri::AppHandle,
+        method: &str,
+        payload: Value,
+        on_event: impl Fn(Value) + Send + Sync + 'static,
+    ) -> CommandResult<Value> {
+        self.request_inner(app, method, payload, Some(Arc::new(on_event)))
+    }
+
+    fn request_inner(
+        &self,
+        app: tauri::AppHandle,
+        method: &str,
+        payload: Value,
+        events: Option<EventHandler>,
+    ) -> CommandResult<Value> {
         self.ensure_started(&app)?;
         let request_id = Uuid::new_v4().to_string();
         let (sender, receiver) = mpsc::channel();
@@ -47,11 +73,13 @@ impl MastraWorker {
         let state = guard.as_ref().ok_or_else(|| {
             CommandError::new("mastra.not-running", "Mastra worker did not start")
         })?;
-        state
-            .pending
-            .lock()
-            .map_err(lock_error)?
-            .insert(request_id.clone(), sender);
+        state.pending.lock().map_err(lock_error)?.insert(
+            request_id.clone(),
+            PendingRequest {
+                reply: sender,
+                events,
+            },
+        );
         let message = json!({"kind":"request","id":request_id,"method":method,"payload":payload});
         write_child(&state.child, &message)?;
         drop(guard);
@@ -88,7 +116,7 @@ impl MastraWorker {
             .spawn()
             .map_err(|error| CommandError::new("mastra.spawn", error.to_string()))?;
         let child = Arc::new(Mutex::new(Some(child)));
-        let pending = Arc::new(Mutex::new(HashMap::<String, Sender<Reply>>::new()));
+        let pending = Arc::new(Mutex::new(HashMap::<String, PendingRequest>::new()));
         let event_child = Arc::clone(&child);
         let event_pending = Arc::clone(&pending);
         let tools = Arc::clone(&self.tools);
@@ -118,8 +146,8 @@ impl MastraWorker {
                             child.take();
                         }
                         if let Ok(mut pending) = event_pending.lock() {
-                            for (_, sender) in pending.drain() {
-                                let _ = sender.send(Err("Mastra worker terminated".into()));
+                            for (_, request) in pending.drain() {
+                                let _ = request.reply.send(Err("Mastra worker terminated".into()));
                             }
                         }
                     }
@@ -135,7 +163,7 @@ impl MastraWorker {
 fn handle_line(
     app: &tauri::AppHandle,
     child: &Arc<Mutex<Option<CommandChild>>>,
-    pending: &Arc<Mutex<HashMap<String, Sender<Reply>>>>,
+    pending: &Arc<Mutex<HashMap<String, PendingRequest>>>,
     tools: &ToolHost,
     line: &str,
 ) {
@@ -145,7 +173,7 @@ fn handle_line(
     match message.get("kind").and_then(Value::as_str) {
         Some("result") => {
             if let Some(id) = message.get("id").and_then(Value::as_str) {
-                if let Some(sender) = pending
+                if let Some(request) = pending
                     .lock()
                     .ok()
                     .and_then(|mut pending| pending.remove(id))
@@ -159,11 +187,14 @@ fn handle_line(
                             .unwrap_or("Mastra worker failed")
                             .into())
                     };
-                    let _ = sender.send(reply);
+                    let _ = request.reply.send(reply);
                 }
             }
         }
         Some("event") => {
+            if let Some(handler) = event_handler(pending, &message) {
+                handler(message.get("payload").cloned().unwrap_or(Value::Null));
+            }
             let _ = app.emit("construct:project:agent-log", message);
         }
         Some("tool-call") => {
@@ -185,6 +216,16 @@ fn handle_line(
         }
         _ => {}
     }
+}
+fn event_handler(
+    pending: &Arc<Mutex<HashMap<String, PendingRequest>>>,
+    message: &Value,
+) -> Option<EventHandler> {
+    let id = message.get("requestId").and_then(Value::as_str)?;
+    pending
+        .lock()
+        .ok()
+        .and_then(|pending| pending.get(id).and_then(|request| request.events.clone()))
 }
 fn write_child(child: &Arc<Mutex<Option<CommandChild>>>, message: &Value) -> CommandResult<()> {
     let mut guard = child.lock().map_err(lock_error)?;
@@ -209,4 +250,40 @@ fn resolve_worker_script(app: &tauri::AppHandle) -> CommandResult<PathBuf> {
 }
 fn lock_error<T>(_: std::sync::PoisonError<T>) -> CommandError {
     CommandError::new("mastra.lock", "Mastra worker lock was poisoned")
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use super::*;
+
+    #[test]
+    fn routes_worker_events_only_to_the_matching_live_request() {
+        let observed = Arc::new(AtomicUsize::new(0));
+        let counter = Arc::clone(&observed);
+        let (reply, _) = mpsc::channel();
+        let pending = Arc::new(Mutex::new(HashMap::from([(
+            "flow-request".to_string(),
+            PendingRequest {
+                reply,
+                events: Some(Arc::new(move |_| {
+                    counter.fetch_add(1, Ordering::SeqCst);
+                })),
+            },
+        )])));
+
+        let handler = event_handler(
+            &pending,
+            &json!({"kind":"event","requestId":"flow-request","payload":{"event":{"type":"reasoning"}}}),
+        )
+        .expect("matching handler");
+        handler(Value::Null);
+        assert_eq!(observed.load(Ordering::SeqCst), 1);
+        assert!(event_handler(
+            &pending,
+            &json!({"kind":"event","requestId":"another-request"})
+        )
+        .is_none());
+    }
 }
