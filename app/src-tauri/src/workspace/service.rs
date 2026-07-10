@@ -153,6 +153,7 @@ fn copy_directory(source: &Path, destination: &Path) -> CommandResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::projects::NewProject;
     use crate::storage::Database;
 
     #[test]
@@ -165,16 +166,17 @@ mod tests {
         fs::write(workspace.join("node_modules/pkg/index.js"), "ignored").unwrap();
 
         let database = Database::open(directory.path().join("state.sqlite3")).unwrap();
-        database
-            .with_connection(|connection| {
-                connection.execute(
-                    "INSERT INTO construct_projects(id, kind, title, description, workspace_path) VALUES ('project', 'flow', 'Project', '', ?1)",
-                    [workspace.to_string_lossy().as_ref()],
-                )?;
-                Ok(())
+        let projects = ProjectStore::new(database);
+        projects
+            .insert(NewProject {
+                id: "project",
+                kind: "flow",
+                title: "Project",
+                description: "",
+                workspace_path: workspace.to_string_lossy().as_ref(),
             })
             .unwrap();
-        let service = WorkspaceService::new(ProjectStore::new(database));
+        let service = WorkspaceService::new(projects);
         let tree = service.list("project").unwrap();
         assert_eq!(tree.len(), 1);
         assert_eq!(tree[0].name, "src");

@@ -1,12 +1,14 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use rusqlite::{params, OptionalExtension};
+use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::error::{CommandError, CommandResult};
 
+use super::models::{NewStorageItem, StorageItem};
+use super::schema::storage_items;
 use super::Database;
 
 #[derive(Debug, Deserialize)]
@@ -81,18 +83,17 @@ impl UiStateStore {
         let key = input.normalized_key()?;
         let scope = input.scope_key();
         let value = self.database.with_connection(|connection| {
-            connection
-                .query_row(
-                    "SELECT value FROM storage_items WHERE scope = ?1 AND key = ?2",
-                    params![scope, key],
-                    |row| row.get::<_, String>(0),
-                )
+            storage_items::table
+                .filter(storage_items::scope.eq(&scope))
+                .filter(storage_items::key.eq(&key))
+                .select(StorageItem::as_select())
+                .first::<StorageItem>(connection)
                 .optional()
         })?;
         self.reads.fetch_add(1, Ordering::Relaxed);
         match value {
-            Some(value) => serde_json::from_str(&value)
-                .or_else(|_| Ok(Value::String(value)))
+            Some(item) => serde_json::from_str(&item.value)
+                .or_else(|_| Ok(Value::String(item.value)))
                 .map_err(|error: serde_json::Error| {
                     CommandError::new("storage.decode", error.to_string())
                 }),
@@ -111,18 +112,23 @@ impl UiStateStore {
             .as_millis()
             .to_string();
         self.database.with_connection(|connection| {
-            connection.execute(
-                r#"
-                INSERT INTO storage_items(scope, key, value, target, updated_at)
-                VALUES (?1, ?2, ?3, 1, ?4)
-                ON CONFLICT(scope, key) DO UPDATE SET
-                  value = excluded.value,
-                  target = excluded.target,
-                  updated_at = excluded.updated_at
-                WHERE storage_items.value != excluded.value
-                "#,
-                params![scope, key, value, timestamp],
-            )?;
+            let item = NewStorageItem {
+                scope: &scope,
+                key: &key,
+                value: &value,
+                target: 1,
+                updated_at: &timestamp,
+            };
+            diesel::insert_into(storage_items::table)
+                .values(&item)
+                .on_conflict((storage_items::scope, storage_items::key))
+                .do_update()
+                .set((
+                    storage_items::value.eq(&value),
+                    storage_items::target.eq(1),
+                    storage_items::updated_at.eq(&timestamp),
+                ))
+                .execute(connection)?;
             Ok(())
         })?;
         self.writes.fetch_add(1, Ordering::Relaxed);
