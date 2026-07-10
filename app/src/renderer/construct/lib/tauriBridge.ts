@@ -1,6 +1,7 @@
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { invoke as invokeNative } from "@tauri-apps/api/core";
 
 import { resolveConstructCloudEndpoint } from "../../../shared/constructCloud";
 import type { ConstructProjectsApi, RuntimeInfo } from "../types";
@@ -158,10 +159,10 @@ export async function installConstructBridge(): Promise<void> {
         // Non-fatal: theme is also applied via CSS in the renderer.
       }
     },
-    getUiState: (input: unknown) => invoke("construct:ui-state:get", input),
-    setUiState: (input: unknown) => invoke("construct:ui-state:set", input),
-    flushStorage: () => invoke("construct:storage:flush"),
-    storageMetrics: () => invoke("construct:storage:metrics"),
+    getUiState: (input: unknown) => invokeNative("rust_ui_state_get", { input }),
+    setUiState: (input: unknown) => invokeNative("rust_ui_state_set", { input }),
+    flushStorage: () => invokeNative("rust_storage_flush"),
+    storageMetrics: () => invokeNative("rust_storage_metrics"),
     ensureProject: (input: unknown) => invoke("construct:project:ensure", input),
     importProject: (input: unknown) => invoke("construct:project:import", input),
     createFlowProject: (input: unknown) => invoke("construct:flow:create", input),

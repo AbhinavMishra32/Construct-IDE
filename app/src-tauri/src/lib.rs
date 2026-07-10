@@ -1,9 +1,12 @@
+mod commands;
+mod core_state;
 mod error;
 mod legacy_sidecar;
+mod paths;
 mod storage;
 mod window;
 
-use tauri::RunEvent;
+use tauri::{Manager, RunEvent};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -11,8 +14,15 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .invoke_handler(tauri::generate_handler![
+            commands::system::rust_ui_state_get,
+            commands::system::rust_ui_state_set,
+            commands::system::rust_storage_flush,
+            commands::system::rust_storage_metrics
+        ])
         .setup(|app| {
             let handle = app.handle().clone();
+            app.manage(core_state::CoreState::initialize()?);
             let (port, token) = legacy_sidecar::spawn(&handle);
             let initialization_script = format!(
                 "window.__CONSTRUCT_BRIDGE__ = {{ port: {}, token: {} }};",
