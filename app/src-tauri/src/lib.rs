@@ -3,6 +3,7 @@ mod core_state;
 mod error;
 mod git;
 mod legacy_sidecar;
+mod lsp;
 mod paths;
 mod process;
 mod projects;
@@ -31,6 +32,11 @@ pub fn run() {
             commands::terminal::rust_terminal_input,
             commands::terminal::rust_terminal_resize,
             commands::terminal::rust_terminal_kill,
+            commands::lsp::rust_lsp_status,
+            commands::lsp::rust_lsp_start,
+            commands::lsp::rust_lsp_stop,
+            commands::lsp::rust_lsp_request,
+            commands::lsp::rust_lsp_install,
             commands::workspace::rust_workspace_list,
             commands::workspace::rust_workspace_read,
             commands::workspace::rust_workspace_write,
@@ -61,6 +67,7 @@ pub fn run() {
                 if let Some(state) = app.try_state::<core_state::CoreState>() {
                     let _ = state.watcher.stop();
                     state.terminal.stop_all();
+                    state.lsp.stop_all();
                 }
                 legacy_sidecar::stop(app);
             }

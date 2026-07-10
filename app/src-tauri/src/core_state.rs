@@ -1,5 +1,6 @@
 use crate::error::CommandResult;
 use crate::git::GitService;
+use crate::lsp::LspService;
 use crate::paths::DataPaths;
 use crate::projects::ProjectStore;
 use crate::storage::{Database, UiStateStore};
@@ -13,6 +14,7 @@ pub struct CoreState {
     pub watcher: WorkspaceWatcher,
     pub git: GitService,
     pub terminal: TerminalService,
+    pub lsp: LspService,
 }
 
 impl CoreState {
@@ -22,6 +24,7 @@ impl CoreState {
         let projects = ProjectStore::new(Database::open(&paths.database)?);
         let git = GitService::new(ProjectStore::new(Database::open(&paths.database)?));
         let terminal = TerminalService::new(ProjectStore::new(Database::open(&paths.database)?));
+        let lsp = LspService::new(ProjectStore::new(Database::open(&paths.database)?));
         Ok(Self {
             paths,
             ui_state: UiStateStore::new(database),
@@ -29,6 +32,7 @@ impl CoreState {
             watcher: WorkspaceWatcher::default(),
             git,
             terminal,
+            lsp,
         })
     }
 }
