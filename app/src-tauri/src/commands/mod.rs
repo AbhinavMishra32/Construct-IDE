@@ -1,3 +1,4 @@
+pub(crate) mod flow;
 pub(crate) mod git;
 pub(crate) mod learning;
 pub(crate) mod lsp;

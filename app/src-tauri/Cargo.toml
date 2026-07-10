@@ -26,6 +26,7 @@ notify = "8"
 portable-pty = "0.9"
 uuid = { version = "1", features = ["v4"] }
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 
 [dev-dependencies]
 tempfile = "3"

@@ -20,6 +20,7 @@ pub struct CoreState {
     pub projects: ProjectStore,
     pub settings: SettingsService,
     pub learning: LearningService,
+    pub mastra: Arc<MastraWorker>,
 }
 
 impl CoreState {
@@ -36,6 +37,13 @@ impl CoreState {
             paths.clone(),
         );
         let learning = LearningService::new(Database::open(&paths.database)?);
+        let tool_projects = ProjectStore::new(Database::open(&paths.database)?);
+        let tool_workspace =
+            WorkspaceService::new(ProjectStore::new(Database::open(&paths.database)?));
+        let mastra = Arc::new(MastraWorker::new(ToolHost::new(
+            tool_projects,
+            tool_workspace,
+        )));
         Ok(Self {
             paths,
             ui_state: UiStateStore::new(database),
@@ -47,6 +55,10 @@ impl CoreState {
             projects: project_repository,
             settings,
             learning,
+            mastra,
         })
     }
 }
+use crate::ai::tools::ToolHost;
+use crate::ai::MastraWorker;
+use std::sync::Arc;

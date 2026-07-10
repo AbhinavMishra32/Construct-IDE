@@ -10,7 +10,8 @@ import { defineConfig } from "tsup";
  */
 export default defineConfig({
   entry: {
-    sidecar: "src/bridge/sidecar.ts"
+    sidecar: "src/bridge/sidecar.ts",
+    "mastra-worker": "src/mastra-worker.ts"
   },
   platform: "node",
   target: "node22",

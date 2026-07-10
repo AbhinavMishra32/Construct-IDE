@@ -1,3 +1,4 @@
+mod ai;
 mod commands;
 mod core_state;
 mod error;
@@ -65,6 +66,12 @@ pub fn run() {
             commands::learning::rust_learning_open,
             commands::learning::rust_learning_concept_open,
             commands::learning::rust_learning_remove,
+            commands::flow::rust_flow_run,
+            commands::flow::rust_flow_research,
+            commands::flow::rust_flow_memory_read,
+            commands::flow::rust_flow_memory_update,
+            commands::flow::rust_flow_rewind,
+            commands::flow::rust_flow_submit_task,
             commands::workspace::rust_workspace_list,
             commands::workspace::rust_workspace_read,
             commands::workspace::rust_workspace_write,
@@ -96,6 +103,7 @@ pub fn run() {
                     let _ = state.watcher.stop();
                     state.terminal.stop_all();
                     state.lsp.stop_all();
+                    state.mastra.stop();
                 }
                 legacy_sidecar::stop(app);
             }
