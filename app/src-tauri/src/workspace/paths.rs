@@ -23,6 +23,13 @@ pub fn is_ignored_name(name: &str) -> bool {
     IGNORED_SEGMENTS.contains(&name)
 }
 
+pub fn is_ignored_path(path: &Path) -> bool {
+    path.components().any(|component| match component {
+        Component::Normal(segment) => is_ignored_name(&segment.to_string_lossy()),
+        _ => false,
+    })
+}
+
 pub fn safe_join(root: &Path, relative: &str) -> CommandResult<PathBuf> {
     let relative_path = Path::new(relative);
     if relative_path.is_absolute()

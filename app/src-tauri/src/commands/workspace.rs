@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use tauri::State;
+use tauri::{AppHandle, State};
 
 use crate::commands::system::OkResponse;
 use crate::core_state::CoreState;
@@ -77,5 +77,23 @@ pub fn rust_workspace_duplicate(
         },
         &input.dest_path,
     )?;
+    Ok(OkResponse::ok())
+}
+
+#[tauri::command]
+pub fn rust_workspace_watch_start(
+    app: AppHandle,
+    state: State<'_, CoreState>,
+    project_id: String,
+) -> CommandResult<OkResponse> {
+    state
+        .watcher
+        .start(app, state.workspace.workspace_path(&project_id)?)?;
+    Ok(OkResponse::ok())
+}
+
+#[tauri::command]
+pub fn rust_workspace_watch_stop(state: State<'_, CoreState>) -> CommandResult<OkResponse> {
+    state.watcher.stop()?;
     Ok(OkResponse::ok())
 }

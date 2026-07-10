@@ -54,6 +54,10 @@ impl WorkspaceService {
         tree::list(&root)
     }
 
+    pub fn workspace_path(&self, project_id: &str) -> CommandResult<std::path::PathBuf> {
+        self.projects.workspace_path(project_id)
+    }
+
     pub fn read(&self, input: &FileInput) -> CommandResult<FileContent> {
         let target = self.target(&input.project_id, &input.path)?;
         if !target.is_file() {

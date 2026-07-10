@@ -2,6 +2,7 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke as invokeNative } from "@tauri-apps/api/core";
+import { listen as listenNative } from "@tauri-apps/api/event";
 
 import { resolveConstructCloudEndpoint } from "../../../shared/constructCloud";
 import type { ConstructProjectsApi, RuntimeInfo } from "../types";
@@ -213,7 +214,11 @@ export async function installConstructBridge(): Promise<void> {
     recordConceptOpen: (input: unknown) => invoke("construct:learning:concept-open", input),
     removeKnowledgeConcept: (input: unknown) => invoke("construct:learning:knowledge-remove", input),
     listProjects: () => invoke("construct:project:list"),
-    openProject: (id: string) => invoke("construct:project:open", id),
+    openProject: async (id: string) => {
+      const project = await invoke("construct:project:open", id);
+      await invokeNative("rust_workspace_watch_start", { projectId: id });
+      return project;
+    },
     updateProject: (input: unknown) => invoke("construct:project:update", input),
     readProjectTape: (projectId: string) => invoke("construct:project:read-tape", projectId),
     updateProjectTape: (input: unknown) => invoke("construct:project:update-tape", input),
@@ -273,9 +278,23 @@ export async function installConstructBridge(): Promise<void> {
     onLitellmStatusChange: subscribe("construct:litellm:status-change"),
     importOpencodeAuth: () => invoke("construct:settings:import-opencode-auth"),
     onProviderLog: subscribe("construct:provider:log"),
-    onFileChanged: (callback: (payload: unknown) => void) =>
-      client.on("construct:project:file-changed", (payload) => callback(payload ?? {})),
-    closeProject: () => invoke("construct:project:close")
+    onFileChanged: (callback: (payload: unknown) => void) => {
+      let disposed = false;
+      let unlisten: (() => void) | null = null;
+      void listenNative("construct:project:file-changed", (event) => callback(event.payload ?? {}))
+        .then((stop) => {
+          if (disposed) stop();
+          else unlisten = stop;
+        });
+      return () => {
+        disposed = true;
+        unlisten?.();
+      };
+    },
+    closeProject: async () => {
+      await invokeNative("rust_workspace_watch_stop");
+      return invoke("construct:project:close");
+    }
   };
 
   window.constructProjects = api as unknown as ConstructProjectsApi;

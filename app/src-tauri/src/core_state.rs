@@ -2,12 +2,13 @@ use crate::error::CommandResult;
 use crate::paths::DataPaths;
 use crate::projects::ProjectStore;
 use crate::storage::{Database, UiStateStore};
-use crate::workspace::WorkspaceService;
+use crate::workspace::{WorkspaceService, WorkspaceWatcher};
 
 pub struct CoreState {
     pub paths: DataPaths,
     pub ui_state: UiStateStore,
     pub workspace: WorkspaceService,
+    pub watcher: WorkspaceWatcher,
 }
 
 impl CoreState {
@@ -19,6 +20,7 @@ impl CoreState {
             paths,
             ui_state: UiStateStore::new(database),
             workspace: WorkspaceService::new(projects),
+            watcher: WorkspaceWatcher::default(),
         })
     }
 }

@@ -27,7 +27,9 @@ pub fn run() {
             commands::workspace::rust_workspace_remove,
             commands::workspace::rust_workspace_rename,
             commands::workspace::rust_workspace_create_folder,
-            commands::workspace::rust_workspace_duplicate
+            commands::workspace::rust_workspace_duplicate,
+            commands::workspace::rust_workspace_watch_start,
+            commands::workspace::rust_workspace_watch_stop
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -46,6 +48,9 @@ pub fn run() {
         .expect("error while building Construct")
         .run(|app, event| {
             if let RunEvent::Exit = event {
+                if let Some(state) = app.try_state::<core_state::CoreState>() {
+                    let _ = state.watcher.stop();
+                }
                 legacy_sidecar::stop(app);
             }
         });
