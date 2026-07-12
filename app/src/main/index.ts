@@ -1,6 +1,6 @@
 import path from "node:path";
 
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, ipcMain, type WebContents } from "electron";
 
 import { ConstructInteractService } from "./ai/ConstructInteractService";
 import { AgentLogService } from "./ai/AgentLogService";
@@ -67,7 +67,7 @@ try {
   // Ignore if .env does not exist.
 }
 
-let activeWebContents: Electron.WebContents | null = null;
+let activeWebContents: WebContents | null = null;
 const logBridge = new MainProcessLogBridge({
   activeWebContents: () => activeWebContents
 });

@@ -17,7 +17,7 @@
 
 <p align="center">
   <img alt="Version" src="https://img.shields.io/badge/version-0.6.1-000000?style=flat-square">
-  <img alt="Desktop" src="https://img.shields.io/badge/desktop-Electron-47848f?style=flat-square&logo=electron&logoColor=white">
+  <img alt="Desktop" src="https://img.shields.io/badge/desktop-Tauri-24c8b8?style=flat-square&logo=tauri&logoColor=white">
   <img alt="Runtime" src="https://img.shields.io/badge/runtime-React%20%2B%20TypeScript-3178c6?style=flat-square&logo=typescript&logoColor=white">
   <img alt="Package manager" src="https://img.shields.io/badge/pnpm-10.23.0-f69220?style=flat-square&logo=pnpm&logoColor=white">
 </p>
@@ -146,14 +146,19 @@ flowchart LR
 
 ## Architecture
 
-Construct is a pnpm + Turbo monorepo. The main product is an Electron desktop
-app with a TypeScript main process and a React renderer.
+Construct is a pnpm + Turbo monorepo. The desktop product is a Rust/Tauri
+application hosting a React renderer built with Vite. Rust owns persistence,
+projects, workspaces, Git, PTYs, LSPs, settings, learning state, Flow state, and
+tool execution. A private Node worker starts on the first AI request and runs
+Mastra only; it communicates with Rust over versioned stdio messages.
 
 ```text
 .
 ├── app/                         # Desktop app workspace
 │   ├── assets/                  # App icon and README screenshot
-│   ├── src/main/                # Electron main process and agent services
+│   ├── src-tauri/               # Rust application core and Tauri commands
+│   ├── src/mastra-worker.ts     # Lazy model/Mastra worker
+│   ├── src/main/                # Mastra prompts and retained AI modules
 │   │   ├── agent-tools/         # Tool contracts exposed to agents
 │   │   ├── ai/                  # AI services, logged agents, feature services
 │   │   ├── config/              # Settings, provider catalog, model routing
@@ -182,31 +187,30 @@ flowchart TB
     FlowUI["Flow workspace, concepts, tasks, logs"]
   end
 
-  subgraph Main["Electron main process"]
-    IPC["IPC controllers"]
-    Flow["ConstructFlowService"]
-    Tools["Agent tools"]
-    Learning["Concept policy + learner store"]
-    Storage["Local storage"]
-    Terminal["Terminal service"]
-    Providers["AI provider gateway"]
+  subgraph Core["Rust core (Tauri)"]
+    Commands["Typed commands + native events"]
+    Flow["Flow state + host tools"]
+    Learning["Learning + project repositories"]
+    Storage["Diesel + SQLite"]
+    Processes["PTY, LSP, Git, watcher"]
   end
-
-  UI --> IPC
-  FlowUI --> IPC
-  IPC --> Flow
-  Flow --> Tools
+  subgraph Worker["Lazy Mastra worker"]
+    Mastra["Model execution + stream decoding"]
+  end
+  UI --> Commands
+  FlowUI --> Commands
+  Commands --> Flow
   Flow --> Learning
-  Flow --> Providers
-  Tools --> Terminal
-  Tools --> Storage
   Learning --> Storage
+  Commands --> Processes
+  Flow -->|stdio request| Mastra
+  Mastra -->|host tool call| Flow
 ```
 
 The important architectural rule: prompts guide the mentor, but host-side
 services enforce durable behavior. Concept placement, task readiness, local
-storage, project state, and tool permissions should be validated in TypeScript
-services, not trusted to model wording alone.
+storage, project state, and tool permissions are validated in Rust, not trusted
+to model wording alone.
 
 ## Construct Flow
 
@@ -320,6 +324,8 @@ local storage and explicit provider routing, not as a formal compliance claim.
 
 - Node.js 25+
 - pnpm 10.23.0
+- Rust (stable) + the Tauri v2 system dependencies for your platform
+  (e.g. WebKitGTK on Linux) — see https://v2.tauri.app/start/prerequisites/
 
 Install dependencies:
 
@@ -358,10 +364,10 @@ App workspace scripts:
 
 | Script | Purpose |
 | --- | --- |
-| `pnpm --filter @construct/app dev` | Run renderer, main-process build watch, and Electron together. |
-| `pnpm --filter @construct/app dev:renderer` | Start Vite for the renderer. |
-| `pnpm --filter @construct/app dev:main` | Watch/build Electron main and preload code with tsup. |
-| `pnpm --filter @construct/app dev:electron` | Launch Electron once renderer and main artifacts are ready. |
+| `pnpm --filter @construct/app dev` | Launch the Rust/Tauri app with the Vite renderer. |
+| `pnpm --filter @construct/app dev:renderer` | Start Vite for the renderer only. |
+| `pnpm --filter @construct/app build:mastra` | Bundle the on-demand Mastra worker. |
+| `pnpm --filter @construct/app tauri:build` | Build the packaged desktop installers with Tauri. |
 | `pnpm --filter @construct/app typecheck` | Typecheck the app. |
 | `pnpm --filter @construct/app test` | Run the app's Node test suite. |
 
@@ -392,7 +398,7 @@ Before changing Flow behavior, ask:
   thinking inside the model?
 - What evidence proves the learner understands the concept?
 - Can the behavior be tested at the tool/service boundary without needing a full
-  Electron build?
+  Tauri build?
 
 Contribution guidelines:
 

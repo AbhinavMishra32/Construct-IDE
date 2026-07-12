@@ -1,31 +1,55 @@
 import path from "node:path";
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { existsSync, readdirSync, statSync } from "node:fs";
+import { totalmem } from "node:os";
+import { promisify } from "node:util";
 
 import type { WebContents } from "electron";
 
+import { RUST_ANALYZER_EXCLUDED_PATHS, rustAnalyzerConfigurationForSection } from "../../shared/constructLsp";
 import { isFlowProject, isTapeProject, type StoredProject } from "../projects/ConstructProjectTypes";
 import type { DebugProcessSnapshot } from "../terminal/ConstructTerminalService";
 
 export type LspLanguage = "typescript" | "python" | "rust" | "go" | "java" | "cpp" | "csharp" | "html" | "css" | "json";
-export type LspStatus = "not-installed" | "running" | "stopped" | "installing";
+export type LspStatus = "not-installed" | "running" | "stopped" | "installing" | "blocked";
+export type LspSkipReason = "no-cargo-project" | "resource-cooldown" | "not-installed";
+export type LspSkipReport = {
+  blockedUntil?: string;
+  memoryLimitMb?: number;
+  message: string;
+  reason: LspSkipReason;
+};
 export type LspStartResult = {
   languages: LspLanguage[];
   workspacePath: string;
+  projectRoots?: Partial<Record<LspLanguage, string>>;
+  skipped?: Partial<Record<LspLanguage, LspSkipReport>>;
 };
 export type LspStatusReport = Record<LspLanguage, {
+  blockedUntil?: string;
   command: string;
+  detail?: string;
   installCommand: string;
   installed: boolean;
   label: string;
+  memoryLimitMb?: number;
+  memoryMb?: number;
   resolvedPath: string | null;
   status: LspStatus;
 }>;
 
 type LspServerState = {
   buffer: string;
-  pendingRequests: Map<number, { resolve: (value: unknown) => void; reject: (reason?: unknown) => void }>;
+  monitorInFlight: boolean;
+  monitorTimer: NodeJS.Timeout | null;
+  pendingRequests: Map<number, {
+    reject: (reason?: unknown) => void;
+    resolve: (value: unknown) => void;
+    timer: NodeJS.Timeout | null;
+  }>;
   process: ChildProcess | null;
+  resource: LspResourceSnapshot | null;
+  startedAt: number | null;
   workspacePath: string | null;
 };
 
@@ -39,7 +63,56 @@ type LspServerConfig = {
   scriptPath?: string[];
 };
 
+type LspResourcePolicy = {
+  cooldownMs: number;
+  memoryLimitMb: number;
+};
+
+type LspResourceSnapshot = {
+  checkedAt: number;
+  memoryMb: number;
+  processCount: number;
+};
+
+type LspResourceBlock = {
+  blockedUntil: number;
+  memoryLimitMb?: number;
+  reason: string;
+  workspacePath: string;
+};
+
+type ProcessResourceSnapshot = {
+  memoryMb: number;
+  processCount: number;
+};
+
+const execFileAsync = promisify(execFile);
+
 const lspLanguageOrder: LspLanguage[] = ["typescript", "python", "rust", "go", "java", "cpp", "csharp", "html", "css", "json"];
+const lspGeneratedDirectoryNames = new Set<string>([
+  ...RUST_ANALYZER_EXCLUDED_PATHS,
+  ".mypy_cache",
+  ".next",
+  ".pytest_cache",
+  ".ruff_cache",
+  ".turbo",
+  ".venv",
+  "__pycache__",
+  "env",
+  "venv"
+]);
+const LSP_REQUEST_TIMEOUT_MS = 15_000;
+const LSP_RESOURCE_MONITOR_INTERVAL_MS = 1_000;
+const LSP_BUFFER_LIMIT_BYTES = 8 * 1024 * 1024;
+const LSP_STDERR_LOG_LIMIT_CHARS = 4_000;
+const LSP_PROCESS_KILL_GRACE_MS = 2_000;
+const RUST_ANALYZER_MEMORY_FRACTION = 0.25;
+const RUST_ANALYZER_MEMORY_MIN_MB = 2_048;
+const RUST_ANALYZER_MEMORY_MAX_MB = 3_072;
+const RUST_ANALYZER_RESOURCE_POLICY: LspResourcePolicy = {
+  cooldownMs: 15 * 60_000,
+  memoryLimitMb: resolveRustAnalyzerMemoryLimitMb()
+};
 
 const lspConfigs: Record<LspLanguage, LspServerConfig> = {
   typescript: {
@@ -126,17 +199,18 @@ const lspConfigs: Record<LspLanguage, LspServerConfig> = {
 
 export class ConstructLspService {
   private readonly servers: Record<LspLanguage, LspServerState> = {
-    typescript: { buffer: "", pendingRequests: new Map(), process: null, workspacePath: null },
-    python: { buffer: "", pendingRequests: new Map(), process: null, workspacePath: null },
-    rust: { buffer: "", pendingRequests: new Map(), process: null, workspacePath: null },
-    go: { buffer: "", pendingRequests: new Map(), process: null, workspacePath: null },
-    java: { buffer: "", pendingRequests: new Map(), process: null, workspacePath: null },
-    cpp: { buffer: "", pendingRequests: new Map(), process: null, workspacePath: null },
-    csharp: { buffer: "", pendingRequests: new Map(), process: null, workspacePath: null },
-    html: { buffer: "", pendingRequests: new Map(), process: null, workspacePath: null },
-    css: { buffer: "", pendingRequests: new Map(), process: null, workspacePath: null },
-    json: { buffer: "", pendingRequests: new Map(), process: null, workspacePath: null }
+    typescript: createServerState(),
+    python: createServerState(),
+    rust: createServerState(),
+    go: createServerState(),
+    java: createServerState(),
+    cpp: createServerState(),
+    csharp: createServerState(),
+    html: createServerState(),
+    css: createServerState(),
+    json: createServerState()
   };
+  private readonly resourceBlocks = new Map<string, LspResourceBlock>();
   private activeWebContents: WebContents | null = null;
   private installingLanguage: LspLanguage | "all" | null = null;
   private installProcess: ChildProcess | null = null;
@@ -160,19 +234,27 @@ export class ConstructLspService {
       const server = this.servers[language];
       const resolvedPath = this.resolveServerCommand(wsPath, language);
       const installed = resolvedPath != null;
+      const resourceBlock = this.activeResourceBlock(language, wsPath);
       const status: LspStatus = server.process
         ? "running"
         : this.installingLanguage === "all" || this.installingLanguage === language
           ? "installing"
+          : resourceBlock
+            ? "blocked"
           : installed
             ? "stopped"
             : "not-installed";
+      const policy = this.resourcePolicyFor(language);
 
       report[language] = {
+        blockedUntil: resourceBlock ? new Date(resourceBlock.blockedUntil).toISOString() : undefined,
         command: lspConfigs[language].command,
+        detail: resourceBlock?.reason,
         installCommand: lspConfigs[language].installCommand,
         installed,
         label: lspConfigs[language].label,
+        memoryLimitMb: policy?.memoryLimitMb,
+        memoryMb: server.resource?.memoryMb,
         resolvedPath,
         status
       };
@@ -184,6 +266,8 @@ export class ConstructLspService {
   startForProject(project: StoredProject): LspStartResult {
     const languages = this.languagesForProject(project);
     const startedLanguages: LspLanguage[] = [];
+    const projectRoots: Partial<Record<LspLanguage, string>> = {};
+    const skipped: Partial<Record<LspLanguage, LspSkipReport>> = {};
 
     if (languages.length === 0) {
       const projectLabel = isFlowProject(project) ? "Flow project" : "project";
@@ -191,12 +275,44 @@ export class ConstructLspService {
     }
 
     for (const language of languages) {
-      if (this.resolveServerCommand(project.workspacePath, language)) {
-        if (this.startServer(project.workspacePath, language)) {
-          startedLanguages.push(language);
-        }
-      } else {
+      const languageRoot = language === "rust" ? this.findCargoProjectRoot(project.workspacePath) : project.workspacePath;
+      if (language === "rust" && !languageRoot) {
+        const message = "Skipping Rust language server because this workspace has Rust files but no Cargo.toml root.";
+        skipped.rust = { message, reason: "no-cargo-project" };
+        this.emitLog("rust", "warn", message);
+        this.stop("rust");
+        continue;
+      }
+
+      const resourceBlock = this.activeResourceBlock(language, languageRoot ?? project.workspacePath);
+      if (resourceBlock) {
+        const policy = this.resourcePolicyFor(language);
+        skipped[language] = {
+          blockedUntil: new Date(resourceBlock.blockedUntil).toISOString(),
+          memoryLimitMb: policy?.memoryLimitMb,
+          message: resourceBlock.reason,
+          reason: "resource-cooldown"
+        };
+        this.emitLog(language, "warn", resourceBlock.reason);
+        this.stop(language);
+        continue;
+      }
+
+      if (!this.resolveServerCommand(project.workspacePath, language)) {
+        skipped[language] = {
+          message: `Skipping ${lspConfigs[language].label}; server is not installed.`,
+          reason: "not-installed"
+        };
         this.emitLog(language, "warn", `Skipping ${lspConfigs[language].label}; server is not installed.`);
+        continue;
+      }
+
+      if (language === "rust" && languageRoot) {
+        projectRoots.rust = languageRoot;
+      }
+
+      if (this.startServer(project.workspacePath, language)) {
+        startedLanguages.push(language);
       }
     }
 
@@ -208,7 +324,9 @@ export class ConstructLspService {
 
     return {
       languages: startedLanguages,
-      workspacePath: project.workspacePath
+      workspacePath: project.workspacePath,
+      projectRoots,
+      skipped: Object.keys(skipped).length > 0 ? skipped : undefined
     };
   }
 
@@ -220,16 +338,22 @@ export class ConstructLspService {
       if (server.process) {
         console.log(`[LSP] Stopping ${lspConfigs[currentLanguage].command}`);
         this.emitLog(currentLanguage, "info", `Stopping ${lspConfigs[currentLanguage].command}`);
-        try {
-          server.process.kill();
-        } catch (err) {
-          console.error("[LSP] Error killing process:", err);
-        }
+        this.terminateProcess(server.process, currentLanguage);
         server.process = null;
       }
+      if (server.monitorTimer) {
+        clearInterval(server.monitorTimer);
+        server.monitorTimer = null;
+      }
+      server.monitorInFlight = false;
       server.buffer = "";
+      server.resource = null;
+      server.startedAt = null;
       server.workspacePath = null;
       for (const pending of server.pendingRequests.values()) {
+        if (pending.timer) {
+          clearTimeout(pending.timer);
+        }
         pending.reject(new Error("LSP server stopped"));
       }
       server.pendingRequests.clear();
@@ -305,7 +429,12 @@ export class ConstructLspService {
       this.activeWebContents = webContents;
 
       if (payload.id !== undefined) {
-        server.pendingRequests.set(payload.id, { resolve, reject });
+        const timer = setTimeout(() => {
+          server.pendingRequests.delete(payload.id);
+          reject(new Error(`${lspConfigs[language].label} LSP request timed out: ${String(payload.method ?? payload.id)}`));
+        }, LSP_REQUEST_TIMEOUT_MS);
+        timer.unref?.();
+        server.pendingRequests.set(payload.id, { resolve, reject, timer });
       }
 
       const { languageId: _languageId, ...message } = payload;
@@ -332,7 +461,8 @@ export class ConstructLspService {
         pid: server.process?.pid ?? null,
         status: server.process ? "running" : "stopped",
         workspacePath: server.workspacePath,
-        command: lspConfigs[language].command
+        command: lspConfigs[language].command,
+        memoryMb: server.resource?.memoryMb ?? undefined
       });
     }
 
@@ -407,6 +537,9 @@ export class ConstructLspService {
 
     if (isTapeProject(project)) {
       for (const file of project.program.files ?? []) {
+        if (this.isIgnoredDiscoveryPath(file.path)) {
+          continue;
+        }
         const language = this.languageForPath(file.path);
         if (language) {
           languages.add(language);
@@ -414,7 +547,7 @@ export class ConstructLspService {
       }
     }
 
-    if (project.activeFilePath) {
+    if (project.activeFilePath && !this.isIgnoredDiscoveryPath(project.activeFilePath)) {
       const language = this.languageForPath(project.activeFilePath);
       if (language) {
         languages.add(language);
@@ -433,7 +566,7 @@ export class ConstructLspService {
     try {
       const entries = readdirSync(workspacePath, { withFileTypes: true });
       for (const entry of entries) {
-        if (entry.name === "node_modules" || entry.name === ".git" || entry.name.startsWith(".")) continue;
+        if (this.isIgnoredDiscoveryDirectory(entry.name)) continue;
         const fullPath = path.join(workspacePath, entry.name);
         if (entry.isDirectory()) {
           this.scanWorkspaceForLanguages(fullPath, languages, depth + 1);
@@ -456,17 +589,52 @@ export class ConstructLspService {
     }
   }
 
+  private findCargoProjectRoot(workspacePath: string): string | null {
+    const cargoToml = path.join(workspacePath, "Cargo.toml");
+    if (existsSync(cargoToml)) {
+      return workspacePath;
+    }
+
+    try {
+      const entries = readdirSync(workspacePath, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isDirectory() || this.isIgnoredDiscoveryDirectory(entry.name)) continue;
+        const candidate = path.join(workspacePath, entry.name, "Cargo.toml");
+        if (existsSync(candidate)) {
+          return path.join(workspacePath, entry.name);
+        }
+      }
+    } catch {}
+
+    return null;
+  }
+
   private startServer(workspacePath: string, language: LspLanguage): boolean {
     const server = this.servers[language];
-    if (server.process && server.workspacePath === workspacePath) {
+    const config = lspConfigs[language];
+    let cwd = workspacePath;
+    if (language === "rust") {
+      const cargoRoot = this.findCargoProjectRoot(workspacePath);
+      if (cargoRoot) {
+        cwd = cargoRoot;
+        console.log(`[LSP] Found Rust project root: ${cargoRoot}`);
+        this.emitLog(language, "info", `Using Rust project root ${cargoRoot}`);
+      } else {
+        const msg = "No Cargo.toml found in workspace; Rust LSP requires a Cargo project.";
+        console.warn(`[LSP] ${msg}`);
+        this.emitLog(language, "warn", msg);
+        return false;
+      }
+    }
+
+    if (server.process && server.workspacePath === cwd) {
       return true;
     }
 
     this.stop(language);
 
-    const config = lspConfigs[language];
-    console.log(`[LSP] Starting ${config.command} in:`, workspacePath);
-    this.emitLog(language, "info", `Starting ${config.command} in ${workspacePath}`);
+    console.log(`[LSP] Starting ${config.command} in:`, cwd);
+    this.emitLog(language, "info", `Starting ${config.command} in ${cwd}`);
 
     const executable = this.resolveServerCommand(workspacePath, language);
 
@@ -477,26 +645,37 @@ export class ConstructLspService {
       return false;
     }
 
+    const resourceBlock = this.activeResourceBlock(language, cwd);
+    if (resourceBlock) {
+      this.emitLog(language, "warn", resourceBlock.reason);
+      return false;
+    }
+
     console.log(`[LSP] Using ${language} server path: ${executable}`);
     this.emitLog(language, "info", `Using server ${executable}`);
 
     const command = config.scriptPath ? process.execPath : executable;
     const args = config.scriptPath ? [executable, ...config.args] : config.command.split(/\s+/).slice(1);
-    server.process = spawn(command, args, {
-      cwd: workspacePath,
+    const resourcePolicy = this.resourcePolicyFor(language);
+    server.process = this.spawnServerProcess(command, args, {
+      cwd,
       env: {
         ...process.env,
         ELECTRON_RUN_AS_NODE: "1"
-      }
+      },
+      resourcePolicy
     });
-    server.workspacePath = workspacePath;
+    server.workspacePath = cwd;
+    server.startedAt = Date.now();
+    server.resource = null;
+    this.startResourceMonitor(language, resourcePolicy);
 
     server.process.stdout?.on("data", (chunk: Buffer) => {
       this.handleData(language, chunk);
     });
 
     server.process.stderr?.on("data", (data: Buffer) => {
-      const text = data.toString("utf8");
+      const text = truncateLspLogText(data.toString("utf8"));
       console.warn(`[LSP ${language} stderr]:`, text);
       this.emitLog(language, "warn", text);
     });
@@ -506,9 +685,18 @@ export class ConstructLspService {
       console.log(`[LSP] ${language} ${detail}`);
       this.emitLog(language, code === 0 ? "info" : "warn", detail);
       server.process = null;
+      if (server.monitorTimer) {
+        clearInterval(server.monitorTimer);
+        server.monitorTimer = null;
+      }
+      server.monitorInFlight = false;
       server.buffer = "";
       server.workspacePath = null;
+      server.startedAt = null;
       for (const pending of server.pendingRequests.values()) {
+        if (pending.timer) {
+          clearTimeout(pending.timer);
+        }
         pending.reject(new Error("LSP server stopped"));
       }
       server.pendingRequests.clear();
@@ -544,6 +732,12 @@ export class ConstructLspService {
   private handleData(language: LspLanguage, chunk: Buffer): void {
     const server = this.servers[language];
     server.buffer += chunk.toString("utf8");
+    if (Buffer.byteLength(server.buffer, "utf8") > LSP_BUFFER_LIMIT_BYTES) {
+      const message = `${lspConfigs[language].label} LSP output exceeded ${Math.round(LSP_BUFFER_LIMIT_BYTES / 1024 / 1024)} MB before a complete JSON-RPC frame; stopping server.`;
+      this.emitLog(language, "error", message);
+      this.stop(language);
+      return;
+    }
     while (true) {
       const contentLengthIndex = server.buffer.indexOf("Content-Length:");
       if (contentLengthIndex === -1) {
@@ -583,7 +777,7 @@ export class ConstructLspService {
   private handleMessage(language: LspLanguage, message: any): void {
     const server = this.servers[language];
     if (message.id !== undefined && message.method !== undefined) {
-      const result = this.clientRequestResult(message.method, message.params);
+      const result = this.clientRequestResult(language, message.method, message.params);
       if (server.process?.stdin) {
         const response = JSON.stringify({ jsonrpc: "2.0", id: message.id, result });
         server.process.stdin.write(`Content-Length: ${Buffer.byteLength(response, "utf8")}\r\n\r\n${response}`);
@@ -593,6 +787,9 @@ export class ConstructLspService {
       const pending = server.pendingRequests.get(message.id);
       if (pending) {
         server.pendingRequests.delete(message.id);
+        if (pending.timer) {
+          clearTimeout(pending.timer);
+        }
         pending.resolve(message);
       }
     } else if (message.method !== undefined) {
@@ -602,13 +799,11 @@ export class ConstructLspService {
     }
   }
 
-  private clientRequestResult(method: string, params: any): unknown {
+  private clientRequestResult(language: LspLanguage, method: string, params: any): unknown {
     switch (method) {
       case "workspace/configuration":
         return Array.isArray(params?.items)
-          ? params.items.map((item: { section?: string }) => item.section === "formattingOptions"
-            ? { tabSize: 2, insertSpaces: true, trimTrailingWhitespace: true, insertFinalNewline: true }
-            : null)
+          ? params.items.map((item: { section?: string | null }) => this.configurationForItem(language, item.section))
           : [];
       case "client/registerCapability":
       case "client/unregisterCapability":
@@ -620,6 +815,198 @@ export class ConstructLspService {
         return null;
     }
   }
+
+  private configurationForItem(language: LspLanguage, section?: string | null): unknown {
+    if (section === "formattingOptions") {
+      return { tabSize: 2, insertSpaces: true, trimTrailingWhitespace: true, insertFinalNewline: true };
+    }
+
+    if (language === "rust") {
+      return rustAnalyzerConfigurationForSection(section, this.servers.rust.workspacePath);
+    }
+
+    return null;
+  }
+
+  private isIgnoredDiscoveryDirectory(name: string): boolean {
+    return name.startsWith(".") || lspGeneratedDirectoryNames.has(name);
+  }
+
+  private isIgnoredDiscoveryPath(filePath: string): boolean {
+    return filePath
+      .replace(/\\/g, "/")
+      .split("/")
+      .filter(Boolean)
+      .some((segment) => this.isIgnoredDiscoveryDirectory(segment));
+  }
+
+  private resourcePolicyFor(language: LspLanguage): LspResourcePolicy | null {
+    return language === "rust" ? RUST_ANALYZER_RESOURCE_POLICY : null;
+  }
+
+  private activeResourceBlock(language: LspLanguage, workspacePath: string): LspResourceBlock | null {
+    const candidates = [workspacePath];
+    if (language === "rust") {
+      const cargoRoot = this.findCargoProjectRoot(workspacePath);
+      if (cargoRoot && cargoRoot !== workspacePath) {
+        candidates.push(cargoRoot);
+      }
+    }
+
+    for (const candidate of candidates) {
+      const key = this.resourceBlockKey(language, candidate);
+      const block = this.resourceBlocks.get(key);
+      if (!block) {
+        continue;
+      }
+      if (Date.now() >= block.blockedUntil) {
+        this.resourceBlocks.delete(key);
+        continue;
+      }
+      return block;
+    }
+
+    return null;
+  }
+
+  private resourceBlockKey(language: LspLanguage, workspacePath: string): string {
+    return `${language}:${path.resolve(workspacePath)}`;
+  }
+
+  private spawnServerProcess(command: string, args: string[], input: {
+    cwd: string;
+    env: NodeJS.ProcessEnv;
+    resourcePolicy: LspResourcePolicy | null;
+  }): ChildProcess {
+    const detached = process.platform !== "win32";
+    if (input.resourcePolicy && detached && isExecutableFile("/bin/sh")) {
+      const memoryLimitKb = String(input.resourcePolicy.memoryLimitMb * 1024);
+      return spawn("/bin/sh", [
+        "-c",
+        [
+          "limit_kb=\"$1\"",
+          "command_path=\"$2\"",
+          "shift 2",
+          "ulimit -v \"$limit_kb\" 2>/dev/null || true",
+          "ulimit -m \"$limit_kb\" 2>/dev/null || true",
+          "exec \"$command_path\" \"$@\""
+        ].join("; "),
+        "construct-lsp-limit",
+        memoryLimitKb,
+        command,
+        ...args
+      ], {
+        cwd: input.cwd,
+        detached,
+        env: input.env
+      });
+    }
+
+    return spawn(command, args, {
+      cwd: input.cwd,
+      detached,
+      env: input.env
+    });
+  }
+
+  private startResourceMonitor(language: LspLanguage, policy: LspResourcePolicy | null): void {
+    const server = this.servers[language];
+    if (server.monitorTimer) {
+      clearInterval(server.monitorTimer);
+      server.monitorTimer = null;
+    }
+
+    if (!policy || !server.process?.pid) {
+      return;
+    }
+
+    server.monitorTimer = setInterval(() => {
+      void this.checkResourceLimit(language, policy);
+    }, LSP_RESOURCE_MONITOR_INTERVAL_MS);
+    server.monitorTimer.unref?.();
+    void this.checkResourceLimit(language, policy);
+  }
+
+  private async checkResourceLimit(language: LspLanguage, policy: LspResourcePolicy): Promise<void> {
+    const server = this.servers[language];
+    const pid = server.process?.pid;
+    if (!pid || server.monitorInFlight) {
+      return;
+    }
+
+    server.monitorInFlight = true;
+    try {
+      const usage = await collectProcessTreeResource(pid);
+      if (server.process?.pid !== pid) {
+        return;
+      }
+
+      server.resource = {
+        checkedAt: Date.now(),
+        memoryMb: usage.memoryMb,
+        processCount: usage.processCount
+      };
+
+      if (usage.memoryMb <= policy.memoryLimitMb) {
+        return;
+      }
+
+      const workspacePath = server.workspacePath ?? this.options.cwd;
+      const blockedUntil = Date.now() + policy.cooldownMs;
+      const reason = `${lspConfigs[language].label} stopped after using ${usage.memoryMb} MB across ${usage.processCount} process(es), above the ${policy.memoryLimitMb} MB Construct safety limit. Auto-restart is blocked until ${new Date(blockedUntil).toLocaleTimeString()}.`;
+      this.resourceBlocks.set(this.resourceBlockKey(language, workspacePath), {
+        blockedUntil,
+        memoryLimitMb: policy.memoryLimitMb,
+        reason,
+        workspacePath
+      });
+      this.emitLog(language, "error", reason);
+      this.stop(language);
+    } catch (error) {
+      this.emitLog(language, "warn", `Unable to inspect ${lspConfigs[language].label} memory usage: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      server.monitorInFlight = false;
+    }
+  }
+
+  private terminateProcess(child: ChildProcess, language: LspLanguage): void {
+    const pid = child.pid;
+    const sendSignal = (signal: NodeJS.Signals) => {
+      try {
+        if (process.platform !== "win32" && typeof pid === "number" && pid > 0) {
+          process.kill(-pid, signal);
+        } else {
+          child.kill(signal);
+        }
+      } catch (error) {
+        try {
+          child.kill(signal);
+        } catch (fallbackError) {
+          if (signal === "SIGTERM") {
+            console.error(`[LSP] Error killing ${language} process:`, fallbackError || error);
+          }
+        }
+      }
+    };
+
+    sendSignal("SIGTERM");
+    const killTimer = setTimeout(() => sendSignal("SIGKILL"), LSP_PROCESS_KILL_GRACE_MS);
+    killTimer.unref?.();
+    child.once("close", () => clearTimeout(killTimer));
+  }
+}
+
+function createServerState(): LspServerState {
+  return {
+    buffer: "",
+    monitorInFlight: false,
+    monitorTimer: null,
+    pendingRequests: new Map(),
+    process: null,
+    resource: null,
+    startedAt: null,
+    workspacePath: null
+  };
 }
 
 function isExecutableFile(filePath: string): boolean {
@@ -628,4 +1015,75 @@ function isExecutableFile(filePath: string): boolean {
   } catch {
     return false;
   }
+}
+
+function resolveRustAnalyzerMemoryLimitMb(): number {
+  const configured = Number(process.env.CONSTRUCT_RUST_ANALYZER_MEMORY_MB);
+  if (Number.isFinite(configured) && configured >= 256) {
+    return Math.floor(configured);
+  }
+
+  const systemMemoryMb = Math.floor(totalmem() / 1024 / 1024);
+  return clamp(
+    Math.floor(systemMemoryMb * RUST_ANALYZER_MEMORY_FRACTION),
+    RUST_ANALYZER_MEMORY_MIN_MB,
+    RUST_ANALYZER_MEMORY_MAX_MB
+  );
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function truncateLspLogText(text: string): string {
+  if (text.length <= LSP_STDERR_LOG_LIMIT_CHARS) {
+    return text;
+  }
+
+  return `${text.slice(0, LSP_STDERR_LOG_LIMIT_CHARS)}... [${text.length - LSP_STDERR_LOG_LIMIT_CHARS} chars omitted]`;
+}
+
+async function collectProcessTreeResource(rootPid: number): Promise<ProcessResourceSnapshot> {
+  if (process.platform === "win32") {
+    return { memoryMb: 0, processCount: 1 };
+  }
+
+  const { stdout } = await execFileAsync("ps", ["-axo", "pid=,ppid=,rss="], {
+    maxBuffer: 4 * 1024 * 1024
+  });
+  const rssByPid = new Map<number, number>();
+  const childrenByParent = new Map<number, number[]>();
+
+  for (const line of stdout.split(/\r?\n/)) {
+    const match = line.match(/^\s*(\d+)\s+(\d+)\s+(\d+)\s*$/);
+    if (!match) {
+      continue;
+    }
+    const pid = Number(match[1]);
+    const parentPid = Number(match[2]);
+    const rssKb = Number(match[3]);
+    rssByPid.set(pid, rssKb);
+    const children = childrenByParent.get(parentPid) ?? [];
+    children.push(pid);
+    childrenByParent.set(parentPid, children);
+  }
+
+  let rssKbTotal = 0;
+  const stack = [rootPid];
+  const visited = new Set<number>();
+
+  while (stack.length > 0) {
+    const pid = stack.pop();
+    if (!pid || visited.has(pid)) {
+      continue;
+    }
+    visited.add(pid);
+    rssKbTotal += rssByPid.get(pid) ?? 0;
+    stack.push(...(childrenByParent.get(pid) ?? []));
+  }
+
+  return {
+    memoryMb: Math.round((rssKbTotal / 1024) * 10) / 10,
+    processCount: visited.size
+  };
 }

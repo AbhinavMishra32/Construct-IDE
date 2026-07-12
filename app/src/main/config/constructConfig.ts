@@ -89,6 +89,7 @@ const DEFAULT_OPENCODE_ZEN_BASE_URL = "https://opencode.ai/zen/v1";
 const SETTINGS_STORAGE_KEY = "construct.settings";
 let configuredDataPaths: ConstructDataPaths | null = null;
 let constructCloudProductionEndpointLocked = false;
+let configuredAiSettings: StoredAiSettings | null = null;
 
 export function createConstructDataPaths(userDataRoot: string): ConstructDataPaths {
   const projectsRoot = path.join(userDataRoot, "construct-projects");
@@ -112,7 +113,15 @@ export function configureConstructCloudProductionEndpointLock(locked: boolean): 
   constructCloudProductionEndpointLocked = locked;
 }
 
+/** Inject settings owned by the native host into the isolated Mastra worker. */
+export function configureConstructAiSettings(settings: StoredAiSettings | null): void {
+  configuredAiSettings = settings;
+}
+
 export function readConstructAiSettingsSync(): StoredAiSettings {
+  if (configuredAiSettings) {
+    return configuredAiSettings;
+  }
   const paths = getElectronDataPaths();
   if (!paths) {
     return defaultAiSettings();

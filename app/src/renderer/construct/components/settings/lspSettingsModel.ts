@@ -1,11 +1,15 @@
 export type LspLanguageId = "typescript" | "python" | "rust" | "go" | "java" | "cpp" | "csharp" | "html" | "css" | "json";
-export type LspServerStatus = "not-installed" | "running" | "stopped" | "installing";
+export type LspServerStatus = "not-installed" | "running" | "stopped" | "installing" | "blocked";
 
 export type LspStatusReport = Record<LspLanguageId, {
+  blockedUntil?: string;
   command: string;
+  detail?: string;
   installCommand: string;
   installed: boolean;
   label: string;
+  memoryLimitMb?: number;
+  memoryMb?: number;
   resolvedPath: string | null;
   status: LspServerStatus;
 }>;
@@ -101,6 +105,7 @@ export function aggregateLspStatus(report: LspStatusReport): LspServerStatus {
   const statuses = lspLanguageOrder.map((language) => report[language].status);
   if (statuses.includes("installing")) return "installing";
   if (statuses.includes("running")) return "running";
+  if (statuses.includes("blocked")) return "blocked";
   if (statuses.includes("stopped")) return "stopped";
   return "not-installed";
 }

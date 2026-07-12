@@ -2,6 +2,9 @@
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
     "paths": {
+      "electron": [
+        "app/src/bridge/electron-shim.ts"
+      ],
       "@/*": [
         "app/src/renderer/*"
       ],
@@ -22,6 +25,6 @@
     "src/**/*.tsx",
     "src/**/*.d.ts",
     "vite.config.ts",
-    "tsup.config.ts"
+    "tsup.mastra.config.ts"
   ]
 }

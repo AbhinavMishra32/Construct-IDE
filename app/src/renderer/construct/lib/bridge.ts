@@ -213,6 +213,13 @@ export function readFile(input: {
   return api().readFile(input);
 }
 
+export function readLspSourceFile(input: {
+  projectId: string;
+  path: string;
+}): Promise<WorkspaceFile> {
+  return api().readLspSourceFile(input);
+}
+
 export function writeFile(input: {
   projectId: string;
   path: string;

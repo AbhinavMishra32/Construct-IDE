@@ -19,6 +19,7 @@ test("workspace tree excludes generated dependency directories before renderer s
   await mkdir(path.join(project.workspacePath, ".construct"), { recursive: true });
   await mkdir(path.join(project.workspacePath, ".git/objects"), { recursive: true });
   await mkdir(path.join(project.workspacePath, ".pytest_cache"), { recursive: true });
+  await mkdir(path.join(project.workspacePath, "target/debug/build/generated"), { recursive: true });
 
   await writeFile(path.join(project.workspacePath, "src/main.py"), "print('ok')\n", "utf8");
   await writeFile(path.join(project.workspacePath, "README.md"), "# Demo\n", "utf8");
@@ -26,6 +27,7 @@ test("workspace tree excludes generated dependency directories before renderer s
   await writeFile(path.join(project.workspacePath, "node_modules/pkg/index.js"), "", "utf8");
   await writeFile(path.join(project.workspacePath, ".construct/learner.md"), "", "utf8");
   await writeFile(path.join(project.workspacePath, ".pytest_cache/CACHEDIR.TAG"), "", "utf8");
+  await writeFile(path.join(project.workspacePath, "target/debug/build/generated/out.rs"), "", "utf8");
 
   const workspace = new ConstructProjectWorkspaceService(() => dir, () => dir);
   const tree = await workspace.listWorkspaceTree(project);
@@ -37,12 +39,14 @@ test("workspace tree excludes generated dependency directories before renderer s
   assert.equal(serialized.includes("node_modules"), false);
   assert.equal(serialized.includes(".construct"), false);
   assert.equal(serialized.includes(".pytest_cache"), false);
+  assert.equal(serialized.includes("target"), false);
 });
 
 test("workspace path ignore policy matches generated path segments", () => {
   assert.equal(isIgnoredWorkspacePath(".venv/lib/python3.12/site-packages/pkg.py"), true);
   assert.equal(isIgnoredWorkspacePath("src/__pycache__/main.cpython-312.pyc"), true);
   assert.equal(isIgnoredWorkspacePath("src/node_modules/pkg/index.js"), true);
+  assert.equal(isIgnoredWorkspacePath("target/debug/build/generated/out.rs"), true);
   assert.equal(isIgnoredWorkspacePath("src/not-node_modules/example.ts"), false);
   assert.equal(isIgnoredWorkspacePath("src/.DS_Store"), true);
 });

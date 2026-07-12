@@ -7,6 +7,7 @@ import ConstructApp from "./construct/ConstructApplication";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { logStore } from "./construct/lib/logStore";
 import { performanceProfiler } from "./construct/lib/performanceProfiler";
+import { installConstructBridge } from "./construct/lib/tauriBridge";
 
 // 1. Capture Renderer process console logs
 const originalRendererLog = console.log;
@@ -59,45 +60,58 @@ if (window.constructProjects && typeof window.constructProjects.onMainLog === "f
   });
 }
 
-// 3. Capture LSP installation progress logs
-if (window.constructProjects && typeof window.constructProjects.onLspInstallProgress === "function") {
-  window.constructProjects.onLspInstallProgress((payload) => {
-    const prefix = payload.language && payload.language !== "all" ? `[${payload.language}] ` : "[installer] ";
-    logStore.addLog("lsp-server", `${prefix}${payload.text}`, payload.type === "stderr" ? "warn" : "info");
-  });
+async function bootstrap(): Promise<void> {
+  // Install the native Tauri-backed compatibility API before React renders.
+  await installConstructBridge();
+
+  // 3. Capture LSP installation progress logs
+  if (window.constructProjects && typeof window.constructProjects.onLspInstallProgress === "function") {
+    window.constructProjects.onLspInstallProgress((payload) => {
+      const prefix = payload.language && payload.language !== "all" ? `[${payload.language}] ` : "[installer] ";
+      logStore.addLog("lsp-server", `${prefix}${payload.text}`, payload.type === "stderr" ? "warn" : "info");
+    });
+  }
+
+  const os =
+    navigator.userAgent.includes("Windows") || navigator.platform.toLowerCase().startsWith("win")
+      ? "win32"
+      : navigator.userAgent.includes("Linux") || navigator.platform.toLowerCase().includes("linux")
+        ? "linux"
+        : "darwin";
+
+  document.documentElement.dataset.opalineWindowType = "electron";
+  document.documentElement.dataset.windowType = "electron";
+  document.documentElement.dataset.opalineOs = os;
+
+  ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+    <React.StrictMode>
+      <TooltipProvider>
+        <React.Profiler
+          id="ConstructApp"
+          onRender={(id, phase, actualDuration, baseDuration) => {
+            if (phase !== "mount" && actualDuration < 8) return;
+            performanceProfiler.record({
+              kind: "mark",
+              label: `react.${phase}:${id}`,
+              durationMs: actualDuration,
+              detail: { baseDuration },
+              severity: actualDuration > 32 ? "warn" : "info"
+            });
+          }}
+        >
+          <ConstructApp />
+        </React.Profiler>
+        <Toaster richColors position="bottom-right" toastOptions={{ className: "font-sans" }} />
+      </TooltipProvider>
+    </React.StrictMode>
+  );
 }
 
-
-const os =
-  navigator.userAgent.includes("Windows") || navigator.platform.toLowerCase().startsWith("win")
-    ? "win32"
-    : navigator.userAgent.includes("Linux") || navigator.platform.toLowerCase().includes("linux")
-      ? "linux"
-      : "darwin";
-
-document.documentElement.dataset.opalineWindowType = "electron";
-document.documentElement.dataset.windowType = "electron";
-document.documentElement.dataset.opalineOs = os;
-
-ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  <React.StrictMode>
-    <TooltipProvider>
-      <React.Profiler
-        id="ConstructApp"
-        onRender={(id, phase, actualDuration, baseDuration) => {
-          if (phase !== "mount" && actualDuration < 8) return;
-          performanceProfiler.record({
-            kind: "mark",
-            label: `react.${phase}:${id}`,
-            durationMs: actualDuration,
-            detail: { baseDuration },
-            severity: actualDuration > 32 ? "warn" : "info"
-          });
-        }}
-      >
-        <ConstructApp />
-      </React.Profiler>
-      <Toaster richColors position="bottom-right" toastOptions={{ className: "font-sans" }} />
-    </TooltipProvider>
-  </React.StrictMode>
-);
+void bootstrap().catch((error) => {
+  console.error("Failed to start Construct:", error);
+  const root = document.getElementById("root");
+  if (root) {
+    root.innerHTML =
+      `<div style="font-family:system-ui;padding:24px;color:#f5f5f5">Failed to start Construct.<br/>${String(error)}</div>`;
+  }
+});
