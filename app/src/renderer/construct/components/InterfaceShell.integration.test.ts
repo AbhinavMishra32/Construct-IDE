@@ -108,6 +108,10 @@ describe("Construct interface shell boundary", () => {
 
   it("uses the extracted sidebar DOM contract and material tokens", () => {
     assert.match(opalineShellSource, /h-\[46px\]/);
+    assert.match(opalineShellSource, /desktop-top-bar-traffic-light-gutter/);
+    assert.doesNotMatch(opalineShellSource, /left-\[83px\]|pl-\[83px\]|pl-52/);
+    assert.match(opalineShellSource, /M216\.4 163\.7c5\.1 5/);
+    assert.match(opalineStylesSource, /--desktop-top-bar-traffic-light-gutter, 90px/);
     assert.match(sourceSidebarSource, /data-slot="sidebar-wrapper"/);
     assert.match(sourceSidebarSource, /data-slot="sidebar-gap"/);
     assert.match(sourceSidebarSource, /data-slot="sidebar-container"/);
