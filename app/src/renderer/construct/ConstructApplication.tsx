@@ -71,7 +71,7 @@ import {
   ShadcnDropdownMenuItem,
   ShadcnDropdownMenuSeparator,
   ShadcnDropdownMenuTrigger,
-  SynaraSidebarMenuButton,
+  SidebarMenuButton,
   Tabs,
   TabsList,
   TabsTrigger,
@@ -2212,7 +2212,7 @@ function ConstructSidebarFooter({
     <div className="flex flex-col gap-0.5">
       {children}
       <SidebarSettingsButton onClick={onOpenSettings} />
-      <SynaraSidebarMenuButton
+      <SidebarMenuButton
         type="button"
         data-construct-control="sidebar-account"
         size="lg"
@@ -2239,7 +2239,7 @@ function ConstructSidebarFooter({
           <span className="truncate text-xs text-muted-foreground/80">{email}</span>
         </span>
         <ChevronDownIcon size={14} className="shrink-0 text-muted-foreground/60" />
-      </SynaraSidebarMenuButton>
+      </SidebarMenuButton>
     </div>
   );
 }

@@ -6,13 +6,13 @@ import {
   ShadcnDropdownMenuContent,
   ShadcnDropdownMenuItem,
   ShadcnDropdownMenuTrigger,
-  SynaraSidebarGroup,
-  SynaraSidebarGroupLabel,
-  SynaraSidebarMenu,
-  SynaraSidebarMenuAction,
-  SynaraSidebarMenuBadge,
-  SynaraSidebarMenuButton,
-  SynaraSidebarMenuItem,
+  SidebarGroup,
+  SidebarGroupLabel,
+  SidebarMenu,
+  SidebarMenuAction,
+  SidebarMenuBadge,
+  SidebarMenuButton,
+  SidebarMenuItem,
 } from "@opaline/ui";
 import type { ProjectSummary } from "../types";
 
@@ -33,9 +33,9 @@ export function DashboardSidebar({
     });
 
   return (
-    <SynaraSidebarGroup>
-      <SynaraSidebarGroupLabel>Projects</SynaraSidebarGroupLabel>
-      <SynaraSidebarMenu>
+    <SidebarGroup>
+      <SidebarGroupLabel>Projects</SidebarGroupLabel>
+      <SidebarMenu>
         {visibleProjects.map((project) => (
           <DashboardSidebarProjectRow
             key={project.id}
@@ -46,12 +46,12 @@ export function DashboardSidebar({
           />
         ))}
         {visibleProjects.length === 0 ? (
-          <SynaraSidebarMenuItem className="px-2.5 py-1.5 text-xs text-muted-foreground/70">
+          <SidebarMenuItem className="px-2.5 py-1.5 text-xs text-muted-foreground/70">
             No projects yet.
-          </SynaraSidebarMenuItem>
+          </SidebarMenuItem>
         ) : null}
-      </SynaraSidebarMenu>
-    </SynaraSidebarGroup>
+      </SidebarMenu>
+    </SidebarGroup>
   );
 }
 
@@ -67,21 +67,21 @@ function DashboardSidebarProjectRow({
   title: string;
 }) {
   return (
-    <SynaraSidebarMenuItem>
-      <SynaraSidebarMenuButton onClick={onClick}>
+    <SidebarMenuItem>
+      <SidebarMenuButton onClick={onClick}>
         <span className="text-muted-foreground/80" aria-hidden="true">
           <Folder size={14} />
         </span>
         <span className="block min-w-0 flex-1 truncate pr-8">{title}</span>
-      </SynaraSidebarMenuButton>
+      </SidebarMenuButton>
       {meta ? (
-        <SynaraSidebarMenuBadge className="right-2 text-[11px] font-normal text-muted-foreground/65 transition-opacity group-hover/menu-item:opacity-0 group-focus-within/menu-item:opacity-0">
+        <SidebarMenuBadge className="right-2 text-[11px] font-normal text-muted-foreground/65 transition-opacity group-hover/menu-item:opacity-0 group-focus-within/menu-item:opacity-0">
           {meta}
-        </SynaraSidebarMenuBadge>
+        </SidebarMenuBadge>
       ) : null}
       <ShadcnDropdownMenu>
         <ShadcnDropdownMenuTrigger
-          render={<SynaraSidebarMenuAction showOnHover />}
+          render={<SidebarMenuAction showOnHover />}
           aria-label={`Project actions for ${title}`}
         >
           <DotsThree size={15} weight="bold" />
@@ -97,7 +97,7 @@ function DashboardSidebarProjectRow({
           </ShadcnDropdownMenuItem>
         </ShadcnDropdownMenuContent>
       </ShadcnDropdownMenu>
-    </SynaraSidebarMenuItem>
+    </SidebarMenuItem>
   );
 }
 
