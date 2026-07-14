@@ -71,7 +71,9 @@ import {
   ShadcnDropdownMenuItem,
   ShadcnDropdownMenuSeparator,
   ShadcnDropdownMenuTrigger,
+  SidebarMenu,
   SidebarMenuButton,
+  SidebarMenuItem,
   Tabs,
   TabsList,
   TabsTrigger,
@@ -2211,38 +2213,40 @@ function ConstructSidebarFooter({
   const plan = account.usage?.plan ?? account.account?.user?.plan ?? null;
 
   return (
-    <div className="flex flex-col gap-0.5">
+    <SidebarMenu className="gap-1">
       {children}
       <SidebarSettingsButton onClick={onOpenSettings} />
-      <SidebarMenuButton
-        type="button"
-        data-construct-control="sidebar-account"
-        size="lg"
-        onClick={onAccountClick}
-      >
-        <UserAvatar className="size-7 shrink-0" />
-        <span className="flex min-w-0 flex-1 flex-col">
-          <span className="flex min-w-0 items-center gap-1.5">
-            <span className="truncate font-semibold text-foreground/90">{account.isPending ? "Account" : name}</span>
-            {plan ? (
-              <Badge
-                variant="secondary"
-                className={cn(
-                  "h-[15px] rounded-[3px] border-0 px-1 text-[9px] font-bold tracking-wider uppercase shrink-0 select-none",
-                  plan.toLowerCase().includes("plus") || plan.toLowerCase().includes("pro")
-                    ? "bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400"
-                    : "bg-muted text-muted-foreground"
-                )}
-              >
-                {formatPlan(plan)}
-              </Badge>
-            ) : null}
+      <SidebarMenuItem>
+        <SidebarMenuButton
+          type="button"
+          data-construct-control="sidebar-account"
+          size="lg"
+          onClick={onAccountClick}
+        >
+          <UserAvatar className="size-7 shrink-0" />
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span className="flex min-w-0 items-center gap-1.5">
+              <span className="truncate font-semibold text-foreground/90">{account.isPending ? "Account" : name}</span>
+              {plan ? (
+                <Badge
+                  variant="secondary"
+                  className={cn(
+                    "h-[15px] rounded-[3px] border-0 px-1 text-[9px] font-bold tracking-wider uppercase shrink-0 select-none",
+                    plan.toLowerCase().includes("plus") || plan.toLowerCase().includes("pro")
+                      ? "bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400"
+                      : "bg-muted text-muted-foreground"
+                  )}
+                >
+                  {formatPlan(plan)}
+                </Badge>
+              ) : null}
+            </span>
+            <span className="truncate text-xs text-muted-foreground/80">{email}</span>
           </span>
-          <span className="truncate text-xs text-muted-foreground/80">{email}</span>
-        </span>
-        <ChevronDownIcon size={14} className="shrink-0 text-muted-foreground/60" />
-      </SidebarMenuButton>
-    </div>
+          <ChevronDownIcon size={14} className="shrink-0 text-muted-foreground/60" />
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+    </SidebarMenu>
   );
 }
 

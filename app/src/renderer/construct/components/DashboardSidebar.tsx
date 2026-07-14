@@ -7,12 +7,12 @@ import {
   ShadcnDropdownMenuItem,
   ShadcnDropdownMenuTrigger,
   SidebarGroup,
-  SidebarGroupLabel,
   SidebarMenu,
   SidebarMenuAction,
   SidebarMenuBadge,
-  SidebarMenuButton,
   SidebarMenuItem,
+  SidebarProjectButton,
+  SIDEBAR_SECTION_LABEL_CLASS_NAME,
 } from "@opaline/ui";
 import type { ProjectSummary } from "../types";
 
@@ -33,9 +33,11 @@ export function DashboardSidebar({
     });
 
   return (
-    <SidebarGroup>
-      <SidebarGroupLabel>Projects</SidebarGroupLabel>
-      <SidebarMenu>
+    <SidebarGroup className="px-1.5 pt-1 pb-2">
+      <div className="mb-1.5 flex items-center px-2">
+        <span className={SIDEBAR_SECTION_LABEL_CLASS_NAME}>Projects</span>
+      </div>
+      <SidebarMenu className="gap-3">
         {visibleProjects.map((project) => (
           <DashboardSidebarProjectRow
             key={project.id}
@@ -46,8 +48,8 @@ export function DashboardSidebar({
           />
         ))}
         {visibleProjects.length === 0 ? (
-          <SidebarMenuItem className="px-2.5 py-1.5 text-xs text-muted-foreground/70">
-            No projects yet.
+          <SidebarMenuItem className="px-2 pt-4 text-center text-[length:var(--app-font-size-ui,12px)] text-muted-foreground/58">
+            No projects yet
           </SidebarMenuItem>
         ) : null}
       </SidebarMenu>
@@ -67,13 +69,8 @@ function DashboardSidebarProjectRow({
   title: string;
 }) {
   return (
-    <SidebarMenuItem>
-      <SidebarMenuButton onClick={onClick}>
-        <span className="text-muted-foreground/80" aria-hidden="true">
-          <Folder size={14} />
-        </span>
-        <span className="block min-w-0 flex-1 truncate pr-8">{title}</span>
-      </SidebarMenuButton>
+    <SidebarMenuItem className="rounded-md">
+      <SidebarProjectButton icon={<Folder />} label={title} onClick={onClick} />
       {meta ? (
         <SidebarMenuBadge className="right-2 text-[11px] font-normal text-muted-foreground/65 transition-opacity group-hover/menu-item:opacity-0 group-focus-within/menu-item:opacity-0">
           {meta}

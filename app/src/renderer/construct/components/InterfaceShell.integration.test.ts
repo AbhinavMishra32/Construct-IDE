@@ -55,6 +55,18 @@ const opalineHeaderControlsSource = readFileSync(
   fileURLToPath(new URL("../../../../../opaline/packages/ui/src/components/desktop-header-controls.tsx", import.meta.url)),
   "utf8",
 );
+const opalineSidebarPresentationSource = readFileSync(
+  fileURLToPath(new URL("../../../../../opaline/packages/ui/src/components/sidebar-presentation.tsx", import.meta.url)),
+  "utf8",
+);
+const opalineSearchInputSource = readFileSync(
+  fileURLToPath(new URL("../../../../../opaline/packages/ui/src/components/search-input.tsx", import.meta.url)),
+  "utf8",
+);
+const opalineSettingsSource = readFileSync(
+  fileURLToPath(new URL("../../../../../opaline/packages/ui/src/settings/Settings.tsx", import.meta.url)),
+  "utf8",
+);
 const opalineThemeSource = readFileSync(
   fileURLToPath(new URL("../../../../../opaline/packages/ui/src/tokens/opaline-theme.css", import.meta.url)),
   "utf8",
@@ -87,9 +99,10 @@ describe("Construct interface shell boundary", () => {
     assert.doesNotMatch(appSource, /AppShell(?:ChromeButton|HeaderToolButton)/);
     assert.doesNotMatch(shellControlsSource, /SidebarNavItemRow/);
     assert.doesNotMatch(dashboardSidebarSource, /SidebarSection|construct-sidebar-row/);
-    assert.match(shellControlsSource, /SidebarMenuButton/);
+    assert.doesNotMatch(shellControlsSource, /SidebarMenuButton/);
     assert.match(dashboardSidebarSource, /SidebarGroup/);
-    assert.match(dashboardSidebarSource, /SidebarMenuButton/);
+    assert.match(dashboardSidebarSource, /SidebarProjectButton/);
+    assert.match(shellControlsSource, /SidebarPrimaryAction/);
     assert.match(opalineIndexSource, /export \{ Button \} from "\.\/components\/button"/);
   });
 
@@ -117,6 +130,17 @@ describe("Construct interface shell boundary", () => {
     assert.match(opalineHeaderControlsSource, /!size-7 shrink-0 rounded-lg/);
     assert.match(opalineShellSource, /size="icon-sm"/);
     assert.match(opalineShellSource, /<DesktopHeaderIconButton/);
+    assert.match(opalineShellSource, /<SidebarPrimaryAction/);
+    assert.match(opalineShellSource, /<SidebarProjectButton/);
+    assert.match(opalineShellSource, /<SidebarContent className="gap-0 font-system-ui">/);
+    assert.match(opalineSidebarPresentationSource, /--app-density-row-height,1\.75rem/);
+    assert.match(opalineSidebarPresentationSource, /export function SidebarPrimaryAction/);
+    assert.match(opalineSidebarPresentationSource, /export function SidebarProjectButton/);
+    assert.match(opalineSidebarPresentationSource, /size="sm"/);
+    assert.match(opalineSearchInputSource, /\[&>\[data-slot=input\]\]:pl-8/);
+    assert.match(opalineSettingsSource, /<SearchInput/);
+    assert.match(opalineSettingsSource, /<SidebarProjectButton/);
+    assert.doesNotMatch(opalineSettingsSource, /SidebarGroupLabel|SidebarSeparator/);
     assert.match(opalineThemeSource, /--color-text-foreground: var\(--foreground/);
     assert.match(opalineThemeSource, /--color-background-button-secondary-hover:/);
     assert.match(opalineThemeSource, /--app-font-size-ui: 12px/);
