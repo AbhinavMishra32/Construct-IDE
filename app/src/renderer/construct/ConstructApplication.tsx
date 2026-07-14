@@ -74,9 +74,6 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  Tabs,
-  TabsList,
-  TabsTrigger,
   useShellHistory
 } from "@opaline/ui";
 import type { SettingsNavItem, ShellHistoryEntry } from "@opaline/ui";
@@ -1660,34 +1657,41 @@ export default function ConstructApp() {
                       <>
                         <SavingIndicator isSaving={isSaving} />
                         <div className="flex items-center gap-1" aria-label="Flow controls">
-                          <Tabs
-                            value={!state.isRightPanelOpen || flowPanelView !== "chat" ? "hidden" : state.inspectorExpanded ? "expanded" : "normal"}
-                            onValueChange={(val) => {
-                              if (val === "hidden") {
-                                state.setRightPanelOpen(false);
-                                state.setInspectorExpanded(false);
-                              } else if (val === "normal") {
+                          <div className="flex h-7 items-center gap-1" role="group" aria-label="Construct agent layout">
+                            <DesktopChromeButton
+                              aria-label="Expand Construct agent"
+                              data-pressed={state.isRightPanelOpen && flowPanelView === "chat" && state.inspectorExpanded ? "" : undefined}
+                              onClick={() => {
+                                expandFlowChat(state);
+                              }}
+                              title="Expand chat"
+                            >
+                              <Maximize2Icon size={16} strokeWidth={1.9} />
+                            </DesktopChromeButton>
+                            <DesktopChromeButton
+                              aria-label="Show Construct agent"
+                              data-pressed={state.isRightPanelOpen && flowPanelView === "chat" && !state.inspectorExpanded ? "" : undefined}
+                              onClick={() => {
                                 setFlowPanelView("chat");
                                 state.setRightPanelOpen(true);
                                 state.setInspectorExpanded(false);
-                              } else if (val === "expanded") {
-                                expandFlowChat(state);
-                              }
-                            }}
-                            className="h-7"
-                          >
-                            <TabsList className="h-7 gap-1 bg-transparent p-0">
-                              <TabsTrigger value="expanded" className="size-7 rounded-[8px] p-0 text-muted-foreground/85 shadow-none hover:bg-transparent hover:text-foreground data-active:bg-transparent data-active:text-foreground data-active:shadow-none" title="Expand chat">
-                                <Maximize2Icon size={16} strokeWidth={1.9} />
-                              </TabsTrigger>
-                              <TabsTrigger value="normal" className="size-7 rounded-[8px] p-0 text-muted-foreground/85 shadow-none hover:bg-transparent hover:text-foreground data-active:bg-transparent data-active:text-foreground data-active:shadow-none" title="Normal chat">
-                                <MessageCircleIcon size={16} strokeWidth={1.9} />
-                              </TabsTrigger>
-                              <TabsTrigger value="hidden" className="size-7 rounded-[8px] p-0 text-muted-foreground/85 shadow-none hover:bg-transparent hover:text-foreground data-active:bg-transparent data-active:text-foreground data-active:shadow-none" title="Hide chat">
-                                <MessageCircleOffIcon size={16} strokeWidth={1.9} />
-                              </TabsTrigger>
-                            </TabsList>
-                          </Tabs>
+                              }}
+                              title="Normal chat"
+                            >
+                              <MessageCircleIcon size={16} strokeWidth={1.9} />
+                            </DesktopChromeButton>
+                            <DesktopChromeButton
+                              aria-label="Hide Construct agent"
+                              data-pressed={!state.isRightPanelOpen || flowPanelView !== "chat" ? "" : undefined}
+                              onClick={() => {
+                                state.setRightPanelOpen(false);
+                                state.setInspectorExpanded(false);
+                              }}
+                              title="Hide chat"
+                            >
+                              <MessageCircleOffIcon size={16} strokeWidth={1.9} />
+                            </DesktopChromeButton>
+                          </div>
                           <DesktopHeaderToolButton
                             data-active={state.isRightPanelOpen && flowPanelView === "project" ? "true" : "false"}
                             onClick={() => {
@@ -2646,18 +2650,14 @@ function ConstructProjectTitleMenu({
       <ShadcnDropdownMenu>
         <ShadcnDropdownMenuTrigger
           render={
-            <Button
+            <DesktopChromeButton
               aria-label="Project actions"
-              className="size-8 shrink-0 rounded-[14px] text-muted-foreground hover:text-foreground"
-              size="icon"
-              type="button"
-              variant="ghost"
             />
           }
         >
           <MoreHorizontalIcon size={15} strokeWidth={2} />
         </ShadcnDropdownMenuTrigger>
-        <ShadcnDropdownMenuContent align="start" className="w-64 rounded-[18px] p-1.5">
+        <ShadcnDropdownMenuContent align="start" className="w-64">
           {activeProject != null ? (
             <>
               <ShadcnDropdownMenuItem onClick={onOpenRightPanel}>

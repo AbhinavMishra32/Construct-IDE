@@ -84,6 +84,9 @@ describe("Construct interface shell boundary", () => {
   it("composes the desktop shell and sidebars through Opaline v3", () => {
     assert.match(appSource, /<DesktopShell/);
     assert.match(appSource, /<DesktopSidebar/);
+    assert.match(appSource, /aria-label="Construct agent layout"/);
+    assert.match(appSource, /render=\{\s*<DesktopChromeButton\s+aria-label="Project actions"/);
+    assert.doesNotMatch(appSource, /<Tabs(?:\s|>)/);
     assert.doesNotMatch(appSource, /<AppShell(?:\s|>)/);
   });
 
