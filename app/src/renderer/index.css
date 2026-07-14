@@ -884,34 +884,28 @@ html, body {
     background: transparent;
   }
 
-  .construct-home-landing .opaline-v3-home-ambient {
-    display: none;
-  }
-
   .construct-home-landing .opaline-v3-home-content {
     width: 100%;
-    gap: 24px;
     transform: none;
   }
 
-  .construct-home-landing .opaline-v3-home-title {
-    font-size: 28px;
-    font-weight: 400;
-    letter-spacing: 0;
+  .construct-home-logo {
+    width: 2.5rem;
   }
 
   .construct-home-composer.construct-flow-composer {
+    --composer-radius: 1.2rem;
     width: 100%;
     max-width: 724px !important;
-    border-radius: 22px !important;
-    background: color-mix(in srgb, var(--card) 98%, var(--background)) !important;
-    box-shadow:
-      0 18px 44px color-mix(in srgb, var(--foreground) 8%, transparent),
-      0 0 0 1px color-mix(in srgb, var(--border) 86%, transparent) !important;
+    border: 1px solid color-mix(in srgb, var(--border) 95%, var(--foreground) 5%) !important;
+    border-radius: var(--composer-radius) !important;
+    background: var(--composer-surface, var(--card)) !important;
+    box-shadow: 0 4px 18px -6px color-mix(in srgb, var(--foreground) 7%, transparent) !important;
   }
 
   .dark .construct-home-composer.construct-flow-composer {
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--border) 82%, transparent) !important;
+    border-color: var(--border) !important;
+    box-shadow: 0 6px 24px -10px rgba(0, 0, 0, 0.3) !important;
   }
 
   .construct-home-composer.construct-flow-composer textarea {
@@ -1325,10 +1319,6 @@ html, body {
     .construct-home-main.is-researching {
       padding-top: 1rem;
       padding-bottom: 1rem;
-    }
-
-    .construct-home-landing .opaline-v3-home-title {
-      font-size: 26px;
     }
 
     .construct-home-research-card {
@@ -1913,18 +1903,19 @@ html, body {
 }
 
 .construct-sidebar-row {
-  height: 30px !important;
+  height: var(--app-density-row-height, 1.75rem) !important;
+  min-height: var(--app-density-row-height, 1.75rem) !important;
   width: 100%;
   align-items: center !important;
   justify-content: flex-start !important;
   gap: 8px !important;
   border: 0 !important;
-  border-radius: 10px !important;
-  padding: 0 10px !important;
+  border-radius: 0.375rem !important;
+  padding: var(--app-density-row-padding-y, 0.125rem) 0.5rem !important;
   background: transparent !important;
   color: var(--foreground) !important;
-  font-size: 13px !important;
-  font-weight: 450 !important;
+  font-size: var(--app-font-size-ui, 12px) !important;
+  font-weight: 400 !important;
   line-height: 18px !important;
   text-align: left;
   box-shadow: none !important;
@@ -1935,16 +1926,16 @@ html, body {
 [data-active="true"] > .construct-sidebar-row {
   background: var(--sidebar-accent) !important;
   color: var(--foreground) !important;
-  font-weight: 450 !important;
+  font-weight: 400 !important;
   box-shadow: none !important;
 }
 
 .construct-sidebar-row [data-icon="inline-start"],
 .construct-sidebar-row [data-sidebar-row-icon] {
   display: grid;
-  width: 17px;
-  height: 17px;
-  flex: 0 0 17px;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
   place-items: center;
   color: color-mix(in srgb, var(--foreground) 54%, transparent);
 }
@@ -1974,7 +1965,7 @@ html, body {
 /* ── Smooth transitions for UI actions in the sidebar ── */
 .opaline-v2-sidebar-pane button,
 .opaline-v2-sidebar-pane a {
-  transition: none !important;
+  transition: color 150ms ease, background-color 150ms ease !important;
 }
 
 .opaline-v2-sidebar-pane button:not(.construct-sidebar-row):not(.construct-sidebar-action):hover:not(:disabled),
@@ -1999,13 +1990,13 @@ html, body {
 .opaline-v2-sidebar-pane [data-sidebar="group-label"],
 .opaline-v2-sidebar-pane [data-sidebar="sidebar-section-heading"],
 .opaline-v2-sidebar-pane [data-slot="sidebar-group-label"] {
-  font-size: 13px !important;
-  font-weight: 500 !important;
+  font-size: var(--app-font-size-ui, 12px) !important;
+  font-weight: 400 !important;
   line-height: 18px !important;
   text-transform: none !important;
   letter-spacing: 0 !important;
   color: var(--muted-foreground) !important;
-  opacity: 0.68 !important;
+  opacity: 0.58 !important;
   padding-left: 8px !important;
   padding-top: 8px !important;
   padding-bottom: 5px !important;

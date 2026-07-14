@@ -17,6 +17,21 @@ const opalineShellSource = readFileSync(
   ),
   "utf8",
 );
+const opalineAppShellSource = readFileSync(
+  fileURLToPath(
+    new URL(
+      "../../../../../opaline/packages/ui/src/opaline-v2/AppShell.tsx",
+      import.meta.url,
+    ),
+  ),
+  "utf8",
+);
+const opalineStylesSource = readFileSync(
+  fileURLToPath(
+    new URL("../../../../../opaline/packages/ui/src/styles.css", import.meta.url),
+  ),
+  "utf8",
+);
 
 describe("Construct interface shell boundary", () => {
   it("composes the desktop shell and sidebars through Opaline v3", () => {
@@ -37,5 +52,14 @@ describe("Construct interface shell boundary", () => {
   it("keeps Opaline free of Construct runtime and persistence dependencies", () => {
     assert.doesNotMatch(opalineShellSource, /constructFlow|projectStore|tauriBridge|AiSettings/);
     assert.match(opalineShellSource, /Product navigation and project state enter/);
+  });
+
+  it("retains the extracted desktop geometry and material tokens", () => {
+    assert.match(opalineAppShellSource, /h-\[46px\]/);
+    assert.match(opalineAppShellSource, /data-placement="content-seam"/);
+    assert.match(opalineStylesSource, /--app-content-card-radius: 0\.9rem/);
+    assert.match(opalineStylesSource, /--seam-shadow-x: -6\.5px/);
+    assert.match(opalineStylesSource, /blur\(8px\) saturate\(135%\)/);
+    assert.match(opalineStylesSource, /--composer-radius: 1\.2rem/);
   });
 });

@@ -5,6 +5,7 @@ import { CheckCircle2Icon, CircleAlertIcon, SearchIcon } from "lucide-react";
 import { AgentRunTrace, AgentSessionComposer, DesktopHomeSurface } from "@opaline/ui";
 import type { AgentRunTraceEntry } from "@opaline/ui";
 import type { ConstructFlowSession, ConstructFlowSessionEvent, ConstructFlowTimelinePart } from "../../../shared/constructFlow";
+import { ConstructAuthLogo } from "../../components/auth/construct-auth-logo";
 import type { AiSettings, FlowProjectRecord, ModelCatalogEntry, ProjectSummary } from "../types";
 import { getSettings, listModels, onConstructFlowSessionEvent, updateAiSettings } from "../lib/bridge";
 import {
@@ -298,6 +299,7 @@ export function Dashboard({
                 >
                   <DesktopHomeSurface
                     className="construct-home-landing"
+                    mark={<ConstructAuthLogo markClassName="construct-home-logo" />}
                     title={headline}
                   >
                     <AgentSessionComposer
