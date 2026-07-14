@@ -63,6 +63,7 @@ import {
   gitStatus,
   applyLearningPatch,
   getProjectLearningState,
+  getUiState,
   listFiles,
   onVerifyLog,
   onConstructInteractSessionEvent,
@@ -70,6 +71,7 @@ import {
   readLspSourceFile,
   renameFile,
   runConstructInteract,
+  setUiState,
   updateProject,
   verifyRecall,
   writeFile,
@@ -116,6 +118,14 @@ const EMPTY_GENERATED_LIVE_STEPS: GeneratedLiveStep[] = [];
 const EMPTY_GIT_MILESTONES: GitMilestone[] = [];
 const EMPTY_REFERENCE_CARDS: ReferenceCardData[] = [];
 const EMPTY_TARGETS: ConstructTarget[] = [];
+const WORKSPACE_CONTEXT_CARDS_UI_STATE_KEY = "workspace.context-cards";
+
+type WorkspaceContextCardsUiState = {
+  version: 1;
+  openReferenceIds: string[];
+  pinnedReferenceIds: string[];
+  openConceptIds: string[];
+};
 
 function resolveNavigableFilePath(rawPath: string, workspacePath: string): string | null {
   const withoutFileScheme = rawPath.replace(/^file:\/\//, "");
@@ -183,6 +193,7 @@ export function Workspace({
   const [openReferenceIds, setOpenReferenceIds] = useState<string[]>([]);
   const [pinnedReferenceIds, setPinnedReferenceIds] = useState<string[]>([]);
   const [openConceptIds, setOpenConceptIds] = useState<string[]>([]);
+  const [contextCardsUiStateHydrated, setContextCardsUiStateHydrated] = useState(false);
   const [savedConceptIds, setSavedConceptIds] = useState<string[]>(() => initialSavedConceptIds(project, project.program.concepts ?? EMPTY_CONCEPTS));
   const [selectedKnowledgeConceptId, setSelectedKnowledgeConceptId] = useState<string | null>(null);
   const [gitMilestoneStates, setGitMilestoneStates] = useState<Record<string, StoredGitMilestoneState>>(() =>
@@ -335,6 +346,8 @@ export function Workspace({
     setActiveFileContent("");
     setOpenReferenceIds([]);
     setPinnedReferenceIds([]);
+    setOpenConceptIds([]);
+    setContextCardsUiStateHydrated(false);
     setVerifyingId(null);
     setVerificationLogs({});
     setInteractingId(null);
@@ -345,7 +358,51 @@ export function Workspace({
     setGeneralInteractResult(undefined);
     setActiveLiveStepId(null);
     autoOpenedRecallRef.current = null;
+
+    let cancelled = false;
+    void getUiState<WorkspaceContextCardsUiState | null>({
+      key: WORKSPACE_CONTEXT_CARDS_UI_STATE_KEY,
+      scope: "workspace",
+      projectId: project.id,
+      fallback: null
+    }).then((saved) => {
+      if (cancelled || !saved || saved.version !== 1) return;
+      const referenceIds = new Set((project.program.references ?? EMPTY_REFERENCE_CARDS).map((reference) => reference.id));
+      const conceptIds = new Set((project.program.concepts ?? EMPTY_CONCEPTS).map((concept) => concept.id));
+      const restoredReferenceIds = uniqueStrings(saved.openReferenceIds ?? []).filter((id) => referenceIds.has(id));
+      setOpenReferenceIds(restoredReferenceIds);
+      setPinnedReferenceIds(uniqueStrings(saved.pinnedReferenceIds ?? []).filter((id) => restoredReferenceIds.includes(id)));
+      setOpenConceptIds(uniqueStrings(saved.openConceptIds ?? []).filter((id) => conceptIds.has(id)));
+    }).catch(() => {
+      // Browser-only smoke checks run without native storage.
+    }).finally(() => {
+      if (!cancelled) setContextCardsUiStateHydrated(true);
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, [project.id]);
+
+  useEffect(() => {
+    if (!contextCardsUiStateHydrated) return;
+    const timeout = window.setTimeout(() => {
+      void setUiState({
+        key: WORKSPACE_CONTEXT_CARDS_UI_STATE_KEY,
+        scope: "workspace",
+        projectId: project.id,
+        value: {
+          version: 1,
+          openReferenceIds,
+          pinnedReferenceIds,
+          openConceptIds
+        } satisfies WorkspaceContextCardsUiState
+      }).catch(() => {
+        // Browser-only smoke checks run without native storage.
+      });
+    }, 500);
+    return () => window.clearTimeout(timeout);
+  }, [contextCardsUiStateHydrated, openConceptIds, openReferenceIds, pinnedReferenceIds, project.id]);
 
   useEffect(() => {
     let disposed = false;

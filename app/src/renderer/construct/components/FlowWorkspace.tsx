@@ -333,7 +333,11 @@ export function FlowWorkspace({
         setDocumentSession(restoredSession);
         setActiveWorkspaceTabId(state.activeWorkspaceTabId ?? restoredSession.activePath);
         setOpenTaskTabIds(state.openTaskTabIds);
-        setOpenConcept(state.openConceptId ? buildInlineConceptPlaceholder(state.openConceptId) : null);
+        const restoredConcept = state.openConceptId
+          ? collectFlowConcepts(project.flow.sessions ?? []).find((concept) => concept.id === state.openConceptId)
+            ?? buildInlineConceptPlaceholder(state.openConceptId)
+          : null;
+        setOpenConcept(restoredConcept);
         setChatScrollTop(state.chatScrollTop);
       })
       .finally(() => {
@@ -740,6 +744,13 @@ export function FlowWorkspace({
   const mergedFlowSessions = useMemo(() => mergeSessions(sessions, liveSession), [liveSession, sessions]);
   const flowConcepts = useMemo(() => collectFlowConcepts(mergedFlowSessions), [mergedFlowSessions]);
   const flowTasks = useMemo(() => mergedFlowSessions.flatMap((session) => session.practiceTasks), [mergedFlowSessions]);
+
+  useEffect(() => {
+    if (!openConcept) return;
+    const hydratedConcept = flowConcepts.find((concept) => concept.id === openConcept.id);
+    if (!hydratedConcept || hydratedConcept === openConcept) return;
+    setOpenConcept(hydratedConcept);
+  }, [flowConcepts, openConcept]);
 
   useEffect(() => {
     if (!flowUiStateHydrated || restoringFlowUiStateRef.current) return;

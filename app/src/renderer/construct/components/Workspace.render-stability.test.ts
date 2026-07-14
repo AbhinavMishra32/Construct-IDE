@@ -48,6 +48,12 @@ describe("Workspace render stability", () => {
     assert.doesNotMatch(flowWorkspaceSource, /\[project\.activeFilePath, refreshTree\]/);
   });
 
+  it("hydrates a restored Flow concept id from persisted session content", () => {
+    assert.match(flowWorkspaceSource, /collectFlowConcepts\(project\.flow\.sessions \?\? \[\]\)\.find\(\(concept\) => concept\.id === state\.openConceptId\)/);
+    assert.match(flowWorkspaceSource, /const hydratedConcept = flowConcepts\.find\(\(concept\) => concept\.id === openConcept\.id\)/);
+    assert.match(flowWorkspaceSource, /setOpenConcept\(hydratedConcept\)/);
+  });
+
   it("does not auto-advance after an agent response", () => {
     assert.doesNotMatch(workspaceSource, /if \(result\.shouldAdvance[^}]+await handleNext\(\)/s);
   });

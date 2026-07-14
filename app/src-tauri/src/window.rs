@@ -17,7 +17,7 @@ pub fn create_main_window<R: Runtime>(
         builder = builder
             .title_bar_style(tauri::TitleBarStyle::Overlay)
             .hidden_title(true)
-            .traffic_light_position(tauri::LogicalPosition::new(16.0, 17.0))
+            .traffic_light_position(tauri::LogicalPosition::new(16.0, 26.0))
             .transparent(true);
     }
     #[cfg(target_os = "windows")]

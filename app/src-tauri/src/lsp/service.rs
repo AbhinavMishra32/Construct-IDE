@@ -17,6 +17,9 @@ use super::framing;
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
 const MAX_BUFFER: usize = 16 * 1024 * 1024;
+const RUST_ANALYZER_MEMORY_FRACTION: u64 = 4;
+const RUST_ANALYZER_MEMORY_MIN_MB: u64 = 2_048;
+const RUST_ANALYZER_MEMORY_MAX_MB: u64 = 3_072;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -234,6 +237,7 @@ impl LspService {
         let workspace = self.projects.workspace_path(project_id)?;
         let languages = discover_languages(&workspace);
         let mut started = Vec::new();
+        let mut project_roots = serde_json::Map::new();
         let mut skipped = serde_json::Map::new();
         for language in Language::all() {
             if !languages.contains(language) {
@@ -249,8 +253,12 @@ impl LspService {
                 skipped.insert(language.id().into(), json!({"reason":"no-cargo-project","message":"Skipping Rust language server because no Cargo.toml root was found."}));
                 continue;
             }
-            if self.start_language(app.clone(), *language, root)? {
+            if self.start_language(app.clone(), *language, root.clone())? {
                 started.push(language.id());
+                project_roots.insert(
+                    language.id().into(),
+                    Value::String(root.to_string_lossy().into_owned()),
+                );
             } else {
                 skipped.insert(language.id().into(), json!({"reason":"not-installed","message":format!("Skipping {}; server is not installed.", config(*language).label)}));
             }
@@ -258,6 +266,7 @@ impl LspService {
         Ok(json!({
             "languages": started,
             "workspacePath": workspace,
+            "projectRoots": project_roots,
             "skipped": if skipped.is_empty() { Value::Null } else { Value::Object(skipped) }
         }))
     }
@@ -347,13 +356,7 @@ impl LspService {
             return Ok(false);
         };
         self.stop_language(language);
-        let mut child = Command::new(&executable)
-            .args(cfg.args)
-            .current_dir(&workspace)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
+        let mut child = spawn_server_process(language, &executable, cfg.args, &workspace)
             .map_err(|error| CommandError::new("lsp.spawn", error.to_string()))?;
         let stdin =
             Arc::new(Mutex::new(child.stdin.take().ok_or_else(|| {
@@ -371,6 +374,7 @@ impl LspService {
         spawn_stdout(
             app.clone(),
             language,
+            workspace.clone(),
             stdout,
             Arc::clone(&stdin),
             Arc::clone(&pending),
@@ -405,6 +409,7 @@ impl LspService {
 fn spawn_stdout(
     app: tauri::AppHandle,
     language: Language,
+    workspace: PathBuf,
     mut stdout: impl Read + Send + 'static,
     writer: Arc<Mutex<ChildStdin>>,
     pending: Arc<Mutex<HashMap<String, Sender<Value>>>>,
@@ -422,7 +427,7 @@ fn spawn_stdout(
             }
             for message in framing::drain(&mut buffer) {
                 if message.get("method").is_some() && message.get("id").is_some() {
-                    let response = json!({"jsonrpc":"2.0","id":message["id"],"result":server_request_result(&message)});
+                    let response = json!({"jsonrpc":"2.0","id":message["id"],"result":server_request_result(language, &workspace, &message)});
                     let _ = writer
                         .lock()
                         .map(|mut writer| writer.write_all(&framing::encode(&response)));
@@ -462,18 +467,74 @@ fn spawn_stderr(app: tauri::AppHandle, language: Language, mut stderr: impl Read
     });
 }
 
-fn server_request_result(message: &Value) -> Value {
+fn server_request_result(language: Language, workspace: &Path, message: &Value) -> Value {
     match message.get("method").and_then(Value::as_str) {
         Some("workspace/configuration") => message
             .pointer("/params/items")
             .and_then(Value::as_array)
-            .map(|items| Value::Array(items.iter().map(|_| Value::Null).collect()))
+            .map(|items| {
+                Value::Array(
+                    items
+                        .iter()
+                        .map(|item| {
+                            configuration_for_section(
+                                language,
+                                workspace,
+                                item.get("section").and_then(Value::as_str),
+                            )
+                        })
+                        .collect(),
+                )
+            })
             .unwrap_or(Value::Array(vec![])),
         Some("workspace/applyEdit") => {
             json!({"applied":false,"failureReason":"Construct does not apply language-server workspace edits automatically."})
         }
         _ => Value::Null,
     }
+}
+
+fn configuration_for_section(language: Language, workspace: &Path, section: Option<&str>) -> Value {
+    if language != Language::Rust {
+        return Value::Null;
+    }
+    let configuration = json!({
+        "cargo": {
+            "allFeatures": false,
+            "buildScripts": { "enable": true },
+            "features": []
+        },
+        "checkOnSave": false,
+        "files": {
+            "exclude": [".git", ".construct", "node_modules", "target", "dist", "build", ".next", ".venv", "venv"]
+        },
+        "hover": {
+            "actions": {
+                "debug": { "enable": false },
+                "run": { "enable": false }
+            }
+        },
+        "linkedProjects": [workspace.join("Cargo.toml")],
+        "numThreads": 2,
+        "procMacro": {
+            "attributes": { "enable": true },
+            "enable": true,
+            "processes": 1
+        }
+    });
+    let Some(section) = section else {
+        return configuration;
+    };
+    if section == "rust-analyzer" {
+        return configuration;
+    }
+    let Some(path) = section.strip_prefix("rust-analyzer.") else {
+        return Value::Null;
+    };
+    path.split('.')
+        .try_fold(&configuration, |cursor, segment| cursor.get(segment))
+        .cloned()
+        .unwrap_or(Value::Null)
 }
 
 fn discover_languages(root: &Path) -> HashSet<Language> {
@@ -559,6 +620,94 @@ fn resolve_executable(workspace: &Path, command: &str) -> Option<PathBuf> {
     })
 }
 
+fn spawn_server_process(
+    language: Language,
+    executable: &Path,
+    args: &[&str],
+    workspace: &Path,
+) -> std::io::Result<Child> {
+    #[cfg(unix)]
+    let mut command = if language == Language::Rust {
+        let mut command = Command::new("/bin/sh");
+        command
+            .arg("-c")
+            .arg(concat!(
+                "limit_kb=\"$1\"; command_path=\"$2\"; shift 2; ",
+                "ulimit -v \"$limit_kb\" 2>/dev/null || true; ",
+                "ulimit -m \"$limit_kb\" 2>/dev/null || true; ",
+                "exec \"$command_path\" \"$@\""
+            ))
+            .arg("construct-rust-analyzer-limit")
+            .arg((rust_analyzer_memory_limit_mb() * 1024).to_string())
+            .arg(executable)
+            .args(args);
+        command
+    } else {
+        let mut command = Command::new(executable);
+        command.args(args);
+        command
+    };
+
+    #[cfg(not(unix))]
+    let mut command = {
+        let mut command = Command::new(executable);
+        command.args(args);
+        command
+    };
+
+    command
+        .current_dir(workspace)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+}
+
+fn rust_analyzer_memory_limit_mb() -> u64 {
+    std::env::var("CONSTRUCT_RUST_ANALYZER_MEMORY_LIMIT_MB")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .map(|value| value.clamp(RUST_ANALYZER_MEMORY_MIN_MB, RUST_ANALYZER_MEMORY_MAX_MB))
+        .unwrap_or_else(|| {
+            total_memory_mb()
+                .map(|total| {
+                    (total / RUST_ANALYZER_MEMORY_FRACTION)
+                        .clamp(RUST_ANALYZER_MEMORY_MIN_MB, RUST_ANALYZER_MEMORY_MAX_MB)
+                })
+                .unwrap_or(RUST_ANALYZER_MEMORY_MAX_MB)
+        })
+}
+
+fn total_memory_mb() -> Option<u64> {
+    #[cfg(target_os = "macos")]
+    {
+        let output = Command::new("/usr/sbin/sysctl")
+            .args(["-n", "hw.memsize"])
+            .output()
+            .ok()?;
+        return String::from_utf8(output.stdout)
+            .ok()?
+            .trim()
+            .parse::<u64>()
+            .ok()
+            .map(|bytes| bytes / 1024 / 1024);
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let meminfo = std::fs::read_to_string("/proc/meminfo").ok()?;
+        return meminfo
+            .lines()
+            .find_map(|line| line.strip_prefix("MemTotal:"))
+            .and_then(|value| value.split_whitespace().next())
+            .and_then(|value| value.parse::<u64>().ok())
+            .map(|kilobytes| kilobytes / 1024);
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    None
+}
+
 fn shell_command(command: &str, cwd: &Path) -> CommandResult<(bool, String)> {
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
     let output = Command::new(shell)
@@ -581,4 +730,70 @@ fn id_key(value: &Value) -> String {
 }
 fn lock_error<T>(_: std::sync::PoisonError<T>) -> CommandError {
     CommandError::new("lsp.lock", "LSP state lock was poisoned")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cargo_root_discovers_a_nested_crate() {
+        let workspace = tempfile::tempdir().unwrap();
+        let crate_root = workspace.path().join("my_bevy_game");
+        std::fs::create_dir(&crate_root).unwrap();
+        std::fs::write(
+            crate_root.join("Cargo.toml"),
+            "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+
+        assert_eq!(cargo_root(workspace.path()), Some(crate_root));
+    }
+
+    #[test]
+    fn rust_configuration_links_the_discovered_manifest() {
+        let root = Path::new("/tmp/learning-project/my_bevy_game");
+        let configuration = configuration_for_section(Language::Rust, root, Some("rust-analyzer"));
+
+        assert_eq!(
+            configuration
+                .pointer("/linkedProjects/0")
+                .and_then(Value::as_str),
+            Some("/tmp/learning-project/my_bevy_game/Cargo.toml")
+        );
+        assert_eq!(
+            configuration
+                .pointer("/procMacro/enable")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn rust_configuration_serves_requested_sections() {
+        let root = Path::new("/tmp/crate");
+
+        assert_eq!(
+            configuration_for_section(Language::Rust, root, Some("rust-analyzer.procMacro.enable")),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            configuration_for_section(Language::Typescript, root, Some("typescript")),
+            Value::Null
+        );
+    }
+
+    #[test]
+    fn rust_memory_budget_is_high_but_bounded() {
+        assert_eq!(
+            (8_192 / RUST_ANALYZER_MEMORY_FRACTION)
+                .clamp(RUST_ANALYZER_MEMORY_MIN_MB, RUST_ANALYZER_MEMORY_MAX_MB),
+            2_048
+        );
+        assert_eq!(
+            (64_000 / RUST_ANALYZER_MEMORY_FRACTION)
+                .clamp(RUST_ANALYZER_MEMORY_MIN_MB, RUST_ANALYZER_MEMORY_MAX_MB),
+            3_072
+        );
+    }
 }
