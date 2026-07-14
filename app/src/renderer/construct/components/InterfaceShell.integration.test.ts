@@ -10,6 +10,7 @@ const appSource = readFileSync(
 const dashboardSource = readFileSync(fileURLToPath(new URL("./Dashboard.tsx", import.meta.url)), "utf8");
 const dashboardSidebarSource = readFileSync(fileURLToPath(new URL("./DashboardSidebar.tsx", import.meta.url)), "utf8");
 const shellControlsSource = readFileSync(fileURLToPath(new URL("../ShellControls.tsx", import.meta.url)), "utf8");
+const rendererStylesSource = readFileSync(fileURLToPath(new URL("../../index.css", import.meta.url)), "utf8");
 const opalineShellSource = readFileSync(
   fileURLToPath(
     new URL(
@@ -126,6 +127,10 @@ describe("Construct interface shell boundary", () => {
     assert.match(opalineComposerSource, /size="icon-xs"/);
     assert.match(opalineComposerSource, /--app-font-size-chat,12px/);
     assert.match(opalineThemeSource, /--app-font-size-chat: 12px/);
+    assert.doesNotMatch(rendererStylesSource, /\.construct-flow-composer textarea/);
+    assert.doesNotMatch(rendererStylesSource, /\.construct-flow-composer > div:last-child/);
+    assert.doesNotMatch(rendererStylesSource, /\.construct-flow-composer \.agent-composer-submit-btn/);
+    assert.doesNotMatch(rendererStylesSource, /\.construct-home-composer\.construct-flow-composer textarea/);
     assert.match(opalineStylesSource, /--app-content-card-radius: 0\.9rem/);
     assert.match(opalineStylesSource, /--seam-shadow-x: -6\.5px/);
     assert.match(opalineStylesSource, /blur\(8px\) saturate\(135%\)/);

@@ -709,96 +709,14 @@ html, body {
   }
 
   .construct-flow-composer {
-    max-width: min(46rem, calc(100% - 0.75rem)) !important;
-    border-radius: 1.5rem !important;
-    background: color-mix(in srgb, var(--card) 96%, var(--background)) !important;
-    box-shadow:
-      0 14px 34px color-mix(in srgb, var(--foreground) 9%, transparent),
-      0 0 0 1px color-mix(in srgb, var(--border) 82%, transparent) !important;
     container-type: inline-size;
     container-name: composer;
-  }
-
-  .dark .construct-flow-composer {
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--border) 82%, transparent) !important;
-  }
-
-  .construct-flow-composer textarea {
-    min-height: 3.25rem !important;
-    max-height: 7rem !important;
-    padding: 0.75rem 1.25rem 0.25rem !important;
-    font-size: 12.5px !important;
-    line-height: 1.5 !important;
-    background: transparent !important;
-  }
-
-  .construct-flow-composer div + textarea {
-    padding-top: 0.2rem !important;
-  }
-
-  .construct-flow-composer > div:last-child {
-    gap: 0.375rem;
-    padding: 0.25rem 0.5rem 0.5rem 0.625rem !important;
-  }
-
-  /* ── Panel / Sidebar chat mode composer layout optimizations ── */
-  .construct-flow-composer.is-panel {
-    border-radius: 1rem !important;
-  }
-
-  .construct-flow-composer.is-panel textarea {
-    font-size: 12px !important;
-    padding-left: 1rem !important;
-    padding-right: 1rem !important;
-    padding-top: 0.6rem !important;
-  }
-
-  .construct-flow-composer.is-panel div + textarea {
-    padding-top: 0.15rem !important;
-  }
-
-  .construct-flow-composer.is-panel > div:first-child button {
-    padding-left: 1rem !important;
-    padding-right: 1rem !important;
-    padding-top: 0.6rem !important;
-    padding-bottom: 0.05rem !important;
-  }
-
-  .construct-flow-composer.is-panel > div:last-child {
-    padding: 0.125rem 0.5rem 0.375rem 0.5rem !important;
   }
 
   @container composer (max-width: 440px) {
     .construct-flow-composer .composer-trigger-text {
       display: none !important;
     }
-  }
-
-  .construct-flow-composer .agent-composer-submit-btn {
-    width: 1.75rem !important;
-    height: 1.75rem !important;
-    min-width: 1.75rem !important;
-    padding: 0 !important;
-    background-color: color-mix(in srgb, var(--foreground) 60%, transparent) !important;
-    color: var(--background) !important;
-    border-radius: 9999px !important;
-    opacity: 0.8;
-    transition: all 0.2s ease;
-  }
-
-  .construct-flow-composer .agent-composer-submit-btn:not(:disabled) {
-    background-color: var(--foreground) !important;
-    opacity: 1;
-  }
-
-  .construct-flow-composer .agent-composer-submit-btn:hover:not(:disabled) {
-    opacity: 0.9;
-    transform: scale(1.05);
-  }
-
-  .construct-flow-composer .agent-composer-submit-btn svg {
-    width: 0.9375rem !important;
-    height: 0.9375rem !important;
   }
 
   .construct-home-surface {
@@ -876,40 +794,6 @@ html, body {
 
   .construct-home-logo {
     width: 2.5rem;
-  }
-
-  .construct-home-composer.construct-flow-composer {
-    --composer-radius: 1.2rem;
-    width: 100%;
-    max-width: 46rem !important;
-    border: 1px solid color-mix(in srgb, var(--border) 95%, var(--foreground) 5%) !important;
-    border-radius: var(--composer-radius) !important;
-    background: var(--composer-surface, var(--card)) !important;
-    box-shadow: 0 4px 18px -6px color-mix(in srgb, var(--foreground) 7%, transparent) !important;
-  }
-
-  .dark .construct-home-composer.construct-flow-composer {
-    border-color: var(--border) !important;
-    box-shadow: 0 6px 24px -10px rgba(0, 0, 0, 0.3) !important;
-  }
-
-  .construct-home-composer.construct-flow-composer textarea {
-    min-height: 54px !important;
-    max-height: 96px !important;
-    padding: 13px 18px 0 !important;
-    font-size: 13px !important;
-    line-height: 20px !important;
-  }
-
-  .construct-home-composer.construct-flow-composer > div:last-child {
-    min-height: 34px;
-    padding: 0 8px 8px 12px !important;
-  }
-
-  .construct-home-composer.construct-flow-composer .agent-composer-submit-btn {
-    width: 28px !important;
-    height: 28px !important;
-    min-width: 28px !important;
   }
 
   .construct-home-composer-count {
