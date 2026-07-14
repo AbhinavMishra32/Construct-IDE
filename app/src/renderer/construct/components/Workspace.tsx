@@ -1611,7 +1611,7 @@ export function Workspace({
       interactToolbar={block?.kind === "interact" ? (
         <div className="flex items-center justify-end">
           <Button
-            size="small"
+            size="sm"
             variant="ghost"
             type="button"
             aria-label="Reset learner chat"
@@ -1702,7 +1702,7 @@ export function Workspace({
               ))}
             </select>
             <Button
-              size="small"
+              size="sm"
               variant="ghost"
               type="button"
               aria-label="Start new Construct Interact chat"
@@ -1881,15 +1881,15 @@ export function Workspace({
                 </div>
                 {stored?.output ? <pre className="overflow-auto rounded-md bg-muted p-2 font-mono text-[10px]">{stored.output}</pre> : null}
                 <div className="flex flex-wrap gap-2">
-                  <Button size="small" variant="secondary" type="button" disabled={!canCommit} onClick={() => void handleCommitMilestone(milestone, false)}>
+                  <Button size="sm" variant="secondary" type="button" disabled={!canCommit} onClick={() => void handleCommitMilestone(milestone, false)}>
                     <CheckCircle size={13} weight="duotone" />
                     {isBusy ? "Committing" : "Commit"}
                   </Button>
-                  <Button size="small" variant="secondary" type="button" disabled={!canCommit || gitProjectStatus?.hasRemote !== true} onClick={() => void handleCommitMilestone(milestone, true)}>
+                  <Button size="sm" variant="secondary" type="button" disabled={!canCommit || gitProjectStatus?.hasRemote !== true} onClick={() => void handleCommitMilestone(milestone, true)}>
                     <GitBranch size={13} weight="duotone" />
                     Commit + Push
                   </Button>
-                  <Button size="small" variant="ghost"
+                  <Button size="sm" variant="ghost"
                     type="button"
                     disabled={status === "pending" || isBusy}
                     onClick={() => updateGitMilestoneState(milestone.id, { status: "pending", output: "Deferred for later." })}

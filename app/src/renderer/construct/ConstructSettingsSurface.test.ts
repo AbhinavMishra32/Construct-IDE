@@ -55,7 +55,6 @@ describe("Construct project advanced settings", () => {
     assert.match(app, /role="status" aria-label="Loading Construct"/);
     assert.match(app, /<ConstructAuthLogo className="mb-1" markClassName="construct-auth-logo__mark--hero" \/>/);
     assert.match(app, /Construct Cloud is not reachable/);
-    assert.match(app, /<ConstructAuthLogo markClassName="construct-auth-logo__mark--sidebar" \/>/);
     assert.match(app, /max-w-\[calc\(100vw-3rem\)\] flex-col gap-7 px-8/);
     assert.match(app, /className="construct-auth-card w-full"/);
     assert.doesNotMatch(app, /Sign in to your Construct account to continue/);

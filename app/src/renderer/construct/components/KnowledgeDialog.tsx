@@ -85,7 +85,7 @@ export function KnowledgeDialog({
           </CardContent></Card> : null}
         </div></ShadcnScrollArea>
         <ShadcnDialogFooter>
-          <Button variant={saved ? "secondary" : "primary"} onClick={() => onSaveChange(!saved)}>
+          <Button variant={saved ? "secondary" : "default"} onClick={() => onSaveChange(!saved)}>
             {saved ? <BookmarkCheckIcon /> : <BookmarkIcon />}
             {saved ? "Saved" : "Save to knowledge base"}
           </Button>

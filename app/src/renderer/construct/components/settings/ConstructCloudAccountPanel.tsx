@@ -264,7 +264,7 @@ function ConstructCloudTokenPanel({
 
       <div className="flex flex-wrap items-center gap-2">
         <Button
-          size="small"
+          size="sm"
           disabled={disabled || busy || !user}
           className="bg-primary hover:bg-primary/90 text-primary-foreground disabled:bg-muted disabled:text-muted-foreground font-medium text-xs px-3.5 py-1.5 h-[34px] rounded-lg transition-colors cursor-pointer border-none"
           onClick={() => void mintToken()}
@@ -273,7 +273,7 @@ function ConstructCloudTokenPanel({
         </Button>
         {accessToken ? (
           <Button
-            size="small"
+            size="sm"
             variant="secondary"
             disabled={disabled}
             className="bg-secondary hover:bg-secondary/80 text-secondary-foreground border border-border/80 font-medium text-xs px-3.5 py-1.5 h-[34px] rounded-lg transition-colors cursor-pointer"
@@ -283,7 +283,7 @@ function ConstructCloudTokenPanel({
           </Button>
         ) : null}
         <Button
-          size="small"
+          size="sm"
           variant="secondary"
           disabled={disabled || busy}
           className="bg-secondary hover:bg-secondary/80 text-secondary-foreground border border-border/80 font-medium text-xs px-3.5 py-1.5 h-[34px] rounded-lg transition-colors cursor-pointer"

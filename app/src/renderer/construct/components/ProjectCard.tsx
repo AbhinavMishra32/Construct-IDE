@@ -34,7 +34,7 @@ export function ProjectCard({
           <span className="block h-full rounded-full bg-muted-foreground/55" style={{ width: `${project.progress}%` }} />
         </div>
       </div>
-      <Button className="shrink-0" size="small" variant="secondary" onClick={() => onOpen(project.id)}>
+      <Button className="shrink-0" size="sm" variant="secondary" onClick={() => onOpen(project.id)}>
         Open
         <ArrowRightIcon size={15} />
       </Button>

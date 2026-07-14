@@ -963,7 +963,7 @@ export function ConstructSettingsSurface({
                       {codeThemePresets.map((preset) => (
                         <Button
                           key={preset.id}
-                          size="small"
+                          size="sm"
                           variant="secondary"
                           onClick={() => void handleCustomCodeThemeJsonChange(presetCodeThemeJson(preset.id))}
                         >
@@ -1081,7 +1081,7 @@ export function ConstructSettingsSurface({
             <SettingsRow
               title="Save tracing settings"
               control={
-                <Button size="small" disabled={observabilityBusy} onClick={() => void saveObservabilityConfiguration()}>
+                <Button size="sm" disabled={observabilityBusy} onClick={() => void saveObservabilityConfiguration()}>
                   Save
                 </Button>
               }
@@ -1132,7 +1132,7 @@ export function ConstructSettingsSurface({
               <SettingsRow
                 title="Save project metadata"
                 control={
-                  <Button size="small" disabled={busy || !projectTitle.trim()} onClick={() => void saveProjectDetails()}>
+                  <Button size="sm" disabled={busy || !projectTitle.trim()} onClick={() => void saveProjectDetails()}>
                     Save
                   </Button>
                 }
@@ -1148,7 +1148,7 @@ export function ConstructSettingsSurface({
                 title="Delete project"
                 description="Permanently removes the project and its workspace folder. This action cannot be undone."
                 control={
-                  <Button variant="danger" size="small" onClick={() => void handleDeleteClick()}>
+                  <Button variant="destructive" size="sm" onClick={() => void handleDeleteClick()}>
                     <Trash size={14} weight="duotone" style={{ marginRight: 4 }} />
                     Delete
                   </Button>
@@ -1219,7 +1219,7 @@ export function ConstructSettingsSurface({
                       <div className="flex items-center justify-between gap-3">
                         <code className="text-xs text-muted-foreground">{entry?.path ?? `.construct/${file}`}</code>
                         <Button
-                          size="small"
+                          size="sm"
                           disabled={flowMemoryBusy || flowMemorySaving !== null || !changed}
                           onClick={() => void saveFlowMemoryFile(file)}
                         >
@@ -1241,7 +1241,7 @@ export function ConstructSettingsSurface({
                 title="Legacy tape source"
                 description={project.sourcePath ?? "Managed inside this Construct project"}
                 control={
-                  <Button size="small" variant="secondary" onClick={() => void openTapeEditor()}>
+                  <Button size="sm" variant="secondary" onClick={() => void openTapeEditor()}>
                     <FileCode size={14} weight="duotone" style={{ marginRight: 4 }} />
                     Edit legacy tape
                   </Button>
@@ -1305,10 +1305,10 @@ export function ConstructSettingsSurface({
               ) : null}
             </div>
             <ShadcnDialogFooter>
-              <Button variant="secondary" size="small" onClick={() => setDeleteConfirmOpen(false)} disabled={deleting}>
+              <Button variant="secondary" size="sm" onClick={() => setDeleteConfirmOpen(false)} disabled={deleting}>
                 Cancel
               </Button>
-              <Button variant="danger" size="small" onClick={() => void handleConfirmDelete()} disabled={deleting}>
+              <Button variant="destructive" size="sm" onClick={() => void handleConfirmDelete()} disabled={deleting}>
                 {deleting ? "Deleting..." : "Delete project"}
               </Button>
             </ShadcnDialogFooter>
@@ -1398,10 +1398,10 @@ export function ConstructSettingsSurface({
                 value={workspaceRoot}
                 onChange={(event) => setWorkspaceRootValue(event.target.value)}
               />
-              <Button variant="secondary" size="small" onClick={() => void chooseRoot()}>
+              <Button variant="secondary" size="sm" onClick={() => void chooseRoot()}>
                 Browse
               </Button>
-              <Button size="small" disabled={busy || !workspaceRoot.trim()} onClick={() => void saveWorkspaceRoot()}>
+              <Button size="sm" disabled={busy || !workspaceRoot.trim()} onClick={() => void saveWorkspaceRoot()}>
                 Save
               </Button>
             </div>

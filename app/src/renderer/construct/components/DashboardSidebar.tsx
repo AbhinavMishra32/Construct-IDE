@@ -6,7 +6,13 @@ import {
   ShadcnDropdownMenuContent,
   ShadcnDropdownMenuItem,
   ShadcnDropdownMenuTrigger,
-  SidebarSection
+  SynaraSidebarGroup,
+  SynaraSidebarGroupLabel,
+  SynaraSidebarMenu,
+  SynaraSidebarMenuAction,
+  SynaraSidebarMenuBadge,
+  SynaraSidebarMenuButton,
+  SynaraSidebarMenuItem,
 } from "@opaline/ui";
 import type { ProjectSummary } from "../types";
 
@@ -27,8 +33,9 @@ export function DashboardSidebar({
     });
 
   return (
-    <SidebarSection heading="Projects">
-      <div className="flex flex-col gap-0.5 pb-2">
+    <SynaraSidebarGroup>
+      <SynaraSidebarGroupLabel>Projects</SynaraSidebarGroupLabel>
+      <SynaraSidebarMenu>
         {visibleProjects.map((project) => (
           <DashboardSidebarProjectRow
             key={project.id}
@@ -39,10 +46,12 @@ export function DashboardSidebar({
           />
         ))}
         {visibleProjects.length === 0 ? (
-          <div className="px-2.5 py-1.5 text-[11px] text-muted-foreground/70">No projects yet.</div>
+          <SynaraSidebarMenuItem className="px-2.5 py-1.5 text-xs text-muted-foreground/70">
+            No projects yet.
+          </SynaraSidebarMenuItem>
         ) : null}
-      </div>
-    </SidebarSection>
+      </SynaraSidebarMenu>
+    </SynaraSidebarGroup>
   );
 }
 
@@ -58,21 +67,21 @@ function DashboardSidebarProjectRow({
   title: string;
 }) {
   return (
-    <div className="group relative min-h-7">
-      <button className="construct-sidebar-row flex" onClick={onClick} type="button">
-        <span className="text-muted-foreground/80" data-sidebar-row-icon aria-hidden="true">
+    <SynaraSidebarMenuItem>
+      <SynaraSidebarMenuButton onClick={onClick}>
+        <span className="text-muted-foreground/80" aria-hidden="true">
           <Folder size={14} />
         </span>
-        <span className="block flex-1 pr-8" data-sidebar-row-label>{title}</span>
-      </button>
+        <span className="block min-w-0 flex-1 truncate pr-8">{title}</span>
+      </SynaraSidebarMenuButton>
       {meta ? (
-        <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] font-normal text-muted-foreground/65 transition-opacity group-hover:opacity-0 group-focus-within:opacity-0">
+        <SynaraSidebarMenuBadge className="right-2 text-[11px] font-normal text-muted-foreground/65 transition-opacity group-hover/menu-item:opacity-0 group-focus-within/menu-item:opacity-0">
           {meta}
-        </span>
+        </SynaraSidebarMenuBadge>
       ) : null}
       <ShadcnDropdownMenu>
         <ShadcnDropdownMenuTrigger
-          className="construct-sidebar-action absolute right-1 top-1/2 grid size-[22px] -translate-y-1/2 place-items-center rounded-[4px] text-muted-foreground/70 opacity-0 transition-opacity hover:bg-transparent hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100 cursor-pointer"
+          render={<SynaraSidebarMenuAction showOnHover />}
           aria-label={`Project actions for ${title}`}
         >
           <DotsThree size={15} weight="bold" />
@@ -88,7 +97,7 @@ function DashboardSidebarProjectRow({
           </ShadcnDropdownMenuItem>
         </ShadcnDropdownMenuContent>
       </ShadcnDropdownMenu>
-    </div>
+    </SynaraSidebarMenuItem>
   );
 }
 
