@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { CheckCircle2Icon, CircleAlertIcon, SearchIcon } from "lucide-react";
 
-import { AgentRunTrace, AgentSessionComposer } from "@opaline/ui";
+import { AgentRunTrace, AgentSessionComposer, DesktopHomeSurface } from "@opaline/ui";
 import type { AgentRunTraceEntry } from "@opaline/ui";
 import type { ConstructFlowSession, ConstructFlowSessionEvent, ConstructFlowTimelinePart } from "../../../shared/constructFlow";
 import type { AiSettings, FlowProjectRecord, ModelCatalogEntry, ProjectSummary } from "../types";
@@ -296,36 +296,39 @@ export function Dashboard({
                   layoutId="construct-home-project-start"
                   transition={homeMotionTransition}
                 >
-                  <h1 className="construct-home-title">{headline}</h1>
-
-                  <AgentSessionComposer
-                    aria-label="Describe the project to create"
-                    className="construct-flow-composer construct-home-composer"
-                    disabled={homeBusy}
-                    footerStart={
-                      <span className="construct-home-composer-count">
-                        {projects.length} project{projects.length === 1 ? "" : "s"}
-                      </span>
-                    }
-                    footerEnd={
-                      <FlowComposerRightControls
-                        settings={aiSettings}
-                        model={activeFlowModel}
-                        models={flowModelOptions}
-                        modelsBusy={modelsBusy}
-                        modelsError={modelsError}
-                        reasoningEffort={aiSettings?.reasoningEffort ?? "auto"}
-                        onModelChange={updateFlowModel}
-                        onReasoningEffortChange={updateReasoningEffort}
-                      />
-                    }
-                    onSubmit={() => void submitPrompt()}
-                    onValueChange={setPrompt}
-                    pending={creating}
-                    placeholder="Build a local-first drawing app that teaches canvas architecture as we go..."
-                    submitLabel="Create Construct project"
-                    value={prompt}
-                  />
+                  <DesktopHomeSurface
+                    className="construct-home-landing"
+                    title={headline}
+                  >
+                    <AgentSessionComposer
+                      aria-label="Describe the project to create"
+                      className="construct-flow-composer construct-home-composer"
+                      disabled={homeBusy}
+                      footerStart={
+                        <span className="construct-home-composer-count">
+                          {projects.length} project{projects.length === 1 ? "" : "s"}
+                        </span>
+                      }
+                      footerEnd={
+                        <FlowComposerRightControls
+                          settings={aiSettings}
+                          model={activeFlowModel}
+                          models={flowModelOptions}
+                          modelsBusy={modelsBusy}
+                          modelsError={modelsError}
+                          reasoningEffort={aiSettings?.reasoningEffort ?? "auto"}
+                          onModelChange={updateFlowModel}
+                          onReasoningEffortChange={updateReasoningEffort}
+                        />
+                      }
+                      onSubmit={() => void submitPrompt()}
+                      onValueChange={setPrompt}
+                      pending={creating}
+                      placeholder="Build a local-first drawing app that teaches canvas architecture as we go..."
+                      submitLabel="Create Construct project"
+                      value={prompt}
+                    />
+                  </DesktopHomeSurface>
                 </motion.div>
               )}
             </AnimatePresence>

@@ -51,14 +51,14 @@ import {
 } from "lucide-react";
 
 import {
-  AppShell,
+  DesktopShell,
+  DesktopSidebar,
   AppShellChromeButton,
   AppShellHeaderToolButton,
   Badge,
   BottomPanel,
   Button,
   Input,
-  Sidebar,
   SettingsSidebar,
   ShadcnDialog,
   ShadcnDialogContent,
@@ -1608,9 +1608,8 @@ export default function ConstructApp() {
       <AuthGate aiSettings={aiSettings}>
         <div className="flex h-screen flex-col overflow-hidden bg-transparent">
         <div className="flex-1 min-h-0 relative">
-          <AppShell
+          <DesktopShell
             className="h-full construct-app-window"
-          key={activeProject?.id ?? "dashboard"}
           history={history}
           defaultBottomPanelOpen={Boolean(activeProject && !settingsSurface && !knowledgeBaseOpen && !learningContextOpen)}
           defaultRightPanelOpen={Boolean(activeProject && !settingsSurface && !knowledgeBaseOpen && !learningContextOpen)}
@@ -1823,7 +1822,7 @@ export default function ConstructApp() {
                 sections={settingsSections}
               />
             ) : knowledgeBaseOpen ? (
-              <Sidebar
+              <DesktopSidebar
                 projects={[]}
                 items={[]}
                 primaryItems={activeProject ? undefined : [
@@ -1860,9 +1859,9 @@ export default function ConstructApp() {
                 {conceptsSidebarPanel ?? (
                   <div className="px-3 py-2 text-[12.5px] text-muted-foreground">Loading concepts...</div>
                 )}
-              </Sidebar>
+              </DesktopSidebar>
             ) : activeProject ? (
-              <Sidebar
+              <DesktopSidebar
                 projects={[]}
                 items={[]}
                 footer={
@@ -1906,9 +1905,9 @@ export default function ConstructApp() {
                     sidebarKnowledgePanel
                   ) : null}
                 </div>
-              </Sidebar>
+              </DesktopSidebar>
             ) : (
-              <Sidebar
+              <DesktopSidebar
                 projects={[]} items={[]}
                 primaryItems={[
                   {
@@ -1946,7 +1945,7 @@ export default function ConstructApp() {
                   onOpenProject={(projectId) => void openProject(projectId)}
                   onOpenProjectSettings={(projectId) => openSettingsSurface("project-overview", projectId)}
                 />
-              </Sidebar>
+              </DesktopSidebar>
             )
           }
           main={main}
