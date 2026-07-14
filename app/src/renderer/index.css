@@ -832,7 +832,7 @@ html, body {
     width: 100%;
     flex-direction: column;
     margin: 0 auto;
-    padding: 22px 48px 48px;
+    padding: 0 1.25rem;
   }
 
   .construct-home-actions {
@@ -849,7 +849,7 @@ html, body {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 96px 0 72px;
+    padding: 0;
   }
 
   .construct-home-main.is-researching {
@@ -860,7 +860,7 @@ html, body {
 
   .construct-home-stack {
     display: flex;
-    width: min(100%, 724px);
+    width: min(100%, 46rem);
     flex-direction: column;
     align-items: center;
     gap: 24px;
@@ -1309,11 +1309,11 @@ html, body {
 
   @media (max-width: 760px) {
     .construct-home-frame {
-      padding: 16px 16px 32px;
+      padding: 0 0.75rem;
     }
 
     .construct-home-main {
-      padding: 56px 0 48px;
+      padding: 0;
     }
 
     .construct-home-main.is-researching {

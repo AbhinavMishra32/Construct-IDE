@@ -17,10 +17,10 @@ const opalineShellSource = readFileSync(
   ),
   "utf8",
 );
-const opalineAppShellSource = readFileSync(
+const synaraSidebarSource = readFileSync(
   fileURLToPath(
     new URL(
-      "../../../../../opaline/packages/ui/src/opaline-v2/AppShell.tsx",
+      "../../../../../opaline/packages/ui/src/opaline-v3/SynaraSidebar.tsx",
       import.meta.url,
     ),
   ),
@@ -51,12 +51,20 @@ describe("Construct interface shell boundary", () => {
 
   it("keeps Opaline free of Construct runtime and persistence dependencies", () => {
     assert.doesNotMatch(opalineShellSource, /constructFlow|projectStore|tauriBridge|AiSettings/);
-    assert.match(opalineShellSource, /Product navigation and project state enter/);
+    assert.match(opalineShellSource, /<SynaraSidebarProvider/);
+    assert.match(opalineShellSource, /<SynaraSidebarInset/);
+    assert.match(opalineShellSource, /<SynaraSidebarRail placement="content-seam"/);
+    assert.doesNotMatch(opalineShellSource, /return <AppShell/);
+    assert.doesNotMatch(opalineShellSource, /<OpalineV2(?:Shell|Sidebar|NavigationControls|HeaderTab)/);
   });
 
-  it("retains the extracted desktop geometry and material tokens", () => {
-    assert.match(opalineAppShellSource, /h-\[46px\]/);
-    assert.match(opalineAppShellSource, /data-placement="content-seam"/);
+  it("uses the extracted sidebar DOM contract and material tokens", () => {
+    assert.match(opalineShellSource, /h-\[46px\]/);
+    assert.match(synaraSidebarSource, /data-slot="sidebar-wrapper"/);
+    assert.match(synaraSidebarSource, /data-slot="sidebar-gap"/);
+    assert.match(synaraSidebarSource, /data-slot="sidebar-container"/);
+    assert.match(synaraSidebarSource, /data-slot="sidebar-inset"/);
+    assert.match(synaraSidebarSource, /data-placement=\{placement\}/);
     assert.match(opalineStylesSource, /--app-content-card-radius: 0\.9rem/);
     assert.match(opalineStylesSource, /--seam-shadow-x: -6\.5px/);
     assert.match(opalineStylesSource, /blur\(8px\) saturate\(135%\)/);
