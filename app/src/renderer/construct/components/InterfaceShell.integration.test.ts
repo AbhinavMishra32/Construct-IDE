@@ -50,6 +50,10 @@ const opalineButtonSource = readFileSync(
   fileURLToPath(new URL("../../../../../opaline/packages/ui/src/components/button.tsx", import.meta.url)),
   "utf8",
 );
+const opalineHeaderControlsSource = readFileSync(
+  fileURLToPath(new URL("../../../../../opaline/packages/ui/src/components/desktop-header-controls.tsx", import.meta.url)),
+  "utf8",
+);
 const opalineThemeSource = readFileSync(
   fileURLToPath(new URL("../../../../../opaline/packages/ui/src/tokens/opaline-theme.css", import.meta.url)),
   "utf8",
@@ -107,12 +111,21 @@ describe("Construct interface shell boundary", () => {
     assert.match(opalineScrollAreaSource, /scrollFade &&/);
     assert.match(opalineButtonSource, /rounded-lg border font-medium text-\[length:var\(--app-font-size-ui,12px\)\]/);
     assert.match(opalineButtonSource, /variant: \{[\s\S]*chrome:/);
+    assert.match(opalineHeaderControlsSource, /size="icon-xs"/);
+    assert.match(opalineHeaderControlsSource, /variant=\{desktopHeaderControlVariant\(tone\)\}/);
+    assert.match(opalineHeaderControlsSource, /!size-7 shrink-0 rounded-lg/);
+    assert.match(opalineShellSource, /size="icon-sm"/);
+    assert.match(opalineShellSource, /<DesktopHeaderIconButton/);
     assert.match(opalineThemeSource, /--color-text-foreground: var\(--foreground/);
     assert.match(opalineThemeSource, /--color-background-button-secondary-hover:/);
     assert.match(opalineThemeSource, /--app-font-size-ui: 12px/);
     assert.match(sourceSidebarSource, /window\.matchMedia\("\(max-width: 767px\)"\)/);
     assert.doesNotMatch(opalineStylesSource, /construct-sidebar-row|opaline-v2-sidebar-pane/);
     assert.match(opalineComposerSource, /chat-composer-shell chat-composer-surface/);
+    assert.match(opalineComposerSource, /variant="prominent"/);
+    assert.match(opalineComposerSource, /size="icon-xs"/);
+    assert.match(opalineComposerSource, /--app-font-size-chat,12px/);
+    assert.match(opalineThemeSource, /--app-font-size-chat: 12px/);
     assert.match(opalineStylesSource, /--app-content-card-radius: 0\.9rem/);
     assert.match(opalineStylesSource, /--seam-shadow-x: -6\.5px/);
     assert.match(opalineStylesSource, /blur\(8px\) saturate\(135%\)/);

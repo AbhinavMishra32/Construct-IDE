@@ -1736,6 +1736,7 @@ export default function ConstructApp() {
                         <DesktopChromeButton
                           onClick={(e) => { e.stopPropagation(); void handlePrevBlock(); }}
                           disabled={tapeProject.currentStepIndex === 0 && tapeProject.currentBlockIndex === 0}
+                          aria-label="Previous panel"
                           title="Previous Panel"
                         >
                           <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 14, height: 14 }}>
@@ -1755,6 +1756,7 @@ export default function ConstructApp() {
                               isAtEnd ||
                               (isAtFrontier && !canContinue)
                             }
+                            aria-label="Next panel"
                             title="Next Panel"
                           >
                             <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 14, height: 14 }}>
