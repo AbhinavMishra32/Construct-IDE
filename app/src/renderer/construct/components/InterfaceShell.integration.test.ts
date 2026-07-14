@@ -63,6 +63,14 @@ const opalineSearchInputSource = readFileSync(
   fileURLToPath(new URL("../../../../../opaline/packages/ui/src/components/search-input.tsx", import.meta.url)),
   "utf8",
 );
+const opalineWindowControlsSource = readFileSync(
+  fileURLToPath(new URL("../../../../../opaline/packages/ui/src/components/desktop-window-controls.tsx", import.meta.url)),
+  "utf8",
+);
+const constructWindowControlsSource = readFileSync(
+  fileURLToPath(new URL("./ConstructDesktopWindowControls.tsx", import.meta.url)),
+  "utf8",
+);
 const opalineSettingsSource = readFileSync(
   fileURLToPath(new URL("../../../../../opaline/packages/ui/src/settings/Settings.tsx", import.meta.url)),
   "utf8",
@@ -112,6 +120,12 @@ describe("Construct interface shell boundary", () => {
     assert.doesNotMatch(opalineShellSource, /left-\[83px\]|pl-\[83px\]|pl-52/);
     assert.match(opalineShellSource, /M216\.4 163\.7c5\.1 5/);
     assert.match(opalineStylesSource, /--desktop-top-bar-traffic-light-gutter, 90px/);
+    assert.match(opalineShellSource, /pr-\[138px\]! sm:pr-\[138px\]!/);
+    assert.match(opalineWindowControlsSource, /w-\[46px\]/);
+    assert.match(opalineWindowControlsSource, /Segoe Fluent Icons/);
+    assert.match(constructWindowControlsSource, /getCurrentWindow/);
+    assert.match(constructWindowControlsSource, /<DesktopWindowControls/);
+    assert.doesNotMatch(rendererStylesSource, /construct-win-titlebar-reserve|header > div:first-child/);
     assert.match(sourceSidebarSource, /data-slot="sidebar-wrapper"/);
     assert.match(sourceSidebarSource, /data-slot="sidebar-gap"/);
     assert.match(sourceSidebarSource, /data-slot="sidebar-container"/);
