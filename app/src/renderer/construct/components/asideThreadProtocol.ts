@@ -49,6 +49,23 @@ export type AsideBridgeSessionInput = {
   thinkingLevel: string;
 };
 
+type AsideQuestion = {
+  header: string;
+  question: string;
+  options: Array<{ label: string; description: string }>;
+  multiple: boolean;
+  custom: boolean;
+};
+
+type PendingAsideQuestion = {
+  sessionId: string;
+  toolCallId: string;
+  createdAt: string;
+  question: string;
+  allowSkip: boolean;
+  questions: AsideQuestion[];
+};
+
 export function buildAsideSession(input: AsideBridgeSessionInput): Record<string, unknown> {
   const merged = mergeSessions(input.sessions, input.liveSession);
   const tasks = merged.flatMap((session) => session.practiceTasks ?? []);
@@ -60,7 +77,7 @@ export function buildAsideSession(input: AsideBridgeSessionInput): Record<string
     id: input.projectId,
     agentId: "construct-flow",
     title: input.projectTitle,
-    status: running ? "running" : "idle",
+    status: activeQuestion ? "suspended" : running ? "running" : "idle",
     createdAt: merged[0]?.createdAt ?? now,
     updatedAt: input.liveSession?.updatedAt ?? merged.at(-1)?.updatedAt ?? now,
     readAt: null,
@@ -71,6 +88,12 @@ export function buildAsideSession(input: AsideBridgeSessionInput): Record<string
       fastMode: false,
     },
     permissionMode: "guard",
+    suspension: activeQuestion ? {
+      kind: "ask-user-question",
+      toolCallId: activeQuestion.toolCallId,
+      createdAt: activeQuestion.createdAt,
+      request: { questions: activeQuestion.questions },
+    } : undefined,
     runtimeConfig: {
       memoryExtractionDisabled: false,
       proactiveMode: false,
@@ -84,8 +107,7 @@ export function buildAsideSession(input: AsideBridgeSessionInput): Record<string
       bash: { cwd: input.workspacePath },
       skills: {},
       question: activeQuestion ? {
-        question: activeQuestion.question,
-        choices: activeQuestion.choices,
+        questions: activeQuestion.questions,
         toolCallId: activeQuestion.toolCallId,
       } : {},
     },
@@ -132,6 +154,34 @@ export class AsideRunProjector {
     };
     this.emit({ type: "message_start", message: userMessage });
     this.emit({ type: "message_end", message: userMessage });
+  }
+
+  resumeQuestion(toolCallId: string, resultText: string): void {
+    if (!this.started) this.start("");
+    const toolName = "ask_user_question";
+    const result = {
+      content: [{ type: "text", text: resultText }],
+      details: { constructKind: "tool" },
+    };
+    this.emit({
+      type: "tool_execution_end",
+      toolCallId,
+      toolName,
+      result,
+      isError: false,
+    });
+    const toolMessage = {
+      id: `${this.runId}:question-result:${toolCallId}`,
+      role: "toolResult",
+      toolCallId,
+      toolName,
+      content: result.content,
+      details: result.details,
+      isError: false,
+      timestamp: Date.now(),
+    };
+    this.emit({ type: "message_start", message: toolMessage });
+    this.emit({ type: "message_end", message: toolMessage });
   }
 
   project(session: ConstructFlowSession): void {
@@ -212,12 +262,12 @@ export class AsideRunProjector {
       this.update({ type: "toolcall_end", contentIndex: state.index });
       this.emit({ type: "tool_execution_start", toolCallId, toolName, args });
     }
-    if (part.status !== "running" && !state.ended) {
+    if (part.status !== "running" && !state.ended && !isUnansweredQuestionPart(part, session)) {
       state.ended = true;
-      const resultText = part.outputPreview ?? part.reason ?? part.title;
+      const projectedResult = constructToolResult(part, session);
       const result = {
-        content: [{ type: "text", text: resultText }],
-        details: constructToolDetails(part, session),
+        content: [{ type: "text", text: projectedResult.text }],
+        details: projectedResult.details,
       };
       this.emit({
         type: "tool_execution_end",
@@ -312,16 +362,19 @@ function sessionToAsideMessages(session: ConstructFlowSession, provider: string,
     const toolCallId = part.toolCallId || part.id;
     const toolName = asideToolName(part.name);
     assistantParts.push({ type: "toolCall", id: toolCallId, name: toolName, arguments: constructToolArguments(part, session) });
-    if (part.status !== "running") toolResults.push({
-      id: `${session.id}:tool-result:${toolCallId}`,
-      role: "toolResult",
-      toolCallId,
-      toolName,
-      content: [{ type: "text", text: part.outputPreview ?? part.reason ?? part.title }],
-      details: constructToolDetails(part, session),
-      isError: part.status === "error",
-      timestamp: toTimestamp(part.completedAt ?? part.updatedAt ?? session.updatedAt),
-    });
+    if (part.status !== "running" && !isUnansweredQuestionPart(part, session)) {
+      const projectedResult = constructToolResult(part, session);
+      toolResults.push({
+        id: `${session.id}:tool-result:${toolCallId}`,
+        role: "toolResult",
+        toolCallId,
+        toolName,
+        content: [{ type: "text", text: projectedResult.text }],
+        details: projectedResult.details,
+        isError: part.status === "error",
+        timestamp: toTimestamp(part.completedAt ?? part.updatedAt ?? session.updatedAt),
+      });
+    }
   }
 
   if (assistantParts.length === 0) {
@@ -347,8 +400,19 @@ function constructToolArguments(
   session: ConstructFlowSession,
 ): Record<string, unknown> {
   const input = isRecord(part.input) ? part.input : { input: part.input };
-  if (asideToolName(part.name) === "write_todos") {
+  const toolName = asideToolName(part.name);
+  if (toolName === "write_todos") {
     return { todos: tasksToAsideTodos(session.practiceTasks ?? []) };
+  }
+  if (toolName === "ask_user_question") {
+    return { ...input, questions: [asideQuestionFromInput(input)] };
+  }
+  if (toolName === "websearch") {
+    return { ...input, objective: stringValue(input.query) ?? stringValue(input.objective) ?? "Search the web" };
+  }
+  if (toolName === "webfetch") {
+    const urls = Array.isArray(input.urls) ? input.urls.filter((url): url is string => typeof url === "string") : [];
+    return { ...input, url: stringValue(input.url) ?? urls[0] ?? "" };
   }
   const concept = conceptForTool(part);
   const task = taskForTool(part, session);
@@ -365,12 +429,54 @@ function constructToolDetails(
 ): Record<string, unknown> {
   const concept = conceptForTool(part);
   const task = taskForTool(part, session);
+  const webSources = webSourcesForTool(part);
+  const webFetchResult = asideWebFetchResult(part);
   return {
     constructKind: concept ? "concept" : task ? "task" : "tool",
     concept,
     task,
     outputPreview: part.outputPreview,
+    ...(webSources.length > 0 ? { sources: webSources } : {}),
+    ...(webFetchResult ? { title: webFetchResult.title, faviconUrl: webFetchResult.faviconUrl } : {}),
   };
+}
+
+function constructToolResult(
+  part: Extract<ConstructFlowTimelinePart, { kind: "tool" }>,
+  session: ConstructFlowSession,
+): { text: string; details: Record<string, unknown> } {
+  return {
+    text: constructToolResultText(part, session),
+    details: constructToolDetails(part, session),
+  };
+}
+
+function constructToolResultText(
+  part: Extract<ConstructFlowTimelinePart, { kind: "tool" }>,
+  session: ConstructFlowSession,
+): string {
+  if (isQuestionToolName(part.name)) {
+    const input = isRecord(part.input) ? part.input : {};
+    const question = asideQuestionFromInput(input);
+    const response = session.toolCalls.find((tool) => (tool.id === (part.toolCallId || part.id) || tool.id === part.id))?.response;
+    const answer = response?.skipped ? "Skipped" : response?.answer ?? "";
+    return [
+      "Asked user 1 question(s)",
+      "User responses to asked questions:",
+      `- ${question.header}: ${answer}`,
+    ].join("\n");
+  }
+  if (asideToolName(part.name) === "websearch") {
+    return JSON.stringify({
+      search_id: `construct-${part.toolCallId || part.id}`,
+      results: asideWebSearchResults(part),
+    });
+  }
+  if (asideToolName(part.name) === "webfetch") {
+    const result = asideWebFetchResult(part);
+    if (result) return result.content;
+  }
+  return part.outputPreview ?? part.reason ?? part.title;
 }
 
 function conceptForTool(part: Extract<ConstructFlowTimelinePart, { kind: "tool" }>): Record<string, unknown> | undefined {
@@ -397,14 +503,114 @@ function taskForTool(part: Extract<ConstructFlowTimelinePart, { kind: "tool" }>,
 }
 
 function asideToolName(name: string): string {
-  if (name === "read-file") return "read_file";
-  if (name === "write-file") return "write_file";
-  if (name === "run-terminal-command") return "bash";
-  if (name === "ask-question") return "ask_user_question";
+  const normalized = normalizeToolName(name);
+  if (normalized === "readfile") return "read_file";
+  if (normalized === "writefile") return "write_file";
+  if (normalized === "runterminalcommand") return "bash";
+  if (["askquestion", "askuser", "askuserquestion"].includes(normalized)) return "ask_user_question";
+  if (normalized === "internetsearch") return "websearch";
+  if (normalized === "internetfetch") return "webfetch";
   if (["practice-task", "create-practice-task"].includes(name)) return "construct_practice_task";
   if (["add-concept", "modify-concept", "suggest-existing-concept"].includes(name)) return "construct_concept";
   if (name === "concept-exercise") return "construct_concept_exercise";
   return name.replaceAll("-", "_");
+}
+
+function asideQuestionFromInput(input: Record<string, unknown>): AsideQuestion {
+  const question = stringValue(input.question) ?? "What would you like Construct to do next?";
+  const choices = Array.isArray(input.choices)
+    ? input.choices.filter((choice): choice is string => typeof choice === "string" && choice.trim().length > 0)
+    : [];
+  const header = stringValue(input.header)
+    ?? (input.answerMode === "code" ? "Your code" : choices.length > 0 ? "Your choice" : "Your answer");
+  return {
+    header,
+    question,
+    options: choices.map((choice) => ({
+      label: choice,
+      description: `Answer with “${choice}”.`,
+    })),
+    multiple: false,
+    custom: input.allowOther !== false || choices.length === 0,
+  };
+}
+
+function isQuestionToolName(name: string): boolean {
+  return ["askquestion", "askuser", "askuserquestion"].includes(normalizeToolName(name));
+}
+
+function isUnansweredQuestionPart(
+  part: Extract<ConstructFlowTimelinePart, { kind: "tool" }>,
+  session: ConstructFlowSession,
+): boolean {
+  if (!isQuestionToolName(part.name) || part.status === "error") return false;
+  const toolCallId = part.toolCallId || part.id;
+  const record = session.toolCalls.find((tool) => tool.id === toolCallId || tool.id === part.id);
+  return !record?.response;
+}
+
+function asideWebSearchResults(part: Extract<ConstructFlowTimelinePart, { kind: "tool" }>): Array<Record<string, unknown>> {
+  const parsed = parseJson(part.outputPreview);
+  const rawResults = Array.isArray(parsed)
+    ? parsed
+    : isRecord(parsed) && Array.isArray(parsed.results) ? parsed.results : [];
+  return rawResults.flatMap((candidate) => {
+    if (!isRecord(candidate)) return [];
+    const url = stringValue(candidate.url);
+    if (!url) return [];
+    const sourceId = stringValue(candidate.source_id) ?? stringValue(candidate.sourceId) ?? `source-${part.id}`;
+    const snippet = stringValue(candidate.snippet) ?? stringValue(candidate.content) ?? stringValue(candidate.excerpt);
+    return [{
+      source_id: sourceId,
+      url,
+      title: stringValue(candidate.title) ?? url,
+      excerpts: snippet ? [snippet] : [],
+      publish_date: stringValue(candidate.publish_date) ?? stringValue(candidate.publishDate) ?? null,
+    }];
+  });
+}
+
+function asideWebFetchResult(part: Extract<ConstructFlowTimelinePart, { kind: "tool" }>): { content: string; title: string; faviconUrl: string | null } | undefined {
+  const parsed = parseJson(part.outputPreview);
+  if (!isRecord(parsed) || !Array.isArray(parsed.results)) return undefined;
+  const results = parsed.results.filter(isRecord);
+  if (results.length === 0) return undefined;
+  const content = results.map((result) => {
+    const title = stringValue(result.title) ?? stringValue(result.url) ?? "Fetched page";
+    const body = stringValue(result.content) ?? stringValue(result.raw_content) ?? "";
+    return `# ${title}\n\n${body}`.trim();
+  }).join("\n\n---\n\n");
+  return {
+    content,
+    title: stringValue(results[0].title) ?? stringValue(results[0].url) ?? "Fetched page",
+    faviconUrl: stringValue(results[0].favicon) ?? stringValue(results[0].faviconUrl) ?? null,
+  };
+}
+
+function webSourcesForTool(part: Extract<ConstructFlowTimelinePart, { kind: "tool" }>): Array<Record<string, unknown>> {
+  if (asideToolName(part.name) === "websearch") {
+    return asideWebSearchResults(part).map((result) => ({
+      id: result.source_id,
+      url: result.url,
+      title: result.title,
+      publishDate: result.publish_date,
+      excerpt: Array.isArray(result.excerpts) ? result.excerpts[0] ?? null : null,
+    }));
+  }
+  if (asideToolName(part.name) !== "webfetch") return [];
+  const parsed = parseJson(part.outputPreview);
+  if (!isRecord(parsed) || !Array.isArray(parsed.results)) return [];
+  return parsed.results.flatMap((candidate) => {
+    if (!isRecord(candidate)) return [];
+    const url = stringValue(candidate.url);
+    if (!url) return [];
+    return [{
+      id: stringValue(candidate.sourceId) ?? stringValue(candidate.source_id) ?? `source-${part.id}`,
+      url,
+      title: stringValue(candidate.title) ?? url,
+      excerpt: stringValue(candidate.content)?.slice(0, 500) ?? null,
+    }];
+  });
 }
 
 function tasksToAsideTodos(tasks: ConstructFlowPracticeTask[]): Array<Record<string, unknown>> {
@@ -422,17 +628,20 @@ function tasksToAsideTodos(tasks: ConstructFlowPracticeTask[]): Array<Record<str
   });
 }
 
-function findPendingQuestion(sessions: ConstructFlowSession[]): { question: string; choices: string[]; toolCallId: string } | undefined {
+function findPendingQuestion(sessions: ConstructFlowSession[]): PendingAsideQuestion | undefined {
   for (const session of [...sessions].reverse()) {
     for (const tool of [...session.toolCalls].reverse()) {
-      if (tool.name !== "ask-question" || tool.status === "error" || tool.response) continue;
+      if (!isQuestionToolName(tool.name) || tool.status === "error" || tool.response) continue;
       const input = isRecord(tool.input) ? tool.input : {};
       const question = stringValue(input.question);
       if (!question) continue;
       return {
+        sessionId: session.id,
         question,
-        choices: Array.isArray(input.choices) ? input.choices.filter((choice): choice is string => typeof choice === "string") : [],
         toolCallId: tool.id,
+        createdAt: tool.createdAt,
+        allowSkip: input.allowSkip === true,
+        questions: [asideQuestionFromInput(input)],
       };
     }
   }
@@ -456,13 +665,48 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function parseRecord(value: string | undefined): Record<string, unknown> {
-  if (!value) return {};
+  const parsed = parseJson(value);
+  return isRecord(parsed) ? parsed : {};
+}
+
+function parseJson(value: string | undefined): unknown {
+  if (!value) return undefined;
   try {
-    const parsed: unknown = JSON.parse(value);
-    return isRecord(parsed) ? parsed : {};
+    return JSON.parse(value) as unknown;
   } catch {
-    return {};
+    return undefined;
   }
+}
+
+function normalizeToolName(name: string): string {
+  return name.replace(/[^a-z0-9]/gi, "").toLowerCase();
+}
+
+export function answerFromAsideSuspensionResponse(value: unknown): string {
+  const response = isRecord(value) ? value : {};
+  const answers = Array.isArray(response.answers) ? response.answers.filter(isRecord) : [];
+  const normalized = answers.flatMap((answer) => {
+    const text = stringValue(answer.answer)?.replace(/^custom:\s*/i, "").trim();
+    if (!text) return [];
+    return [{ header: stringValue(answer.header), text }];
+  });
+  if (normalized.length === 1) return normalized[0].text;
+  return normalized.map((answer) => answer.header ? `${answer.header}: ${answer.text}` : answer.text).join("\n");
+}
+
+export function questionResultTextFromAsideSuspensionResponse(value: unknown): string {
+  const response = isRecord(value) ? value : {};
+  const answers = Array.isArray(response.answers) ? response.answers.filter(isRecord) : [];
+  const lines = answers.flatMap((answer) => {
+    const header = stringValue(answer.header);
+    const text = stringValue(answer.answer);
+    return header && text ? [`- ${header}: ${text}`] : [];
+  });
+  return [
+    `Asked user ${Math.max(lines.length, 1)} question(s)`,
+    "User responses to asked questions:",
+    ...(lines.length > 0 ? lines : ["- Question: Skipped"]),
+  ].join("\n");
 }
 
 function stringValue(value: unknown): string | undefined {

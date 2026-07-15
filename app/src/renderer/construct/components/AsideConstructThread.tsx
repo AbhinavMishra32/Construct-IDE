@@ -8,8 +8,10 @@ import type {
 import type { AiSettings, FlowProjectRecord, ModelCatalogEntry } from "../types";
 import {
   AsideRunProjector,
+  answerFromAsideSuspensionResponse,
   buildAsideMessages,
   buildAsideSession,
+  questionResultTextFromAsideSuspensionResponse,
 } from "./asideThreadProtocol";
 
 const ASIDE_BRIDGE_CHANNEL = "construct-aside-bridge:v1";
@@ -53,6 +55,13 @@ export type AsideConstructThreadProps = {
 };
 
 type LatestThreadState = Omit<AsideConstructThreadProps, "theme"> & { resolvedTheme: "light" | "dark" };
+
+type AsideProcedureBridge = {
+  frameId: string;
+  iframeRef: RefObject<HTMLIFrameElement | null>;
+  socketsRef: RefObject<Map<string, string>>;
+  activeRunRef: RefObject<ActiveBridgeRun | null>;
+};
 
 export function AsideConstructThread({
   project,
@@ -184,7 +193,13 @@ async function handleAsideMessage({
     const paths = arrayOfStrings(message.payload?.paths);
     const inputs = Array.isArray(message.payload?.inputs) ? message.payload.inputs : [];
     try {
-      const values = await Promise.all(paths.map((path, index) => resolveAsideProcedure(path, inputs[index], latestRef)));
+      const bridge = {
+        frameId: message.frameId,
+        iframeRef,
+        socketsRef,
+        activeRunRef,
+      };
+      const values = await Promise.all(paths.map((path, index) => resolveAsideProcedure(path, inputs[index], latestRef, bridge)));
       respondToAsideFrame(iframeRef, message, { ok: true, value: values });
     } catch (error) {
       respondToAsideFrame(iframeRef, message, { ok: false, error: error instanceof Error ? error.message : String(error) });
@@ -295,6 +310,7 @@ async function resolveAsideProcedure(
   path: string,
   rawInput: unknown,
   latestRef: RefObject<LatestThreadState>,
+  bridge: AsideProcedureBridge,
 ): Promise<unknown> {
   const latest = latestRef.current;
   if (!latest) return {};
@@ -322,6 +338,37 @@ async function resolveAsideProcedure(
     latest.activeModel,
   );
   if (path === "sessions.markRead") return { readAt: new Date().toISOString() };
+  if (path === "sessions.resolveSuspension") {
+    const pendingQuestion = findPendingQuestion(
+      latest.sessions,
+      latest.liveSession,
+      stringValue(input.toolCallId),
+    );
+    if (!pendingQuestion) throw new Error("The tracked Construct question is no longer pending.");
+    const response = recordValue(input.response);
+    const answer = answerFromAsideSuspensionResponse(response);
+    if (!answer) throw new Error("Choose an option or enter a custom answer before submitting.");
+    return continueFromAsideQuestion({
+      latestRef,
+      bridge,
+      pendingQuestion,
+      answer,
+      resultText: questionResultTextFromAsideSuspensionResponse(response),
+      skipped: false,
+    });
+  }
+  if (path === "sessions.interrupt") {
+    const pendingQuestion = findPendingQuestion(latest.sessions, latest.liveSession);
+    if (!pendingQuestion) return session();
+    return continueFromAsideQuestion({
+      latestRef,
+      bridge,
+      pendingQuestion,
+      answer: "Skipped",
+      resultText: "Asked user 1 question(s)\nUser responses to asked questions:\n- Question: Skipped",
+      skipped: true,
+    });
+  }
   if (path === "sessions.update") {
     const model = modelInput(input);
     if (model.provider && isConstructProvider(model.provider) && model.provider !== currentProvider(latest.aiSettings)) {
@@ -357,6 +404,80 @@ async function resolveAsideProcedure(
   if (path.startsWith("agents.")) return [];
   if (path.startsWith("analytics.")) return {};
   return {};
+}
+
+async function continueFromAsideQuestion({
+  latestRef,
+  bridge,
+  pendingQuestion,
+  answer,
+  resultText,
+  skipped,
+}: {
+  latestRef: RefObject<LatestThreadState>;
+  bridge: AsideProcedureBridge;
+  pendingQuestion: NonNullable<ReturnType<typeof findPendingQuestion>>;
+  answer: string;
+  resultText: string;
+  skipped: boolean;
+}): Promise<Record<string, unknown>> {
+  const latest = latestRef.current;
+  if (!latest) return {};
+  const socketId = [...bridge.socketsRef.current.entries()].find(([, sessionId]) => (
+    sessionId === latest.project.id || sessionId === pendingQuestion.sessionId
+  ))?.[0] ?? bridge.socketsRef.current.keys().next().value;
+  const projector = socketId ? new AsideRunProjector(
+    (value) => sendSocketMessage(bridge.iframeRef, bridge.frameId, socketId, value),
+    currentProvider(latest.aiSettings),
+    latest.activeModel,
+  ) : undefined;
+  const startedAt = Date.now();
+  if (projector && socketId) {
+    projector.resumeQuestion(pendingQuestion.toolCallId, resultText);
+    bridge.activeRunRef.current = { socketId, startedAt, projector };
+  }
+
+  try {
+    await latest.onRunAgent(answer, {
+      questionResponse: {
+        sessionId: pendingQuestion.sessionId,
+        toolCallId: pendingQuestion.toolCallId,
+        question: pendingQuestion.question,
+        answer: skipped ? "" : answer,
+        skipped,
+        answeredAt: new Date().toISOString(),
+      },
+    });
+  } catch (error) {
+    projector?.fail(error instanceof Error ? error.message : String(error));
+    bridge.activeRunRef.current = null;
+    throw error;
+  }
+
+  const refreshed = latestRef.current;
+  if (!refreshed) return {};
+  return clearResolvedSuspension(buildAsideSession({
+    projectId: refreshed.project.id,
+    projectTitle: refreshed.project.title,
+    workspacePath: refreshed.project.workspacePath,
+    sessions: refreshed.sessions,
+    liveSession: refreshed.liveSession,
+    provider: currentProvider(refreshed.aiSettings),
+    model: refreshed.activeModel,
+    thinkingLevel: reasoningLevel(refreshed.aiSettings),
+  }), pendingQuestion.toolCallId);
+}
+
+function clearResolvedSuspension(session: Record<string, unknown>, toolCallId: string): Record<string, unknown> {
+  const suspension = recordValue(session.suspension);
+  if (stringValue(suspension.toolCallId) !== toolCallId) return session;
+  const toolState = recordValue(session.toolState);
+  return {
+    ...session,
+    status: "idle",
+    suspension: undefined,
+    toolState: { ...toolState, question: {} },
+  };
 }
 
 function modelInventory(latest: LatestThreadState) {
@@ -433,10 +554,11 @@ function flowSnapshotForRun(
     .find((session) => timestamp(session.createdAt) >= activeRun.startedAt - 1_500);
 }
 
-function findPendingQuestion(sessions: ConstructFlowSession[], liveSession?: ConstructFlowSession) {
+function findPendingQuestion(sessions: ConstructFlowSession[], liveSession?: ConstructFlowSession, toolCallId?: string) {
   for (const session of [...mergedSessions(sessions, liveSession)].reverse()) {
     for (const tool of [...session.toolCalls].reverse()) {
-      if (tool.name !== "ask-question" || tool.status === "error" || tool.response) continue;
+      if (!isQuestionToolName(tool.name) || tool.status === "error" || tool.response) continue;
+      if (toolCallId && tool.id !== toolCallId) continue;
       const input = recordValue(tool.input);
       const question = stringValue(input.question);
       if (!question) continue;
@@ -444,6 +566,11 @@ function findPendingQuestion(sessions: ConstructFlowSession[], liveSession?: Con
     }
   }
   return undefined;
+}
+
+function isQuestionToolName(name: string): boolean {
+  const normalized = name.replace(/[^a-z0-9]/gi, "").toLowerCase();
+  return normalized === "askquestion" || normalized === "askuser" || normalized === "askuserquestion";
 }
 
 function mergedSessions(sessions: ConstructFlowSession[], liveSession?: ConstructFlowSession): ConstructFlowSession[] {
