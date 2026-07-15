@@ -36,6 +36,11 @@ type ActiveBridgeRun = {
   projector: AsideRunProjector;
 };
 
+type AsideSocketDescriptor = {
+  kind: "chat" | "session-subscription";
+  sessionId: string;
+};
+
 export type AsideConstructThreadProps = {
   project: FlowProjectRecord;
   sessions: ConstructFlowSession[];
@@ -59,7 +64,7 @@ type LatestThreadState = Omit<AsideConstructThreadProps, "theme"> & { resolvedTh
 type AsideProcedureBridge = {
   frameId: string;
   iframeRef: RefObject<HTMLIFrameElement | null>;
-  socketsRef: RefObject<Map<string, string>>;
+  socketsRef: RefObject<Map<string, AsideSocketDescriptor>>;
   activeRunRef: RefObject<ActiveBridgeRun | null>;
 };
 
@@ -82,7 +87,7 @@ export function AsideConstructThread({
 }: AsideConstructThreadProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const frameIdRef = useRef<string | null>(null);
-  const socketsRef = useRef(new Map<string, string>());
+  const socketsRef = useRef(new Map<string, AsideSocketDescriptor>());
   const activeRunRef = useRef<ActiveBridgeRun | null>(null);
   const resolvedTheme = resolveTheme(theme);
   const latestRef = useRef<LatestThreadState>({
@@ -144,13 +149,30 @@ export function AsideConstructThread({
 
   useEffect(() => {
     const activeRun = activeRunRef.current;
-    if (!activeRun) return;
-    const snapshot = flowSnapshotForRun(activeRun, sessions, liveSession);
-    if (!snapshot) return;
-    activeRun.sessionId = snapshot.id;
-    activeRun.projector.project(snapshot);
-    if (isTerminalSession(snapshot)) activeRunRef.current = null;
-  }, [liveSession, sessions]);
+    if (activeRun) {
+      const snapshot = flowSnapshotForRun(activeRun, sessions, liveSession);
+      if (snapshot) {
+        activeRun.sessionId = snapshot.id;
+        activeRun.projector.project(snapshot);
+        if (isTerminalSession(snapshot)) activeRunRef.current = null;
+      }
+    }
+
+    const session = buildAsideSession({
+      projectId: project.id,
+      projectTitle: project.title,
+      workspacePath: project.workspacePath,
+      sessions,
+      liveSession,
+      provider: currentProvider(aiSettings),
+      model: activeModel,
+      thinkingLevel: reasoningLevel(aiSettings),
+    });
+    for (const [socketId, descriptor] of socketsRef.current) {
+      if (descriptor.kind !== "session-subscription" || descriptor.sessionId !== project.id) continue;
+      sendSocketMessage(iframeRef, frameIdRef.current ?? "", socketId, { op: "update", session });
+    }
+  }, [activeModel, aiSettings, liveSession, project, sessions]);
 
   useEffect(() => {
     sendToAsideFrame(iframeRef, frameIdRef.current, "theme", { theme: resolvedTheme });
@@ -178,7 +200,7 @@ async function handleAsideMessage({
   message: AsideHostMessage;
   iframeRef: RefObject<HTMLIFrameElement | null>;
   latestRef: RefObject<LatestThreadState>;
-  socketsRef: RefObject<Map<string, string>>;
+  socketsRef: RefObject<Map<string, AsideSocketDescriptor>>;
   activeRunRef: RefObject<ActiveBridgeRun | null>;
 }): Promise<void> {
   const latest = latestRef.current;
@@ -210,9 +232,24 @@ async function handleAsideMessage({
   if (message.type === "ws-connect") {
     const socketId = stringValue(message.payload?.socketId);
     if (!socketId) return;
-    const sessionId = sessionIdFromSocketUrl(stringValue(message.payload?.url)) ?? latest.project.id;
-    socketsRef.current.set(socketId, sessionId);
-    sendToAsideFrame(iframeRef, message.frameId, "ws-open", { socketId, sessionId });
+    const descriptor = asideSocketDescriptor(stringValue(message.payload?.url), latest.project.id);
+    socketsRef.current.set(socketId, descriptor);
+    sendToAsideFrame(iframeRef, message.frameId, "ws-open", { socketId, sessionId: descriptor.sessionId });
+    if (descriptor.kind === "session-subscription") {
+      sendSocketMessage(iframeRef, message.frameId, socketId, {
+        op: "snapshot",
+        session: buildAsideSession({
+          projectId: latest.project.id,
+          projectTitle: latest.project.title,
+          workspacePath: latest.project.workspacePath,
+          sessions: latest.sessions,
+          liveSession: latest.liveSession,
+          provider: currentProvider(latest.aiSettings),
+          model: latest.activeModel,
+          thinkingLevel: reasoningLevel(latest.aiSettings),
+        }),
+      });
+    }
     return;
   }
 
@@ -423,9 +460,10 @@ async function continueFromAsideQuestion({
 }): Promise<Record<string, unknown>> {
   const latest = latestRef.current;
   if (!latest) return {};
-  const socketId = [...bridge.socketsRef.current.entries()].find(([, sessionId]) => (
-    sessionId === latest.project.id || sessionId === pendingQuestion.sessionId
-  ))?.[0] ?? bridge.socketsRef.current.keys().next().value;
+  const socketId = [...bridge.socketsRef.current.entries()].find(([, descriptor]) => (
+    descriptor.kind === "chat"
+      && (descriptor.sessionId === latest.project.id || descriptor.sessionId === pendingQuestion.sessionId)
+  ))?.[0];
   const projector = socketId ? new AsideRunProjector(
     (value) => sendSocketMessage(bridge.iframeRef, bridge.frameId, socketId, value),
     currentProvider(latest.aiSettings),
@@ -617,14 +655,25 @@ function resolveTheme(theme: "light" | "dark" | "system"): "light" | "dark" {
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
-function sessionIdFromSocketUrl(value: string | undefined): string | undefined {
-  if (!value) return undefined;
+export function asideSocketDescriptor(value: string | undefined, fallbackSessionId: string): AsideSocketDescriptor {
+  if (!value) return { kind: "chat", sessionId: fallbackSessionId };
   try {
     const url = new URL(value);
-    const pathId = url.pathname.startsWith("/agents/chat/") ? decodeURIComponent(url.pathname.slice("/agents/chat/".length)) : undefined;
-    return url.searchParams.get("sessionId") ?? pathId;
+    if (url.pathname.startsWith("/ws/sessions/")) {
+      return {
+        kind: "session-subscription",
+        sessionId: decodeURIComponent(url.pathname.slice("/ws/sessions/".length)) || fallbackSessionId,
+      };
+    }
+    const pathId = url.pathname.startsWith("/agents/chat/")
+      ? decodeURIComponent(url.pathname.slice("/agents/chat/".length))
+      : undefined;
+    return {
+      kind: "chat",
+      sessionId: url.searchParams.get("sessionId") ?? pathId ?? fallbackSessionId,
+    };
   } catch {
-    return undefined;
+    return { kind: "chat", sessionId: fallbackSessionId };
   }
 }
 

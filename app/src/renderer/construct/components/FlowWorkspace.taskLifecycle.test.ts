@@ -62,6 +62,9 @@ describe("FlowWorkspace task lifecycle rendering", () => {
     assert.match(asideHostSource, /aside-thread\/main\.html/);
     assert.match(asideHostSource, /buildAsideSession/);
     assert.match(asideHostSource, /buildAsideMessages/);
+    assert.match(asideHostSource, /descriptor\.kind !== "session-subscription"/);
+    assert.match(asideHostSource, /\{ op: "update", session \}/);
+    assert.match(asideHostSource, /op: "snapshot"/);
     assert.match(asideHostSource, /new AsideRunProjector/);
     assert.match(asideHostSource, /await latest\.onRunAgent\(message, options\)/);
     assert.match(asideEntrySource, /extension-main-BQoDRRY7\.js/);
