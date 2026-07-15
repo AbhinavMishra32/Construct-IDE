@@ -18,6 +18,10 @@ const asideToolRendererSource = readFileSync(
   fileURLToPath(new URL("../../../../public/aside-thread/assets/tool-renderer-Bj91yJjw.js", import.meta.url)),
   "utf8",
 );
+const asideGlobalsSource = readFileSync(
+  fileURLToPath(new URL("../../../../public/aside-thread/assets/globals-BWsjXQ4T.css", import.meta.url)),
+  "utf8",
+);
 
 describe("FlowWorkspace task lifecycle rendering", () => {
   it("renders failed practice-task drafts without a persistent creating spinner", () => {
@@ -69,6 +73,9 @@ describe("FlowWorkspace task lifecycle rendering", () => {
     assert.match(asideHostSource, /await latest\.onRunAgent\(message, options\)/);
     assert.match(asideEntrySource, /extension-main-BQoDRRY7\.js/);
     assert.match(asideEntrySource, /construct-runtime-shim\.js/);
+    assert.match(asideGlobalsSource, /url\(\.\/geist-latin-wght-normal-Dm3htQBi\.woff2\)/);
+    assert.match(asideGlobalsSource, /url\(\.\/AsideDisplay-Variable-LuohODSt\.woff2\)/);
+    assert.doesNotMatch(asideGlobalsSource, /url\(\/assets\//);
     assert.match(asideShimSource, /construct-aside-bridge:v1/);
     assert.match(asideShimSource, /result: \{ data: values\[index\] \}/);
     assert.match(asideToolRendererSource, /construct_concept:ConstructConceptRenderer/);
