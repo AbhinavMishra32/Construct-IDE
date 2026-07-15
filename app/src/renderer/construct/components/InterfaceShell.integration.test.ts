@@ -92,7 +92,12 @@ describe("Construct interface shell boundary", () => {
     assert.match(constructSidebarSource, /<SidebarGroup/);
     assert.match(constructSidebarSource, /<SidebarMenu/);
     assert.match(constructSidebarSource, /<SidebarFooter/);
+    assert.match(constructSidebarSource, /sidebar-segmented-picker/);
+    assert.match(constructSidebarSource, /sidebar-segmented-thumb/);
     assert.match(constructSidebarSource, /sidebar-surface-enter/);
+    assert.match(appSource, /sidebarWidth=\{activeProject \? sidebarWidth : 256\}/);
+    assert.match(appSource, /title=\{isDashboardHome \? "New Project" : undefined\}/);
+    assert.match(rendererStylesSource, /@import "@opaline\/ui\/styles\.css"/);
     assert.match(appSource, /aria-label="Construct agent layout"/);
     assert.match(appSource, /render=\{\s*<DesktopChromeButton\s+aria-label="Project actions"/);
     assert.doesNotMatch(appSource, /<Tabs(?:\s|>)/);

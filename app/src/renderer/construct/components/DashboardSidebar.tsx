@@ -37,7 +37,7 @@ export function DashboardSidebar({
       <div className="mb-1.5 flex items-center px-2">
         <span className={SIDEBAR_SECTION_LABEL_CLASS_NAME}>Projects</span>
       </div>
-      <SidebarMenu className="gap-3">
+      <SidebarMenu className="gap-0.5">
         {visibleProjects.map((project) => (
           <DashboardSidebarProjectRow
             key={project.id}

@@ -1625,11 +1625,14 @@ export default function ConstructApp() {
           onBottomPanelOpenChange={setBottomPanelOpen}
           bottomPanelExpanded={bottomPanelExpanded}
           onBottomPanelExpandedChange={setBottomPanelExpanded}
-          sidebarWidth={sidebarWidth}
+          sidebarWidth={activeProject ? sidebarWidth : 256}
+          sidebarMinWidth={activeProject ? 240 : 256}
+          sidebarMaxWidth={activeProject ? 520 : 256}
           onSidebarWidthChange={setSidebarWidth}
           inspectorWidth={inspectorWidth}
           onInspectorWidthChange={setInspectorWidth}
           headerTabs={shellHeaderTabs}
+          title={isDashboardHome ? "New Project" : undefined}
           renderHeaderTab={(tab, shellState) => (
             <ConstructProjectTitleMenu
               activeProject={activeProject}
@@ -1915,36 +1918,40 @@ export default function ConstructApp() {
               </ConstructSidebarSurface>
             ) : (
               <ConstructSidebarSurface
+                activeView={projectsViewOpen ? "projects" : "home"}
                 actions={[
                   {
-                    id: "home",
-                    active: !knowledgeBaseOpen && !learningContextOpen && !projectsViewOpen,
-                    icon: <HomeIcon size={15} />,
-                    label: "Home",
+                    id: "new-project",
+                    active: false,
+                    icon: <FileTextIcon size={15} />,
+                    label: "New project",
                     onClick: handleBack
                   },
                   {
-                    id: "knowledge-base",
+                    id: "search",
+                    active: false,
+                    icon: <SearchIcon size={15} />,
+                    label: "Search",
+                    onClick: openProjectsView
+                  },
+                  {
+                    id: "concepts",
                     active: knowledgeBaseOpen,
                     icon: <BookOpen size={15} />,
                     label: "Concepts",
                     onClick: openKnowledgeBase
-                  },
-                  {
-                    id: "projects",
-                    active: projectsViewOpen,
-                    icon: <FolderOpenIcon size={15} />,
-                    label: "Projects",
-                    onClick: openProjectsView
                   }
                 ]}
                 footer={
-                  <ConstructSidebarFooter
-                    aiSettings={aiSettings}
-                    onAccountClick={() => setAccountDialogOpen(true)}
-                    onOpenSettings={() => openSettingsSurface("workspace")}
-                  />
+                  <SidebarMenu className="gap-1">
+                    <SidebarSettingsButton onClick={() => openSettingsSurface("workspace")} />
+                  </SidebarMenu>
                 }
+                onSelectView={(viewId) => viewId === "projects" ? openProjectsView() : handleBack()}
+                views={[
+                  { id: "home", label: "Home" },
+                  { id: "projects", label: "Projects" }
+                ]}
               >
                 <DashboardSidebar
                   projects={projects}

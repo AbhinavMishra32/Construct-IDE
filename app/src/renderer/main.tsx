@@ -82,6 +82,7 @@ async function bootstrap(): Promise<void> {
 
   document.documentElement.dataset.opalineWindowType = "electron";
   document.documentElement.dataset.windowType = "electron";
+  document.documentElement.dataset.runtime = "electron";
   document.documentElement.dataset.opalineOs = os;
 
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
