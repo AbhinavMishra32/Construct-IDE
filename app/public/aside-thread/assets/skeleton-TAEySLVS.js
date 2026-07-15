@@ -1,0 +1,3 @@
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._posthogChunkIds=e._posthogChunkIds||{},e._posthogChunkIds[n]="019f4f14-6795-7dc2-8367-2fed661e64fd")}catch(e){}}();import{K as t}from"./browser-color-scheme-CWUx8WNZ.js";import{t as o}from"./dist-Bj2HqGuI.js";var a=t();function m({className:e,...r}){return(0,a.jsx)("div",{"data-slot":"skeleton",className:o("animate-skeleton-shimmer from-secondary via-muted border-shape-initial! to-secondary rounded-md bg-linear-to-r from-25% to-75% bg-[length:200%_100%]",e),...r})}export{m as t};
+
+//# chunkId=019f4f14-6795-7dc2-8367-2fed661e64fd

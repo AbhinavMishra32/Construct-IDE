@@ -1,0 +1,3 @@
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._posthogChunkIds=e._posthogChunkIds||{},e._posthogChunkIds[n]="019f4f14-6747-7602-b581-a95b7273876e")}catch(e){}}();import{_ as r}from"./browser-color-scheme-CWUx8WNZ.js";import{t as s}from"./useQuery-BkwMjeI5.js";import{r as u}from"./context-local-runtime.js";var l="queue";function p(){const{accountId:e}=u(),{data:o}=s(r().settings.getAll.queryOptions({accountId:e},{select:t=>t.followUpBehavior}));return o??"queue"}export{p as n,l as t};
+
+//# chunkId=019f4f14-6747-7602-b581-a95b7273876e

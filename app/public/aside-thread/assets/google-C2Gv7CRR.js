@@ -1,0 +1,3 @@
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._posthogChunkIds=e._posthogChunkIds||{},e._posthogChunkIds[n]="019f4f14-6789-7cb2-a183-130d302c53ce")}catch(e){}}();import{K as n}from"./browser-color-scheme-CWUx8WNZ.js";import{v as t}from"./extension-main-BQoDRRY7.js";import{t as i}from"./google-sign-in-BqQs0LRp.js";var e=n();function a(){const{intent:o="sign-in"}=t.useSearch();return(0,e.jsx)(i,{successEvent:o==="sign-up"?"onboarding.auth.sign-up-with-google":"onboarding.auth.sign-in-with-google"})}export{a as component};
+
+//# chunkId=019f4f14-6789-7cb2-a183-130d302c53ce

@@ -1,0 +1,3 @@
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._posthogChunkIds=e._posthogChunkIds||{},e._posthogChunkIds[n]="019f4f14-67c0-7b62-b065-940ef93429f2")}catch(e){}}();var E={off:0,minimal:1,low:2,medium:3,high:4,xhigh:5,max:6},L=Object.keys(E);export{L as t};
+
+//# chunkId=019f4f14-67c0-7b62-b065-940ef93429f2

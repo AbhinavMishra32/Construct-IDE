@@ -1,0 +1,3 @@
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._posthogChunkIds=e._posthogChunkIds||{},e._posthogChunkIds[n]="019f4f14-67ae-7823-8f47-0147ea7c0b56")}catch(e){}}();import{_ as s,f as r,x as i}from"./schemas-EgjOPK4R.js";var l=["+"],n="Email address contains invalid characters",t=s({email:r("Please enter a valid email address").refine(a=>l.every(e=>!a.includes(e)),n),password:i().min(1,"Please enter your password")});export{t};
+
+//# chunkId=019f4f14-67ae-7823-8f47-0147ea7c0b56
