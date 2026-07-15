@@ -52,7 +52,6 @@ import {
 
 import {
   DesktopShell,
-  DesktopSidebar,
   DesktopChromeButton,
   DesktopHeaderToolButton,
   Badge,
@@ -82,6 +81,7 @@ import { cn } from "../lib/utils";
 
 import { Dashboard } from "./components/Dashboard";
 import { DashboardSidebar } from "./components/DashboardSidebar";
+import { ConstructSidebarSurface } from "./components/ConstructSidebarSurface";
 import { ProjectsSurface } from "./components/ProjectsSurface";
 import { FileTree } from "./components/FileTree";
 import { TerminalPanel, type TerminalPanelHandle } from "./components/TerminalPanel";
@@ -1833,10 +1833,8 @@ export default function ConstructApp() {
                 sections={settingsSections}
               />
             ) : knowledgeBaseOpen ? (
-              <DesktopSidebar
-                projects={[]}
-                items={[]}
-                primaryItems={activeProject ? undefined : [
+              <ConstructSidebarSurface
+                actions={activeProject ? [] : [
                   {
                     id: "home",
                     active: false,
@@ -1870,11 +1868,9 @@ export default function ConstructApp() {
                 {conceptsSidebarPanel ?? (
                   <div className="px-3 py-2 text-[12.5px] text-muted-foreground">Loading concepts...</div>
                 )}
-              </DesktopSidebar>
+              </ConstructSidebarSurface>
             ) : activeProject ? (
-              <DesktopSidebar
-                projects={[]}
-                items={[]}
+              <ConstructSidebarSurface
                 footer={
                   <ConstructSidebarFooter
                     aiSettings={aiSettings}
@@ -1916,11 +1912,10 @@ export default function ConstructApp() {
                     sidebarKnowledgePanel
                   ) : null}
                 </div>
-              </DesktopSidebar>
+              </ConstructSidebarSurface>
             ) : (
-              <DesktopSidebar
-                projects={[]} items={[]}
-                primaryItems={[
+              <ConstructSidebarSurface
+                actions={[
                   {
                     id: "home",
                     active: !knowledgeBaseOpen && !learningContextOpen && !projectsViewOpen,
@@ -1956,7 +1951,7 @@ export default function ConstructApp() {
                   onOpenProject={(projectId) => void openProject(projectId)}
                   onOpenProjectSettings={(projectId) => openSettingsSurface("project-overview", projectId)}
                 />
-              </DesktopSidebar>
+              </ConstructSidebarSurface>
             )
           }
           main={main}
