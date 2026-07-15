@@ -12,6 +12,10 @@ const dashboardSidebarSource = readFileSync(fileURLToPath(new URL("./DashboardSi
 const constructSidebarSource = readFileSync(fileURLToPath(new URL("./ConstructSidebarSurface.tsx", import.meta.url)), "utf8");
 const homeProjectPickerSource = readFileSync(fileURLToPath(new URL("./HomeProjectPicker.tsx", import.meta.url)), "utf8");
 const flowWorkspaceSource = readFileSync(fileURLToPath(new URL("./FlowWorkspace.tsx", import.meta.url)), "utf8");
+const asideShimSource = readFileSync(
+  fileURLToPath(new URL("../../../../public/aside-thread/construct-runtime-shim.js", import.meta.url)),
+  "utf8",
+);
 const shellControlsSource = readFileSync(fileURLToPath(new URL("../ShellControls.tsx", import.meta.url)), "utf8");
 const rendererStylesSource = readFileSync(fileURLToPath(new URL("../../index.css", import.meta.url)), "utf8");
 const opalineShellSource = readFileSync(
@@ -95,10 +99,21 @@ describe("Construct interface shell boundary", () => {
     assert.match(constructSidebarSource, /sidebar-segmented-picker/);
     assert.match(constructSidebarSource, /sidebar-segmented-thumb/);
     assert.match(constructSidebarSource, /sidebar-surface-enter/);
-    assert.match(appSource, /sidebarWidth=\{activeProject \? sidebarWidth : 256\}/);
+    assert.match(appSource, /sidebarWidth=\{settingsSurface \? settingsSidebarWidth : activeProject \? sidebarWidth : 256\}/);
+    assert.match(appSource, /sidebarResizeStorageKey=\{settingsSurface \? "construct\.settings\.sidebar\.width" : undefined\}/);
+    assert.match(appSource, /sidebarMainMinWidth=\{settingsSurface \? 640 : undefined\}/);
+    assert.match(appSource, /showHeader=\{!settingsSurface\}/);
+    assert.match(appSource, /backLabel="Back to app"/);
     assert.match(appSource, /title=\{isDashboardHome \? "New Project" : undefined\}/);
     assert.match(rendererStylesSource, /@import "@opaline\/ui\/styles\.css"/);
-    assert.match(appSource, /aria-label="Construct agent layout"/);
+    assert.doesNotMatch(appSource, /aria-label="Construct agent layout"/);
+    assert.doesNotMatch(appSource, /aria-label="Expand Construct agent"/);
+    assert.doesNotMatch(flowWorkspaceSource, /aria-label="Flow chat layout"/);
+    assert.match(asideShimSource, /aria-label="Open in tab"/);
+    assert.match(asideShimSource, /"Full-screen chat"/);
+    assert.match(asideShimSource, /"Panel chat"/);
+    assert.match(asideShimSource, /"Close chat"/);
+    assert.match(opalineShellSource, /transition-\[grid-template-columns\]/);
     assert.match(appSource, /render=\{\s*<DesktopChromeButton\s+aria-label="Project actions"/);
     assert.doesNotMatch(appSource, /<Tabs(?:\s|>)/);
     assert.doesNotMatch(appSource, /<AppShell(?:\s|>)/);
@@ -116,8 +131,8 @@ describe("Construct interface shell boundary", () => {
     assert.match(dashboardSource, /placeholder="Ask for follow-up changes or attach images"/);
     assert.match(dashboardSource, /<HomeProjectPicker/);
     assert.match(homeProjectPickerSource, /Work in a project/);
-    assert.match(flowWorkspaceSource, /onProviderChange: \(provider: ComposerProvider\)/);
-    assert.match(flowWorkspaceSource, /ShadcnDropdownMenu as ComposerMenu/);
+    assert.match(flowWorkspaceSource, /onProviderModelChange: \(provider: ComposerProvider, model: string\)/);
+    assert.match(flowWorkspaceSource, /<ProviderModelPicker/);
   });
 
   it("keeps Opaline free of Construct runtime and persistence dependencies", () => {
@@ -125,6 +140,10 @@ describe("Construct interface shell boundary", () => {
     assert.match(opalineShellSource, /<SidebarProvider/);
     assert.match(opalineShellSource, /<SidebarInset/);
     assert.match(opalineShellSource, /<SidebarRail placement="content-seam"/);
+    assert.match(opalineShellSource, /showHeader \? <header/);
+    assert.match(opalineShellSource, /storageKey: sidebarResizeStorageKey/);
+    assert.match(opalineShellSource, /wrapper\.clientWidth - nextWidth >= sidebarMainMinWidth/);
+    assert.match(opalineShellSource, /resizable=\{sidebarResizable\}/);
     assert.doesNotMatch(opalineShellSource, /return <AppShell/);
     assert.doesNotMatch(opalineShellSource, /<OpalineV2(?:Shell|Sidebar|NavigationControls|HeaderTab)/);
     assert.doesNotMatch(opalineShellSource, /opaline-v2/);
@@ -141,7 +160,7 @@ describe("Construct interface shell boundary", () => {
     assert.match(dashboardSidebarSource, /STUDIO_SIDEBAR_STATE_KEY/);
     assert.match(dashboardSidebarSource, /Pin project/);
     assert.match(dashboardSidebarSource, /Archive project/);
-    assert.doesNotMatch(appSource, /activeView=\{projectsViewOpen \? "projects" : "home"\}/);
+    assert.match(appSource, /activeView=\{projectsViewOpen \? "projects" : "home"\}/);
     assert.match(shellControlsSource, /SidebarPrimaryAction/);
     assert.match(opalineIndexSource, /export \{ Button \} from "\.\/components\/button"/);
   });

@@ -9,6 +9,7 @@ const CHANNEL = "construct-aside-bridge:v1";
 const frameId = crypto.randomUUID();
 const pendingRequests = new Map();
 const sockets = new Map();
+let chatMode = "panel";
 
 window.__asideFixtureErrors = [];
 window.__constructAsideBridgeLog = [];
@@ -25,6 +26,52 @@ function post(type, payload = {}, requestId) {
 }
 
 window.__CONSTRUCT_ASIDE_ACTION__ = (action, payload = {}) => post("action", { action, ...payload });
+
+function bindSidepanelHeaderActions() {
+  const layoutButton = document.querySelector(
+    '[aria-label="Open in tab"], [data-construct-chat-layout-action="toggle"]',
+  );
+  if (layoutButton instanceof HTMLButtonElement) {
+    layoutButton.dataset.constructChatLayoutAction = "toggle";
+    layoutButton.setAttribute("aria-label", chatMode === "maximized" ? "Panel chat" : "Full-screen chat");
+    layoutButton.title = chatMode === "maximized" ? "Panel chat" : "Full-screen chat";
+    const icon = layoutButton.querySelector("svg");
+    if (icon instanceof SVGElement) {
+      icon.style.transition = "transform 180ms cubic-bezier(0.32, 0.72, 0, 1)";
+      icon.style.transform = chatMode === "maximized" ? "rotate(180deg)" : "";
+    }
+  }
+
+  const closeButton = document.querySelector(
+    '[aria-label="Close side panel"], [data-construct-chat-layout-action="close"]',
+  );
+  if (closeButton instanceof HTMLButtonElement) {
+    closeButton.dataset.constructChatLayoutAction = "close";
+    closeButton.setAttribute("aria-label", "Close chat");
+    closeButton.title = "Close chat";
+  }
+}
+
+document.addEventListener("click", (event) => {
+  const button = event.target instanceof Element
+    ? event.target.closest("[data-construct-chat-layout-action]")
+    : null;
+  if (!(button instanceof HTMLButtonElement)) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  const action = button.dataset.constructChatLayoutAction;
+  if (action === "toggle") {
+    window.__CONSTRUCT_ASIDE_ACTION__?.(chatMode === "maximized" ? "chat-panel" : "chat-maximize");
+  } else if (action === "close") {
+    window.__CONSTRUCT_ASIDE_ACTION__?.("chat-close");
+  }
+}, true);
+
+const sidepanelHeaderObserver = new MutationObserver(bindSidepanelHeaderActions);
+window.addEventListener("DOMContentLoaded", () => {
+  bindSidepanelHeaderActions();
+  sidepanelHeaderObserver.observe(document.body, { childList: true, subtree: true });
+});
 
 function request(type, payload) {
   const requestId = crypto.randomUUID();
@@ -58,6 +105,14 @@ window.addEventListener("message", (event) => {
     document.documentElement.classList.toggle("dark", dark);
     document.documentElement.classList.toggle("light", !dark);
     document.documentElement.style.colorScheme = dark ? "dark" : "light";
+    return;
+  }
+
+  if (message.type === "layout") {
+    chatMode = message.payload?.chatMode === "maximized" ? "maximized" : "panel";
+    document.documentElement.dataset.constructChatMode = chatMode;
+    window.dispatchEvent(new CustomEvent("construct-chat-layout", { detail: chatMode }));
+    bindSidepanelHeaderActions();
     return;
   }
 

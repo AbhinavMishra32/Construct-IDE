@@ -15,6 +15,7 @@ import {
 } from "./asideThreadProtocol";
 
 const ASIDE_BRIDGE_CHANNEL = "construct-aside-bridge:v1";
+const ASIDE_THREAD_BRIDGE_REVISION = "2026-07-15-layout-v2";
 
 type AsideHostMessage = {
   channel: typeof ASIDE_BRIDGE_CHANNEL;
@@ -46,6 +47,7 @@ export type AsideConstructThreadProps = {
   sessions: ConstructFlowSession[];
   liveSession?: ConstructFlowSession;
   pending: boolean;
+  chatMode: "panel" | "maximized";
   theme: "light" | "dark" | "system";
   aiSettings: AiSettings | null;
   models: ModelCatalogEntry[];
@@ -57,6 +59,9 @@ export type AsideConstructThreadProps = {
   onReasoningEffortChange: (effort: AiSettings["reasoningEffort"]) => Promise<void>;
   onOpenConcept: (conceptId: string) => void;
   onOpenTask: (task: ConstructFlowPracticeTask) => void;
+  onChatMaximize: () => void;
+  onChatPanel: () => void;
+  onChatClose: () => void;
 };
 
 type LatestThreadState = Omit<AsideConstructThreadProps, "theme"> & { resolvedTheme: "light" | "dark" };
@@ -73,6 +78,7 @@ export function AsideConstructThread({
   sessions,
   liveSession,
   pending,
+  chatMode,
   theme,
   aiSettings,
   models,
@@ -84,6 +90,9 @@ export function AsideConstructThread({
   onReasoningEffortChange,
   onOpenConcept,
   onOpenTask,
+  onChatMaximize,
+  onChatPanel,
+  onChatClose,
 }: AsideConstructThreadProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const frameIdRef = useRef<string | null>(null);
@@ -95,6 +104,7 @@ export function AsideConstructThread({
     sessions,
     liveSession,
     pending,
+    chatMode,
     resolvedTheme,
     aiSettings,
     models,
@@ -106,12 +116,16 @@ export function AsideConstructThread({
     onReasoningEffortChange,
     onOpenConcept,
     onOpenTask,
+    onChatMaximize,
+    onChatPanel,
+    onChatClose,
   });
   latestRef.current = {
     project,
     sessions,
     liveSession,
     pending,
+    chatMode,
     resolvedTheme,
     aiSettings,
     models,
@@ -123,13 +137,17 @@ export function AsideConstructThread({
     onReasoningEffortChange,
     onOpenConcept,
     onOpenTask,
+    onChatMaximize,
+    onChatPanel,
+    onChatClose,
   };
 
   const source = useMemo(() => {
     const entry = new URL("./aside-thread/main.html", document.baseURI);
+    entry.searchParams.set("constructBridge", ASIDE_THREAD_BRIDGE_REVISION);
     entry.hash = `/u/1/sidepanel?sessionId=${encodeURIComponent(project.id)}`;
     return entry.href;
-  }, [project.id]);
+  }, [project.id, ASIDE_THREAD_BRIDGE_REVISION]);
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent<unknown>) => {
@@ -178,6 +196,10 @@ export function AsideConstructThread({
     sendToAsideFrame(iframeRef, frameIdRef.current, "theme", { theme: resolvedTheme });
   }, [resolvedTheme]);
 
+  useEffect(() => {
+    sendToAsideFrame(iframeRef, frameIdRef.current, "layout", { chatMode });
+  }, [chatMode]);
+
   return (
     <iframe
       ref={iframeRef}
@@ -208,6 +230,7 @@ async function handleAsideMessage({
 
   if (message.type === "ready") {
     sendToAsideFrame(iframeRef, message.frameId, "theme", { theme: latest.resolvedTheme });
+    sendToAsideFrame(iframeRef, message.frameId, "layout", { chatMode: latest.chatMode });
     return;
   }
 
@@ -280,6 +303,9 @@ async function handleAsideMessage({
         .find((candidate) => candidate.id === taskId);
       if (task) latest.onOpenTask(task);
     }
+    if (action === "chat-maximize") latest.onChatMaximize();
+    if (action === "chat-panel") latest.onChatPanel();
+    if (action === "chat-close") latest.onChatClose();
   }
 }
 
