@@ -1,11 +1,9 @@
 import Editor, { DiffEditor } from "@monaco-editor/react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import type { editor as MonacoEditor } from "monaco-editor";
-import { ArrowDownIcon, ArrowUpIcon, BadgeCheckIcon, BookOpenIcon, BotIcon, BrainCircuitIcon, CheckCircle2Icon, CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleAlertIcon, CircleIcon, CloudIcon, CornerDownLeftIcon, CpuIcon, FileTextIcon, GaugeIcon, GitCompareIcon, GithubIcon, HelpCircleIcon, Layers3Icon, ListChecksIcon, Loader2Icon, PencilIcon, PlusCircleIcon, RotateCcwIcon, RouteIcon, SearchIcon, SendIcon, StarIcon, TerminalIcon, Trash2Icon, PlusIcon, MicIcon, type LucideIcon } from "lucide-react";
+import { ArrowDownIcon, ArrowUpIcon, BadgeCheckIcon, BookOpenIcon, BotIcon, BrainCircuitIcon, CheckCircle2Icon, CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleAlertIcon, CircleIcon, CloudIcon, CornerDownLeftIcon, CpuIcon, FileTextIcon, GaugeIcon, GitCompareIcon, GithubIcon, HelpCircleIcon, Layers3Icon, ListChecksIcon, Loader2Icon, PencilIcon, PlusCircleIcon, RotateCcwIcon, RouteIcon, SearchIcon, SendIcon, StarIcon, TerminalIcon, Trash2Icon, MicIcon, type LucideIcon } from "lucide-react";
 import {
   AdaptiveSidecarLayout,
-  AgentSessionComposer,
-  AgentSessionSurface,
   Button,
   ShadcnDropdownMenu as ComposerMenu,
   ShadcnDropdownMenuContent as ComposerMenuContent,
@@ -82,7 +80,6 @@ import {
   FLOW_CHAT_EVENT_ROW_CLASS_NAME
 } from "./flowChatStyles";
 import { iconForFile } from "./workspace/FileChooserContent";
-import { ConstructAuthLogo } from "../../components/auth/construct-auth-logo";
 import type { InlineFileRef } from "../lib/inlineRefs";
 import { Badge } from "../../components/ui/badge";
 import {
@@ -104,6 +101,7 @@ import { Textarea } from "../../components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../../components/ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
 import { cn } from "../../lib/utils";
+import { AsideConstructThread } from "./AsideConstructThread";
 import {
   activateDocument,
   closeDocument,
@@ -1217,7 +1215,6 @@ function FlowAgentPanel({
   liveSession,
   pending,
   chatMode,
-  chatScrollTop,
   openConcept,
   theme,
   onActiveViewChange,
@@ -1228,8 +1225,6 @@ function FlowAgentPanel({
   onOpenConceptById,
   onOpenTask,
   onOpenFile,
-  onRewindUserMessage,
-  onChatScrollTopChange,
   onResetChat
 }: {
   project: FlowProjectRecord;
@@ -1253,19 +1248,8 @@ function FlowAgentPanel({
   onChatScrollTopChange: (scrollTop: number | null) => void;
   onResetChat: () => void;
 }) {
-  const [draft, setDraft] = useState("");
-  const [rewindingSessionId, setRewindingSessionId] = useState<string | null>(null);
-  const [acknowledgedConceptEventKeys, setAcknowledgedConceptEventKeys] = useState<Set<string>>(() => new Set());
-  const acknowledgeConceptEvent = useCallback((eventKey: string) => {
-    setAcknowledgedConceptEventKeys((current) => {
-      const next = new Set(current);
-      next.add(eventKey);
-      return next;
-    });
-  }, []);
   const mergedSessions = useMemo(() => mergeSessions(sessions, liveSession), [liveSession, sessions]);
   const flowConcepts = useMemo(() => collectFlowConcepts(mergedSessions), [mergedSessions]);
-  const conceptMutations = useMemo(() => collectConceptMutations(mergedSessions), [mergedSessions]);
   const flowTasks = useMemo(() => mergedSessions.flatMap((session) => session.practiceTasks), [mergedSessions]);
   const flowExercises = useMemo(() => mergedSessions.flatMap((session) => session.conceptExercises ?? []), [mergedSessions]);
   const pathNodes = useMemo(() => [...(project.flow.pathNodes ?? [])].sort((a, b) => a.order - b.order), [project.flow.pathNodes]);
@@ -1273,128 +1257,22 @@ function FlowAgentPanel({
   const activeTask = useMemo(() => findActiveTaskForNode(flowTasks, currentPathNode?.id), [currentPathNode?.id, flowTasks]);
   const activeQuestion = useMemo(() => findActiveFlowQuestion(mergedSessions), [mergedSessions]);
   const learningMaterialsHidden = activeQuestion?.payload.hideLearningMaterials === true;
-  const activeConceptExercise = useMemo(() => {
-    const waitingExercises = flowExercises.filter((ex) => ex.status === "waiting");
-    return waitingExercises.length > 0 ? waitingExercises[waitingExercises.length - 1] : undefined;
-  }, [flowExercises]);
-
-  const activeComposerItem = useMemo(() => {
-    if (activeConceptExercise) {
-      let eventId = "";
-      for (const session of mergedSessions) {
-        const timelineEvent = session.timeline?.find(
-          (e) => e.kind === "tool" && e.name === "concept-exercise" && (() => {
-            const payload = readExerciseToolPayload(e.input, e.outputPreview);
-            const resolved = resolveExerciseForToolPayload(payload, session.conceptExercises ?? [], session.id);
-            return resolved?.id === activeConceptExercise.id;
-          })()
-        );
-        if (timelineEvent) {
-          eventId = timelineEvent.id;
-          return {
-            type: "exercise" as const,
-            id: activeConceptExercise.id,
-            title: activeConceptExercise.title,
-            prompt: activeConceptExercise.prompt,
-            domId: `${session.id}:exercise:${eventId}`,
-            item: activeConceptExercise
-          };
-        }
-      }
-      return {
-        type: "exercise" as const,
-        id: activeConceptExercise.id,
-        title: activeConceptExercise.title,
-        prompt: activeConceptExercise.prompt,
-        domId: "",
-        item: activeConceptExercise
-      };
-    }
-
-    if (activeTask) {
-      let eventId = "";
-      for (const session of mergedSessions) {
-        const timelineEvent = session.timeline?.find(
-          (e) => e.kind === "tool" && e.name === "practice-task" && (() => {
-            const payload = readTaskToolPayload(e.input, e.outputPreview);
-            const resolved = resolveTaskForToolPayload(payload, session.practiceTasks ?? [], session.id);
-            return resolved?.id === activeTask.id;
-          })()
-        );
-        if (timelineEvent) {
-          eventId = timelineEvent.id;
-          return {
-            type: "task" as const,
-            id: activeTask.id,
-            title: activeTask.title,
-            prompt: activeTask.prompt,
-            domId: `${session.id}:task:${eventId}`,
-            item: activeTask
-          };
-        }
-      }
-      return {
-        type: "task" as const,
-        id: activeTask.id,
-        title: activeTask.title,
-        prompt: activeTask.prompt,
-        domId: "",
-        item: activeTask
-      };
-    }
-
-    return undefined;
-  }, [activeConceptExercise, activeTask, mergedSessions]);
-  const messages = useMemo(() => buildFlowMessages({
-    sessions: mergedSessions,
-    concepts: flowConcepts,
-    conceptMutations,
-    tasks: flowTasks,
-    pathNodes,
-    currentTaskId: activeTask?.id,
-    acknowledgedConceptEventKeys,
-    theme,
-    onOpenConceptDetails,
-    onOpenConceptById,
-    onAcknowledgeConceptEvent: acknowledgeConceptEvent,
-    onOpenTask,
-    onOpenFile,
-    onRewindUserMessage: async (sessionId, content) => {
-      setRewindingSessionId(sessionId);
-      try {
-        await onRewindUserMessage(sessionId);
-        setDraft(content);
-      } finally {
-        setRewindingSessionId(null);
-      }
-    },
-    rewindingSessionId,
-    pending,
-    chatMode
-  }), [acknowledgeConceptEvent, acknowledgedConceptEventKeys, activeTask?.id, conceptMutations, flowConcepts, flowTasks, mergedSessions, onOpenConceptById, onOpenConceptDetails, onOpenFile, onOpenTask, onRewindUserMessage, pathNodes, rewindingSessionId, pending, theme, chatMode]);
   const latestContextWindow = useMemo(() => findLatestContextWindow(mergedSessions), [mergedSessions]);
   const [aiSettings, setAiSettings] = useState<AiSettings | null>(null);
   const [modelOptions, setModelOptions] = useState<ModelCatalogEntry[]>([]);
-  const [modelsBusy, setModelsBusy] = useState(false);
-  const [modelsError, setModelsError] = useState<string | null>(null);
   const aiSettingsRef = useRef<AiSettings | null>(null);
 
   const refreshModels = useCallback(async (settingsSnapshot?: AiSettings | null) => {
     const resolvedSettings = settingsSnapshot ?? aiSettingsRef.current;
     if (!resolvedSettings) return;
-    setModelsBusy(true);
-    setModelsError(null);
     try {
       const models = await listModels({
         provider: resolvedSettings.source === "construct-cloud" ? "construct-cloud" : resolvedSettings.provider,
         apiKey: apiKeyForProvider(resolvedSettings)
       });
       setModelOptions(models);
-    } catch (error) {
-      setModelsError(error instanceof Error ? error.message : String(error));
+    } catch {
       setModelOptions([]);
-    } finally {
-      setModelsBusy(false);
     }
   }, []);
 
@@ -1410,9 +1288,7 @@ function FlowAgentPanel({
         setAiSettings(settings.ai);
         void refreshModels(settings.ai);
       })
-      .catch((error) => {
-        if (!cancelled) setModelsError(error instanceof Error ? error.message : String(error));
-      });
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -1429,12 +1305,10 @@ function FlowAgentPanel({
     if (!aiSettings) return;
     const optimistic = { ...aiSettings, reasoningEffort };
     setAiSettings(optimistic);
-    setModelsError(null);
     try {
       const settings = await updateAiSettings({ ai: { reasoningEffort } });
       setAiSettings(settings.ai);
-    } catch (error) {
-      setModelsError(error instanceof Error ? error.message : String(error));
+    } catch {
       const settings = await getSettings();
       setAiSettings(settings.ai);
     }
@@ -1445,12 +1319,10 @@ function FlowAgentPanel({
     const key = modelSettingsKeyForProvider(aiSettings.source === "construct-cloud" ? "construct-cloud" : aiSettings.provider);
     const optimistic = { ...aiSettings, [key]: model };
     setAiSettings(optimistic);
-    setModelsError(null);
     try {
       const settings = await updateAiSettings({ ai: { [key]: model } });
       setAiSettings(settings.ai);
-    } catch (error) {
-      setModelsError(error instanceof Error ? error.message : String(error));
+    } catch {
       const settings = await getSettings();
       setAiSettings(settings.ai);
     }
@@ -1464,29 +1336,17 @@ function FlowAgentPanel({
     const optimistic = { ...aiSettings, ...patch };
     setAiSettings(optimistic);
     setModelOptions([]);
-    setModelsError(null);
     try {
       const settings = await updateAiSettings({ ai: patch });
       setAiSettings(settings.ai);
       await refreshModels(settings.ai);
-    } catch (error) {
-      setModelsError(error instanceof Error ? error.message : String(error));
+    } catch {
       const settings = await getSettings();
       setAiSettings(settings.ai);
       await refreshModels(settings.ai);
     }
   }, [aiSettings, refreshModels]);
 
-  useEffect(() => {
-    setDraft(activeQuestion?.payload.initialAnswer ?? "");
-  }, [activeQuestion?.id]);
-
-  const submitComposer = useCallback(() => {
-    const message = draft.trim();
-    if (!message) return;
-    setDraft("");
-    void onRunAgent(message, activeTask ? { taskMessage: { taskId: activeTask.id, pathNodeId: activeTask.pathNodeId } } : undefined);
-  }, [activeTask, draft, onRunAgent]);
   const showMaximizedConceptDock = activeView === "chat" && chatMode === "maximized" && openConcept !== null;
 
   return (
@@ -1573,102 +1433,23 @@ function FlowAgentPanel({
             ) : null}
           </div>
           <div className="construct-flow-chat-thread relative flex min-h-0 flex-1 flex-col overflow-hidden">
-          <AgentSessionSurface
-            className="construct-flow-session min-h-0 flex-1 bg-transparent"
-            data-construct-flow-chat="true"
-            messages={messages}
-            emptyState={(
-              <div className="construct-flow-empty-state flex max-w-[46rem] flex-col items-center gap-4 px-6 pb-5 text-center select-none">
-                <ConstructAuthLogo markClassName="size-10" />
-                <h2 className="text-[26px] font-normal leading-[1.15] tracking-[-0.015em] text-foreground/95 sm:text-[30px]">
-                  What should we work on in {project.title}?
-                </h2>
-              </div>
-            )}
-            scrollKey={`${messages.length}:${liveSession?.updatedAt ?? "idle"}`}
-            showReasoningSummaries
-            timelineScrollTop={chatScrollTop}
-            onTimelineScroll={(state) => {
-              onChatScrollTopChange(state.atBottom ? null : state.scrollTop);
-            }}
-            composer={
-              activeQuestion ? (
-                <FlowQuestionComposer
-                  key={activeQuestion.id}
-                  question={activeQuestion}
-                  workspacePath={project.workspacePath}
-                  theme={theme}
-                  chatMode={chatMode}
-                  value={draft}
-                  onValueChange={setDraft}
-                  onAnswer={(response) => {
-                    setDraft("");
-                    void onRunAgent("Continue from the tracked question answer.", { questionResponse: response });
-                  }}
-                  onSkip={() => {
-                    const response = buildFlowQuestionResponse(activeQuestion, "", true);
-                    setDraft("");
-                    void onRunAgent("Continue from the skipped tracked question.", { questionResponse: response });
-                  }}
-                  pending={pending && !activeQuestion}
-                  onOpenFile={onOpenFile}
-                  onOpenConcept={onOpenConceptById}
-                />
-              ) : (
-                <>
-                  <AgentSessionComposer
-                    className={cn("construct-flow-composer", chatMode === "panel" && "is-panel")}
-                    value={draft}
-                    onValueChange={setDraft}
-                    onSubmit={submitComposer}
-                    pending={pending}
-                    submitLabel="Send"
-                    placeholder={activeTask ? `Message the Construct agent about: ${activeTask.title}` : "Ask for follow-up changes"}
-                    footerStart={
-                      <>
-                        <Button
-                          aria-label="Open project map"
-                          onClick={() => onActiveViewChange("project")}
-                          size="icon-xs"
-                          title="Open project map"
-                          type="button"
-                          variant="chrome"
-                        >
-                          <PlusIcon data-icon="inline-start" />
-                        </Button>
-                        <span className="inline-flex h-7 shrink-0 items-center gap-1.5 px-1.5 text-[length:var(--app-font-size-ui-sm,11px)] font-normal text-[var(--runtime-full-access-accent)]">
-                          <BadgeCheckIcon className="size-3.5" />
-                          Full access
-                        </span>
-                        {activeComposerItem ? (
-                          <ActiveComposerItemIndicator
-                            activeItem={activeComposerItem}
-                            pending={pending}
-                            onSubmitTask={onSubmitTask}
-                          />
-                        ) : null}
-                      </>
-                    }
-                    footerEnd={
-                      <FlowComposerRightControls
-                        contextWindow={latestContextWindow}
-                        settings={aiSettings}
-                        model={activeFlowModel}
-                        models={flowModelOptions}
-                        modelsBusy={modelsBusy}
-                        modelsError={modelsError}
-                        reasoningEffort={aiSettings?.reasoningEffort ?? "auto"}
-                        onModelChange={updateFlowModel}
-                        onProviderChange={updateProvider}
-                        onReasoningEffortChange={updateReasoningEffort}
-                      />
-                    }
-                  />
-                  {/* Kept for static analysis tests: <FlowComposerControls */}
-                </>
-              )
-            }
-          />
+            <AsideConstructThread
+              activeModel={activeFlowModel}
+              activeTask={activeTask}
+              aiSettings={aiSettings}
+              liveSession={liveSession}
+              models={flowModelOptions}
+              pending={pending}
+              project={project}
+              sessions={sessions}
+              theme={theme}
+              onModelChange={updateFlowModel}
+              onOpenConcept={onOpenConceptById}
+              onOpenTask={onOpenTask}
+              onProviderChange={updateProvider}
+              onReasoningEffortChange={updateReasoningEffort}
+              onRunAgent={onRunAgent}
+            />
           </div>
         </div>
       )}
