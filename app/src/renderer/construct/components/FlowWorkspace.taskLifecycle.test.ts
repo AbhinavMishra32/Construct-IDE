@@ -64,6 +64,7 @@ describe("FlowWorkspace task lifecycle rendering", () => {
     assert.match(flowWorkspaceSource, /<AsideConstructThread/);
     assert.match(flowWorkspaceSource, /onProviderChange=\{updateProvider\}/);
     assert.match(asideHostSource, /aside-thread\/main\.html/);
+    assert.match(asideHostSource, /constructBridge/);
     assert.match(asideHostSource, /buildAsideSession/);
     assert.match(asideHostSource, /buildAsideMessages/);
     assert.match(asideHostSource, /descriptor\.kind !== "session-subscription"/);
@@ -78,6 +79,14 @@ describe("FlowWorkspace task lifecycle rendering", () => {
     assert.doesNotMatch(asideGlobalsSource, /url\(\/assets\//);
     assert.match(asideShimSource, /construct-aside-bridge:v1/);
     assert.match(asideShimSource, /result: \{ data: values\[index\] \}/);
+    assert.match(asideShimSource, /aria-label="Open in tab"/);
+    assert.match(asideShimSource, /aria-label="Close side panel"/);
+    assert.match(asideShimSource, /chat-maximize/);
+    assert.match(asideShimSource, /chat-panel/);
+    assert.match(asideShimSource, /chat-close/);
+    assert.match(asideHostSource, /latest\.onChatMaximize\(\)/);
+    assert.match(asideHostSource, /latest\.onChatPanel\(\)/);
+    assert.match(asideHostSource, /latest\.onChatClose\(\)/);
     assert.match(asideToolRendererSource, /construct_concept:ConstructConceptRenderer/);
     assert.match(asideToolRendererSource, /construct_practice_task:ConstructTaskRenderer/);
     assert.match(asideToolRendererSource, /construct_concept_exercise:ConstructExerciseRenderer/);

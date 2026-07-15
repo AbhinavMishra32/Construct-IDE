@@ -11,10 +11,12 @@ import { getSettings, listModels, onConstructFlowSessionEvent, updateAiSettings 
 import {
   apiKeyForProvider,
   flowFeatureModel,
+  modelSettingsKeyForProvider,
   modelOptionsForActiveAgent,
   FlowComposerRightControls
 } from "./FlowWorkspace";
 import { HomeProjectPicker } from "./HomeProjectPicker";
+import type { ComposerProvider } from "./ProviderModelPicker";
 
 type HomeResearchPhase = "idle" | "creating" | "researching" | "handoff" | "starting" | "opening" | "error";
 
@@ -206,37 +208,21 @@ export function Dashboard({
     }
   }, [aiSettings]);
 
-  const updateFlowModel = useCallback(async (model: string) => {
-    if (!aiSettings) return;
-    const key = aiSettings.source === "construct-cloud"
-      ? "constructCloudModel"
-      : aiSettings.provider === "openrouter"
-      ? "openRouterModel"
-      : aiSettings.provider === "opencode-zen"
-      ? "opencodeZenModel"
-      : aiSettings.provider === "github-copilot"
-      ? "githubCopilotModel"
-      : aiSettings.provider === "litellm"
-      ? "liteLlmModel"
-      : "openAiModel";
+  const loadProviderModels = useCallback(async (provider: ComposerProvider) => {
+    const settings = aiSettingsRef.current;
+    if (!settings) return [];
+    return listModels({
+      provider,
+      apiKey: apiKeyForProvider(settings, provider)
+    });
+  }, []);
 
-    const optimistic = { ...aiSettings, [key]: model };
-    setAiSettings(optimistic);
-    setModelsError(null);
-    try {
-      const settings = await updateAiSettings({ ai: { [key]: model } });
-      setAiSettings(settings.ai);
-    } catch (error) {
-      setModelsError(error instanceof Error ? error.message : String(error));
-      void getSettings().then((settings) => setAiSettings(settings.ai));
-    }
-  }, [aiSettings]);
-
-  const updateProvider = useCallback(async (provider: AiSettings["provider"] | "construct-cloud") => {
+  const updateProviderModel = useCallback(async (provider: ComposerProvider, model: string) => {
     if (!aiSettings) return;
+    const modelKey = modelSettingsKeyForProvider(provider);
     const patch = provider === "construct-cloud"
-      ? { source: "construct-cloud" as const, featureModels: {} }
-      : { source: "byok" as const, provider, featureModels: {} };
+      ? { source: "construct-cloud" as const, featureModels: {}, [modelKey]: model }
+      : { source: "byok" as const, provider, featureModels: {}, [modelKey]: model };
     const optimistic = { ...aiSettings, ...patch };
     setAiSettings(optimistic);
     setModelOptions([]);
@@ -348,8 +334,8 @@ export function Dashboard({
                               modelsBusy={modelsBusy}
                               modelsError={modelsError}
                               reasoningEffort={aiSettings?.reasoningEffort ?? "auto"}
-                              onModelChange={updateFlowModel}
-                              onProviderChange={updateProvider}
+                              onLoadProviderModels={loadProviderModels}
+                              onProviderModelChange={updateProviderModel}
                               onReasoningEffortChange={updateReasoningEffort}
                             />
                           }
