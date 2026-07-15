@@ -137,4 +137,56 @@ describe("Construct project advanced settings", () => {
     assert.match(mastraWorker, /internet_fetch:\s*createTool/);
     assert.match(mastraWorker, /explicitFlowToolChoice\(String\(payload\.message/);
   });
+
+  it("uses the Synara-style profile and appearance settings surfaces", () => {
+    const source = readFileSync(fileURLToPath(new URL("./ConstructSettingsSurface.tsx", import.meta.url)), "utf8");
+    const profile = readFileSync(
+      fileURLToPath(new URL("./components/settings/ConstructProfileSettingsPanel.tsx", import.meta.url)),
+      "utf8",
+    );
+    const nativeProfile = readFileSync(
+      fileURLToPath(new URL("../../../src-tauri/src/profile.rs", import.meta.url)),
+      "utf8",
+    );
+    const sharedSettings = readFileSync(
+      fileURLToPath(new URL("../../../../opaline/packages/ui/src/settings/Settings.tsx", import.meta.url)),
+      "utf8",
+    );
+
+    assert.match(source, /id: "profile", label: "Profile"/);
+    assert.match(source, /activeItemId === "profile"/);
+    assert.match(source, /<ConstructProfileSettingsPanel projects=\{projects\} aiSettings=\{aiSettings\} \/>/);
+    assert.match(source, /role="radiogroup" aria-label="Theme preference"/);
+    assert.match(source, /role="radio"/);
+    assert.match(source, /onThemeChange\(option\.value\)/);
+    assert.doesNotMatch(source, /<SelectItem value="system">System<\/SelectItem>[\s\S]*?<SelectItem value="light">Light<\/SelectItem>[\s\S]*?<SelectItem value="dark">Dark<\/SelectItem>/);
+
+    assert.match(profile, /construct\.profile\.v1/);
+    assert.match(profile, /getProfile\(\)/);
+    assert.match(profile, /updateProfile\(/);
+    assert.match(profile, /window\.localStorage\.removeItem\(PROFILE_STORAGE_KEY\)/);
+    assert.doesNotMatch(profile, /window\.localStorage\.setItem/);
+    assert.match(profile, /function buildProfileActivity/);
+    assert.match(profile, /snapshot\.activityEvents/);
+    assert.match(profile, /function localDateKey/);
+    assert.doesNotMatch(profile, /toISOString\(\)\.slice\(0, 10\)/);
+    assert.match(profile, /function compressAvatarImage/);
+    assert.match(profile, /canvas\.toDataURL\("image\/jpeg", 0\.84\)/);
+    assert.match(profile, /navigator\.clipboard\.writeText\(summary\)/);
+    assert.match(profile, /Current AI setup/);
+    assert.match(profile, /Project mix/);
+
+    assert.match(nativeProfile, /struct ProfileService/);
+    assert.match(nativeProfile, /const PROFILE_SCOPE: &str = "profile:default"/);
+    assert.match(nativeProfile, /MAX_ACTIVITY_EVENTS/);
+    assert.match(nativeProfile, /pub fn snapshot\(&self, projects: &\[Value\], learning: &Value\)/);
+    assert.match(nativeProfile, /profile\.invalid-avatar/);
+
+    assert.match(sharedSettings, /app-settings-surface/);
+    assert.match(sharedSettings, /max-w-2xl/);
+    assert.match(sharedSettings, /data-slot="settings-row"/);
+    assert.match(sharedSettings, /divide-y divide-border overflow-hidden rounded-lg border border-border bg-transparent/);
+    assert.doesNotMatch(sharedSettings, /<Card className=/);
+    assert.doesNotMatch(sharedSettings, /data-checked:bg-sky-500/);
+  });
 });

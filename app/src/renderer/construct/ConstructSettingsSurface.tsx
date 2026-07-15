@@ -1,6 +1,6 @@
 import { useDeferredValue, useEffect, useRef, useState } from "react";
-import { Activity, PanelRight } from "lucide-react";
-import { Brain, FileCode, Folder, GearSix, Notebook, TerminalWindow, Trash } from "@phosphor-icons/react";
+import { Activity, Laptop, Moon, PanelRight, Sun } from "lucide-react";
+import { Brain, FileCode, Folder, GearSix, Notebook, TerminalWindow, Trash, UserCircle } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import {
   Alert,
@@ -30,6 +30,7 @@ import type { SettingsNavSection } from "@opaline/ui";
 
 import { ConstructAiSettingsSection } from "./components/settings/ConstructAiSettingsSection";
 import { ConstructLspSettingsPanel } from "./components/settings/ConstructLspSettingsPanel";
+import { ConstructProfileSettingsPanel } from "./components/settings/ConstructProfileSettingsPanel";
 import { validateConstructSource } from "./compiler/pipeline";
 import {
   aggregateLspStatus,
@@ -913,27 +914,45 @@ export function ConstructSettingsSurface({
     );
   }
 
+  if (activeItemId === "profile") {
+    return <ConstructProfileSettingsPanel projects={projects} aiSettings={aiSettings} />;
+  }
+
   if (activeItemId === "appearance") {
     const selectedCodeTheme = normalizeCodeThemeId(codeThemeId);
     const customThemeValid = Boolean(parseCodeThemeJson(customCodeThemeJson));
     return (
-      <SettingsPanel title="Appearance" subtitle="Theme source for Construct and the embedded editor shell.">
-        <SettingsSection>
+      <SettingsPanel title="Appearance" subtitle="Theme, code presentation, and workspace chrome.">
+        <SettingsSection title="Theme and typography">
           <SettingsCard>
             <SettingsRow
-              title="Color theme"
-              description="Match the system appearance or keep Construct fixed to one mode."
+              title="Theme"
+              description="Choose how Construct looks across the app."
               control={
-                <Select value={theme} onValueChange={(value) => onThemeChange(value as ThemeMode)}>
-                  <SelectTrigger className="h-8 w-44 text-xs">
-                    <SelectValue placeholder="Select theme" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="system">System</SelectItem>
-                    <SelectItem value="light">Light</SelectItem>
-                    <SelectItem value="dark">Dark</SelectItem>
-                  </SelectContent>
-                </Select>
+                <div role="radiogroup" aria-label="Theme preference" className="inline-flex w-full items-center gap-1 sm:w-auto">
+                  {([
+                    { value: "light", label: "Light", icon: Sun },
+                    { value: "dark", label: "Dark", icon: Moon },
+                    { value: "system", label: "System", icon: Laptop }
+                  ] as const).map((option) => {
+                    const Icon = option.icon;
+                    const selected = theme === option.value;
+                    return (
+                      <Button
+                        key={option.value}
+                        role="radio"
+                        aria-checked={selected}
+                        size="sm"
+                        variant={selected ? "secondary" : "ghost"}
+                        className={selected ? "flex-1 rounded-lg sm:flex-none" : "flex-1 rounded-lg text-muted-foreground sm:flex-none"}
+                        onClick={() => onThemeChange(option.value)}
+                      >
+                        <Icon data-icon="inline-start" />
+                        {option.label}
+                      </Button>
+                    );
+                  })}
+                </div>
               }
             />
             <SettingsRow
@@ -1431,6 +1450,7 @@ export function buildSettingsSections(projects: ProjectSummary[], projectId?: st
       label: "Construct",
       items: [
         { id: "workspace", label: "General", icon: <Folder size={18} weight="duotone" /> },
+        { id: "profile", label: "Profile", icon: <UserCircle size={18} weight="duotone" /> },
         { id: "ai", label: "AI", icon: <Brain size={18} weight="duotone" /> },
         { id: "observability", label: "Observability", icon: <Activity size={18} /> },
         { id: "appearance", label: "Appearance", icon: <GearSix size={18} weight="duotone" /> },
@@ -1527,6 +1547,9 @@ export function settingsTitle(itemId: string, projectId: string | undefined, pro
   }
   if (itemId === "ai") {
     return "AI";
+  }
+  if (itemId === "profile") {
+    return "Profile";
   }
   if (itemId === "appearance") {
     return "Appearance";
