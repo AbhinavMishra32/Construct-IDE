@@ -310,7 +310,7 @@ export function Dashboard({
                       <header className="mx-auto flex w-full max-w-[46rem] flex-col items-center gap-4 px-6 pb-5 text-center select-none">
                         <ConstructAuthLogo markClassName="size-10" />
                         <h2
-                          className="text-[26px] font-normal leading-[1.15] tracking-[-0.015em] text-foreground/95 sm:text-[30px]"
+                          className="font-display text-[26px] font-[450] leading-[1.15] tracking-[-0.015em] text-foreground/95 sm:text-[30px]"
                           data-testid="empty-landing-heading"
                         >
                           What should we work on?
