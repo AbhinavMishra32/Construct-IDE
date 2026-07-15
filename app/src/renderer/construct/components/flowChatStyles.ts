@@ -1,9 +1,9 @@
-/** Source chat chrome shared by Construct-only cards embedded in the transcript. */
+/** Aside thread materials shared by Construct-only domain cards embedded in the transcript. */
 export const FLOW_CHAT_EVENT_CARD_CLASS_NAME =
-  "w-full max-w-[46rem] min-w-0 rounded-[var(--radius-user-message,0.8rem)] border border-[color:var(--color-border)] bg-[var(--color-background-elevated-secondary)] shadow-none";
+  "w-full max-w-full min-w-0 rounded-xl border border-border/70 bg-secondary/55 shadow-none";
 
 export const FLOW_CHAT_EVENT_ROW_CLASS_NAME =
-  `${FLOW_CHAT_EVENT_CARD_CLASS_NAME} transition-colors hover:bg-[var(--color-background-button-secondary-hover)]`;
+  `${FLOW_CHAT_EVENT_CARD_CLASS_NAME} transition-colors hover:border-border hover:bg-secondary/80`;
 
 export const FLOW_CHAT_EVENT_ICON_CLASS_NAME =
-  "grid size-7 shrink-0 place-items-center rounded-[0.5rem] border border-[color:var(--color-border)] bg-[var(--color-background-surface)] text-muted-foreground";
+  "grid size-7 shrink-0 place-items-center rounded-lg border border-border/60 bg-background/65 text-muted-foreground";
