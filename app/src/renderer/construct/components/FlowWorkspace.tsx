@@ -1612,24 +1612,30 @@ function FlowAgentPanel({
                     pending={pending}
                     submitLabel="Send"
                     placeholder={activeTask ? `Message the Construct agent about: ${activeTask.title}` : "Ask for follow-up changes"}
-                    header={
-                      chatMode === "panel" && activeComposerItem ? (
-                        <ActiveComposerItemIndicator
-                          activeItem={activeComposerItem}
-                          isHeader={true}
-                          pending={pending}
-                          onSubmitTask={onSubmitTask}
-                        />
-                      ) : undefined
-                    }
                     footerStart={
-                      chatMode !== "panel" && activeComposerItem ? (
-                        <ActiveComposerItemIndicator
-                          activeItem={activeComposerItem}
-                          pending={pending}
-                          onSubmitTask={onSubmitTask}
-                        />
-                      ) : null
+                      <>
+                        <Button
+                          aria-label="Open project map"
+                          onClick={() => onActiveViewChange("project")}
+                          size="icon-xs"
+                          title="Open project map"
+                          type="button"
+                          variant="chrome"
+                        >
+                          <PlusIcon data-icon="inline-start" />
+                        </Button>
+                        <span className="inline-flex h-7 shrink-0 items-center gap-1.5 px-1.5 text-[length:var(--app-font-size-ui-sm,11px)] font-normal text-[var(--runtime-full-access-accent)]">
+                          <BadgeCheckIcon className="size-3.5" />
+                          Full access
+                        </span>
+                        {activeComposerItem ? (
+                          <ActiveComposerItemIndicator
+                            activeItem={activeComposerItem}
+                            pending={pending}
+                            onSubmitTask={onSubmitTask}
+                          />
+                        ) : null}
+                      </>
                     }
                     footerEnd={
                       <FlowComposerRightControls
