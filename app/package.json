@@ -1,7 +1,7 @@
 {
   "name": "@construct/app",
   "private": true,
-  "version": "0.6.7-alpha",
+  "version": "0.7.0",
   "type": "module",
   "description": "Construct desktop IDE for agentic project work.",
   "productName": "Construct",
@@ -20,7 +20,7 @@
     "tauri:before-dev": "pnpm mastra:prepare && pnpm dev:renderer",
     "tauri:before-build": "pnpm mastra:prepare && pnpm build:renderer",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test src/main/storage/storage.test.ts src/main/projects/ConstructProjectRepository.test.ts src/main/projects/ConstructProjectWorkspaceService.test.ts src/main/lsp/ConstructLspService.test.ts src/main/config/constructConfig.test.ts src/main/agent-tools/constructTapeTools.test.ts src/main/constructAgentRuntime.test.ts src/main/constructAgentModels.test.ts src/main/constructAiFeatures.test.ts src/main/constructInteractAgent.test.ts src/main/constructInteractTools.test.ts src/main/constructLearningStore.test.ts src/main/ipc/ConstructFlowIpcController.test.ts src/main/learning/ConstructConceptPolicyService.test.ts src/main/flow/ConstructFlowService.test.ts src/main/generatedLiveSteps.test.ts src/main/constructSelectionExplainAgent.test.ts src/renderer/construct/ConstructSettingsSurface.test.ts src/renderer/construct/components/ConstructInteractSession.test.ts src/renderer/construct/components/FlowWorkspace.taskLifecycle.test.ts src/renderer/construct/components/StepList.test.ts src/renderer/construct/components/Workspace.render-stability.test.ts src/renderer/construct/lib/documentSession.test.ts src/renderer/construct/lib/inlineRefs.test.ts src/renderer/construct/lib/parser.test.ts src/renderer/construct/lib/selectionContext.test.ts src/renderer/construct/compiler/parser.test.ts src/renderer/construct/compiler/pipeline.test.ts"
+    "test": "node --import tsx --test src/main/storage/storage.test.ts src/main/projects/ConstructProjectRepository.test.ts src/main/projects/ConstructProjectWorkspaceService.test.ts src/main/lsp/ConstructLspService.test.ts src/main/config/constructConfig.test.ts src/main/agent-tools/constructTapeTools.test.ts src/main/constructAgentRuntime.test.ts src/main/constructAgentModels.test.ts src/main/constructAiFeatures.test.ts src/main/constructInteractAgent.test.ts src/main/constructInteractTools.test.ts src/main/constructLearningStore.test.ts src/main/ipc/ConstructFlowIpcController.test.ts src/main/learning/ConstructConceptPolicyService.test.ts src/main/flow/ConstructFlowService.test.ts src/main/generatedLiveSteps.test.ts src/main/constructSelectionExplainAgent.test.ts src/renderer/construct/ConstructSettingsSurface.test.ts src/renderer/construct/components/ConstructInteractSession.test.ts src/renderer/construct/components/DashboardSidebar.test.ts src/renderer/construct/components/FlowWorkspace.taskLifecycle.test.ts src/renderer/construct/components/StepList.test.ts src/renderer/construct/components/Workspace.render-stability.test.ts src/renderer/construct/lib/documentSession.test.ts src/renderer/construct/lib/inlineRefs.test.ts src/renderer/construct/lib/parser.test.ts src/renderer/construct/lib/selectionContext.test.ts src/renderer/construct/compiler/parser.test.ts src/renderer/construct/compiler/pipeline.test.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

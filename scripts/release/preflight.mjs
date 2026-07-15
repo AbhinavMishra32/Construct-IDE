@@ -8,6 +8,7 @@ const failures = [];
 const packageJson = readJson("package.json");
 const appPackageJson = readJson("app/package.json");
 const tauriConfig = readJson("app/src-tauri/tauri.conf.json");
+const cargoToml = read("app/src-tauri/Cargo.toml");
 const viteConfig = read("app/vite.config.ts");
 const ciWorkflow = read(".github/workflows/ci.yml");
 const releaseWorkflow = read(".github/workflows/release.yml");
@@ -34,6 +35,10 @@ check(
 check(exists("app/src-tauri/tauri.conf.json"), "Tauri config exists at app/src-tauri/tauri.conf.json.");
 check(exists("app/src-tauri/Cargo.toml"), "Tauri Rust crate exists at app/src-tauri/Cargo.toml.");
 check(tauriConfig.version === appPackageJson.version, "tauri.conf.json version stays aligned with app/package.json.");
+check(
+  new RegExp(`^version = "${escapeRegExp(appPackageJson.version)}"$`, "m").test(cargoToml),
+  "Cargo.toml version stays aligned with app/package.json."
+);
 check(tauriConfig.identifier === "cc.tryconstruct.desktop", "tauri.conf.json keeps the cc.tryconstruct.desktop identifier.");
 check(
   Array.isArray(tauriConfig.bundle?.externalBin) && tauriConfig.bundle.externalBin.includes("binaries/construct-mastra"),
@@ -118,4 +123,8 @@ function check(condition, message) {
   if (!condition) {
     failures.push(message);
   }
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
