@@ -19,6 +19,11 @@ import {
 
 export type ConstructAgentTools = ToolsInput;
 
+export type ConstructAgentToolChoice = "auto" | "required" | {
+  type: "tool";
+  toolName: string;
+};
+
 export type ConstructAgentRuntimeMessage = {
   role: "system" | "user" | "assistant";
   content: string;
@@ -36,6 +41,7 @@ export type ConstructAgentRuntimeRequest<T> = {
   messages?: ConstructAgentRuntimeMessage[];
   schema: z.ZodType<T>;
   tools?: ConstructAgentTools;
+  toolChoice?: ConstructAgentToolChoice;
   maxRetries?: number;
   maxSteps?: number;
   abortSignal?: AbortSignal;
@@ -103,6 +109,23 @@ class FxpntConstructAgentRuntime implements ConstructAgentRuntime {
   }
 }
 
+export function resolveAgentToolChoice(
+  tools: ConstructAgentTools | undefined,
+  requested: ConstructAgentToolChoice | undefined
+): AgentStreamOptions["toolChoice"] | undefined {
+  const toolNames = tools ? Object.keys(tools) : [];
+  if (toolNames.length === 0) {
+    if (requested) {
+      throw new Error("A tool choice was requested for an agent run with no tools.");
+    }
+    return undefined;
+  }
+  if (requested && typeof requested === "object" && !tools?.[requested.toolName]) {
+    throw new Error(`Requested agent tool "${requested.toolName}" is not registered for this run.`);
+  }
+  return requested ?? "auto";
+}
+
 class MastraConstructAgentRuntime implements ConstructAgentRuntime {
   async runAgentic(request: ConstructAgenticRuntimeRequest): Promise<ConstructAgenticRunResult> {
     request.onTrace?.({
@@ -121,6 +144,7 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
         purpose: request.purpose,
         featureId: request.featureId,
         toolCount: request.tools ? Object.keys(request.tools).length : 0,
+        toolChoice: request.toolChoice ?? "auto",
         maxRetries: request.maxRetries ?? 1
       }
     });
@@ -181,6 +205,7 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
 
     new Mastra({ agents: { [request.id]: agent }, logger: false });
     const hasTools = request.tools && Object.keys(request.tools).length > 0;
+    const toolChoice = resolveAgentToolChoice(request.tools, request.toolChoice);
     const runStartedAt = Date.now();
     const runEventId = outputEventId(request.id);
     emitProviderLog(
@@ -229,7 +254,7 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
       const output = await agent.stream(streamInput, {
         abortSignal: internalAbort.signal,
         maxSteps: request.maxSteps ?? (hasTools ? 16 : 1),
-        toolChoice: hasTools ? "auto" : undefined,
+        toolChoice,
         providerOptions,
         onIterationComplete: (iteration) => {
           completedSteps = iteration.iteration;
@@ -421,6 +446,7 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
         purpose: request.purpose,
         featureId: request.featureId,
         toolCount: request.tools ? Object.keys(request.tools).length : 0,
+        toolChoice: request.toolChoice ?? "auto",
         maxRetries: request.maxRetries ?? 1
       }
     });
@@ -486,6 +512,7 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
 
     new Mastra({ agents: { [request.id]: agent }, logger: false });
     const hasTools = request.tools && Object.keys(request.tools).length > 0;
+    const toolChoice = resolveAgentToolChoice(request.tools, request.toolChoice);
     const runStartedAt = Date.now();
     const runEventId = outputEventId(request.id);
 
@@ -535,7 +562,7 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
         },
         abortSignal: request.abortSignal,
         maxSteps: request.maxSteps ?? (hasTools ? 12 : 1),
-        toolChoice: hasTools ? "auto" : undefined,
+        toolChoice,
         providerOptions,
         onIterationComplete: (iteration) => {
           const normalized: ConstructAgentIteration = {

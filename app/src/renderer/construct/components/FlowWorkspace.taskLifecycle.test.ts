@@ -53,7 +53,7 @@ describe("FlowWorkspace task lifecycle rendering", () => {
     assert.match(source, /data-learning-materials-hidden=\{learningMaterialsHidden \? "true" : undefined\}/);
     assert.match(asideHostSource, /const pendingQuestion = findPendingQuestion/);
     assert.match(asideHostSource, /questionResponse:/);
-    assert.match(asideProtocolSource, /choices: activeQuestion\.choices/);
+    assert.match(asideProtocolSource, /questions: activeQuestion\.questions/);
   });
 
   it("mounts the compiled thread application while keeping Construct's domain bridge", () => {

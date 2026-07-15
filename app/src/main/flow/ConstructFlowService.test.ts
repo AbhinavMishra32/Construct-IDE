@@ -1550,6 +1550,50 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     assert.equal(result.session.contextWindow?.messageCount, 3);
   });
 
+  it("forces explicit ask_user_question requests through the canonical provider tool", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "construct-flow-test-explicit-question-tool-"));
+    const workspaceRoot = path.join(dir, "workspaces");
+    await mkdir(workspaceRoot, { recursive: true });
+    const workspace = new ConstructProjectWorkspaceService(
+      () => workspaceRoot,
+      () => dir
+    );
+    const flowMemory = new ConstructFlowMemoryService(workspace);
+    const logs = new AgentLogService(() => {});
+    const learningStore = new ConstructLearningStore(path.join(dir, "learning-state.json"));
+    const calls: any[] = [];
+    const service = new ConstructFlowService({
+      workspace,
+      flowMemory,
+      latestTerminalOutput: () => "",
+      logs,
+      learningStore: () => learningStore,
+      agentRuntime: () => ({
+        runAgentic: async (input: any) => {
+          calls.push(input);
+          return { text: "I will ask through the tracked question form.", stepCount: 1, finishReason: "stop", durationMs: 1 };
+        }
+      }) as any
+    });
+    const project = createFlowTestProject(workspaceRoot, "explicit-question-tool-project");
+    await mkdir(project.workspacePath, { recursive: true });
+
+    await service.runMainAgent(project, {
+      projectId: project.id,
+      message: "Use the ask_user_question tool to ask about my Python experience."
+    });
+
+    assert.equal(calls.length, 1);
+    assert.deepEqual(calls[0].toolChoice, { type: "tool", toolName: "ask_user_question" });
+    assert.ok(calls[0].tools.ask_user_question);
+    assert.ok(calls[0].tools.internet_search);
+    assert.ok(calls[0].tools.internet_fetch);
+    assert.equal(calls[0].tools["ask-question"], undefined);
+    assert.equal(calls[0].tools.askQuestion, undefined);
+    assert.equal(calls[0].tools["internet-search"], undefined);
+    assert.match(calls[0].instructions, /MUST use the ask_user_question tool/);
+  });
+
   it("replays visible setup tools and tracked question answers into the next model call", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "construct-flow-test-visible-transcript-"));
     const workspaceRoot = path.join(dir, "workspaces");
@@ -2270,6 +2314,7 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     const flowMemory = new ConstructFlowMemoryService(workspace);
     const logs = new AgentLogService(() => {});
     const learningStore = new ConstructLearningStore(path.join(dir, "learning-state.json"));
+    let researchCall: any;
     const service = new ConstructFlowService({
       workspace,
       flowMemory,
@@ -2278,6 +2323,7 @@ describe("ConstructFlowService Concept and Task Tools", () => {
       learningStore: () => learningStore,
       agentRuntime: () => ({
         runAgentic: async (input: any) => {
+          researchCall = input;
           input.onTrace({
             title: "Fetched web page",
             event: {
@@ -2330,6 +2376,15 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     assert.match(researchMemory, /Mentor Handoff/);
     assert.match(researchMemory, /motion vectors/);
     assert.doesNotMatch(researchMemory, /Are you looking to/);
+    assert.deepEqual(Object.keys(researchCall.tools), [
+      "read",
+      "grep",
+      "glob",
+      "internet_search",
+      "internet_fetch",
+      "flowMemoryFetch",
+      "flowMemoryPatch"
+    ]);
     assert.ok(project.flow.researchCompletedAt);
     assert.ok(result.session.toolCalls.some((toolCall) => (
       toolCall.name === "flow-memory-update" &&
@@ -2361,7 +2416,7 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     assert.match(source, /Do not duplicate the context in both prose and the tool question/);
     assert.match(source, /Treat research\.md as the new-project research handoff/);
     assert.match(source, /Do not ask the learner clarifying questions/);
-    assert.match(source, /flow-memory-fetch, and flow-memory-patch/);
+    assert.match(source, /flowMemoryFetch, and flowMemoryPatch/);
     assert.match(source, /removeDuplicatedQuestionText/);
     assert.match(source, /Question-response guard/);
     assert.match(source, /learnerReadiness/);
@@ -2371,9 +2426,10 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     const source = readFileSync(new URL("./ConstructFlowService.ts", import.meta.url), "utf8");
     assert.match(source, /const sourceGroundingEnabled = settings\?\.ai\.flowSourceGroundingEnabled !== false/);
     assert.match(source, /webResearchEnabled: sourceGroundingEnabled/);
-    assert.match(source, /omitInternetTools\(protocol\.tools\)/);
+    assert.match(source, /researchProtocolToolNames\.filter\(\(name\) => !isInternetToolName\(name\)\)/);
+    assert.match(source, /tools: researchTools/);
     assert.match(source, /sourceGrounding: toolPolicy\.sourceGroundingEnabled \? "enabled" : "disabled"/);
-    assert.match(source, /Disabled in settings\. Do not call internet-search or internet-fetch/);
+    assert.match(source, /Disabled in settings\. Do not call internet_search or internet_fetch/);
   });
 
   it("allows the next matching workspace mutation after a concept firewall review", async () => {
@@ -2729,7 +2785,7 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     assert.match(source, /Mentor handoffs, not executor checklists:/);
     assert.match(source, /Do not turn ordinary chat into a coding-agent handoff/);
     assert.match(source, /the learner is only told to run a command, create a directory tree, paste full files, add env vars, then run a build/);
-    assert.match(source, /use practice-task, small consented support edits, or a focused ask-question instead of a long prose checklist/);
+    assert.match(source, /use practice-task, small consented support edits, or a focused ask_user_question instead of a long prose checklist/);
     assert.match(source, /ask what prior pattern, Concept, task, or file shape this resembles/);
     assert.match(source, /guide the learner to identify roles and boundaries before paths and commands/);
     assert.match(source, /Command snippets in chat should be rare, tiny, and observational or validation-focused/);

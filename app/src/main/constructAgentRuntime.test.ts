@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { AgentLogService } from "./ai/AgentLogService";
+import { resolveAgentToolChoice } from "./constructAgentRuntime";
 import { finalizeDanglingToolRunEvents, iterationDetail } from "./constructAgentRuntimeStream";
 import type { ConstructAgentRunEvent } from "../shared/constructLearning";
 
@@ -13,6 +14,21 @@ const selectionExplainSource = readFileSync(fileURLToPath(new URL("./constructSe
 const gatewaySource = readFileSync(fileURLToPath(new URL("./ai/AIGateway.ts", import.meta.url)), "utf8");
 
 describe("construct agent runtime stream lifecycle", () => {
+  it("validates forced tool choices before calling a provider", () => {
+    const tools = { ask_user_question: {} } as any;
+    assert.deepEqual(resolveAgentToolChoice(tools, {
+      type: "tool",
+      toolName: "ask_user_question"
+    }), {
+      type: "tool",
+      toolName: "ask_user_question"
+    });
+    assert.throws(
+      () => resolveAgentToolChoice(tools, { type: "tool", toolName: "missing_tool" }),
+      /is not registered for this run/
+    );
+  });
+
   it("routes provider-bound model calls through the local AI gateway", () => {
     assert.match(gatewaySource, /chatCompletions/);
     assert.match(gatewaySource, /\/chat\/completions/);
