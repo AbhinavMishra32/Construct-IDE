@@ -1570,9 +1570,11 @@ function FlowAgentPanel({
           <div className="construct-flow-chat-thread relative flex min-h-0 flex-1 flex-col overflow-hidden">
           <AgentSessionSurface
             className="construct-flow-session min-h-0 flex-1 bg-transparent"
+            data-construct-flow-chat="true"
             messages={messages}
             emptyState={<div className="construct-flow-empty-state flex flex-col items-center gap-3 text-center"><ConstructAuthLogo markClassName="construct-auth-logo__mark--agent-empty" /><span>Ask the Construct agent what to build or learn next.</span></div>}
             scrollKey={`${messages.length}:${liveSession?.updatedAt ?? "idle"}`}
+            showReasoningSummaries
             timelineScrollTop={chatScrollTop}
             onTimelineScroll={(state) => {
               onChatScrollTopChange(state.atBottom ? null : state.scrollTop);
