@@ -30,6 +30,7 @@ import {
   ChevronRightIcon,
   ChevronDownIcon,
   CloudIcon,
+  CircleIcon,
   CopyIcon,
   FileTerminalIcon,
   FileTextIcon,
@@ -40,8 +41,6 @@ import {
   LogOutIcon,
   MoreHorizontalIcon,
   MessageCircleIcon,
-  MessageCircleOff as MessageCircleOffIcon,
-  Maximize2 as Maximize2Icon,
   PanelRightIcon,
   SearchIcon,
   SettingsIcon,
@@ -433,6 +432,7 @@ export default function ConstructApp() {
   const [bottomPanelOpen, setBottomPanelOpen] = useState(false);
   const [bottomPanelExpanded, setBottomPanelExpanded] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(300);
+  const [settingsSidebarWidth, setSettingsSidebarWidth] = useState(256);
   const [inspectorWidth, setInspectorWidth] = useState(320);
   const [theme, setTheme] = useState<ThemeMode>(() => getInitialTheme());
   const [codeThemeId, setCodeThemeId] = useState<CodeThemeId>("construct");
@@ -796,6 +796,13 @@ export default function ConstructApp() {
     showDashboardSurface({ persistCurrentProject: true, recordHistory: true });
     void refresh();
   }, [activeProject?.id, projectShellUiState, pushHistory, uiStateHydrated]);
+
+  const focusNewProjectComposer = useCallback(() => {
+    handleBack();
+    window.requestAnimationFrame(() => {
+      document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Describe the project to create"]')?.focus();
+    });
+  }, [handleBack]);
 
   const openSettingsSurface = useCallback((itemId: string, projectId?: string) => {
     const originProjectId = projectId ?? activeProject?.id;
@@ -1400,6 +1407,30 @@ export default function ConstructApp() {
     finish();
   }, [history.current?.id]);
 
+  const maximizeFlowChat = useCallback(() => {
+    setFlowPanelView("chat");
+    setRightPanelOpen(true);
+    setInspectorExpanded(false);
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        setFlowPanelView("chat");
+        setRightPanelOpen(true);
+        setInspectorExpanded(true);
+      });
+    });
+  }, []);
+
+  const panelFlowChat = useCallback(() => {
+    setFlowPanelView("chat");
+    setRightPanelOpen(true);
+    setInspectorExpanded(false);
+  }, []);
+
+  const closeFlowChat = useCallback(() => {
+    setRightPanelOpen(false);
+    setInspectorExpanded(false);
+  }, []);
+
   const main = settingsSurface ? (
       <ConstructSettingsSurface
         activeItemId={settingsSurface.itemId}
@@ -1446,6 +1477,9 @@ export default function ConstructApp() {
         onGuidePanelChange={setRightPanel}
         onKnowledgePanelChange={setSidebarKnowledgePanel}
         onPanelViewChange={setFlowPanelView}
+        onChatMaximize={maximizeFlowChat}
+        onChatPanel={panelFlowChat}
+        onChatClose={closeFlowChat}
         onLayoutRequest={handleFlowLayoutRequest}
         onProjectChange={handleFlowProjectChange}
         onRunCommand={runCommand}
@@ -1546,17 +1580,15 @@ export default function ConstructApp() {
     !knowledgeBaseOpen &&
     !learningContextOpen &&
     !projectsViewOpen;
-  const shellHeaderTabs = isDashboardHome
+  const shellHeaderTabs = isDashboardHome || settingsSurface
     ? []
     : [
         {
-          id: settingsSurface
-            ? `settings-${settingsSurface.itemId}`
-            : knowledgeBaseOpen
-              ? "concepts"
-              : learningContextOpen
-                ? "learner-context"
-                : activeProject?.id ?? "dashboard",
+          id: knowledgeBaseOpen
+            ? "concepts"
+            : learningContextOpen
+              ? "learner-context"
+              : activeProject?.id ?? "dashboard",
           title: headerTitle,
           active: true
         }
@@ -1588,19 +1620,6 @@ export default function ConstructApp() {
     shellState.setRightPanelOpen(true);
   }, [activeProject, handleRightSlotChange]);
 
-  const expandFlowChat = useCallback((shellState: DesktopShellState) => {
-    setFlowPanelView("chat");
-    shellState.setRightPanelOpen(true);
-    shellState.setInspectorExpanded(false);
-    window.requestAnimationFrame(() => {
-      window.requestAnimationFrame(() => {
-        setFlowPanelView("chat");
-        shellState.setRightPanelOpen(true);
-        shellState.setInspectorExpanded(true);
-      });
-    });
-  }, []);
-
   if (!aiSettings) {
     return <ConstructSplashScreen />;
   }
@@ -1625,13 +1644,23 @@ export default function ConstructApp() {
           onBottomPanelOpenChange={setBottomPanelOpen}
           bottomPanelExpanded={bottomPanelExpanded}
           onBottomPanelExpandedChange={setBottomPanelExpanded}
-          sidebarWidth={activeProject ? sidebarWidth : 256}
-          sidebarMinWidth={activeProject ? 240 : 256}
-          sidebarMaxWidth={activeProject ? 520 : 256}
-          onSidebarWidthChange={setSidebarWidth}
+          sidebarWidth={settingsSurface ? settingsSidebarWidth : activeProject ? sidebarWidth : 256}
+          sidebarMinWidth={settingsSurface ? 208 : activeProject ? 240 : 256}
+          sidebarMaxWidth={settingsSurface ? 520 : activeProject ? 520 : 256}
+          sidebarMainMinWidth={settingsSurface ? 640 : undefined}
+          sidebarResizeStorageKey={settingsSurface ? "construct.settings.sidebar.width" : undefined}
+          onSidebarWidthChange={settingsSurface ? setSettingsSidebarWidth : setSidebarWidth}
+          showHeader={!settingsSurface}
           inspectorWidth={inspectorWidth}
           onInspectorWidthChange={setInspectorWidth}
           headerTabs={shellHeaderTabs}
+          navigationHomeIcon={(
+            <CircleIcon
+              aria-hidden
+              strokeWidth={1.5}
+              style={{ height: 14, width: 14 }}
+            />
+          )}
           title={isDashboardHome ? "New Project" : undefined}
           renderHeaderTab={(tab, shellState) => (
             <ConstructProjectTitleMenu
@@ -1660,41 +1689,6 @@ export default function ConstructApp() {
                       <>
                         <SavingIndicator isSaving={isSaving} />
                         <div className="flex items-center gap-1" aria-label="Flow controls">
-                          <div className="flex h-7 items-center gap-1" role="group" aria-label="Construct agent layout">
-                            <DesktopChromeButton
-                              aria-label="Expand Construct agent"
-                              data-pressed={state.isRightPanelOpen && flowPanelView === "chat" && state.inspectorExpanded ? "" : undefined}
-                              onClick={() => {
-                                expandFlowChat(state);
-                              }}
-                              title="Expand chat"
-                            >
-                              <Maximize2Icon size={16} strokeWidth={1.9} />
-                            </DesktopChromeButton>
-                            <DesktopChromeButton
-                              aria-label="Show Construct agent"
-                              data-pressed={state.isRightPanelOpen && flowPanelView === "chat" && !state.inspectorExpanded ? "" : undefined}
-                              onClick={() => {
-                                setFlowPanelView("chat");
-                                state.setRightPanelOpen(true);
-                                state.setInspectorExpanded(false);
-                              }}
-                              title="Normal chat"
-                            >
-                              <MessageCircleIcon size={16} strokeWidth={1.9} />
-                            </DesktopChromeButton>
-                            <DesktopChromeButton
-                              aria-label="Hide Construct agent"
-                              data-pressed={!state.isRightPanelOpen || flowPanelView !== "chat" ? "" : undefined}
-                              onClick={() => {
-                                state.setRightPanelOpen(false);
-                                state.setInspectorExpanded(false);
-                              }}
-                              title="Hide chat"
-                            >
-                              <MessageCircleOffIcon size={16} strokeWidth={1.9} />
-                            </DesktopChromeButton>
-                          </div>
                           <DesktopHeaderToolButton
                             data-active={state.isRightPanelOpen && flowPanelView === "project" ? "true" : "false"}
                             onClick={() => {
@@ -1815,7 +1809,7 @@ export default function ConstructApp() {
             settingsSurface ? (
               <SettingsSidebar
                 activeItemId={settingsSurface.itemId}
-                backLabel="Back to projects"
+                backLabel="Back to app"
                 footer={
                   <ConstructSidebarFooter
                     aiSettings={aiSettings}
@@ -1925,18 +1919,18 @@ export default function ConstructApp() {
                     active: false,
                     icon: <FileTextIcon size={15} />,
                     label: "New project",
-                    onClick: handleBack
+                    onClick: focusNewProjectComposer
                   },
                   {
                     id: "search",
-                    active: false,
+                    active: projectsViewOpen,
                     icon: <SearchIcon size={15} />,
                     label: "Search",
                     onClick: openProjectsView
                   },
                   {
                     id: "concepts",
-                    active: knowledgeBaseOpen,
+                    active: false,
                     icon: <BookOpen size={15} />,
                     label: "Concepts",
                     onClick: openKnowledgeBase
@@ -1954,9 +1948,9 @@ export default function ConstructApp() {
                 ]}
               >
                 <DashboardSidebar
+                  onCreateProject={focusNewProjectComposer}
                   projects={projects}
                   onOpenProject={(projectId) => void openProject(projectId)}
-                  onOpenProjectSettings={(projectId) => openSettingsSurface("project-overview", projectId)}
                 />
               </ConstructSidebarSurface>
             )
@@ -2122,6 +2116,7 @@ function projectSummaryFromRecord(project: AnyProjectRecord): ProjectSummary {
       description: project.description,
       progress: project.progress,
       lastOpenedAt: project.lastOpenedAt,
+      createdAt: project.flow.createdAt,
       sourcePath: project.sourcePath,
       workspacePath: project.workspacePath,
       completedAt: project.completedAt,

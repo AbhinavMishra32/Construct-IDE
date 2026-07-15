@@ -87,9 +87,13 @@ describe("Workspace render stability", () => {
     assert.match(appSource, /const handleFlowLayoutRequest = useCallback\(\(request: FlowLayoutRequest\)/);
     assert.match(appSource, /if \(request\.kind === "maximized-chat"\)[\s\S]*setInspectorExpanded\(true\);[\s\S]*setSidebarOpen\(request\.reason !== "project-created"\);/);
     assert.match(appSource, /setInspectorExpanded\(false\);\s*setSidebarOpen\(true\);/);
-    assert.match(appSource, /const expandFlowChat = useCallback\(\(shellState: DesktopShellState\)/);
+    assert.match(appSource, /const maximizeFlowChat = useCallback\(\(\) =>/);
+    assert.match(appSource, /const panelFlowChat = useCallback\(\(\) =>/);
+    assert.match(appSource, /const closeFlowChat = useCallback\(\(\) =>/);
     assert.match(appSource, /window\.requestAnimationFrame\(\(\) => \{\s*window\.requestAnimationFrame/s);
-    assert.match(appSource, /expandFlowChat\(state\);/);
+    assert.match(appSource, /onChatMaximize=\{maximizeFlowChat\}/);
+    assert.match(appSource, /onChatPanel=\{panelFlowChat\}/);
+    assert.match(appSource, /onChatClose=\{closeFlowChat\}/);
     assert.match(appSource, /chatMode=\{rightPanelOpen && inspectorExpanded && flowPanelView === "chat" \? "maximized" : "panel"\}/);
     assert.match(appSource, /onLayoutRequest=\{handleFlowLayoutRequest\}/);
     assert.match(appSource, /if \(isFlowProjectRecord\(project\)\) \{\s*pendingImmersiveFlowProjectIdsRef\.current\.add\(project\.id\);\s*handleFlowLayoutRequest\(\{ kind: "maximized-chat", reason: "project-created" \}\);/);

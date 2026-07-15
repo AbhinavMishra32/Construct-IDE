@@ -39,8 +39,8 @@ export function ConstructSidebarSurface({
   views?: ConstructSidebarView[];
 }) {
   return (
-    <div className="flex h-full min-h-0 flex-col font-system-ui">
-      <SidebarContent className="gap-0 font-system-ui">
+    <div className="flex h-full min-h-0 flex-col font-system-ui text-[length:var(--app-font-size-ui,12px)]">
+      <SidebarContent className="gap-0 font-system-ui text-[length:var(--app-font-size-ui,12px)]">
         {views.length > 1 && activeView && onSelectView ? (
           <SidebarSegmentedPicker
             activeView={activeView}
