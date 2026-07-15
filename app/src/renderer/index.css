@@ -1124,7 +1124,7 @@ html, body {
   }
 
   [data-component="agent-session-timeline"] textarea,
-  .construct-flow-session:not([data-aside-thread-ui="true"]) textarea,
+  .construct-flow-session textarea,
   .opaline-agent-session-compose textarea {
     font-size: var(--app-font-size-chat, 12px) !important;
     line-height: 1.625 !important;

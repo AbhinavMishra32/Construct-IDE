@@ -4,8 +4,8 @@ import type { editor as MonacoEditor } from "monaco-editor";
 import { ArrowDownIcon, ArrowUpIcon, BadgeCheckIcon, BookOpenIcon, BotIcon, BrainCircuitIcon, CheckCircle2Icon, CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleAlertIcon, CircleIcon, CloudIcon, CornerDownLeftIcon, CpuIcon, FileTextIcon, GaugeIcon, GitCompareIcon, GithubIcon, HelpCircleIcon, Layers3Icon, ListChecksIcon, Loader2Icon, PencilIcon, PlusCircleIcon, RotateCcwIcon, RouteIcon, SearchIcon, SendIcon, StarIcon, TerminalIcon, Trash2Icon, PlusIcon, MicIcon, type LucideIcon } from "lucide-react";
 import {
   AdaptiveSidecarLayout,
-  AsideThreadComposer,
-  AsideThreadSurface,
+  AgentSessionComposer,
+  AgentSessionSurface,
   Button,
   ShadcnDropdownMenu as ComposerMenu,
   ShadcnDropdownMenuContent as ComposerMenuContent,
@@ -1573,103 +1573,102 @@ function FlowAgentPanel({
             ) : null}
           </div>
           <div className="construct-flow-chat-thread relative flex min-h-0 flex-1 flex-col overflow-hidden">
-            <AsideThreadSurface
-              className="construct-flow-session min-h-0 flex-1"
-              data-construct-flow-chat="true"
-              messages={messages}
-              emptyState={(
-                <div className="construct-flow-empty-state flex max-w-[46rem] flex-col items-center gap-4 px-6 pb-5 text-center select-none">
-                  <ConstructAuthLogo markClassName="size-10" />
-                  <h2 className="text-[26px] font-normal leading-[1.15] tracking-[-0.015em] text-foreground/95 sm:text-[30px]">
-                    What should we work on in {project.title}?
-                  </h2>
-                </div>
-              )}
-              scrollKey={`${messages.length}:${liveSession?.updatedAt ?? "idle"}`}
-              showReasoningSummaries
-              timelineScrollTop={chatScrollTop}
-              onTimelineScroll={(state) => {
-                onChatScrollTopChange(state.atBottom ? null : state.scrollTop);
-              }}
-              activePanel={activeComposerItem ? (
-                <ActiveComposerItemIndicator
-                  activeItem={activeComposerItem}
-                  isHeader
-                  pending={pending}
-                  onSubmitTask={onSubmitTask}
+          <AgentSessionSurface
+            className="construct-flow-session min-h-0 flex-1 bg-transparent"
+            data-construct-flow-chat="true"
+            messages={messages}
+            emptyState={(
+              <div className="construct-flow-empty-state flex max-w-[46rem] flex-col items-center gap-4 px-6 pb-5 text-center select-none">
+                <ConstructAuthLogo markClassName="size-10" />
+                <h2 className="text-[26px] font-normal leading-[1.15] tracking-[-0.015em] text-foreground/95 sm:text-[30px]">
+                  What should we work on in {project.title}?
+                </h2>
+              </div>
+            )}
+            scrollKey={`${messages.length}:${liveSession?.updatedAt ?? "idle"}`}
+            showReasoningSummaries
+            timelineScrollTop={chatScrollTop}
+            onTimelineScroll={(state) => {
+              onChatScrollTopChange(state.atBottom ? null : state.scrollTop);
+            }}
+            composer={
+              activeQuestion ? (
+                <FlowQuestionComposer
+                  key={activeQuestion.id}
+                  question={activeQuestion}
+                  workspacePath={project.workspacePath}
+                  theme={theme}
+                  chatMode={chatMode}
+                  value={draft}
+                  onValueChange={setDraft}
+                  onAnswer={(response) => {
+                    setDraft("");
+                    void onRunAgent("Continue from the tracked question answer.", { questionResponse: response });
+                  }}
+                  onSkip={() => {
+                    const response = buildFlowQuestionResponse(activeQuestion, "", true);
+                    setDraft("");
+                    void onRunAgent("Continue from the skipped tracked question.", { questionResponse: response });
+                  }}
+                  pending={pending && !activeQuestion}
+                  onOpenFile={onOpenFile}
+                  onOpenConcept={onOpenConceptById}
                 />
-              ) : undefined}
-              composer={
-                activeQuestion ? (
-                  <FlowQuestionComposer
-                    key={activeQuestion.id}
-                    question={activeQuestion}
-                    workspacePath={project.workspacePath}
-                    theme={theme}
-                    chatMode={chatMode}
+              ) : (
+                <>
+                  <AgentSessionComposer
+                    className={cn("construct-flow-composer", chatMode === "panel" && "is-panel")}
                     value={draft}
                     onValueChange={setDraft}
-                    onAnswer={(response) => {
-                      setDraft("");
-                      void onRunAgent("Continue from the tracked question answer.", { questionResponse: response });
-                    }}
-                    onSkip={() => {
-                      const response = buildFlowQuestionResponse(activeQuestion, "", true);
-                      setDraft("");
-                      void onRunAgent("Continue from the skipped tracked question.", { questionResponse: response });
-                    }}
-                    pending={pending && !activeQuestion}
-                    onOpenFile={onOpenFile}
-                    onOpenConcept={onOpenConceptById}
-                  />
-                ) : (
-                  <>
-                    <AsideThreadComposer
-                      className={cn("construct-flow-composer", chatMode === "panel" && "is-panel")}
-                      value={draft}
-                      onValueChange={setDraft}
-                      onSubmit={submitComposer}
-                      pending={pending}
-                      submitLabel="Send"
-                      placeholder={activeTask ? `Message the Construct agent about: ${activeTask.title}` : "Ask for follow-up changes"}
-                      leadingAction={
+                    onSubmit={submitComposer}
+                    pending={pending}
+                    submitLabel="Send"
+                    placeholder={activeTask ? `Message the Construct agent about: ${activeTask.title}` : "Ask for follow-up changes"}
+                    footerStart={
+                      <>
                         <Button
                           aria-label="Open project map"
                           onClick={() => onActiveViewChange("project")}
                           size="icon-xs"
                           title="Open project map"
                           type="button"
-                          variant="secondary"
+                          variant="chrome"
                         >
                           <PlusIcon data-icon="inline-start" />
                         </Button>
-                      }
-                      footerStart={
-                        <span className="inline-flex h-7 shrink-0 items-center gap-1.5 px-1.5 text-xs font-normal text-muted-foreground">
+                        <span className="inline-flex h-7 shrink-0 items-center gap-1.5 px-1.5 text-[length:var(--app-font-size-ui-sm,11px)] font-normal text-[var(--runtime-full-access-accent)]">
                           <BadgeCheckIcon className="size-3.5" />
                           Full access
                         </span>
-                      }
-                      footerEnd={
-                        <FlowComposerRightControls
-                          contextWindow={latestContextWindow}
-                          settings={aiSettings}
-                          model={activeFlowModel}
-                          models={flowModelOptions}
-                          modelsBusy={modelsBusy}
-                          modelsError={modelsError}
-                          reasoningEffort={aiSettings?.reasoningEffort ?? "auto"}
-                          onModelChange={updateFlowModel}
-                          onProviderChange={updateProvider}
-                          onReasoningEffortChange={updateReasoningEffort}
-                        />
-                      }
-                    />
-                    {/* Kept for static analysis tests: <FlowComposerControls */}
-                  </>
-                )
-              }
-            />
+                        {activeComposerItem ? (
+                          <ActiveComposerItemIndicator
+                            activeItem={activeComposerItem}
+                            pending={pending}
+                            onSubmitTask={onSubmitTask}
+                          />
+                        ) : null}
+                      </>
+                    }
+                    footerEnd={
+                      <FlowComposerRightControls
+                        contextWindow={latestContextWindow}
+                        settings={aiSettings}
+                        model={activeFlowModel}
+                        models={flowModelOptions}
+                        modelsBusy={modelsBusy}
+                        modelsError={modelsError}
+                        reasoningEffort={aiSettings?.reasoningEffort ?? "auto"}
+                        onModelChange={updateFlowModel}
+                        onProviderChange={updateProvider}
+                        onReasoningEffortChange={updateReasoningEffort}
+                      />
+                    }
+                  />
+                  {/* Kept for static analysis tests: <FlowComposerControls */}
+                </>
+              )
+            }
+          />
           </div>
         </div>
       )}
@@ -4704,7 +4703,7 @@ function buildConceptCardPart(
     type: "actions",
     id: `${sessionId}:concept:${eventId}`,
     content: (
-      <div className="construct-flow-concept-event flex w-full max-w-full min-w-0 flex-col" data-attention={shouldRequestAttention ? "true" : "false"} data-flow-surface="concept-card">
+      <div className="construct-flow-concept-event flex w-full max-w-[46rem] min-w-0 flex-col" data-attention={shouldRequestAttention ? "true" : "false"} data-flow-surface="concept-card">
         {status === "running" && toolName !== "remove-concept" ? (
           <ConceptCreationPreview
             payload={payload}
@@ -5190,8 +5189,8 @@ function FlowQuestionComposer({
   const isPanel = chatMode === "panel";
 
   const containerClass = isPanel
-    ? "mx-3 mb-1 w-[calc(100%-1.5rem)] rounded-xl border border-border bg-card px-2.5 pb-2 pt-2.5 shadow-sm ring-1 ring-border/40"
-    : "construct-flow-question-composer mx-3 mb-1 w-[calc(100%-1.5rem)] rounded-xl border border-border bg-card px-4 pb-3 pt-4 shadow-md ring-1 ring-border/40";
+    ? "mx-auto w-full max-w-[min(46rem,calc(100%-0.75rem))] rounded-[var(--radius-user-message,0.8rem)] border border-[color:var(--color-border)] bg-[var(--color-background-elevated-primary-opaque)] px-2.5 pb-2 pt-2.5 shadow-[0_4px_18px_-6px_color-mix(in_srgb,var(--foreground)_7%,transparent)]"
+    : "construct-flow-question-composer mx-auto w-full max-w-[min(46rem,calc(100%-0.75rem))] rounded-[var(--radius-user-message,0.8rem)] border border-[color:var(--color-border)] bg-[var(--color-background-elevated-primary-opaque)] px-4 pb-3 pt-4 shadow-[0_4px_18px_-6px_color-mix(in_srgb,var(--foreground)_7%,transparent)]";
 
   const questionTextClass = isPanel
     ? "max-w-full text-[13px] font-medium leading-5 text-foreground"
@@ -5201,11 +5200,11 @@ function FlowQuestionComposer({
 
   const choiceButtonClass = (choice: string) => cn(
     isPanel
-      ? "group flex min-h-8 items-center gap-2 rounded-lg px-2 py-1 text-left text-[13px] leading-relaxed outline-none focus-visible:ring-2 focus-visible:ring-ring/35"
-      : "group flex min-h-[2.25rem] items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[14px] leading-5 outline-none focus-visible:ring-2 focus-visible:ring-ring/35",
+      ? "group flex min-h-8 items-center gap-2 rounded-[10px] px-2 py-1 text-left text-[13px] leading-relaxed outline-none focus-visible:ring-2 focus-visible:ring-ring/35"
+      : "group flex min-h-[2.25rem] items-center gap-2.5 rounded-[12px] px-2.5 py-1.5 text-left text-[14px] leading-5 outline-none focus-visible:ring-2 focus-visible:ring-ring/35",
     selected === choice
-      ? "bg-secondary text-foreground"
-      : "bg-transparent text-foreground hover:bg-secondary/65"
+      ? "bg-muted/70 text-foreground"
+      : "bg-transparent text-foreground hover:bg-muted/35"
   );
 
   const choiceCircleClass = (choice: string) => cn(
@@ -5219,9 +5218,9 @@ function FlowQuestionComposer({
 
   const otherLabelClass = cn(
     isPanel
-      ? "mt-1.5 flex min-h-8 items-center gap-2 rounded-lg px-2 py-1 text-[13px] leading-relaxed"
-      : "mt-2 flex min-h-[2.25rem] items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[14px] leading-5",
-    usingOther ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-secondary/50"
+      ? "mt-1.5 flex min-h-8 items-center gap-2 rounded-[10px] px-2 py-1 text-[13px] leading-relaxed"
+      : "mt-2 flex min-h-[2.25rem] items-center gap-2.5 rounded-[12px] px-2.5 py-1.5 text-[14px] leading-5",
+    usingOther ? "bg-muted/55 text-foreground" : "text-muted-foreground hover:bg-muted/25"
   );
 
   const otherIconContainerClass = cn(

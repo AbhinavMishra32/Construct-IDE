@@ -5,11 +5,10 @@ import { fileURLToPath } from "node:url";
 
 const flowWorkspaceSource = readFileSync(fileURLToPath(new URL("./FlowWorkspace.tsx", import.meta.url)), "utf8");
 const rendererStylesSource = readFileSync(fileURLToPath(new URL("../../index.css", import.meta.url)), "utf8");
-const asideThreadSource = readFileSync(
-  fileURLToPath(new URL("../../../../../opaline/packages/ui/src/agent-session/AsideThreadSurface.tsx", import.meta.url)),
+const agentSessionSource = readFileSync(
+  fileURLToPath(new URL("../../../../../opaline/packages/ui/src/agent-session/AgentSessionSurface.tsx", import.meta.url)),
   "utf8",
 );
-const flowChatStylesSource = readFileSync(fileURLToPath(new URL("./flowChatStyles.ts", import.meta.url)), "utf8");
 
 describe("FlowWorkspace task lifecycle rendering", () => {
   it("renders failed practice-task drafts without a persistent creating spinner", () => {
@@ -46,29 +45,19 @@ describe("FlowWorkspace task lifecycle rendering", () => {
     assert.match(source, /data-learning-materials-hidden=\{learningMaterialsHidden \? "true" : undefined\}/);
   });
 
-  it("keeps Construct task and concept state inside the Aside thread contract", () => {
+  it("keeps Construct task and concept state inside the source chat contract", () => {
     assert.match(flowWorkspaceSource, /data-construct-flow-chat="true"/);
     assert.match(flowWorkspaceSource, /data-flow-surface="concept-card"/);
     assert.match(flowWorkspaceSource, /data-flow-surface="concept-exercise"/);
     assert.match(flowWorkspaceSource, /id: `\$\{sessionId\}:task:\$\{eventId\}`/);
-    assert.match(flowWorkspaceSource, /<AsideThreadSurface/);
-    assert.match(flowWorkspaceSource, /activePanel=\{activeComposerItem[\s\S]*<ActiveComposerItemIndicator[\s\S]*isHeader/);
-    assert.match(flowWorkspaceSource, /<AsideThreadComposer/);
-    assert.match(flowWorkspaceSource, /leadingAction=\{[\s\S]*aria-label="Open project map"/);
-    assert.match(flowWorkspaceSource, /Full access/);
+    assert.match(flowWorkspaceSource, /Full access[\s\S]*<ActiveComposerItemIndicator/);
     assert.match(flowWorkspaceSource, /onProviderChange=\{updateProvider\}/);
-    assert.doesNotMatch(flowWorkspaceSource, /<AgentSessionSurface/);
-    assert.doesNotMatch(flowWorkspaceSource, /<AgentSessionComposer/);
-    assert.match(asideThreadSource, /data-agent-session-ui="aside-thread"/);
-    assert.match(asideThreadSource, /data-component="aside-agent-session-panel"/);
-    assert.match(asideThreadSource, /data-chat-input-form="true"/);
-    assert.match(asideThreadSource, /max-w-\[95%\]/);
-    assert.match(asideThreadSource, /rounded-xl bg-secondary px-3 py-1\.5/);
-    assert.match(asideThreadSource, /function AsideProcessItem/);
-    assert.match(asideThreadSource, /--agent-session-panel-overlay-height/);
-    assert.match(flowChatStylesSource, /max-w-full/);
-    assert.match(flowChatStylesSource, /bg-secondary\/55/);
-    assert.match(rendererStylesSource, /\.construct-flow-chat-stage/);
-    assert.match(rendererStylesSource, /\.construct-flow-session:not\(\[data-aside-thread-ui="true"\]\) textarea/);
+    assert.match(agentSessionSource, /data-chat-transcript-pane="true"/);
+    assert.match(agentSessionSource, /max-w-\[46rem\]/);
+    assert.match(agentSessionSource, /relative z-10 -mt-5/);
+    assert.match(agentSessionSource, /chat-composer-stacked-top/);
+    assert.match(agentSessionSource, /data-chat-composer-form="true"/);
+    assert.match(rendererStylesSource, /background: var\(--app-user-message-background\)/);
+    assert.match(rendererStylesSource, /background: var\(--color-background-elevated-secondary\)/);
   });
 });
