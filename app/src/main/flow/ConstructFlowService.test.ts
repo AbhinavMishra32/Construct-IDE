@@ -112,9 +112,16 @@ describe("ConstructFlowService Concept and Task Tools", () => {
     });
     assert.ok(protocol.tools["ask-question"]);
     assert.ok(protocol.tools.askQuestion);
+    assert.ok(protocol.tools.ask_question);
+    assert.ok(protocol.tools.ask_user_question);
+    assert.equal((protocol.tools.ask_user_question as { id?: string }).id, "ask_user_question");
     assert.ok(protocol.tools.internetSearch);
+    assert.ok(protocol.tools.internet_search);
+    assert.equal((protocol.tools.internet_search as { id?: string }).id, "internet_search");
     assert.ok(protocol.tools["internet-fetch"]);
     assert.ok(protocol.tools.internetFetch);
+    assert.ok(protocol.tools.internet_fetch);
+    assert.equal((protocol.tools.internet_fetch as { id?: string }).id, "internet_fetch");
 
     const session: ConstructFlowSession = {
       id: "session-1",

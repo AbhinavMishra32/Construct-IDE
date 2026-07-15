@@ -3232,7 +3232,8 @@ function formatQuestionResponseMessage(
 }
 
 function isQuestionTool(name: string | undefined): boolean {
-  return normalizeToolName(name) === "askquestion" || normalizeToolName(name) === "askuser";
+  const normalized = normalizeToolName(name);
+  return normalized === "askquestion" || normalized === "askuser" || normalized === "askuserquestion";
 }
 
 function normalizeToolName(name: string | undefined): string {
@@ -4512,10 +4513,17 @@ const mentorProtocolToolNames = [
   "edit",
   "ask-question",
   "askQuestion",
+  "ask_question",
+  "ask-user",
+  "askUser",
+  "ask_user",
+  "ask_user_question",
   "internet-search",
   "internetSearch",
+  "internet_search",
   "internet-fetch",
   "internetFetch",
+  "internet_fetch",
   "flowMemoryPatch",
   "flow-memory-patch"
 ];
@@ -4527,6 +4535,11 @@ const taskReviewProtocolToolNames = [
   "run-terminal-command",
   "ask-question",
   "askQuestion",
+  "ask_question",
+  "ask-user",
+  "askUser",
+  "ask_user",
+  "ask_user_question",
   "flowMemoryPatch",
   "flow-memory-patch"
 ];
@@ -4729,6 +4742,8 @@ const protocolRecordedToolNames = new Set([
   "write",
   "edit",
   "askquestion",
+  "askuser",
+  "askuserquestion",
   "internetfetch",
   "flowmemorypatch",
   "flowmemoryfetch",

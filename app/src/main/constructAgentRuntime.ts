@@ -1170,7 +1170,8 @@ class MastraConstructAgentRuntime implements ConstructAgentRuntime {
           payload: { ...chunk, providerToolCallId, id: event.id }
         });
         if (chunk.type === "tool-result" && abortController) {
-          const isHalting = ["ask-question", "askQuestion", "ask-user", "askUser", "practice-task"].includes(toolName);
+          const normalizedToolName = toolName.replace(/[^a-z0-9]/gi, "").toLowerCase();
+          const isHalting = ["askquestion", "askuser", "askuserquestion", "practicetask"].includes(normalizedToolName);
           if (isHalting) {
             abortController.abort();
           }
