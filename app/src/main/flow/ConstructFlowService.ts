@@ -4605,7 +4605,7 @@ function availableFlowToolNames(policy: FlowRunToolPolicy): string[] {
   return [...new Set([...policy.protocolToolNames, ...policy.flowToolNames])];
 }
 
-function explicitFlowToolChoice(message: string, tools: ToolsInput): ConstructAgentToolChoice | undefined {
+export function explicitFlowToolChoice(message: string, tools: ToolsInput): ConstructAgentToolChoice | undefined {
   const normalized = message
     .toLowerCase()
     .replace(/[`'"]/g, "")

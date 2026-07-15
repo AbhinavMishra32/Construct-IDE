@@ -315,6 +315,23 @@ describe("Aside thread protocol", () => {
     assert.equal(toolResult.role, "toolResult");
     assert.equal(toolResult.toolCallId, "question-1");
   });
+
+  it("does not duplicate a tracked answer as a synthetic user chat bubble", () => {
+    const messages = buildAsideMessages([flowSession({
+      id: "continuation-1",
+      origin: "question-response",
+      status: "completed",
+      messages: [
+        { id: "answer-1", role: "user", content: "Continue from the tracked question answer.", createdAt },
+        { id: "reply-1", role: "assistant", content: "We can start with the Python basics.", createdAt },
+      ],
+    })], undefined, "openai", "gpt-5.5");
+
+    assert.equal(messages.some((message) => message.role === "user"), false);
+    const assistant = messages.find((message) => message.role === "assistant");
+    assert.ok(assistant && assistant.role === "assistant");
+    assert.deepEqual(assistant.content, [{ type: "text", text: "We can start with the Python basics." }]);
+  });
 });
 
 function flowSession(overrides: Partial<ConstructFlowSession> = {}): ConstructFlowSession {

@@ -3200,7 +3200,7 @@ function questionKey(sessionId: string, toolCallId: string): string {
 
 function isQuestionTool(name: string | undefined): boolean {
   const normalized = (name ?? "").replace(/[^a-z0-9]/gi, "").toLowerCase();
-  return normalized === "askuser" || normalized === "askquestion";
+  return normalized === "askuser" || normalized === "askquestion" || normalized === "askuserquestion";
 }
 
 function buildFlowQuestionResponse(

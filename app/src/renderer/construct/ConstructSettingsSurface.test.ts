@@ -132,5 +132,9 @@ describe("Construct project advanced settings", () => {
     assert.match(cloudPanel, /api\/cloud\/tokens/);
     assert.match(settingsCommand, /"construct-cloud"/);
     assert.match(mastraWorker, /createConstructAgentRuntime/);
+    assert.match(mastraWorker, /ask_user_question:\s*hostTool/);
+    assert.match(mastraWorker, /internet_search:\s*createTool/);
+    assert.match(mastraWorker, /internet_fetch:\s*createTool/);
+    assert.match(mastraWorker, /explicitFlowToolChoice\(String\(payload\.message/);
   });
 });

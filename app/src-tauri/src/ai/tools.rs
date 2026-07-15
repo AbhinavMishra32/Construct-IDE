@@ -21,6 +21,9 @@ impl ToolHost {
     }
 
     pub fn execute(&self, name: &str, input: &Value) -> CommandResult<Value> {
+        if name == "ask_user_question" {
+            return Ok(input.clone());
+        }
         let project_id = required(input, "projectId")?;
         match name {
             "read-file" => Ok(serde_json::to_value(self.workspace.read(&FileInput {
@@ -86,10 +89,28 @@ fn command_is_allowed(command: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     #[test]
     fn blocks_destructive_and_dependency_mutations() {
         assert!(!command_is_allowed("rm -rf ."));
         assert!(!command_is_allowed("npm install"));
         assert!(command_is_allowed("cargo test"));
+    }
+
+    #[test]
+    fn question_tool_does_not_require_a_workspace_project() {
+        let input = json!({
+            "question":"What is your Python experience?",
+            "choices":["Never used it","Know the basics"]
+        });
+        let dir = tempfile::tempdir().unwrap();
+        let database = crate::storage::Database::open(&dir.path().join("workspace.db")).unwrap();
+        let projects = ProjectStore::new(
+            crate::storage::Database::open(&dir.path().join("projects.db")).unwrap(),
+        );
+        let workspace = WorkspaceService::new(ProjectStore::new(database));
+        let host = ToolHost::new(projects, workspace);
+
+        assert_eq!(host.execute("ask_user_question", &input).unwrap(), input);
     }
 }

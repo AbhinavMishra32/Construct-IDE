@@ -1034,7 +1034,7 @@ function bufferToString(value: string | Buffer | undefined): string {
   return "";
 }
 
-async function searchInternet(query: string, limit: number, tavilyApiKey?: string) {
+export async function searchInternet(query: string, limit: number, tavilyApiKey?: string) {
   const boundedLimit = Math.min(Math.max(limit, 1), 6);
   const boundedQuery = query.trim().slice(0, 380);
   if (tavilyApiKey?.trim()) {
@@ -1087,7 +1087,7 @@ async function searchInternet(query: string, limit: number, tavilyApiKey?: strin
   }));
 }
 
-async function fetchInternetPages(input: {
+export async function fetchInternetPages(input: {
   urls: string[];
   query?: string;
   maxChars: number;

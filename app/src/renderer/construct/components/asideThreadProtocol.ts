@@ -337,14 +337,16 @@ export class AsideRunProjector {
 }
 
 function sessionToAsideMessages(session: ConstructFlowSession, provider: string, model: string): AsideBridgeMessage[] {
-  const output: AsideBridgeMessage[] = session.messages
-    .filter((message) => message.role === "user")
-    .map((message) => ({
-      id: message.id,
-      role: "user" as const,
-      content: [{ type: "text" as const, text: message.content }],
-      timestamp: toTimestamp(message.createdAt),
-    }));
+  const output: AsideBridgeMessage[] = session.origin === "question-response" || session.origin === "system"
+    ? []
+    : session.messages
+      .filter((message) => message.role === "user")
+      .map((message) => ({
+        id: message.id,
+        role: "user" as const,
+        content: [{ type: "text" as const, text: message.content }],
+        timestamp: toTimestamp(message.createdAt),
+      }));
 
   const assistantParts: AsideAssistantPart[] = [];
   const toolResults: AsideBridgeMessage[] = [];

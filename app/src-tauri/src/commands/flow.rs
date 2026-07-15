@@ -50,6 +50,14 @@ async fn run(
             "project is not a Flow project",
         ));
     }
+    let question_response = input
+        .get("questionResponse")
+        .filter(|value| value.is_object())
+        .cloned();
+    let answered_session = question_response
+        .as_ref()
+        .map(|response| apply_question_response(&mut project, response))
+        .transpose()?;
     let message = input
         .get("message")
         .and_then(Value::as_str)
@@ -61,9 +69,20 @@ async fn run(
         .to_string();
     let created = timestamp();
     let session_id = Uuid::new_v4().to_string();
-    let mut session = json!({"id":session_id,"projectId":project_id,"threadId":project.pointer("/flow/threadId").cloned().unwrap_or(json!(project_id)),"origin":"user","messages":[{"id":Uuid::new_v4().to_string(),"role":"user","content":message,"createdAt":created}],"status":"running","toolCalls":[],"agentEvents":[],"timeline":[],"actions":[],"practiceTasks":[],"conceptExercises":[],"createdAt":created,"updatedAt":created});
+    let origin = if question_response.is_some() {
+        "question-response"
+    } else {
+        "user"
+    };
+    let mut session = json!({"id":session_id,"projectId":project_id,"threadId":project.pointer("/flow/threadId").cloned().unwrap_or(json!(project_id)),"origin":origin,"questionResponse":question_response,"messages":[{"id":Uuid::new_v4().to_string(),"role":"user","content":message,"createdAt":created}],"status":"running","toolCalls":[],"agentEvents":[],"timeline":[],"actions":[],"practiceTasks":[],"conceptExercises":[],"createdAt":created,"updatedAt":created});
     push_session(&mut project, session.clone());
     state.projects.write(&project)?;
+    if let Some(answered_session) = answered_session {
+        let _ = app.emit(
+            "construct:flow:session-event",
+            json!({"type":"completed","projectId":project_id,"session":answered_session}),
+        );
+    }
     let _ = app.emit(
         "construct:flow:session-event",
         json!({"type":"started","projectId":project_id,"session":session}),
@@ -130,7 +149,13 @@ async fn run(
         .unwrap_or_default()
         .to_string();
     let updated = timestamp();
-    session["status"] = json!("completed");
+    let waiting_for_question = has_pending_question(&session);
+    let terminal_status = if waiting_for_question {
+        "waiting"
+    } else {
+        "completed"
+    };
+    session["status"] = json!(terminal_status);
     session["updatedAt"] = json!(updated);
     session["durationMs"] = response.get("durationMs").cloned().unwrap_or(json!(0));
     session["stepCount"] = response.get("stepCount").cloned().unwrap_or(json!(0));
@@ -138,8 +163,10 @@ async fn run(
         .get("finishReason")
         .cloned()
         .unwrap_or(json!("stop"));
-    session["messages"].as_array_mut().unwrap().push(json!({"id":Uuid::new_v4().to_string(),"role":"assistant","content":reply,"createdAt":updated}));
-    flow_trace::finalize_reply(&mut session, &reply, "completed");
+    if !reply.trim().is_empty() {
+        session["messages"].as_array_mut().unwrap().push(json!({"id":Uuid::new_v4().to_string(),"role":"assistant","content":reply,"createdAt":updated}));
+    }
+    flow_trace::finalize_reply(&mut session, &reply, terminal_status);
     replace_session(&mut project, &session_id, session.clone());
     project["flow"]["updatedAt"] = json!(updated);
     if research {
@@ -149,13 +176,74 @@ async fn run(
     let result = json!({"session":session,"reply":reply,"actions":[]});
     let _ = app.emit(
         "construct:flow:session-event",
-        json!({"type":"completed","projectId":project_id,"session":session,"result":result}),
+        json!({"type":terminal_status,"projectId":project_id,"session":session,"result":result}),
     );
     if research {
         Ok(json!({"session":session,"reply":reply,"actions":[],"project":project}))
     } else {
         Ok(result)
     }
+}
+
+fn apply_question_response(project: &mut Value, response: &Value) -> CommandResult<Value> {
+    let session_id = response
+        .get("sessionId")
+        .and_then(Value::as_str)
+        .ok_or_else(|| CommandError::new("flow.question-response", "sessionId is required"))?;
+    let tool_call_id = response
+        .get("toolCallId")
+        .and_then(Value::as_str)
+        .ok_or_else(|| CommandError::new("flow.question-response", "toolCallId is required"))?;
+    let session = project
+        .pointer_mut("/flow/sessions")
+        .and_then(Value::as_array_mut)
+        .and_then(|sessions| {
+            sessions
+                .iter_mut()
+                .find(|session| session.get("id").and_then(Value::as_str) == Some(session_id))
+        })
+        .ok_or_else(|| {
+            CommandError::new("flow.question-response", "question session was not found")
+        })?;
+    let tool_call = session
+        .get_mut("toolCalls")
+        .and_then(Value::as_array_mut)
+        .and_then(|tool_calls| {
+            tool_calls
+                .iter_mut()
+                .find(|tool_call| tool_call.get("id").and_then(Value::as_str) == Some(tool_call_id))
+        })
+        .ok_or_else(|| {
+            CommandError::new("flow.question-response", "question tool call was not found")
+        })?;
+    tool_call["response"] = response.clone();
+    session["status"] = json!("completed");
+    session["updatedAt"] = response
+        .get("answeredAt")
+        .cloned()
+        .unwrap_or_else(|| json!(timestamp()));
+    Ok(session.clone())
+}
+
+fn has_pending_question(session: &Value) -> bool {
+    session
+        .get("toolCalls")
+        .and_then(Value::as_array)
+        .is_some_and(|tool_calls| {
+            tool_calls.iter().any(|tool_call| {
+                let normalized = tool_call
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .chars()
+                    .filter(|character| character.is_ascii_alphanumeric())
+                    .collect::<String>()
+                    .to_lowercase();
+                normalized == "askuserquestion"
+                    && tool_call.get("status").and_then(Value::as_str) != Some("error")
+                    && tool_call.get("response").is_none()
+            })
+        })
 }
 
 #[tauri::command]
@@ -300,4 +388,46 @@ fn timestamp() -> String {
 }
 fn io_error(error: std::io::Error) -> CommandError {
     CommandError::new("flow.io", error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn question_response_completes_the_source_session_and_clears_waiting() {
+        let mut project = json!({
+            "flow": {
+                "sessions": [{
+                    "id": "question-session",
+                    "status": "waiting",
+                    "updatedAt": "2026-07-15T00:00:00Z",
+                    "toolCalls": [{
+                        "id": "question-call",
+                        "name": "ask_user_question",
+                        "status": "completed",
+                        "input": {"question": "What is your Python experience?"}
+                    }]
+                }]
+            }
+        });
+        assert!(has_pending_question(&project["flow"]["sessions"][0]));
+
+        let response = json!({
+            "sessionId": "question-session",
+            "toolCallId": "question-call",
+            "question": "What is your Python experience?",
+            "answer": "Know the basics",
+            "answeredAt": "2026-07-15T00:01:00Z"
+        });
+        let answered = apply_question_response(&mut project, &response).unwrap();
+
+        assert_eq!(answered["status"], "completed");
+        assert_eq!(answered["updatedAt"], "2026-07-15T00:01:00Z");
+        assert_eq!(
+            answered["toolCalls"][0]["response"]["answer"],
+            "Know the basics"
+        );
+        assert!(!has_pending_question(&answered));
+    }
 }
