@@ -15,7 +15,9 @@ import type {
   WorkspaceFile,
   WorkspaceTreeNode,
   ConstructUiStateScope,
-  ConstructStorageMetrics
+  ConstructStorageMetrics,
+  ConstructProfile,
+  ConstructProfileSnapshot
 } from "../types";
 import type { ConstructSelectionContext } from "./selectionContext";
 import { apiTracker } from "./apiTracker";
@@ -85,6 +87,14 @@ export function flushStorage(): ReturnType<ConstructProjectsApi["flushStorage"]>
 
 export function storageMetrics(): Promise<ConstructStorageMetrics> {
   return performanceProfiler.measureAsync("storage.metrics", {}, () => api().storageMetrics());
+}
+
+export function getProfile(): Promise<ConstructProfileSnapshot> {
+  return performanceProfiler.measureAsync("profile.get", {}, () => api().getProfile());
+}
+
+export function updateProfile(input: ConstructProfile): Promise<ConstructProfile> {
+  return performanceProfiler.measureAsync("profile.update", {}, () => api().updateProfile(input));
 }
 
 export function ensureProject(input: {

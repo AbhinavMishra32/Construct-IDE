@@ -217,6 +217,7 @@ export class ConstructProjectWorkspaceService {
         description: project.description,
         progress: project.progress,
         lastOpenedAt: project.lastOpenedAt,
+        createdAt: project.flow.createdAt,
         workspacePath: project.workspacePath,
         sourcePath: project.sourcePath ?? null,
         currentStepIndex: undefined,

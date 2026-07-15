@@ -1,7 +1,7 @@
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { invoke as invokeNative } from "@tauri-apps/api/core";
+import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen as listenNative } from "@tauri-apps/api/event";
 import { readTextFile } from "@tauri-apps/plugin-fs";
 
@@ -15,6 +15,38 @@ import type { ConstructProjectsApi, RuntimeInfo } from "../types";
  */
 
 let runtimeInfo: RuntimeInfo | null = null;
+
+type NativeCommandErrorPayload = {
+  code?: unknown;
+  message?: unknown;
+};
+
+/**
+ * Tauri rejects commands with the serialized Rust `CommandError`, not a
+ * JavaScript `Error`. Normalize that IPC boundary once so renderer consumers
+ * never accidentally stringify `{ code, message }` as `[object Object]`.
+ */
+export function normalizeNativeCommandError(error: unknown): Error {
+  if (error instanceof Error) return error;
+  if (typeof error === "string" && error.trim()) return new Error(error.trim());
+
+  if (error && typeof error === "object" && !Array.isArray(error)) {
+    const payload = error as NativeCommandErrorPayload;
+    const message = typeof payload.message === "string" ? payload.message.trim() : "";
+    const code = typeof payload.code === "string" ? payload.code.trim() : "";
+    if (message) return new Error(code ? `${code}: ${message}` : message);
+  }
+
+  return new Error("Native command failed.");
+}
+
+async function invokeNative<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  try {
+    return await tauriInvoke<T>(command, args);
+  } catch (error) {
+    throw normalizeNativeCommandError(error);
+  }
+}
 
 /**
  * Install the compatibility globals before React renders.
@@ -62,6 +94,8 @@ export async function installConstructBridge(): Promise<void> {
     setUiState: (input: unknown) => invokeNative("rust_ui_state_set", { input }),
     flushStorage: () => invokeNative("rust_storage_flush"),
     storageMetrics: () => invokeNative("rust_storage_metrics"),
+    getProfile: () => invokeNative("rust_profile_get"),
+    updateProfile: (input: unknown) => invokeNative("rust_profile_update", { input }),
     ensureProject: (input: unknown) => invokeNative("rust_project_ensure", { input }),
     importProject: (input: unknown) => invokeNative("rust_project_import", { input }),
     createFlowProject: (input: unknown) => invokeNative("rust_flow_create", { input }),

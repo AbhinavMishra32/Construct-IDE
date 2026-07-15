@@ -7,6 +7,7 @@ mod learning;
 mod lsp;
 mod paths;
 mod process;
+mod profile;
 mod projects;
 mod settings;
 mod storage;
@@ -27,6 +28,8 @@ pub fn run() {
             commands::system::rust_ui_state_set,
             commands::system::rust_storage_flush,
             commands::system::rust_storage_metrics,
+            commands::system::rust_profile_get,
+            commands::system::rust_profile_update,
             commands::system::rust_runtime_info,
             commands::system::rust_theme_set,
             commands::system::rust_debug_processes,

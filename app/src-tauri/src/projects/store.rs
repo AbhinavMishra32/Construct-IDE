@@ -216,6 +216,7 @@ fn summary(project: Value) -> Value {
         "kind":project.get("kind").cloned().unwrap_or(json!("tape")), "id":project["id"],
         "title":project["title"], "description":project["description"], "progress":project["progress"],
         "lastOpenedAt":project.get("lastOpenedAt"), "workspacePath":project["workspacePath"],
+        "createdAt":flow.and_then(|flow|flow.get("createdAt")).or_else(||project.get("lastOpenedAt")),
         "sourcePath":project.get("sourcePath"), "activeFilePath":project.get("activeFilePath"),
         "completedAt":project.get("completedAt"), "stepCount":steps.map(Vec::len), "fileCount":files.map(Vec::len),
         "flowGoal":flow.and_then(|flow|flow.get("goal")), "flowMemoryFileCount":if flow.is_some(){Some(4)}else{None},

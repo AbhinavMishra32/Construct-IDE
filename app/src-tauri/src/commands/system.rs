@@ -4,6 +4,7 @@ use tauri::{AppHandle, State};
 
 use crate::core_state::CoreState;
 use crate::error::CommandResult;
+use crate::profile::ConstructProfile;
 use crate::storage::{StorageMetrics, UiStateInput};
 
 #[derive(Serialize)]
@@ -40,6 +41,21 @@ pub fn rust_storage_flush(state: State<'_, CoreState>) -> CommandResult<OkRespon
 #[tauri::command]
 pub fn rust_storage_metrics(state: State<'_, CoreState>) -> StorageMetrics {
     state.ui_state.metrics()
+}
+
+#[tauri::command]
+pub fn rust_profile_get(state: State<'_, CoreState>) -> CommandResult<Value> {
+    let projects = state.projects.list()?;
+    let learning = state.learning.read()?;
+    state.profile.snapshot(&projects, &learning)
+}
+
+#[tauri::command]
+pub fn rust_profile_update(
+    state: State<'_, CoreState>,
+    input: ConstructProfile,
+) -> CommandResult<ConstructProfile> {
+    state.profile.update(input)
 }
 
 #[tauri::command]
