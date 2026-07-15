@@ -134,6 +134,14 @@ describe("Construct interface shell boundary", () => {
     assert.doesNotMatch(shellControlsSource, /SidebarMenuButton/);
     assert.match(dashboardSidebarSource, /SidebarGroup/);
     assert.match(dashboardSidebarSource, /SidebarProjectButton/);
+    assert.match(dashboardSidebarSource, />Studio</);
+    assert.match(dashboardSidebarSource, /aria-label="New project"/);
+    assert.match(dashboardSidebarSource, /Last user message/);
+    assert.match(dashboardSidebarSource, /Created at/);
+    assert.match(dashboardSidebarSource, /STUDIO_SIDEBAR_STATE_KEY/);
+    assert.match(dashboardSidebarSource, /Pin project/);
+    assert.match(dashboardSidebarSource, /Archive project/);
+    assert.doesNotMatch(appSource, /activeView=\{projectsViewOpen \? "projects" : "home"\}/);
     assert.match(shellControlsSource, /SidebarPrimaryAction/);
     assert.match(opalineIndexSource, /export \{ Button \} from "\.\/components\/button"/);
   });
@@ -188,7 +196,8 @@ describe("Construct interface shell boundary", () => {
     assert.match(opalineThemeSource, /--app-font-size-ui: 12px/);
     assert.match(sourceSidebarSource, /window\.matchMedia\("\(max-width: 767px\)"\)/);
     assert.doesNotMatch(opalineStylesSource, /construct-sidebar-row|opaline-v2-sidebar-pane/);
-    assert.match(opalineComposerSource, /chat-composer-shell chat-composer-surface/);
+    assert.match(opalineComposerSource, /group chat-composer-shell/);
+    assert.match(opalineComposerSource, /chat-composer-surface overflow-hidden/);
     assert.match(opalineComposerSource, /variant="prominent"/);
     assert.match(opalineComposerSource, /size="icon-xs"/);
     assert.match(opalineComposerSource, /--app-font-size-chat,12px/);
