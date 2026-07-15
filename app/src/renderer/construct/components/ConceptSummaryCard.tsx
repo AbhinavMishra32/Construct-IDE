@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { conceptMasteryRubricForLevel, type ConstructConceptMasteryLevel } from "../../../shared/constructLearning";
 import type { ConceptCard } from "../types";
 import { cn } from "../../lib/utils";
+import { FLOW_CHAT_EVENT_ICON_CLASS_NAME, FLOW_CHAT_EVENT_ROW_CLASS_NAME } from "./flowChatStyles";
 
 type ConceptSummaryCardProps = {
   concept: ConceptCard;
@@ -135,15 +136,17 @@ export function ConceptSummaryCard({
       <button
         type="button"
         className={cn(
-          "construct-concept-summary-card group flex w-full max-w-[46rem] min-w-0 items-center justify-between gap-2.5 rounded-[12px] border border-border/60 bg-muted/30 p-2.5 text-left text-foreground hover:bg-muted/65 active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 cursor-default",
-          isPanel && "p-2 gap-2 rounded-lg"
+          "construct-concept-summary-card group flex items-center justify-between gap-2.5 p-2.5 text-left text-foreground active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45",
+          FLOW_CHAT_EVENT_ROW_CLASS_NAME,
+          isPanel && "gap-2 p-2"
         )}
         data-attention={attention ? "true" : "false"}
         onClick={onOpen}
       >
         <div className="flex min-w-0 flex-1 items-center gap-2.5">
           <span className={cn(
-            "grid size-8 shrink-0 place-items-center rounded-[8px] border shadow-sm group-hover:scale-95",
+            FLOW_CHAT_EVENT_ICON_CLASS_NAME,
+            "size-8 group-hover:scale-95",
             iconClass,
             isPanel && "size-7 rounded-md"
           )}>

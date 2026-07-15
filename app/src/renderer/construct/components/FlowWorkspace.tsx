@@ -76,6 +76,11 @@ import {
 import { ConstructCodeBlock } from "./ConstructCode";
 import { KnowledgeCard } from "./KnowledgeCard";
 import { ConceptSummaryCard } from "./ConceptSummaryCard";
+import {
+  FLOW_CHAT_EVENT_CARD_CLASS_NAME,
+  FLOW_CHAT_EVENT_ICON_CLASS_NAME,
+  FLOW_CHAT_EVENT_ROW_CLASS_NAME
+} from "./flowChatStyles";
 import { iconForFile } from "./workspace/FileChooserContent";
 import { ConstructAuthLogo } from "../../components/auth/construct-auth-logo";
 import type { InlineFileRef } from "../lib/inlineRefs";
@@ -3441,8 +3446,8 @@ function buildQuestionAnsweredPart(
     type: "actions",
     id: `${sessionId}:question-answer:${toolCall.id}`,
     content: (
-      <div className="construct-flow-event-card group flex w-full max-w-[46rem] min-w-0 items-start gap-2 rounded-[10px] border border-border/70 bg-card/90 px-2.5 py-2 text-[12px] shadow-sm transition-[background-color,border-color] duration-150 hover:bg-muted/20" data-flow-surface="question-answered">
-        <span className="grid size-5 shrink-0 place-items-center rounded-[6px] border border-border/70 bg-background/80 text-muted-foreground shadow-xs">
+      <div className={cn("construct-flow-event-card group flex items-start gap-2 px-2.5 py-2 text-[12px]", FLOW_CHAT_EVENT_ROW_CLASS_NAME)} data-flow-surface="question-answered">
+        <span className={cn(FLOW_CHAT_EVENT_ICON_CLASS_NAME, "size-5 rounded-[6px]")}>
           <HelpCircleIcon size={11} />
         </span>
         <div className="min-w-0 flex-1 bg-transparent">
@@ -3563,8 +3568,9 @@ function buildConceptExercisePart({
   const isPanel = chatMode === "panel";
 
   const containerClass = cn(
-    "construct-flow-exercise-card flex w-full max-w-[46rem] min-w-0 flex-col gap-2 rounded-[10px] border border-border/70 bg-card/95 p-3 text-left text-foreground shadow-sm",
-    isPanel && "max-w-full p-2.5 rounded-xl gap-2"
+    "construct-flow-exercise-card flex flex-col gap-2 p-3 text-left text-foreground",
+    FLOW_CHAT_EVENT_CARD_CLASS_NAME,
+    isPanel && "max-w-full gap-2 p-2.5"
   );
 
   return {
@@ -3574,7 +3580,7 @@ function buildConceptExercisePart({
       <div className={containerClass} data-flow-surface="concept-exercise">
         <div className={cn("flex min-w-0 items-center justify-between gap-2.5 border-b border-border/55 pb-2", isPanel && "pb-1.5 gap-2")}>
           <div className="flex min-w-0 items-center gap-2">
-            <span className={cn("grid size-6 shrink-0 place-items-center rounded-[7px] border shadow-xs bg-background/80", iconClass, isPanel && "size-6 rounded-[6px]")}>
+            <span className={cn(FLOW_CHAT_EVENT_ICON_CLASS_NAME, "size-6", iconClass, isPanel && "size-6 rounded-[6px]")}>
               {failed ? (
                 <CircleAlertIcon size={isPanel ? 11 : 13} />
               ) : status === "running" ? (
@@ -3770,8 +3776,9 @@ function buildPlanPathPart({
   const isPanel = chatMode === "panel";
 
   const containerClass = cn(
-    "construct-flow-event-card flex w-full max-w-[46rem] min-w-0 flex-col gap-2 rounded-[10px] border border-border/70 bg-card/90 p-3 text-left text-foreground shadow-sm",
-    isPanel && "p-2.5 rounded-xl gap-1.5"
+    "construct-flow-event-card flex flex-col gap-2 p-3 text-left text-foreground",
+    FLOW_CHAT_EVENT_CARD_CLASS_NAME,
+    isPanel && "gap-1.5 p-2.5"
   );
 
   return {
@@ -3783,7 +3790,8 @@ function buildPlanPathPart({
         <div className="flex min-w-0 items-center justify-between gap-2.5 border-b border-border/50 pb-2">
           <div className="flex min-w-0 items-center gap-2">
             <span className={cn(
-              "grid size-6 shrink-0 place-items-center rounded-[7px] border shadow-xs bg-background/80",
+              FLOW_CHAT_EVENT_ICON_CLASS_NAME,
+              "size-6",
               failed ? "border-destructive/15 text-destructive bg-destructive/5" : "border-border/70 text-muted-foreground",
               isPanel && "size-6"
             )}>
@@ -4062,15 +4070,17 @@ function buildTaskCreatedPart({
       <button
         type="button"
         className={cn(
-          "construct-flow-event-card group flex w-full max-w-[46rem] min-w-0 items-center justify-between gap-2.5 rounded-[12px] border border-border/60 bg-muted/30 p-2.5 text-left text-foreground hover:bg-muted/65 active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 cursor-default",
-          isPanel && "p-2 gap-2 rounded-lg"
+          "construct-flow-event-card group flex items-center justify-between gap-2.5 p-2.5 text-left text-foreground active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 disabled:cursor-default",
+          FLOW_CHAT_EVENT_ROW_CLASS_NAME,
+          isPanel && "gap-2 p-2"
         )}
         disabled={!ready}
         onClick={() => task && onOpenTask(task)}
       >
         <div className="flex min-w-0 flex-1 items-center gap-2.5">
           <span className={cn(
-            "grid size-8 shrink-0 place-items-center rounded-[8px] border shadow-sm group-hover:scale-95",
+            FLOW_CHAT_EVENT_ICON_CLASS_NAME,
+            "size-8 group-hover:scale-95",
             iconClass,
             isPanel && "size-7 rounded-md"
           )}>
@@ -4712,12 +4722,14 @@ function buildConceptCardPart(
           />
         ) : (
           <div className={cn(
-            "construct-concept-summary-card flex w-full max-w-[46rem] min-w-0 items-center justify-between gap-2.5 rounded-[12px] border border-border/60 bg-muted/30 p-2.5 text-left text-foreground",
-            isPanel && "p-2 gap-2 rounded-lg"
+            "construct-concept-summary-card flex items-center justify-between gap-2.5 p-2.5 text-left text-foreground",
+            FLOW_CHAT_EVENT_CARD_CLASS_NAME,
+            isPanel && "gap-2 p-2"
           )}>
             <div className="flex min-w-0 flex-1 items-center gap-2.5">
               <span className={cn(
-                "grid size-8 shrink-0 place-items-center rounded-[8px] border border-destructive/15 bg-destructive/5 text-destructive shadow-sm",
+                FLOW_CHAT_EVENT_ICON_CLASS_NAME,
+                "size-8 border-destructive/15 bg-destructive/5 text-destructive",
                 isPanel && "size-7 rounded-md"
               )}>
                 <Trash2Icon size={isPanel ? 13 : 14} />
@@ -4800,12 +4812,14 @@ function ConceptCreationPreview({
 
   return (
     <div className={cn(
-      "construct-concept-summary-card flex w-full max-w-[46rem] min-w-0 items-center justify-between gap-2.5 rounded-[12px] border border-border/60 bg-muted/30 p-2.5 text-left text-foreground",
-      isPanel && "p-2 gap-2 rounded-lg"
+      "construct-concept-summary-card flex items-center justify-between gap-2.5 p-2.5 text-left text-foreground",
+      FLOW_CHAT_EVENT_CARD_CLASS_NAME,
+      isPanel && "gap-2 p-2"
     )}>
       <div className="flex min-w-0 flex-1 items-center gap-2.5">
         <span className={cn(
-          "grid size-8 shrink-0 place-items-center rounded-[8px] border border-border/70 bg-background/80 text-muted-foreground shadow-sm",
+          FLOW_CHAT_EVENT_ICON_CLASS_NAME,
+          "size-8",
           isPanel && "size-7 rounded-md"
         )}>
           <Loader2Icon size={isPanel ? 13 : 14} className="animate-spin text-[color:var(--construct-warning)]" />
@@ -5560,8 +5574,8 @@ function FlowMemoryUpdateCard({
     }
   };
   return (
-    <div className="construct-flow-event-card flex w-full max-w-[46rem] min-w-0 items-center gap-2.5 rounded-[10px] border border-border/70 bg-card/90 px-3 py-2 text-[13px] text-muted-foreground shadow-sm transition-colors duration-150 hover:bg-muted/20" data-flow-surface="memory-updated">
-      <span className="grid size-6 shrink-0 place-items-center rounded-[7px] border border-border/70 bg-background/80 text-muted-foreground shadow-xs">
+    <div className={cn("construct-flow-event-card flex items-center gap-2.5 px-3 py-2 text-[13px] text-muted-foreground", FLOW_CHAT_EVENT_ROW_CLASS_NAME)} data-flow-surface="memory-updated">
+      <span className={cn(FLOW_CHAT_EVENT_ICON_CLASS_NAME, "size-6")}>
         <FileTextIcon size={13} />
       </span>
       <div className="min-w-0 flex-1">
