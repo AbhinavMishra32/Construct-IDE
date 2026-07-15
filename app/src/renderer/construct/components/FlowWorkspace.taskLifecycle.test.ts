@@ -4,9 +4,18 @@ import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const flowWorkspaceSource = readFileSync(fileURLToPath(new URL("./FlowWorkspace.tsx", import.meta.url)), "utf8");
-const rendererStylesSource = readFileSync(fileURLToPath(new URL("../../index.css", import.meta.url)), "utf8");
-const agentSessionSource = readFileSync(
-  fileURLToPath(new URL("../../../../../opaline/packages/ui/src/agent-session/AgentSessionSurface.tsx", import.meta.url)),
+const asideHostSource = readFileSync(fileURLToPath(new URL("./AsideConstructThread.tsx", import.meta.url)), "utf8");
+const asideProtocolSource = readFileSync(fileURLToPath(new URL("./asideThreadProtocol.ts", import.meta.url)), "utf8");
+const asideEntrySource = readFileSync(
+  fileURLToPath(new URL("../../../../public/aside-thread/main.html", import.meta.url)),
+  "utf8",
+);
+const asideShimSource = readFileSync(
+  fileURLToPath(new URL("../../../../public/aside-thread/construct-runtime-shim.js", import.meta.url)),
+  "utf8",
+);
+const asideToolRendererSource = readFileSync(
+  fileURLToPath(new URL("../../../../public/aside-thread/assets/tool-renderer-Bj91yJjw.js", import.meta.url)),
   "utf8",
 );
 
@@ -39,25 +48,28 @@ describe("FlowWorkspace task lifecycle rendering", () => {
   it("uses semantic question payload flags for code defaults, skipping, and hidden materials", () => {
     const source = readFileSync(fileURLToPath(new URL("./FlowWorkspace.tsx", import.meta.url)), "utf8");
 
-    assert.match(source, /setDraft\(activeQuestion\?\.payload\.initialAnswer \?\? ""\)/);
     assert.match(source, /hideLearningMaterials/);
     assert.match(source, /allowSkip: typeof source\.allowSkip === "boolean" \? source\.allowSkip : false/);
     assert.match(source, /data-learning-materials-hidden=\{learningMaterialsHidden \? "true" : undefined\}/);
+    assert.match(asideHostSource, /const pendingQuestion = findPendingQuestion/);
+    assert.match(asideHostSource, /questionResponse:/);
+    assert.match(asideProtocolSource, /choices: activeQuestion\.choices/);
   });
 
-  it("keeps Construct task and concept state inside the source chat contract", () => {
-    assert.match(flowWorkspaceSource, /data-construct-flow-chat="true"/);
-    assert.match(flowWorkspaceSource, /data-flow-surface="concept-card"/);
-    assert.match(flowWorkspaceSource, /data-flow-surface="concept-exercise"/);
-    assert.match(flowWorkspaceSource, /id: `\$\{sessionId\}:task:\$\{eventId\}`/);
-    assert.match(flowWorkspaceSource, /Full access[\s\S]*<ActiveComposerItemIndicator/);
+  it("mounts the compiled thread application while keeping Construct's domain bridge", () => {
+    assert.match(flowWorkspaceSource, /<AsideConstructThread/);
     assert.match(flowWorkspaceSource, /onProviderChange=\{updateProvider\}/);
-    assert.match(agentSessionSource, /data-chat-transcript-pane="true"/);
-    assert.match(agentSessionSource, /max-w-\[46rem\]/);
-    assert.match(agentSessionSource, /relative z-10 -mt-5/);
-    assert.match(agentSessionSource, /chat-composer-stacked-top/);
-    assert.match(agentSessionSource, /data-chat-composer-form="true"/);
-    assert.match(rendererStylesSource, /background: var\(--app-user-message-background\)/);
-    assert.match(rendererStylesSource, /background: var\(--color-background-elevated-secondary\)/);
+    assert.match(asideHostSource, /aside-thread\/main\.html/);
+    assert.match(asideHostSource, /buildAsideSession/);
+    assert.match(asideHostSource, /buildAsideMessages/);
+    assert.match(asideHostSource, /new AsideRunProjector/);
+    assert.match(asideHostSource, /await latest\.onRunAgent\(message, options\)/);
+    assert.match(asideEntrySource, /extension-main-BQoDRRY7\.js/);
+    assert.match(asideEntrySource, /construct-runtime-shim\.js/);
+    assert.match(asideShimSource, /construct-aside-bridge:v1/);
+    assert.match(asideShimSource, /result: \{ data: values\[index\] \}/);
+    assert.match(asideToolRendererSource, /construct_concept:ConstructConceptRenderer/);
+    assert.match(asideToolRendererSource, /construct_practice_task:ConstructTaskRenderer/);
+    assert.match(asideToolRendererSource, /construct_concept_exercise:ConstructExerciseRenderer/);
   });
 });
