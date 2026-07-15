@@ -1490,7 +1490,7 @@ function FlowAgentPanel({
   const showMaximizedConceptDock = activeView === "chat" && chatMode === "maximized" && openConcept !== null;
 
   return (
-    <aside className="flex h-full min-h-0 flex-col bg-background">
+    <aside className="flex h-full min-h-0 flex-col bg-[var(--color-background-surface)] font-system-ui">
       {activeView === "project" && (
         <div className="flex min-h-12 shrink-0 items-center justify-between gap-3 border-b border-border/45 bg-background/95 px-3 py-2">
           <div className="flex min-w-0 items-center gap-2">
@@ -1577,7 +1577,14 @@ function FlowAgentPanel({
             className="construct-flow-session min-h-0 flex-1 bg-transparent"
             data-construct-flow-chat="true"
             messages={messages}
-            emptyState={<div className="construct-flow-empty-state flex flex-col items-center gap-3 text-center"><ConstructAuthLogo markClassName="construct-auth-logo__mark--agent-empty" /><span>Ask the Construct agent what to build or learn next.</span></div>}
+            emptyState={(
+              <div className="construct-flow-empty-state flex max-w-[46rem] flex-col items-center gap-4 px-6 pb-5 text-center select-none">
+                <ConstructAuthLogo markClassName="size-10" />
+                <h2 className="text-[26px] font-normal leading-[1.15] tracking-[-0.015em] text-foreground/95 sm:text-[30px]">
+                  What should we work on in {project.title}?
+                </h2>
+              </div>
+            )}
             scrollKey={`${messages.length}:${liveSession?.updatedAt ?? "idle"}`}
             showReasoningSummaries
             timelineScrollTop={chatScrollTop}
@@ -5182,8 +5189,8 @@ function FlowQuestionComposer({
   const isPanel = chatMode === "panel";
 
   const containerClass = isPanel
-    ? "mx-auto w-full max-w-[min(46rem,calc(100%-0.75rem))] rounded-xl border border-border/70 bg-card px-2.5 pb-2 pt-2.5 shadow-[0_4px_12px_color-mix(in_srgb,var(--foreground)_5%,transparent)] dark:shadow-none"
-    : "construct-flow-question-composer mx-auto w-full max-w-[min(46rem,calc(100%-0.75rem))] rounded-[20px] border border-border/70 bg-card px-4 pb-3 pt-4 shadow-[0_10px_30px_color-mix(in_srgb,var(--foreground)_7%,transparent)] dark:shadow-none";
+    ? "mx-auto w-full max-w-[min(46rem,calc(100%-0.75rem))] rounded-[var(--radius-user-message,0.8rem)] border border-[color:var(--color-border)] bg-[var(--color-background-elevated-primary-opaque)] px-2.5 pb-2 pt-2.5 shadow-[0_4px_18px_-6px_color-mix(in_srgb,var(--foreground)_7%,transparent)]"
+    : "construct-flow-question-composer mx-auto w-full max-w-[min(46rem,calc(100%-0.75rem))] rounded-[var(--radius-user-message,0.8rem)] border border-[color:var(--color-border)] bg-[var(--color-background-elevated-primary-opaque)] px-4 pb-3 pt-4 shadow-[0_4px_18px_-6px_color-mix(in_srgb,var(--foreground)_7%,transparent)]";
 
   const questionTextClass = isPanel
     ? "max-w-full text-[13px] font-medium leading-5 text-foreground"
