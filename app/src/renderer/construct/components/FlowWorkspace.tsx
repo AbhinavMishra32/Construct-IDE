@@ -1,12 +1,22 @@
 import Editor, { DiffEditor } from "@monaco-editor/react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import type { editor as MonacoEditor } from "monaco-editor";
-import { ArrowDownIcon, ArrowUpIcon, BadgeCheckIcon, BookOpenIcon, BotIcon, BrainCircuitIcon, CheckCircle2Icon, CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleAlertIcon, CircleIcon, CornerDownLeftIcon, CpuIcon, FileTextIcon, GaugeIcon, GitCompareIcon, HelpCircleIcon, Layers3Icon, ListChecksIcon, Loader2Icon, PencilIcon, PlusCircleIcon, RotateCcwIcon, RouteIcon, SearchIcon, SendIcon, StarIcon, TerminalIcon, Trash2Icon, PlusIcon, MicIcon, type LucideIcon } from "lucide-react";
+import { ArrowDownIcon, ArrowUpIcon, BadgeCheckIcon, BookOpenIcon, BotIcon, BrainCircuitIcon, CheckCircle2Icon, CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleAlertIcon, CircleIcon, CloudIcon, CornerDownLeftIcon, CpuIcon, FileTextIcon, GaugeIcon, GitCompareIcon, GithubIcon, HelpCircleIcon, Layers3Icon, ListChecksIcon, Loader2Icon, PencilIcon, PlusCircleIcon, RotateCcwIcon, RouteIcon, SearchIcon, SendIcon, StarIcon, TerminalIcon, Trash2Icon, PlusIcon, MicIcon, type LucideIcon } from "lucide-react";
 import {
   AdaptiveSidecarLayout,
   AgentSessionComposer,
   AgentSessionSurface,
   Button,
+  ShadcnDropdownMenu as ComposerMenu,
+  ShadcnDropdownMenuContent as ComposerMenuContent,
+  ShadcnDropdownMenuGroup as ComposerMenuGroup,
+  ShadcnDropdownMenuItem as ComposerMenuItem,
+  ShadcnDropdownMenuLabel as ComposerMenuLabel,
+  ShadcnDropdownMenuSeparator as ComposerMenuSeparator,
+  ShadcnDropdownMenuSub as ComposerMenuSub,
+  ShadcnDropdownMenuSubContent as ComposerMenuSubContent,
+  ShadcnDropdownMenuSubTrigger as ComposerMenuSubTrigger,
+  ShadcnDropdownMenuTrigger as ComposerMenuTrigger,
   ShadcnDialog,
   ShadcnDialogContent,
   ShadcnDialogDescription,
@@ -1441,6 +1451,27 @@ function FlowAgentPanel({
     }
   }, [aiSettings]);
 
+  const updateProvider = useCallback(async (provider: AiSettings["provider"] | "construct-cloud") => {
+    if (!aiSettings) return;
+    const patch = provider === "construct-cloud"
+      ? { source: "construct-cloud" as const, featureModels: {} }
+      : { source: "byok" as const, provider, featureModels: {} };
+    const optimistic = { ...aiSettings, ...patch };
+    setAiSettings(optimistic);
+    setModelOptions([]);
+    setModelsError(null);
+    try {
+      const settings = await updateAiSettings({ ai: patch });
+      setAiSettings(settings.ai);
+      await refreshModels(settings.ai);
+    } catch (error) {
+      setModelsError(error instanceof Error ? error.message : String(error));
+      const settings = await getSettings();
+      setAiSettings(settings.ai);
+      await refreshModels(settings.ai);
+    }
+  }, [aiSettings, refreshModels]);
+
   useEffect(() => {
     setDraft(activeQuestion?.payload.initialAnswer ?? "");
   }, [activeQuestion?.id]);
@@ -1608,6 +1639,7 @@ function FlowAgentPanel({
                         modelsError={modelsError}
                         reasoningEffort={aiSettings?.reasoningEffort ?? "auto"}
                         onModelChange={updateFlowModel}
+                        onProviderChange={updateProvider}
                         onReasoningEffortChange={updateReasoningEffort}
                       />
                     }
@@ -6301,6 +6333,21 @@ function FlowCircularContextMeter({ contextWindow }: { contextWindow?: Construct
   );
 }
 
+type ComposerProvider = AiSettings["provider"] | "construct-cloud";
+
+const COMPOSER_PROVIDER_OPTIONS: ReadonlyArray<{
+  id: ComposerProvider;
+  Icon: LucideIcon;
+  label: string;
+}> = [
+  { id: "construct-cloud", Icon: CloudIcon, label: "Construct Cloud" },
+  { id: "openai", Icon: BotIcon, label: "OpenAI" },
+  { id: "openrouter", Icon: RouteIcon, label: "OpenRouter" },
+  { id: "github-copilot", Icon: GithubIcon, label: "GitHub Copilot" },
+  { id: "opencode-zen", Icon: RouteIcon, label: "OpenCode Zen" },
+  { id: "litellm", Icon: Layers3Icon, label: "LiteLLM" },
+];
+
 export function FlowComposerRightControls({
   contextWindow,
   settings,
@@ -6310,6 +6357,7 @@ export function FlowComposerRightControls({
   modelsError,
   reasoningEffort,
   onModelChange,
+  onProviderChange,
   onReasoningEffortChange
 }: {
   contextWindow?: ConstructAgentContextWindow;
@@ -6320,17 +6368,19 @@ export function FlowComposerRightControls({
   modelsError: string | null;
   reasoningEffort: AiSettings["reasoningEffort"];
   onModelChange: (model: string) => void;
+  onProviderChange: (provider: ComposerProvider) => void;
   onReasoningEffortChange: (effort: AiSettings["reasoningEffort"]) => void;
 }) {
   const activeModel = models.find((m) => m.id === model) ?? null;
-  const provider = settings?.source === "construct-cloud" ? "construct-cloud" : (settings?.provider ?? "openai");
+  const provider: ComposerProvider = settings?.source === "construct-cloud" ? "construct-cloud" : (settings?.provider ?? "openai");
   const buckets = useMemo(() => bucketModelsByBrand(models, provider), [models, provider]);
   const visibleBrandKeys = useMemo(() => sortModelBrands([...buckets.keys()]), [buckets]);
 
   const shortModel = getShortModelName(activeModel?.name || readableModelName(model) || "Model");
   const activeEffort = reasoningEffortMeta(reasoningEffort);
   const shortEffort = activeEffort.value === "auto" ? "Auto" : activeEffort.value === "none" ? "Off" : activeEffort.label;
-  const triggerLabel = `${shortModel} ${shortEffort}`;
+  const providerOption = COMPOSER_PROVIDER_OPTIONS.find((option) => option.id === provider) ?? COMPOSER_PROVIDER_OPTIONS[1];
+  const ProviderIcon = providerOption.Icon;
   const hasCatalogModel = models.some((entry) => entry.id === model);
 
   return (
@@ -6338,92 +6388,98 @@ export function FlowComposerRightControls({
       {contextWindow ? <FlowCircularContextMeter contextWindow={contextWindow} /> : null}
 
       {settings ? (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 gap-1.5 rounded-full px-2 text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-muted"
-                type="button"
+        <ComposerMenu>
+          <ComposerMenuTrigger
+            render={
+              <Button
+                aria-label="Change provider, model, and reasoning"
+                className="min-w-0 shrink-0 justify-start gap-1.5 whitespace-nowrap px-2 text-[length:var(--app-font-size-ui-sm,11px)] font-normal text-[var(--color-text-foreground-secondary)] hover:text-[var(--color-text-foreground)] sm:px-2.5"
                 disabled={modelsBusy}
-              >
-                <CpuIcon size={15.5} className="shrink-0" />
-                <span className="composer-trigger-text truncate max-w-[12rem]">{triggerLabel}</span>
-                <ChevronDownIcon size={13.5} className="text-muted-foreground/70 shrink-0" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56 p-1 z-50">
-            <DropdownMenuGroup>
-              <DropdownMenuLabel className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Reasoning</DropdownMenuLabel>
+                size="sm"
+                type="button"
+                variant="chrome"
+              />
+            }
+          >
+            <ProviderIcon className="shrink-0 text-[var(--color-text-foreground)]" data-icon="inline-start" />
+            <span className="composer-trigger-text max-w-[10rem] truncate text-[var(--color-text-foreground)]">{shortModel}</span>
+            <span className="shrink-0 text-muted-foreground/45">{shortEffort}</span>
+            <ChevronDownIcon className="ms-0.5 shrink-0 opacity-60" data-icon="inline-end" />
+          </ComposerMenuTrigger>
+          <ComposerMenuContent align="end" className="w-64" side="top">
+            <ComposerMenuGroup>
+              <ComposerMenuLabel>Reasoning</ComposerMenuLabel>
               {reasoningEffortOptions.map((option) => {
                 const displayLabel = option.label;
                 return (
-                  <DropdownMenuItem
+                  <ComposerMenuItem
                     key={option.value}
-                    className="flex items-center justify-between gap-2 rounded-[7px] text-xs"
+                    className="flex items-center justify-between gap-2"
                     onClick={() => onReasoningEffortChange(option.value)}
                   >
                     <span>{displayLabel}</span>
-                    {option.value === reasoningEffort ? <CheckIcon size={13} className="text-foreground shrink-0" /> : null}
-                  </DropdownMenuItem>
+                    {option.value === reasoningEffort ? <CheckIcon className="size-3 shrink-0 text-foreground" /> : null}
+                  </ComposerMenuItem>
                 );
               })}
-            </DropdownMenuGroup>
+            </ComposerMenuGroup>
 
-            <DropdownMenuSeparator className="-mx-1 my-1 h-px bg-border" />
+            <ComposerMenuSeparator />
 
-            <DropdownMenuGroup>
-              <DropdownMenuLabel className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Model</DropdownMenuLabel>
-              <div className="px-2 pb-1 text-[10px] leading-snug text-muted-foreground">
-                Change models in AI settings.
-              </div>
-              {!hasCatalogModel && model ? (
-                <div className="mx-1 mb-1 rounded-[7px] border border-border/70 bg-muted/35 px-2 py-1.5 text-[10px] leading-snug text-muted-foreground">
-                  Custom model from settings.
-                </div>
-              ) : null}
+            <ComposerMenuGroup>
+              <ComposerMenuLabel>Provider</ComposerMenuLabel>
+              {COMPOSER_PROVIDER_OPTIONS.map(({ id, Icon, label }) => (
+                <ComposerMenuItem key={id} onClick={() => onProviderChange(id)}>
+                  <Icon className="size-3.5" />
+                  <span className="truncate">{label}</span>
+                  {id === provider ? <CheckIcon className="ml-auto size-3 shrink-0" /> : null}
+                </ComposerMenuItem>
+              ))}
+            </ComposerMenuGroup>
+
+            <ComposerMenuSeparator />
+
+            <ComposerMenuGroup>
+              <ComposerMenuLabel>Model</ComposerMenuLabel>
+              {!hasCatalogModel && model ? <ComposerMenuItem disabled>{readableModelName(model)}</ComposerMenuItem> : null}
               {visibleBrandKeys.map((brand) => {
                 const meta = modelBrandMeta(brand);
                 const brandModels = buckets.get(brand) ?? [];
 
                 return (
-                  <DropdownMenuSub key={brand}>
-                    <DropdownMenuSubTrigger className="flex items-center justify-between gap-2 rounded-[7px] text-xs">
+                  <ComposerMenuSub key={brand}>
+                    <ComposerMenuSubTrigger>
                       <span>{meta.label}</span>
-                    </DropdownMenuSubTrigger>
-                    <DropdownMenuPortal>
-                      <DropdownMenuSubContent className="w-64 max-h-[220px] overflow-y-auto p-1 z-50">
-                        <DropdownMenuGroup>
-                          <DropdownMenuLabel className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground sticky top-0 bg-popover z-10">
-                            {meta.label} Models
-                          </DropdownMenuLabel>
-                          {brandModels.map((m) => (
-                            <DropdownMenuItem
-                              key={m.id}
-                              className="flex items-center justify-between gap-2 rounded-[7px] text-xs"
-                              onSelect={() => onModelChange(m.id)}
-                            >
-                              <span className="truncate">{m.name || readableModelName(m.id)}</span>
-                              {m.id === model ? <CheckIcon size={13} className="text-foreground shrink-0" /> : null}
-                            </DropdownMenuItem>
-                          ))}
-                        </DropdownMenuGroup>
-                      </DropdownMenuSubContent>
-                    </DropdownMenuPortal>
-                  </DropdownMenuSub>
+                    </ComposerMenuSubTrigger>
+                    <ComposerMenuSubContent className="max-h-[220px] w-64 overflow-y-auto">
+                      <ComposerMenuGroup>
+                        <ComposerMenuLabel className="sticky top-0 bg-popover">
+                          {meta.label} Models
+                        </ComposerMenuLabel>
+                        {brandModels.map((m) => (
+                          <ComposerMenuItem
+                            key={m.id}
+                            className="flex items-center justify-between gap-2"
+                            onClick={() => onModelChange(m.id)}
+                          >
+                            <span className="truncate">{m.name || readableModelName(m.id)}</span>
+                            {m.id === model ? <CheckIcon className="size-3 shrink-0 text-foreground" /> : null}
+                          </ComposerMenuItem>
+                        ))}
+                      </ComposerMenuGroup>
+                    </ComposerMenuSubContent>
+                  </ComposerMenuSub>
                 );
               })}
-            </DropdownMenuGroup>
-          </DropdownMenuContent>
-        </DropdownMenu>
+            </ComposerMenuGroup>
+          </ComposerMenuContent>
+        </ComposerMenu>
       ) : (
-        <span className="inline-flex h-7 items-center gap-1.5 rounded-full bg-muted/45 px-2 text-[11px] text-muted-foreground">
+        <span className="inline-flex h-7 items-center gap-1.5 px-2 text-[11px] text-muted-foreground">
           <Loader2Icon className="size-3 animate-spin" />
           Model
         </span>
       )}
-
-
 
       {modelsError ? (
         <Tooltip>

@@ -9,6 +9,9 @@ const appSource = readFileSync(
 );
 const dashboardSource = readFileSync(fileURLToPath(new URL("./Dashboard.tsx", import.meta.url)), "utf8");
 const dashboardSidebarSource = readFileSync(fileURLToPath(new URL("./DashboardSidebar.tsx", import.meta.url)), "utf8");
+const constructSidebarSource = readFileSync(fileURLToPath(new URL("./ConstructSidebarSurface.tsx", import.meta.url)), "utf8");
+const homeProjectPickerSource = readFileSync(fileURLToPath(new URL("./HomeProjectPicker.tsx", import.meta.url)), "utf8");
+const flowWorkspaceSource = readFileSync(fileURLToPath(new URL("./FlowWorkspace.tsx", import.meta.url)), "utf8");
 const shellControlsSource = readFileSync(fileURLToPath(new URL("../ShellControls.tsx", import.meta.url)), "utf8");
 const rendererStylesSource = readFileSync(fileURLToPath(new URL("../../index.css", import.meta.url)), "utf8");
 const opalineShellSource = readFileSync(
@@ -81,9 +84,15 @@ const opalineThemeSource = readFileSync(
 );
 
 describe("Construct interface shell boundary", () => {
-  it("composes the desktop shell and sidebars through Opaline v3", () => {
+  it("composes the desktop shell with the literal source sidebar structure", () => {
     assert.match(appSource, /<DesktopShell/);
-    assert.match(appSource, /<DesktopSidebar/);
+    assert.match(appSource, /<ConstructSidebarSurface/);
+    assert.doesNotMatch(appSource, /<DesktopSidebar/);
+    assert.match(constructSidebarSource, /<SidebarContent/);
+    assert.match(constructSidebarSource, /<SidebarGroup/);
+    assert.match(constructSidebarSource, /<SidebarMenu/);
+    assert.match(constructSidebarSource, /<SidebarFooter/);
+    assert.match(constructSidebarSource, /sidebar-surface-enter/);
     assert.match(appSource, /aria-label="Construct agent layout"/);
     assert.match(appSource, /render=\{\s*<DesktopChromeButton\s+aria-label="Project actions"/);
     assert.doesNotMatch(appSource, /<Tabs(?:\s|>)/);
@@ -94,9 +103,16 @@ describe("Construct interface shell boundary", () => {
     assert.doesNotMatch(appSource, /<DesktopShell[\s\S]{0,180}key=\{activeProject/);
   });
 
-  it("renders the Flow landing composition through Opaline", () => {
-    assert.match(dashboardSource, /<DesktopHomeSurface/);
+  it("renders the literal source empty landing with working Construct adapters", () => {
+    assert.doesNotMatch(dashboardSource, /<DesktopHomeSurface|HEADLINES/);
+    assert.match(dashboardSource, /What should we work on\?/);
+    assert.match(dashboardSource, /data-empty-landing-composer-block="true"/);
     assert.match(dashboardSource, /<AgentSessionComposer/);
+    assert.match(dashboardSource, /placeholder="Ask for follow-up changes or attach images"/);
+    assert.match(dashboardSource, /<HomeProjectPicker/);
+    assert.match(homeProjectPickerSource, /Work in a project/);
+    assert.match(flowWorkspaceSource, /onProviderChange: \(provider: ComposerProvider\)/);
+    assert.match(flowWorkspaceSource, /ShadcnDropdownMenu as ComposerMenu/);
   });
 
   it("keeps Opaline free of Construct runtime and persistence dependencies", () => {
