@@ -1,6 +1,6 @@
 [package]
 name = "construct"
-version = "0.7.0"
+version = "0.7.0-alpha"
 description = "Construct desktop IDE for agentic project work."
 authors = ["Abhinav Mishra <abhinav@tryconstruct.cc>"]
 edition = "2021"

@@ -1,7 +1,7 @@
 {
   "name": "@construct/app",
   "private": true,
-  "version": "0.7.0",
+  "version": "0.7.0-alpha",
   "type": "module",
   "description": "Construct desktop IDE for agentic project work.",
   "productName": "Construct",
