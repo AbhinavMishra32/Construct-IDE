@@ -64,7 +64,9 @@ function isReleaseArtifact(file) {
   const base = path.basename(file);
   if (base.endsWith(".blockmap")) return false;
   if (base.startsWith("builder-")) return false;
-  if (!base.startsWith("Construct-")) return false;
+  // Tauri uses target-specific separators: Linux RPMs use `Construct-`,
+  // while DMG, MSI, NSIS, DEB, and AppImage artifacts use `_` or `.`.
+  if (!/^Construct(?:[-_.]|$)/.test(base)) return false;
   const allowed = [
     ".dmg",
     ".zip",
