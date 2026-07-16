@@ -173,14 +173,24 @@ jobs:
         working-directory: app
         shell: bash
         env:
-          # Tauri code-signing + notarization (no-op when the secrets are unset).
-          APPLE_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: pnpm tauri build
+          # Use neutral names here: Tauri treats its signing variables as enabled
+          # when they exist, even if GitHub supplied an empty secret value.
+          MACOS_CERTIFICATE_INPUT: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD_INPUT: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_SIGNING_IDENTITY_INPUT: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          MACOS_APPLE_ID_INPUT: ${{ secrets.APPLE_ID }}
+          MACOS_APPLE_PASSWORD_INPUT: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          MACOS_TEAM_ID_INPUT: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -n "$MACOS_CERTIFICATE_INPUT" ]; then
+            export APPLE_CERTIFICATE="$MACOS_CERTIFICATE_INPUT"
+            export APPLE_CERTIFICATE_PASSWORD="$MACOS_CERTIFICATE_PASSWORD_INPUT"
+            export APPLE_SIGNING_IDENTITY="$MACOS_SIGNING_IDENTITY_INPUT"
+            export APPLE_ID="$MACOS_APPLE_ID_INPUT"
+            export APPLE_PASSWORD="$MACOS_APPLE_PASSWORD_INPUT"
+            export APPLE_TEAM_ID="$MACOS_TEAM_ID_INPUT"
+          fi
+          pnpm tauri build
 
       - name: Upload package artifacts
         uses: actions/upload-artifact@v5
