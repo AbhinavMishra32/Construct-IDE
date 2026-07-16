@@ -8,7 +8,11 @@ const packageJson = JSON.parse(readFileSync(path.join(root, "package.json"), "ut
 const tag = process.env.TAG?.trim() || `v${packageJson.version}`;
 const version = tag.replace(/^v/, "");
 const releaseDir = path.resolve(root, process.env.RELEASE_ARTIFACT_DIR || path.join("app", "release", version));
-const notesFile = path.join(root, "docs", "releases", `${version}.md`);
+const taggedNotesFile = path.join(root, "docs", "releases", `${version}.md`);
+// A public tag may use a shorter marketing label (for example, 0.7-alpha)
+// while manifests retain the canonical SemVer version (0.7.0-alpha).
+const canonicalNotesFile = path.join(root, "docs", "releases", `${packageJson.version}.md`);
+const notesFile = existsSync(taggedNotesFile) ? taggedNotesFile : canonicalNotesFile;
 const explicitPrerelease = process.env.IS_PRERELEASE?.trim();
 const isPrerelease = explicitPrerelease
   ? explicitPrerelease === "true"
