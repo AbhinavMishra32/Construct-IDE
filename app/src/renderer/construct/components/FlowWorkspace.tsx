@@ -1,11 +1,9 @@
 import Editor, { DiffEditor } from "@monaco-editor/react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import type { editor as MonacoEditor } from "monaco-editor";
-import { ArrowDownIcon, ArrowUpIcon, BadgeCheckIcon, BookOpenIcon, BotIcon, BrainCircuitIcon, CheckCircle2Icon, CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleAlertIcon, CircleIcon, CornerDownLeftIcon, CpuIcon, FileTextIcon, GaugeIcon, GitCompareIcon, HelpCircleIcon, Layers3Icon, ListChecksIcon, Loader2Icon, PencilIcon, PlusCircleIcon, RotateCcwIcon, RouteIcon, SearchIcon, SendIcon, StarIcon, TerminalIcon, Trash2Icon, PlusIcon, MicIcon, type LucideIcon } from "lucide-react";
+import { ArrowDownIcon, ArrowUpIcon, BadgeCheckIcon, BookOpenIcon, BotIcon, BrainCircuitIcon, CheckCircle2Icon, CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleAlertIcon, CircleIcon, CloudIcon, CornerDownLeftIcon, CpuIcon, FileTextIcon, GaugeIcon, GitCompareIcon, GithubIcon, HelpCircleIcon, Layers3Icon, ListChecksIcon, Loader2Icon, PencilIcon, PlusCircleIcon, RotateCcwIcon, RouteIcon, SearchIcon, SendIcon, Settings2Icon, StarIcon, TerminalIcon, Trash2Icon, MicIcon, type LucideIcon } from "lucide-react";
 import {
   AdaptiveSidecarLayout,
-  AgentSessionComposer,
-  AgentSessionSurface,
   Button,
   ShadcnDialog,
   ShadcnDialogContent,
@@ -66,8 +64,12 @@ import {
 import { ConstructCodeBlock } from "./ConstructCode";
 import { KnowledgeCard } from "./KnowledgeCard";
 import { ConceptSummaryCard } from "./ConceptSummaryCard";
+import {
+  FLOW_CHAT_EVENT_CARD_CLASS_NAME,
+  FLOW_CHAT_EVENT_ICON_CLASS_NAME,
+  FLOW_CHAT_EVENT_ROW_CLASS_NAME
+} from "./flowChatStyles";
 import { iconForFile } from "./workspace/FileChooserContent";
-import { ConstructAuthLogo } from "../../components/auth/construct-auth-logo";
 import type { InlineFileRef } from "../lib/inlineRefs";
 import { Badge } from "../../components/ui/badge";
 import {
@@ -89,6 +91,8 @@ import { Textarea } from "../../components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../../components/ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
 import { cn } from "../../lib/utils";
+import { AsideConstructThread } from "./AsideConstructThread";
+import { ProviderModelPicker, type ComposerProvider } from "./ProviderModelPicker";
 import {
   activateDocument,
   closeDocument,
@@ -207,6 +211,9 @@ export function FlowWorkspace({
   onGuidePanelChange,
   onKnowledgePanelChange,
   onPanelViewChange,
+  onChatMaximize,
+  onChatPanel,
+  onChatClose,
   onLayoutRequest,
   onProjectChange,
   onRunCommand,
@@ -222,6 +229,9 @@ export function FlowWorkspace({
   onGuidePanelChange: (panel: ReactNode | null) => void;
   onKnowledgePanelChange?: (panel: ReactNode | null) => void;
   onPanelViewChange: (view: "chat" | "project") => void;
+  onChatMaximize: () => void;
+  onChatPanel: () => void;
+  onChatClose: () => void;
   onLayoutRequest?: (request: FlowLayoutRequest) => void;
   onProjectChange: (project: FlowProjectRecord) => void;
   onRunCommand: (command: string, cwd: string) => void;
@@ -845,6 +855,9 @@ export function FlowWorkspace({
         openConcept={activePanelView === "chat" && chatMode === "maximized" ? openConcept : null}
         theme={theme}
         onActiveViewChange={onPanelViewChange}
+        onChatMaximize={onChatMaximize}
+        onChatPanel={onChatPanel}
+        onChatClose={onChatClose}
         onRunAgent={runAgent}
         onSubmitTask={submitTask}
         onCloseConceptDetails={() => setOpenConcept(null)}
@@ -863,7 +876,7 @@ export function FlowWorkspace({
       />
     );
     return () => onGuidePanelChange(null);
-  }, [activePanelView, chatMode, learningMaterialsHidden, liveSession, onGuidePanelChange, onPanelViewChange, openConcept, openConceptById, openInlineFile, openTaskTab, pending, project, rewindUserSession, runAgent, sessions, submitTask, theme, updateChatScrollTop, setOpenConcept]);
+  }, [activePanelView, chatMode, learningMaterialsHidden, liveSession, onChatClose, onChatMaximize, onChatPanel, onGuidePanelChange, onPanelViewChange, openConcept, openConceptById, openInlineFile, openTaskTab, pending, project, rewindUserSession, runAgent, sessions, submitTask, theme, updateChatScrollTop, setOpenConcept]);
 
   useEffect(() => {
     onKnowledgePanelChange?.(null);
@@ -1202,10 +1215,12 @@ function FlowAgentPanel({
   liveSession,
   pending,
   chatMode,
-  chatScrollTop,
   openConcept,
   theme,
   onActiveViewChange,
+  onChatMaximize,
+  onChatPanel,
+  onChatClose,
   onRunAgent,
   onSubmitTask,
   onCloseConceptDetails,
@@ -1213,8 +1228,6 @@ function FlowAgentPanel({
   onOpenConceptById,
   onOpenTask,
   onOpenFile,
-  onRewindUserMessage,
-  onChatScrollTopChange,
   onResetChat
 }: {
   project: FlowProjectRecord;
@@ -1227,6 +1240,9 @@ function FlowAgentPanel({
   openConcept: ConceptCard | null;
   theme: "light" | "dark" | "system";
   onActiveViewChange: (view: "chat" | "project") => void;
+  onChatMaximize: () => void;
+  onChatPanel: () => void;
+  onChatClose: () => void;
   onRunAgent: (message: string, options?: FlowAgentRunOptions) => Promise<void>;
   onSubmitTask: (task: ConstructFlowPracticeTask, note?: string, subtaskId?: string) => Promise<void>;
   onCloseConceptDetails: () => void;
@@ -1238,19 +1254,8 @@ function FlowAgentPanel({
   onChatScrollTopChange: (scrollTop: number | null) => void;
   onResetChat: () => void;
 }) {
-  const [draft, setDraft] = useState("");
-  const [rewindingSessionId, setRewindingSessionId] = useState<string | null>(null);
-  const [acknowledgedConceptEventKeys, setAcknowledgedConceptEventKeys] = useState<Set<string>>(() => new Set());
-  const acknowledgeConceptEvent = useCallback((eventKey: string) => {
-    setAcknowledgedConceptEventKeys((current) => {
-      const next = new Set(current);
-      next.add(eventKey);
-      return next;
-    });
-  }, []);
   const mergedSessions = useMemo(() => mergeSessions(sessions, liveSession), [liveSession, sessions]);
   const flowConcepts = useMemo(() => collectFlowConcepts(mergedSessions), [mergedSessions]);
-  const conceptMutations = useMemo(() => collectConceptMutations(mergedSessions), [mergedSessions]);
   const flowTasks = useMemo(() => mergedSessions.flatMap((session) => session.practiceTasks), [mergedSessions]);
   const flowExercises = useMemo(() => mergedSessions.flatMap((session) => session.conceptExercises ?? []), [mergedSessions]);
   const pathNodes = useMemo(() => [...(project.flow.pathNodes ?? [])].sort((a, b) => a.order - b.order), [project.flow.pathNodes]);
@@ -1258,128 +1263,22 @@ function FlowAgentPanel({
   const activeTask = useMemo(() => findActiveTaskForNode(flowTasks, currentPathNode?.id), [currentPathNode?.id, flowTasks]);
   const activeQuestion = useMemo(() => findActiveFlowQuestion(mergedSessions), [mergedSessions]);
   const learningMaterialsHidden = activeQuestion?.payload.hideLearningMaterials === true;
-  const activeConceptExercise = useMemo(() => {
-    const waitingExercises = flowExercises.filter((ex) => ex.status === "waiting");
-    return waitingExercises.length > 0 ? waitingExercises[waitingExercises.length - 1] : undefined;
-  }, [flowExercises]);
-
-  const activeComposerItem = useMemo(() => {
-    if (activeConceptExercise) {
-      let eventId = "";
-      for (const session of mergedSessions) {
-        const timelineEvent = session.timeline?.find(
-          (e) => e.kind === "tool" && e.name === "concept-exercise" && (() => {
-            const payload = readExerciseToolPayload(e.input, e.outputPreview);
-            const resolved = resolveExerciseForToolPayload(payload, session.conceptExercises ?? [], session.id);
-            return resolved?.id === activeConceptExercise.id;
-          })()
-        );
-        if (timelineEvent) {
-          eventId = timelineEvent.id;
-          return {
-            type: "exercise" as const,
-            id: activeConceptExercise.id,
-            title: activeConceptExercise.title,
-            prompt: activeConceptExercise.prompt,
-            domId: `${session.id}:exercise:${eventId}`,
-            item: activeConceptExercise
-          };
-        }
-      }
-      return {
-        type: "exercise" as const,
-        id: activeConceptExercise.id,
-        title: activeConceptExercise.title,
-        prompt: activeConceptExercise.prompt,
-        domId: "",
-        item: activeConceptExercise
-      };
-    }
-
-    if (activeTask) {
-      let eventId = "";
-      for (const session of mergedSessions) {
-        const timelineEvent = session.timeline?.find(
-          (e) => e.kind === "tool" && e.name === "practice-task" && (() => {
-            const payload = readTaskToolPayload(e.input, e.outputPreview);
-            const resolved = resolveTaskForToolPayload(payload, session.practiceTasks ?? [], session.id);
-            return resolved?.id === activeTask.id;
-          })()
-        );
-        if (timelineEvent) {
-          eventId = timelineEvent.id;
-          return {
-            type: "task" as const,
-            id: activeTask.id,
-            title: activeTask.title,
-            prompt: activeTask.prompt,
-            domId: `${session.id}:task:${eventId}`,
-            item: activeTask
-          };
-        }
-      }
-      return {
-        type: "task" as const,
-        id: activeTask.id,
-        title: activeTask.title,
-        prompt: activeTask.prompt,
-        domId: "",
-        item: activeTask
-      };
-    }
-
-    return undefined;
-  }, [activeConceptExercise, activeTask, mergedSessions]);
-  const messages = useMemo(() => buildFlowMessages({
-    sessions: mergedSessions,
-    concepts: flowConcepts,
-    conceptMutations,
-    tasks: flowTasks,
-    pathNodes,
-    currentTaskId: activeTask?.id,
-    acknowledgedConceptEventKeys,
-    theme,
-    onOpenConceptDetails,
-    onOpenConceptById,
-    onAcknowledgeConceptEvent: acknowledgeConceptEvent,
-    onOpenTask,
-    onOpenFile,
-    onRewindUserMessage: async (sessionId, content) => {
-      setRewindingSessionId(sessionId);
-      try {
-        await onRewindUserMessage(sessionId);
-        setDraft(content);
-      } finally {
-        setRewindingSessionId(null);
-      }
-    },
-    rewindingSessionId,
-    pending,
-    chatMode
-  }), [acknowledgeConceptEvent, acknowledgedConceptEventKeys, activeTask?.id, conceptMutations, flowConcepts, flowTasks, mergedSessions, onOpenConceptById, onOpenConceptDetails, onOpenFile, onOpenTask, onRewindUserMessage, pathNodes, rewindingSessionId, pending, theme, chatMode]);
   const latestContextWindow = useMemo(() => findLatestContextWindow(mergedSessions), [mergedSessions]);
   const [aiSettings, setAiSettings] = useState<AiSettings | null>(null);
   const [modelOptions, setModelOptions] = useState<ModelCatalogEntry[]>([]);
-  const [modelsBusy, setModelsBusy] = useState(false);
-  const [modelsError, setModelsError] = useState<string | null>(null);
   const aiSettingsRef = useRef<AiSettings | null>(null);
 
   const refreshModels = useCallback(async (settingsSnapshot?: AiSettings | null) => {
     const resolvedSettings = settingsSnapshot ?? aiSettingsRef.current;
     if (!resolvedSettings) return;
-    setModelsBusy(true);
-    setModelsError(null);
     try {
       const models = await listModels({
         provider: resolvedSettings.source === "construct-cloud" ? "construct-cloud" : resolvedSettings.provider,
         apiKey: apiKeyForProvider(resolvedSettings)
       });
       setModelOptions(models);
-    } catch (error) {
-      setModelsError(error instanceof Error ? error.message : String(error));
+    } catch {
       setModelOptions([]);
-    } finally {
-      setModelsBusy(false);
     }
   }, []);
 
@@ -1395,9 +1294,7 @@ function FlowAgentPanel({
         setAiSettings(settings.ai);
         void refreshModels(settings.ai);
       })
-      .catch((error) => {
-        if (!cancelled) setModelsError(error instanceof Error ? error.message : String(error));
-      });
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -1414,12 +1311,10 @@ function FlowAgentPanel({
     if (!aiSettings) return;
     const optimistic = { ...aiSettings, reasoningEffort };
     setAiSettings(optimistic);
-    setModelsError(null);
     try {
       const settings = await updateAiSettings({ ai: { reasoningEffort } });
       setAiSettings(settings.ai);
-    } catch (error) {
-      setModelsError(error instanceof Error ? error.message : String(error));
+    } catch {
       const settings = await getSettings();
       setAiSettings(settings.ai);
     }
@@ -1430,31 +1325,38 @@ function FlowAgentPanel({
     const key = modelSettingsKeyForProvider(aiSettings.source === "construct-cloud" ? "construct-cloud" : aiSettings.provider);
     const optimistic = { ...aiSettings, [key]: model };
     setAiSettings(optimistic);
-    setModelsError(null);
     try {
       const settings = await updateAiSettings({ ai: { [key]: model } });
       setAiSettings(settings.ai);
-    } catch (error) {
-      setModelsError(error instanceof Error ? error.message : String(error));
+    } catch {
       const settings = await getSettings();
       setAiSettings(settings.ai);
     }
   }, [aiSettings]);
 
-  useEffect(() => {
-    setDraft(activeQuestion?.payload.initialAnswer ?? "");
-  }, [activeQuestion?.id]);
+  const updateProvider = useCallback(async (provider: AiSettings["provider"] | "construct-cloud") => {
+    if (!aiSettings) return;
+    const patch = provider === "construct-cloud"
+      ? { source: "construct-cloud" as const, featureModels: {} }
+      : { source: "byok" as const, provider, featureModels: {} };
+    const optimistic = { ...aiSettings, ...patch };
+    setAiSettings(optimistic);
+    setModelOptions([]);
+    try {
+      const settings = await updateAiSettings({ ai: patch });
+      setAiSettings(settings.ai);
+      await refreshModels(settings.ai);
+    } catch {
+      const settings = await getSettings();
+      setAiSettings(settings.ai);
+      await refreshModels(settings.ai);
+    }
+  }, [aiSettings, refreshModels]);
 
-  const submitComposer = useCallback(() => {
-    const message = draft.trim();
-    if (!message) return;
-    setDraft("");
-    void onRunAgent(message, activeTask ? { taskMessage: { taskId: activeTask.id, pathNodeId: activeTask.pathNodeId } } : undefined);
-  }, [activeTask, draft, onRunAgent]);
   const showMaximizedConceptDock = activeView === "chat" && chatMode === "maximized" && openConcept !== null;
 
   return (
-    <aside className="flex h-full min-h-0 flex-col bg-background">
+    <aside className="flex h-full min-h-0 flex-col bg-[var(--color-background-surface)] font-system-ui">
       {activeView === "project" && (
         <div className="flex min-h-12 shrink-0 items-center justify-between gap-3 border-b border-border/45 bg-background/95 px-3 py-2">
           <div className="flex min-w-0 items-center gap-2">
@@ -1537,86 +1439,27 @@ function FlowAgentPanel({
             ) : null}
           </div>
           <div className="construct-flow-chat-thread relative flex min-h-0 flex-1 flex-col overflow-hidden">
-          <AgentSessionSurface
-            className="construct-flow-session min-h-0 flex-1 bg-transparent"
-            messages={messages}
-            emptyState={<div className="construct-flow-empty-state flex flex-col items-center gap-3 text-center"><ConstructAuthLogo markClassName="construct-auth-logo__mark--agent-empty" /><span>Ask the Construct agent what to build or learn next.</span></div>}
-            scrollKey={`${messages.length}:${liveSession?.updatedAt ?? "idle"}`}
-            timelineScrollTop={chatScrollTop}
-            onTimelineScroll={(state) => {
-              onChatScrollTopChange(state.atBottom ? null : state.scrollTop);
-            }}
-            composer={
-              activeQuestion ? (
-                <FlowQuestionComposer
-                  key={activeQuestion.id}
-                  question={activeQuestion}
-                  workspacePath={project.workspacePath}
-                  theme={theme}
-                  chatMode={chatMode}
-                  value={draft}
-                  onValueChange={setDraft}
-                  onAnswer={(response) => {
-                    setDraft("");
-                    void onRunAgent("Continue from the tracked question answer.", { questionResponse: response });
-                  }}
-                  onSkip={() => {
-                    const response = buildFlowQuestionResponse(activeQuestion, "", true);
-                    setDraft("");
-                    void onRunAgent("Continue from the skipped tracked question.", { questionResponse: response });
-                  }}
-                  pending={pending && !activeQuestion}
-                  onOpenFile={onOpenFile}
-                  onOpenConcept={onOpenConceptById}
-                />
-              ) : (
-                <>
-                  <AgentSessionComposer
-                    className={cn("construct-flow-composer", chatMode === "panel" && "is-panel")}
-                    value={draft}
-                    onValueChange={setDraft}
-                    onSubmit={submitComposer}
-                    pending={pending}
-                    submitLabel="Send"
-                    placeholder={activeTask ? `Message the Construct agent about: ${activeTask.title}` : "Ask for follow-up changes"}
-                    header={
-                      chatMode === "panel" && activeComposerItem ? (
-                        <ActiveComposerItemIndicator
-                          activeItem={activeComposerItem}
-                          isHeader={true}
-                          pending={pending}
-                          onSubmitTask={onSubmitTask}
-                        />
-                      ) : undefined
-                    }
-                    footerStart={
-                      chatMode !== "panel" && activeComposerItem ? (
-                        <ActiveComposerItemIndicator
-                          activeItem={activeComposerItem}
-                          pending={pending}
-                          onSubmitTask={onSubmitTask}
-                        />
-                      ) : null
-                    }
-                    footerEnd={
-                      <FlowComposerRightControls
-                        contextWindow={latestContextWindow}
-                        settings={aiSettings}
-                        model={activeFlowModel}
-                        models={flowModelOptions}
-                        modelsBusy={modelsBusy}
-                        modelsError={modelsError}
-                        reasoningEffort={aiSettings?.reasoningEffort ?? "auto"}
-                        onModelChange={updateFlowModel}
-                        onReasoningEffortChange={updateReasoningEffort}
-                      />
-                    }
-                  />
-                  {/* Kept for static analysis tests: <FlowComposerControls */}
-                </>
-              )
-            }
-          />
+            <AsideConstructThread
+              activeModel={activeFlowModel}
+              activeTask={activeTask}
+              aiSettings={aiSettings}
+              chatMode={chatMode}
+              liveSession={liveSession}
+              models={flowModelOptions}
+              pending={pending}
+              project={project}
+              sessions={sessions}
+              theme={theme}
+              onModelChange={updateFlowModel}
+              onOpenConcept={onOpenConceptById}
+              onOpenTask={onOpenTask}
+              onProviderChange={updateProvider}
+              onReasoningEffortChange={updateReasoningEffort}
+              onRunAgent={onRunAgent}
+              onChatMaximize={onChatMaximize}
+              onChatPanel={onChatPanel}
+              onChatClose={onChatClose}
+            />
           </div>
         </div>
       )}
@@ -1722,15 +1565,16 @@ function FlowReasoningEffortDropdown({
         <TooltipTrigger asChild>
           <DropdownMenuTrigger asChild>
             <Button
-                className="h-6 gap-1 rounded-full px-1.5 text-[10.5px]"
+                className="h-8 gap-2 rounded-xl px-2.5 text-[length:var(--app-font-size-ui,12px)] font-normal"
                 size="sm"
-                variant="secondary"
+                variant="chrome"
                 type="button"
                 disabled={disabled}
                 title="Thinking effort"
               >
-                <BrainCircuitIcon size={12} />
-                <span className="hidden sm:inline">{active.short}</span>
+                <Settings2Icon data-icon="inline-start" />
+                <span className="hidden sm:inline">{active.label}</span>
+                <ChevronDownIcon className="opacity-55" data-icon="inline-end" />
             </Button>
           </DropdownMenuTrigger>
         </TooltipTrigger>
@@ -1744,10 +1588,10 @@ function FlowReasoningEffortDropdown({
             onClick={() => onChange(option.value)}
           >
             <span className="flex items-center gap-2">
-              <BrainCircuitIcon size={13} className="text-muted-foreground" />
+              <Settings2Icon className="text-muted-foreground" />
               {option.label}
             </span>
-            {option.value === value ? <CheckIcon size={13} /> : null}
+            {option.value === value ? <CheckIcon /> : null}
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>
@@ -3367,7 +3211,7 @@ function questionKey(sessionId: string, toolCallId: string): string {
 
 function isQuestionTool(name: string | undefined): boolean {
   const normalized = (name ?? "").replace(/[^a-z0-9]/gi, "").toLowerCase();
-  return normalized === "askuser" || normalized === "askquestion";
+  return normalized === "askuser" || normalized === "askquestion" || normalized === "askuserquestion";
 }
 
 function buildFlowQuestionResponse(
@@ -3401,8 +3245,8 @@ function buildQuestionAnsweredPart(
     type: "actions",
     id: `${sessionId}:question-answer:${toolCall.id}`,
     content: (
-      <div className="construct-flow-event-card group flex w-full max-w-[46rem] min-w-0 items-start gap-2 rounded-[10px] border border-border/70 bg-card/90 px-2.5 py-2 text-[12px] shadow-sm transition-[background-color,border-color] duration-150 hover:bg-muted/20" data-flow-surface="question-answered">
-        <span className="grid size-5 shrink-0 place-items-center rounded-[6px] border border-border/70 bg-background/80 text-muted-foreground shadow-xs">
+      <div className={cn("construct-flow-event-card group flex items-start gap-2 px-2.5 py-2 text-[12px]", FLOW_CHAT_EVENT_ROW_CLASS_NAME)} data-flow-surface="question-answered">
+        <span className={cn(FLOW_CHAT_EVENT_ICON_CLASS_NAME, "size-5 rounded-[6px]")}>
           <HelpCircleIcon size={11} />
         </span>
         <div className="min-w-0 flex-1 bg-transparent">
@@ -3523,8 +3367,9 @@ function buildConceptExercisePart({
   const isPanel = chatMode === "panel";
 
   const containerClass = cn(
-    "construct-flow-exercise-card flex w-full max-w-[46rem] min-w-0 flex-col gap-2 rounded-[10px] border border-border/70 bg-card/95 p-3 text-left text-foreground shadow-sm",
-    isPanel && "max-w-full p-2.5 rounded-xl gap-2"
+    "construct-flow-exercise-card flex flex-col gap-2 p-3 text-left text-foreground",
+    FLOW_CHAT_EVENT_CARD_CLASS_NAME,
+    isPanel && "max-w-full gap-2 p-2.5"
   );
 
   return {
@@ -3534,7 +3379,7 @@ function buildConceptExercisePart({
       <div className={containerClass} data-flow-surface="concept-exercise">
         <div className={cn("flex min-w-0 items-center justify-between gap-2.5 border-b border-border/55 pb-2", isPanel && "pb-1.5 gap-2")}>
           <div className="flex min-w-0 items-center gap-2">
-            <span className={cn("grid size-6 shrink-0 place-items-center rounded-[7px] border shadow-xs bg-background/80", iconClass, isPanel && "size-6 rounded-[6px]")}>
+            <span className={cn(FLOW_CHAT_EVENT_ICON_CLASS_NAME, "size-6", iconClass, isPanel && "size-6 rounded-[6px]")}>
               {failed ? (
                 <CircleAlertIcon size={isPanel ? 11 : 13} />
               ) : status === "running" ? (
@@ -3730,8 +3575,9 @@ function buildPlanPathPart({
   const isPanel = chatMode === "panel";
 
   const containerClass = cn(
-    "construct-flow-event-card flex w-full max-w-[46rem] min-w-0 flex-col gap-2 rounded-[10px] border border-border/70 bg-card/90 p-3 text-left text-foreground shadow-sm",
-    isPanel && "p-2.5 rounded-xl gap-1.5"
+    "construct-flow-event-card flex flex-col gap-2 p-3 text-left text-foreground",
+    FLOW_CHAT_EVENT_CARD_CLASS_NAME,
+    isPanel && "gap-1.5 p-2.5"
   );
 
   return {
@@ -3743,7 +3589,8 @@ function buildPlanPathPart({
         <div className="flex min-w-0 items-center justify-between gap-2.5 border-b border-border/50 pb-2">
           <div className="flex min-w-0 items-center gap-2">
             <span className={cn(
-              "grid size-6 shrink-0 place-items-center rounded-[7px] border shadow-xs bg-background/80",
+              FLOW_CHAT_EVENT_ICON_CLASS_NAME,
+              "size-6",
               failed ? "border-destructive/15 text-destructive bg-destructive/5" : "border-border/70 text-muted-foreground",
               isPanel && "size-6"
             )}>
@@ -4022,15 +3869,17 @@ function buildTaskCreatedPart({
       <button
         type="button"
         className={cn(
-          "construct-flow-event-card group flex w-full max-w-[46rem] min-w-0 items-center justify-between gap-2.5 rounded-[12px] border border-border/60 bg-muted/30 p-2.5 text-left text-foreground hover:bg-muted/65 active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 cursor-default",
-          isPanel && "p-2 gap-2 rounded-lg"
+          "construct-flow-event-card group flex items-center justify-between gap-2.5 p-2.5 text-left text-foreground active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 disabled:cursor-default",
+          FLOW_CHAT_EVENT_ROW_CLASS_NAME,
+          isPanel && "gap-2 p-2"
         )}
         disabled={!ready}
         onClick={() => task && onOpenTask(task)}
       >
         <div className="flex min-w-0 flex-1 items-center gap-2.5">
           <span className={cn(
-            "grid size-8 shrink-0 place-items-center rounded-[8px] border shadow-sm group-hover:scale-95",
+            FLOW_CHAT_EVENT_ICON_CLASS_NAME,
+            "size-8 group-hover:scale-95",
             iconClass,
             isPanel && "size-7 rounded-md"
           )}>
@@ -4672,12 +4521,14 @@ function buildConceptCardPart(
           />
         ) : (
           <div className={cn(
-            "construct-concept-summary-card flex w-full max-w-[46rem] min-w-0 items-center justify-between gap-2.5 rounded-[12px] border border-border/60 bg-muted/30 p-2.5 text-left text-foreground",
-            isPanel && "p-2 gap-2 rounded-lg"
+            "construct-concept-summary-card flex items-center justify-between gap-2.5 p-2.5 text-left text-foreground",
+            FLOW_CHAT_EVENT_CARD_CLASS_NAME,
+            isPanel && "gap-2 p-2"
           )}>
             <div className="flex min-w-0 flex-1 items-center gap-2.5">
               <span className={cn(
-                "grid size-8 shrink-0 place-items-center rounded-[8px] border border-destructive/15 bg-destructive/5 text-destructive shadow-sm",
+                FLOW_CHAT_EVENT_ICON_CLASS_NAME,
+                "size-8 border-destructive/15 bg-destructive/5 text-destructive",
                 isPanel && "size-7 rounded-md"
               )}>
                 <Trash2Icon size={isPanel ? 13 : 14} />
@@ -4760,12 +4611,14 @@ function ConceptCreationPreview({
 
   return (
     <div className={cn(
-      "construct-concept-summary-card flex w-full max-w-[46rem] min-w-0 items-center justify-between gap-2.5 rounded-[12px] border border-border/60 bg-muted/30 p-2.5 text-left text-foreground",
-      isPanel && "p-2 gap-2 rounded-lg"
+      "construct-concept-summary-card flex items-center justify-between gap-2.5 p-2.5 text-left text-foreground",
+      FLOW_CHAT_EVENT_CARD_CLASS_NAME,
+      isPanel && "gap-2 p-2"
     )}>
       <div className="flex min-w-0 flex-1 items-center gap-2.5">
         <span className={cn(
-          "grid size-8 shrink-0 place-items-center rounded-[8px] border border-border/70 bg-background/80 text-muted-foreground shadow-sm",
+          FLOW_CHAT_EVENT_ICON_CLASS_NAME,
+          "size-8",
           isPanel && "size-7 rounded-md"
         )}>
           <Loader2Icon size={isPanel ? 13 : 14} className="animate-spin text-[color:var(--construct-warning)]" />
@@ -5128,8 +4981,8 @@ function FlowQuestionComposer({
   const isPanel = chatMode === "panel";
 
   const containerClass = isPanel
-    ? "mx-auto w-full max-w-[min(46rem,calc(100%-0.75rem))] rounded-xl border border-border/70 bg-card px-2.5 pb-2 pt-2.5 shadow-[0_4px_12px_color-mix(in_srgb,var(--foreground)_5%,transparent)] dark:shadow-none"
-    : "construct-flow-question-composer mx-auto w-full max-w-[min(46rem,calc(100%-0.75rem))] rounded-[20px] border border-border/70 bg-card px-4 pb-3 pt-4 shadow-[0_10px_30px_color-mix(in_srgb,var(--foreground)_7%,transparent)] dark:shadow-none";
+    ? "mx-auto w-full max-w-[min(46rem,calc(100%-0.75rem))] rounded-[var(--radius-user-message,0.8rem)] border border-[color:var(--color-border)] bg-[var(--color-background-elevated-primary-opaque)] px-2.5 pb-2 pt-2.5 shadow-[0_4px_18px_-6px_color-mix(in_srgb,var(--foreground)_7%,transparent)]"
+    : "construct-flow-question-composer mx-auto w-full max-w-[min(46rem,calc(100%-0.75rem))] rounded-[var(--radius-user-message,0.8rem)] border border-[color:var(--color-border)] bg-[var(--color-background-elevated-primary-opaque)] px-4 pb-3 pt-4 shadow-[0_4px_18px_-6px_color-mix(in_srgb,var(--foreground)_7%,transparent)]";
 
   const questionTextClass = isPanel
     ? "max-w-full text-[13px] font-medium leading-5 text-foreground"
@@ -5520,8 +5373,8 @@ function FlowMemoryUpdateCard({
     }
   };
   return (
-    <div className="construct-flow-event-card flex w-full max-w-[46rem] min-w-0 items-center gap-2.5 rounded-[10px] border border-border/70 bg-card/90 px-3 py-2 text-[13px] text-muted-foreground shadow-sm transition-colors duration-150 hover:bg-muted/20" data-flow-surface="memory-updated">
-      <span className="grid size-6 shrink-0 place-items-center rounded-[7px] border border-border/70 bg-background/80 text-muted-foreground shadow-xs">
+    <div className={cn("construct-flow-event-card flex items-center gap-2.5 px-3 py-2 text-[13px] text-muted-foreground", FLOW_CHAT_EVENT_ROW_CLASS_NAME)} data-flow-surface="memory-updated">
+      <span className={cn(FLOW_CHAT_EVENT_ICON_CLASS_NAME, "size-6")}>
         <FileTextIcon size={13} />
       </span>
       <div className="min-w-0 flex-1">
@@ -5981,12 +5834,17 @@ function defaultFlowModelForProvider(provider: AiSettings["provider"] | "constru
   return "gpt-5-mini";
 }
 
-export function apiKeyForProvider(settings: AiSettings): string | undefined {
-  if (settings.source === "construct-cloud") return settings.constructCloudAccessToken || undefined;
-  if (settings.provider === "openai") return settings.openAiApiKey || undefined;
-  if (settings.provider === "openrouter") return settings.openRouterApiKey || undefined;
-  if (settings.provider === "opencode-zen") return settings.opencodeZenApiKey || undefined;
-  if (settings.provider === "litellm") return settings.liteLlmApiKey || undefined;
+export function apiKeyForProvider(
+  settings: AiSettings,
+  provider: AiSettings["provider"] | "construct-cloud" = settings.source === "construct-cloud"
+    ? "construct-cloud"
+    : settings.provider,
+): string | undefined {
+  if (provider === "construct-cloud") return settings.constructCloudAccessToken || undefined;
+  if (provider === "openai") return settings.openAiApiKey || undefined;
+  if (provider === "openrouter") return settings.openRouterApiKey || undefined;
+  if (provider === "opencode-zen") return settings.opencodeZenApiKey || undefined;
+  if (provider === "litellm") return settings.liteLlmApiKey || undefined;
   return undefined;
 }
 
@@ -6031,7 +5889,7 @@ function providerLabel(provider: AiSettings["provider"] | "construct-cloud"): st
   return "OpenAI";
 }
 
-function modelSettingsKeyForProvider(provider: AiSettings["provider"] | "construct-cloud"): "openAiModel" | "openRouterModel" | "opencodeZenModel" | "githubCopilotModel" | "liteLlmModel" | "constructCloudModel" {
+export function modelSettingsKeyForProvider(provider: AiSettings["provider"] | "construct-cloud"): "openAiModel" | "openRouterModel" | "opencodeZenModel" | "githubCopilotModel" | "liteLlmModel" | "constructCloudModel" {
   if (provider === "construct-cloud") return "constructCloudModel";
   if (provider === "openrouter") return "openRouterModel";
   if (provider === "opencode-zen") return "opencodeZenModel";
@@ -6309,7 +6167,8 @@ export function FlowComposerRightControls({
   modelsBusy,
   modelsError,
   reasoningEffort,
-  onModelChange,
+  onLoadProviderModels,
+  onProviderModelChange,
   onReasoningEffortChange
 }: {
   contextWindow?: ConstructAgentContextWindow;
@@ -6319,111 +6178,37 @@ export function FlowComposerRightControls({
   modelsBusy: boolean;
   modelsError: string | null;
   reasoningEffort: AiSettings["reasoningEffort"];
-  onModelChange: (model: string) => void;
+  onLoadProviderModels: (provider: ComposerProvider) => Promise<ModelCatalogEntry[]>;
+  onProviderModelChange: (provider: ComposerProvider, model: string) => void;
   onReasoningEffortChange: (effort: AiSettings["reasoningEffort"]) => void;
 }) {
-  const activeModel = models.find((m) => m.id === model) ?? null;
-  const provider = settings?.source === "construct-cloud" ? "construct-cloud" : (settings?.provider ?? "openai");
-  const buckets = useMemo(() => bucketModelsByBrand(models, provider), [models, provider]);
-  const visibleBrandKeys = useMemo(() => sortModelBrands([...buckets.keys()]), [buckets]);
-
-  const shortModel = getShortModelName(activeModel?.name || readableModelName(model) || "Model");
-  const activeEffort = reasoningEffortMeta(reasoningEffort);
-  const shortEffort = activeEffort.value === "auto" ? "Auto" : activeEffort.value === "none" ? "Off" : activeEffort.label;
-  const triggerLabel = `${shortModel} ${shortEffort}`;
-  const hasCatalogModel = models.some((entry) => entry.id === model);
-
   return (
     <div className="flex items-center gap-1.5">
       {contextWindow ? <FlowCircularContextMeter contextWindow={contextWindow} /> : null}
 
       {settings ? (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 gap-1.5 rounded-full px-2 text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-muted"
-                type="button"
-                disabled={modelsBusy}
-              >
-                <CpuIcon size={15.5} className="shrink-0" />
-                <span className="composer-trigger-text truncate max-w-[12rem]">{triggerLabel}</span>
-                <ChevronDownIcon size={13.5} className="text-muted-foreground/70 shrink-0" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56 p-1 z-50">
-            <DropdownMenuGroup>
-              <DropdownMenuLabel className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Reasoning</DropdownMenuLabel>
-              {reasoningEffortOptions.map((option) => {
-                const displayLabel = option.label;
-                return (
-                  <DropdownMenuItem
-                    key={option.value}
-                    className="flex items-center justify-between gap-2 rounded-[7px] text-xs"
-                    onClick={() => onReasoningEffortChange(option.value)}
-                  >
-                    <span>{displayLabel}</span>
-                    {option.value === reasoningEffort ? <CheckIcon size={13} className="text-foreground shrink-0" /> : null}
-                  </DropdownMenuItem>
-                );
-              })}
-            </DropdownMenuGroup>
-
-            <DropdownMenuSeparator className="-mx-1 my-1 h-px bg-border" />
-
-            <DropdownMenuGroup>
-              <DropdownMenuLabel className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Model</DropdownMenuLabel>
-              <div className="px-2 pb-1 text-[10px] leading-snug text-muted-foreground">
-                Change models in AI settings.
-              </div>
-              {!hasCatalogModel && model ? (
-                <div className="mx-1 mb-1 rounded-[7px] border border-border/70 bg-muted/35 px-2 py-1.5 text-[10px] leading-snug text-muted-foreground">
-                  Custom model from settings.
-                </div>
-              ) : null}
-              {visibleBrandKeys.map((brand) => {
-                const meta = modelBrandMeta(brand);
-                const brandModels = buckets.get(brand) ?? [];
-
-                return (
-                  <DropdownMenuSub key={brand}>
-                    <DropdownMenuSubTrigger className="flex items-center justify-between gap-2 rounded-[7px] text-xs">
-                      <span>{meta.label}</span>
-                    </DropdownMenuSubTrigger>
-                    <DropdownMenuPortal>
-                      <DropdownMenuSubContent className="w-64 max-h-[220px] overflow-y-auto p-1 z-50">
-                        <DropdownMenuGroup>
-                          <DropdownMenuLabel className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground sticky top-0 bg-popover z-10">
-                            {meta.label} Models
-                          </DropdownMenuLabel>
-                          {brandModels.map((m) => (
-                            <DropdownMenuItem
-                              key={m.id}
-                              className="flex items-center justify-between gap-2 rounded-[7px] text-xs"
-                              onSelect={() => onModelChange(m.id)}
-                            >
-                              <span className="truncate">{m.name || readableModelName(m.id)}</span>
-                              {m.id === model ? <CheckIcon size={13} className="text-foreground shrink-0" /> : null}
-                            </DropdownMenuItem>
-                          ))}
-                        </DropdownMenuGroup>
-                      </DropdownMenuSubContent>
-                    </DropdownMenuPortal>
-                  </DropdownMenuSub>
-                );
-              })}
-            </DropdownMenuGroup>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <>
+          <ProviderModelPicker
+            settings={settings}
+            model={model}
+            models={models}
+            modelsBusy={modelsBusy}
+            modelsError={modelsError}
+            onLoadProviderModels={onLoadProviderModels}
+            onProviderModelChange={onProviderModelChange}
+          />
+          <FlowReasoningEffortDropdown
+            value={reasoningEffort}
+            disabled={modelsBusy}
+            onChange={onReasoningEffortChange}
+          />
+        </>
       ) : (
-        <span className="inline-flex h-7 items-center gap-1.5 rounded-full bg-muted/45 px-2 text-[11px] text-muted-foreground">
+        <span className="inline-flex h-7 items-center gap-1.5 px-2 text-[11px] text-muted-foreground">
           <Loader2Icon className="size-3 animate-spin" />
           Model
         </span>
       )}
-
-
 
       {modelsError ? (
         <Tooltip>

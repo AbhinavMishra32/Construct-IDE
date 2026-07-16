@@ -127,6 +127,7 @@ export type ProjectSummary = {
   description: string;
   progress: number;
   lastOpenedAt: string | null;
+  createdAt?: string | null;
   workspacePath: string;
   sourcePath: string | null;
   currentStepIndex?: number;

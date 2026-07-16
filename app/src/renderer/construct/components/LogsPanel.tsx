@@ -595,10 +595,10 @@ export const LogsPanel: React.FC<{ theme: "light" | "dark" | "system" }> = ({ th
             >
               Auto-scroll
             </button>
-            <Button onClick={handleCopyAll} variant="secondary" size="small" className="h-[24px] rounded-[7px] px-2.5 text-[12px]">
+            <Button onClick={handleCopyAll} variant="secondary" size="sm" className="h-[24px] rounded-[7px] px-2.5 text-[12px]">
               Copy
             </Button>
-            <Button onClick={handleClear} variant="secondary" size="small" className="h-[24px] rounded-[7px] px-2.5 text-[12px]">
+            <Button onClick={handleClear} variant="secondary" size="sm" className="h-[24px] rounded-[7px] px-2.5 text-[12px]">
               Clear
             </Button>
           </div>

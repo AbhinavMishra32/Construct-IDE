@@ -4,6 +4,7 @@ import { Toaster } from "sonner";
 
 import "./index.css";
 import ConstructApp from "./construct/ConstructApplication";
+import { ConstructDesktopWindowControls } from "./construct/components/ConstructDesktopWindowControls";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { logStore } from "./construct/lib/logStore";
 import { performanceProfiler } from "./construct/lib/performanceProfiler";
@@ -81,6 +82,7 @@ async function bootstrap(): Promise<void> {
 
   document.documentElement.dataset.opalineWindowType = "electron";
   document.documentElement.dataset.windowType = "electron";
+  document.documentElement.dataset.runtime = "electron";
   document.documentElement.dataset.opalineOs = os;
 
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
@@ -102,6 +104,7 @@ async function bootstrap(): Promise<void> {
           <ConstructApp />
         </React.Profiler>
         <Toaster richColors position="bottom-right" toastOptions={{ className: "font-sans" }} />
+        <ConstructDesktopWindowControls />
       </TooltipProvider>
     </React.StrictMode>
   );

@@ -41,8 +41,13 @@ pub fn rust_learning_open(state: State<'_, CoreState>, input: Value) -> CommandR
     let project = input
         .get("sourceProjectId")
         .and_then(Value::as_str)
-        .unwrap_or_default();
-    let concept = input.get("id").and_then(Value::as_str).unwrap_or_default();
+        .unwrap_or_default()
+        .to_string();
+    let concept = input
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
     let at = format!(
         "{}",
         std::time::SystemTime::now()
@@ -50,7 +55,12 @@ pub fn rust_learning_open(state: State<'_, CoreState>, input: Value) -> CommandR
             .unwrap_or_default()
             .as_millis()
     );
-    state.learning.apply_patch(&json!({"knowledgeConcept":input,"conceptOpen":{"projectId":project,"conceptId":concept,"openedAt":at}}))
+    let result = state.learning.apply_patch(&json!({"knowledgeConcept":input,"conceptOpen":{"projectId":project,"conceptId":concept,"openedAt":at}}))?;
+    state.profile.record_activity(
+        "concept-open",
+        (!project.is_empty()).then_some(project.as_str()),
+    )?;
+    Ok(result)
 }
 #[tauri::command]
 pub fn rust_learning_concept_open(
@@ -64,7 +74,10 @@ pub fn rust_learning_concept_open(
             .unwrap_or_default()
             .as_millis()
     );
-    state.learning.apply_patch(&json!({"conceptOpen":{"projectId":input.get("projectId"),"conceptId":input.get("conceptId"),"openedAt":at},"knowledgeConcept":input.get("savedRecord")}))
+    let project_id = input.get("projectId").and_then(Value::as_str);
+    let result = state.learning.apply_patch(&json!({"conceptOpen":{"projectId":input.get("projectId"),"conceptId":input.get("conceptId"),"openedAt":at},"knowledgeConcept":input.get("savedRecord")}))?;
+    state.profile.record_activity("concept-open", project_id)?;
+    Ok(result)
 }
 #[tauri::command]
 pub fn rust_learning_remove(state: State<'_, CoreState>, input: Value) -> CommandResult<Value> {

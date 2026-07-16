@@ -1,0 +1,3 @@
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._posthogChunkIds=e._posthogChunkIds||{},e._posthogChunkIds[n]="019f4f14-6712-76a2-ba1c-f0bbf7844c41")}catch(e){}}();import{n as i}from"./api-B2grmKFn.js";async function l(){const n=await i("/billing/plans");if(!n.ok)throw new Error("Failed to load billing plans");return await n.json()}l.queryKey=[{scope:"billing",entity:"plans"}];export{l as t};
+
+//# chunkId=019f4f14-6712-76a2-ba1c-f0bbf7844c41

@@ -14,11 +14,44 @@ pub fn apply(session: &mut Value, trace: &Value) -> bool {
         return false;
     }
     upsert(array_mut(session, "agentEvents"), event.clone());
+    if event_type == "tool" {
+        if let Some(tool_call) = tool_call_record(event) {
+            upsert(array_mut(session, "toolCalls"), tool_call);
+        }
+    }
     if let Some(part) = timeline_part(event) {
         upsert(array_mut(session, "timeline"), part);
     }
     session["updatedAt"] = json!(timestamp());
     true
+}
+
+fn tool_call_record(event: &Value) -> Option<Value> {
+    let name = event
+        .get("toolName")
+        .or_else(|| event.get("title"))?
+        .as_str()?;
+    let id = event.get("toolCallId").or_else(|| event.get("id"))?.clone();
+    let status = event.get("status").cloned().unwrap_or(json!("running"));
+    let completed = status.as_str() != Some("running");
+    let created_at = event
+        .get("createdAt")
+        .cloned()
+        .unwrap_or_else(|| json!(timestamp()));
+    let mut record = compact(json!({
+        "id":id,
+        "name":name,
+        "title":event.get("title"),
+        "reason":event.get("detail"),
+        "input":event.get("input"),
+        "outputPreview":event.get("outputPreview"),
+        "status":status,
+        "createdAt":created_at
+    }));
+    if completed {
+        record["completedAt"] = json!(timestamp());
+    }
+    Some(record)
 }
 
 pub fn finalize_reply(session: &mut Value, reply: &str, status: &str) {
@@ -151,7 +184,7 @@ mod tests {
 
     #[test]
     fn projects_incremental_reasoning_and_tools_into_the_timeline() {
-        let mut session = json!({"agentEvents":[],"timeline":[]});
+        let mut session = json!({"agentEvents":[],"timeline":[],"toolCalls":[]});
         assert!(apply(
             &mut session,
             &json!({"event":{
@@ -170,6 +203,25 @@ mod tests {
         assert_eq!(session["timeline"].as_array().unwrap().len(), 2);
         assert_eq!(session["timeline"][0]["kind"], "reasoning");
         assert_eq!(session["timeline"][1]["toolCallId"], "provider-tool-1");
+        assert_eq!(session["toolCalls"][0]["id"], "provider-tool-1");
+        assert_eq!(session["toolCalls"][0]["name"], "read-file");
+    }
+
+    #[test]
+    fn persists_completed_question_calls_for_the_waiting_session() {
+        let mut session = json!({"agentEvents":[],"timeline":[],"toolCalls":[]});
+        assert!(apply(
+            &mut session,
+            &json!({"event":{
+                "id":"visible-tool-1","toolCallId":"provider-question-1","type":"tool",
+                "status":"completed","title":"ask_user_question","toolName":"ask_user_question",
+                "input":{"question":"What is your Python experience?","choices":["New","Comfortable"]},
+                "outputPreview":"Question prepared","createdAt":"2026-07-15T00:00:00Z"
+            }})
+        ));
+        assert_eq!(session["toolCalls"][0]["id"], "provider-question-1");
+        assert_eq!(session["toolCalls"][0]["name"], "ask_user_question");
+        assert!(session["toolCalls"][0].get("response").is_none());
     }
 
     #[test]

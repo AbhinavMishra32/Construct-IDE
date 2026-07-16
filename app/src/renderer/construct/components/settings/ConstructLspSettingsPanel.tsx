@@ -84,7 +84,7 @@ export function ConstructLspSettingsPanel({
                   control={
                     <Button
                       variant="secondary"
-                      size="small"
+                      size="sm"
                       disabled={installBusy || server.status === "installing"}
                       onClick={() => onInstall(language)}
                     >
@@ -108,19 +108,19 @@ export function ConstructLspSettingsPanel({
                 <div className="flex items-center gap-2">
                   {aggregateStatus === "running" ? (
                     <>
-                      <Button variant="secondary" size="small" onClick={onRestart}>
+                      <Button variant="secondary" size="sm" onClick={onRestart}>
                         Restart
                       </Button>
-                      <Button variant="danger" size="small" onClick={onStop}>
+                      <Button variant="destructive" size="sm" onClick={onStop}>
                         Stop
                       </Button>
                     </>
                   ) : (
-                    <Button size="small" disabled={aggregateStatus === "not-installed"} onClick={onStart}>
+                    <Button size="sm" disabled={aggregateStatus === "not-installed"} onClick={onStart}>
                       Start
                     </Button>
                   )}
-                  <Button variant="secondary" size="small" disabled={installBusy} onClick={() => onInstall()}>
+                  <Button variant="secondary" size="sm" disabled={installBusy} onClick={() => onInstall()}>
                     {aggregateStatus === "not-installed" ? "Download & Install" : "Reinstall / Update"}
                   </Button>
                 </div>

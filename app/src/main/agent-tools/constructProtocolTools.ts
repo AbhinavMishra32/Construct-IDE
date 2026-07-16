@@ -571,7 +571,7 @@ export function createConstructProtocolTools(options: ConstructProtocolToolsOpti
     )
   });
 
-  const createQuestionTool = (id: "ask-question" | "askQuestion" | "ask-user" | "askUser") => createTool({
+  const createQuestionTool = (id: "ask-question" | "askQuestion" | "ask_question" | "ask-user" | "askUser" | "ask_user" | "ask_user_question") => createTool({
     id,
     description: "Ask the learner a direct tracked question when their answer is useful for learner modeling or required to choose the next step. The question field should be the short direct question only; put any brief setup in normal chat before the tool call. Reason is internal and should stay concise. Use for learner background, preferences, constraints, goals, confidence, clarification, design choices, blockers, or approvals. Do not use this for quizzes, recap prompts, or questions whose answer can be taught in chat or encoded in task guidance. Questions pause the Flow session until answered unless the caller explicitly resumes later. Most questions should be answered, so allowSkip defaults to false; enable it only for genuinely optional or repetitive follow-ups. For code answers, initialAnswer may prefill the Monaco input only when the learner already wrote most of the code and the question asks for a small iteration. Set hideLearningMaterials when the answer should come from learner memory rather than currently visible concept material.",
     inputSchema: z.object({
@@ -596,11 +596,14 @@ export function createConstructProtocolTools(options: ConstructProtocolToolsOpti
   });
   const askQuestion = createQuestionTool("ask-question");
   const askQuestionAlias = createQuestionTool("askQuestion");
+  const askQuestionSnakeAlias = createQuestionTool("ask_question");
   const askUser = createQuestionTool("ask-user");
   const askUserAlias = createQuestionTool("askUser");
+  const askUserSnakeAlias = createQuestionTool("ask_user");
+  const askUserQuestionAlias = createQuestionTool("ask_user_question");
 
-  const internetSearch = createTool({
-    id: "internet-search",
+  const createInternetSearchTool = (id: "internet-search" | "internetSearch" | "internet_search") => createTool({
+    id,
     description: "Search the web for current project/domain/technology/concept research. Return concise source-grounded results for citation-backed Flow chat and Concepts.",
     inputSchema: z.object({
       query: z.string().min(2).max(180),
@@ -619,7 +622,10 @@ export function createConstructProtocolTools(options: ConstructProtocolToolsOpti
       );
     }
   });
-  const createInternetFetchTool = (id: "internet-fetch" | "internetFetch") => createTool({
+  const internetSearch = createInternetSearchTool("internet-search");
+  const internetSearchAlias = createInternetSearchTool("internetSearch");
+  const internetSearchSnakeAlias = createInternetSearchTool("internet_search");
+  const createInternetFetchTool = (id: "internet-fetch" | "internetFetch" | "internet_fetch") => createTool({
     id,
     description: "Fetch readable content from exact public web URLs. Uses Tavily Extract when configured, with a bounded public HTTP fallback. Use after internet-search when you need the source page contents.",
     inputSchema: z.object({
@@ -655,6 +661,7 @@ export function createConstructProtocolTools(options: ConstructProtocolToolsOpti
   });
   const internetFetch = createInternetFetchTool("internet-fetch");
   const internetFetchAlias = createInternetFetchTool("internetFetch");
+  const internetFetchSnakeAlias = createInternetFetchTool("internet_fetch");
 
   const tools: ToolsInput = {
     findFiles,
@@ -670,12 +677,17 @@ export function createConstructProtocolTools(options: ConstructProtocolToolsOpti
     workspaceDiff,
     "ask-question": askQuestion,
     askQuestion: askQuestionAlias,
+    ask_question: askQuestionSnakeAlias,
     "ask-user": askUser,
     askUser: askUserAlias,
-    internetSearch,
+    ask_user: askUserSnakeAlias,
+    ask_user_question: askUserQuestionAlias,
+    internetSearch: internetSearchAlias,
+    internet_search: internetSearchSnakeAlias,
     "internet-search": internetSearch,
     "internet-fetch": internetFetch,
-    internetFetch: internetFetchAlias
+    internetFetch: internetFetchAlias,
+    internet_fetch: internetFetchSnakeAlias
   };
 
   if (isFlowProject(options.project)) {
@@ -1022,7 +1034,7 @@ function bufferToString(value: string | Buffer | undefined): string {
   return "";
 }
 
-async function searchInternet(query: string, limit: number, tavilyApiKey?: string) {
+export async function searchInternet(query: string, limit: number, tavilyApiKey?: string) {
   const boundedLimit = Math.min(Math.max(limit, 1), 6);
   const boundedQuery = query.trim().slice(0, 380);
   if (tavilyApiKey?.trim()) {
@@ -1075,7 +1087,7 @@ async function searchInternet(query: string, limit: number, tavilyApiKey?: strin
   }));
 }
 
-async function fetchInternetPages(input: {
+export async function fetchInternetPages(input: {
   urls: string[];
   query?: string;
   maxChars: number;

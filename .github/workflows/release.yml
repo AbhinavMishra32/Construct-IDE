@@ -122,7 +122,7 @@ jobs:
             echo "version=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
             echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
 
-            # Update version in package.json + tauri.conf.json files
+            # Update every package manifest Tauri uses for a coherent canary version.
             node -e "
               const fs = require('fs');
               const newVer = '${NEW_VERSION}';
@@ -135,8 +135,13 @@ jobs:
               const tc = JSON.parse(fs.readFileSync(conf, 'utf8'));
               tc.version = newVer;
               fs.writeFileSync(conf, JSON.stringify(tc, null, 2) + '\n');
+              const cargo = 'app/src-tauri/Cargo.toml';
+              const cargoSource = fs.readFileSync(cargo, 'utf8');
+              const nextCargoSource = cargoSource.replace(/^version = ".*"$/m, 'version = "' + newVer + '"');
+              if (nextCargoSource === cargoSource) throw new Error('Could not update app/src-tauri/Cargo.toml version.');
+              fs.writeFileSync(cargo, nextCargoSource);
             "
-            echo "Updated package.json + tauri.conf.json to version ${NEW_VERSION}"
+            echo "Updated package.json, Cargo.toml, and tauri.conf.json to version ${NEW_VERSION}"
           else
             # For tag push or manual dispatch with tag
             if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then

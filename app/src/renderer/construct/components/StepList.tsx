@@ -36,7 +36,7 @@ export function StepList({
         title: (
           <Button
             variant="ghost"
-            size="small"
+            size="sm"
             disabled={!onSelectLiveStep}
             onClick={() => onSelectLiveStep?.(liveStep.id)}
           >
@@ -68,7 +68,7 @@ export function StepList({
       title: (
         <Button
           variant="ghost"
-          size="small"
+          size="sm"
           disabled={!isClickable}
           onClick={() => onSelectStep?.(stepIndex)}
         >

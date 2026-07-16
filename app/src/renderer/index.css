@@ -1,8 +1,17 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "@opaline/ui/styles.css";
 @import "@fontsource-variable/geist";
 @import "@fontsource-variable/geist-mono";
 @source "../../../opaline/packages/ui/src";
+
+@font-face {
+  font-family: "Aside Display";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("/aside-thread/assets/AsideDisplay-Variable-LuohODSt.woff2") format("woff2-variations");
+}
 
 @keyframes opaline-agent-thinking-shimmer {
   from { background-position: 100% center; }
@@ -161,10 +170,6 @@ html, body {
 
 .construct-auth-logo__mark--hero {
   width: 3rem;
-}
-
-.construct-auth-logo__mark--sidebar {
-  width: 1.5rem;
 }
 
 .construct-auth-logo__mark--agent-empty {
@@ -331,44 +336,73 @@ html, body {
   --color-mist: #e2e8f0;
   --color-signal: #0f766e;
   --color-ember: #f97316;
-  --radius: 0.75rem;
-  --font-sans: "Inter", "Geist Variable", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-mono: "Geist Mono Variable", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --radius: 0.625rem;
+  --font-sans: "Geist Variable", "Geist", sans-serif;
+  --font-display: "Aside Display", "Geist Variable", "Geist", sans-serif;
+  --font-system-ui: "Geist Variable", "Geist", sans-serif;
+  --font-mono: "Berkeley Mono", "Geist Mono Variable", "Geist Mono", "JetBrains Mono", monospace;
 }
 
 :root {
   color-scheme: light;
+  --squircle-factor: 1.4;
+  --hairline: 0.5px;
+  --opaline-font-sans: "Geist Variable", "Geist", sans-serif;
+  --opaline-font-mono: "Berkeley Mono", "Geist Mono Variable", "Geist Mono", "JetBrains Mono", monospace;
+  --font-ui-family: var(--font-sans);
+  --font-system-ui: var(--font-sans);
   --construct-startup-logo-color: color-mix(in srgb, #111111 62%, transparent);
   --construct-auth-logo-color: color-mix(in srgb, #111111 82%, transparent);
-  --background: hsl(0 0% 100%);
-  --foreground: hsl(0 0% 9%);
-  --card: hsl(0 0% 100%);
-  --card-foreground: hsl(0 0% 9%);
-  --popover: hsl(0 0% 100%);
-  --popover-foreground: hsl(0 0% 9%);
-  --primary: hsl(0 0% 13%);
-  --primary-foreground: hsl(0 0% 98%);
-  --secondary: hsl(0 0% 96%);
-  --secondary-foreground: hsl(0 0% 13%);
-  --muted: hsl(0 0% 96%);
-  --muted-foreground: hsl(0 0% 45%);
-  --accent: hsl(0 0% 96%);
-  --accent-foreground: hsl(0 0% 13%);
-  --destructive: hsl(0 72% 51%);
-  --border: hsl(0 0% 90%);
-  --input: hsl(0 0% 90%);
-  --ring: hsl(0 0% 64%);
-  --sidebar: hsl(240 5% 97.5%);
-  --sidebar-foreground: hsl(240 10% 3.9%);
-  --sidebar-primary: hsl(240 5% 15%);
-  --sidebar-primary-foreground: hsl(0 0% 100%);
-  --sidebar-accent: color-mix(in srgb, var(--foreground) 4.5%, transparent);
-  --sidebar-accent-active: color-mix(in srgb, var(--foreground) 6.5%, transparent);
-  --sidebar-accent-foreground: hsl(240 10% 3.9%);
-  --sidebar-border: hsl(240 5% 90%);
-  --sidebar-ring: hsl(240 5% 64%);
-  --sidebar-accent-glass: rgba(0, 0, 0, 0.04);
-  --construct-shadow-overlay: 0 12px 32px #00000024;
+  --background: oklch(100% 0 0);
+  --foreground: oklch(14.5% 0 0);
+  --surface-primary: oklch(100% 0 0);
+  --surface-secondary: oklch(100% 0 0 / 85%);
+  --surface-tertiary: oklch(100% 0 0 / 55%);
+  --surface-primary-foreground: oklch(14.5% 0 0 / 85%);
+  --surface-secondary-foreground: oklch(14.5% 0 0 / 55%);
+  --surface-tertiary-foreground: oklch(14.5% 0 0 / 25%);
+  --card: var(--surface-primary);
+  --card-foreground: var(--foreground);
+  --popover: var(--background);
+  --popover-foreground: var(--foreground);
+  --primary: oklch(14.5% 0 0 / 95%);
+  --primary-foreground: oklch(98.5% 0 0 / 95%);
+  --secondary: oklch(14.5% 0 0 / 8%);
+  --secondary-foreground: oklch(14.5% 0 0 / 55%);
+  --muted: oklch(14.5% 0 0 / 5%);
+  --muted-foreground: oklch(14.5% 0 0 / 55%);
+  --accent: oklch(14.5% 0 0 / 10%);
+  --accent-foreground: oklch(14.5% 0 0 / 85%);
+  --destructive: oklch(57.7% 0.245 27.325);
+  --border: oklch(14.5% 0 0 / 10%);
+  --border-surface: oklch(14.5% 0 0 / 10%);
+  --border-surface-strong: oklch(14.5% 0 0 / 15%);
+  --input: oklch(14.5% 0 0 / 10%);
+  --ring: oklch(14.5% 0 0 / 8%);
+  --sidebar: color-mix(in oklab, var(--foreground) 3%, var(--background));
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-active: oklch(14.5% 0 0 / 13%);
+  --sidebar-accent-foreground: var(--accent-foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+  --sidebar-accent-glass: oklch(14.5% 0 0 / 5%);
+  --color-background-surface: var(--background);
+  --color-background-surface-under: color-mix(in oklab, var(--foreground) 2%, var(--background));
+  --color-background-editor-opaque: color-mix(in oklab, var(--foreground) 8%, var(--background));
+  --color-background-elevated-primary: var(--surface-secondary);
+  --color-background-elevated-primary-opaque: var(--surface-primary);
+  --color-background-elevated-secondary: var(--muted);
+  --color-background-elevated-secondary-opaque: color-mix(in oklab, var(--foreground) 7%, var(--background));
+  --app-user-message-background: var(--secondary);
+  --opaline-radius-sm: calc(0.25rem * var(--squircle-factor));
+  --opaline-radius-md: calc(0.375rem * var(--squircle-factor));
+  --opaline-radius-lg: calc(0.5rem * var(--squircle-factor));
+  --opaline-radius-xl: calc(0.75rem * var(--squircle-factor));
+  --opaline-radius-composer: calc(1rem * var(--squircle-factor));
+  --construct-shadow-overlay: 0 20px 25px -5px #0000001a, 0 8px 10px -6px #0000001a;
   --opaline-shadow-overlay: var(--construct-shadow-overlay);
   --construct-success: hsl(148 48% 34%);
   --construct-success-soft: hsl(148 42% 94%);
@@ -396,35 +430,51 @@ html, body {
   color-scheme: dark;
   --construct-startup-logo-color: color-mix(in srgb, #f5f5f5 62%, transparent);
   --construct-auth-logo-color: color-mix(in srgb, #ffffff 82%, transparent);
-  --background: hsl(0 0% 9%);
-  --foreground: hsl(0 0% 98%);
-  --card: hsl(0 0% 13%);
-  --card-foreground: hsl(0 0% 98%);
-  --popover: hsl(0 0% 13%);
-  --popover-foreground: hsl(0 0% 98%);
-  --primary: hsl(0 0% 90%);
-  --primary-foreground: hsl(0 0% 13%);
-  --secondary: hsl(0 0% 18%);
-  --secondary-foreground: hsl(0 0% 98%);
-  --muted: hsl(0 0% 18%);
-  --muted-foreground: hsl(0 0% 64%);
-  --accent: hsl(0 0% 18%);
-  --accent-foreground: hsl(0 0% 98%);
-  --destructive: hsl(0 63% 55%);
-  --border: hsl(0 0% 100% / 10%);
-  --input: hsl(0 0% 100% / 15%);
-  --ring: hsl(0 0% 45%);
-  --sidebar: hsl(240 7% 7.5%);
-  --sidebar-foreground: hsl(240 5% 90%);
-  --sidebar-primary: hsl(0 0% 98%);
-  --sidebar-primary-foreground: hsl(240 6% 7.5%);
-  --sidebar-accent: rgba(255, 255, 255, 0.06);
-  --sidebar-accent-active: rgba(255, 255, 255, 0.095);
-  --sidebar-accent-foreground: hsl(0 0% 100%);
-  --sidebar-border: hsl(240 5% 12%);
-  --sidebar-ring: hsl(240 5% 45%);
-  --sidebar-accent-glass: rgba(255, 255, 255, 0.045);
-  --construct-shadow-overlay: 0 12px 32px #00000024;
+  --background: oklch(20.5% 0 0);
+  --foreground: oklch(98.5% 0 0);
+  --surface-primary: oklch(98.5% 0 0 / 8%);
+  --surface-secondary: oklch(98.5% 0 0 / 6%);
+  --surface-tertiary: oklch(98.5% 0 0 / 4%);
+  --surface-primary-foreground: oklch(98.5% 0 0 / 85%);
+  --surface-secondary-foreground: oklch(98.5% 0 0 / 55%);
+  --surface-tertiary-foreground: oklch(98.5% 0 0 / 25%);
+  --card: color-mix(in oklab, var(--foreground) 8%, var(--background));
+  --card-foreground: var(--foreground);
+  --popover: oklch(26.9% 0 0);
+  --popover-foreground: var(--foreground);
+  --primary: oklch(98.5% 0 0 / 85%);
+  --primary-foreground: oklch(14.5% 0 0 / 85%);
+  --secondary: oklch(98.5% 0 0 / 8%);
+  --secondary-foreground: oklch(98.5% 0 0 / 55%);
+  --muted: oklch(98.5% 0 0 / 15%);
+  --muted-foreground: oklch(98.5% 0 0 / 55%);
+  --accent: oklch(98.5% 0 0 / 10%);
+  --accent-foreground: oklch(98.5% 0 0 / 85%);
+  --destructive: oklch(70.4% 0.191 22.216);
+  --border: oklch(98.5% 0 0 / 10%);
+  --border-surface: oklch(98.5% 0 0 / 15%);
+  --border-surface-strong: oklch(98.5% 0 0 / 20%);
+  --input: oklch(98.5% 0 0 / 10%);
+  --ring: oklch(98.5% 0 0 / 8%);
+  --sidebar: color-mix(in oklab, var(--foreground) 3%, var(--background));
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-active: oklch(98.5% 0 0 / 13%);
+  --sidebar-accent-foreground: var(--accent-foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+  --sidebar-accent-glass: oklch(98.5% 0 0 / 5%);
+  --color-background-surface: var(--background);
+  --color-background-surface-under: color-mix(in oklab, black 24%, var(--background));
+  --color-background-editor-opaque: color-mix(in oklab, var(--foreground) 8%, var(--background));
+  --color-background-elevated-primary: var(--surface-primary);
+  --color-background-elevated-primary-opaque: color-mix(in oklab, var(--foreground) 8%, var(--background));
+  --color-background-elevated-secondary: var(--surface-secondary);
+  --color-background-elevated-secondary-opaque: color-mix(in oklab, var(--foreground) 6%, var(--background));
+  --app-user-message-background: var(--secondary);
+  --construct-shadow-overlay: 0 20px 25px -5px #0006, 0 8px 10px -6px #0006;
   --opaline-shadow-overlay: var(--construct-shadow-overlay);
   --construct-success: hsl(148 62% 60%);
   --construct-success-soft: hsl(148 34% 18%);
@@ -498,92 +548,10 @@ html, body {
     box-shadow: var(--opaline-shadow-overlay) !important;
   }
 
-  .opaline-app-shell[data-resizing="true"] {
-    cursor: col-resize;
-  }
-
-  html[data-construct-platform="win32"] .construct-app-window {
-    --construct-win-titlebar-reserve: 150px;
-    --construct-win-window-radius: 16px;
-    width: 100% !important;
-    height: 100% !important;
-    margin: 0;
-    overflow: hidden;
-    border: 0;
-    border-radius: var(--construct-win-window-radius);
-    background: color-mix(in srgb, var(--background) 62%, transparent);
-    box-shadow:
-      0 0 0 1px color-mix(in srgb, var(--foreground) 8%, transparent) inset,
-      0 1px 0 color-mix(in srgb, var(--foreground) 7%, transparent) inset;
-  }
-
-  html[data-construct-platform="win32"] body,
-  html[data-construct-platform="win32"] .construct-startup-splash {
-    background: transparent !important;
-  }
-
-  html[data-construct-platform="win32"] .construct-app-window > .opaline-v2-sidebar-pane {
-    border-top-left-radius: var(--construct-win-window-radius);
-    border-bottom-left-radius: var(--construct-win-window-radius);
-    background: color-mix(in srgb, var(--sidebar) 46%, transparent) !important;
-    -webkit-backdrop-filter: blur(34px) saturate(1.8);
-    backdrop-filter: blur(34px) saturate(1.8);
-  }
-
-  html[data-construct-platform="win32"] .construct-app-window > section {
-    border-top-right-radius: var(--construct-win-window-radius);
-    border-bottom-right-radius: var(--construct-win-window-radius);
-    background: color-mix(in srgb, var(--background) 58%, transparent) !important;
-  }
-
-  html[data-construct-platform="win32"] .construct-app-window > section > header {
-    border-top-right-radius: var(--construct-win-window-radius);
-    -webkit-app-region: drag;
-    app-region: drag;
-    min-height: 30px;
-    padding-right: calc(var(--construct-win-titlebar-reserve) + 0.5rem) !important;
-    background: color-mix(in srgb, var(--background) 54%, transparent) !important;
-    -webkit-backdrop-filter: blur(34px) saturate(1.8);
-    backdrop-filter: blur(34px) saturate(1.8);
-  }
-
-  html[data-construct-platform="win32"] .construct-app-window > .opaline-v2-sidebar-pane > div:first-child {
-    justify-content: flex-start !important;
-    padding-left: 0.75rem !important;
-  }
-
-  html[data-construct-platform="win32"] .construct-app-window > section > header > div:first-child {
-    left: 0.75rem !important;
-  }
-
-  html[data-construct-platform="win32"] .construct-app-window > section > header > div:last-child {
-    position: static;
-    z-index: 50;
-    margin-right: 0 !important;
-  }
-
-  html[data-construct-platform="win32"] .construct-app-window .opaline-v2-inspector-surface {
-    background: color-mix(in srgb, var(--card) 66%, transparent) !important;
-    -webkit-backdrop-filter: blur(30px) saturate(1.65);
-    backdrop-filter: blur(30px) saturate(1.65);
-  }
-
-  html[data-construct-platform="win32"] .construct-app-window :where(button, a, input, textarea, select, summary, [role="button"], [role="tab"], [role="menuitem"], [role="slider"], [role="textbox"], [contenteditable="true"], .monaco-editor, .xterm, [data-no-drag]) {
-    -webkit-app-region: no-drag;
-    app-region: no-drag;
-  }
-
-  .opaline-app-shell[data-resizing="true"] .opaline-v2-sidebar-pane,
-  .opaline-app-shell[data-resizing="true"] .opaline-v2-inspector-pane,
-  .opaline-app-shell[data-resizing="true"] .opaline-v2-bottom-panel-frame {
-    transition: none !important;
-  }
-
-  .opaline-app-shell[data-resizing="true"] .opaline-v2-sidebar-pane,
-  .opaline-app-shell[data-resizing="true"] .opaline-v2-inspector-surface,
-  html[data-opaline-bottom-panel-resizing="true"] .opaline-v2-bottom-panel-frame {
+  html[data-opaline-bottom-panel-resizing="true"] [data-slot="desktop-bottom-panel"] {
     -webkit-backdrop-filter: none !important;
     backdrop-filter: none !important;
+    transition: none !important;
   }
 
   .construct-floating-task-card {
@@ -724,96 +692,14 @@ html, body {
   }
 
   .construct-flow-composer {
-    max-width: min(46rem, calc(100% - 0.75rem)) !important;
-    border-radius: 1.5rem !important;
-    background: color-mix(in srgb, var(--card) 96%, var(--background)) !important;
-    box-shadow:
-      0 14px 34px color-mix(in srgb, var(--foreground) 9%, transparent),
-      0 0 0 1px color-mix(in srgb, var(--border) 82%, transparent) !important;
     container-type: inline-size;
     container-name: composer;
-  }
-
-  .dark .construct-flow-composer {
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--border) 82%, transparent) !important;
-  }
-
-  .construct-flow-composer textarea {
-    min-height: 3.25rem !important;
-    max-height: 7rem !important;
-    padding: 0.75rem 1.25rem 0.25rem !important;
-    font-size: 12.5px !important;
-    line-height: 1.5 !important;
-    background: transparent !important;
-  }
-
-  .construct-flow-composer div + textarea {
-    padding-top: 0.2rem !important;
-  }
-
-  .construct-flow-composer > div:last-child {
-    gap: 0.375rem;
-    padding: 0.25rem 0.5rem 0.5rem 0.625rem !important;
-  }
-
-  /* ── Panel / Sidebar chat mode composer layout optimizations ── */
-  .construct-flow-composer.is-panel {
-    border-radius: 1rem !important;
-  }
-
-  .construct-flow-composer.is-panel textarea {
-    font-size: 12px !important;
-    padding-left: 1rem !important;
-    padding-right: 1rem !important;
-    padding-top: 0.6rem !important;
-  }
-
-  .construct-flow-composer.is-panel div + textarea {
-    padding-top: 0.15rem !important;
-  }
-
-  .construct-flow-composer.is-panel > div:first-child button {
-    padding-left: 1rem !important;
-    padding-right: 1rem !important;
-    padding-top: 0.6rem !important;
-    padding-bottom: 0.05rem !important;
-  }
-
-  .construct-flow-composer.is-panel > div:last-child {
-    padding: 0.125rem 0.5rem 0.375rem 0.5rem !important;
   }
 
   @container composer (max-width: 440px) {
     .construct-flow-composer .composer-trigger-text {
       display: none !important;
     }
-  }
-
-  .construct-flow-composer .agent-composer-submit-btn {
-    width: 1.75rem !important;
-    height: 1.75rem !important;
-    min-width: 1.75rem !important;
-    padding: 0 !important;
-    background-color: color-mix(in srgb, var(--foreground) 60%, transparent) !important;
-    color: var(--background) !important;
-    border-radius: 9999px !important;
-    opacity: 0.8;
-    transition: all 0.2s ease;
-  }
-
-  .construct-flow-composer .agent-composer-submit-btn:not(:disabled) {
-    background-color: var(--foreground) !important;
-    opacity: 1;
-  }
-
-  .construct-flow-composer .agent-composer-submit-btn:hover:not(:disabled) {
-    opacity: 0.9;
-    transform: scale(1.05);
-  }
-
-  .construct-flow-composer .agent-composer-submit-btn svg {
-    width: 0.9375rem !important;
-    height: 0.9375rem !important;
   }
 
   .construct-home-surface {
@@ -832,14 +718,7 @@ html, body {
     width: 100%;
     flex-direction: column;
     margin: 0 auto;
-    padding: 22px 48px 48px;
-  }
-
-  .construct-home-actions {
-    display: flex;
-    min-height: 2rem;
-    align-items: flex-start;
-    justify-content: flex-end;
+    padding: 0 1.25rem;
   }
 
   .construct-home-main {
@@ -849,7 +728,7 @@ html, body {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 96px 0 72px;
+    padding: 0;
   }
 
   .construct-home-main.is-researching {
@@ -860,7 +739,7 @@ html, body {
 
   .construct-home-stack {
     display: flex;
-    width: min(100%, 724px);
+    width: min(100%, 46rem);
     flex-direction: column;
     align-items: center;
     gap: 24px;
@@ -874,67 +753,6 @@ html, body {
   .construct-home-input-container {
     position: relative;
     width: 100%;
-  }
-
-  .construct-home-title {
-    position: absolute;
-    bottom: calc(100% + 24px);
-    left: 0;
-    right: 0;
-    margin: 0;
-    text-align: center;
-    font-size: 28px;
-    font-weight: 400;
-    line-height: 1.12;
-    color: color-mix(in srgb, var(--foreground) 96%, transparent);
-    letter-spacing: 0;
-  }
-
-  .construct-home-composer.construct-flow-composer {
-    width: 100%;
-    max-width: 724px !important;
-    border-radius: 22px !important;
-    background: color-mix(in srgb, var(--card) 98%, var(--background)) !important;
-    box-shadow:
-      0 18px 44px color-mix(in srgb, var(--foreground) 8%, transparent),
-      0 0 0 1px color-mix(in srgb, var(--border) 86%, transparent) !important;
-  }
-
-  .dark .construct-home-composer.construct-flow-composer {
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--border) 82%, transparent) !important;
-  }
-
-  .construct-home-composer.construct-flow-composer textarea {
-    min-height: 54px !important;
-    max-height: 96px !important;
-    padding: 13px 18px 0 !important;
-    font-size: 13px !important;
-    line-height: 20px !important;
-  }
-
-  .construct-home-composer.construct-flow-composer > div:last-child {
-    min-height: 34px;
-    padding: 0 8px 8px 12px !important;
-  }
-
-  .construct-home-composer.construct-flow-composer .agent-composer-submit-btn {
-    width: 28px !important;
-    height: 28px !important;
-    min-width: 28px !important;
-  }
-
-  .construct-home-composer-count {
-    display: inline-flex;
-    max-width: 10rem;
-    min-width: 0;
-    flex-shrink: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    padding: 0 0.25rem;
-    font-size: 13px;
-    line-height: 20px;
-    color: var(--muted-foreground);
   }
 
   .construct-home-research-card {
@@ -1305,20 +1123,16 @@ html, body {
 
   @media (max-width: 760px) {
     .construct-home-frame {
-      padding: 16px 16px 32px;
+      padding: 0 0.75rem;
     }
 
     .construct-home-main {
-      padding: 56px 0 48px;
+      padding: 0;
     }
 
     .construct-home-main.is-researching {
       padding-top: 1rem;
       padding-bottom: 1rem;
-    }
-
-    .construct-home-title {
-      font-size: 26px;
     }
 
     .construct-home-research-card {
@@ -1351,8 +1165,8 @@ html, body {
   [data-component="agent-session-timeline"] [data-slot="user-message-text"],
   .construct-flow-session [data-slot="text-part-body"],
   .construct-flow-session [data-slot="user-message-text"] {
-    font-size: 12.5px !important;
-    line-height: 1.55;
+    font-size: var(--app-font-size-chat, 12px) !important;
+    line-height: 1.625;
   }
 
   [data-component="agent-session-timeline"] [data-slot="text-part-body"] .text-sm,
@@ -1365,8 +1179,8 @@ html, body {
   [data-component="agent-session-timeline"] textarea,
   .construct-flow-session textarea,
   .opaline-agent-session-compose textarea {
-    font-size: 12.5px !important;
-    line-height: 1.5 !important;
+    font-size: var(--app-font-size-chat, 12px) !important;
+    line-height: 1.625 !important;
   }
 
   .construct-flow-session [data-component="agent-session-timeline"] {
@@ -1399,8 +1213,8 @@ html, body {
   }
 
   .construct-flow-session [data-slot="user-message-body"] {
-    background: color-mix(in srgb, var(--muted) 82%, var(--card));
-    box-shadow: 0 1px 2px color-mix(in srgb, var(--foreground) 5%, transparent);
+    background: var(--app-user-message-background);
+    box-shadow: none;
   }
 
   .construct-flow-session [data-component="text-part"] {
@@ -1519,7 +1333,7 @@ html, body {
 
   .construct-flow-chat-stage {
     --construct-flow-concept-dock-width: clamp(18rem, 28vw, 25rem);
-    background: var(--background);
+    background: var(--color-background-surface);
   }
 
   .construct-flow-chat-stage.is-maximized {
@@ -1552,24 +1366,15 @@ html, body {
 
   .construct-flow-chat-stage.is-maximized .construct-flow-event-card,
   .construct-flow-chat-stage.is-maximized .construct-concept-summary-card {
-    border-color: color-mix(in srgb, var(--border) 74%, transparent);
-    background: color-mix(in srgb, var(--card) 96%, var(--muted) 4%);
-    box-shadow:
-      0 1px 2px color-mix(in srgb, var(--foreground) 4%, transparent),
-      0 1px 0 color-mix(in srgb, var(--foreground) 4%, transparent) inset;
+    border-color: var(--color-border);
+    background: var(--color-background-elevated-secondary);
+    box-shadow: none;
   }
 
   .construct-flow-chat-stage.is-maximized .construct-flow-exercise-card {
-    border-color: color-mix(in srgb, var(--border) 82%, transparent);
-    background:
-      linear-gradient(
-        180deg,
-        color-mix(in srgb, var(--card) 98%, var(--muted) 2%),
-        color-mix(in srgb, var(--card) 94%, var(--muted) 6%)
-      );
-    box-shadow:
-      0 1px 2px color-mix(in srgb, var(--foreground) 5%, transparent),
-      0 1px 0 color-mix(in srgb, var(--foreground) 6%, transparent) inset;
+    border-color: var(--color-border);
+    background: var(--color-background-elevated-secondary);
+    box-shadow: none;
   }
 
   .construct-flow-chat-stage.is-maximized .construct-flow-question-composer {
@@ -1606,12 +1411,10 @@ html, body {
     min-height: 0;
     margin: 0.75rem 0 0.75rem 0.75rem;
     overflow: hidden;
-    border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
-    border-radius: 1.375rem;
-    background: color-mix(in srgb, var(--card) 94%, transparent);
-    box-shadow:
-      0 20px 50px color-mix(in srgb, var(--background) 35%, transparent),
-      0 1px 0 color-mix(in srgb, var(--foreground) 7%, transparent) inset;
+    border: 1px solid var(--color-border);
+    border-radius: 1rem;
+    background: var(--color-background-elevated-primary-opaque);
+    box-shadow: 0 4px 18px -6px color-mix(in srgb, var(--foreground) 7%, transparent);
   }
 
   .construct-flow-chat-concept-card:has([data-construct-explainable="concept-card"][data-collapsed="true"]) {
@@ -1629,7 +1432,7 @@ html, body {
   }
 
   .construct-flow-chat-stage.has-concept .construct-flow-chat-thread {
-    transform: translateX(0.375rem);
+    transform: translateX(0);
   }
 
   .construct-flow-event-card,
@@ -1639,7 +1442,17 @@ html, body {
   }
 
   .construct-flow-event-card {
-    box-shadow: 0 1px 2px color-mix(in srgb, var(--foreground) 4%, transparent);
+    box-shadow: none;
+  }
+
+  @media (max-width: 900px) {
+    .construct-flow-chat-stage {
+      --construct-flow-concept-dock-width: min(22rem, 46vw);
+    }
+
+    .construct-flow-chat-concept-card {
+      margin-left: 0.5rem;
+    }
   }
 
   .construct-flow-event-card > button:first-child {
@@ -1857,148 +1670,6 @@ html, body {
 .highlight-flash {
   animation: highlight-fade 3.5s ease-in-out;
   border-radius: 12px;
-}
-
-/* ── Sleek Scrollbars for Opaline Sidebar ── */
-.opaline-v2-sidebar-pane * {
-  scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
-}
-
-.opaline-v2-sidebar-pane *[data-scrolling="true"] {
-  scrollbar-color: var(--sidebar-border) transparent;
-}
-
-.opaline-v2-sidebar-pane *::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
-}
-
-.opaline-v2-sidebar-pane *::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.opaline-v2-sidebar-pane *::-webkit-scrollbar-thumb {
-  background: transparent;
-  border-radius: 99px;
-  transition: background-color 0.3s;
-}
-
-.opaline-v2-sidebar-pane *[data-scrolling="true"]::-webkit-scrollbar-thumb {
-  background: var(--sidebar-border);
-}
-
-.opaline-v2-sidebar-pane *::-webkit-scrollbar-thumb:hover {
-  background: var(--muted-foreground);
-}
-
-/* ── Soften Separator Lines ── */
-.opaline-v2-sidebar-pane hr,
-.opaline-v2-sidebar-pane div[role="separator"],
-.opaline-v2-sidebar-pane [data-sidebar="separator"],
-.opaline-v2-sidebar-pane .border-t,
-.opaline-v2-sidebar-pane .border-b,
-.opaline-v2-sidebar-pane .border-r {
-  border-color: color-mix(in srgb, var(--sidebar-border) 25%, transparent) !important;
-}
-
-.construct-sidebar-row {
-  height: 30px !important;
-  width: 100%;
-  align-items: center !important;
-  justify-content: flex-start !important;
-  gap: 8px !important;
-  border: 0 !important;
-  border-radius: 10px !important;
-  padding: 0 10px !important;
-  background: transparent !important;
-  color: var(--foreground) !important;
-  font-size: 13px !important;
-  font-weight: 450 !important;
-  line-height: 18px !important;
-  text-align: left;
-  box-shadow: none !important;
-}
-
-.construct-sidebar-row:hover:not(:disabled),
-.construct-sidebar-row[data-active="true"],
-[data-active="true"] > .construct-sidebar-row {
-  background: var(--sidebar-accent) !important;
-  color: var(--foreground) !important;
-  font-weight: 450 !important;
-  box-shadow: none !important;
-}
-
-.construct-sidebar-row [data-icon="inline-start"],
-.construct-sidebar-row [data-sidebar-row-icon] {
-  display: grid;
-  width: 17px;
-  height: 17px;
-  flex: 0 0 17px;
-  place-items: center;
-  color: color-mix(in srgb, var(--foreground) 54%, transparent);
-}
-
-.construct-sidebar-row [data-sidebar-row-label] {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.construct-sidebar-row[data-sidebar-row-layout="split"] {
-  justify-content: space-between !important;
-}
-
-.construct-sidebar-row[data-inset="true"] {
-  padding-left: 27px !important;
-}
-
-.construct-sidebar-row[data-construct-control="sidebar-account"] {
-  height: auto !important;
-  min-height: 44px;
-  padding-top: 6px !important;
-  padding-bottom: 6px !important;
-}
-
-/* ── Smooth transitions for UI actions in the sidebar ── */
-.opaline-v2-sidebar-pane button,
-.opaline-v2-sidebar-pane a {
-  transition: none !important;
-}
-
-.opaline-v2-sidebar-pane button:not(.construct-sidebar-row):not(.construct-sidebar-action):hover:not(:disabled),
-.opaline-v2-sidebar-pane a:not(.construct-sidebar-row):hover:not(:disabled) {
-  background-color: var(--sidebar-accent) !important;
-  color: var(--sidebar-accent-foreground) !important;
-  border-color: transparent !important;
-}
-
-.opaline-v2-sidebar-pane .construct-sidebar-action:hover:not(:disabled) {
-  background: transparent !important;
-  color: var(--foreground) !important;
-}
-
-.opaline-v2-sidebar-pane [data-active="true"]:not(.construct-sidebar-row):not(:has(> .construct-sidebar-row)) {
-  background-color: var(--sidebar-accent-active) !important;
-  color: var(--sidebar-accent-foreground) !important;
-}
-
-/* ── Sleek Sidebar Section Headings ── */
-.opaline-v2-sidebar-pane section > div:first-child,
-.opaline-v2-sidebar-pane [data-sidebar="group-label"],
-.opaline-v2-sidebar-pane [data-sidebar="sidebar-section-heading"],
-.opaline-v2-sidebar-pane [data-slot="sidebar-group-label"] {
-  font-size: 13px !important;
-  font-weight: 500 !important;
-  line-height: 18px !important;
-  text-transform: none !important;
-  letter-spacing: 0 !important;
-  color: var(--muted-foreground) !important;
-  opacity: 0.68 !important;
-  padding-left: 8px !important;
-  padding-top: 8px !important;
-  padding-bottom: 5px !important;
 }
 
 /* ── Base UI ScrollArea Custom Scrollbar Styling ── */

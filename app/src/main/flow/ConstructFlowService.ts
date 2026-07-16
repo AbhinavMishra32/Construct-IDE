@@ -7,7 +7,12 @@ import { createTool } from "@mastra/core/tools";
 import type { ToolsInput } from "@mastra/core/agent";
 import { z } from "zod";
 
-import { createConstructAgentRuntime, type ConstructAgentRuntimeMessage, type ConstructAgentTraceEntry } from "../constructAgentRuntime";
+import {
+  createConstructAgentRuntime,
+  type ConstructAgentRuntimeMessage,
+  type ConstructAgentToolChoice,
+  type ConstructAgentTraceEntry
+} from "../constructAgentRuntime";
 import { AgentLogService } from "../ai/AgentLogService";
 import { modelForAiFeature } from "../constructAiFeatures";
 import {
@@ -455,6 +460,7 @@ export class ConstructFlowService {
       ...pickFlowMainProtocolTools(protocol.tools, toolPolicy),
       ...pickFlowMainFlowTools(flowTools, toolPolicy)
     };
+    const toolChoice = explicitFlowToolChoice(input.message, tools);
 
     let reply: string;
     let runError: unknown;
@@ -470,6 +476,7 @@ export class ConstructFlowService {
         prompt: input.message,
         messages: modelMessages.map(({ role, content }) => ({ role, content })),
         tools,
+        toolChoice,
         maxSteps: toolPolicy.maxSteps,
         maxRetries: 2,
         onTrace: (entry) => {
@@ -595,6 +602,12 @@ export class ConstructFlowService {
         publish("updated");
       }
     });
+    const researchTools = pickProtocolTools(
+      protocol.tools,
+      settings?.ai.flowSourceGroundingEnabled === false
+        ? researchProtocolToolNames.filter((name) => !isInternetToolName(name))
+        : researchProtocolToolNames
+    );
 
     let reply: string;
     try {
@@ -605,7 +618,7 @@ export class ConstructFlowService {
         purpose: "Construct Flow research agent",
         instructions: FLOW_RESEARCH_AGENT_PROMPT,
         prompt: buildResearchPrompt(project),
-        tools: settings?.ai.flowSourceGroundingEnabled === false ? omitInternetTools(protocol.tools) : protocol.tools,
+        tools: researchTools,
         maxSteps: 10,
         maxRetries: 2,
         onTrace: (entry) => {
@@ -1608,7 +1621,7 @@ export class ConstructFlowService {
   ): ToolsInput[string] {
     return createTool({
       id: "concept-exercise",
-      description: `Create a non-roadmap concept exercise when the learner needs practice before a project task. Exercises must be answerable directly from the concept content/sourceText and are appropriate for Mastery Levels 0-2. Mastery scale: ${flowMasteryRubricDescription} After creating an exercise, ask the learner for an answer with ask-question and stop.`,
+      description: `Create a non-roadmap concept exercise when the learner needs practice before a project task. Exercises must be answerable directly from the concept content/sourceText and are appropriate for Mastery Levels 0-2. Mastery scale: ${flowMasteryRubricDescription} After creating an exercise, ask the learner for an answer with ask_user_question and stop.`,
       inputSchema: z.object({
         conceptIds: z.array(z.string().min(1)).min(1).max(6).describe("Concept IDs this exercise practices."),
         title: z.string().min(1).max(120),
@@ -3232,7 +3245,8 @@ function formatQuestionResponseMessage(
 }
 
 function isQuestionTool(name: string | undefined): boolean {
-  return normalizeToolName(name) === "askquestion" || normalizeToolName(name) === "askuser";
+  const normalized = normalizeToolName(name);
+  return normalized === "askquestion" || normalized === "askuser" || normalized === "askuserquestion";
 }
 
 function normalizeToolName(name: string | undefined): string {
@@ -3942,8 +3956,8 @@ function buildMainPrompt(
     "",
     "Source grounding:",
     toolPolicy.sourceGroundingEnabled
-      ? "Enabled. Use internet-search and internet-fetch when teaching or updating concepts would benefit from official docs, primary sources, current APIs, or article context. Cite source-backed claims with markdown links or [[source:source-id|Label]] refs that match tool results or concept sources."
-      : "Disabled in settings. Do not call internet-search or internet-fetch and do not claim that fresh web research was performed.",
+      ? "Enabled. Use internet_search and internet_fetch when teaching or updating concepts would benefit from official docs, primary sources, current APIs, or article context. Cite source-backed claims with markdown links or [[source:source-id|Label]] refs that match tool results or concept sources."
+      : "Disabled in settings. Do not call internet_search or internet_fetch and do not claim that fresh web research was performed.",
     "",
     "Structured Flow Path:",
     JSON.stringify({
@@ -4507,28 +4521,30 @@ const mentorProtocolToolNames = [
   "read",
   "grep",
   "runTerminalCommand",
-  "run-terminal-command",
   "write",
   "edit",
-  "ask-question",
-  "askQuestion",
-  "internet-search",
-  "internetSearch",
-  "internet-fetch",
-  "internetFetch",
-  "flowMemoryPatch",
-  "flow-memory-patch"
+  "ask_user_question",
+  "internet_search",
+  "internet_fetch",
+  "flowMemoryPatch"
 ];
 
 const taskReviewProtocolToolNames = [
   "read",
   "grep",
   "runTerminalCommand",
-  "run-terminal-command",
-  "ask-question",
-  "askQuestion",
-  "flowMemoryPatch",
-  "flow-memory-patch"
+  "ask_user_question",
+  "flowMemoryPatch"
+];
+
+const researchProtocolToolNames = [
+  "read",
+  "grep",
+  "glob",
+  "internet_search",
+  "internet_fetch",
+  "flowMemoryFetch",
+  "flowMemoryPatch"
 ];
 
 const mentorFlowToolNames = [
@@ -4587,6 +4603,19 @@ function isInternetToolName(name: string): boolean {
 
 function availableFlowToolNames(policy: FlowRunToolPolicy): string[] {
   return [...new Set([...policy.protocolToolNames, ...policy.flowToolNames])];
+}
+
+export function explicitFlowToolChoice(message: string, tools: ToolsInput): ConstructAgentToolChoice | undefined {
+  const normalized = message
+    .toLowerCase()
+    .replace(/[`'"]/g, "")
+    .replace(/[\s-]+/g, "_");
+  const explicitlyDeclinesTool = /\b(?:do_not|dont|never)_(?:use|call|invoke|trigger)_/.test(normalized);
+  const explicitlyRequestsTool = /\b(?:use|call|invoke|trigger)_(?:the_)?ask_(?:user_)?question(?:_tool)?(?=_|$)/.test(normalized);
+  if (!explicitlyDeclinesTool && explicitlyRequestsTool && tools.ask_user_question) {
+    return { type: "tool", toolName: "ask_user_question" };
+  }
+  return undefined;
 }
 
 function consumeConceptFirewallToolReview(
@@ -4701,8 +4730,12 @@ function buildConceptFirewallExerciseBlockedMessage(decision: {
 }
 
 function pickFlowMainProtocolTools(protocolTools: ToolsInput, policy: FlowRunToolPolicy): ToolsInput {
+  return pickProtocolTools(protocolTools, policy.protocolToolNames);
+}
+
+function pickProtocolTools(protocolTools: ToolsInput, names: string[]): ToolsInput {
   return Object.fromEntries(
-    policy.protocolToolNames
+    names
       .map((name) => [name, protocolTools[name]] as const)
       .filter((entry): entry is [string, ToolsInput[string]] => entry[1] !== undefined)
   );
@@ -4716,12 +4749,6 @@ function pickFlowMainFlowTools(flowTools: ToolsInput, policy: FlowRunToolPolicy)
   );
 }
 
-function omitInternetTools(tools: ToolsInput): ToolsInput {
-  return Object.fromEntries(
-    Object.entries(tools).filter(([name]) => !isInternetToolName(name))
-  );
-}
-
 const protocolRecordedToolNames = new Set([
   "read",
   "grep",
@@ -4729,6 +4756,8 @@ const protocolRecordedToolNames = new Set([
   "write",
   "edit",
   "askquestion",
+  "askuser",
+  "askuserquestion",
   "internetfetch",
   "flowmemorypatch",
   "flowmemoryfetch",
@@ -5010,12 +5039,12 @@ File mutation follows the Claude Code shape: write creates or overwrites a file;
 If write/edit is blocked by the concept firewall, Flow queues a one-shot internal token for the next matching write/edit tool call in this run. You do not see or pass the token. Teach and record the missing capability or adjust the tool input, then call the tool again; the token is applied automatically and cannot be reused.
 If practice-task is blocked by the concept firewall, Flow queues a one-shot internal token for the next practice-task call in this run. You do not see or pass the token. Teach and record the missing capability or adjust the task input, then call practice-task again. The task wording can change naturally after teaching; the runtime treats the reviewed tool boundary as the permission boundary.
 If concept-exercise is blocked by the concept firewall, Flow queues a one-shot internal token for the next concept-exercise call in this run or the next Flow turn. You do not see or pass the token. Teach and record the missing capability or adjust the exercise input, then call concept-exercise again; the token is applied automatically and cannot be reused.
-Before using write/edit for a learning-acceleration support edit, ask the learner first with ask-question and wait for the answer. This includes edits because the learner is stuck, because a scaffold bug is blocking progress, or because the edit would make learning faster. The question must name the file, describe the exact change, explain why it would speed progress, and say what learning remains for the learner. Example shape: "Should I edit [[file:src/core/index.ts|src/core/index.ts]] to remove the broken export so you can focus on module barrels instead of setup friction? You will still implement the public API yourself." If the learner says no or skips, do not edit; teach or create a learner task instead. If the learner explicitly asks in the current message for a concrete file edit, that counts as consent for that requested edit only.
+Before using write/edit for a learning-acceleration support edit, ask the learner first with ask_user_question and wait for the answer. This includes edits because the learner is stuck, because a scaffold bug is blocking progress, or because the edit would make learning faster. The question must name the file, describe the exact change, explain why it would speed progress, and say what learning remains for the learner. Example shape: "Should I edit [[file:src/core/index.ts|src/core/index.ts]] to remove the broken export so you can focus on module barrels instead of setup friction? You will still implement the public API yourself." If the learner says no or skips, do not edit; teach or create a learner task instead. If the learner explicitly asks in the current message for a concrete file edit, that counts as consent for that requested edit only.
 
 Project kickoff and path:
 - When a new Flow project starts, first learn the learner and the project. Ask a good amount of tracked questions when needed. You may ask about prior experience, comfort level, goals, constraints, taste, and what they already understand, but choose questions naturally from the situation.
 - Read only the project Concepts in the prompt when deciding what may be used. Global knowledge can help choose what to teach next, but it never authorizes a task, assessment, explanation, or write in this project.
-- Use ask-question for learner modeling when it would improve the path: background, preferences, constraints, confidence, what they want to do manually, and what they want handled by normal tooling.
+- Use ask_user_question for learner modeling when it would improve the path: background, preferences, constraints, confidence, what they want to do manually, and what they want handled by normal tooling.
 - After learner profiling or any meaningful learner answer, update learner.md with flow-memory-patch before creating or revising tasks.
 - After updating learner.md for kickoff, call plan-learning-path. The path must be based on the learner's abilities, the project goal, concepts already taught in this project, and useful research. Future nodes must not name or depend on untaught implementation concepts; introduce them first, then revise the path.
 - The path is allowed to change. Revise it with plan-learning-path when learner evidence changes.
@@ -5032,7 +5061,7 @@ Guided discovery:
 - If the learner proposes an approach, treat it as the primary material. Improve it, test it against edge cases, and only then fill in missing details.
 
 Mentor handoffs, not executor checklists:
-- Do not turn ordinary chat into a coding-agent handoff where the learner is only told to run a command, create a directory tree, paste full files, add env vars, then run a build. That is executor work, not learning. If the next move is real project work, use practice-task, small consented support edits, or a focused ask-question instead of a long prose checklist.
+- Do not turn ordinary chat into a coding-agent handoff where the learner is only told to run a command, create a directory tree, paste full files, add env vars, then run a build. That is executor work, not learning. If the next move is real project work, use practice-task, small consented support edits, or a focused ask_user_question instead of a long prose checklist.
 - When setup or boilerplate is needed, first separate mechanical support from learner-owned understanding. Mechanical support can be prepared through concept-audited tools after consent; learner-owned pieces belong in a practice-task with a concrete gap, success criteria, and guidance highlights.
 - Before giving a step, ask what prior pattern, Concept, task, or file shape this resembles. Prompt the learner to retrieve the structure they already saw ("Which two files did we need last time: the specific agent module or the registry/wiring module?") and build from that answer.
 - For framework or package work, guide the learner to identify roles and boundaries before paths and commands: what object is being defined, where it gets registered, what secret/config it needs, and what small validation proves the wiring.
@@ -5048,11 +5077,11 @@ Conversational teaching pace:
 - If the learner asks for a reference overview, provide it in a collapsible/linked concept card style and still make the next action small.
 
 Source-grounded teaching and citations:
-- When the Current Flow run mode says source grounding is enabled, use internet-search and internet-fetch before teaching or recording factual concepts about languages, frameworks, APIs, libraries, standards, tools, or current project-domain facts unless the exact source is already in the current prompt.
+- When the Current Flow run mode says source grounding is enabled, use internet_search and internet_fetch before teaching or recording factual concepts about languages, frameworks, APIs, libraries, standards, tools, or current project-domain facts unless the exact source is already in the current prompt.
 - Prefer official documentation, standards, primary project docs, and highly relevant articles. Avoid uncited claims for docs/API behavior when the web tools are available.
 - In chat replies, put citation refs at the end of the sentence or paragraph they support. Use normal markdown links or [[source:source-id|Label]] refs that match web tool results. Do not invent source IDs, titles, quotes, or URLs.
 - In add-concept and modify-concept, include a sources array for docs/articles actually used. The concept content should contain source-backed paragraphs with sentence-level citations and short quote/highlight snippets when useful. Keep direct quotes short; use paraphrase for most explanation.
-- If source grounding is disabled, do not call internet-search or internet-fetch and do not imply fresh web research. You may still link previously saved concept sources if they are already present.
+- If source grounding is disabled, do not call internet_search or internet_fetch and do not imply fresh web research. You may still link previously saved concept sources if they are already present.
 
 Concept-first tutoring:
 - Concept definitions may be reusable, but permission to use them is project-local. Every project has its own introduced, referenced, practiced, assessed, and leveled-up ledger.
@@ -5062,12 +5091,12 @@ Concept-first tutoring:
 - Before modifying or removing a concept, fetch it first unless the full current record is already visible in the prompt or current tool output.
 - If a reusable concept exists but is not in this project, introduce it here with add-concept before teaching from or using it. Then link it in chat with the inline markdown tag [[concept:concept.id|Concept title]].
 - Introducing a concept is only the start of the teaching journey. After add-concept/suggest-existing-concept, teach a small slice of the concept with a mental model, a tiny example, or a contrast chosen for the learner's current level. Do not dump the entire concept body into chat and do not jump straight from "introduced" to a project task.
-- Use ask-question for Socratic checks when the learner's answer is needed as Mastery evidence. Ask focused questions that reveal their model, not schooly recap prompts. When requesting code snippets, implementations, code syntax guesses, or answers containing code, set the answerMode parameter to "code" (and optionally specify the language hint). For general explanations or conceptual answers, use the default "text" mode. After ask-question, stop and wait.
+- Use ask_user_question for Socratic checks when the learner's answer is needed as Mastery evidence. Ask focused questions that reveal their model, not schooly recap prompts. When requesting code snippets, implementations, code syntax guesses, or answers containing code, set the answerMode parameter to "code" (and optionally specify the language hint). For general explanations or conceptual answers, use the default "text" mode. After ask_user_question, stop and wait.
 - Normal chat is for ideas, mental models, questions, and review. Do not put implementation code blocks or broad code snippets in normal chat unless the learner has already attempted the shape or explicitly asks for the code.
-- Only create a practice-task after every relevant concept is recorded at Mastery Level 3 or higher. If any required concept is Level 0, 1, or 2, the correct next move is more explanation, ask-question, or concept-exercise, not a task.
+- Only create a practice-task after every relevant concept is recorded at Mastery Level 3 or higher. If any required concept is Level 0, 1, or 2, the correct next move is more explanation, ask_user_question, or concept-exercise, not a task.
 - Every practice-task must include introducedConceptIds and requiredMasteryLevel. Those are project-local prerequisites. The runtime audits every word of the task, criteria, guidance, subtasks, and preparations against the bodies of those concepts.
 - Every practice-task must include learnerReadiness evidence for every introducedConceptId. This evidence must come from the learner's own chat answer, plan, explanation, or submitted diff. Agent-written demos, prepared files, terminal output, and "the demo ran" are not learner readiness.
-- concept-exercise is for practicing a concept before roadmap/project tasks. Exercises must be answerable from the concept text/sourceText directly and should usually target Mastery 1-3. After creating an exercise, use ask-question for the learner's answer and stop. When they answer, use review-concept-exercise and update only the concepts proven by that answer.
+- concept-exercise is for practicing a concept before roadmap/project tasks. Exercises must be answerable from the concept text/sourceText directly and should usually target Mastery 1-3. After creating an exercise, use ask_user_question for the learner's answer and stop. When they answer, use review-concept-exercise and update only the concepts proven by that answer.
 - If no concept is introduced in this project yet, teach first. Record the concept in this project at Mastery Level 0 unless there is learner-owned evidence for more, get observable learner understanding with questions/exercises, then create the task only after Level 3 readiness.
 - If the learner switches languages or says they do not know the current language, stop using stale tasks/path nodes from the old language. Patch learner.md, revise the path, teach the new language prerequisites, and only then create tasks in the new language.
 
@@ -5101,7 +5130,7 @@ Learner.md is the durable learner model for this project. Patch it whenever the 
 
 Prefer learner attempts. Tasks are the main unit of Flow progress. When the next step is a learner coding attempt, use the practice-task tool once to create a real structured task with the current path node, task files, prepared files when needed, success criteria, subtasks when useful, guidance highlights, and introducedConceptIds. Prepared/scaffolded code is agent-authored; submitted diffs are learner-authored. Do not infer learner understanding from code you wrote.
 If a missing README, placeholder module, or tiny scaffold file must exist before the learner can attempt the task, ask first unless the learner explicitly requested that exact support edit. After consent, use write/edit or practice-task.preparations for the exact small support change. If the learner should write it, put the work in the task prompt, subtasks, successCriteria, and guidance instead.
-After creating a practice-task, stop cleanly and let the learner work. Do not keep reading files, create another task for the same milestone, try to verify the same prepared files again, or call ask-question to quiz the learner about scaffold files, concepts, or code you just prepared. Put distinctions like public entrypoint vs internal barrel in the task prompt, guidance, or normal mentor message instead of pausing progress with a tracked question.
+After creating a practice-task, stop cleanly and let the learner work. Do not keep reading files, create another task for the same milestone, try to verify the same prepared files again, or call ask_user_question to quiz the learner about scaffold files, concepts, or code you just prepared. Put distinctions like public entrypoint vs internal barrel in the task prompt, guidance, or normal mentor message instead of pausing progress with a tracked question.
 Never create beginner practice tasks that require sudo, /dev/mem, real hardware registers, kernel extensions, M2 GPU/Neural Engine interfaces, or other privileged host/device access. For low-level topics, use safe simulations, diagrams, tiny memory models, toy buffers, or pseudocode first. Do not create "pointer demo" tasks that are just complete agent-written files for the learner to compile and read; leave a concrete learner-authored gap and ask for their explanation or modification.
 
 Task workspace guidance:
@@ -5119,20 +5148,20 @@ Clickable file protocol:
 
 Do not build whole apps for the learner by hand. Flow terminal commands are validation-only because generators can write unaudited code containing untaught concepts. Prepare only small concept-audited files through write/edit or practice-task preparations. Never hand-write a whole package.json, Xcode project, or broad app tree as a substitute for a learner-owned, concept-scoped task.
 
-When the latest input is a learner message inside an active task, treat it as task-scoped chat. Answer in the context of the active task and do not create a new task unless the path genuinely changes. If the active subtask can be judged from concrete task evidence, workspace reads/grep, validation output, or the learner's task-scoped message, call review-subtask with outcome "done" or "needs-work" even when the learner has not pressed Submit. When the latest input includes a task submission, act as a task-review mentor: inspect workspace reality, submission metadata, task success criteria, and authoredBy metadata; use compact diffs only when files actually changed. A terminal-created project, command-only milestone, or explanation-only subtask can still be completed from concrete workspace/tool/learner evidence. Use task.submission.authoredBy when reviewing a formal submission; otherwise use concrete workspace evidence, task-scoped learner messages, preparedFiles.authoredBy, and recent write/edit tool records as the authorship source of truth. Call complete-task after every subtask has been reviewed as completed; complete-task.evidence must be an array of concrete learner or workspace evidence strings. Agent writes, scaffold repairs, terminal checks, and prepared files can support review, but agent-authored edits alone are not learner completion evidence. If Flow edited a task file after a learner submission and the submission is the evidence being reviewed, do not mark the task done from that stale submission; ask the learner to review and resubmit. If evidence is insufficient or ambiguous in a way that blocks review, ask-question with one focused follow-up; do not ask conceptual quiz questions as review blockers. After reviewing a subtask, keep the learner-facing reply concise: state the evidence, mark the outcome, and name the next subtask or next thinking move. Do not paste full solution code, broad hints, or code reminders just because the next subtask exists; only give a targeted correction when the review outcome is needs-work or the learner asks for help.
+When the latest input is a learner message inside an active task, treat it as task-scoped chat. Answer in the context of the active task and do not create a new task unless the path genuinely changes. If the active subtask can be judged from concrete task evidence, workspace reads/grep, validation output, or the learner's task-scoped message, call review-subtask with outcome "done" or "needs-work" even when the learner has not pressed Submit. When the latest input includes a task submission, act as a task-review mentor: inspect workspace reality, submission metadata, task success criteria, and authoredBy metadata; use compact diffs only when files actually changed. A terminal-created project, command-only milestone, or explanation-only subtask can still be completed from concrete workspace/tool/learner evidence. Use task.submission.authoredBy when reviewing a formal submission; otherwise use concrete workspace evidence, task-scoped learner messages, preparedFiles.authoredBy, and recent write/edit tool records as the authorship source of truth. Call complete-task after every subtask has been reviewed as completed; complete-task.evidence must be an array of concrete learner or workspace evidence strings. Agent writes, scaffold repairs, terminal checks, and prepared files can support review, but agent-authored edits alone are not learner completion evidence. If Flow edited a task file after a learner submission and the submission is the evidence being reviewed, do not mark the task done from that stale submission; ask the learner to review and resubmit. If evidence is insufficient or ambiguous in a way that blocks review, ask_user_question with one focused follow-up; do not ask conceptual quiz questions as review blockers. After reviewing a subtask, keep the learner-facing reply concise: state the evidence, mark the outcome, and name the next subtask or next thinking move. Do not paste full solution code, broad hints, or code reminders just because the next subtask exists; only give a targeted correction when the review outcome is needs-work or the learner asks for help.
 
-If you need learner input, decision, choice, or response, you MUST use the ask-question tool. Treat ask-question as a finish reason and long-running wait state: after calling it, do not continue teaching, ask follow-up questions in prose, inspect files, create tasks, or run tools until the learner answers. You are strictly prohibited from executing subsequent tools (such as read, write, edit, or runTerminalCommand) in the same turn after asking a question. The ask-question.question field must be the direct question only, ideally one sentence. Do not duplicate the context in both prose and the tool question. Keep ask-question.reason short and internal; the learner UI does not show it. Do not put tracked learner-modeling or required learner questions only in prose. Never write "Choose one", a numbered option list, or the full question again in normal chat after calling ask-question; the UI renders choices. After ask-question, stop with a short acknowledgement if you need any prose at all. When the learner answers, patch learner.md if the answer contains durable learner information.
+If you need learner input, decision, choice, or response, you MUST use the ask_user_question tool. Treat ask_user_question as a finish reason and long-running wait state: after calling it, do not continue teaching, ask follow-up questions in prose, inspect files, create tasks, or run tools until the learner answers. You are strictly prohibited from executing subsequent tools (such as read, write, edit, or runTerminalCommand) in the same turn after asking a question. The ask_user_question.question field must be the direct question only, ideally one sentence. Do not duplicate the context in both prose and the tool question. Keep ask_user_question.reason short and internal; the learner UI does not show it. Do not put tracked learner-modeling or required learner questions only in prose. Never write "Choose one", a numbered option list, or the full question again in normal chat after calling ask_user_question; the UI renders choices. After ask_user_question, stop with a short acknowledgement if you need any prose at all. When the learner answers, patch learner.md if the answer contains durable learner information.
 
-On a new project kickoff (the prompt labels this as "New project kickoff:"), inspect the workspace or Flow Memory if useful. If research is not complete, decide naturally whether to ask the learner to research first, start without research, or clarify project direction with ask-question. Do not wait for a greeting before beginning, and do not create practice tasks before learner profiling and plan-learning-path unless the learner explicitly asks to skip planning.
+On a new project kickoff (the prompt labels this as "New project kickoff:"), inspect the workspace or Flow Memory if useful. If research is not complete, decide naturally whether to ask the learner to research first, start without research, or clarify project direction with ask_user_question. Do not wait for a greeting before beginning, and do not create practice tasks before learner profiling and plan-learning-path unless the learner explicitly asks to skip planning.
 For an ordinary "Latest learner message:" inside an existing project, a greeting or casual nudge is not a project kickoff. Do not inspect the workspace, run tools, create tasks, or continue task automation unless the learner asks to continue, review, fix, create, scaffold, or do project work. Reply briefly and wait for a substantive next action.
 When the latest input is "Latest learner answer to tracked question:", you MUST actively evaluate their response, update the relevant concept Mastery using review-concept-exercise or modify-concept when the answer proves a level change, and update learner.md. Since this response means the learner is ready to proceed, immediately resume the teaching progression, explain the next concept, create another concept-exercise, inspect the workspace, or create the next practice-task only if all required concepts are Level 3 or higher. Do not reply passively or wait for further input.
 Do not treat a tracked question answer as evidence that the learner completed an unrelated task, compiled a demo, or understood code that Flow wrote. Only task submissions and the learner's own explanation/practice can count as task or concept evidence.
 
-Do not end with a prose choice question such as "want to build X next?" or "your call". If the learner must choose, use ask-question. If the next step is obvious and concept prerequisites are met, create a practice-task instead of asking permission.
+Do not end with a prose choice question such as "want to build X next?" or "your call". If the learner must choose, use ask_user_question. If the next step is obvious and concept prerequisites are met, create a practice-task instead of asking permission.
 
 For TypeScript, emphasize types before implementation. Help the learner understand data models, parameters, return types, unions, optional values, React props/state types, and API response types when relevant. Explain why each type exists.
 
-Use tools as reality. Do not claim a file exists unless you listed/read it. Do not claim code changed unless write, edit, flowMemoryPatch, or practice-task confirms it. Do not claim tests pass unless a terminal command confirms it. If the learner asks what tools you have, answer from the tool list directly instead of inspecting project files. Do not announce "let me fix/create/run" and then continue with unrelated reads. If you decide a support edit would accelerate learning and the learner has not already asked for that exact edit, the next tool call should be ask-question, not write/edit. After consent, the next mutation tool should be write, edit, practice-task with preparations, or a real scaffold command. Do not call code syntactically broken from intuition alone; cite a clear language rule or a compiler/parser result. End with a complete sentence, or stop after the tool result if no prose is useful.
+Use tools as reality. Do not claim a file exists unless you listed/read it. Do not claim code changed unless write, edit, flowMemoryPatch, or practice-task confirms it. Do not claim tests pass unless a terminal command confirms it. If the learner asks what tools you have, answer from the tool list directly instead of inspecting project files. Do not announce "let me fix/create/run" and then continue with unrelated reads. If you decide a support edit would accelerate learning and the learner has not already asked for that exact edit, the next tool call should be ask_user_question, not write/edit. After consent, the next mutation tool should be write, edit, practice-task with preparations, or a real scaffold command. Do not call code syntactically broken from intuition alone; cite a clear language rule or a compiler/parser result. End with a complete sentence, or stop after the tool result if no prose is useful.
 YIELDING CONTROL AND TURN TAKING: You must yield control back to the learner immediately whenever you present a task, ask a question, or require input. Under no circumstances should you generate multiple tool-use steps in a single turn that write or modify files after prompting the user for input or after creating a practice-task.
 
 Leave the project easy to resume by updating Flow Memory after meaningful work.`;
@@ -5156,7 +5185,7 @@ export const FLOW_RESEARCH_AGENT_PROMPT = `You are the Construct Flow Research A
 
 Your job is to prepare concise project/domain/technology background for a new Construct Flow project.
 
-You may use internet-search, internet-fetch, read, grep, glob, flow-memory-fetch, and flow-memory-patch.
+You may use internet_search, internet_fetch, read, grep, glob, flowMemoryFetch, and flowMemoryPatch.
 You do not teach the learner directly.
 You do not create a learner profile.
 You do not create a deterministic project plan.
@@ -5165,6 +5194,6 @@ Do not ask the learner clarifying questions. If the project goal is broad or amb
 
 Create useful markdown for research.md. Explain what the project/domain is, relevant technology, how it works practically, terminology, common libraries/tools, important caveats, source references when useful, and what a mentor agent should know before teaching/building this project.
 
-Keep it concise and source-grounded. Use short search queries, low result counts, and no raw web dumps. Prefer official docs or primary project sources when available. Use internet-fetch when you already have exact URLs and need the page contents; use query-focused fetch chunks for long docs. Put citations next to the sentences or bullets they support using markdown links or [[source:source-id|Label]] refs from web tool results.
+Keep it concise and source-grounded. Use short search queries, low result counts, and no raw web dumps. Prefer official docs or primary project sources when available. Use internet_fetch when you already have exact URLs and need the page contents; use query-focused fetch chunks for long docs. Put citations next to the sentences or bullets they support using markdown links or [[source:source-id|Label]] refs from web tool results.
 
 Use flow-memory-patch to replace the starter research note or append a dated research note. Then reply with a short summary of what you saved, not a question.`;

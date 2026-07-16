@@ -23,6 +23,7 @@ pub fn rust_project_open(state: State<'_, CoreState>, id: String) -> CommandResu
     })?;
     project["lastOpenedAt"] = Value::String(now());
     state.projects.write(&project)?;
+    state.profile.record_activity("project-open", Some(&id))?;
     Ok(project)
 }
 

@@ -1,29 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { CheckCircle2Icon, CircleAlertIcon, SearchIcon } from "lucide-react";
+import { CheckCircle2Icon, CircleAlertIcon, PlusIcon, SearchIcon, ShieldCheckIcon } from "lucide-react";
 
-import { AgentRunTrace, AgentSessionComposer } from "@opaline/ui";
+import { AgentRunTrace, AgentSessionComposer, Button } from "@opaline/ui";
 import type { AgentRunTraceEntry } from "@opaline/ui";
 import type { ConstructFlowSession, ConstructFlowSessionEvent, ConstructFlowTimelinePart } from "../../../shared/constructFlow";
+import { ConstructAuthLogo } from "../../components/auth/construct-auth-logo";
 import type { AiSettings, FlowProjectRecord, ModelCatalogEntry, ProjectSummary } from "../types";
 import { getSettings, listModels, onConstructFlowSessionEvent, updateAiSettings } from "../lib/bridge";
 import {
   apiKeyForProvider,
   flowFeatureModel,
+  modelSettingsKeyForProvider,
   modelOptionsForActiveAgent,
   FlowComposerRightControls
 } from "./FlowWorkspace";
-
-const HEADLINES = [
-  "Ready to learn your next obsession?",
-  "Ready to hyperfocus on something brand new?",
-  "Let's build something we probably don't need, but definitely want to understand.",
-  "What logic maze are we getting lost in today?",
-  "Ready to teach a silicon chip some new tricks?",
-  "What system are we beautifully over-engineering today?",
-  "Time to build. Coffee is optional, curiosity is not.",
-  "Let's compile some wild ideas."
-];
+import { HomeProjectPicker } from "./HomeProjectPicker";
+import type { ComposerProvider } from "./ProviderModelPicker";
 
 type HomeResearchPhase = "idle" | "creating" | "researching" | "handoff" | "starting" | "opening" | "error";
 
@@ -47,6 +40,7 @@ export function Dashboard({
   busy,
   error,
   onCreateProjectFromPrompt,
+  onOpenProject,
   onProjectReady,
 }: {
   projects: ProjectSummary[];
@@ -60,6 +54,7 @@ export function Dashboard({
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [researchRun, setResearchRun] = useState<HomeResearchRun | null>(null);
+  const [projectPickerOpen, setProjectPickerOpen] = useState(false);
 
   const [aiSettings, setAiSettings] = useState<AiSettings | null>(null);
   const [modelOptions, setModelOptions] = useState<ModelCatalogEntry[]>([]);
@@ -213,36 +208,36 @@ export function Dashboard({
     }
   }, [aiSettings]);
 
-  const updateFlowModel = useCallback(async (model: string) => {
-    if (!aiSettings) return;
-    const key = aiSettings.source === "construct-cloud"
-      ? "constructCloudModel"
-      : aiSettings.provider === "openrouter"
-      ? "openRouterModel"
-      : aiSettings.provider === "opencode-zen"
-      ? "opencodeZenModel"
-      : aiSettings.provider === "github-copilot"
-      ? "githubCopilotModel"
-      : aiSettings.provider === "litellm"
-      ? "liteLlmModel"
-      : "openAiModel";
+  const loadProviderModels = useCallback(async (provider: ComposerProvider) => {
+    const settings = aiSettingsRef.current;
+    if (!settings) return [];
+    return listModels({
+      provider,
+      apiKey: apiKeyForProvider(settings, provider)
+    });
+  }, []);
 
-    const optimistic = { ...aiSettings, [key]: model };
+  const updateProviderModel = useCallback(async (provider: ComposerProvider, model: string) => {
+    if (!aiSettings) return;
+    const modelKey = modelSettingsKeyForProvider(provider);
+    const patch = provider === "construct-cloud"
+      ? { source: "construct-cloud" as const, featureModels: {}, [modelKey]: model }
+      : { source: "byok" as const, provider, featureModels: {}, [modelKey]: model };
+    const optimistic = { ...aiSettings, ...patch };
     setAiSettings(optimistic);
+    setModelOptions([]);
     setModelsError(null);
     try {
-      const settings = await updateAiSettings({ ai: { [key]: model } });
+      const settings = await updateAiSettings({ ai: patch });
       setAiSettings(settings.ai);
+      await refreshModels(settings.ai);
     } catch (error) {
       setModelsError(error instanceof Error ? error.message : String(error));
-      void getSettings().then((settings) => setAiSettings(settings.ai));
+      const settings = await getSettings();
+      setAiSettings(settings.ai);
+      await refreshModels(settings.ai);
     }
-  }, [aiSettings]);
-
-  const headline = useMemo(() => {
-    const randomIndex = Math.floor(Math.random() * HEADLINES.length);
-    return HEADLINES[randomIndex];
-  }, []);
+  }, [aiSettings, refreshModels]);
 
   async function submitPrompt() {
     const trimmed = prompt.trim();
@@ -296,36 +291,74 @@ export function Dashboard({
                   layoutId="construct-home-project-start"
                   transition={homeMotionTransition}
                 >
-                  <h1 className="construct-home-title">{headline}</h1>
+                  <section className="flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-visible bg-[var(--color-background-surface)] px-[var(--app-density-chat-gutter-x,0.75rem)] sm:px-[var(--app-density-chat-gutter-x-lg,1.25rem)]">
+                    <div className="flex w-full flex-col justify-center">
+                      <header className="mx-auto flex w-full max-w-[46rem] flex-col items-center gap-4 px-6 pb-5 text-center select-none">
+                        <ConstructAuthLogo markClassName="size-10" />
+                        <h2
+                          className="font-display text-[26px] font-[450] leading-[1.15] tracking-[-0.015em] text-foreground/95 sm:text-[30px]"
+                          data-testid="empty-landing-heading"
+                        >
+                          What should we work on?
+                        </h2>
+                      </header>
 
-                  <AgentSessionComposer
-                    aria-label="Describe the project to create"
-                    className="construct-flow-composer construct-home-composer"
-                    disabled={homeBusy}
-                    footerStart={
-                      <span className="construct-home-composer-count">
-                        {projects.length} project{projects.length === 1 ? "" : "s"}
-                      </span>
-                    }
-                    footerEnd={
-                      <FlowComposerRightControls
-                        settings={aiSettings}
-                        model={activeFlowModel}
-                        models={flowModelOptions}
-                        modelsBusy={modelsBusy}
-                        modelsError={modelsError}
-                        reasoningEffort={aiSettings?.reasoningEffort ?? "auto"}
-                        onModelChange={updateFlowModel}
-                        onReasoningEffortChange={updateReasoningEffort}
-                      />
-                    }
-                    onSubmit={() => void submitPrompt()}
-                    onValueChange={setPrompt}
-                    pending={creating}
-                    placeholder="Build a local-first drawing app that teaches canvas architecture as we go..."
-                    submitLabel="Create Construct project"
-                    value={prompt}
-                  />
+                      <div className="w-full overflow-visible" data-empty-landing-composer-block="true">
+                        <AgentSessionComposer
+                          aria-label="Describe the project to create"
+                          className="construct-flow-composer construct-home-composer relative z-10"
+                          disabled={homeBusy}
+                          footerStart={
+                            <>
+                              <Button
+                                aria-label="Choose a project"
+                                onClick={() => setProjectPickerOpen(true)}
+                                size="icon-xs"
+                                title="Choose a project"
+                                type="button"
+                                variant="chrome"
+                              >
+                                <PlusIcon data-icon="inline-start" />
+                              </Button>
+                              <span className="inline-flex h-7 shrink-0 items-center gap-1.5 px-1.5 text-[length:var(--app-font-size-ui-sm,11px)] font-normal text-[var(--runtime-full-access-accent)]">
+                                <ShieldCheckIcon className="size-3.5" />
+                                Full access
+                              </span>
+                            </>
+                          }
+                          footerEnd={
+                            <FlowComposerRightControls
+                              settings={aiSettings}
+                              model={activeFlowModel}
+                              models={flowModelOptions}
+                              modelsBusy={modelsBusy}
+                              modelsError={modelsError}
+                              reasoningEffort={aiSettings?.reasoningEffort ?? "auto"}
+                              onLoadProviderModels={loadProviderModels}
+                              onProviderModelChange={updateProviderModel}
+                              onReasoningEffortChange={updateReasoningEffort}
+                            />
+                          }
+                          onSubmit={() => void submitPrompt()}
+                          onValueChange={setPrompt}
+                          pending={creating}
+                          placeholder="Ask for follow-up changes or attach images"
+                          submitLabel="Create Construct project"
+                          value={prompt}
+                        />
+
+                        <div className="chat-composer-shell relative z-0 mx-auto -mt-5 flex min-h-8 w-full max-w-[46rem] min-w-0 flex-nowrap items-center gap-x-1.5 overflow-hidden !rounded-t-none !rounded-b-[var(--composer-radius)] bg-[color-mix(in_srgb,var(--color-background-elevated-secondary)_76%,var(--color-background-surface)_24%)] px-2 pb-1.5 pt-6 sm:min-h-7">
+                          <HomeProjectPicker
+                            onOpenChange={setProjectPickerOpen}
+                            onOpenProject={(projectId) => onOpenProject?.(projectId)}
+                            open={projectPickerOpen}
+                            projects={projects}
+                          />
+                          <div className="min-w-0 flex-1" />
+                        </div>
+                      </div>
+                    </div>
+                  </section>
                 </motion.div>
               )}
             </AnimatePresence>

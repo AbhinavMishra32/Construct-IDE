@@ -1,0 +1,3 @@
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._posthogChunkIds=e._posthogChunkIds||{},e._posthogChunkIds[n]="019f4f14-66fe-7523-b695-7db72b7bbceb")}catch(e){}}();import{$ as a,J as s,K as i}from"./browser-color-scheme-CWUx8WNZ.js";var t=a(s(),1),u=i(),e=(0,t.createContext)(null),x=({children:r})=>{const[n,o]=(0,t.useState)("");return(0,u.jsx)(e,{value:{password:n,setPassword:o},children:r})},v=()=>{const r=(0,t.use)(e);if(!r)throw new Error("useOnboardingContext must be used within a OnboardingProvider");return r};export{v as n,x as t};
+
+//# chunkId=019f4f14-66fe-7523-b695-7db72b7bbceb

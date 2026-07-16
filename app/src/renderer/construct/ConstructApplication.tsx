@@ -30,6 +30,7 @@ import {
   ChevronRightIcon,
   ChevronDownIcon,
   CloudIcon,
+  CircleIcon,
   CopyIcon,
   FileTerminalIcon,
   FileTextIcon,
@@ -40,8 +41,6 @@ import {
   LogOutIcon,
   MoreHorizontalIcon,
   MessageCircleIcon,
-  MessageCircleOff as MessageCircleOffIcon,
-  Maximize2 as Maximize2Icon,
   PanelRightIcon,
   SearchIcon,
   SettingsIcon,
@@ -51,14 +50,13 @@ import {
 } from "lucide-react";
 
 import {
-  AppShell,
-  AppShellChromeButton,
-  AppShellHeaderToolButton,
+  DesktopShell,
+  DesktopChromeButton,
+  DesktopHeaderToolButton,
   Badge,
   BottomPanel,
   Button,
   Input,
-  Sidebar,
   SettingsSidebar,
   ShadcnDialog,
   ShadcnDialogContent,
@@ -71,14 +69,18 @@ import {
   ShadcnDropdownMenuItem,
   ShadcnDropdownMenuSeparator,
   ShadcnDropdownMenuTrigger,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
   useShellHistory
 } from "@opaline/ui";
-import type { SettingsNavItem, ShellHistoryEntry, SidebarNavItem } from "@opaline/ui";
-import type { AppShellState } from "@opaline/ui";
+import type { SettingsNavItem, ShellHistoryEntry } from "@opaline/ui";
+import type { DesktopShellState } from "@opaline/ui";
 import { cn } from "../lib/utils";
 
 import { Dashboard } from "./components/Dashboard";
 import { DashboardSidebar } from "./components/DashboardSidebar";
+import { ConstructSidebarSurface } from "./components/ConstructSidebarSurface";
 import { ProjectsSurface } from "./components/ProjectsSurface";
 import { FileTree } from "./components/FileTree";
 import { TerminalPanel, type TerminalPanelHandle } from "./components/TerminalPanel";
@@ -88,7 +90,6 @@ import { LogsPanel } from "./components/LogsPanel";
 import { KnowledgeBaseSurface } from "./components/KnowledgeBaseSurface";
 import { SelectionExplanationController } from "./components/SelectionExplanationController";
 import { defaultFlowProjectSettings, inferFlowTitle } from "./components/project-create/flowProjectDefaults";
-import { Tabs, TabsList, TabsTrigger } from "../components/ui/tabs";
 import {
   bootstrapProjects,
   openSavedProject
@@ -431,6 +432,7 @@ export default function ConstructApp() {
   const [bottomPanelOpen, setBottomPanelOpen] = useState(false);
   const [bottomPanelExpanded, setBottomPanelExpanded] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(300);
+  const [settingsSidebarWidth, setSettingsSidebarWidth] = useState(256);
   const [inspectorWidth, setInspectorWidth] = useState(320);
   const [theme, setTheme] = useState<ThemeMode>(() => getInitialTheme());
   const [codeThemeId, setCodeThemeId] = useState<CodeThemeId>("construct");
@@ -794,6 +796,13 @@ export default function ConstructApp() {
     showDashboardSurface({ persistCurrentProject: true, recordHistory: true });
     void refresh();
   }, [activeProject?.id, projectShellUiState, pushHistory, uiStateHydrated]);
+
+  const focusNewProjectComposer = useCallback(() => {
+    handleBack();
+    window.requestAnimationFrame(() => {
+      document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Describe the project to create"]')?.focus();
+    });
+  }, [handleBack]);
 
   const openSettingsSurface = useCallback((itemId: string, projectId?: string) => {
     const originProjectId = projectId ?? activeProject?.id;
@@ -1398,6 +1407,30 @@ export default function ConstructApp() {
     finish();
   }, [history.current?.id]);
 
+  const maximizeFlowChat = useCallback(() => {
+    setFlowPanelView("chat");
+    setRightPanelOpen(true);
+    setInspectorExpanded(false);
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        setFlowPanelView("chat");
+        setRightPanelOpen(true);
+        setInspectorExpanded(true);
+      });
+    });
+  }, []);
+
+  const panelFlowChat = useCallback(() => {
+    setFlowPanelView("chat");
+    setRightPanelOpen(true);
+    setInspectorExpanded(false);
+  }, []);
+
+  const closeFlowChat = useCallback(() => {
+    setRightPanelOpen(false);
+    setInspectorExpanded(false);
+  }, []);
+
   const main = settingsSurface ? (
       <ConstructSettingsSurface
         activeItemId={settingsSurface.itemId}
@@ -1444,6 +1477,9 @@ export default function ConstructApp() {
         onGuidePanelChange={setRightPanel}
         onKnowledgePanelChange={setSidebarKnowledgePanel}
         onPanelViewChange={setFlowPanelView}
+        onChatMaximize={maximizeFlowChat}
+        onChatPanel={panelFlowChat}
+        onChatClose={closeFlowChat}
         onLayoutRequest={handleFlowLayoutRequest}
         onProjectChange={handleFlowProjectChange}
         onRunCommand={runCommand}
@@ -1544,17 +1580,15 @@ export default function ConstructApp() {
     !knowledgeBaseOpen &&
     !learningContextOpen &&
     !projectsViewOpen;
-  const shellHeaderTabs = isDashboardHome
+  const shellHeaderTabs = isDashboardHome || settingsSurface
     ? []
     : [
         {
-          id: settingsSurface
-            ? `settings-${settingsSurface.itemId}`
-            : knowledgeBaseOpen
-              ? "concepts"
-              : learningContextOpen
-                ? "learner-context"
-                : activeProject?.id ?? "dashboard",
+          id: knowledgeBaseOpen
+            ? "concepts"
+            : learningContextOpen
+              ? "learner-context"
+              : activeProject?.id ?? "dashboard",
           title: headerTitle,
           active: true
         }
@@ -1567,7 +1601,7 @@ export default function ConstructApp() {
     });
   }, []);
 
-  const openBottomTerminal = useCallback((shellState: AppShellState) => {
+  const openBottomTerminal = useCallback((shellState: DesktopShellState) => {
     if (shellState.isBottomPanelOpen && activeBottomTabId === PRIMARY_TERMINAL_TAB_ID) {
       shellState.setBottomPanelOpen(false);
       return;
@@ -1576,7 +1610,7 @@ export default function ConstructApp() {
     shellState.setBottomPanelOpen(true);
   }, [activeBottomTabId, ensureBottomTerminalOpen]);
 
-  const openRightWorkspacePanel = useCallback((shellState: AppShellState) => {
+  const openRightWorkspacePanel = useCallback((shellState: DesktopShellState) => {
     if (!activeProject) return;
     if (isFlowProjectRecord(activeProject)) {
       setFlowPanelView("chat");
@@ -1585,19 +1619,6 @@ export default function ConstructApp() {
     }
     shellState.setRightPanelOpen(true);
   }, [activeProject, handleRightSlotChange]);
-
-  const expandFlowChat = useCallback((shellState: AppShellState) => {
-    setFlowPanelView("chat");
-    shellState.setRightPanelOpen(true);
-    shellState.setInspectorExpanded(false);
-    window.requestAnimationFrame(() => {
-      window.requestAnimationFrame(() => {
-        setFlowPanelView("chat");
-        shellState.setRightPanelOpen(true);
-        shellState.setInspectorExpanded(true);
-      });
-    });
-  }, []);
 
   if (!aiSettings) {
     return <ConstructSplashScreen />;
@@ -1608,9 +1629,8 @@ export default function ConstructApp() {
       <AuthGate aiSettings={aiSettings}>
         <div className="flex h-screen flex-col overflow-hidden bg-transparent">
         <div className="flex-1 min-h-0 relative">
-          <AppShell
+          <DesktopShell
             className="h-full construct-app-window"
-          key={activeProject?.id ?? "dashboard"}
           history={history}
           defaultBottomPanelOpen={Boolean(activeProject && !settingsSurface && !knowledgeBaseOpen && !learningContextOpen)}
           defaultRightPanelOpen={Boolean(activeProject && !settingsSurface && !knowledgeBaseOpen && !learningContextOpen)}
@@ -1624,11 +1644,24 @@ export default function ConstructApp() {
           onBottomPanelOpenChange={setBottomPanelOpen}
           bottomPanelExpanded={bottomPanelExpanded}
           onBottomPanelExpandedChange={setBottomPanelExpanded}
-          sidebarWidth={sidebarWidth}
-          onSidebarWidthChange={setSidebarWidth}
+          sidebarWidth={settingsSurface ? settingsSidebarWidth : activeProject ? sidebarWidth : 256}
+          sidebarMinWidth={settingsSurface ? 208 : activeProject ? 240 : 256}
+          sidebarMaxWidth={settingsSurface ? 520 : activeProject ? 520 : 256}
+          sidebarMainMinWidth={settingsSurface ? 640 : undefined}
+          sidebarResizeStorageKey={settingsSurface ? "construct.settings.sidebar.width" : undefined}
+          onSidebarWidthChange={settingsSurface ? setSettingsSidebarWidth : setSidebarWidth}
+          showHeader={!settingsSurface}
           inspectorWidth={inspectorWidth}
           onInspectorWidthChange={setInspectorWidth}
           headerTabs={shellHeaderTabs}
+          navigationHomeIcon={(
+            <CircleIcon
+              aria-hidden
+              strokeWidth={1.5}
+              style={{ height: 14, width: 14 }}
+            />
+          )}
+          title={isDashboardHome ? "New Project" : undefined}
           renderHeaderTab={(tab, shellState) => (
             <ConstructProjectTitleMenu
               activeProject={activeProject}
@@ -1656,35 +1689,7 @@ export default function ConstructApp() {
                       <>
                         <SavingIndicator isSaving={isSaving} />
                         <div className="flex items-center gap-1" aria-label="Flow controls">
-                          <Tabs
-                            value={!state.isRightPanelOpen || flowPanelView !== "chat" ? "hidden" : state.inspectorExpanded ? "expanded" : "normal"}
-                            onValueChange={(val) => {
-                              if (val === "hidden") {
-                                state.setRightPanelOpen(false);
-                                state.setInspectorExpanded(false);
-                              } else if (val === "normal") {
-                                setFlowPanelView("chat");
-                                state.setRightPanelOpen(true);
-                                state.setInspectorExpanded(false);
-                              } else if (val === "expanded") {
-                                expandFlowChat(state);
-                              }
-                            }}
-                            className="h-7"
-                          >
-                            <TabsList className="h-7 gap-1 bg-transparent p-0">
-                              <TabsTrigger value="expanded" className="size-7 rounded-[8px] p-0 text-muted-foreground/85 shadow-none hover:bg-transparent hover:text-foreground data-active:bg-transparent data-active:text-foreground data-active:shadow-none" title="Expand chat">
-                                <Maximize2Icon size={16} strokeWidth={1.9} />
-                              </TabsTrigger>
-                              <TabsTrigger value="normal" className="size-7 rounded-[8px] p-0 text-muted-foreground/85 shadow-none hover:bg-transparent hover:text-foreground data-active:bg-transparent data-active:text-foreground data-active:shadow-none" title="Normal chat">
-                                <MessageCircleIcon size={16} strokeWidth={1.9} />
-                              </TabsTrigger>
-                              <TabsTrigger value="hidden" className="size-7 rounded-[8px] p-0 text-muted-foreground/85 shadow-none hover:bg-transparent hover:text-foreground data-active:bg-transparent data-active:text-foreground data-active:shadow-none" title="Hide chat">
-                                <MessageCircleOffIcon size={16} strokeWidth={1.9} />
-                              </TabsTrigger>
-                            </TabsList>
-                          </Tabs>
-                          <AppShellHeaderToolButton
+                          <DesktopHeaderToolButton
                             data-active={state.isRightPanelOpen && flowPanelView === "project" ? "true" : "false"}
                             onClick={() => {
                               if (state.isRightPanelOpen && flowPanelView === "project") {
@@ -1703,15 +1708,15 @@ export default function ConstructApp() {
                             title="Project map"
                           >
                             <ListChecksIcon size={16} strokeWidth={1.9} />
-                          </AppShellHeaderToolButton>
-                          <AppShellHeaderToolButton
+                          </DesktopHeaderToolButton>
+                          <DesktopHeaderToolButton
                             data-active={state.isBottomPanelOpen ? "true" : "false"}
                             onClick={() => openBottomTerminal(state)}
                             aria-label="Toggle terminal"
                             title="Terminal"
                           >
                             <HeaderBottomPanelIcon open={state.isBottomPanelOpen} />
-                          </AppShellHeaderToolButton>
+                          </DesktopHeaderToolButton>
                         </div>
                       </>
                     );
@@ -1731,42 +1736,44 @@ export default function ConstructApp() {
                         }}
                         style={{ cursor: !isAtFrontier ? "pointer" : "default" }}
                       >
-                        <AppShellChromeButton
+                        <DesktopChromeButton
                           onClick={(e) => { e.stopPropagation(); void handlePrevBlock(); }}
                           disabled={tapeProject.currentStepIndex === 0 && tapeProject.currentBlockIndex === 0}
+                          aria-label="Previous panel"
                           title="Previous Panel"
                         >
                           <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 14, height: 14 }}>
                             <line x1="19" y1="12" x2="5" y2="12" />
                             <polyline points="12 19 5 12 12 5" />
                           </svg>
-                        </AppShellChromeButton>
+                        </DesktopChromeButton>
 
                         <Badge variant="secondary">
                           {currentBlockNumber(tapeProject)}/{totalBlocks(tapeProject.program)}
                         </Badge>
 
                         {!isAtFrontier && (
-                          <AppShellChromeButton
+                          <DesktopChromeButton
                             onClick={(e) => { e.stopPropagation(); void handleNextBlock(); }}
                             disabled={
                               isAtEnd ||
                               (isAtFrontier && !canContinue)
                             }
+                            aria-label="Next panel"
                             title="Next Panel"
                           >
                             <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 14, height: 14 }}>
                               <line x1="5" y1="12" x2="19" y2="12" />
                               <polyline points="12 5 19 12 12 19" />
                             </svg>
-                          </AppShellChromeButton>
+                          </DesktopChromeButton>
                         )}
 
                       </div>
 
                       <SavingIndicator isSaving={isSaving} />
                       <div className="flex items-center gap-1" aria-label="Workspace panels">
-                        <AppShellHeaderToolButton
+                        <DesktopHeaderToolButton
                           data-active={state.isRightPanelOpen && activeRightSlotId === "interact" ? "true" : "false"}
                           onClick={() => {
                             handleRightSlotChange("interact");
@@ -1777,21 +1784,21 @@ export default function ConstructApp() {
                           aria-label="Open Construct Interact"
                         >
                           <MessageCircleIcon size={16} strokeWidth={1.9} />
-                        </AppShellHeaderToolButton>
-                        <AppShellHeaderToolButton
+                        </DesktopHeaderToolButton>
+                        <DesktopHeaderToolButton
                           data-active={state.isRightPanelOpen ? "true" : "false"}
                           onClick={state.toggleRightPanel}
                           aria-label="Toggle guide panel"
                         >
                           <HeaderGuidePanelIcon open={state.isRightPanelOpen} />
-                        </AppShellHeaderToolButton>
-                        <AppShellHeaderToolButton
+                        </DesktopHeaderToolButton>
+                        <DesktopHeaderToolButton
                           data-active={state.isBottomPanelOpen ? "true" : "false"}
                           onClick={() => openBottomTerminal(state)}
                           aria-label="Toggle terminal"
                         >
                           <HeaderBottomPanelIcon open={state.isBottomPanelOpen} />
-                        </AppShellHeaderToolButton>
+                        </DesktopHeaderToolButton>
                       </div>
                     </>
                   );
@@ -1802,7 +1809,7 @@ export default function ConstructApp() {
             settingsSurface ? (
               <SettingsSidebar
                 activeItemId={settingsSurface.itemId}
-                backLabel="Back to projects"
+                backLabel="Back to app"
                 footer={
                   <ConstructSidebarFooter
                     aiSettings={aiSettings}
@@ -1823,10 +1830,8 @@ export default function ConstructApp() {
                 sections={settingsSections}
               />
             ) : knowledgeBaseOpen ? (
-              <Sidebar
-                projects={[]}
-                items={[]}
-                primaryItems={activeProject ? undefined : [
+              <ConstructSidebarSurface
+                actions={activeProject ? [] : [
                   {
                     id: "home",
                     active: false,
@@ -1860,11 +1865,9 @@ export default function ConstructApp() {
                 {conceptsSidebarPanel ?? (
                   <div className="px-3 py-2 text-[12.5px] text-muted-foreground">Loading concepts...</div>
                 )}
-              </Sidebar>
+              </ConstructSidebarSurface>
             ) : activeProject ? (
-              <Sidebar
-                projects={[]}
-                items={[]}
+              <ConstructSidebarSurface
                 footer={
                   <ConstructSidebarFooter
                     aiSettings={aiSettings}
@@ -1906,47 +1909,50 @@ export default function ConstructApp() {
                     sidebarKnowledgePanel
                   ) : null}
                 </div>
-              </Sidebar>
+              </ConstructSidebarSurface>
             ) : (
-              <Sidebar
-                projects={[]} items={[]}
-                primaryItems={[
+              <ConstructSidebarSurface
+                activeView={projectsViewOpen ? "projects" : "home"}
+                actions={[
                   {
-                    id: "home",
-                    active: !knowledgeBaseOpen && !learningContextOpen && !projectsViewOpen,
-                    icon: <HomeIcon size={15} />,
-                    label: "Home",
-                    onClick: handleBack
+                    id: "new-project",
+                    active: false,
+                    icon: <FileTextIcon size={15} />,
+                    label: "New project",
+                    onClick: focusNewProjectComposer
                   },
                   {
-                    id: "knowledge-base",
-                    active: knowledgeBaseOpen,
+                    id: "search",
+                    active: projectsViewOpen,
+                    icon: <SearchIcon size={15} />,
+                    label: "Search",
+                    onClick: openProjectsView
+                  },
+                  {
+                    id: "concepts",
+                    active: false,
                     icon: <BookOpen size={15} />,
                     label: "Concepts",
                     onClick: openKnowledgeBase
-                  },
-                  {
-                    id: "projects",
-                    active: projectsViewOpen,
-                    icon: <FolderOpenIcon size={15} />,
-                    label: "Projects",
-                    onClick: openProjectsView
                   }
                 ]}
                 footer={
-                  <ConstructSidebarFooter
-                    aiSettings={aiSettings}
-                    onAccountClick={() => setAccountDialogOpen(true)}
-                    onOpenSettings={() => openSettingsSurface("workspace")}
-                  />
+                  <SidebarMenu className="gap-1">
+                    <SidebarSettingsButton onClick={() => openSettingsSurface("workspace")} />
+                  </SidebarMenu>
                 }
+                onSelectView={(viewId) => viewId === "projects" ? openProjectsView() : handleBack()}
+                views={[
+                  { id: "home", label: "Home" },
+                  { id: "projects", label: "Projects" }
+                ]}
               >
                 <DashboardSidebar
+                  onCreateProject={focusNewProjectComposer}
                   projects={projects}
                   onOpenProject={(projectId) => void openProject(projectId)}
-                  onOpenProjectSettings={(projectId) => openSettingsSurface("project-overview", projectId)}
                 />
-              </Sidebar>
+              </ConstructSidebarSurface>
             )
           }
           main={main}
@@ -2110,6 +2116,7 @@ function projectSummaryFromRecord(project: AnyProjectRecord): ProjectSummary {
       description: project.description,
       progress: project.progress,
       lastOpenedAt: project.lastOpenedAt,
+      createdAt: project.flow.createdAt,
       sourcePath: project.sourcePath,
       workspacePath: project.workspacePath,
       completedAt: project.completedAt,
@@ -2207,38 +2214,40 @@ function ConstructSidebarFooter({
   const plan = account.usage?.plan ?? account.account?.user?.plan ?? null;
 
   return (
-    <div className="flex flex-col gap-0.5">
+    <SidebarMenu className="gap-1">
       {children}
       <SidebarSettingsButton onClick={onOpenSettings} />
-      <button
-        type="button"
-        data-construct-control="sidebar-account"
-        className="construct-sidebar-row flex"
-        onClick={onAccountClick}
-      >
-        <UserAvatar className="size-7 shrink-0" />
-        <span className="flex min-w-0 flex-1 flex-col">
-          <span className="flex min-w-0 items-center gap-1.5">
-            <span className="truncate font-semibold text-foreground/90">{account.isPending ? "Account" : name}</span>
-            {plan ? (
-              <Badge
-                variant="secondary"
-                className={cn(
-                  "h-[15px] rounded-[3px] border-0 px-1 text-[9px] font-bold tracking-wider uppercase shrink-0 select-none",
-                  plan.toLowerCase().includes("plus") || plan.toLowerCase().includes("pro")
-                    ? "bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400"
-                    : "bg-muted text-muted-foreground"
-                )}
-              >
-                {formatPlan(plan)}
-              </Badge>
-            ) : null}
+      <SidebarMenuItem>
+        <SidebarMenuButton
+          type="button"
+          data-construct-control="sidebar-account"
+          size="lg"
+          onClick={onAccountClick}
+        >
+          <UserAvatar className="size-7 shrink-0" />
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span className="flex min-w-0 items-center gap-1.5">
+              <span className="truncate font-semibold text-foreground/90">{account.isPending ? "Account" : name}</span>
+              {plan ? (
+                <Badge
+                  variant="secondary"
+                  className={cn(
+                    "h-[15px] rounded-[3px] border-0 px-1 text-[9px] font-bold tracking-wider uppercase shrink-0 select-none",
+                    plan.toLowerCase().includes("plus") || plan.toLowerCase().includes("pro")
+                      ? "bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400"
+                      : "bg-muted text-muted-foreground"
+                  )}
+                >
+                  {formatPlan(plan)}
+                </Badge>
+              ) : null}
+            </span>
+            <span className="truncate text-xs text-muted-foreground/80">{email}</span>
           </span>
-          <span className="truncate text-xs text-muted-foreground/80">{email}</span>
-        </span>
-        <ChevronDownIcon size={14} className="shrink-0 text-muted-foreground/60" />
-      </button>
-    </div>
+          <ChevronDownIcon size={14} className="shrink-0 text-muted-foreground/60" />
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+    </SidebarMenu>
   );
 }
 
@@ -2539,16 +2548,16 @@ function ConstructAccountConnectionSection({
             />
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Button size="small" disabled={busy || !hasUser} onClick={onMint} className="rounded-lg h-7 text-xs px-3">
+            <Button size="sm" disabled={busy || !hasUser} onClick={onMint} className="rounded-lg h-7 text-xs px-3">
               {busy ? "Working..." : "Mint token"}
             </Button>
             {allowEndpointEditing ? (
-              <Button size="small" variant="secondary" disabled={busy} onClick={onSave} className="rounded-lg h-7 text-xs px-3">
+              <Button size="sm" variant="secondary" disabled={busy} onClick={onSave} className="rounded-lg h-7 text-xs px-3">
                 Save
               </Button>
             ) : null}
             {tokenDraft ? (
-              <Button size="small" variant="secondary" disabled={busy} onClick={onClear} className="rounded-lg h-7 text-xs px-3">
+              <Button size="sm" variant="secondary" disabled={busy} onClick={onClear} className="rounded-lg h-7 text-xs px-3">
                 Clear token
               </Button>
             ) : null}
@@ -2605,36 +2614,6 @@ function formatUsageUnits(units: number): string {
   return String(units);
 }
 
-function ConstructDashboardNavItem({ item }: { item: SidebarNavItem }) {
-  if (item.id === "brand") {
-    return <ConstructSidebarBrand />;
-  }
-
-  return (
-    <Button
-      className="construct-sidebar-row"
-      data-active={item.active === true ? "true" : undefined}
-      onClick={item.onClick}
-      variant={item.id === "new-project" ? "default" : "ghost"}
-    >
-      {item.icon != null ? <span className="grid size-[18px] shrink-0 place-items-center" data-icon="inline-start" aria-hidden="true">{item.icon}</span> : null}
-      <span data-sidebar-row-label>{item.label}</span>
-    </Button>
-  );
-}
-
-function ConstructSidebarBrand() {
-  return (
-    <div className="flex min-w-0 items-center gap-2 px-2 py-2">
-      <ConstructAuthLogo markClassName="construct-auth-logo__mark--sidebar" />
-      <div className="min-w-0">
-        <div className="truncate text-sm font-semibold text-foreground">Construct</div>
-        <div className="truncate text-xs text-muted-foreground">Learn by building</div>
-      </div>
-    </div>
-  );
-}
-
 function ConstructProjectTitleMenu({
   activeProject,
   isSettingsSurface,
@@ -2668,18 +2647,14 @@ function ConstructProjectTitleMenu({
       <ShadcnDropdownMenu>
         <ShadcnDropdownMenuTrigger
           render={
-            <Button
+            <DesktopChromeButton
               aria-label="Project actions"
-              className="size-8 shrink-0 rounded-[14px] text-muted-foreground hover:text-foreground"
-              size="icon"
-              type="button"
-              variant="ghost"
             />
           }
         >
           <MoreHorizontalIcon size={15} strokeWidth={2} />
         </ShadcnDropdownMenuTrigger>
-        <ShadcnDropdownMenuContent align="start" className="w-64 rounded-[18px] p-1.5">
+        <ShadcnDropdownMenuContent align="start" className="w-64">
           {activeProject != null ? (
             <>
               <ShadcnDropdownMenuItem onClick={onOpenRightPanel}>

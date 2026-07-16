@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { GearSix, Notebook } from "@phosphor-icons/react";
 import { BookOpenIcon, PanelBottomIcon, PanelRightIcon } from "lucide-react";
-import { Button, Spinner, SidebarNavItemRow } from "@opaline/ui";
+import { Spinner, SidebarPrimaryAction } from "@opaline/ui";
 
 
 export function HeaderGuidePanelIcon({ open }: { open: boolean }) {
@@ -14,14 +14,7 @@ export function HeaderBottomPanelIcon({ open }: { open: boolean }) {
 
 export function SidebarLearningButton({ onClick }: { onClick: () => void }) {
   return (
-    <SidebarNavItemRow
-      onClick={onClick}
-      item={{
-        id: "learning-context",
-        label: "Context",
-        icon: <Notebook className="size-[15px]" />
-      }}
-    />
+    <SidebarPrimaryAction icon={<Notebook />} label="Context" onClick={onClick} />
   );
 }
 
@@ -35,30 +28,20 @@ export function SidebarConceptsButton({
   onClick: () => void;
 }) {
   return (
-    <SidebarNavItemRow
+    <SidebarPrimaryAction
       aria-label={disabled && disabledReason ? disabledReason : "Open Concepts"}
       disabled={disabled}
+      icon={<BookOpenIcon />}
+      label="Concepts"
       onClick={disabled ? undefined : onClick}
       title={disabledReason}
-      item={{
-        id: "concepts",
-        label: "Concepts",
-        icon: <BookOpenIcon className="size-[15px]" />
-      }}
     />
   );
 }
 
 export function SidebarSettingsButton({ onClick }: { onClick: () => void }) {
   return (
-    <SidebarNavItemRow
-      onClick={onClick}
-      item={{
-        id: "settings",
-        label: "Settings",
-        icon: <GearSix className="size-[15px]" />
-      }}
-    />
+    <SidebarPrimaryAction icon={<GearSix />} label="Settings" onClick={onClick} />
   );
 }
 

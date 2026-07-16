@@ -49,12 +49,12 @@ describe("Construct Interact Codex-style UI", () => {
 
   it("uses Codex message geometry and a real icon-only composer", () => {
     const source = readFileSync(fileURLToPath(new URL("../../../../../opaline/packages/ui/src/agent-session/AgentSessionSurface.tsx", import.meta.url)), "utf8");
-    assert.match(source, /max-w-\[77%\]/);
-    assert.match(source, /rounded-\[18px\]/);
-    assert.match(source, /rounded-3xl/);
+    assert.match(source, /max-w-\[80%\]/);
+    assert.match(source, /rounded-\[16px\]/);
+    assert.match(source, /rounded-full/);
     assert.match(source, /ArrowUpIcon/);
     assert.match(source, /event\.key === "Enter"/);
-    assert.match(source, /aria-label=\{pending \? "Construct Interact is thinking"/);
+    assert.match(source, /aria-label=\{pending \? "Construct agent is thinking"/);
     assert.doesNotMatch(source, /SendHorizontal/);
     assert.doesNotMatch(source, /Enter to send<\/span>/);
   });
@@ -83,7 +83,7 @@ describe("Construct Interact Codex-style UI", () => {
     assert.match(flow, /collectFlowConcepts/);
     assert.match(app, /onKnowledgePanelChange=\{setSidebarKnowledgePanel\}/);
     assert.match(app, /sidebarKnowledgePanel && !isFlowProjectRecord\(activeProject\)/);
-    assert.match(dashboard, /onModelChange=\{updateFlowModel\}/);
+    assert.match(dashboard, /onProviderModelChange=\{updateProviderModel\}/);
     assert.match(slotPanel, /rounded-\[8px\]/);
     assert.match(slotPanel, /data-\[state=active\]:bg-muted/);
     assert.doesNotMatch(slotPanel, /after:bg-primary/);
@@ -104,6 +104,7 @@ describe("Construct Interact Codex-style UI", () => {
 
   it("renders Opaline concept cards directly inside Flow chat and routes active-task messages through the main composer", () => {
     const flow = readFileSync(fileURLToPath(new URL("./FlowWorkspace.tsx", import.meta.url)), "utf8");
+    const aside = readFileSync(fileURLToPath(new URL("./AsideConstructThread.tsx", import.meta.url)), "utf8");
     const conceptCard = readFileSync(fileURLToPath(new URL("./ConceptSummaryCard.tsx", import.meta.url)), "utf8");
     const css = readFileSync(fileURLToPath(new URL("../../index.css", import.meta.url)), "utf8");
 
@@ -114,9 +115,8 @@ describe("Construct Interact Codex-style UI", () => {
     assert.match(flow, /language: readConceptLanguage/);
     assert.match(flow, /technology: readString\(conceptObj\.technology\) \?\? readString\(inputObj\.technology\) \?\? readString\(outputObj\.technology\)/);
     assert.match(flow, /<ConceptSummaryCard[\s\S]*variant="chat"/);
-    assert.match(flow, /taskMessage: \{ taskId: activeTask\.id, pathNodeId: activeTask\.pathNodeId \}/);
-    assert.match(flow, /placeholder=\{activeTask \? `Message the Construct agent about: \$\{activeTask\.title\}`/);
-    assert.match(flow, /<ActiveComposerItemIndicator\s+activeItem=\{activeComposerItem\}/);
+    assert.match(aside, /taskMessage: \{ taskId: latest\.activeTask\.id, pathNodeId: latest\.activeTask\.pathNodeId \}/);
+    assert.match(aside, /await latest\.onRunAgent\(message, options\)/);
     assert.match(flow, /onOpenFile=\{onOpenFile\}/);
     assert.match(flow, /function FlowFileChip/);
     assert.match(flow, /createInlineFileReference/);
@@ -159,15 +159,17 @@ describe("Construct Interact Codex-style UI", () => {
     const types = readFileSync(fileURLToPath(new URL("../../../../../opaline/packages/ui/src/agent-session/types.ts", import.meta.url)), "utf8");
     const primitives = readFileSync(fileURLToPath(new URL("../../../../../opaline/packages/ui/src/agent-session/AgentSessionPrimitives.tsx", import.meta.url)), "utf8");
     const flow = readFileSync(fileURLToPath(new URL("./FlowWorkspace.tsx", import.meta.url)), "utf8");
+    const aside = readFileSync(fileURLToPath(new URL("./AsideConstructThread.tsx", import.meta.url)), "utf8");
     assert.match(types, /type: "activity"/);
     assert.match(types, /onOpenFile\?: \(path: string\) => void/);
     assert.match(primitives, /data-component="activity-part"/);
     assert.match(primitives, /<AgentRunTraceRow entry=\{part\.entry\} defaultOpen=\{part\.defaultOpen\} onOpenFile=\{part\.onOpenFile\}/);
     assert.match(types, /footerStart\?: ReactNode/);
-    assert.match(flow, /<FlowComposerControls/);
-    assert.match(flow, /FlowContextMeter/);
-    assert.match(flow, /FlowModelDropdown/);
-    assert.match(flow, /onModelChange=\{updateFlowModel\}/);
+    assert.match(flow, /<AsideConstructThread/);
+    assert.match(flow, /export function FlowComposerRightControls/);
+    assert.match(flow, /FlowCircularContextMeter/);
+    assert.match(flow, /<ProviderModelPicker/);
+    assert.match(flow, /onProviderModelChange/);
     assert.match(flow, /modelOptionsForActiveAgent/);
     assert.doesNotMatch(flow, /"construct-flow": model/);
     assert.match(flow, /collectAnsweredQuestionKeys/);
@@ -186,10 +188,9 @@ describe("Construct Interact Codex-style UI", () => {
     assert.match(flow, /return parts\.sort\(compareTimelineParts\)/);
     assert.match(flow, /type: "activity"/);
     assert.match(flow, /onOpenFile: \(path\) => onOpenFile\(createInlineFileReference\(path\)\)/);
-    assert.match(flow, /onSelect=\{\(\) => onModelChange\(m\.id\)\}/);
     assert.doesNotMatch(flow, /brandModels\.map\(\(m\) => \([\s\S]{0,240}DropdownMenuItem[\s\S]{0,120}disabled/);
     assert.match(flow, /findActiveFlowQuestion\(mergedSessions\)/);
-    assert.match(flow, /<FlowQuestionComposer/);
+    assert.match(flow, /function FlowQuestionComposer/);
     assert.match(flow, /questionResponse/);
     assert.match(flow, /markQuestionAnswered/);
     assert.match(flow, /session\.origin === "question-response"/);
@@ -197,7 +198,7 @@ describe("Construct Interact Codex-style UI", () => {
     assert.match(flow, /\(event\.type === "started" \|\| event\.type === "updated"\) && !isTerminalFlowSession\(event\.session\)/);
     assert.match(flow, /event\.type === "completed" \|\| event\.type === "error" \|\| event\.type === "waiting" \|\| isTerminalFlowSession\(event\.session\)/);
     assert.match(flow, /setPending\(false\);\s*setLiveSession\(undefined\);/);
-    assert.match(flow, /pending=\{pending && !activeQuestion\}/);
+    assert.match(aside, /const pendingQuestion = findPendingQuestion\(latest\.sessions, latest\.liveSession\);/);
     assert.match(flow, /Custom answer/);
     assert.match(flow, /Type your answer/);
     assert.match(flow, /CornerDownLeftIcon/);

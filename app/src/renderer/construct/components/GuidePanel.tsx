@@ -372,7 +372,7 @@ function GuideBlock({
             <p className="text-xs font-medium text-muted-foreground">Concepts introduced here</p>
             <div className="flex flex-wrap gap-2">
               {linkedConcepts.map((concept) => (
-                <Button key={concept.id} size="small" variant="secondary" onClick={() => onOpenConcept(concept.id)}>
+                <Button key={concept.id} size="sm" variant="secondary" onClick={() => onOpenConcept(concept.id)}>
                   <PhosphorBookOpenIcon data-icon="inline-start" />
                   {concept.title}
                 </Button>

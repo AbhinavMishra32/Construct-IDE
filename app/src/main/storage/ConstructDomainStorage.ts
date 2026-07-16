@@ -980,6 +980,7 @@ export class ConstructDomainStorage {
         description: row.description,
         progress: row.progress,
         lastOpenedAt: row.last_opened_at,
+        createdAt: row.flow_created_at,
         workspacePath: row.workspace_path,
         sourcePath: row.source_path,
         currentStepIndex: undefined,

@@ -1,0 +1,3 @@
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._posthogChunkIds=e._posthogChunkIds||{},e._posthogChunkIds[n]="019f4f14-6821-7a71-bd2b-f14f64d58503")}catch(e){}}();var s="https://api.aside.com";function n(t,e){const r=typeof t=="string"?new URL(t,`${s}/`):t;return fetch(r,e)}export{n,s as t};
+
+//# chunkId=019f4f14-6821-7a71-bd2b-f14f64d58503

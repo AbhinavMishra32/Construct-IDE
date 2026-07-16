@@ -404,6 +404,7 @@ export type ProjectSummary = {
   description: string;
   progress: number;
   lastOpenedAt: string | null;
+  createdAt?: string | null;
   sourcePath: string | null;
   workspacePath: string;
   currentStepIndex?: number;
@@ -641,6 +642,36 @@ export type ProjectFileChangePayload = {
 
 export type ConstructUiStateScope = "application" | "workspace";
 
+export type ConstructProfile = {
+  name: string;
+  handle: string;
+  avatarColor: string;
+  avatarImage: string | null;
+  updatedAt: string | null;
+};
+
+export type ConstructProfileActivityEvent = {
+  kind: string;
+  projectId: string | null;
+  at: string;
+};
+
+export type ConstructProfileSnapshot = {
+  profile: ConstructProfile;
+  stats: {
+    projects: number;
+    completedProjects: number;
+    concepts: number;
+    flowSessions: number;
+    verificationPasses: number;
+    averageProgress: number;
+  };
+  activityEvents: ConstructProfileActivityEvent[];
+  mostWorkedProject: string | null;
+  projectMix: { flow: number; tape: number };
+  evidenceVersion: number;
+};
+
 export type ConstructStorageMetricEvent = {
   id: number;
   at: string;
@@ -692,6 +723,8 @@ export type ConstructProjectsApi = {
   }): Promise<{ ok: true }>;
   flushStorage(): Promise<{ ok: true }>;
   storageMetrics(): Promise<ConstructStorageMetrics>;
+  getProfile(): Promise<ConstructProfileSnapshot>;
+  updateProfile(input: ConstructProfile): Promise<ConstructProfile>;
   ensureProject(input: {
     source: string;
     sourcePath?: string | null;

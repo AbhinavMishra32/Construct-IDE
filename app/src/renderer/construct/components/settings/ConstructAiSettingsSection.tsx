@@ -316,7 +316,7 @@ export function ConstructAiSettingsSection({
                   />
                   {onImportOpencodeAuth ? (
                     <Button
-                      size="small"
+                      size="sm"
                       variant="secondary"
                       title="Import API key from opencode CLI auth file"
                       className="bg-secondary hover:bg-secondary/80 text-secondary-foreground border border-border/80 font-medium text-xs px-3.5 py-1.5 h-[34px] rounded-lg transition-colors cursor-pointer flex items-center shrink-0"
@@ -386,7 +386,7 @@ export function ConstructAiSettingsSection({
             description={modelsError ?? ""}
             control={
               <Button
-                size="small"
+                size="sm"
                 disabled={!canSave}
                 className="bg-primary hover:bg-primary/95 text-primary-foreground disabled:bg-muted disabled:text-muted-foreground font-medium text-xs px-5 py-1.5 h-[34px] rounded-lg transition-colors cursor-pointer border-none"
                 onClick={onSave}
@@ -406,7 +406,7 @@ export function ConstructAiSettingsSection({
             control={
               <Button
                 variant="secondary"
-                size="small"
+                size="sm"
                 className="bg-secondary hover:bg-secondary/80 text-secondary-foreground border border-border/80 font-medium text-xs px-3.5 py-1.5 h-[34px] rounded-lg transition-colors cursor-pointer"
                 onClick={async () => {
                   try {

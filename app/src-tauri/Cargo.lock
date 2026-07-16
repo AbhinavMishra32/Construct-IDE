@@ -518,7 +518,7 @@ dependencies = [
 
 [[package]]
 name = "construct"
-version = "0.6.7-alpha"
+version = "0.7.0"
 dependencies = [
  "chrono",
  "diesel",

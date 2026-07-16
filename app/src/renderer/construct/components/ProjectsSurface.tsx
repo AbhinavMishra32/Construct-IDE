@@ -131,7 +131,7 @@ export function ProjectsSurface({
                           <BookOpenIcon size={12} />
                           Concepts learned ({conceptCount})
                         </h3>
-                        <Button size="small" variant="ghost" onClick={() => onOpenProjectSettings(project.id)}>
+                        <Button size="sm" variant="ghost" onClick={() => onOpenProjectSettings(project.id)}>
                           Project settings
                         </Button>
                       </div>
