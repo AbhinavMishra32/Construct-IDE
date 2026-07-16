@@ -190,7 +190,15 @@ jobs:
             export APPLE_PASSWORD="$MACOS_APPLE_PASSWORD_INPUT"
             export APPLE_TEAM_ID="$MACOS_TEAM_ID_INPUT"
           fi
-          pnpm tauri build
+          if [ "${{ matrix.platform }}" = "windows" ]; then
+            # WiX/MSI accepts a prerelease only when its identifier is numeric.
+            # Keep the public app/release version (for example, 0.7.0-alpha)
+            # while supplying a valid installer ProductVersion.
+            WINDOWS_BUNDLE_VERSION="$(node -e 'const version = require("./package.json").version; const [core, prerelease] = version.split("-", 2); process.stdout.write(prerelease ? `${core}-1` : core)')"
+            pnpm tauri build --config "{\"version\":\"${WINDOWS_BUNDLE_VERSION}\"}"
+          else
+            pnpm tauri build
+          fi
 
       - name: Upload package artifacts
         uses: actions/upload-artifact@v5
