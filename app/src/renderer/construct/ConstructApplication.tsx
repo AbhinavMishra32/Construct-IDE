@@ -461,6 +461,13 @@ export default function ConstructApp() {
   const restoringProjectUiStateRef = useRef(false);
   const pendingImmersiveFlowProjectIdsRef = useRef<Set<string>>(new Set());
   const [aiSettings, setAiSettings] = useState<AiSettings | null>(null);
+  const [releaseVersion, setReleaseVersion] = useState("");
+  /* Resolved against whatever endpoint the settings name, falling back to the
+     configured one before they have loaded — the hook has to run on every render
+     regardless, so it cannot wait for them. */
+  const settingsAccount = useConstructSettingsAccount(
+    aiSettings?.constructCloudBaseUrl ?? configuredConstructCloudEndpoint(),
+  );
   const projectShellUiState = useMemo<ConstructProjectShellUiState>(() => ({
     version: 1,
     sidebarOpen,
@@ -552,6 +559,7 @@ export default function ConstructApp() {
           setShowStatusBar(settings.app?.showStatusBar !== false);
           setCodeThemeId(normalizeCodeThemeId(settings.app?.codeThemeId));
           setCustomCodeThemeJson(settings.app?.customCodeThemeJson ?? "");
+          setReleaseVersion(settings.releaseVersion ?? "");
         }
       })
       .catch(() => {
@@ -1472,6 +1480,12 @@ export default function ConstructApp() {
         onShowStatusBarChange={setShowStatusBar}
         onProjectsChange={setProjects}
         onActiveProjectChange={setActiveProject}
+        accountName={settingsAccount.name}
+        accountEmail={settingsAccount.email}
+        accountPlan={settingsAccount.plan}
+        releaseVersion={releaseVersion}
+        onOpenAccount={() => setAccountDialogOpen(true)}
+        onSignOut={settingsAccount.signOut}
       />
   ) : learningContextOpen ? (
     <LearningContextSurface />
@@ -2483,6 +2497,35 @@ function ConstructAccountDialog({
       </ShadcnDialogContent>
     </ShadcnDialog>
   );
+}
+
+/**
+ * The account facts the settings page shows, and the one action it offers.
+ *
+ * Settings needs a name, an address, a plan and a way out — not the whole account
+ * payload — so this narrows {@link useConstructAccount} to exactly that. Signing
+ * out reloads rather than unwinding renderer state by hand: the auth client, the
+ * bearer token and every surface drawn from the session all have to forget at
+ * once, and a reload is the only thing that guarantees none of them is left
+ * holding a stale one.
+ */
+function useConstructSettingsAccount(baseUrl: string) {
+  const account = useConstructAccount(baseUrl);
+  const user = account.session?.user as ConstructAccountUser | undefined;
+  const plan = account.usage?.plan ?? account.account?.user?.plan ?? null;
+
+  const signOut = useCallback(async () => {
+    localStorage.removeItem("bearer_token");
+    await account.authClient.signOut();
+    window.location.reload();
+  }, [account.authClient]);
+
+  return {
+    name: account.isPending ? "Account" : displayAccountName(user),
+    email: user?.email ?? "Signed in",
+    plan: plan ? formatPlan(plan) : null,
+    signOut,
+  };
 }
 
 function useConstructAccount(baseUrl: string) {

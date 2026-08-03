@@ -452,6 +452,24 @@ html, body {
   --window-controls-leading: 6rem;
   --window-controls-trailing: 0rem;
 
+  /* Declared here as well as in `@theme inline`, and this copy is the one that
+     wins. `@theme` emits its variables into the theme layer, which the vendored
+     Opaline tokens then override from a plain `:root` of their own — same
+     specificity, later in the cascade. Without this block every `var(--radius-*)`
+     in the app silently resolved to Opaline's scale instead of ours, which is
+     subtle enough on a button to miss and obvious on a sheet: a settings card
+     asking for 30px was drawing Opaline's flat 14px.
+
+     Keep the two lists in step. `@theme` is what generates the `rounded-*`
+     utilities; this is what `var()` reads. */
+  --radius-sm: 0.3125rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.625rem;
+  --radius-xl: 0.875rem;
+  --radius-2xl: calc(1.125rem * var(--squircle-factor));
+  --radius-item: 0.375rem;
+  --radius-menu: calc(var(--radius-item) + 0.375rem);
+
   --opaline-font-sans: "Geist Variable", "Geist", sans-serif;
   --opaline-font-mono: "Berkeley Mono", "Geist Mono Variable", "Geist Mono", "JetBrains Mono", monospace;
   --font-ui-family: var(--font-sans);
