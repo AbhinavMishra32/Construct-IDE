@@ -1,16 +1,17 @@
 import { useEffect, useState } from "react";
 import { FolderOpen, GearSix } from "@phosphor-icons/react";
 
+import { Button, Input } from "@opaline/ui";
+
 import {
-  Button,
-  Input,
-  ShadcnDialog,
-  ShadcnDialogContent,
-  ShadcnDialogDescription,
-  ShadcnDialogFooter,
-  ShadcnDialogHeader,
-  ShadcnDialogTitle
-} from "@opaline/ui";
+  SparButton,
+  SparDialog,
+  SparDialogContent,
+  SparDialogDescription,
+  SparDialogFooter,
+  SparDialogHeader,
+  SparDialogTitle,
+} from "../../components/spar";
 
 import {
   getSettings,
@@ -18,6 +19,7 @@ import {
   setWorkspaceRoot
 } from "../lib/bridge";
 import type { ProjectSummary } from "../types";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 
 export function SettingsDialog({
   open,
@@ -77,51 +79,62 @@ export function SettingsDialog({
   }
 
   return (
-    <ShadcnDialog open={open} onOpenChange={onOpenChange}>
-      <ShadcnDialogContent className="sm:max-w-lg">
-        <ShadcnDialogHeader>
-          <div className="mb-1 flex size-9 items-center justify-center rounded-md bg-muted text-muted-foreground"><GearSix size={20} weight="duotone" /></div>
-          <ShadcnDialogTitle>Project settings</ShadcnDialogTitle>
-          <ShadcnDialogDescription>Choose where Construct keeps project workspaces. Existing workspaces are copied into the new root.</ShadcnDialogDescription>
-        </ShadcnDialogHeader>
-        <div className="space-y-5 py-2">
-          <label className="space-y-2">
-              <span className="text-sm font-medium">Default workspace location</span>
-              <div className="flex gap-2">
-                <Input className="min-w-0 flex-1"
-                  value={workspaceRoot}
-                  onChange={(event) => setWorkspaceRootValue(event.target.value)}
-                  placeholder="Choose a project folder"
-                />
-                <Button variant="secondary" type="button" onClick={() => void chooseRoot()}>
-                  <FolderOpen size={16} weight="duotone" />
-                  Browse
-                </Button>
-              </div>
+    <SparDialog open={open} onOpenChange={onOpenChange}>
+      <SparDialogContent className="sm:max-w-[30rem]">
+        <SparDialogHeader>
+          {/* 28px tile at the control radius, sized to the title beside it rather
+              than standing over it — a 36px icon above a 16px heading is an
+              illustration, and this is a label. */}
+          <div className="mb-0.5 grid size-7 place-items-center rounded-[var(--radius-md)] bg-[var(--color-background-elevated-secondary)] text-muted-foreground">
+            <GearSix size={16} weight="duotone" />
+          </div>
+          <SparDialogTitle>Project settings</SparDialogTitle>
+          <SparDialogDescription>
+            Choose where Construct keeps project workspaces. Existing workspaces are copied into the new root.
+          </SparDialogDescription>
+        </SparDialogHeader>
+        <div className="space-y-4">
+          <label className="block space-y-1.5">
+            <span className="text-ui font-medium">Default workspace location</span>
+            <div className="flex gap-2">
+              <Input
+                className="min-w-0 flex-1"
+                value={workspaceRoot}
+                onChange={(event) => setWorkspaceRootValue(event.target.value)}
+                placeholder="Choose a project folder"
+              />
+              <Button variant="secondary" type="button" onClick={() => void chooseRoot()}>
+                <FolderOpen size={14} weight="duotone" />
+                Browse
+              </Button>
+            </div>
           </label>
-          <label className="space-y-2">
-              <span className="text-sm font-medium">Color theme</span>
-              <select
-                value={theme}
-                onChange={(event) => onThemeChange(event.target.value as any)}
-                className="flex h-8 w-full rounded-md border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-              >
-                <option value="system">System default</option>
-                <option value="dark">Dark theme</option>
-                <option value="light">Light theme</option>
-              </select>
+          <label className="block space-y-1.5">
+            <span className="text-ui font-medium">Color theme</span>
+            <Select value={theme} onValueChange={(value) => onThemeChange(value as "light" | "dark" | "system")}>
+              <SelectTrigger className="h-8 w-full text-ui"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="system">System default</SelectItem>
+                <SelectItem value="dark">Dark theme</SelectItem>
+                <SelectItem value="light">Light theme</SelectItem>
+              </SelectContent>
+            </Select>
           </label>
-          {error ? <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{error}</div> : null}
+          {error ? (
+            <p className="rounded-[var(--radius-xl)] border border-destructive/30 bg-destructive/5 px-3 py-2 text-ui leading-[1.6] text-destructive">
+              {error}
+            </p>
+          ) : null}
         </div>
-        <ShadcnDialogFooter>
-          <Button variant="secondary" onClick={() => onOpenChange(false)}>
+        <SparDialogFooter>
+          <SparButton onClick={() => onOpenChange(false)} size="sm" variant="secondary">
             Cancel
-          </Button>
-          <Button disabled={!workspaceRoot.trim() || busy} onClick={() => void save()}>
+          </SparButton>
+          <SparButton disabled={!workspaceRoot.trim() || busy} onClick={() => void save()} size="sm">
             Save location
-          </Button>
-        </ShadcnDialogFooter>
-      </ShadcnDialogContent>
-    </ShadcnDialog>
+          </SparButton>
+        </SparDialogFooter>
+      </SparDialogContent>
+    </SparDialog>
   );
 }

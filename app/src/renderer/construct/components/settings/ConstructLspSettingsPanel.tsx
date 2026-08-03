@@ -4,13 +4,15 @@ import {
   AlertTitle,
   Badge,
   Button,
-  SettingsCard,
   SettingsPanel,
-  SettingsRow,
-  SettingsSection,
-  SettingsToggle,
   Spinner
 } from "@opaline/ui";
+import {
+  SparSettingsCard as SettingsCard,
+  SparSettingsRow as SettingsRow,
+  SparSettingsSection as SettingsSection,
+  SparSettingsToggle as SettingsToggle,
+} from "../../../components/spar";
 
 import { lspLanguageOrder, type LspLanguageId, type LspServerStatus, type LspStatusReport } from "./lspSettingsModel";
 

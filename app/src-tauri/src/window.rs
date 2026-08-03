@@ -17,7 +17,11 @@ pub fn create_main_window<R: Runtime>(
         builder = builder
             .title_bar_style(tauri::TitleBarStyle::Overlay)
             .hidden_title(true)
-            .traffic_light_position(tauri::LogicalPosition::new(16.0, 26.0))
+            // Centred in the 44px titlebar row the renderer reserves through
+            // `--titlebar-height`: 16px buttons in a 44px row leave 14px above.
+            // Keep the two in step — the row is what the buttons are measured
+            // against, and moving one without the other lands them off-centre.
+            .traffic_light_position(tauri::LogicalPosition::new(16.0, 14.0))
             .transparent(true);
     }
     #[cfg(target_os = "windows")]

@@ -1,0 +1,691 @@
+/* Spar's desktop material, ported onto Construct.
+ *
+ * Three things live here and nothing else: the window chrome geometry the OS
+ * draws over, the glass surfaces the app is built out of, and the overrides that
+ * make the vendored Opaline shell resolve to those surfaces instead of its own.
+ * Colour tokens stay in `index.css` beside Construct's own; this file only ever
+ * reads them.
+ *
+ * Liquid Glass proper is a native material — Tauri installs an NSVisualEffect
+ * layer behind the web contents (`src-tauri/src/window.rs`), and CSS cannot
+ * reach it. The surfaces below reproduce its *read* instead, which is three
+ * things and not the heavy blur everyone reaches for first:
+ *   1. a lightly frosted, mostly-opaque fill — glass tints, it does not fog;
+ *   2. a bright 1px inset rim, the specular edge of a curved surface, which is
+ *      what actually says "glass" rather than "translucent rectangle";
+ *   3. a 0.5px outer hairline so the shape stays legible on any backdrop.
+ * The blur is deliberately small (8px). Past ~12px small text behind the
+ * surface turns to mush and the material reads as frosted plastic.
+ */
+
+/* Registered so the rim sweep can interpolate; an unregistered custom property
+   animates discretely and the light would jump instead of travel. */
+@property --spar-shimmer-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+/* The drum's two fade depths, registered for the same reason: they are driven
+   from whether the list is scrolled away from that end, and an unregistered
+   length would snap the mask on rather than ease it. Zero means no fade at all,
+   which is what an end with nothing past it gets. */
+@property --drum-top {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --drum-bottom {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@layer base {
+  /* Real squircles, not merely bigger circles. `border-radius` always draws a
+     circular arc; `corner-shape` replaces that arc with a superellipse — the
+     curve macOS actually uses, whose curvature is continuous, so a straight edge
+     flows into its corner instead of meeting it at a visible seam.
+     superellipse(2) is the Apple constant.
+
+     Guarded because the property is Chromium 139+: without support every corner
+     keeps the arc it already had, which is exactly the old appearance. */
+  @supports (corner-shape: superellipse(2)) {
+    *,
+    *::before,
+    *::after {
+      corner-shape: superellipse(2);
+    }
+
+    /* Circles must stay circles. A superellipse at a pill radius squares off an
+       avatar or a send button into a blob. */
+    [class~="rounded-full"],
+    [class*="rounded-full"],
+    .app-round {
+      corner-shape: round;
+    }
+
+    /* Everything below the sheet scale opts back out. The superellipse is a
+       feature of the big surfaces; applied to every button, field, menu row and
+       card it stops being a material and becomes a tic — and at those radii
+       nobody can see the difference anyway, only the extra weight it lends the
+       corner. Matched on the radius the element asks for rather than by
+       component, so a new control inherits the rule for free. */
+    :is(
+      [class~="rounded-xs"],
+      [class~="rounded-sm"],
+      [class~="rounded-md"],
+      [class~="rounded-lg"],
+      [class~="rounded-xl"],
+      [class*="--radius-sm"],
+      [class*="--radius-md"],
+      [class*="--radius-lg"],
+      [class*="--radius-xl"],
+      [class*="--radius-menu"],
+      [class*="--radius-item"],
+      [data-slot^="dropdown-menu"],
+      [data-slot^="context-menu"],
+      [data-slot^="menu"],
+      [data-slot^="command"],
+      [data-slot="tooltip-content"],
+      [data-slot="select-content"],
+      [data-slot="select-item"]
+    ) {
+      corner-shape: round;
+    }
+  }
+
+  body {
+    font-size: var(--text-ui);
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--foreground) 16%, transparent);
+  }
+}
+
+@layer components {
+  /* ---- Window chrome ------------------------------------------------------ */
+
+  /* Windows puts its caption buttons on the trailing edge, so the reservation
+     moves with them: nothing to clear on the left, 138px to clear on the right. */
+  :root[data-window-controls="right"] {
+    --window-controls-leading: 0rem;
+    --window-controls-trailing: 8.625rem;
+  }
+
+  /* A native frame keeps its buttons outside our content: reserve nothing. */
+  :root[data-window-controls="none"] {
+    --window-controls-leading: 0rem;
+    --window-controls-trailing: 0rem;
+  }
+
+  .app-drag {
+    -webkit-app-region: drag;
+  }
+
+  .app-no-drag {
+    -webkit-app-region: no-drag;
+  }
+
+  /* AppKit shows the arrow over a source list, never the hand — the pointer
+     cursor is a web affordance, and on a sidebar of rows it is the single
+     clearest tell that a desktop app was built in a browser. Scoped here so
+     ordinary buttons elsewhere keep it. */
+  .app-sidebar button:not(:disabled),
+  .app-sidebar [role="button"]:not(:disabled),
+  .app-sidebar a[href],
+  [data-slot="sidebar"] button:not(:disabled),
+  [data-slot="sidebar"] [role="button"]:not(:disabled) {
+    cursor: default;
+  }
+
+  /* The window is a hole the OS paints its material into — Liquid Glass on
+     macOS 26, vibrancy below that, Acrylic on Windows 11. This goes on the whole
+     shell, not just the sidebar: the content pane's rounded corner exposes
+     whatever sits behind the pane, and if the material stops at the sidebar's
+     edge then what it exposes is bare window. That is the dark notch under the
+     curve. Spanning the shell means the corner reveals the same surface the
+     sidebar shows, and the two read as one continuous sheet. */
+  .app-vibrant {
+    /* Not quite transparent: a tint over the native material. Glass alone takes
+       its value from whatever is behind the window, so on a dark desktop it
+       collapses to the same value as the content pane and the two stop reading
+       as separate surfaces. The wash keeps it reliably the lighter of the pair
+       however the wallpaper moves. */
+    background: var(--app-vibrant-tint);
+  }
+
+  /* No native material to sit on — Linux, Windows 10 — so paint it outright, or
+     the hole shows the desktop straight through. */
+  :root[data-native-surface="none"] .app-vibrant {
+    background: var(--app-sidebar-fill);
+  }
+
+  /* Named for what it is rather than how it is built: this is the fill every
+     page sits on. It is a heavy tint over the native material rather than a
+     solid, so the window's glass carries through the whole app — kept close to
+     opaque because text on it has to hold contrast against an arbitrary
+     desktop. `--app-glass-fill` is the dial. */
+  .app-pane {
+    background: color-mix(in oklab, var(--app-window-fill) var(--app-glass-fill), transparent);
+  }
+
+  .hairline-r {
+    box-shadow: inset -1px 0 0 0 var(--sidebar-border);
+  }
+
+  .hairline-b {
+    box-shadow: inset 0 -1px 0 0 var(--border);
+  }
+
+  .hairline-t {
+    box-shadow: inset 0 1px 0 0 var(--border);
+  }
+
+  /* ---- Opaline shell overrides ------------------------------------------- */
+
+  /* The vendored shell ships its own material tokens. Repointing them here is
+     what converts it to Spar's read without touching the submodule: the sidebar
+     becomes a tint over the native vibrancy, the content pane becomes the inset
+     glass sheet, and the seam between them stops being a drawn divider. */
+  .opaline-v3-desktop-shell {
+    --app-content-card-radius: var(--radius-2xl);
+    --app-shell-background: var(--app-vibrant-tint);
+    --app-sidebar-backdrop-filter: none;
+    --app-sidebar-shadow: none;
+    --app-sidebar-surface: transparent;
+    --app-surface-divider: var(--border);
+    --app-user-message-background: var(--app-user-message-background);
+    --color-background-control: var(--surface-primary);
+    --composer-radius: var(--radius-2xl);
+    --composer-surface: color-mix(in oklab, var(--popover) var(--glass-fill), transparent);
+    --desktop-top-bar-traffic-light-gutter: var(--window-controls-leading);
+  }
+
+  :root[data-native-surface="none"] .opaline-v3-desktop-shell {
+    --app-shell-background: var(--app-sidebar-fill);
+  }
+
+  .dark .opaline-v3-desktop-shell {
+    --app-sidebar-backdrop-filter: none;
+    --app-sidebar-shadow: none;
+    --app-sidebar-surface: transparent;
+  }
+
+  /* The gap layer painted its own gradient wash so the collapsed sidebar had
+     something to be. With real vibrancy behind the window that wash reads as a
+     smear across the material, so it comes off and the OS surface shows. */
+  .opaline-v3-desktop-shell > [data-slot="sidebar"] [data-slot="sidebar-gap"],
+  .opaline-v3-desktop-shell [data-slot="sidebar-gap"]::before {
+    background: none;
+  }
+
+  /* The pane is the sheet; the sidebar is the material it sits on. Both of the
+     shell's own fills are replaced: the sidebar inner surface paints nothing at
+     all, and the content card carries the heavy tint plus the inset hairline
+     that follows its curve. */
+  .opaline-v3-desktop-shell .app-sidebar-surface {
+    border-right: 0;
+    background: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .opaline-v3-desktop-shell .chat-content-card {
+    --seam-line: var(--sidebar-border);
+    --seam-shadow-color: oklch(0% 0 0 / 8%);
+    background: color-mix(in oklab, var(--app-window-fill) var(--app-glass-fill), transparent) !important;
+  }
+
+  .dark .opaline-v3-desktop-shell .chat-content-card {
+    --seam-shadow-color: oklch(0% 0 0 / 30%);
+  }
+
+  /* The backing strip behind the pane's rounded corner. Transparent so the
+     corner reveals the window's own material rather than a guessed fill. */
+  .opaline-v3-desktop-shell .chat-content-card-backing::after {
+    background-color: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  /* The inspector is another sheet on the same glass, not a solid panel. */
+  .opaline-v3-desktop-shell [data-slot="desktop-inspector-surface"] {
+    background: color-mix(in oklab, var(--app-window-fill) var(--app-glass-fill), transparent);
+  }
+
+  /* Header row: Spar's 44px titlebar rather than the shell's 46px, so the row
+     centres against the traffic lights at their measured position. */
+  .opaline-v3-desktop-shell > * header.chat-surface-divider,
+  .opaline-v3-desktop-shell header.chat-surface-divider {
+    height: var(--titlebar-height);
+    min-height: var(--titlebar-height);
+    padding-inline: 0.625rem;
+  }
+
+  .opaline-v3-desktop-shell [data-slot="sidebar-header"] {
+    height: var(--titlebar-height);
+    min-height: var(--titlebar-height);
+  }
+
+  .desktop-top-bar-traffic-light-gutter {
+    padding-left: max(0.625rem, var(--window-controls-leading)) !important;
+  }
+
+  /* Toolbar controls at AppKit's proportion, not the web's. 24px square with a
+     14px glyph — a 28px control with a 15px glyph is a touch target, and a
+     toolbar that opens under the pointer never needed one. The radius steps down
+     with the box so the corner stays in proportion to what it is wrapping. */
+  .opaline-v3-desktop-shell header.chat-surface-divider
+    :is(
+      [data-slot="button"][data-size="icon-xs"],
+      [data-slot="button"][data-size="icon-sm"],
+      .opaline-header-tool-button,
+      .opaline-shell-chrome-button
+    ) {
+    height: 1.5rem !important;
+    width: 1.5rem !important;
+    min-width: 1.5rem;
+    border-radius: var(--radius-md);
+  }
+
+  .opaline-v3-desktop-shell header.chat-surface-divider [data-slot="button"] svg,
+  .opaline-v3-desktop-shell header.chat-surface-divider [data-slot="button"] [data-slot="central-icon"] {
+    height: 0.875rem;
+    width: 0.875rem;
+  }
+
+  /* The sidebar's own chrome row — collapse, home, back, forward — takes the same
+     control as the toolbar's. They sit on one continuous line across the top of
+     the window, and two sizes on that line is the tell that they were built
+     separately. */
+  .opaline-v3-desktop-shell [data-slot="sidebar-header"] [data-slot="button"] {
+    height: 1.5rem !important;
+    width: 1.5rem !important;
+    min-width: 1.5rem;
+    border-radius: var(--radius-md);
+  }
+
+  .opaline-v3-desktop-shell [data-slot="sidebar-header"] [data-slot="button"] svg {
+    height: 0.875rem;
+    width: 0.875rem;
+  }
+
+  /* Chrome buttons read as pressed by taking a fill, not by growing a border. */
+  .opaline-v3-desktop-shell header.chat-surface-divider [data-slot="button"][data-active="true"],
+  .opaline-v3-desktop-shell header.chat-surface-divider [data-slot="button"][data-pressed] {
+    background: var(--accent);
+    color: var(--foreground);
+  }
+
+  /* ---- Settings ---------------------------------------------------------- */
+
+  /* Transparent, like every other page: the settings pane is inset into the same
+     glass, and the shell's own `bg-background` was another surface the material
+     stopped at. */
+  .app-settings-surface {
+    background: transparent;
+  }
+
+  /* The heading takes the page scale the dashboard uses — 24.8px at -0.035em,
+     tight enough that a heading this size does not read as body copy scaled up —
+     and the sections carry their own top margin, so the flex gap that used to
+     space them comes off or every group is spaced twice. */
+  .app-settings-surface h1 {
+    font-size: 1.55rem;
+    font-weight: 600;
+    letter-spacing: -0.035em;
+  }
+
+  .app-settings-surface h1 + p {
+    margin-top: 0.25rem;
+    font-size: var(--text-content);
+    line-height: var(--text-content--line-height);
+  }
+
+  .app-settings-surface > div > div:has(> [data-slot="settings-card"]),
+  .app-settings-surface > div > .flex.flex-col.gap-6 {
+    gap: 0;
+  }
+
+  /* ---- Scrollbars -------------------------------------------------------- */
+
+  .app-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--foreground) 18%, transparent) transparent;
+  }
+
+  .app-scroll::-webkit-scrollbar {
+    width: 9px;
+    height: 9px;
+  }
+
+  .app-scroll::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    /* A pill, not a squircle — the universal rule above would square its ends. */
+    corner-shape: round;
+    border-radius: 9999px;
+    background-clip: content-box;
+    background-color: color-mix(in srgb, var(--foreground) 16%, transparent);
+  }
+
+  .app-scroll::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in srgb, var(--foreground) 28%, transparent);
+  }
+
+  .app-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  /* ---- Agent transcript -------------------------------------------------- */
+
+  .agent-transcript {
+    --transcript-width: 46rem;
+  }
+
+  /* The fallback matters: composers and banners sit outside .agent-transcript,
+     where --transcript-width is not in scope. Without it the custom property
+     resolves to nothing, max-width is dropped, and those rows go full-bleed. */
+  .transcript-column {
+    width: 100%;
+    max-width: var(--transcript-width, 46rem);
+    margin-inline: auto;
+  }
+
+  /* Aside's "working" label sweeps a highlight across the text rather than
+     spinning, which reads quieter in a window that stays open for hours. */
+  .thinking-shimmer {
+    background: linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--foreground) 38%, transparent) 0%,
+      color-mix(in srgb, var(--foreground) 38%, transparent) 35%,
+      var(--foreground) 50%,
+      color-mix(in srgb, var(--foreground) 38%, transparent) 65%,
+      color-mix(in srgb, var(--foreground) 38%, transparent) 100%
+    );
+    background-size: 220% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: spar-shimmer 2.4s linear infinite;
+  }
+
+  /* ---- Glass ------------------------------------------------------------- */
+
+  .glass {
+    background: color-mix(in oklab, var(--popover) var(--glass-fill), transparent);
+    box-shadow:
+      inset 0 0 0 1px var(--glass-rim),
+      inset 0 1px 0 0 var(--glass-sheen),
+      0 0 0 0.5px var(--glass-hairline),
+      var(--app-shadow-card);
+    backdrop-filter: blur(8px) saturate(120%);
+    -webkit-backdrop-filter: blur(8px) saturate(120%);
+    /* Keeps the blur from bleeding past the rounded corner in WebKit. */
+    isolation: isolate;
+  }
+
+  .floating-surface {
+    border-radius: var(--radius-menu);
+    corner-shape: round;
+    box-shadow:
+      inset 0 0 0 1px var(--glass-rim),
+      inset 0 1px 0 0 var(--glass-sheen),
+      0 0 0 0.5px var(--glass-hairline),
+      var(--app-shadow-overlay);
+    background: color-mix(in oklab, var(--popover) var(--glass-fill), transparent);
+    backdrop-filter: blur(8px) saturate(120%);
+    -webkit-backdrop-filter: blur(8px) saturate(120%);
+    isolation: isolate;
+  }
+
+  /* Menus sit closer to opaque than panels do: they are almost entirely small
+     text, and every point of transparency costs contrast against whatever
+     happens to be behind them.
+
+     A tight arc, not a squircle: a menu is a list of 26px rows, and a corner
+     wider than the row it clips eats the first and last items' highlight. */
+  .menu-surface {
+    border-radius: var(--radius-menu);
+    corner-shape: round;
+    background: color-mix(in oklab, var(--popover) var(--glass-fill-solid), transparent);
+    box-shadow:
+      inset 0 0 0 1px var(--glass-rim),
+      inset 0 1px 0 0 var(--glass-sheen),
+      0 0 0 0.5px var(--glass-hairline),
+      var(--app-shadow-menu);
+    backdrop-filter: blur(8px) saturate(120%);
+    -webkit-backdrop-filter: blur(8px) saturate(120%);
+    isolation: isolate;
+  }
+
+  /* ---- Composer ---------------------------------------------------------- */
+
+  .composer-shell {
+    border-radius: var(--radius-2xl);
+    background: color-mix(in oklab, var(--popover) var(--glass-fill), transparent);
+    box-shadow:
+      inset 0 0 0 1px var(--glass-rim),
+      inset 0 1px 0 0 var(--glass-sheen),
+      0 0 0 0.5px var(--glass-hairline),
+      var(--app-shadow-composer);
+    backdrop-filter: blur(8px) saturate(120%);
+    -webkit-backdrop-filter: blur(8px) saturate(120%);
+    isolation: isolate;
+    transition: box-shadow 0.15s ease;
+  }
+
+  /* Focus reads as the surface lifting, not as a coloured outline — the same
+     move macOS makes when a text field takes the caret. */
+  .composer-shell:focus-within {
+    box-shadow:
+      inset 0 0 0 1px var(--glass-rim),
+      inset 0 1px 0 0 var(--glass-sheen),
+      0 0 0 0.5px color-mix(in oklab, var(--foreground) 32%, transparent),
+      var(--app-shadow-composer);
+  }
+
+  /* Fades transcript content into the composer instead of clipping it hard. */
+  .composer-fade {
+    background: linear-gradient(
+      to bottom,
+      transparent,
+      color-mix(in oklab, var(--app-window-fill) var(--app-glass-fill), transparent) 62%
+    );
+  }
+
+  /* The vendored composer surfaces take the same glass, so a Construct chat and
+     the dashboard composer read as one control at two sizes. */
+  .opaline-v3-desktop-shell .chat-composer-surface,
+  .chat-composer-surface {
+    box-shadow:
+      inset 0 0 0 1px var(--glass-rim),
+      inset 0 1px 0 0 var(--glass-sheen),
+      0 0 0 0.5px var(--glass-hairline),
+      var(--app-shadow-composer);
+    backdrop-filter: blur(8px) saturate(120%);
+    -webkit-backdrop-filter: blur(8px) saturate(120%);
+    isolation: isolate;
+  }
+
+  /* ---- Scrolling drum ---------------------------------------------------- */
+
+  /* A list taller than the room it was given, presented the way a physical
+     picker drum reads: rows near each edge fade and soften as though rotating
+     away, rather than being cut in half by a boundary.
+
+     Two layers doing two different jobs. The mask fades the content itself, so
+     it dissolves into whatever is genuinely behind the pane — a gradient in a
+     guessed background colour cannot, because the pane is a translucent tint
+     over the window's own material and the "background" is the desktop. The edge
+     strips then taper a small backdrop blur across the same distance, which is
+     what turns a flat fade into a surface curving away from you. */
+  .drum {
+    --drum-fade: 2.25rem;
+    mask-image: linear-gradient(
+      to bottom,
+      transparent 0,
+      #000 var(--drum-top),
+      #000 calc(100% - var(--drum-bottom)),
+      transparent 100%
+    );
+    -webkit-mask-image: linear-gradient(
+      to bottom,
+      transparent 0,
+      #000 var(--drum-top),
+      #000 calc(100% - var(--drum-bottom)),
+      transparent 100%
+    );
+    transition:
+      --drum-top 180ms ease,
+      --drum-bottom 180ms ease;
+  }
+
+  .drum-edge {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 2.25rem;
+    pointer-events: none;
+    /* Small on purpose. Past ~4px the half-visible card stops reading as one on
+       its way out and starts reading as a smear over the list. */
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+    transition: opacity 180ms ease;
+  }
+
+  .drum-edge-top {
+    top: 0;
+    mask-image: linear-gradient(to bottom, #000, transparent);
+    -webkit-mask-image: linear-gradient(to bottom, #000, transparent);
+  }
+
+  .drum-edge-bottom {
+    bottom: 0;
+    mask-image: linear-gradient(to top, #000, transparent);
+    -webkit-mask-image: linear-gradient(to top, #000, transparent);
+  }
+
+  /* ---- Work sheets ------------------------------------------------------- */
+
+  /* A sheet is inset into a canvas of almost its own value, so the 0.5px
+     hairline the glass surfaces use disappears and the panes read as one
+     undivided field. A full 1px edge plus a wider ambient shadow is what makes
+     the inset legible as an inset. */
+  .work-blob {
+    position: relative;
+    border-radius: var(--radius-2xl);
+    box-shadow: var(--app-shadow-sheet);
+    overflow: hidden;
+    isolation: isolate;
+  }
+
+  /* The edge is drawn over the content, not under it. As an inset shadow on the
+     element it is covered by any child that paints its own background — which is
+     every pane here — so it survived only where the clip curves away from the
+     child's own antialiased corner. One ring on top is the same line the whole
+     way round. */
+  .work-blob::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    border-radius: inherit;
+    box-shadow: inset 0 0 0 1px var(--sheet-edge);
+    pointer-events: none;
+  }
+
+  /* Working state: the rim breathes rather than a light going round it. A
+     constant-speed arc on a loop is a machine — it reads as a progress spinner
+     disguised as an edge, and it never stops, so it competes with the content
+     for the rest of the run. Brightening the whole rim in and out is the same
+     information with none of that. */
+  .work-blob[data-busy="true"]::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    padding: 1px;
+    border-radius: inherit;
+    background: var(--shimmer-tint);
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    animation: spar-blob-breathe 3.4s cubic-bezier(0.4, 0, 0.6, 1) var(--shimmer-phase, 0s) infinite alternate;
+    pointer-events: none;
+  }
+
+  /* ---- Code -------------------------------------------------------------- */
+
+  .code-inline {
+    border-radius: 0.35rem;
+    border: 1px solid color-mix(in srgb, var(--border) 82%, var(--foreground) 8%);
+    background: color-mix(in srgb, var(--muted) 70%, transparent);
+    padding: 0.05em 0.32em;
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+    /* A long identifier in a narrow column has to wrap. Cloning the decoration
+       gives each wrapped fragment its own complete border and padding, so it
+       reads as two chips rather than one torn in half. */
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+    overflow-wrap: break-word;
+    word-break: normal;
+  }
+
+  .code-block {
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border);
+    background: color-mix(in srgb, var(--muted) 45%, transparent);
+    font-family: var(--font-mono);
+  }
+}
+
+@keyframes spar-shimmer {
+  from {
+    background-position: 140% 0;
+  }
+  to {
+    background-position: -40% 0;
+  }
+}
+
+@keyframes spar-blob-breathe {
+  from {
+    opacity: 0.25;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drum,
+  .drum-edge {
+    transition: none;
+  }
+
+  .thinking-shimmer,
+  .work-blob[data-busy="true"]::after {
+    animation: none;
+    opacity: 0.55;
+  }
+
+  .thinking-shimmer {
+    color: var(--muted-foreground);
+    -webkit-text-fill-color: currentColor;
+  }
+}

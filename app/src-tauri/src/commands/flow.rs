@@ -72,9 +72,24 @@ async fn run(
     let origin = if question_response.is_some() {
         "question-response"
     } else {
-        "user"
+        input
+            .get("origin")
+            .and_then(Value::as_str)
+            .filter(|origin| matches!(*origin, "user" | "system" | "task-submission"))
+            .unwrap_or("user")
     };
-    let mut session = json!({"id":session_id,"projectId":project_id,"threadId":project.pointer("/flow/threadId").cloned().unwrap_or(json!(project_id)),"origin":origin,"questionResponse":question_response,"messages":[{"id":Uuid::new_v4().to_string(),"role":"user","content":message,"createdAt":created}],"status":"running","toolCalls":[],"agentEvents":[],"timeline":[],"actions":[],"practiceTasks":[],"conceptExercises":[],"createdAt":created,"updatedAt":created});
+    // Research is a distinct Flow session.  The renderer uses this stable suffix
+    // to keep the research card alive until the mentor run begins.
+    let thread_id = project
+        .pointer("/flow/threadId")
+        .and_then(Value::as_str)
+        .unwrap_or(&project_id);
+    let session_thread_id = if research {
+        format!("{thread_id}:research")
+    } else {
+        thread_id.to_string()
+    };
+    let mut session = json!({"id":session_id,"projectId":project_id,"threadId":session_thread_id,"origin":origin,"questionResponse":question_response,"messages":[{"id":Uuid::new_v4().to_string(),"role":"user","content":message,"createdAt":created}],"status":"running","toolCalls":[],"agentEvents":[],"timeline":[],"actions":[],"practiceTasks":[],"conceptExercises":[],"createdAt":created,"updatedAt":created});
     push_session(&mut project, session.clone());
     state.projects.write(&project)?;
     if let Some(answered_session) = answered_session {
@@ -91,6 +106,7 @@ async fn run(
     let worker = Arc::clone(&state.mastra);
     let worker_app = app.clone();
     let worker_project = project.clone();
+    let worker_concepts = project_concepts(&state.learning.read()?, &project_id);
     let worker_message = message.clone();
     let worker_settings = state.settings.read()?["ai"].clone();
     let live_session = Arc::new(Mutex::new(session.clone()));
@@ -106,7 +122,7 @@ async fn run(
         worker.request_with_events(
             worker_app,
             method,
-            json!({"project":worker_project,"memory":memory,"message":worker_message,"settings":worker_settings}),
+            json!({"project":worker_project,"concepts":worker_concepts,"memory":memory,"message":worker_message,"settings":worker_settings}),
             move |trace| {
                 let Ok(mut session) = event_session.lock() else {
                     return;
@@ -166,6 +182,18 @@ async fn run(
     if !reply.trim().is_empty() {
         session["messages"].as_array_mut().unwrap().push(json!({"id":Uuid::new_v4().to_string(),"role":"assistant","content":reply,"createdAt":updated}));
     }
+    if research && !reply.trim().is_empty() {
+        let research_path = project
+            .get("workspacePath")
+            .and_then(Value::as_str)
+            .map(|root| {
+                std::path::Path::new(root)
+                    .join(".construct")
+                    .join("research.md")
+            })
+            .ok_or_else(|| CommandError::new("flow.workspace", "workspace path missing"))?;
+        std::fs::write(research_path, format!("# Research\n\n{reply}\n")).map_err(io_error)?;
+    }
     flow_trace::finalize_reply(&mut session, &reply, terminal_status);
     replace_session(&mut project, &session_id, session.clone());
     project["flow"]["updatedAt"] = json!(updated);
@@ -183,6 +211,19 @@ async fn run(
     } else {
         Ok(result)
     }
+}
+
+fn project_concepts(learning: &Value, project_id: &str) -> Vec<Value> {
+    learning
+        .pointer("/knowledgeBase/concepts")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flat_map(|concepts| concepts.values())
+        .filter(|concept| {
+            concept.get("sourceProjectId").and_then(Value::as_str) == Some(project_id)
+        })
+        .cloned()
+        .collect()
 }
 
 fn apply_question_response(project: &mut Value, response: &Value) -> CommandResult<Value> {

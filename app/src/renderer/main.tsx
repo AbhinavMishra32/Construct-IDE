@@ -85,6 +85,17 @@ async function bootstrap(): Promise<void> {
   document.documentElement.dataset.runtime = "electron";
   document.documentElement.dataset.opalineOs = os;
 
+  /* Which edge the OS draws its window buttons on, and whether it gives us a
+     native material to tint. Both are read from CSS rather than branched on in
+     components: the chrome reserves room with `--window-controls-leading` /
+     `--window-controls-trailing`, and the vibrant layer falls back to a painted
+     fill wherever there is no vibrancy behind the window to show through.
+     macOS traffic lights sit on the leading edge; the Windows caption buttons
+     are a fixed 138px overlay on the trailing one; Linux has neither. */
+  document.documentElement.dataset.windowControls =
+    os === "win32" ? "right" : os === "darwin" ? "left" : "none";
+  document.documentElement.dataset.nativeSurface = os === "linux" ? "none" : "vibrancy";
+
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>
       <TooltipProvider>

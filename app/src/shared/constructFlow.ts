@@ -351,6 +351,7 @@ export type ConstructFlowAgentInput = {
   };
   questionResponse?: ConstructFlowQuestionResponse;
   startReason?: "new-project";
+  origin?: ConstructFlowSessionOrigin;
   quickAction?: "continue" | "tried" | "stuck" | "run-tests" | "explain-selection" | "checkpoint";
 };
 

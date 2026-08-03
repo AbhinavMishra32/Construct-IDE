@@ -10,6 +10,149 @@ const frameId = crypto.randomUUID();
 const pendingRequests = new Map();
 const sockets = new Map();
 let chatMode = "panel";
+document.documentElement.dataset.constructChatMode = chatMode;
+
+// Aside renders the transcript inside this iframe, so Construct's previous
+// Flow reading measure cannot cascade in from the host document. Keep the
+// vendored controls intact, but restore the old 46rem Flow column for every
+// top-level chat surface (message list, composer, and the session panel).
+const constructFlowMargins = document.createElement("style");
+constructFlowMargins.textContent = `
+  :root {
+    --construct-flow-chat-max-width: 46rem;
+    --construct-flow-chat-gutter: clamp(0.75rem, 2vw, 1.5rem);
+  }
+
+  [data-agent-session-ui="chat"] {
+    width: min(
+      var(--construct-flow-chat-max-width),
+      calc(100% - (var(--construct-flow-chat-gutter) * 2))
+    ) !important;
+    margin-inline: auto !important;
+  }
+
+  /* Construct owns chat layout from the desktop header. The vendored Aside
+     sidepanel's browser-tab and close affordances would duplicate those
+     controls and make the host/iframe layout state disagree. */
+  [aria-label="Open in tab"],
+  [aria-label="Close side panel"],
+  [data-construct-chat-layout-action] {
+    display: none !important;
+  }
+
+  /* Keep the header's fade/gradient layer, but remove Aside's per-session
+     switcher from it. Project navigation belongs to Construct's project UI. */
+  button.no-drag.flex.max-w-60.justify-start.overflow-hidden {
+    display: none !important;
+  }
+
+  /* The switcher used to reserve a 40px header row. Keep that row's fade as
+     an overlay, rather than leaving an empty gap above the transcript. */
+  header.app-region-drag:has(button.no-drag.flex.max-w-60.justify-start.overflow-hidden) {
+    position: absolute !important;
+    inset: 0 0 auto !important;
+    z-index: 10;
+    pointer-events: none;
+  }
+
+  /* The compiled sidepanel adds its own 1.25–2rem message padding. Combined
+     with the host reading gutter this made the narrow chat feel doubly inset.
+     A panel is an inspector, so use the available width with a hairline safe
+     edge; the expanded view deliberately keeps the comfortable 46rem measure. */
+  :root[data-construct-chat-mode="panel"] [data-agent-session-ui="chat"] {
+    width: calc(100% - 0.5rem) !important;
+  }
+
+  :root[data-construct-chat-mode="panel"] [data-component="message-list"][data-agent-session-ui="chat"] {
+    padding-inline: 0.375rem !important;
+  }
+
+  /* ---- Host material ---------------------------------------------------- */
+
+  /* The frame is a hole in the content pane, not a page of its own. The pane it
+     sits in is a tint over the window's native vibrancy, so every opaque surface
+     down to the transcript has to come off or the chat becomes the one rectangle
+     in the app that the glass stops at.
+
+     The tokens these read are pushed in from the host on every theme change (see
+     applyHostTokens below), so the chat cannot drift from the app around it. */
+  html,
+  body,
+  #root,
+  [data-agent-session-ui="chat"],
+  [data-component="message-list"] {
+    background: transparent !important;
+  }
+
+  /* The learner's own turn is the one thing in the transcript that carries a
+     surface. Everything else is text on the pane, which is what keeps a long
+     conversation from reading as a stack of cards. */
+  [data-slot="user-message-body"] {
+    background: var(--construct-user-message-background, var(--muted)) !important;
+    border-radius: var(--construct-radius-xl, 0.875rem) !important;
+    box-shadow: none !important;
+  }
+
+  /* The composer takes the same glass as the dashboard's, so the two read as one
+     control at two sizes: a frosted fill, a specular rim, and a hairline that
+     keeps the shape legible against whatever is behind the window. */
+  [data-component="composer"],
+  .chat-composer-shell,
+  .chat-composer-surface {
+    background: var(--construct-composer-surface, var(--popover)) !important;
+    border-radius: var(--construct-radius-2xl, 1.85rem) !important;
+    box-shadow:
+      inset 0 0 0 1px var(--construct-glass-rim, transparent),
+      inset 0 1px 0 0 var(--construct-glass-sheen, transparent),
+      0 0 0 0.5px var(--construct-glass-hairline, transparent),
+      var(--construct-shadow-composer, none) !important;
+    backdrop-filter: blur(8px) saturate(120%);
+    -webkit-backdrop-filter: blur(8px) saturate(120%);
+    isolation: isolate;
+  }
+
+  /* Scrollbars match the host's: a 5px pill inside a transparent track, so the
+     frame does not show a Chromium scrollbar next to the app's own. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--construct-scrollbar-thumb, rgba(0, 0, 0, 0.18)) transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 9px;
+    height: 9px;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 9999px;
+    background-clip: content-box;
+    background-color: var(--construct-scrollbar-thumb, rgba(0, 0, 0, 0.16));
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+`;
+document.head.append(constructFlowMargins);
+
+/**
+ * Copy the host's resolved surface tokens onto this document's root.
+ *
+ * The bundle ships its own token layer, and the values that matter for the
+ * material — the glass fill, the rim, the user-message surface — have no
+ * equivalent in it. Rather than hard-coding a second copy of them here (which
+ * would silently drift the first time the host's theme moves), the host resolves
+ * them and sends them across, and this writes them under a `--construct-` prefix
+ * so nothing in the bundle's own scale is overwritten.
+ */
+function applyHostTokens(tokens) {
+  if (!tokens || typeof tokens !== "object") return;
+  for (const [name, value] of Object.entries(tokens)) {
+    if (typeof value !== "string" || !value) continue;
+    document.documentElement.style.setProperty(`--construct-${name}`, value);
+  }
+}
 
 window.__asideFixtureErrors = [];
 window.__constructAsideBridgeLog = [];
@@ -52,6 +195,34 @@ function bindSidepanelHeaderActions() {
   }
 }
 
+// Flow's pre-Aside transcript kept concept work visible while it was happening:
+// a learner should see the concept preview, the fetched ledger, and any update
+// without having to discover each accordion. The vendored renderer does not
+// expose an extension point for per-tool default expansion, so mark and open
+// only Construct concept tool rows once when they first enter the DOM. Ordinary
+// tools retain Aside's compact behaviour, and a user's later manual collapse is
+// respected because the row has already been marked.
+function expandConstructConceptTools() {
+  for (const trigger of document.querySelectorAll('button[aria-expanded="false"]')) {
+    if (!(trigger instanceof HTMLButtonElement) || trigger.dataset.constructConceptAutoExpanded === "true") continue;
+    const label = trigger.textContent?.replace(/\s+/g, " ").trim().toLowerCase() ?? "";
+    if (!/(?:recording|recorded|updating|updated) concept|(?:fetch|fetching|fetched|checking|checked)[_ -]?concepts?/.test(label)) continue;
+    trigger.dataset.constructConceptAutoExpanded = "true";
+    trigger.click();
+  }
+}
+
+// Construct's host tool intentionally asks one tracked question per call. The
+// vendored component is generic enough for a multi-question questionnaire and
+// therefore hard-codes a plural label; use the correct product copy here.
+function normalizeConstructQuestionSubmitLabel() {
+  for (const button of document.querySelectorAll("button")) {
+    if (button instanceof HTMLButtonElement && button.textContent?.trim() === "Submit answers") {
+      button.textContent = "Submit answer";
+    }
+  }
+}
+
 document.addEventListener("click", (event) => {
   const button = event.target instanceof Element
     ? event.target.closest("[data-construct-chat-layout-action]")
@@ -67,9 +238,15 @@ document.addEventListener("click", (event) => {
   }
 }, true);
 
-const sidepanelHeaderObserver = new MutationObserver(bindSidepanelHeaderActions);
+const sidepanelHeaderObserver = new MutationObserver(() => {
+  bindSidepanelHeaderActions();
+  expandConstructConceptTools();
+  normalizeConstructQuestionSubmitLabel();
+});
 window.addEventListener("DOMContentLoaded", () => {
   bindSidepanelHeaderActions();
+  expandConstructConceptTools();
+  normalizeConstructQuestionSubmitLabel();
   sidepanelHeaderObserver.observe(document.body, { childList: true, subtree: true });
 });
 
@@ -105,6 +282,7 @@ window.addEventListener("message", (event) => {
     document.documentElement.classList.toggle("dark", dark);
     document.documentElement.classList.toggle("light", !dark);
     document.documentElement.style.colorScheme = dark ? "dark" : "light";
+    applyHostTokens(message.payload?.tokens);
     return;
   }
 

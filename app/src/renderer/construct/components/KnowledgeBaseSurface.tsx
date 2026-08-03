@@ -1,4 +1,4 @@
-import { BookOpenIcon, ChevronRightIcon, ExternalLinkIcon, GitBranchIcon, HistoryIcon, NetworkIcon, SearchIcon, Trash2Icon } from "lucide-react";
+import { BookOpenIcon, ChevronRightIcon, ExternalLinkIcon, GitBranchIcon, HistoryIcon, NetworkIcon, Trash2Icon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { Button, FileTree as OpalineFileTree, ShadcnScrollArea, type FileTreeItem } from "@opaline/ui";
 import ForceGraph3D, { type ForceGraphMethods, type GraphData, type NodeObject } from "react-force-graph-3d";
@@ -8,6 +8,7 @@ import { MarkdownBlock } from "./MarkdownBlock";
 import { readKnowledgeRecords, subscribeKnowledgeRecords, removeKnowledgeConcept, type SavedKnowledgeRecord } from "../lib/knowledgeStore";
 import type { AnyProjectRecord, ConceptCard } from "../types";
 import { isFlowProjectRecord } from "../types";
+import { SparSidebarSearch, SparViewSwitch } from "../../components/spar";
 import { cn } from "../../lib/utils";
 
 type ConceptScope = "current" | "all";
@@ -392,26 +393,28 @@ function ConceptsSidebarPanel({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 flex-col gap-2 border-b pb-2 pt-0.5">
-        <label className="flex h-11 flex-1 items-center gap-2.5 rounded-[8px] border bg-background/70 px-3 ring-offset-background transition-colors focus-within:border-primary/35 focus-within:ring-2 focus-within:ring-ring/25">
-          <SearchIcon size={16} className="shrink-0 text-muted-foreground/55" />
-          <input
-            type="text"
-            className="min-w-0 flex-1 border-0 bg-transparent text-[13px] outline-none placeholder:text-muted-foreground/45"
-            value={query}
-            placeholder="Search concepts..."
-            onChange={(event) => onQueryChange(event.target.value)}
-          />
-        </label>
+      {/* The shared search and the shared segmented switch. This column used to
+          run a 44px field at 13px over a hand-rolled two-button scope toggle,
+          while the file explorer next door ran a 32px field at 12.5px — the same
+          control, two sizes, on two sidebars a click apart. */}
+      <div className="flex shrink-0 flex-col gap-2 pb-2 pt-0.5">
+        <SparSidebarSearch
+          ariaLabel="Search concepts"
+          onChange={onQueryChange}
+          placeholder="Search concepts"
+          value={query}
+        />
         {canUseProjectScope ? (
-          <div className="grid grid-cols-2 gap-1 rounded-[6px] border bg-background/60 p-0.5">
-            <ScopeButton active={scope === "current"} title="Current project" onClick={() => onScopeChange("current")}>
-              Project
-            </ScopeButton>
-            <ScopeButton active={scope === "all"} title="All concepts" onClick={() => onScopeChange("all")}>
-              All
-            </ScopeButton>
-          </div>
+          <SparViewSwitch
+            ariaLabel="Concept scope"
+            className="w-full"
+            onChange={(next) => onScopeChange(next)}
+            options={[
+              { value: "current", label: "Project" },
+              { value: "all", label: "All" },
+            ]}
+            value={scope}
+          />
         ) : null}
       </div>
       {filteredCount ? (
@@ -450,32 +453,6 @@ function ConceptsSidebarPanel({
   );
 }
 
-function ScopeButton({
-  active,
-  children,
-  title,
-  onClick
-}: {
-  active: boolean;
-  children: ReactNode;
-  title: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      className={cn(
-        "h-7 rounded-[5px] px-2 text-[11.5px] font-medium leading-none transition-colors",
-        active ? "bg-muted text-foreground shadow-sm" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-      )}
-      title={title}
-      aria-label={title}
-      onClick={onClick}
-    >
-      {children}
-    </button>
-  );
-}
 
 function conceptTreeNodeToFileTreeItem(node: ConceptTreeRecordNode, selectedTreePath: string | null, expandedTreePaths: Set<string>): FileTreeItem {
   const hasChildren = node.children.length > 0;

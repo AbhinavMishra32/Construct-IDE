@@ -616,10 +616,11 @@ export function FlowWorkspace({
       sessionsRef.current = optimisticSessions;
       setSessions((current) => markQuestionAnswered(current, questionResponse));
       setLiveSession((current) => current ? markQuestionAnswered([current], questionResponse)[0] : undefined);
+      const currentProject = projectRef.current;
       onProjectChange({
-        ...project,
+        ...currentProject,
         flow: {
-          ...project.flow,
+          ...currentProject.flow,
           sessions: optimisticSessions,
           updatedAt: questionResponse.answeredAt
         }
@@ -638,10 +639,11 @@ export function FlowWorkspace({
       sessionsRef.current = nextSessions;
       setSessions(nextSessions);
       setLiveSession(undefined);
+      const currentProject = projectRef.current;
       onProjectChange({
-        ...project,
+        ...currentProject,
         flow: {
-          ...project.flow,
+          ...currentProject.flow,
           sessions: nextSessions,
           updatedAt: result.session.updatedAt
         }
@@ -1130,7 +1132,7 @@ function readConceptMutation(
   input: unknown,
   outputPreview?: string
 ): ConceptMutation | null {
-  const kind = conceptMutationKindForTool(toolName);
+  const kind = conceptMutationKindForTool(canonicalFlowConceptToolName(toolName));
   if (!kind) return null;
   const payload = readConceptPayload(input, outputPreview);
   if (!payload.id) return null;
@@ -1150,6 +1152,7 @@ function conceptMutationKindForTool(toolName: string | undefined): ConceptMutati
 }
 
 function applyFlowConceptRecord(concepts: Map<string, ConceptCard>, toolName: string | undefined, input: unknown, outputPreview?: string) {
+  toolName = canonicalFlowConceptToolName(toolName);
   if (toolName === "fetch-concepts") {
     const outputObj = parseJsonObject(outputPreview);
     if (outputObj && Array.isArray(outputObj.concepts)) {
@@ -1206,6 +1209,21 @@ function applyFlowConceptRecord(concepts: Map<string, ConceptCard>, toolName: st
   const newCard = buildConceptCardFromInput(payload);
   const merged = existing ? mergeConceptCards(existing, newCard) : newCard;
   concepts.set(payload.id, merged);
+}
+
+// The original Flow service persisted kebab-case host-tool IDs. The Mastra
+// worker emits its JavaScript tool-map keys instead, so normalize at the one
+// point that hydrates the real concept cards. Without this, a valid add_concept
+// trace is ignored and the detail pane falls back to an empty placeholder.
+function canonicalFlowConceptToolName(toolName: string | undefined): string | undefined {
+  switch (toolName?.replace(/[_\s]+/g, "-").toLowerCase()) {
+    case "add-concept": return "add-concept";
+    case "modify-concept": return "modify-concept";
+    case "remove-concept": return "remove-concept";
+    case "fetch-concepts": return "fetch-concepts";
+    case "suggest-existing-concept": return "suggest-existing-concept";
+    default: return toolName;
+  }
 }
 
 function FlowAgentPanel({
@@ -1426,9 +1444,9 @@ function FlowAgentPanel({
                 <KnowledgeCard
                   key={openConcept.id}
                   concept={openConcept}
+                  theme={theme}
                   relatedConcepts={flowConcepts}
                   saved={false}
-                  theme={theme}
                   onClose={onCloseConceptDetails}
                   onOpenConcept={onOpenConceptById}
                   onOpenFile={onOpenFile}

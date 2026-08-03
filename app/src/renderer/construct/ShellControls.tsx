@@ -1,21 +1,23 @@
 import { useEffect, useRef, useState } from "react";
 import { GearSix, Notebook } from "@phosphor-icons/react";
 import { BookOpenIcon, PanelBottomIcon, PanelRightIcon } from "lucide-react";
-import { Spinner, SidebarPrimaryAction } from "@opaline/ui";
+import { Spinner } from "@opaline/ui";
 
+import { SparSidebarAction } from "../components/spar";
 
+/* 14px in a 24px button: the AppKit toolbar glyph, not a web icon. The weight
+   steps up when the panel is open so the control reads as pressed without a fill
+   behind it. */
 export function HeaderGuidePanelIcon({ open }: { open: boolean }) {
-  return <PanelRightIcon aria-hidden="true" className="size-[16px]" strokeWidth={open ? 2.1 : 1.9} />;
+  return <PanelRightIcon aria-hidden="true" className="size-3.5" strokeWidth={open ? 2.1 : 1.9} />;
 }
 
 export function HeaderBottomPanelIcon({ open }: { open: boolean }) {
-  return <PanelBottomIcon aria-hidden="true" className="size-[16px]" strokeWidth={open ? 2.1 : 1.9} />;
+  return <PanelBottomIcon aria-hidden="true" className="size-3.5" strokeWidth={open ? 2.1 : 1.9} />;
 }
 
 export function SidebarLearningButton({ onClick }: { onClick: () => void }) {
-  return (
-    <SidebarPrimaryAction icon={<Notebook />} label="Context" onClick={onClick} />
-  );
+  return <SparSidebarAction icon={<Notebook />} label="Context" onClick={onClick} />;
 }
 
 export function SidebarConceptsButton({
@@ -28,21 +30,18 @@ export function SidebarConceptsButton({
   onClick: () => void;
 }) {
   return (
-    <SidebarPrimaryAction
-      aria-label={disabled && disabledReason ? disabledReason : "Open Concepts"}
+    <SparSidebarAction
       disabled={disabled}
       icon={<BookOpenIcon />}
       label="Concepts"
       onClick={disabled ? undefined : onClick}
-      title={disabledReason}
+      {...(disabledReason ? { title: disabledReason } : {})}
     />
   );
 }
 
 export function SidebarSettingsButton({ onClick }: { onClick: () => void }) {
-  return (
-    <SidebarPrimaryAction icon={<GearSix />} label="Settings" onClick={onClick} />
-  );
+  return <SparSidebarAction icon={<GearSix />} label="Settings" onClick={onClick} />;
 }
 
 export function SavingIndicator({ isSaving }: { isSaving: boolean }) {

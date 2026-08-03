@@ -128,6 +128,7 @@ export type AsideEnvelopeEmitter = (value: Record<string, unknown>) => void;
 
 export class AsideRunProjector {
   readonly runId = crypto.randomUUID();
+  private sessionId: string | null = null;
   private sequence = 0;
   private assistant: AsideAssistantMessage | null = null;
   private readonly parts = new Map<string, { index: number; text: string; ended: boolean }>();
@@ -141,19 +142,14 @@ export class AsideRunProjector {
     private readonly model: string,
   ) {}
 
-  start(userText: string): void {
+  bindSession(sessionId: string): void {
+    if (!this.assistant) this.sessionId = sessionId;
+  }
+
+  start(_userText: string): void {
     if (this.started) return;
     this.started = true;
     this.emit({ type: "agent_start" });
-    if (!userText.trim()) return;
-    const userMessage = {
-      id: `${this.runId}:user`,
-      role: "user",
-      content: [{ type: "text", text: userText }],
-      timestamp: Date.now(),
-    };
-    this.emit({ type: "message_start", message: userMessage });
-    this.emit({ type: "message_end", message: userMessage });
   }
 
   resumeQuestion(toolCallId: string, resultText: string): void {
@@ -186,6 +182,7 @@ export class AsideRunProjector {
 
   project(session: ConstructFlowSession): void {
     if (this.ended) return;
+    this.bindSession(session.id);
     if (!this.started) this.start(session.messages.find((message) => message.role === "user")?.content ?? "");
     for (const part of session.timeline ?? []) this.projectPart(session, part);
 
@@ -248,9 +245,14 @@ export class AsideRunProjector {
   }
 
   private projectTool(session: ConstructFlowSession, part: Extract<ConstructFlowTimelinePart, { kind: "tool" }>): void {
+    const toolName = asideToolName(part.name);
+    // Providers announce question tools before their streamed JSON input is
+    // complete. Rendering that preliminary event permanently freezes Aside's
+    // question card on a fabricated fallback because tool arguments are only
+    // registered once per call. Wait for the real question instead.
+    if (toolName === "ask_user_question" && !questionText(part.input)) return;
     const assistant = this.ensureAssistant();
     const toolCallId = part.toolCallId || part.id;
-    const toolName = asideToolName(part.name);
     const args = constructToolArguments(part, session);
     let state = this.tools.get(part.id);
     if (!state) {
@@ -294,7 +296,7 @@ export class AsideRunProjector {
   private ensureAssistant(): AsideAssistantMessage {
     if (this.assistant) return this.assistant;
     this.assistant = {
-      id: `${this.runId}:assistant`,
+      id: `${this.sessionId ?? this.runId}:assistant`,
       role: "assistant",
       content: [],
       provider: this.provider,
@@ -482,7 +484,7 @@ function constructToolResultText(
 }
 
 function conceptForTool(part: Extract<ConstructFlowTimelinePart, { kind: "tool" }>): Record<string, unknown> | undefined {
-  if (!["add-concept", "modify-concept", "suggest-existing-concept"].includes(part.name)) return undefined;
+  if (!["add-concept", "modify-concept", "suggest-existing-concept"].includes(canonicalConstructToolName(part.name))) return undefined;
   const input = isRecord(part.input) ? part.input : {};
   const parsed = parseRecord(part.outputPreview);
   const source = { ...input, ...parsed };
@@ -498,24 +500,45 @@ function conceptForTool(part: Extract<ConstructFlowTimelinePart, { kind: "tool" 
 }
 
 function taskForTool(part: Extract<ConstructFlowTimelinePart, { kind: "tool" }>, session: ConstructFlowSession): ConstructFlowPracticeTask | undefined {
-  if (!["practice-task", "create-practice-task"].includes(part.name)) return undefined;
+  if (!["practice-task", "create-practice-task"].includes(canonicalConstructToolName(part.name))) return undefined;
   const input = isRecord(part.input) ? part.input : {};
   const id = stringValue(input.id) ?? stringValue(input.taskId);
   return session.practiceTasks.find((task) => task.id === id) ?? session.practiceTasks.at(-1);
 }
 
 function asideToolName(name: string): string {
-  const normalized = normalizeToolName(name);
+  const canonicalName = canonicalConstructToolName(name);
+  const normalized = normalizeToolName(canonicalName);
   if (normalized === "readfile") return "read_file";
   if (normalized === "writefile") return "write_file";
   if (normalized === "runterminalcommand") return "bash";
   if (["askquestion", "askuser", "askuserquestion"].includes(normalized)) return "ask_user_question";
   if (normalized === "internetsearch") return "websearch";
   if (normalized === "internetfetch") return "webfetch";
-  if (["practice-task", "create-practice-task"].includes(name)) return "construct_practice_task";
-  if (["add-concept", "modify-concept", "suggest-existing-concept"].includes(name)) return "construct_concept";
-  if (name === "concept-exercise") return "construct_concept_exercise";
-  return name.replaceAll("-", "_");
+  if (["practice-task", "create-practice-task"].includes(canonicalName)) return "construct_practice_task";
+  if (["add-concept", "modify-concept", "suggest-existing-concept"].includes(canonicalName)) return "construct_concept";
+  if (canonicalName === "concept-exercise") return "construct_concept_exercise";
+  return canonicalName.replaceAll("-", "_");
+}
+
+/**
+ * The native Mastra worker exposes tools with snake_case object keys while the
+ * pre-Aside Flow renderer and host bridge use kebab-case identifiers. Keep the
+ * conversion at the protocol boundary so persisted legacy traces and live
+ * worker events select the same Construct-specific renderer.
+ */
+function canonicalConstructToolName(name: string): string {
+  switch (normalizeToolName(name)) {
+    case "addconcept": return "add-concept";
+    case "modifyconcept": return "modify-concept";
+    case "removeconcept": return "remove-concept";
+    case "suggestexistingconcept": return "suggest-existing-concept";
+    case "fetchconcepts": return "fetch-concepts";
+    case "practicetask": return "practice-task";
+    case "createpracticetask": return "create-practice-task";
+    case "conceptexercise": return "concept-exercise";
+    default: return name;
+  }
 }
 
 function asideQuestionFromInput(input: Record<string, unknown>): AsideQuestion {
@@ -535,6 +558,10 @@ function asideQuestionFromInput(input: Record<string, unknown>): AsideQuestion {
     multiple: false,
     custom: input.allowOther !== false || choices.length === 0,
   };
+}
+
+function questionText(input: unknown): string | undefined {
+  return isRecord(input) ? stringValue(input.question) : undefined;
 }
 
 function isQuestionToolName(name: string): boolean {
@@ -688,7 +715,7 @@ export function answerFromAsideSuspensionResponse(value: unknown): string {
   const response = isRecord(value) ? value : {};
   const answers = Array.isArray(response.answers) ? response.answers.filter(isRecord) : [];
   const normalized = answers.flatMap((answer) => {
-    const text = stringValue(answer.answer)?.replace(/^custom:\s*/i, "").trim();
+    const text = suspensionAnswerText(answer);
     if (!text) return [];
     return [{ header: stringValue(answer.header), text }];
   });
@@ -701,7 +728,7 @@ export function questionResultTextFromAsideSuspensionResponse(value: unknown): s
   const answers = Array.isArray(response.answers) ? response.answers.filter(isRecord) : [];
   const lines = answers.flatMap((answer) => {
     const header = stringValue(answer.header);
-    const text = stringValue(answer.answer);
+    const text = suspensionAnswerText(answer);
     return header && text ? [`- ${header}: ${text}`] : [];
   });
   return [
@@ -709,6 +736,13 @@ export function questionResultTextFromAsideSuspensionResponse(value: unknown): s
     "User responses to asked questions:",
     ...(lines.length > 0 ? lines : ["- Question: Skipped"]),
   ].join("\n");
+}
+
+// Aside marks freeform input as `custom:`. Construct's pre-Aside code-answer
+// path treated the editor contents as the answer itself, so remove only that
+// transport marker and otherwise preserve the multiline source verbatim.
+function suspensionAnswerText(answer: Record<string, unknown>): string | undefined {
+  return stringValue(answer.answer)?.replace(/^custom:\s*/i, "").trim();
 }
 
 function stringValue(value: unknown): string | undefined {

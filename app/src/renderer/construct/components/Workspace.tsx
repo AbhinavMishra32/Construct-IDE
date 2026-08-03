@@ -13,6 +13,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { AdaptiveSidecarLayout, Button, HoverPreview, SidebarBottomSlot, SlotPanel, Timeline } from "@opaline/ui";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { logStore } from "../lib/logStore";
 import { lspClient } from "../lib/lspClient";
 import { apiTracker } from "../lib/apiTracker";
@@ -1685,22 +1686,24 @@ export function Workspace({
         placeholder="Ask about the project..."
         toolbar={
           <div className="flex items-center gap-2">
-            <select
-              className="min-w-0 flex-1 rounded-md border bg-background px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-ring/30"
+            <Select
               value={generalInteractThreadId}
-              onChange={(event) => {
-                setGeneralInteractThreadId(event.target.value);
+              onValueChange={(value) => {
+                if (!value) return;
+                setGeneralInteractThreadId(value);
                 setGeneralInteractAnswer("");
                 setGeneralInteractResult(undefined);
               }}
-              aria-label="Construct Interact session"
             >
+              <SelectTrigger aria-label="Construct Interact session" className="min-w-0 flex-1 text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
               {threadOptions.map((thread) => (
-                <option key={thread.threadId} value={thread.threadId}>
+                <SelectItem key={thread.threadId} value={thread.threadId}>
                   {thread.label || "New chat"}
-                </option>
+                </SelectItem>
               ))}
-            </select>
+              </SelectContent>
+            </Select>
             <Button
               size="sm"
               variant="ghost"

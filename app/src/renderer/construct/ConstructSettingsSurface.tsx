@@ -14,11 +14,7 @@ import {
   ShadcnDialogHeader,
   ShadcnDialogTitle,
   Input,
-  SettingsCard,
   SettingsPanel,
-  SettingsRow,
-  SettingsSection,
-  SettingsToggle,
   Select,
   SelectContent,
   SelectItem,
@@ -27,8 +23,19 @@ import {
   Textarea
 } from "@opaline/ui";
 import type { SettingsNavSection } from "@opaline/ui";
+/* The settings rows are Spar's, not Opaline's: a card with a real surface and a
+   contact shadow, 54px rows so a title-only row matches one with a description,
+   and the group label above the card rather than inside it. Aliased to the old
+   names so the call sites below read the same as every other settings screen. */
+import {
+  SparSettingsCard as SettingsCard,
+  SparSettingsRow as SettingsRow,
+  SparSettingsSection as SettingsSection,
+  SparSettingsToggle as SettingsToggle,
+} from "../components/spar";
 
 import { ConstructAiSettingsSection } from "./components/settings/ConstructAiSettingsSection";
+import { ConstructSparSettingsPage } from "./components/settings/ConstructSparSettingsPage";
 import { ConstructLspSettingsPanel } from "./components/settings/ConstructLspSettingsPanel";
 import { ConstructProfileSettingsPanel } from "./components/settings/ConstructProfileSettingsPanel";
 import { validateConstructSource } from "./compiler/pipeline";
@@ -177,7 +184,13 @@ export function ConstructSettingsSurface({
   onCodeThemeChange,
   onShowStatusBarChange,
   onProjectsChange,
-  onActiveProjectChange
+  onActiveProjectChange,
+  accountName,
+  accountEmail,
+  accountPlan,
+  releaseVersion,
+  onOpenAccount,
+  onSignOut
 }: {
   activeItemId: string;
   projectId?: string;
@@ -191,6 +204,12 @@ export function ConstructSettingsSurface({
   onShowStatusBarChange: (showStatusBar: boolean) => void;
   onProjectsChange: (projects: ProjectSummary[]) => void;
   onActiveProjectChange: (project: AnyProjectRecord | null | ((current: AnyProjectRecord | null) => AnyProjectRecord | null)) => void;
+  accountName: string;
+  accountEmail: string;
+  accountPlan: string | null;
+  releaseVersion: string;
+  onOpenAccount: () => void;
+  onSignOut: () => Promise<void>;
 }) {
   const project = projectId ? projects.find((item) => item.id === projectId) : null;
   const isFlowProject = project?.kind === "flow";
@@ -1406,38 +1425,28 @@ export function ConstructSettingsSurface({
     );
   }
 
+  /* "General" is where the gear lands, so it is the whole settings screen rather
+     than one card of storage paths: appearance, the providers the agent can call,
+     the model every run starts on, what the runtime guarantees, and the account.
+     The remaining nav items stay as they were — they are the deep ends (Profile,
+     Observability, Language Server, and the per-project panels) that a landing
+     screen has no business holding. */
   return (
-    <SettingsPanel title="General" subtitle="Local project storage and app-wide Construct defaults.">
-      <SettingsSection title="Storage">
-        <SettingsCard>
-          <SettingsRow title="Workspace root" description="New and imported projects are kept under this folder.">
-            <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto_auto]">
-              <Input
-                className="min-w-0"
-                value={workspaceRoot}
-                onChange={(event) => setWorkspaceRootValue(event.target.value)}
-              />
-              <Button variant="secondary" size="sm" onClick={() => void chooseRoot()}>
-                Browse
-              </Button>
-              <Button size="sm" disabled={busy || !workspaceRoot.trim()} onClick={() => void saveWorkspaceRoot()}>
-                Save
-              </Button>
-            </div>
-          </SettingsRow>
-        </SettingsCard>
-      </SettingsSection>
-      <SettingsSection title="About">
-        <SettingsCard>
-          <SettingsRow
-            title="Supported protocols"
-            description="Construct keeps older tape projects working while the protocol evolves."
-            control={<code>tape-0.1 · tape-0.2 · tape-0.3 · tape-0.3.1 · tape-0.4 · tape-0.4.1 · tape-0.4.2</code>}
-          />
-        </SettingsCard>
-      </SettingsSection>
-      {error ? <Alert variant="destructive"><AlertTitle>Settings error</AlertTitle><AlertDescription>{error}</AlertDescription></Alert> : null}
-    </SettingsPanel>
+    <ConstructSparSettingsPage
+      accountEmail={accountEmail}
+      accountName={accountName}
+      accountPlan={accountPlan}
+      onBrowseWorkspaceRoot={() => void chooseRoot()}
+      onOpenAccount={onOpenAccount}
+      onSaveWorkspaceRoot={() => void saveWorkspaceRoot()}
+      onSignOut={onSignOut}
+      onThemeChange={onThemeChange}
+      onWorkspaceRootChange={setWorkspaceRootValue}
+      releaseVersion={releaseVersion}
+      theme={theme}
+      workspaceBusy={busy}
+      workspaceRoot={workspaceRoot}
+    />
   );
 }
 
