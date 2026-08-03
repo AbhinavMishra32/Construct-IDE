@@ -495,7 +495,12 @@ export type ConstructFlowResearchResult = ConstructFlowAgentResult & {
 };
 
 export function isFlowProjectRecord(project: AnyProjectRecord | ProjectSummary | null | undefined): project is FlowProjectRecord {
-  return project?.kind === "flow";
+  // Native snapshots can arrive while a legacy record is being hydrated. The
+  // Flow payload is the authoritative discriminator; without this fallback a
+  // valid Flow project can be sent into the tape-only Workspace renderer,
+  // which expects `program.concepts`.
+  return project?.kind === "flow"
+    || (project != null && "flow" in project && !("program" in project));
 }
 
 export type AuthoringFixRecord = {

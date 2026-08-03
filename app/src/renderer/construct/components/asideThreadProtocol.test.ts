@@ -141,7 +141,54 @@ describe("Aside thread protocol", () => {
     assert.equal(answerFromAsideSuspensionResponse(response), "WebGPU");
     assert.equal(
       questionResultTextFromAsideSuspensionResponse(response),
-      "Asked user 1 question(s)\nUser responses to asked questions:\n- Your choice: custom: WebGPU",
+      "Asked user 1 question(s)\nUser responses to asked questions:\n- Your choice: WebGPU",
+    );
+  });
+
+  it("preserves multiline code answers through Aside's custom suspension response", () => {
+    const code = "def mean(values):\n    return sum(values) / len(values)";
+    const pending = flowSession({
+      status: "waiting",
+      toolCalls: [{
+        id: "code-question-1",
+        name: "ask_user_question",
+        title: "Write a function",
+        reason: "Verify the learner can express the implementation.",
+        input: {
+          question: "Write a Python function that calculates the mean.",
+          answerMode: "code",
+          language: "python",
+          allowOther: true,
+        },
+        status: "completed",
+        createdAt,
+        completedAt: createdAt,
+      }],
+    });
+
+    const projected = buildAsideSession({
+      projectId: "project-1",
+      projectTitle: "Python",
+      workspacePath: "/tmp/python",
+      sessions: [pending],
+      provider: "openai",
+      model: "gpt-5.5",
+      thinkingLevel: "medium",
+    });
+    const suspension = projected.suspension as { request: { questions: Array<Record<string, unknown>> } };
+    assert.deepEqual(suspension.request.questions[0], {
+      header: "Your code",
+      question: "Write a Python function that calculates the mean.",
+      options: [],
+      multiple: false,
+      custom: true,
+    });
+
+    const response = { answers: [{ header: "Your code", answer: `custom: ${code}` }] };
+    assert.equal(answerFromAsideSuspensionResponse(response), code);
+    assert.equal(
+      questionResultTextFromAsideSuspensionResponse(response),
+      `Asked user 1 question(s)\nUser responses to asked questions:\n- Your code: ${code}`,
     );
   });
 
@@ -190,7 +237,7 @@ describe("Aside thread protocol", () => {
     }]);
   });
 
-  it("maps Construct concept tools and their results into native chat messages", () => {
+  it("maps snake_case worker concept tools and their results into native chat cards", () => {
     const session = flowSession({
       status: "completed",
       messages: [{ id: "user-1", role: "user", content: "Teach fixed timesteps", createdAt }],
@@ -207,7 +254,9 @@ describe("Aside thread protocol", () => {
           id: "concept-1",
           kind: "tool",
           toolCallId: "concept-call-1",
-          name: "add-concept",
+          // Mastra emits the tool-map key, while legacy Flow persisted the
+          // equivalent kebab-case host identifier.
+          name: "add_concept",
           title: "Record concept",
           status: "completed",
           input: { id: "fixed-timestep", title: "Fixed timestep", language: "typescript" },
@@ -281,11 +330,62 @@ describe("Aside thread protocol", () => {
     });
     const sequences = envelopes.map((envelope) => envelope.seq);
     assert.deepEqual(sequences, sequences.map((_, index) => index));
-    assert.deepEqual(eventTypes.slice(0, 3), ["agent_start", "message_start", "message_end"]);
+    assert.deepEqual(eventTypes.slice(0, 2), ["agent_start", "message_start"]);
+    assert.equal(eventTypes.filter((type) => type === "message_start").length, 1);
+    const assistant = envelopes
+      .map((envelope) => envelope.event as { type?: string; message?: { id?: string } })
+      .find((event) => event.type === "message_start")?.message;
+    assert.equal(assistant?.id, "session-1:assistant");
     assert.ok(assistantEventTypes.includes("text_start"));
     assert.equal(assistantEventTypes.filter((type) => type === "text_delta").length, 2);
     assert.ok(assistantEventTypes.includes("text_end"));
     assert.deepEqual(eventTypes.slice(-2), ["message_end", "agent_end"]);
+  });
+
+  it("waits for streamed question input instead of freezing a fallback question", () => {
+    const envelopes: Array<Record<string, unknown>> = [];
+    const projector = new AsideRunProjector((value) => envelopes.push(value), "openai", "gpt-5.5");
+    projector.start("");
+    projector.project(flowSession({
+      status: "running",
+      timeline: [{
+        id: "question-part",
+        toolCallId: "question-1",
+        kind: "tool",
+        name: "ask_user_question",
+        title: "Preparing questions",
+        status: "running",
+        createdAt,
+      }],
+    }));
+    assert.equal(envelopes.some((envelope) => (envelope.event as { type?: string }).type === "tool_execution_start"), false);
+
+    projector.project(flowSession({
+      status: "waiting",
+      timeline: [{
+        id: "question-part",
+        toolCallId: "question-1",
+        kind: "tool",
+        name: "ask_user_question",
+        title: "Ask learner",
+        input: { question: "What does autograd record?", answerMode: "code" },
+        status: "completed",
+        createdAt,
+      }],
+      toolCalls: [{
+        id: "question-1",
+        name: "ask_user_question",
+        title: "Ask learner",
+        reason: "Check understanding",
+        input: { question: "What does autograd record?", answerMode: "code" },
+        status: "completed",
+        createdAt,
+      }],
+    }));
+    const started = envelopes
+      .map((envelope) => envelope.event as { type?: string; args?: { question?: string } })
+      .find((event) => event.type === "tool_execution_start");
+    assert.equal(started?.args?.question, "What does autograd record?");
   });
 
   it("resumes a suspended native question with its tool result before continuation output", () => {

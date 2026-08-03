@@ -3318,7 +3318,7 @@ function buildFlowSystemPrompt(flowStatePrompt: string): string {
   return `${FLOW_MAIN_AGENT_PROMPT}\n\n${flowStatePrompt}`;
 }
 
-function buildFlowModelMessages(project: StoredFlowProject): FlowModelMessage[] {
+export function buildFlowModelMessages(project: StoredFlowProject): FlowModelMessage[] {
   const messages = buildRawFlowModelMessages(project);
   const compaction = latestCompletedCompaction(project);
   if (!compaction?.summary) return messages;

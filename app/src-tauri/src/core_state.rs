@@ -43,9 +43,11 @@ impl CoreState {
         let tool_projects = ProjectStore::new(Database::open(&paths.database)?);
         let tool_workspace =
             WorkspaceService::new(ProjectStore::new(Database::open(&paths.database)?));
+        let tool_learning = LearningService::new(Database::open(&paths.database)?);
         let mastra = Arc::new(MastraWorker::new(ToolHost::new(
             tool_projects,
             tool_workspace,
+            tool_learning,
         )));
         Ok(Self {
             paths,

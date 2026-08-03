@@ -560,7 +560,7 @@ function ConceptCardBody({
               />
             ) : null}
             {guide.sections.map((section) => (
-              <MarkdownBlock key={section.kind} content={section.content} theme={theme} sources={concept.sources} defaultCodeLanguage={concept.language} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
+              <MarkdownBlock key={section.kind} className="construct-aside-markdown" content={section.content} theme={theme} sources={concept.sources} defaultCodeLanguage={concept.language} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
             ))}
           </ConceptBlock>
         );
@@ -617,7 +617,7 @@ function ConceptCardBody({
               after={(fieldChangeFor(activeEvent, "example") ?? fieldChangeFor(activeEvent, "examples"))?.after ?? visibleExample}
             />
           ) : (
-            <MarkdownBlock content={`\`\`\`${exampleLanguage(concept)}\n${visibleExample}\n\`\`\``} theme={theme} defaultCodeLanguage={concept.language} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
+            <MarkdownBlock className="construct-aside-markdown" content={`\`\`\`${exampleLanguage(concept)}\n${visibleExample}\n\`\`\``} theme={theme} defaultCodeLanguage={concept.language} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />
           )}
         </ConceptBlock>
       ) : null}
@@ -717,7 +717,7 @@ function ConceptMarkdownOrDiff({
   if (change) {
     return <InlineConceptDiff before={change.before} after={change.after ?? content} />;
   }
-  return <MarkdownBlock content={content} theme={theme} sources={sources} defaultCodeLanguage={defaultCodeLanguage} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />;
+  return <MarkdownBlock className="construct-aside-markdown" content={content} theme={theme} sources={sources} defaultCodeLanguage={defaultCodeLanguage} onOpenConcept={onOpenConcept} onOpenFile={onOpenFile} />;
 }
 
 function InlineConceptDiff({ before, after }: { before?: string; after?: string }) {

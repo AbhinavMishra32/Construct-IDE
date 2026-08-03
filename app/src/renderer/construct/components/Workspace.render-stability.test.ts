@@ -52,6 +52,10 @@ describe("Workspace render stability", () => {
     assert.match(flowWorkspaceSource, /collectFlowConcepts\(project\.flow\.sessions \?\? \[\]\)\.find\(\(concept\) => concept\.id === state\.openConceptId\)/);
     assert.match(flowWorkspaceSource, /const hydratedConcept = flowConcepts\.find\(\(concept\) => concept\.id === openConcept\.id\)/);
     assert.match(flowWorkspaceSource, /setOpenConcept\(hydratedConcept\)/);
+    assert.match(flowWorkspaceSource, /function canonicalFlowConceptToolName/);
+    assert.match(flowWorkspaceSource, /toolName = canonicalFlowConceptToolName\(toolName\)/);
+    assert.match(flowWorkspaceSource, /case "add-concept": return "add-concept"/);
+    assert.match(flowWorkspaceSource, /case "fetch-concepts": return "fetch-concepts"/);
   });
 
   it("does not auto-advance after an agent response", () => {

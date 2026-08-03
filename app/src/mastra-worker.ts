@@ -4,9 +4,10 @@ import { randomUUID } from "node:crypto";
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 
-import { createConstructAgentRuntime } from "./main/constructAgentRuntime";
+import { createConstructAgentRuntime, type ConstructAgentRuntimeMessage } from "./main/constructAgentRuntime";
 import { configureConstructAiSettings, type StoredAiSettings } from "./main/config/constructConfig";
 import {
+  buildFlowModelMessages,
   FLOW_MAIN_AGENT_PROMPT,
   explicitFlowToolChoice
 } from "./main/flow/ConstructFlowService";
@@ -67,9 +68,49 @@ const hostTools = {
   )
 };
 
+// Flow's durable teaching state is owned by the native host. Keeping these
+// tools in the worker registry is what gives the mentor permission to create
+// and update real Construct concepts instead of merely describing a syllabus.
+const flowConceptTools = {
+  fetch_concepts: hostTool(
+    "fetch-concepts",
+    "Read the concepts introduced in this Construct project before teaching from, placing, or changing a concept.",
+    z.object({ projectId: z.string(), ids: z.array(z.string()).max(30).optional(), query: z.string().max(240).optional(), includeTree: z.boolean().optional() })
+  ),
+  add_concept: hostTool(
+    "add-concept",
+    "Persist a new project-local Construct concept. Use this after teaching a new capability; concepts normally begin at mastery level 0.",
+    z.object({
+      projectId: z.string(), id: z.string().min(1), title: z.string().min(1), content: z.string().min(1),
+      parentId: z.string().nullable().optional(), language: z.string().max(80).default("unknown"), technology: z.string().max(120).optional(),
+      sources: z.array(z.object({ title: z.string(), url: z.string().url(), snippet: z.string().optional() })).max(10).optional(),
+      examples: z.array(z.string()).max(12).optional(), relatedConcepts: z.array(z.string()).max(20).optional(),
+      masteryLevel: z.number().int().min(0).max(5).default(0), masteryReason: z.string().max(700).optional(),
+      reason: z.string().min(1), evidence: z.array(z.string().min(1)).min(1).max(8), pathNodeId: z.string().optional(), taskId: z.string().optional()
+    })
+  ),
+  modify_concept: hostTool(
+    "modify-concept",
+    "Update an existing project-local Construct concept only after reading it with fetch-concepts.",
+    z.object({
+      projectId: z.string(), id: z.string().min(1), title: z.string().min(1).optional(), content: z.string().min(1).optional(),
+      language: z.string().max(80).optional(), technology: z.string().max(120).optional(), sources: z.array(z.object({ title: z.string(), url: z.string().url(), snippet: z.string().optional() })).max(10).optional(),
+      examples: z.array(z.string()).max(12).optional(), relatedConcepts: z.array(z.string()).max(20).optional(),
+      masteryLevel: z.number().int().min(0).max(5).optional(), masteryReason: z.string().max(700).optional(),
+      reason: z.string().min(1), evidence: z.array(z.string().min(1)).min(1).max(8)
+    })
+  ),
+  remove_concept: hostTool(
+    "remove-concept",
+    "Remove a project-local Construct concept only when it is genuinely obsolete or incorrectly placed.",
+    z.object({ projectId: z.string(), id: z.string().min(1), reason: z.string().min(1), evidence: z.array(z.string().min(1)).min(1).max(8) })
+  )
+};
+
 function createFlowTools(settings: StoredAiSettings | undefined) {
   return {
     ...hostTools,
+    ...flowConceptTools,
     internet_search: createTool({
       id: "internet_search",
       description: "Search the public web for current, source-grounded information. Prefer official documentation and primary sources.",
@@ -122,9 +163,11 @@ async function execute(request: RequestMessage): Promise<unknown> {
     : FLOW_MAIN_AGENT_PROMPT;
   const prompt = [
     `Project snapshot:\n${JSON.stringify(payload.project ?? {})}`,
+    `Project concepts (the authoritative project-local teaching ledger):\n${JSON.stringify(payload.concepts ?? [])}`,
     `Project memory:\n${JSON.stringify(payload.memory ?? {})}`,
     `Learner request:\n${String(payload.message ?? (research ? "Research this project." : "Continue."))}`
   ].join("\n\n");
+  const messages = flowConversationMessages(payload.project, prompt, research);
   return runtime.runAgentic({
     id: research ? "construct-flow-research-agent" : "construct-flow-agent",
     name: research ? "Construct Flow Research" : "Construct Flow",
@@ -132,12 +175,30 @@ async function execute(request: RequestMessage): Promise<unknown> {
     featureId: "construct-flow",
     instructions,
     prompt,
-    messages: [{ role: "user", content: prompt }],
+    messages,
     tools: research ? researchTools : flowTools,
     toolChoice: research ? undefined : explicitFlowToolChoice(String(payload.message ?? ""), flowTools),
     maxSteps: research ? 8 : 24,
     onTrace: trace
   });
+}
+
+function flowConversationMessages(project: unknown, prompt: string, research: boolean): ConstructAgentRuntimeMessage[] {
+  if (research) return [{ role: "user" as const, content: prompt }];
+  if (!project || typeof project !== "object") return [{ role: "user", content: prompt }];
+  const flowProject = project as Parameters<typeof buildFlowModelMessages>[0];
+  const runningSessionIds = new Set(
+    (flowProject.flow?.sessions ?? [])
+      .filter((session) => session.status === "running")
+      .map((session) => session.id),
+  );
+  // Reuse Flow's pre-migration transcript authority. It preserves visible
+  // reasoning/tool activity, tracked answers, and compaction boundaries instead
+  // of reducing continuity to the final assistant prose alone.
+  const history = buildFlowModelMessages(flowProject)
+    .filter((message) => !message.sessionId || !runningSessionIds.has(message.sessionId))
+    .map(({ role, content }) => ({ role, content }));
+  return [...history, { role: "user" as const, content: prompt }];
 }
 
 const lines = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
