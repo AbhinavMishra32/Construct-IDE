@@ -39,8 +39,10 @@ import {
   KeyRoundIcon,
   ListChecksIcon,
   LogOutIcon,
+  Maximize2Icon,
   MoreHorizontalIcon,
   MessageCircleIcon,
+  MessageCircleOffIcon,
   PanelRightIcon,
   SearchIcon,
   SettingsIcon,
@@ -69,13 +71,12 @@ import {
   ShadcnDropdownMenuItem,
   ShadcnDropdownMenuSeparator,
   ShadcnDropdownMenuTrigger,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
   useShellHistory
 } from "@opaline/ui";
 import type { SettingsNavItem, ShellHistoryEntry } from "@opaline/ui";
 import type { DesktopShellState } from "@opaline/ui";
+import { GearSix } from "@phosphor-icons/react";
+import { SPAR_SIDEBAR_ROW } from "../components/spar";
 import { cn } from "../lib/utils";
 
 import { Dashboard } from "./components/Dashboard";
@@ -433,6 +434,11 @@ export default function ConstructApp() {
   const [bottomPanelExpanded, setBottomPanelExpanded] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(300);
   const [settingsSidebarWidth, setSettingsSidebarWidth] = useState(256);
+  /* 275 is where the ChatGPT desktop sidebar opens, and it is the right place to
+     start for a list of project titles: they wrap and truncate worse than a chat
+     title does, so the narrow end of the 240–520 range is the wrong default.
+     Opaline's rail restores the dragged value from its own storage key. */
+  const [dashboardSidebarWidth, setDashboardSidebarWidth] = useState(275);
   const [inspectorWidth, setInspectorWidth] = useState(320);
   const [theme, setTheme] = useState<ThemeMode>(() => getInitialTheme());
   const [codeThemeId, setCodeThemeId] = useState<CodeThemeId>("construct");
@@ -1248,19 +1254,28 @@ export default function ConstructApp() {
     });
   }
 
-  async function createProjectFromHomePrompt(prompt: string): Promise<FlowProjectRecord> {
+  async function createProjectFromHomePrompt(prompt: string, options?: { images?: File[]; planMode?: boolean; workspacePath?: string }): Promise<FlowProjectRecord> {
     const goal = prompt.trim();
     if (!goal) {
       throw new Error("Describe what you want to build first.");
     }
-    return createFlowProject({
+    const imageReferences = options?.images?.length
+      ? `\n\nAttached image references: ${options.images.map((file) => file.name).join(", ")}.`
+      : "";
+    const project = await createFlowProject({
       title: inferFlowTitle(goal),
-      goal,
+      goal: `${goal}${imageReferences}`,
+      workspacePath: options?.workspacePath,
       researchFirst: true,
-      autonomyPreference: "balanced",
+      autonomyPreference: options?.planMode ? "guided" : "balanced",
       permissionsPreference: defaultFlowProjectSettings.agentEdits,
       projectSettings: defaultFlowProjectSettings
     });
+    // Project creation is durable before background research begins. Keep the
+    // sidebar in sync at that boundary; research failure must not hide a real
+    // newly-created project from the user.
+    setProjects((current) => upsertProjectSummary(current, projectSummaryFromRecord(project)));
+    return project;
   }
 
   async function openHomeCreatedFlowProject(project: FlowProjectRecord): Promise<void> {
@@ -1295,6 +1310,8 @@ export default function ConstructApp() {
     if (request.kind === "maximized-chat") {
       setInspectorExpanded(true);
       setSidebarOpen(request.reason !== "project-created");
+      setBottomPanelOpen(false);
+      setBottomPanelExpanded(false);
       return;
     }
     setInspectorExpanded(false);
@@ -1509,7 +1526,6 @@ export default function ConstructApp() {
       error={error}
       onCreateProjectFromPrompt={createProjectFromHomePrompt}
       onProjectReady={openHomeCreatedFlowProject}
-      onOpenProject={(projectId) => void openProject(projectId)}
     />
   );
 
@@ -1644,12 +1660,17 @@ export default function ConstructApp() {
           onBottomPanelOpenChange={setBottomPanelOpen}
           bottomPanelExpanded={bottomPanelExpanded}
           onBottomPanelExpandedChange={setBottomPanelExpanded}
-          sidebarWidth={settingsSurface ? settingsSidebarWidth : activeProject ? sidebarWidth : 256}
-          sidebarMinWidth={settingsSurface ? 208 : activeProject ? 240 : 256}
-          sidebarMaxWidth={settingsSurface ? 520 : activeProject ? 520 : 256}
+          sidebarWidth={settingsSurface ? settingsSidebarWidth : activeProject ? sidebarWidth : dashboardSidebarWidth}
+          sidebarMinWidth={settingsSurface ? 208 : 240}
+          sidebarMaxWidth={520}
           sidebarMainMinWidth={settingsSurface ? 640 : undefined}
-          sidebarResizeStorageKey={settingsSurface ? "construct.settings.sidebar.width" : undefined}
-          onSidebarWidthChange={settingsSurface ? setSettingsSidebarWidth : setSidebarWidth}
+          /* Each surface remembers its own width. Settings and the dashboard hold
+             lists of different shapes, and one shared measurement means dragging
+             one to fit resizes the other to something it was never sized for.
+             A project's file tree keeps the session width and is not persisted —
+             it is dragged against the file being read, not against the list. */
+          sidebarResizeStorageKey={settingsSurface ? "construct.settings.sidebar.width" : isDashboardHome ? "construct.dashboard.sidebar.width" : undefined}
+          onSidebarWidthChange={settingsSurface ? setSettingsSidebarWidth : isDashboardHome ? setDashboardSidebarWidth : setSidebarWidth}
           showHeader={!settingsSurface}
           inspectorWidth={inspectorWidth}
           onInspectorWidthChange={setInspectorWidth}
@@ -1689,6 +1710,32 @@ export default function ConstructApp() {
                       <>
                         <SavingIndicator isSaving={isSaving} />
                         <div className="flex items-center gap-1" aria-label="Flow controls">
+                          <div className="flex h-7 items-center gap-1" role="group" aria-label="Construct agent layout">
+                            <DesktopChromeButton
+                              aria-label="Expand Construct agent"
+                              data-pressed={state.isRightPanelOpen && flowPanelView === "chat" && state.inspectorExpanded ? "" : undefined}
+                              onClick={maximizeFlowChat}
+                              title="Expand chat"
+                            >
+                              <Maximize2Icon size={16} strokeWidth={1.9} />
+                            </DesktopChromeButton>
+                            <DesktopChromeButton
+                              aria-label="Show Construct agent"
+                              data-pressed={state.isRightPanelOpen && flowPanelView === "chat" && !state.inspectorExpanded ? "" : undefined}
+                              onClick={panelFlowChat}
+                              title="Sidebar chat"
+                            >
+                              <MessageCircleIcon size={16} strokeWidth={1.9} />
+                            </DesktopChromeButton>
+                            <DesktopChromeButton
+                              aria-label="Hide Construct agent"
+                              data-pressed={!state.isRightPanelOpen || flowPanelView !== "chat" ? "" : undefined}
+                              onClick={closeFlowChat}
+                              title="Hide chat"
+                            >
+                              <MessageCircleOffIcon size={16} strokeWidth={1.9} />
+                            </DesktopChromeButton>
+                          </div>
                           <DesktopHeaderToolButton
                             data-active={state.isRightPanelOpen && flowPanelView === "project" ? "true" : "false"}
                             onClick={() => {
@@ -1936,11 +1983,7 @@ export default function ConstructApp() {
                     onClick: openKnowledgeBase
                   }
                 ]}
-                footer={
-                  <SidebarMenu className="gap-1">
-                    <SidebarSettingsButton onClick={() => openSettingsSurface("workspace")} />
-                  </SidebarMenu>
-                }
+                footer={<SidebarSettingsButton onClick={() => openSettingsSurface("workspace")} />}
                 onSelectView={(viewId) => viewId === "projects" ? openProjectsView() : handleBack()}
                 views={[
                   { id: "home", label: "Home" },
@@ -2213,41 +2256,51 @@ function ConstructSidebarFooter({
   const email = user?.email ?? "Signed in";
   const plan = account.usage?.plan ?? account.account?.user?.plan ?? null;
 
+  /* One row rather than three. The address under the name repeated what the
+     avatar and the name already say, and the plan had a whole second line of
+     chrome to itself — so the address moves into the tooltip, where it costs
+     nothing until it is wanted, and the plan becomes a pill on the row.
+
+     The row and the gear are two targets because they are two actions: the body
+     opens the account sheet, the gear opens Settings. */
   return (
-    <SidebarMenu className="gap-1">
+    <div className="space-y-0.5">
       {children}
       <SidebarSettingsButton onClick={onOpenSettings} />
-      <SidebarMenuItem>
-        <SidebarMenuButton
-          type="button"
+      <div className={cn(SPAR_SIDEBAR_ROW, "gap-0 p-0 hover:bg-transparent")}>
+        <button
+          className={cn(SPAR_SIDEBAR_ROW, "rounded-r-none pr-1 text-foreground/90 hover:bg-[var(--sidebar-accent)]")}
           data-construct-control="sidebar-account"
-          size="lg"
           onClick={onAccountClick}
+          title={`${account.isPending ? "Account" : name} · ${email}${plan ? ` · ${formatPlan(plan)}` : ""}`}
+          type="button"
         >
-          <UserAvatar className="size-7 shrink-0" />
-          <span className="flex min-w-0 flex-1 flex-col">
-            <span className="flex min-w-0 items-center gap-1.5">
-              <span className="truncate font-semibold text-foreground/90">{account.isPending ? "Account" : name}</span>
-              {plan ? (
-                <Badge
-                  variant="secondary"
-                  className={cn(
-                    "h-[15px] rounded-[3px] border-0 px-1 text-[9px] font-bold tracking-wider uppercase shrink-0 select-none",
-                    plan.toLowerCase().includes("plus") || plan.toLowerCase().includes("pro")
-                      ? "bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400"
-                      : "bg-muted text-muted-foreground"
-                  )}
-                >
-                  {formatPlan(plan)}
-                </Badge>
-              ) : null}
+          <UserAvatar className="size-5 shrink-0" />
+          <span className="min-w-0 flex-1 truncate text-left">{account.isPending ? "Account" : name}</span>
+          {plan ? (
+            <span
+              className={cn(
+                "shrink-0 rounded-full px-1.5 py-px text-ui-sm font-medium select-none",
+                plan.toLowerCase().includes("plus") || plan.toLowerCase().includes("pro")
+                  ? "bg-[var(--construct-success)]/12 text-[var(--construct-success)]"
+                  : "bg-[var(--color-background-elevated-secondary)] text-muted-foreground"
+              )}
+            >
+              {formatPlan(plan)}
             </span>
-            <span className="truncate text-xs text-muted-foreground/80">{email}</span>
-          </span>
-          <ChevronDownIcon size={14} className="shrink-0 text-muted-foreground/60" />
-        </SidebarMenuButton>
-      </SidebarMenuItem>
-    </SidebarMenu>
+          ) : null}
+        </button>
+        <button
+          aria-label="Settings"
+          className="grid size-7 shrink-0 place-items-center rounded-md rounded-l-none text-muted-foreground/70 transition-colors hover:bg-[var(--sidebar-accent)] hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+          onClick={onOpenSettings}
+          title="Settings"
+          type="button"
+        >
+          <GearSix className="size-3.5" />
+        </button>
+      </div>
+    </div>
   );
 }
 

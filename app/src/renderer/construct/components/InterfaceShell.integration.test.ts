@@ -11,6 +11,10 @@ const dashboardSource = readFileSync(fileURLToPath(new URL("./Dashboard.tsx", im
 const dashboardSidebarSource = readFileSync(fileURLToPath(new URL("./DashboardSidebar.tsx", import.meta.url)), "utf8");
 const constructSidebarSource = readFileSync(fileURLToPath(new URL("./ConstructSidebarSurface.tsx", import.meta.url)), "utf8");
 const homeProjectPickerSource = readFileSync(fileURLToPath(new URL("./HomeProjectPicker.tsx", import.meta.url)), "utf8");
+const synaraComposerControlsSource = readFileSync(
+  fileURLToPath(new URL("./synara/SynaraComposerControls.tsx", import.meta.url)),
+  "utf8",
+);
 const flowWorkspaceSource = readFileSync(fileURLToPath(new URL("./FlowWorkspace.tsx", import.meta.url)), "utf8");
 const asideShimSource = readFileSync(
   fileURLToPath(new URL("../../../../public/aside-thread/construct-runtime-shim.js", import.meta.url)),
@@ -92,22 +96,22 @@ describe("Construct interface shell boundary", () => {
     assert.match(appSource, /<DesktopShell/);
     assert.match(appSource, /<ConstructSidebarSurface/);
     assert.doesNotMatch(appSource, /<DesktopSidebar/);
-    assert.match(constructSidebarSource, /<SidebarContent/);
-    assert.match(constructSidebarSource, /<SidebarGroup/);
-    assert.match(constructSidebarSource, /<SidebarMenu/);
-    assert.match(constructSidebarSource, /<SidebarFooter/);
-    assert.match(constructSidebarSource, /sidebar-segmented-picker/);
-    assert.match(constructSidebarSource, /sidebar-segmented-thumb/);
-    assert.match(constructSidebarSource, /sidebar-surface-enter/);
-    assert.match(appSource, /sidebarWidth=\{settingsSurface \? settingsSidebarWidth : activeProject \? sidebarWidth : 256\}/);
-    assert.match(appSource, /sidebarResizeStorageKey=\{settingsSurface \? "construct\.settings\.sidebar\.width" : undefined\}/);
+    // The sidebar body is Construct's own composition over the shared row
+    // primitives — the shell owns the off-canvas container and the seam rail, and
+    // nothing else.
+    assert.match(constructSidebarSource, /<SparSidebarAction/);
+    assert.match(constructSidebarSource, /<SparViewSwitch/);
+    assert.match(constructSidebarSource, /app-sidebar app-drag/);
+    assert.match(appSource, /sidebarWidth=\{settingsSurface \? settingsSidebarWidth : activeProject \? sidebarWidth : dashboardSidebarWidth\}/);
+    assert.match(appSource, /sidebarResizeStorageKey=\{settingsSurface \? "construct\.settings\.sidebar\.width" : isDashboardHome \? "construct\.dashboard\.sidebar\.width" : undefined\}/);
     assert.match(appSource, /sidebarMainMinWidth=\{settingsSurface \? 640 : undefined\}/);
     assert.match(appSource, /showHeader=\{!settingsSurface\}/);
     assert.match(appSource, /backLabel="Back to app"/);
     assert.match(appSource, /title=\{isDashboardHome \? "New Project" : undefined\}/);
     assert.match(rendererStylesSource, /@import "@opaline\/ui\/styles\.css"/);
-    assert.doesNotMatch(appSource, /aria-label="Construct agent layout"/);
-    assert.doesNotMatch(appSource, /aria-label="Expand Construct agent"/);
+    assert.match(appSource, /aria-label="Construct agent layout"/);
+    assert.match(appSource, /aria-label="Expand Construct agent"/);
+    assert.match(appSource, /aria-label="Show Construct agent"/);
     assert.doesNotMatch(flowWorkspaceSource, /aria-label="Flow chat layout"/);
     assert.match(asideShimSource, /aria-label="Open in tab"/);
     assert.match(asideShimSource, /"Full-screen chat"/);
@@ -128,9 +132,14 @@ describe("Construct interface shell boundary", () => {
     assert.match(dashboardSource, /What should we work on\?/);
     assert.match(dashboardSource, /data-empty-landing-composer-block="true"/);
     assert.match(dashboardSource, /<AgentSessionComposer/);
-    assert.match(dashboardSource, /placeholder="Ask for follow-up changes or attach images"/);
+    assert.match(dashboardSource, /placeholder=\{homePlaceholder\}/);
+    assert.match(dashboardSource, /What should we work on in \$\{workspaceLabel\}\?/);
+    assert.match(dashboardSource, /conceptFirewallEnabled: enabled/);
+    assert.match(synaraComposerControlsSource, /Learning guardrails/);
+    assert.match(synaraComposerControlsSource, /Unrestricted workspace/);
     assert.match(dashboardSource, /<HomeProjectPicker/);
     assert.match(homeProjectPickerSource, /Work in a project/);
+    assert.match(homeProjectPickerSource, /<Button\s+\{\.\.\.buttonProps\}/);
     assert.match(flowWorkspaceSource, /onProviderModelChange: \(provider: ComposerProvider, model: string\)/);
     assert.match(flowWorkspaceSource, /<ProviderModelPicker/);
   });
@@ -151,17 +160,16 @@ describe("Construct interface shell boundary", () => {
     assert.doesNotMatch(shellControlsSource, /SidebarNavItemRow/);
     assert.doesNotMatch(dashboardSidebarSource, /SidebarSection|construct-sidebar-row/);
     assert.doesNotMatch(shellControlsSource, /SidebarMenuButton/);
-    assert.match(dashboardSidebarSource, /SidebarGroup/);
-    assert.match(dashboardSidebarSource, /SidebarProjectButton/);
-    assert.match(dashboardSidebarSource, />Studio</);
+    assert.match(dashboardSidebarSource, /<SparSidebarRow/);
+    assert.match(dashboardSidebarSource, />Projects</);
     assert.match(dashboardSidebarSource, /aria-label="New project"/);
     assert.match(dashboardSidebarSource, /Last user message/);
     assert.match(dashboardSidebarSource, /Created at/);
     assert.match(dashboardSidebarSource, /STUDIO_SIDEBAR_STATE_KEY/);
-    assert.match(dashboardSidebarSource, /Pin project/);
-    assert.match(dashboardSidebarSource, /Archive project/);
+    assert.match(dashboardSidebarSource, /Pin to top/);
+    assert.match(dashboardSidebarSource, /Archive/);
     assert.match(appSource, /activeView=\{projectsViewOpen \? "projects" : "home"\}/);
-    assert.match(shellControlsSource, /SidebarPrimaryAction/);
+    assert.match(shellControlsSource, /SparSidebarAction/);
     assert.match(opalineIndexSource, /export \{ Button \} from "\.\/components\/button"/);
   });
 
