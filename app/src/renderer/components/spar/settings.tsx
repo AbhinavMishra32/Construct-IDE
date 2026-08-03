@@ -1,0 +1,198 @@
+import type { ReactNode } from "react";
+import { Switch as SwitchPrimitive } from "radix-ui";
+
+import { cn } from "../../lib/utils";
+
+/**
+ * The heading over a stack of rows.
+ *
+ * The label sits above the card rather than inside it, which is what lets the
+ * card be one uninterrupted surface instead of a header plus a body. A heading
+ * row inside a divided card reads as the first item in the list, and settings
+ * screens are full of people clicking it.
+ */
+export function SparSettingsSection({
+  title,
+  description,
+  children,
+  className,
+}: {
+  title?: ReactNode;
+  description?: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <section className={cn("flex flex-col not-first:mt-7", className)}>
+      {title != null && <h2 className="mb-2 px-0.5 text-ui font-medium text-muted-foreground">{title}</h2>}
+      {description != null && (
+        <p className="mb-2 px-0.5 text-ui leading-[1.6] text-muted-foreground/80">{description}</p>
+      )}
+      {children}
+    </section>
+  );
+}
+
+/**
+ * The card the rows live in: one surface, hairline-divided, with the contact
+ * shadow every raised sheet in the app carries. Its own corner is the sheet
+ * radius, so the superellipse is visible at this size and reads as the same
+ * material as the composer and the content pane.
+ */
+export function SparSettingsCard({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <div
+      className={cn(
+        "overflow-hidden rounded-[var(--radius-2xl)] border border-border bg-card shadow-[var(--app-shadow-card)]",
+        className,
+      )}
+      data-slot="settings-card"
+    >
+      <div className="divide-y divide-border">{children}</div>
+    </div>
+  );
+}
+
+/** A section and its card in one, for the common case of exactly one card. */
+export function SparSettingsGroup({
+  label,
+  description,
+  children,
+  className,
+}: {
+  label?: ReactNode;
+  description?: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <SparSettingsSection
+      className={className}
+      {...(description == null ? {} : { description })}
+      {...(label == null ? {} : { title: label })}
+    >
+      <SparSettingsCard>{children}</SparSettingsCard>
+    </SparSettingsSection>
+  );
+}
+
+/**
+ * One setting.
+ *
+ * 54px minimum so a row with only a title still matches one carrying a title and
+ * a description — a list whose rows change height with their copy reads as
+ * unevenly spaced rather than as variable content.
+ *
+ * The control sits on the row's centre line at desktop widths and drops below the
+ * copy when the pane is too narrow to hold both.
+ */
+export function SparSettingsRow({
+  title,
+  description,
+  control,
+  children,
+  className,
+}: {
+  title?: ReactNode;
+  description?: ReactNode;
+  control?: ReactNode;
+  children?: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn("min-h-[3.375rem] px-3.5 py-2.5", className)} data-slot="settings-row">
+      <div className="flex min-h-[2.375rem] flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        {(title != null || description != null) && (
+          <div className="min-w-0 flex-1">
+            {title != null && <p className="text-content font-medium">{title}</p>}
+            {description != null && (
+              <p className="mt-0.5 text-ui leading-[1.6] text-muted-foreground">{description}</p>
+            )}
+          </div>
+        )}
+        {control != null && (
+          <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto sm:justify-end">{control}</div>
+        )}
+      </div>
+      {children != null && <div className="mt-3">{children}</div>}
+    </div>
+  );
+}
+
+/**
+ * The macOS switch: a 26x16 track with a raised 12px knob.
+ *
+ * Smaller than the web default, because at chrome size a 44px switch is the
+ * loudest thing on a settings screen — and every row that has one would then be
+ * shouting over the rows that do not.
+ */
+export function SparSettingsToggle({
+  checked,
+  onCheckedChange,
+  disabled,
+  ariaLabel,
+}: {
+  checked: boolean;
+  /** Optional: a disabled switch reporting a fixed runtime guarantee has nothing
+   *  to call, and requiring a no-op handler for it is ceremony. */
+  onCheckedChange?(next: boolean): void;
+  disabled?: boolean;
+  ariaLabel?: string;
+}) {
+  return (
+    <SwitchPrimitive.Root
+      aria-label={ariaLabel}
+      checked={checked}
+      className={cn(
+        "peer inline-flex h-4 w-[1.625rem] shrink-0 cursor-pointer items-center rounded-full p-px transition-colors outline-none",
+        "focus-visible:ring-2 focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-50",
+        "data-[state=checked]:bg-[var(--construct-success)] data-[state=unchecked]:bg-[var(--color-background-elevated-secondary)]",
+        "data-[state=unchecked]:inset-shadow-[0_1px_0_0_color-mix(in_srgb,var(--foreground)_8%,transparent)]",
+      )}
+      data-slot="settings-toggle"
+      disabled={disabled}
+      {...(onCheckedChange ? { onCheckedChange } : {})}
+    >
+      <SwitchPrimitive.Thumb
+        className={cn(
+          "pointer-events-none block size-3.5 rounded-full bg-white shadow-[0_1px_2px_oklch(0%_0_0/25%)] ring-0",
+          "transition-transform data-[state=checked]:translate-x-[0.625rem] data-[state=unchecked]:translate-x-0",
+        )}
+      />
+    </SwitchPrimitive.Root>
+  );
+}
+
+/**
+ * A standing fact about the runtime rather than something to change: the claim on
+ * the left, the state that backs it on the right.
+ */
+export function SparSettingsBoundary({
+  title,
+  detail,
+  badge,
+  tone = "muted",
+}: {
+  title: ReactNode;
+  detail: ReactNode;
+  badge: ReactNode;
+  tone?: "muted" | "success";
+}) {
+  return (
+    <SparSettingsRow
+      className="py-3"
+      control={
+        <span
+          className={cn(
+            "mt-px inline-flex shrink-0 items-center gap-1.5 rounded-md bg-[var(--color-background-elevated-secondary)] px-2 py-1 text-ui-sm",
+            tone === "success" ? "text-[var(--construct-success)]" : "text-muted-foreground",
+          )}
+        >
+          {badge}
+        </span>
+      }
+      description={detail}
+      title={title}
+    />
+  );
+}

@@ -39,6 +39,14 @@ export { SparEmptyState, SparMeter, SparSegmented, SparViewSwitch } from "./cont
 export type { SparMeterBand, SparViewOption } from "./controls";
 export { SparScrollDrum } from "./scroll-drum";
 export {
+  SparSettingsBoundary,
+  SparSettingsCard,
+  SparSettingsGroup,
+  SparSettingsRow,
+  SparSettingsSection,
+  SparSettingsToggle,
+} from "./settings";
+export {
   SPAR_SIDEBAR_ROW,
   SparSectionLabel,
   SparSectionToggle,

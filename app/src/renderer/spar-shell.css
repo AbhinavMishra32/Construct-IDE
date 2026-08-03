@@ -326,6 +326,36 @@
     color: var(--foreground);
   }
 
+  /* ---- Settings ---------------------------------------------------------- */
+
+  /* Transparent, like every other page: the settings pane is inset into the same
+     glass, and the shell's own `bg-background` was another surface the material
+     stopped at. */
+  .app-settings-surface {
+    background: transparent;
+  }
+
+  /* The heading takes the page scale the dashboard uses — 24.8px at -0.035em,
+     tight enough that a heading this size does not read as body copy scaled up —
+     and the sections carry their own top margin, so the flex gap that used to
+     space them comes off or every group is spaced twice. */
+  .app-settings-surface h1 {
+    font-size: 1.55rem;
+    font-weight: 600;
+    letter-spacing: -0.035em;
+  }
+
+  .app-settings-surface h1 + p {
+    margin-top: 0.25rem;
+    font-size: var(--text-content);
+    line-height: var(--text-content--line-height);
+  }
+
+  .app-settings-surface > div > div:has(> [data-slot="settings-card"]),
+  .app-settings-surface > div > .flex.flex-col.gap-6 {
+    gap: 0;
+  }
+
   /* ---- Scrollbars -------------------------------------------------------- */
 
   .app-scroll {

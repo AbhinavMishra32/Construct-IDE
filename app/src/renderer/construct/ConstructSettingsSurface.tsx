@@ -14,11 +14,7 @@ import {
   ShadcnDialogHeader,
   ShadcnDialogTitle,
   Input,
-  SettingsCard,
   SettingsPanel,
-  SettingsRow,
-  SettingsSection,
-  SettingsToggle,
   Select,
   SelectContent,
   SelectItem,
@@ -27,6 +23,16 @@ import {
   Textarea
 } from "@opaline/ui";
 import type { SettingsNavSection } from "@opaline/ui";
+/* The settings rows are Spar's, not Opaline's: a card with a real surface and a
+   contact shadow, 54px rows so a title-only row matches one with a description,
+   and the group label above the card rather than inside it. Aliased to the old
+   names so the call sites below read the same as every other settings screen. */
+import {
+  SparSettingsCard as SettingsCard,
+  SparSettingsRow as SettingsRow,
+  SparSettingsSection as SettingsSection,
+  SparSettingsToggle as SettingsToggle,
+} from "../components/spar";
 
 import { ConstructAiSettingsSection } from "./components/settings/ConstructAiSettingsSection";
 import { ConstructLspSettingsPanel } from "./components/settings/ConstructLspSettingsPanel";

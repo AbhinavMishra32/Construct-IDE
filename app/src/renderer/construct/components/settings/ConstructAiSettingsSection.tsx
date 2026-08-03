@@ -8,12 +8,14 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
-  SettingsCard,
-  SettingsRow,
-  SettingsSection,
-  SettingsToggle
+  SelectValue
 } from "@opaline/ui";
+import {
+  SparSettingsCard as SettingsCard,
+  SparSettingsRow as SettingsRow,
+  SparSettingsSection as SettingsSection,
+  SparSettingsToggle as SettingsToggle,
+} from "../../../components/spar";
 
 import type { AiSettings, ModelCatalogEntry } from "../../types";
 import { ConstructCloudAccountPanel } from "./ConstructCloudAccountPanel";
