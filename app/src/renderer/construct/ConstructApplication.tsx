@@ -24,7 +24,7 @@ import type { AuthView } from "@better-auth-ui/core";
 import type { AiSettings, AppSettings } from "./types";
 import { CONSTRUCT_CLOUD_PRODUCTION_BASE_URL, endpointFromRuntimeInfo } from "../../shared/constructCloud";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type ComponentPropsWithoutRef, type PropsWithChildren } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type ComponentProps, type ComponentPropsWithoutRef, type PropsWithChildren } from "react";
 import {
   BookOpen,
   ChevronRightIcon,
@@ -462,12 +462,6 @@ export default function ConstructApp() {
   const pendingImmersiveFlowProjectIdsRef = useRef<Set<string>>(new Set());
   const [aiSettings, setAiSettings] = useState<AiSettings | null>(null);
   const [releaseVersion, setReleaseVersion] = useState("");
-  /* Resolved against whatever endpoint the settings name, falling back to the
-     configured one before they have loaded — the hook has to run on every render
-     regardless, so it cannot wait for them. */
-  const settingsAccount = useConstructSettingsAccount(
-    aiSettings?.constructCloudBaseUrl ?? configuredConstructCloudEndpoint(),
-  );
   const projectShellUiState = useMemo<ConstructProjectShellUiState>(() => ({
     version: 1,
     sidebarOpen,
@@ -1464,7 +1458,7 @@ export default function ConstructApp() {
   }, []);
 
   const main = settingsSurface ? (
-      <ConstructSettingsSurface
+      <ConstructSettingsMain
         activeItemId={settingsSurface.itemId}
         projectId={settingsSurface.projectId}
         projects={projects}
@@ -1480,12 +1474,9 @@ export default function ConstructApp() {
         onShowStatusBarChange={setShowStatusBar}
         onProjectsChange={setProjects}
         onActiveProjectChange={setActiveProject}
-        accountName={settingsAccount.name}
-        accountEmail={settingsAccount.email}
-        accountPlan={settingsAccount.plan}
+        cloudBaseUrl={aiSettings?.constructCloudBaseUrl ?? ""}
         releaseVersion={releaseVersion}
         onOpenAccount={() => setAccountDialogOpen(true)}
-        onSignOut={settingsAccount.signOut}
       />
   ) : learningContextOpen ? (
     <LearningContextSurface />
@@ -2509,6 +2500,41 @@ function ConstructAccountDialog({
  * once, and a reload is the only thing that guarantees none of them is left
  * holding a stale one.
  */
+/**
+ * The settings surface, plus the account facts it shows.
+ *
+ * This exists so the account hooks run *under* `AuthGate`. They call `useAuth`,
+ * which needs the provider `AuthGate` renders — and `AuthGate` is mounted inside
+ * `ConstructApplication`'s own tree, below its body. Resolving the account in
+ * that body instead would run `useAuth` with no provider above it and throw
+ * before the error boundary beside it had mounted, which takes the whole window
+ * blank. The settings surface is rendered through the shell's `main` slot, which
+ * is inside the gate, so a component here is under the provider by construction.
+ */
+function ConstructSettingsMain({
+  cloudBaseUrl,
+  onOpenAccount,
+  releaseVersion,
+  ...surface
+}: Omit<
+  ComponentProps<typeof ConstructSettingsSurface>,
+  "accountName" | "accountEmail" | "accountPlan" | "onSignOut"
+> & { cloudBaseUrl: string }) {
+  const account = useConstructSettingsAccount(cloudBaseUrl || configuredConstructCloudEndpoint());
+
+  return (
+    <ConstructSettingsSurface
+      {...surface}
+      accountEmail={account.email}
+      accountName={account.name}
+      accountPlan={account.plan}
+      onOpenAccount={onOpenAccount}
+      onSignOut={account.signOut}
+      releaseVersion={releaseVersion}
+    />
+  );
+}
+
 function useConstructSettingsAccount(baseUrl: string) {
   const account = useConstructAccount(baseUrl);
   const user = account.session?.user as ConstructAccountUser | undefined;
