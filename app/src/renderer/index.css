@@ -3,7 +3,46 @@
 @import "@opaline/ui/styles.css";
 @import "@fontsource-variable/geist";
 @import "@fontsource-variable/geist-mono";
+/* Window chrome, glass surfaces, and the overrides that repoint the vendored
+   Opaline shell at them. Imported after the shell's own stylesheet so its
+   material tokens are the ones being replaced. */
+@import "./spar-shell.css";
 @source "../../../opaline/packages/ui/src";
+
+.composer-picker-menu--normal {
+  --picker-menu-body-p: 0.25rem;
+  --picker-option-min-h: 1.625rem;
+  --picker-option-px: 0.5rem;
+  --picker-option-py: 0.0625rem;
+  --picker-option-gap: 0.5rem;
+  --picker-option-icon-size: 1.125rem;
+  --picker-section-py: 0.375rem;
+  --picker-separator-my: 0.25rem;
+  --picker-separator-mx: 0.5rem;
+  --picker-sub-chevron-ms: auto;
+  --picker-sub-chevron-size: 1rem;
+  --picker-sub-chevron-opacity: 0.8;
+}
+
+.composer-picker-menu-fixed.composer-picker-menu--normal {
+  width: 13rem;
+  min-width: 13rem;
+  max-width: min(13rem, 92vw);
+}
+
+.composer-picker-menu--normal [data-slot="menu-item"],
+.composer-picker-menu--normal [data-slot="menu-radio-item"],
+.composer-picker-menu--normal [data-slot="menu-checkbox-item"],
+.composer-picker-menu--normal [data-slot="menu-sub-trigger"] {
+  min-height: var(--picker-option-min-h);
+  padding-inline: var(--picker-option-px);
+  padding-block: var(--picker-option-py);
+  gap: var(--picker-option-gap);
+}
+
+.composer-picker-menu--normal [data-slot="menu-popup-body"] {
+  padding: var(--picker-menu-body-p);
+}
 
 @font-face {
   font-family: "Aside Display";
@@ -118,13 +157,22 @@ html, body {
   background: transparent;
 }
 
+/* No frame of our own on macOS or Linux. The window keeps its decorations there
+   (`src-tauri/src/window.rs` only hides the title, not the frame), so the OS
+   already draws the rounded corner and the drop shadow — and a second ring
+   inside the first reads as a border the app painted on itself. Windows is the
+   one platform that hands us an undecorated rectangle, so that is the one place
+   the corner and the contact shadow are ours to draw. */
 #root {
-  border-radius: 1.125rem;
   overflow: hidden;
+}
+
+:root[data-window-controls="right"] #root {
+  border-radius: 0.5rem;
   box-shadow:
-    0 0 0 1px rgba(0, 0, 0, 0.08),
-    0 2px 8px rgba(0, 0, 0, 0.08),
-    0 8px 32px rgba(0, 0, 0, 0.12);
+    0 0 0 1px oklch(0% 0 0 / 8%),
+    0 2px 8px oklch(0% 0 0 / 8%),
+    0 8px 32px oklch(0% 0 0 / 12%);
 }
 
 .construct-startup-splash {
@@ -321,9 +369,14 @@ html, body {
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+  --color-success: var(--construct-success);
+  --color-warning: var(--construct-warning);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-surface: var(--surface-primary);
+  --color-surface-raised: var(--color-background-elevated-primary);
+  --color-surface-sunken: var(--color-background-surface-under);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -336,17 +389,69 @@ html, body {
   --color-mist: #e2e8f0;
   --color-signal: #0f766e;
   --color-ember: #f97316;
+
   --radius: 0.625rem;
-  --font-sans: "Geist Variable", "Geist", sans-serif;
+  /* Controls and chrome: plain arcs at plain sizes. A superellipse only reads as
+     one once the corner is big enough to see the curve — under ~14px it just
+     makes a button look slightly inflated, which is what a browser app looks
+     like and a Mac app does not. Buttons, fields, rows, cards, menus live here.
+
+     The steps are sized to nest. A corner is concentric when the outer radius
+     equals the inner one plus the gap between them, and a corner that isn't
+     concentric reads as a mistake even to someone who could not name why: the
+     two arcs run at different speeds and the gap between them pinches. */
+  --radius-sm: 0.3125rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.625rem;
+  --radius-xl: 0.875rem;
+  /* Sheets: the one place the squircle stays. The content pane, the work sheets
+     and the composer carry a corner long enough for the superellipse to be the
+     point rather than a rounding error. */
+  --radius-2xl: calc(1.125rem * var(--squircle-factor));
+
+  /* Menus are their own pair, and the pair is the point: a menu's rim is 6px, so
+     its shell has to be exactly 6px rounder than the row highlight inside it or
+     the highlight's corner drifts off the shell's. */
+  --radius-item: 0.375rem;
+  --radius-menu: calc(var(--radius-item) + 0.375rem);
+
+  --font-sans: "Geist Variable", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Geist", sans-serif;
   --font-display: "Aside Display", "Geist Variable", "Geist", sans-serif;
   --font-system-ui: "Geist Variable", "Geist", sans-serif;
-  --font-mono: "Berkeley Mono", "Geist Mono Variable", "Geist Mono", "JetBrains Mono", monospace;
+  --font-mono: "SF Mono", "Berkeley Mono", "Geist Mono Variable", "Geist Mono", ui-monospace, monospace;
+
+  /* The desktop type scale: three sizes and no more. `ui` is chrome, `ui-sm` is
+     metadata beside it, `content` is anything meant to be read as prose. */
+  --text-ui: 0.75rem;
+  --text-ui--line-height: 1.125rem;
+  --text-ui-sm: 0.6875rem;
+  --text-ui-sm--line-height: 1rem;
+  --text-content: 0.8125rem;
+  --text-content--line-height: 1.375rem;
 }
 
 :root {
   color-scheme: light;
-  --squircle-factor: 1.4;
+  /* A superellipse stays closer to its corner box than the arc of the same
+     radius, so an identical value reads visibly tighter. The multiplier sits
+     above the arc-era 1.4 for that reason, and the large surfaces (menus,
+     panels, the content pane) carry a bigger base value on top of it — the
+     larger the corner, the more of the curve you can see. */
+  --squircle-factor: 1.65;
   --hairline: 0.5px;
+
+  /* Window chrome. The OS draws its own buttons over our first row, so these
+     tokens reserve the room they occupy — on the leading edge for macOS traffic
+     lights, on the trailing edge for the Windows caption buttons. `spar-shell.css`
+     picks a side from data-window-controls on <html>.
+
+     macOS: measured on 26, the buttons are 16x16 and run x=18..80; 6rem clears
+     that with a 16px gap, and the row height centres them. Windows: the
+     minimise/maximise/close overlay is a fixed 138px at 100% scale. */
+  --titlebar-height: 2.75rem;
+  --window-controls-leading: 6rem;
+  --window-controls-trailing: 0rem;
+
   --opaline-font-sans: "Geist Variable", "Geist", sans-serif;
   --opaline-font-mono: "Berkeley Mono", "Geist Mono Variable", "Geist Mono", "JetBrains Mono", monospace;
   --font-ui-family: var(--font-sans);
@@ -363,40 +468,76 @@ html, body {
   --surface-tertiary-foreground: oklch(14.5% 0 0 / 25%);
   --card: var(--surface-primary);
   --card-foreground: var(--foreground);
-  --popover: var(--background);
+  --popover: oklch(99% 0 0);
   --popover-foreground: var(--foreground);
   --primary: oklch(14.5% 0 0 / 95%);
   --primary-foreground: oklch(98.5% 0 0 / 95%);
-  --secondary: oklch(14.5% 0 0 / 8%);
-  --secondary-foreground: oklch(14.5% 0 0 / 55%);
+  --secondary: oklch(14.5% 0 0 / 6%);
+  --secondary-foreground: oklch(14.5% 0 0 / 78%);
   --muted: oklch(14.5% 0 0 / 5%);
   --muted-foreground: oklch(14.5% 0 0 / 55%);
-  --accent: oklch(14.5% 0 0 / 10%);
+  --accent: oklch(14.5% 0 0 / 8%);
   --accent-foreground: oklch(14.5% 0 0 / 85%);
   --destructive: oklch(57.7% 0.245 27.325);
   --border: oklch(14.5% 0 0 / 10%);
+  --border-strong: oklch(14.5% 0 0 / 16%);
   --border-surface: oklch(14.5% 0 0 / 10%);
   --border-surface-strong: oklch(14.5% 0 0 / 15%);
   --input: oklch(14.5% 0 0 / 10%);
-  --ring: oklch(14.5% 0 0 / 8%);
-  --sidebar: color-mix(in oklab, var(--foreground) 3%, var(--background));
+  --ring: oklch(14.5% 0 0 / 22%);
+  /* Transparent: the sidebar is a hole onto the window's own material, and any
+     fill here would sit on top of the vibrancy and flatten it. */
+  --sidebar: transparent;
   --sidebar-foreground: var(--foreground);
   --sidebar-primary: var(--primary);
   --sidebar-primary-foreground: var(--primary-foreground);
-  --sidebar-accent: var(--accent);
-  --sidebar-accent-active: oklch(14.5% 0 0 / 13%);
-  --sidebar-accent-foreground: var(--accent-foreground);
-  --sidebar-border: var(--border);
+  --sidebar-accent: oklch(14.5% 0 0 / 6%);
+  --sidebar-accent-active: oklch(14.5% 0 0 / 11%);
+  --sidebar-accent-foreground: var(--foreground);
+  --sidebar-border: oklch(14.5% 0 0 / 8%);
   --sidebar-ring: var(--ring);
   --sidebar-accent-glass: oklch(14.5% 0 0 / 5%);
   --color-background-surface: var(--background);
-  --color-background-surface-under: color-mix(in oklab, var(--foreground) 2%, var(--background));
+  --color-background-surface-under: color-mix(in oklab, var(--foreground) 3%, var(--background));
   --color-background-editor-opaque: color-mix(in oklab, var(--foreground) 8%, var(--background));
   --color-background-elevated-primary: var(--surface-secondary);
   --color-background-elevated-primary-opaque: var(--surface-primary);
   --color-background-elevated-secondary: var(--muted);
   --color-background-elevated-secondary-opaque: color-mix(in oklab, var(--foreground) 7%, var(--background));
-  --app-user-message-background: var(--secondary);
+  --color-background-editor: color-mix(in oklab, var(--foreground) 2%, var(--background));
+
+  /* The window's own fill, tinted over whatever native material sits behind it.
+     `--app-window-fill` is the colour; `--app-glass-fill` is how much of it
+     survives, and so how much of the desktop shows through. */
+  --app-window-fill: oklch(97.6% 0 0);
+  /* Only painted when the platform gives us no native material to sit on. */
+  --app-sidebar-fill: oklch(95.5% 0 0);
+  --app-vibrant-tint: oklch(100% 0 0 / 30%);
+  --app-glass-fill: 88%;
+  --app-user-message-background: oklch(14.5% 0 0 / 6%);
+  --app-shadow-overlay: 0 20px 25px -5px oklch(0% 0 0 / 10%), 0 8px 10px -6px oklch(0% 0 0 / 10%);
+  --app-shadow-menu: 0 16px 40px -12px oklch(0% 0 0 / 20%), 0 4px 10px -4px oklch(0% 0 0 / 8%);
+  --app-shadow-composer: 0 4px 18px -6px color-mix(in srgb, var(--foreground) 8%, transparent);
+  --app-shadow-card: 0 1px 2px oklch(0% 0 0 / 4%);
+  /* Working sheets sit on a canvas that is nearly their own colour, so the
+     contact shadow alone cannot separate them. A wider, softer ambient pass
+     underneath does the lifting; the edge below draws the shape. Two passes and
+     not three: shadows sum where two edges meet, so a mid pass on top of the
+     ambient one pools in the corners and the curve reads as a smudge. */
+  --app-shadow-sheet:
+    0 1px 2px oklch(0% 0 0 / 4%),
+    0 8px 20px -12px oklch(0% 0 0 / 13%);
+  --sheet-edge: color-mix(in oklab, var(--foreground) 16%, transparent);
+
+  /* Glass. In light the rim is a near-white specular edge; the sheen brightens
+     just the top line, where a curved surface would actually catch the light. */
+  --glass-fill: 82%;
+  --glass-fill-solid: 94%;
+  --glass-rim: oklch(100% 0 0 / 80%);
+  --glass-sheen: oklch(100% 0 0 / 90%);
+  --glass-hairline: color-mix(in oklab, var(--foreground) 18%, transparent);
+  --shimmer-tint: oklch(14.5% 0 0 / 28%);
+
   --opaline-radius-sm: calc(0.25rem * var(--squircle-factor));
   --opaline-radius-md: calc(0.375rem * var(--squircle-factor));
   --opaline-radius-lg: calc(0.5rem * var(--squircle-factor));
@@ -430,7 +571,9 @@ html, body {
   color-scheme: dark;
   --construct-startup-logo-color: color-mix(in srgb, #f5f5f5 62%, transparent);
   --construct-auth-logo-color: color-mix(in srgb, #ffffff 82%, transparent);
-  --background: oklch(20.5% 0 0);
+  /* Three points lighter than it was: the pane is a tint over the desktop, and
+     at 20.5% the glass had nothing left to let through. */
+  --background: oklch(23.5% 0 0);
   --foreground: oklch(98.5% 0 0);
   --surface-primary: oklch(98.5% 0 0 / 8%);
   --surface-secondary: oklch(98.5% 0 0 / 6%);
@@ -438,42 +581,74 @@ html, body {
   --surface-primary-foreground: oklch(98.5% 0 0 / 85%);
   --surface-secondary-foreground: oklch(98.5% 0 0 / 55%);
   --surface-tertiary-foreground: oklch(98.5% 0 0 / 25%);
-  --card: color-mix(in oklab, var(--foreground) 8%, var(--background));
+  --card: color-mix(in oklab, var(--foreground) 6%, var(--background));
   --card-foreground: var(--foreground);
-  --popover: oklch(26.9% 0 0);
+  --popover: oklch(29% 0 0);
   --popover-foreground: var(--foreground);
-  --primary: oklch(98.5% 0 0 / 85%);
-  --primary-foreground: oklch(14.5% 0 0 / 85%);
+  --primary: oklch(98.5% 0 0 / 90%);
+  --primary-foreground: oklch(14.5% 0 0 / 92%);
   --secondary: oklch(98.5% 0 0 / 8%);
-  --secondary-foreground: oklch(98.5% 0 0 / 55%);
-  --muted: oklch(98.5% 0 0 / 15%);
+  --secondary-foreground: oklch(98.5% 0 0 / 78%);
+  --muted: oklch(98.5% 0 0 / 10%);
   --muted-foreground: oklch(98.5% 0 0 / 55%);
   --accent: oklch(98.5% 0 0 / 10%);
   --accent-foreground: oklch(98.5% 0 0 / 85%);
   --destructive: oklch(70.4% 0.191 22.216);
   --border: oklch(98.5% 0 0 / 10%);
+  --border-strong: oklch(98.5% 0 0 / 16%);
   --border-surface: oklch(98.5% 0 0 / 15%);
   --border-surface-strong: oklch(98.5% 0 0 / 20%);
-  --input: oklch(98.5% 0 0 / 10%);
-  --ring: oklch(98.5% 0 0 / 8%);
-  --sidebar: color-mix(in oklab, var(--foreground) 3%, var(--background));
+  --input: oklch(98.5% 0 0 / 12%);
+  --ring: oklch(98.5% 0 0 / 26%);
+  --sidebar: transparent;
   --sidebar-foreground: var(--foreground);
   --sidebar-primary: var(--primary);
   --sidebar-primary-foreground: var(--primary-foreground);
-  --sidebar-accent: var(--accent);
+  --sidebar-accent: oklch(98.5% 0 0 / 7%);
   --sidebar-accent-active: oklch(98.5% 0 0 / 13%);
-  --sidebar-accent-foreground: var(--accent-foreground);
-  --sidebar-border: var(--border);
+  --sidebar-accent-foreground: var(--foreground);
+  --sidebar-border: oklch(98.5% 0 0 / 9%);
   --sidebar-ring: var(--ring);
   --sidebar-accent-glass: oklch(98.5% 0 0 / 5%);
   --color-background-surface: var(--background);
-  --color-background-surface-under: color-mix(in oklab, black 24%, var(--background));
+  --color-background-surface-under: color-mix(in oklab, black 22%, var(--background));
   --color-background-editor-opaque: color-mix(in oklab, var(--foreground) 8%, var(--background));
   --color-background-elevated-primary: var(--surface-primary);
   --color-background-elevated-primary-opaque: color-mix(in oklab, var(--foreground) 8%, var(--background));
   --color-background-elevated-secondary: var(--surface-secondary);
   --color-background-elevated-secondary-opaque: color-mix(in oklab, var(--foreground) 6%, var(--background));
-  --app-user-message-background: var(--secondary);
+  --color-background-editor: color-mix(in oklab, black 14%, var(--background));
+
+  --app-window-fill: oklch(23.5% 0 0);
+  /* Lighter than the pane, not darker: the sidebar is the surface the content
+     sits on, so it catches more light. Only painted with no native material. */
+  --app-sidebar-fill: oklch(28.5% 0 0);
+  --app-vibrant-tint: oklch(100% 0 0 / 6%);
+  --app-glass-fill: 86%;
+  --app-user-message-background: oklch(98.5% 0 0 / 8%);
+  --app-shadow-overlay: 0 20px 25px -5px oklch(0% 0 0 / 40%), 0 8px 10px -6px oklch(0% 0 0 / 40%);
+  --app-shadow-menu: 0 16px 40px -10px oklch(0% 0 0 / 55%), 0 4px 12px -4px oklch(0% 0 0 / 40%);
+  --app-shadow-composer: 0 6px 24px -10px oklch(0% 0 0 / 45%);
+  --app-shadow-card: 0 1px 2px oklch(0% 0 0 / 20%);
+  --app-shadow-sheet:
+    0 1px 2px oklch(0% 0 0 / 26%),
+    0 10px 26px -14px oklch(0% 0 0 / 55%);
+  /* No edge in dark. The sheet is already darker than the canvas it sits in, so
+     the value step does the separating and a ring on top of it only reads as a
+     drawn outline. Light mode needs the line because the two are nearly the
+     same value there. */
+  --sheet-edge: transparent;
+
+  /* Dark glass keeps the same anatomy, but a white rim at 80% would read as a
+     drawn outline rather than a lit edge — so the rim drops to a faint sheen and
+     the hairline carries the shape instead. */
+  --glass-fill: 78%;
+  --glass-fill-solid: 92%;
+  --glass-rim: oklch(100% 0 0 / 8%);
+  --glass-sheen: oklch(100% 0 0 / 12%);
+  --glass-hairline: oklch(0% 0 0 / 55%);
+  --shimmer-tint: oklch(100% 0 0 / 40%);
+
   --construct-shadow-overlay: 0 20px 25px -5px #0006, 0 8px 10px -6px #0006;
   --opaline-shadow-overlay: var(--construct-shadow-overlay);
   --construct-success: hsl(148 62% 60%);
@@ -528,6 +703,12 @@ html, body {
 }
 
 @layer components {
+  .construct-dashboard-project-title-fade > span:nth-child(2) {
+    -webkit-mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 32px), transparent 100%);
+    mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 32px), transparent 100%);
+    text-overflow: clip !important;
+  }
+
   [data-construct-terminal="true"] .xterm-selection div {
     background-color: color-mix(in srgb, #9cccff 44%, transparent) !important;
   }
@@ -1404,17 +1585,108 @@ html, body {
     opacity: 1;
     pointer-events: auto;
     transform: translateX(0);
+    border-right: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+    background: var(--color-background-surface);
   }
 
   .construct-flow-chat-concept-card {
-    height: calc(100% - 1.5rem);
+    height: 100%;
     min-height: 0;
-    margin: 0.75rem 0 0.75rem 0.75rem;
+    margin: 0;
     overflow: hidden;
-    border: 1px solid var(--color-border);
-    border-radius: 1rem;
-    background: var(--color-background-elevated-primary-opaque);
-    box-shadow: 0 4px 18px -6px color-mix(in srgb, var(--foreground) 7%, transparent);
+    background: var(--color-background-surface);
+  }
+
+  /* The detail card lives beside the vendored Aside transcript. Remove the
+     old floating overlay treatment so it reads as a first-class Aside pane:
+     one shared surface, one hairline divider, and compact neutral controls. */
+  .construct-flow-chat-concept-card [data-construct-explainable="concept-card"] {
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+  }
+
+  .construct-flow-chat-concept-card [data-construct-explainable="concept-card"] > header {
+    background: transparent;
+    border-color: color-mix(in srgb, var(--border) 72%, transparent);
+  }
+
+  .construct-flow-chat-concept-card [data-construct-explainable="concept-card"] > header > div {
+    padding: 1rem 1rem 0.875rem;
+  }
+
+  .construct-flow-chat-concept-card .construct-concept-card-material {
+    padding: 1rem;
+  }
+
+  .construct-flow-chat-concept-card .construct-concept-card-material > * {
+    max-width: none;
+  }
+
+  /* Port Aside's chat reading measure and markdown rhythm into the concept
+     body. Controls remain the existing interactive ConceptCard controls. */
+  .construct-flow-chat-concept-card .construct-aside-markdown {
+    color: var(--color-text-primary, var(--foreground));
+    font-size: 14px;
+    line-height: 1.65;
+  }
+
+  .construct-flow-chat-concept-card .construct-aside-markdown > :first-child {
+    margin-top: 0;
+  }
+
+  .construct-flow-chat-concept-card .construct-aside-markdown > :last-child {
+    margin-bottom: 0;
+  }
+
+  .construct-flow-chat-concept-card .construct-aside-markdown h1,
+  .construct-flow-chat-concept-card .construct-aside-markdown h2,
+  .construct-flow-chat-concept-card .construct-aside-markdown h3 {
+    margin-top: 1.5rem;
+    margin-bottom: 0.75rem;
+    color: var(--color-text-primary, var(--foreground));
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  .construct-flow-chat-concept-card .construct-aside-markdown h1 { font-size: 1.25rem; }
+  .construct-flow-chat-concept-card .construct-aside-markdown h2 { font-size: 1.125rem; }
+  .construct-flow-chat-concept-card .construct-aside-markdown h3 { font-size: 1rem; }
+
+  .construct-flow-chat-concept-card .construct-aside-markdown p,
+  .construct-flow-chat-concept-card .construct-aside-markdown ul,
+  .construct-flow-chat-concept-card .construct-aside-markdown ol {
+    margin-top: 0.75rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .construct-flow-chat-concept-card .construct-aside-markdown .construct-code-block {
+    margin: 1rem 0;
+    border-color: color-mix(in srgb, var(--border) 72%, transparent);
+    border-radius: 0.75rem;
+    background: var(--color-background-surface);
+    box-shadow: none;
+  }
+
+  .construct-flow-chat-concept-card .construct-aside-markdown .construct-code-block__header {
+    background: color-mix(in srgb, var(--color-background-surface) 82%, var(--foreground) 3%);
+    color: var(--muted-foreground);
+  }
+
+  .construct-flow-chat-concept-card .construct-aside-markdown .construct-inline-code {
+    border-color: color-mix(in srgb, var(--border) 72%, transparent);
+    border-radius: 0.375rem;
+    background: color-mix(in srgb, var(--color-background-surface) 78%, var(--foreground) 6%);
+  }
+
+  .construct-flow-chat-concept-card [data-construct-explainable="concept-card"] button {
+    border-radius: 0.5rem;
+  }
+
+  .construct-flow-chat-concept-card [data-construct-explainable="concept-card"] .opaline-overlay-shadow {
+    box-shadow: none !important;
   }
 
   .construct-flow-chat-concept-card:has([data-construct-explainable="concept-card"][data-collapsed="true"]) {
