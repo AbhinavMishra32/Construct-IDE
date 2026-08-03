@@ -118,7 +118,7 @@ describe("Construct interface shell boundary", () => {
     assert.match(asideShimSource, /"Panel chat"/);
     assert.match(asideShimSource, /"Close chat"/);
     assert.match(opalineShellSource, /transition-\[grid-template-columns\]/);
-    assert.match(appSource, /render=\{\s*<DesktopChromeButton\s+aria-label="Project actions"/);
+    assert.match(appSource, /aria-label="Project actions"/);
     assert.doesNotMatch(appSource, /<Tabs(?:\s|>)/);
     assert.doesNotMatch(appSource, /<AppShell(?:\s|>)/);
   });

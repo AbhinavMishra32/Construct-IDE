@@ -280,6 +280,52 @@
     padding-left: max(0.625rem, var(--window-controls-leading)) !important;
   }
 
+  /* Toolbar controls at AppKit's proportion, not the web's. 24px square with a
+     14px glyph — a 28px control with a 15px glyph is a touch target, and a
+     toolbar that opens under the pointer never needed one. The radius steps down
+     with the box so the corner stays in proportion to what it is wrapping. */
+  .opaline-v3-desktop-shell header.chat-surface-divider
+    :is(
+      [data-slot="button"][data-size="icon-xs"],
+      [data-slot="button"][data-size="icon-sm"],
+      .opaline-header-tool-button,
+      .opaline-shell-chrome-button
+    ) {
+    height: 1.5rem !important;
+    width: 1.5rem !important;
+    min-width: 1.5rem;
+    border-radius: var(--radius-md);
+  }
+
+  .opaline-v3-desktop-shell header.chat-surface-divider [data-slot="button"] svg,
+  .opaline-v3-desktop-shell header.chat-surface-divider [data-slot="button"] [data-slot="central-icon"] {
+    height: 0.875rem;
+    width: 0.875rem;
+  }
+
+  /* The sidebar's own chrome row — collapse, home, back, forward — takes the same
+     control as the toolbar's. They sit on one continuous line across the top of
+     the window, and two sizes on that line is the tell that they were built
+     separately. */
+  .opaline-v3-desktop-shell [data-slot="sidebar-header"] [data-slot="button"] {
+    height: 1.5rem !important;
+    width: 1.5rem !important;
+    min-width: 1.5rem;
+    border-radius: var(--radius-md);
+  }
+
+  .opaline-v3-desktop-shell [data-slot="sidebar-header"] [data-slot="button"] svg {
+    height: 0.875rem;
+    width: 0.875rem;
+  }
+
+  /* Chrome buttons read as pressed by taking a fill, not by growing a border. */
+  .opaline-v3-desktop-shell header.chat-surface-divider [data-slot="button"][data-active="true"],
+  .opaline-v3-desktop-shell header.chat-surface-divider [data-slot="button"][data-pressed] {
+    background: var(--accent);
+    color: var(--foreground);
+  }
+
   /* ---- Scrollbars -------------------------------------------------------- */
 
   .app-scroll {

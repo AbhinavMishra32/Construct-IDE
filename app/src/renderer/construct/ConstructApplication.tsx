@@ -76,7 +76,14 @@ import {
 import type { SettingsNavItem, ShellHistoryEntry } from "@opaline/ui";
 import type { DesktopShellState } from "@opaline/ui";
 import { GearSix } from "@phosphor-icons/react";
-import { SPAR_SIDEBAR_ROW } from "../components/spar";
+import {
+  SPAR_SIDEBAR_ROW,
+  SparMenu,
+  SparMenuContent,
+  SparMenuItem,
+  SparMenuSeparator,
+  SparMenuTrigger,
+} from "../components/spar";
 import { cn } from "../lib/utils";
 
 import { Dashboard } from "./components/Dashboard";
@@ -2693,62 +2700,64 @@ function ConstructProjectTitleMenu({
   const isFlow = activeProject != null && isFlowProjectRecord(activeProject);
 
   return (
-    <div className="inline-flex max-w-[min(24rem,48vw)] items-center gap-1.5 [-webkit-app-region:no-drag]">
-      <span className="min-w-0 max-w-80 truncate px-1 text-sm font-medium" title={title}>
+    <div className="app-no-drag inline-flex max-w-[min(24rem,48vw)] items-center gap-1 [-webkit-app-region:no-drag]">
+      {/* The title is text in the toolbar, not a tab. A tab-shaped control
+          implies there is a second one to switch to, and there never is. */}
+      <span className="min-w-0 max-w-80 truncate px-1 text-ui font-medium" title={title}>
         {title}
       </span>
-      <ShadcnDropdownMenu>
-        <ShadcnDropdownMenuTrigger
-          render={
-            <DesktopChromeButton
-              aria-label="Project actions"
-            />
-          }
-        >
-          <MoreHorizontalIcon size={15} strokeWidth={2} />
-        </ShadcnDropdownMenuTrigger>
-        <ShadcnDropdownMenuContent align="start" className="w-64">
+      <SparMenu>
+        <SparMenuTrigger asChild>
+          <button
+            aria-label="Project actions"
+            className="app-no-drag grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground aria-expanded:bg-accent aria-expanded:text-foreground"
+            type="button"
+          >
+            <MoreHorizontalIcon size={14} strokeWidth={2} />
+          </button>
+        </SparMenuTrigger>
+        <SparMenuContent align="start" className="min-w-[15rem]">
           {activeProject != null ? (
             <>
-              <ShadcnDropdownMenuItem onClick={onOpenRightPanel}>
-                <PanelRightIcon size={14} />
+              <SparMenuItem onSelect={onOpenRightPanel}>
+                <PanelRightIcon />
                 {isFlow ? "Open Construct agent" : "Open legacy guide panel"}
-              </ShadcnDropdownMenuItem>
-              <ShadcnDropdownMenuItem onClick={onOpenTerminal}>
-                <TerminalSquareIcon size={14} />
+              </SparMenuItem>
+              <SparMenuItem onSelect={onOpenTerminal}>
+                <TerminalSquareIcon />
                 Open terminal
-              </ShadcnDropdownMenuItem>
-              <ShadcnDropdownMenuItem onClick={onOpenProjectSettings}>
-                <SettingsIcon size={14} />
+              </SparMenuItem>
+              <SparMenuItem onSelect={onOpenProjectSettings}>
+                <SettingsIcon />
                 Project settings
-              </ShadcnDropdownMenuItem>
-              <ShadcnDropdownMenuSeparator />
-              <ShadcnDropdownMenuItem onClick={onCopyWorkspacePath}>
-                <FolderOpenIcon size={14} />
+              </SparMenuItem>
+              <SparMenuSeparator />
+              <SparMenuItem onSelect={onCopyWorkspacePath}>
+                <FolderOpenIcon />
                 Copy workspace path
-              </ShadcnDropdownMenuItem>
-              <ShadcnDropdownMenuItem onClick={onCopyProjectId}>
-                <CopyIcon size={14} />
+              </SparMenuItem>
+              <SparMenuItem onSelect={onCopyProjectId}>
+                <CopyIcon />
                 Copy project ID
-              </ShadcnDropdownMenuItem>
-              <ShadcnDropdownMenuSeparator />
+              </SparMenuItem>
+              <SparMenuSeparator />
             </>
           ) : null}
-          <ShadcnDropdownMenuItem onClick={onOpenWorkspaceSettings}>
-            <SettingsIcon size={14} />
+          <SparMenuItem onSelect={onOpenWorkspaceSettings}>
+            <SettingsIcon />
             Workspace settings
-          </ShadcnDropdownMenuItem>
+          </SparMenuItem>
           {(activeProject != null || isSettingsSurface) ? (
             <>
-              <ShadcnDropdownMenuSeparator />
-              <ShadcnDropdownMenuItem onClick={onBack}>
-                <HomeIcon size={14} />
+              <SparMenuSeparator />
+              <SparMenuItem onSelect={onBack}>
+                <HomeIcon />
                 Back to home
-              </ShadcnDropdownMenuItem>
+              </SparMenuItem>
             </>
           ) : null}
-        </ShadcnDropdownMenuContent>
-      </ShadcnDropdownMenu>
+        </SparMenuContent>
+      </SparMenu>
     </div>
   );
 }
