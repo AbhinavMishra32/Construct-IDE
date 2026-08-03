@@ -1519,9 +1519,13 @@ html, body {
     animation: construct-file-tree-accordion-up 180ms cubic-bezier(0.16, 0.84, 0.22, 1);
   }
 
+  /* Transparent all the way down to the transcript. The stage, the concept dock
+     and the card inside it are all inset into the content pane, and the pane is a
+     tint over the window's material — so each opaque fill on the way down is
+     another place the glass stops. */
   .construct-flow-chat-stage {
     --construct-flow-concept-dock-width: clamp(18rem, 28vw, 25rem);
-    background: var(--color-background-surface);
+    background: transparent;
   }
 
   .construct-flow-chat-stage.is-maximized {
@@ -1592,8 +1596,10 @@ html, body {
     opacity: 1;
     pointer-events: auto;
     transform: translateX(0);
-    border-right: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
-    background: var(--color-background-surface);
+    /* A hairline, not a rule. The dock and the transcript are two halves of one
+       surface, and a full border between them reads as two panes. */
+    box-shadow: inset -1px 0 0 0 var(--border);
+    background: transparent;
   }
 
   .construct-flow-chat-concept-card {
@@ -1601,7 +1607,7 @@ html, body {
     min-height: 0;
     margin: 0;
     overflow: hidden;
-    background: var(--color-background-surface);
+    background: transparent;
   }
 
   /* The detail card lives beside the vendored Aside transcript. Remove the

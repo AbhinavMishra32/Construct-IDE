@@ -15,7 +15,7 @@ import {
 } from "./asideThreadProtocol";
 
 const ASIDE_BRIDGE_CHANNEL = "construct-aside-bridge:v1";
-const ASIDE_THREAD_BRIDGE_REVISION = "2026-07-15-layout-v2";
+const ASIDE_THREAD_BRIDGE_REVISION = "2026-07-19-question-resolution-v2";
 
 type AsideHostMessage = {
   channel: typeof ASIDE_BRIDGE_CHANNEL;
@@ -171,6 +171,7 @@ export function AsideConstructThread({
       const snapshot = flowSnapshotForRun(activeRun, sessions, liveSession);
       if (snapshot) {
         activeRun.sessionId = snapshot.id;
+        activeRun.projector.bindSession(snapshot.id);
         activeRun.projector.project(snapshot);
         if (isTerminalSession(snapshot)) activeRunRef.current = null;
       }
@@ -193,7 +194,7 @@ export function AsideConstructThread({
   }, [activeModel, aiSettings, liveSession, project, sessions]);
 
   useEffect(() => {
-    sendToAsideFrame(iframeRef, frameIdRef.current, "theme", { theme: resolvedTheme });
+    sendToAsideFrame(iframeRef, frameIdRef.current, "theme", { theme: resolvedTheme, tokens: hostSurfaceTokens() });
   }, [resolvedTheme]);
 
   useEffect(() => {
@@ -201,15 +202,44 @@ export function AsideConstructThread({
   }, [chatMode]);
 
   return (
+    /* Transparent, not `bg-background`. The frame is a hole in the content pane,
+       and the pane is a tint over the window's native material — an opaque fill
+       here makes the chat the one rectangle in the app the glass stops at. The
+       frame's own document is made transparent from the shim's side. */
     <iframe
       ref={iframeRef}
       allow="clipboard-read; clipboard-write"
-      className="h-full min-h-0 w-full border-0 bg-background"
+      className="h-full min-h-0 w-full border-0 bg-transparent"
       data-construct-agent-thread="aside-production-bundle"
       src={source}
       title={`${project.title} Construct agent`}
     />
   );
+}
+
+/**
+ * The surface tokens the vendored thread has no equivalent for, resolved against
+ * the host document so the chat's material cannot drift from the app's.
+ *
+ * Resolved rather than named: the frame is a separate document, so a `var()`
+ * referring to the host's `:root` would fall back to nothing inside it. Reading
+ * the computed value here is what carries a light/dark change across.
+ */
+function hostSurfaceTokens(): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  const root = getComputedStyle(document.documentElement);
+  const read = (name: string) => root.getPropertyValue(name).trim();
+  return {
+    "user-message-background": read("--app-user-message-background"),
+    "composer-surface": `color-mix(in oklab, ${read("--popover")} ${read("--glass-fill")}, transparent)`,
+    "glass-rim": read("--glass-rim"),
+    "glass-sheen": read("--glass-sheen"),
+    "glass-hairline": read("--glass-hairline"),
+    "shadow-composer": read("--app-shadow-composer"),
+    "radius-xl": read("--radius-xl"),
+    "radius-2xl": read("--radius-2xl"),
+    "scrollbar-thumb": `color-mix(in srgb, ${read("--foreground")} 16%, transparent)`,
+  };
 }
 
 async function handleAsideMessage({
@@ -229,7 +259,7 @@ async function handleAsideMessage({
   if (!latest) return;
 
   if (message.type === "ready") {
-    sendToAsideFrame(iframeRef, message.frameId, "theme", { theme: latest.resolvedTheme });
+    sendToAsideFrame(iframeRef, message.frameId, "theme", { theme: latest.resolvedTheme, tokens: hostSurfaceTokens() });
     sendToAsideFrame(iframeRef, message.frameId, "layout", { chatMode: latest.chatMode });
     return;
   }
@@ -501,35 +531,47 @@ async function continueFromAsideQuestion({
     bridge.activeRunRef.current = { socketId, startedAt, projector };
   }
 
-  try {
-    await latest.onRunAgent(answer, {
-      questionResponse: {
-        sessionId: pendingQuestion.sessionId,
-        toolCallId: pendingQuestion.toolCallId,
-        question: pendingQuestion.question,
-        answer: skipped ? "" : answer,
-        skipped,
-        answeredAt: new Date().toISOString(),
-      },
-    });
-  } catch (error) {
+  // The compiled Aside mutation keeps its suspension panel mounted until this
+  // RPC resolves. Do not make that UI wait for Construct's full agent run:
+  // acknowledge the resolved suspension now, while the projector streams the
+  // continuation in the background.
+  void latest.onRunAgent(answer, {
+    questionResponse: {
+      sessionId: pendingQuestion.sessionId,
+      toolCallId: pendingQuestion.toolCallId,
+      question: pendingQuestion.question,
+      answer: skipped ? "" : answer,
+      skipped,
+      answeredAt: new Date().toISOString(),
+    },
+  }).catch((error: unknown) => {
     projector?.fail(error instanceof Error ? error.message : String(error));
     bridge.activeRunRef.current = null;
-    throw error;
+  });
+
+  const resolvedSession = clearResolvedSuspension(buildAsideSession({
+    projectId: latest.project.id,
+    projectTitle: latest.project.title,
+    workspacePath: latest.project.workspacePath,
+    sessions: latest.sessions,
+    liveSession: latest.liveSession,
+    provider: currentProvider(latest.aiSettings),
+    model: latest.activeModel,
+    thinkingLevel: reasoningLevel(latest.aiSettings),
+  }), pendingQuestion.toolCallId);
+
+  // Aside's suspension surface reads its websocket-backed session store. The
+  // mutation result alone updates a query cache, so publish the resolved state
+  // on the same channel that originally opened the question modal.
+  for (const [subscriptionSocketId, descriptor] of bridge.socketsRef.current) {
+    if (descriptor.kind !== "session-subscription" || descriptor.sessionId !== latest.project.id) continue;
+    sendSocketMessage(bridge.iframeRef, bridge.frameId, subscriptionSocketId, {
+      op: "update",
+      session: resolvedSession,
+    });
   }
 
-  const refreshed = latestRef.current;
-  if (!refreshed) return {};
-  return clearResolvedSuspension(buildAsideSession({
-    projectId: refreshed.project.id,
-    projectTitle: refreshed.project.title,
-    workspacePath: refreshed.project.workspacePath,
-    sessions: refreshed.sessions,
-    liveSession: refreshed.liveSession,
-    provider: currentProvider(refreshed.aiSettings),
-    model: refreshed.activeModel,
-    thinkingLevel: reasoningLevel(refreshed.aiSettings),
-  }), pendingQuestion.toolCallId);
+  return resolvedSession;
 }
 
 function clearResolvedSuspension(session: Record<string, unknown>, toolCallId: string): Record<string, unknown> {
@@ -538,7 +580,7 @@ function clearResolvedSuspension(session: Record<string, unknown>, toolCallId: s
   const toolState = recordValue(session.toolState);
   return {
     ...session,
-    status: "idle",
+    status: "running",
     suspension: undefined,
     toolState: { ...toolState, question: {} },
   };
