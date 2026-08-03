@@ -59,7 +59,6 @@ import {
   BottomPanel,
   Button,
   Input,
-  SettingsSidebar,
   ShadcnDialog,
   ShadcnDialogContent,
   ShadcnDialogDescription,
@@ -89,6 +88,7 @@ import { cn } from "../lib/utils";
 import { Dashboard } from "./components/Dashboard";
 import { DashboardSidebar } from "./components/DashboardSidebar";
 import { ConstructSidebarSurface } from "./components/ConstructSidebarSurface";
+import { ConstructSettingsSidebar } from "./components/ConstructSettingsSidebar";
 import { ProjectsSurface } from "./components/ProjectsSurface";
 import { FileTree } from "./components/FileTree";
 import { TerminalPanel, type TerminalPanelHandle } from "./components/TerminalPanel";
@@ -1875,7 +1875,7 @@ export default function ConstructApp() {
           }
           sidebar={
             settingsSurface ? (
-              <SettingsSidebar
+              <ConstructSettingsSidebar
                 activeItemId={settingsSurface.itemId}
                 backLabel="Back to app"
                 footer={

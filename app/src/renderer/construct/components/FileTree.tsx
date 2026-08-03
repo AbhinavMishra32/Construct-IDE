@@ -25,6 +25,12 @@ import {
   Plus,
 } from "lucide-react";
 
+import {
+  SparButton,
+  SparEmptyState,
+  SparSidebarHeaderButton,
+  SparSidebarSearch,
+} from "../../components/spar";
 import type { WorkspaceTreeNode } from "../types";
 import { iconForFile as renderFileIcon } from "./workspace/fileIcons";
 
@@ -527,27 +533,20 @@ export function FileTree({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-transparent">
-      <div className="shrink-0 flex items-center gap-1.5 px-3 pb-2 pt-3">
-        <label className="flex h-8 flex-1 items-center gap-2 rounded-[6px] border bg-background/70 px-2.5 ring-offset-background focus-within:border-primary/35 focus-within:ring-2 focus-within:ring-ring/25">
-          <Search className="size-3.5 shrink-0 text-muted-foreground/50" />
-          <input
-            type="text"
-            className="min-w-0 flex-1 border-0 bg-transparent text-[12.5px] outline-none placeholder:text-muted-foreground/45"
-            value={searchQuery}
-            placeholder="Search files..."
-            onChange={(event) => setSearchQuery(event.target.value)}
-          />
-        </label>
+      {/* The shared sidebar search and the shared 24px header control, so the
+          explorer's filter row is the same height and the same material as the
+          one over Settings and Concepts. */}
+      <div className="flex shrink-0 items-center gap-1 px-2.5 pb-2 pt-0.5">
+        <SparSidebarSearch
+          ariaLabel="Search files"
+          onChange={setSearchQuery}
+          placeholder="Search files"
+          value={searchQuery}
+        />
         {onRefresh && (
-          <button
-            className="flex size-8 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
-            type="button"
-            onClick={onRefresh}
-            title="Refresh Explorer"
-            aria-label="Refresh Explorer"
-          >
-            <RotateCw size={13} />
-          </button>
+          <SparSidebarHeaderButton aria-label="Refresh Explorer" onClick={onRefresh} title="Refresh Explorer">
+            <RotateCw />
+          </SparSidebarHeaderButton>
         )}
       </div>
 
@@ -581,50 +580,43 @@ export function FileTree({
         </div>
       ) : null}
 
+      {/* Both empty states use the shared one. The pair of hand-rolled versions
+          here carried a 48px tile with an inset highlight and a 16px drop shadow —
+          a lit, floating object inside a flat sidebar, and the loudest thing on
+          the surface at the moment there is nothing on it. */}
       {showEmptyWorkspaceState ? (
-        <div className="flex flex-col items-center justify-center pt-20 pb-12 px-5 text-center text-muted-foreground animate-in fade-in duration-300">
-          <div className="flex size-12 items-center justify-center rounded-2xl bg-sidebar-accent/50 border border-sidebar-border/30 shadow-[inset_0_1px_2px_rgba(255,255,255,0.05),0_8px_16px_rgba(0,0,0,0.15)] mb-4">
-            <FolderOpen className="size-5 text-muted-foreground/80" />
-          </div>
-          <h3 className="text-[13px] font-semibold text-foreground tracking-tight">No files in project</h3>
-          <p className="text-[11.5px] text-muted-foreground/65 mt-1.5 max-w-[200px] leading-relaxed">
-            Create a file to get started.
-          </p>
-          {onCreateFile && (
-            <Button
-              variant="outline"
-              onClick={() =>
-                setCreatingState({
-                  type: "file",
-                  parentPath: "",
-                })
-              }
-              className="mt-4 px-3 gap-1 active:scale-[0.97] transition-transform duration-150"
-              style={{ fontSize: "11px", borderRadius: "12px" }}
-            >
-              <Plus className="size-3" />
-              <span>Create File</span>
-            </Button>
-          )}
-        </div>
+        <SparEmptyState
+          action={
+            onCreateFile ? (
+              <SparButton
+                onClick={() => setCreatingState({ type: "file", parentPath: "" })}
+                size="sm"
+                variant="secondary"
+              >
+                <Plus />
+                Create file
+              </SparButton>
+            ) : undefined
+          }
+          className="mx-2.5 border-0"
+          compact
+          description="Create a file to get started."
+          icon={FolderOpen}
+          title="No files in project"
+        />
       ) : showEmptySearchState ? (
-        <div className="flex flex-col items-center justify-center pt-20 pb-12 px-5 text-center text-muted-foreground animate-in fade-in duration-300">
-          <div className="flex size-12 items-center justify-center rounded-2xl bg-sidebar-accent/50 border border-sidebar-border/30 shadow-[inset_0_1px_2px_rgba(255,255,255,0.05),0_8px_16px_rgba(0,0,0,0.15)] mb-4">
-            <Search className="size-5 text-muted-foreground/80" />
-          </div>
-          <h3 className="text-[13px] font-semibold text-foreground tracking-tight">No matches found</h3>
-          <p className="text-[11.5px] text-muted-foreground/65 mt-1.5 max-w-[200px] leading-relaxed">
-            No files match "{searchQuery}"
-          </p>
-          <Button
-            variant="outline"
-            onClick={() => setSearchQuery("")}
-            className="mt-4 px-3 active:scale-[0.97] transition-transform duration-150"
-            style={{ fontSize: "11px", borderRadius: "12px" }}
-          >
-            Clear Search
-          </Button>
-        </div>
+        <SparEmptyState
+          action={
+            <SparButton onClick={() => setSearchQuery("")} size="sm" variant="secondary">
+              Clear search
+            </SparButton>
+          }
+          className="mx-2.5 border-0"
+          compact
+          description={`No files match “${searchQuery}”.`}
+          icon={Search}
+          title="No matches found"
+        />
       ) : (
         <div className="relative min-h-0 flex-1 overflow-hidden">
           <OpalineFileTree

@@ -53,6 +53,7 @@ export {
   SparSidebarAction,
   SparSidebarHeaderButton,
   SparSidebarRow,
+  SparSidebarSearch,
   SparStatusDot,
 } from "./sidebar";
 export type { SparRowMenuItem } from "./sidebar";

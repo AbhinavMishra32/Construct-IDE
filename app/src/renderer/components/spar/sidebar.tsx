@@ -1,5 +1,5 @@
 import { Fragment, useLayoutEffect, useRef, useState } from "react";
-import { ChevronRight, EllipsisVertical } from "lucide-react";
+import { ChevronRight, EllipsisVertical, Search, X } from "lucide-react";
 
 import { cn } from "../../lib/utils";
 import {
@@ -309,6 +309,61 @@ export function SparStatusDot({ tone = "muted", className }: { tone?: "muted" | 
         )}
       />
     </span>
+  );
+}
+
+/**
+ * The one search field the sidebar uses, wherever it filters a list.
+ *
+ * There were three of these — 44px, 32px, and Opaline's own — at three radii and
+ * three text sizes, which is most of why the sidebar read as a different app on
+ * every surface. This is a 28px row like everything else in the column, so a
+ * field above a list of rows is the same height as the rows it filters.
+ *
+ * The clear button appears only once there is something to clear: a permanent ✕
+ * in an empty field is a control that does nothing most of the time.
+ */
+export function SparSidebarSearch({
+  value,
+  onChange,
+  placeholder = "Search",
+  ariaLabel,
+  className,
+}: {
+  value: string;
+  onChange(next: string): void;
+  placeholder?: string;
+  ariaLabel?: string;
+  className?: string;
+}) {
+  return (
+    <label
+      className={cn(
+        "flex h-7 w-full items-center gap-1.5 rounded-md bg-[var(--color-background-elevated-secondary)] px-2",
+        "transition-shadow focus-within:shadow-[inset_0_0_0_1px_var(--border-strong)]",
+        className,
+      )}
+    >
+      <Search className="size-3.5 shrink-0 text-muted-foreground/60" />
+      <input
+        aria-label={ariaLabel ?? placeholder}
+        className="min-w-0 flex-1 bg-transparent text-ui outline-none placeholder:text-muted-foreground/60"
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        type="search"
+        value={value}
+      />
+      {value.length > 0 && (
+        <button
+          aria-label="Clear search"
+          className="grid size-4 shrink-0 place-items-center rounded-full text-muted-foreground/60 transition-colors hover:text-foreground"
+          onClick={() => onChange("")}
+          type="button"
+        >
+          <X className="size-3" />
+        </button>
+      )}
+    </label>
   );
 }
 
