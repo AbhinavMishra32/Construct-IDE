@@ -883,13 +883,17 @@ html, body {
     }
   }
 
+  /* Transparent, not `--background`. The pane this sits in is a tint over the
+     window's own material, and a solid fill here paints over that glass — which
+     is what made the dashboard the one screen where the app stopped looking like
+     a Mac app. */
   .construct-home-surface {
     display: flex;
     height: 100%;
     min-height: 0;
     flex-direction: column;
     overflow: auto;
-    background: var(--background);
+    background: transparent;
     color: var(--foreground);
   }
 
@@ -936,6 +940,10 @@ html, body {
     width: 100%;
   }
 
+  /* A working sheet, not a floating dialog. It is inset into a canvas of nearly
+     its own value, so the separation comes from the sheet shadow and the drawn
+     edge rather than from an 18px drop shadow that made it read as a modal
+     hovering over the page. */
   .construct-home-research-card {
     width: min(100%, 740px);
     max-height: min(42rem, calc(100dvh - 9rem));
@@ -943,18 +951,19 @@ html, body {
     overflow-y: auto;
     overscroll-behavior: contain;
     scrollbar-gutter: stable;
-    border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
-    border-radius: 22px;
-    background: color-mix(in srgb, var(--card) 96%, var(--background));
+    border-radius: var(--radius-2xl);
+    background: var(--card);
     box-shadow:
-      0 18px 48px color-mix(in srgb, var(--foreground) 7%, transparent),
-      0 1px 0 color-mix(in srgb, var(--foreground) 3%, transparent) inset;
+      var(--app-shadow-sheet),
+      inset 0 0 0 1px var(--sheet-edge);
     padding: 1.125rem 1.25rem 1.25rem;
   }
 
   .dark .construct-home-research-card {
-    background: color-mix(in srgb, var(--card) 92%, var(--background));
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--border) 56%, transparent);
+    /* In dark the value step against the pane does the separating, so the edge
+       drops out and only the shadow is left — a ring on top of a step reads as a
+       drawn outline. */
+    box-shadow: var(--app-shadow-sheet);
   }
 
   .construct-home-research-header {
@@ -967,15 +976,14 @@ html, body {
 
   .construct-home-research-mark {
     display: inline-flex;
-    width: 1.875rem;
-    height: 1.875rem;
+    width: 1.5rem;
+    height: 1.5rem;
     flex: none;
     align-items: center;
     justify-content: center;
-    border: 1px solid color-mix(in srgb, var(--border) 58%, transparent);
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--muted) 48%, transparent);
-    color: color-mix(in srgb, var(--foreground) 72%, var(--muted-foreground));
+    border-radius: var(--radius-md);
+    background: var(--color-background-elevated-secondary);
+    color: var(--muted-foreground);
   }
 
   .construct-home-research-header h1 {
@@ -983,10 +991,10 @@ html, body {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 0.875rem;
-    font-weight: 650;
-    letter-spacing: 0;
-    line-height: 1.125rem;
+    font-size: var(--text-content);
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    line-height: 1.25rem;
   }
 
   .construct-home-research-header p {
@@ -994,25 +1002,26 @@ html, body {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 0.75rem;
-    line-height: 1rem;
+    font-size: var(--text-ui);
+    line-height: var(--text-ui--line-height);
     color: var(--muted-foreground);
   }
 
+  /* No border. A pill this small with both a fill and an outline reads as a
+     button you cannot press; the fill alone is enough to say "standing fact". */
   .construct-home-research-pill {
     display: inline-flex;
     height: 1.5rem;
     flex: none;
     align-items: center;
     gap: 0.375rem;
-    border: 1px solid color-mix(in srgb, var(--border) 58%, transparent);
     border-radius: 999px;
-    background: color-mix(in srgb, var(--muted) 42%, transparent);
+    background: var(--color-background-elevated-secondary);
     padding: 0 0.5625rem;
-    font-size: 0.6875rem;
-    font-weight: 600;
+    font-size: var(--text-ui-sm);
+    font-weight: 500;
     line-height: 1;
-    color: color-mix(in srgb, var(--foreground) 70%, var(--muted-foreground));
+    color: var(--muted-foreground);
   }
 
   .construct-home-research-status-dot {
@@ -1032,10 +1041,10 @@ html, body {
   .construct-home-research-goal span,
   .construct-home-research-live-header small {
     color: var(--muted-foreground);
-    font-size: 0.6875rem;
-    font-weight: 650;
+    font-size: var(--text-ui-sm);
+    font-weight: 500;
     letter-spacing: 0;
-    line-height: 1rem;
+    line-height: var(--text-ui-sm--line-height);
   }
 
   .construct-home-research-goal strong {
@@ -1044,9 +1053,9 @@ html, body {
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
     color: color-mix(in srgb, var(--foreground) 90%, transparent);
-    font-size: 0.8125rem;
+    font-size: var(--text-content);
     font-weight: 500;
-    line-height: 1.25rem;
+    line-height: var(--text-content--line-height);
   }
 
   .construct-home-research-progress {
@@ -1062,19 +1071,20 @@ html, body {
     min-width: 0;
     align-items: center;
     gap: 0.375rem;
-    border: 1px solid transparent;
     border-radius: 999px;
     padding: 0.1875rem 0.5rem 0.1875rem 0.25rem;
     color: var(--muted-foreground);
-    font-size: 0.6875rem;
-    font-weight: 600;
-    line-height: 1rem;
+    font-size: var(--text-ui-sm);
+    font-weight: 500;
+    line-height: var(--text-ui-sm--line-height);
   }
 
+  /* The step in flight is the only one that takes a fill. Giving every state its
+     own outline made the row read as three buttons; one lit chip in a row of
+     plain labels says which one is running without any of that. */
   .construct-home-research-step[data-status="active"] {
-    border-color: color-mix(in srgb, var(--border) 56%, transparent);
-    background: color-mix(in srgb, var(--muted) 36%, transparent);
-    color: color-mix(in srgb, var(--foreground) 78%, var(--muted-foreground));
+    background: var(--color-background-elevated-secondary);
+    color: var(--foreground);
   }
 
   .construct-home-research-step[data-status="complete"] {
@@ -1082,9 +1092,8 @@ html, body {
   }
 
   .construct-home-research-step[data-status="error"] {
-    border-color: color-mix(in srgb, var(--destructive) 24%, var(--border));
-    background: color-mix(in srgb, var(--destructive) 8%, var(--background));
-    color: color-mix(in srgb, var(--destructive) 76%, var(--foreground));
+    background: color-mix(in srgb, var(--destructive) 10%, transparent);
+    color: var(--destructive);
   }
 
   .construct-home-research-step-dot {
@@ -1181,13 +1190,12 @@ html, body {
     max-width: 100%;
     align-items: center;
     gap: 0.375rem;
-    border: 1px solid color-mix(in srgb, var(--border) 58%, transparent);
     border-radius: 999px;
-    background: color-mix(in srgb, var(--muted) 38%, transparent);
+    background: var(--color-background-elevated-secondary);
     padding: 0.1875rem 0.5rem;
-    color: color-mix(in srgb, var(--foreground) 72%, var(--muted-foreground));
-    font-size: 0.6875rem;
-    line-height: 1rem;
+    color: var(--muted-foreground);
+    font-size: var(--text-ui-sm);
+    line-height: var(--text-ui-sm--line-height);
   }
 
   .construct-home-research-search span {
@@ -1200,31 +1208,30 @@ html, body {
   .construct-home-research-search-more {
     display: inline-flex;
     align-items: center;
-    border: 1px solid color-mix(in srgb, var(--border) 58%, transparent);
     border-radius: 999px;
     background: transparent;
     padding: 0.1875rem 0.5625rem;
-    color: color-mix(in srgb, var(--foreground) 62%, var(--muted-foreground));
-    font-size: 0.6875rem;
-    font-weight: 600;
-    line-height: 1rem;
+    color: var(--muted-foreground);
+    font-size: var(--text-ui-sm);
+    font-weight: 500;
+    line-height: var(--text-ui-sm--line-height);
     cursor: pointer;
   }
 
   .construct-home-research-search-more:hover {
-    background: color-mix(in srgb, var(--muted) 44%, transparent);
-    color: color-mix(in srgb, var(--foreground) 82%, var(--muted-foreground));
+    background: var(--color-background-elevated-secondary);
+    color: var(--foreground);
   }
 
   .construct-home-error {
     width: 100%;
-    max-width: 724px;
-    border: 1px solid color-mix(in srgb, var(--destructive) 24%, transparent);
-    border-radius: 0.5rem;
-    background: color-mix(in srgb, var(--destructive) 10%, transparent);
-    padding: 0.625rem 0.75rem;
-    font-size: 0.875rem;
-    line-height: 1.25rem;
+    max-width: 46rem;
+    border: 1px solid color-mix(in srgb, var(--destructive) 30%, transparent);
+    border-radius: var(--radius-xl);
+    background: color-mix(in srgb, var(--destructive) 5%, transparent);
+    padding: 0.5rem 0.75rem;
+    font-size: var(--text-ui);
+    line-height: 1.6;
     color: var(--destructive);
   }
 

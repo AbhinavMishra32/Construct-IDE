@@ -1,13 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { CheckCircle2Icon, CircleAlertIcon, PlusIcon, SearchIcon, ShieldCheckIcon } from "lucide-react";
+import { CheckCircle2Icon, CircleAlertIcon, SearchIcon } from "lucide-react";
 
-import { AgentRunTrace, AgentSessionComposer, Button } from "@opaline/ui";
+import { AgentRunTrace, AgentSessionComposer } from "@opaline/ui";
 import type { AgentRunTraceEntry } from "@opaline/ui";
 import type { ConstructFlowSession, ConstructFlowSessionEvent, ConstructFlowTimelinePart } from "../../../shared/constructFlow";
 import { ConstructAuthLogo } from "../../components/auth/construct-auth-logo";
 import type { AiSettings, FlowProjectRecord, ModelCatalogEntry, ProjectSummary } from "../types";
-import { getSettings, listModels, onConstructFlowSessionEvent, updateAiSettings } from "../lib/bridge";
+import {
+  getSettings,
+  listModels,
+  onConstructFlowSessionEvent,
+  runConstructFlowAgent,
+  runConstructFlowResearch,
+  updateAiSettings
+} from "../lib/bridge";
 import {
   apiKeyForProvider,
   flowFeatureModel,
@@ -17,6 +24,7 @@ import {
 } from "./FlowWorkspace";
 import { HomeProjectPicker } from "./HomeProjectPicker";
 import type { ComposerProvider } from "./ProviderModelPicker";
+import { ComposerExtrasMenu, RuntimeUsageControls } from "./synara/SynaraComposerControls";
 
 type HomeResearchPhase = "idle" | "creating" | "researching" | "handoff" | "starting" | "opening" | "error";
 
@@ -40,21 +48,23 @@ export function Dashboard({
   busy,
   error,
   onCreateProjectFromPrompt,
-  onOpenProject,
   onProjectReady,
 }: {
   projects: ProjectSummary[];
   busy: boolean;
   error: string | null;
-  onCreateProjectFromPrompt: (prompt: string) => Promise<FlowProjectRecord>;
+  onCreateProjectFromPrompt: (prompt: string, options?: { images?: File[]; planMode?: boolean; workspacePath?: string }) => Promise<FlowProjectRecord>;
   onProjectReady: (project: FlowProjectRecord) => Promise<void>;
-  onOpenProject?: (projectId: string) => void;
 }) {
   const [prompt, setPrompt] = useState("");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [researchRun, setResearchRun] = useState<HomeResearchRun | null>(null);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
+  const [attachedImages, setAttachedImages] = useState<File[]>([]);
+  const [planMode, setPlanMode] = useState(false);
+  const [workspacePath, setWorkspacePath] = useState<string | undefined>();
+  const [workspaceLabel, setWorkspaceLabel] = useState<string | undefined>();
 
   const [aiSettings, setAiSettings] = useState<AiSettings | null>(null);
   const [modelOptions, setModelOptions] = useState<ModelCatalogEntry[]>([]);
@@ -64,6 +74,7 @@ export function Dashboard({
   const onProjectReadyRef = useRef(onProjectReady);
   const researchRunRef = useRef<HomeResearchRun | null>(null);
   const openingProjectIdsRef = useRef<Set<string>>(new Set());
+  const startedMentorAfterResearchRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     onProjectReadyRef.current = onProjectReady;
@@ -121,7 +132,27 @@ export function Dashboard({
         } else {
           phase = terminal ? "starting" : "researching";
           if (terminal) {
-            projectToOpen = current.project;
+            // Tauri owns project creation but does not have Electron's former
+            // host-side research-to-mentor chain. Start that follow-up exactly
+            // once when the native research session becomes terminal.
+            if (!startedMentorAfterResearchRef.current.has(event.session.id)) {
+              startedMentorAfterResearchRef.current.add(event.session.id);
+              const projectId = current.project.id;
+              void runConstructFlowAgent({
+                projectId,
+                startReason: "new-project",
+                origin: "system",
+                message: "Start this new Flow project after research completed. Greet the learner briefly, use the project goal and Flow Memory, then begin the next helpful mentor step without waiting for another learner prompt."
+              }).catch((caught) => {
+                const active = researchRunRef.current;
+                if (!active || active.project?.id !== projectId) return;
+                assignResearchRun({
+                  ...active,
+                  phase: "error",
+                  error: caught instanceof Error ? caught.message : String(caught)
+                });
+              });
+            }
           }
         }
       } else if (terminal) {
@@ -251,7 +282,7 @@ export function Dashboard({
         project: null,
         sessions: []
       });
-      const project = await onCreateProjectFromPrompt(trimmed);
+      const project = await onCreateProjectFromPrompt(trimmed, { images: attachedImages, planMode, workspacePath });
       const current = researchRunRef.current;
       assignResearchRun(current?.goal === trimmed
         ? {
@@ -263,6 +294,18 @@ export function Dashboard({
         : current
       );
       setPrompt("");
+      setAttachedImages([]);
+      // `rust_flow_create` intentionally only persists the project.  The
+      // research run is asynchronous so its native events can drive the card.
+      void runConstructFlowResearch({ projectId: project.id }).catch((caught) => {
+        const active = researchRunRef.current;
+        if (active?.project?.id !== project.id) return;
+        assignResearchRun({
+          ...active,
+          phase: "error",
+          error: caught instanceof Error ? caught.message : String(caught)
+        });
+      });
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : String(caught);
       setCreateError(message);
@@ -274,6 +317,16 @@ export function Dashboard({
 
   const activeHomeRun = researchRun && researchRun.phase !== "idle" ? researchRun : null;
   const homeBusy = busy || creating || Boolean(activeHomeRun);
+  const homeHeading = workspaceLabel
+    ? `What should we work on in ${workspaceLabel}?`
+    : projectPickerOpen
+      ? "What should we work on in a project?"
+      : "What should we work on?";
+  const homePlaceholder = workspaceLabel
+    ? `Describe what you want to change in ${workspaceLabel}`
+    : projectPickerOpen
+      ? "Choose a project, then describe what you want to change"
+      : "Ask for follow-up changes or attach images";
 
   return (
     <div className="construct-home-surface">
@@ -291,15 +344,21 @@ export function Dashboard({
                   layoutId="construct-home-project-start"
                   transition={homeMotionTransition}
                 >
-                  <section className="flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-visible bg-[var(--color-background-surface)] px-[var(--app-density-chat-gutter-x,0.75rem)] sm:px-[var(--app-density-chat-gutter-x-lg,1.25rem)]">
+                  {/* Transparent, so the composer sits on the pane's glass. A
+                      surface fill here is what turned the landing screen into a
+                      flat white page inside a translucent window. */}
+                  <section className="flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-visible px-[var(--app-density-chat-gutter-x,0.75rem)] sm:px-[var(--app-density-chat-gutter-x-lg,1.25rem)]">
                     <div className="flex w-full flex-col justify-center">
                       <header className="mx-auto flex w-full max-w-[46rem] flex-col items-center gap-4 px-6 pb-5 text-center select-none">
                         <ConstructAuthLogo markClassName="size-10" />
+                        {/* 28px at -0.035em. The tighter tracking is what stops a
+                            heading this size reading as body copy scaled up —
+                            optical sizes want less letter-spacing, not the same. */}
                         <h2
-                          className="font-display text-[26px] font-[450] leading-[1.15] tracking-[-0.015em] text-foreground/95 sm:text-[30px]"
+                          className="font-display text-[1.75rem] font-medium leading-[1.15] tracking-[-0.035em] text-foreground/95"
                           data-testid="empty-landing-heading"
                         >
-                          What should we work on?
+                          {homeHeading}
                         </h2>
                       </header>
 
@@ -310,20 +369,29 @@ export function Dashboard({
                           disabled={homeBusy}
                           footerStart={
                             <>
-                              <Button
-                                aria-label="Choose a project"
-                                onClick={() => setProjectPickerOpen(true)}
-                                size="icon-xs"
-                                title="Choose a project"
-                                type="button"
-                                variant="chrome"
-                              >
-                                <PlusIcon data-icon="inline-start" />
-                              </Button>
-                              <span className="inline-flex h-7 shrink-0 items-center gap-1.5 px-1.5 text-[length:var(--app-font-size-ui-sm,11px)] font-normal text-[var(--runtime-full-access-accent)]">
-                                <ShieldCheckIcon className="size-3.5" />
-                                Full access
-                              </span>
+                              <ComposerExtrasMenu
+                                interactionMode={planMode ? "plan" : "default"}
+                                supportsFastMode={false}
+                                fastModeEnabled={false}
+                                onAddPhotos={(files) => setAttachedImages((current) => [...current, ...files])}
+                                onToggleFastMode={() => {}}
+                                onSetPlanMode={setPlanMode}
+                              />
+                              <RuntimeUsageControls
+                                runtimeMode={aiSettings?.conceptFirewallEnabled === false ? "full-access" : "approval-required"}
+                                onRuntimeModeChange={async (mode) => {
+                                  if (!aiSettings) return;
+                                  const enabled = mode !== "full-access";
+                                  const optimistic = { ...aiSettings, conceptFirewallEnabled: enabled };
+                                  setAiSettings(optimistic);
+                                  try {
+                                    const settings = await updateAiSettings({ ai: { conceptFirewallEnabled: enabled } });
+                                    setAiSettings(settings.ai);
+                                  } catch {
+                                    setAiSettings(aiSettings);
+                                  }
+                                }}
+                              />
                             </>
                           }
                           footerEnd={
@@ -342,17 +410,31 @@ export function Dashboard({
                           onSubmit={() => void submitPrompt()}
                           onValueChange={setPrompt}
                           pending={creating}
-                          placeholder="Ask for follow-up changes or attach images"
+                          placeholder={homePlaceholder}
                           submitLabel="Create Construct project"
                           value={prompt}
                         />
 
-                        <div className="chat-composer-shell relative z-0 mx-auto -mt-5 flex min-h-8 w-full max-w-[46rem] min-w-0 flex-nowrap items-center gap-x-1.5 overflow-hidden !rounded-t-none !rounded-b-[var(--composer-radius)] bg-[color-mix(in_srgb,var(--color-background-elevated-secondary)_76%,var(--color-background-surface)_24%)] px-2 pb-1.5 pt-6 sm:min-h-7">
+                        {/* Tucked under the composer and sharing its corner, so
+                            the pair reads as one control with a shelf rather than
+                            as a field with a box under it. The fill is a step down
+                            from the composer's glass — enough to separate the two
+                            without drawing a line between them. */}
+                        <div className="chat-composer-shell relative z-0 mx-auto -mt-5 flex min-h-8 w-full max-w-[46rem] min-w-0 flex-nowrap items-center gap-x-1.5 overflow-hidden !rounded-t-none !rounded-b-[var(--composer-radius)] bg-[var(--color-background-elevated-secondary)] px-2 pb-1.5 pt-6 sm:min-h-7">
                           <HomeProjectPicker
                             onOpenChange={setProjectPickerOpen}
-                            onOpenProject={(projectId) => onOpenProject?.(projectId)}
+                            onClearWorkspace={() => {
+                              setWorkspacePath(undefined);
+                              setWorkspaceLabel(undefined);
+                            }}
+                            onSelectWorkspace={(path, label) => {
+                              setWorkspacePath(path);
+                              setWorkspaceLabel(label);
+                            }}
                             open={projectPickerOpen}
                             projects={projects}
+                            selectedWorkspaceLabel={workspaceLabel}
+                            selectedWorkspacePath={workspacePath}
                           />
                           <div className="min-w-0 flex-1" />
                         </div>
