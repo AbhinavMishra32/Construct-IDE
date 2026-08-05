@@ -51,7 +51,9 @@ import {
   House,
   FolderClosed,
   SquarePen,
-  Search
+  Search,
+  PanelLeftClose,
+  PanelLeftOpen
 } from "lucide-react";
 
 import {
@@ -80,6 +82,7 @@ import type { DesktopShellState } from "@opaline/ui";
 import { GearSix } from "@phosphor-icons/react";
 import {
   SPAR_SIDEBAR_ROW,
+  SparToolbarIconButton,
   SparMenu,
   SparMenuContent,
   SparMenuItem,
@@ -1694,11 +1697,27 @@ export default function ConstructApp() {
           inspectorWidth={inspectorWidth}
           onInspectorWidthChange={setInspectorWidth}
           headerTabs={shellHeaderTabs}
-          navigationHomeIcon={(
-            <CircleIcon
-              aria-hidden
-              strokeWidth={1.5}
-              style={{ height: 14, width: 14 }}
+          /* The sidebar's first row, replacing Opaline's navigation cluster.
+             Spar puts the wordmark on the leading edge — past whatever inset the
+             traffic lights need — and one collapse control on the trailing one.
+             The cluster it replaces spent that row on four controls, including a
+             bare circle standing in for Home and a pair of history arrows that
+             duplicate what the nav rows below already do. */
+          sidebarChrome={(shellState) => (
+            <>
+              <ConstructAuthLogo markClassName="size-4" />
+              <SparToolbarIconButton
+                icon={PanelLeftClose}
+                onClick={() => shellState.setSidebarOpen(false)}
+                title="Hide sidebar"
+              />
+            </>
+          )}
+          collapsedSidebarTrigger={(shellState) => (
+            <SparToolbarIconButton
+              icon={PanelLeftOpen}
+              onClick={() => shellState.setSidebarOpen(true)}
+              title="Show sidebar"
             />
           )}
           title={isDashboardHome ? "New Project" : undefined}

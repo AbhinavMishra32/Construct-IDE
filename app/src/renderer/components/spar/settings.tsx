@@ -4,12 +4,10 @@ import { Switch as SwitchPrimitive } from "radix-ui";
 import { cn } from "../../lib/utils";
 
 /**
- * The heading over a stack of rows.
+ * A labelled stack of rows. The label sits above the card, not inside it — the
+ * card is then one uninterrupted surface instead of a header plus a body.
  *
- * The label sits above the card rather than inside it, which is what lets the
- * card be one uninterrupted surface instead of a header plus a body. A heading
- * row inside a divided card reads as the first item in the list, and settings
- * screens are full of people clicking it.
+ * Geometry copied from Spar's `Group` in `components/pages/SettingsPage.tsx`.
  */
 export function SparSettingsSection({
   title,
@@ -23,7 +21,7 @@ export function SparSettingsSection({
   className?: string;
 }) {
   return (
-    <section className={cn("flex flex-col not-first:mt-7", className)}>
+    <section className={cn("mt-7", className)}>
       {title != null && <h2 className="mb-2 px-0.5 text-ui font-medium text-muted-foreground">{title}</h2>}
       {description != null && (
         <p className="mb-2 px-0.5 text-ui leading-[1.6] text-muted-foreground/80">{description}</p>
@@ -33,12 +31,7 @@ export function SparSettingsSection({
   );
 }
 
-/**
- * The card the rows live in: one surface, hairline-divided, with the contact
- * shadow every raised sheet in the app carries. Its own corner is the sheet
- * radius, so the superellipse is visible at this size and reads as the same
- * material as the composer and the content pane.
- */
+/** The card the rows live in: one surface, hairline-divided, sheet radius. */
 export function SparSettingsCard({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <div
@@ -77,16 +70,29 @@ export function SparSettingsGroup({
 }
 
 /**
- * One setting.
+ * One row of a settings card, exactly as Spar draws it: a flex line with a 54px
+ * floor, so a row holding only a title still lines up with one holding a title
+ * and a description instead of the list looking unevenly spaced.
  *
- * 54px minimum so a row with only a title still matches one carrying a title and
- * a description — a list whose rows change height with their copy reads as
- * unevenly spaced rather than as variable content.
- *
- * The control sits on the row's centre line at desktop widths and drops below the
- * copy when the pane is too narrow to hold both.
+ * Children are composed freely — this is a row, not a template. {@link
+ * SparSettingsField} is the labelled arrangement most rows want, built on top.
  */
-export function SparSettingsRow({
+export function SparSettingsRow({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <div className={cn("flex min-h-[3.375rem] items-center gap-3 px-3.5 py-2", className)} data-slot="settings-row">
+      {children}
+    </div>
+  );
+}
+
+/**
+ * The labelled arrangement: copy on the left, control on the right, and anything
+ * wider than a control on its own line underneath.
+ *
+ * The control drops below the copy when the pane is too narrow to hold both, so a
+ * dragged-in sidebar does not squeeze a select down to nothing.
+ */
+export function SparSettingsField({
   title,
   description,
   control,
@@ -100,8 +106,8 @@ export function SparSettingsRow({
   className?: string;
 }) {
   return (
-    <div className={cn("min-h-[3.375rem] px-3.5 py-2.5", className)} data-slot="settings-row">
-      <div className="flex min-h-[2.375rem] flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+    <SparSettingsRow className={cn(children ? "flex-col items-stretch gap-2.5 py-3" : undefined, className)}>
+      <div className="flex w-full min-w-0 flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
         {(title != null || description != null) && (
           <div className="min-w-0 flex-1">
             {title != null && <p className="text-content font-medium">{title}</p>}
@@ -114,8 +120,8 @@ export function SparSettingsRow({
           <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto sm:justify-end">{control}</div>
         )}
       </div>
-      {children != null && <div className="mt-3">{children}</div>}
-    </div>
+      {children}
+    </SparSettingsRow>
   );
 }
 
@@ -144,14 +150,14 @@ export function SparSettingsToggle({
       aria-label={ariaLabel}
       checked={checked}
       className={cn(
-        "peer inline-flex h-4 w-[1.625rem] shrink-0 cursor-pointer items-center rounded-full p-px transition-colors outline-none",
+        "peer inline-flex h-4 w-[1.625rem] shrink-0 cursor-default items-center rounded-full p-px transition-colors outline-none",
         "focus-visible:ring-2 focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-50",
         "data-[state=checked]:bg-[var(--construct-success)] data-[state=unchecked]:bg-[var(--color-background-elevated-secondary)]",
         "data-[state=unchecked]:inset-shadow-[0_1px_0_0_color-mix(in_srgb,var(--foreground)_8%,transparent)]",
       )}
       data-slot="settings-toggle"
       disabled={disabled}
-      {...(onCheckedChange ? { onCheckedChange } : {})}
+      onCheckedChange={onCheckedChange}
     >
       <SwitchPrimitive.Thumb
         className={cn(
@@ -179,20 +185,19 @@ export function SparSettingsBoundary({
   tone?: "muted" | "success";
 }) {
   return (
-    <SparSettingsRow
-      className="py-3"
-      control={
-        <span
-          className={cn(
-            "mt-px inline-flex shrink-0 items-center gap-1.5 rounded-md bg-[var(--color-background-elevated-secondary)] px-2 py-1 text-ui-sm",
-            tone === "success" ? "text-[var(--construct-success)]" : "text-muted-foreground",
-          )}
-        >
-          {badge}
-        </span>
-      }
-      description={detail}
-      title={title}
-    />
+    <SparSettingsRow className="items-start gap-4 py-3">
+      <div className="min-w-0 flex-1">
+        <p className="text-content font-medium">{title}</p>
+        <p className="mt-0.5 text-ui leading-[1.6] text-muted-foreground">{detail}</p>
+      </div>
+      <span
+        className={cn(
+          "mt-px inline-flex shrink-0 items-center gap-1.5 rounded-md bg-[var(--color-background-elevated-secondary)] px-2 py-1 text-ui-sm",
+          tone === "success" ? "text-[var(--construct-success)]" : "text-muted-foreground",
+        )}
+      >
+        {badge}
+      </span>
+    </SparSettingsRow>
   );
 }

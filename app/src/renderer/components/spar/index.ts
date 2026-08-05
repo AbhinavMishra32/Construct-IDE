@@ -71,6 +71,8 @@ export {
   SelectTrigger as SparSelectTrigger,
   SelectValue as SparSelectValue,
 } from "./ui/select";
+export { ModelSelectField as SparModelSelectField } from "./ui/model-select";
+export type { ModelOption as SparModelOption } from "./ui/model-select";
 
 export {
   Tooltip as SparTooltip,
@@ -98,6 +100,7 @@ export { SparScrollDrum } from "./scroll-drum";
 export {
   SparSettingsBoundary,
   SparSettingsCard,
+  SparSettingsField,
   SparSettingsGroup,
   SparSettingsRow,
   SparSettingsSection,
