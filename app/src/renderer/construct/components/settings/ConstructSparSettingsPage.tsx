@@ -33,7 +33,8 @@ import {
   SparMenuTrigger,
   SparSegmented,
   SparSettingsGroup,
-  SparSettingsRow,
+  SparSettingsField,
+  SparModelSelectField,
 } from "../../../components/spar";
 import { ProviderGlyph } from "../../../components/spar/provider-glyph";
 import { credentialStore, deviceNoun } from "../../../components/spar/platform";
@@ -144,7 +145,7 @@ function ProviderRow({
   onKeyUrl(): void;
 }) {
   return (
-    <SparSettingsRow
+    <SparSettingsField
       control={
         <>
           <ModelPicker
@@ -198,9 +199,7 @@ function ProviderRow({
           )}
         </span>
       }
-    >
-      {undefined}
-    </SparSettingsRow>
+    />
   );
 }
 
@@ -249,7 +248,7 @@ function Boundary({
   tone?: "muted" | "success";
 }) {
   return (
-    <SparSettingsRow
+    <SparSettingsField
       className="py-3"
       control={
         <span
@@ -275,18 +274,21 @@ function Boundary({
 function ProviderConnectDialog({
   provider,
   settings,
+  models,
   onClose,
   onSave,
   onImportCopilot,
 }: {
   provider: ConstructProvider | null;
   settings: AiSettings;
+  models: Array<{ id: string; name: string }>;
   onClose(): void;
   onSave(patch: Partial<AiSettings>): Promise<void>;
   onImportCopilot(): Promise<void>;
 }) {
   const [apiKey, setApiKey] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
+  const [model, setModel] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -294,6 +296,7 @@ function ProviderConnectDialog({
     if (!provider) return;
     setApiKey(provider.apiKeyKey ? String(settings[provider.apiKeyKey] ?? "") : "");
     setBaseUrl(provider.baseUrlKey ? String(settings[provider.baseUrlKey] ?? "") : "");
+    setModel(provider.selectedModel);
     setError("");
   }, [provider, settings]);
 
@@ -310,6 +313,7 @@ function ProviderConnectDialog({
         const patch: Partial<AiSettings> = {};
         if (provider.apiKeyKey) Object.assign(patch, { [provider.apiKeyKey]: apiKey.trim() });
         if (provider.baseUrlKey) Object.assign(patch, { [provider.baseUrlKey]: baseUrl.trim() });
+        if (model.trim()) Object.assign(patch, { [provider.modelKey]: model.trim() });
         await onSave(patch);
       }
       onClose();
@@ -360,6 +364,21 @@ function ProviderConnectDialog({
                   onChange={(event) => setBaseUrl(event.target.value)}
                   placeholder="https://…"
                   value={baseUrl}
+                />
+              </label>
+            )}
+            {provider && provider.id !== "github-copilot" && (
+              <label className="block space-y-1.5">
+                <span className="text-ui font-medium">Model</span>
+                {/* A select, not a text field: this is the one input with hundreds
+                    of right answers, and it was the one input that showed none of
+                    them. A hand-typed id still works — a model newer than the
+                    catalogue, or one only your own endpoint knows — and is carried
+                    as its own item rather than reset to the first in the list. */}
+                <SparModelSelectField
+                  models={models}
+                  onChange={setModel}
+                  value={model}
                 />
               </label>
             )}
@@ -486,6 +505,15 @@ export function ConstructSparSettingsPage({
       .finally(() => setLoadingCatalogue(null));
   }, [catalogues, settings]);
 
+  /* Opening the dialog is what asks for the catalogue. The select inside it is
+     the only place the full list is shown, and loading every connected
+     provider's models up front is a handful of round-trips for a list nobody
+     has looked at yet. */
+  const openProvider = useCallback((provider: ConstructProvider) => {
+    setSelected(provider);
+    loadCatalogue(provider);
+  }, [loadCatalogue]);
+
   const signOut = async () => {
     setBusy(true);
     try {
@@ -511,7 +539,7 @@ export function ConstructSparSettingsPage({
         )}
 
         <SparSettingsGroup label="Appearance">
-          <SparSettingsRow
+          <SparSettingsField
             className="py-2.5"
             control={
               <SparSegmented
@@ -531,7 +559,7 @@ export function ConstructSparSettingsPage({
         </SparSettingsGroup>
 
         <SparSettingsGroup label="Storage">
-          <SparSettingsRow
+          <SparSettingsField
             description="New and imported projects are kept under this folder."
             title="Workspace root"
           >
@@ -553,12 +581,12 @@ export function ConstructSparSettingsPage({
                 Save
               </SparButton>
             </div>
-          </SparSettingsRow>
+          </SparSettingsField>
         </SparSettingsGroup>
 
         <SparSettingsGroup label="Providers">
           {!settings && (
-            <SparSettingsRow
+            <SparSettingsField
               control={<Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
               title="Reading the provider inventory…"
             />
@@ -575,16 +603,16 @@ export function ConstructSparSettingsPage({
                 onLoadModels={() => loadCatalogue(provider)}
                 onMakeDefault={() => void patch(selectProviderPatch(provider, provider.selectedModel))}
                 onModel={(model) => void patch(selectProviderPatch(provider, model))}
-                onOpen={() => setSelected(provider)}
+                onOpen={() => openProvider(provider)}
                 provider={provider}
               />
             ))}
-          {available.length > 0 && <ConnectRow available={available} onPick={setSelected} />}
+          {available.length > 0 && <ConnectRow available={available} onPick={openProvider} />}
         </SparSettingsGroup>
 
         {defaultProvider && (
           <SparSettingsGroup label="Agent">
-            <SparSettingsRow
+            <SparSettingsField
               control={
                 <ModelPicker
                   busy={loadingCatalogue === defaultProvider.id}
@@ -597,7 +625,7 @@ export function ConstructSparSettingsPage({
               description="Every new run starts here until you switch provider."
               title="Default model"
             />
-            <SparSettingsRow
+            <SparSettingsField
               control={
                 <SparSegmented
                   ariaLabel="Reasoning effort"
@@ -635,7 +663,7 @@ export function ConstructSparSettingsPage({
         </SparSettingsGroup>
 
         <SparSettingsGroup label="Account">
-          <SparSettingsRow
+          <SparSettingsField
             control={
               <SparButton onClick={onOpenAccount} size="sm" variant="secondary">
                 Manage
@@ -653,7 +681,7 @@ export function ConstructSparSettingsPage({
               </span>
             }
           />
-          <SparSettingsRow
+          <SparSettingsField
             control={
               <SparButton onClick={() => setSignOutOpen(true)} size="sm" variant="secondary">
                 <LogOut />
@@ -673,6 +701,7 @@ export function ConstructSparSettingsPage({
 
       {settings && (
         <ProviderConnectDialog
+          models={selected ? catalogues[selected.id] ?? [] : []}
           onClose={() => setSelected(null)}
           onImportCopilot={async () => {
             await importOpencodeAuth();

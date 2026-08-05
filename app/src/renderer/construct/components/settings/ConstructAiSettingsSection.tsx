@@ -12,7 +12,7 @@ import {
 } from "@opaline/ui";
 import {
   SparSettingsCard as SettingsCard,
-  SparSettingsRow as SettingsRow,
+  SparSettingsField as SettingsRow,
   SparSettingsSection as SettingsSection,
   SparSettingsToggle as SettingsToggle,
 } from "../../../components/spar";

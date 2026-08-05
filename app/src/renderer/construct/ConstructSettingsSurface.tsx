@@ -29,7 +29,7 @@ import type { SettingsNavSection } from "@opaline/ui";
    names so the call sites below read the same as every other settings screen. */
 import {
   SparSettingsCard as SettingsCard,
-  SparSettingsRow as SettingsRow,
+  SparSettingsField as SettingsRow,
   SparSettingsSection as SettingsSection,
   SparSettingsToggle as SettingsToggle,
 } from "../components/spar";

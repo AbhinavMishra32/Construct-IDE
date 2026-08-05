@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-import { SparSidebarAction, SparViewSwitch } from "../../components/spar";
+import { SparSidebarAction } from "../../components/spar";
 
 export type ConstructSidebarAction = {
   active?: boolean;
@@ -10,11 +10,6 @@ export type ConstructSidebarAction = {
   label: ReactNode;
   onClick: () => void;
   shortcut?: string;
-};
-
-export type ConstructSidebarView = {
-  id: string;
-  label: string;
 };
 
 /**
@@ -32,47 +27,40 @@ export type ConstructSidebarView = {
  */
 export function ConstructSidebarSurface({
   actions = [],
-  activeView,
+  nav = [],
   children,
   footer,
-  onSelectView,
-  views = [],
 }: {
+  /** Things you do — start something, search. */
   actions?: ConstructSidebarAction[];
-  activeView?: string;
+  /** Places you go. Separated from the actions by a gap, the way Spar's is: a
+   *  destination and a command look identical as rows, so the only thing telling
+   *  you which is which is that they sit in different groups. */
+  nav?: ConstructSidebarAction[];
   children: ReactNode;
   footer: ReactNode;
-  onSelectView?: (viewId: string) => void;
-  views?: ConstructSidebarView[];
 }) {
+  const rows = (items: ConstructSidebarAction[]) =>
+    items.map((action) => (
+      <SparSidebarAction
+        active={action.active}
+        badge={action.badge}
+        icon={action.icon}
+        key={action.id}
+        label={action.label}
+        onClick={action.onClick}
+        {...(action.shortcut ? { shortcut: action.shortcut } : {})}
+      />
+    ));
+
   return (
     <div className="app-sidebar app-drag flex h-full min-h-0 w-full flex-col font-system-ui">
-      {views.length > 1 && activeView && onSelectView ? (
-        <div className="app-no-drag px-2.5 pb-2 pt-0.5">
-          <SparViewSwitch
-            ariaLabel="Sidebar view"
-            className="w-full"
-            onChange={onSelectView}
-            options={views.map((view) => ({ value: view.id, label: view.label }))}
-            value={activeView}
-          />
-        </div>
+      {actions.length > 0 ? (
+        <div className="app-no-drag space-y-0.5 px-2.5">{rows(actions)}</div>
       ) : null}
 
-      {actions.length > 0 ? (
-        <div className="app-no-drag space-y-0.5 px-2.5">
-          {actions.map((action) => (
-            <SparSidebarAction
-              active={action.active}
-              badge={action.badge}
-              icon={action.icon}
-              key={action.id}
-              label={action.label}
-              onClick={action.onClick}
-              {...(action.shortcut ? { shortcut: action.shortcut } : {})}
-            />
-          ))}
-        </div>
+      {nav.length > 0 ? (
+        <nav className="app-no-drag mt-3 space-y-0.5 px-2.5">{rows(nav)}</nav>
       ) : null}
 
       {/* The list owns the scroll, not the sidebar: the footer has to stay put

@@ -100,11 +100,10 @@ describe("Construct interface shell boundary", () => {
     // primitives — the shell owns the off-canvas container and the seam rail, and
     // nothing else.
     assert.match(constructSidebarSource, /<SparSidebarAction/);
-    assert.match(constructSidebarSource, /<SparViewSwitch/);
+    assert.match(constructSidebarSource, /nav\?: ConstructSidebarAction\[\]/);
     assert.match(constructSidebarSource, /app-sidebar app-drag/);
-    assert.match(appSource, /sidebarWidth=\{settingsSurface \? settingsSidebarWidth : activeProject \? sidebarWidth : dashboardSidebarWidth\}/);
-    assert.match(appSource, /sidebarResizeStorageKey=\{settingsSurface \? "construct\.settings\.sidebar\.width" : isDashboardHome \? "construct\.dashboard\.sidebar\.width" : undefined\}/);
-    assert.match(appSource, /sidebarMainMinWidth=\{settingsSurface \? 640 : undefined\}/);
+    assert.match(appSource, /sidebarWidth=\{sidebarWidth\}/);
+    assert.match(appSource, /sidebarResizeStorageKey="construct\.sidebar\.width"/);
     assert.match(appSource, /showHeader=\{!settingsSurface\}/);
     assert.match(appSource, /backLabel="Back to app"/);
     assert.match(appSource, /title=\{isDashboardHome \? "New Project" : undefined\}/);
@@ -168,7 +167,6 @@ describe("Construct interface shell boundary", () => {
     assert.match(dashboardSidebarSource, /STUDIO_SIDEBAR_STATE_KEY/);
     assert.match(dashboardSidebarSource, /Pin to top/);
     assert.match(dashboardSidebarSource, /Archive/);
-    assert.match(appSource, /activeView=\{projectsViewOpen \? "projects" : "home"\}/);
     assert.match(shellControlsSource, /SparSidebarAction/);
     assert.match(opalineIndexSource, /export \{ Button \} from "\.\/components\/button"/);
   });
