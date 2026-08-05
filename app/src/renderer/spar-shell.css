@@ -1,35 +1,26 @@
 /* Spar's desktop material, ported onto Construct.
  *
- * Three things live here and nothing else: the window chrome geometry the OS
- * draws over, the glass surfaces the app is built out of, and the overrides that
- * make the vendored Opaline shell resolve to those surfaces instead of its own.
- * Colour tokens stay in `index.css` beside Construct's own; this file only ever
- * reads them.
+ * The `@property` registrations, the base layer, and the component layer below
+ * are copied verbatim from `pracai/apps/desktop/src/renderer/theme.css`, so
+ * keeping the two in step is a re-copy rather than a re-derivation. Construct's
+ * own additions are confined to the one marked block at the end of the component
+ * layer: the overrides that repoint the vendored Opaline shell's material tokens
+ * at these surfaces. Colour tokens live in `index.css`; this file only reads them.
  *
  * Liquid Glass proper is a native material — Tauri installs an NSVisualEffect
- * layer behind the web contents (`src-tauri/src/window.rs`), and CSS cannot
- * reach it. The surfaces below reproduce its *read* instead, which is three
- * things and not the heavy blur everyone reaches for first:
- *   1. a lightly frosted, mostly-opaque fill — glass tints, it does not fog;
- *   2. a bright 1px inset rim, the specular edge of a curved surface, which is
- *      what actually says "glass" rather than "translucent rectangle";
- *   3. a 0.5px outer hairline so the shape stays legible on any backdrop.
- * The blur is deliberately small (8px). Past ~12px small text behind the
- * surface turns to mush and the material reads as frosted plastic.
+ * layer behind the web contents (`src-tauri/src/window.rs`), and CSS cannot reach
+ * it. The surfaces here reproduce its *read* instead: a lightly frosted,
+ * mostly-opaque fill, a bright 1px inset rim, and a 0.5px outer hairline. The
+ * blur stays small (8px) — past ~12px small text behind the surface turns to mush
+ * and the material reads as frosted plastic.
  */
 
-/* Registered so the rim sweep can interpolate; an unregistered custom property
-   animates discretely and the light would jump instead of travel. */
-@property --spar-shimmer-angle {
+@property --shimmer-angle {
   syntax: "<angle>";
   inherits: false;
   initial-value: 0deg;
 }
 
-/* The drum's two fade depths, registered for the same reason: they are driven
-   from whether the list is scrolled away from that end, and an unregistered
-   length would snap the mask on rather than ease it. Zero means no fade at all,
-   which is what an end with nothing past it gets. */
 @property --drum-top {
   syntax: "<length>";
   inherits: false;
@@ -49,8 +40,9 @@
      flows into its corner instead of meeting it at a visible seam.
      superellipse(2) is the Apple constant.
 
-     Guarded because the property is Chromium 139+: without support every corner
-     keeps the arc it already had, which is exactly the old appearance. */
+     Guarded because the property is Chromium 139+ (the bundled Electron clears
+     it comfortably): without support every corner keeps the arc it already had,
+     which is exactly the old appearance. */
   @supports (corner-shape: superellipse(2)) {
     *,
     *::before,
@@ -86,7 +78,6 @@
       [class*="--radius-item"],
       [data-slot^="dropdown-menu"],
       [data-slot^="context-menu"],
-      [data-slot^="menu"],
       [data-slot^="command"],
       [data-slot="tooltip-content"],
       [data-slot="select-content"],
@@ -96,8 +87,42 @@
     }
   }
 
+  *,
+  *::before,
+  *::after {
+    border-color: var(--border);
+    box-sizing: border-box;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  html {
+    font-family: var(--font-sans);
+    font-size: 16px;
+    font-synthesis: none;
+  }
+
   body {
+    margin: 0;
+    overflow: hidden;
+    /* Transparent so the native macOS vibrancy layer shows through the sidebar. */
+    background: transparent;
+    color: var(--foreground);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
     font-size: var(--text-ui);
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+    color: inherit;
   }
 
   button:not(:disabled),
@@ -111,7 +136,7 @@
 }
 
 @layer components {
-  /* ---- Window chrome ------------------------------------------------------ */
+  /* ---- macOS window chrome ---------------------------------------------- */
 
   /* Windows puts its caption buttons on the trailing edge, so the reservation
      moves with them: nothing to clear on the left, 138px to clear on the right. */
@@ -130,24 +155,23 @@
     -webkit-app-region: drag;
   }
 
+  /* AppKit shows the arrow over a source list, never the hand — the pointer
+     cursor is a web affordance, and on a sidebar of rows it is the single
+     clearest tell that a desktop app was built in a browser. Scoped here so
+     ordinary buttons elsewhere keep it. The resize handle overrides this itself
+     from the utilities layer. */
+  .app-sidebar button:not(:disabled),
+  .app-sidebar [role="button"]:not(:disabled),
+  .app-sidebar a[href] {
+    cursor: default;
+  }
+
   .app-no-drag {
     -webkit-app-region: no-drag;
   }
 
-  /* AppKit shows the arrow over a source list, never the hand — the pointer
-     cursor is a web affordance, and on a sidebar of rows it is the single
-     clearest tell that a desktop app was built in a browser. Scoped here so
-     ordinary buttons elsewhere keep it. */
-  .app-sidebar button:not(:disabled),
-  .app-sidebar [role="button"]:not(:disabled),
-  .app-sidebar a[href],
-  [data-slot="sidebar"] button:not(:disabled),
-  [data-slot="sidebar"] [role="button"]:not(:disabled) {
-    cursor: default;
-  }
-
   /* The window is a hole the OS paints its material into — Liquid Glass on
-     macOS 26, vibrancy below that, Acrylic on Windows 11. This goes on the whole
+     macOS 26, vibrancy below that, Mica on Windows 11. This goes on the whole
      shell, not just the sidebar: the content pane's rounded corner exposes
      whatever sits behind the pane, and if the material stops at the sidebar's
      edge then what it exposes is bare window. That is the dark notch under the
@@ -162,8 +186,8 @@
     background: var(--app-vibrant-tint);
   }
 
-  /* No native material to sit on — Linux, Windows 10 — so paint it outright, or
-     the hole shows the desktop straight through. */
+  /* No native material to sit on — Windows 10, Linux — so paint it outright,
+     or the hole shows the desktop straight through. */
   :root[data-native-surface="none"] .app-vibrant {
     background: var(--app-sidebar-fill);
   }
@@ -177,6 +201,18 @@
     background: color-mix(in oklab, var(--app-window-fill) var(--app-glass-fill), transparent);
   }
 
+  /* The content pane as an inset sheet on the sidebar's material: rounded on the
+     leading edge, top and bottom, so the glass appears to continue behind it. The
+     hairline is drawn as an inset ring rather than a border so it follows the
+     curve, and overflow is clipped so toolbars and editors cannot square the
+     corners off from the inside. */
+  .app-content-pane {
+    border-start-start-radius: var(--radius-2xl);
+    border-end-start-radius: var(--radius-2xl);
+    box-shadow: inset 0 0 0 0.5px var(--sidebar-border);
+    overflow: hidden;
+  }
+
   .hairline-r {
     box-shadow: inset -1px 0 0 0 var(--sidebar-border);
   }
@@ -188,6 +224,480 @@
   .hairline-t {
     box-shadow: inset 0 1px 0 0 var(--border);
   }
+
+  /* ---- Sidebar rows ------------------------------------------------------ */
+
+  /* A title longer than the sidebar fades out where it runs out of room rather
+     than ending in an ellipsis. The ellipsis has to be paid for three characters
+     before the edge, and it spends them saying "there is more" — which the fade
+     says for nothing. The mask is on the text itself rather than a scrim laid
+     over it because the sidebar is glass: a scrim would have to guess what is
+     behind it, and would be wrong on every wallpaper but one. */
+  .sidebar-title {
+    /* In px, not rem, because the marquee below has to travel exactly this far
+       to clear the fade and reads the same number out of TypeScript. */
+    --sidebar-title-fade: 22px;
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  .sidebar-title[data-clipped="true"] {
+    mask-image: linear-gradient(to right, #000 0, #000 calc(100% - var(--sidebar-title-fade)), transparent 100%);
+  }
+
+  .sidebar-title > span {
+    display: block;
+    white-space: nowrap;
+  }
+
+  /* The row's controls take their room from the title, because the title is the
+     one thing in the row that can afford to be shorter. */
+  .sidebar-row:hover .sidebar-title,
+  .sidebar-row:has(:focus-visible) .sidebar-title,
+  .sidebar-row:has([data-row-controls][data-open="true"]) .sidebar-title {
+    margin-right: var(--sidebar-controls-width, 4rem);
+  }
+
+  [data-row-controls] {
+    display: none;
+  }
+
+  .sidebar-row:hover [data-row-controls],
+  .sidebar-row:has(:focus-visible) [data-row-controls],
+  [data-row-controls][data-open="true"] {
+    display: flex;
+  }
+
+  /* Hovering a clipped title walks the rest of it past the fade and back, so the
+     whole name is readable without asking for a tooltip. It rests at both ends
+     instead of turning the moment it arrives — the far end is the half you
+     hovered to read. */
+  .sidebar-row:hover .sidebar-title[data-clipped="true"] > span {
+    animation: sidebar-title-marquee var(--sidebar-title-duration, 4s) 0.45s ease-in-out infinite alternate;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sidebar-row:hover .sidebar-title[data-clipped="true"] > span {
+      animation: none;
+    }
+  }
+
+  /* ---- Scrollbars ------------------------------------------------------- */
+
+  .app-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--foreground) 18%, transparent) transparent;
+  }
+
+  .app-scroll::-webkit-scrollbar {
+    width: 9px;
+    height: 9px;
+  }
+
+  .app-scroll::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    /* A pill, not a squircle — the universal rule above would square its ends. */
+    corner-shape: round;
+    border-radius: 9999px;
+    background-clip: content-box;
+    background-color: color-mix(in srgb, var(--foreground) 16%, transparent);
+  }
+
+  .app-scroll::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in srgb, var(--foreground) 28%, transparent);
+  }
+
+  .app-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  /* ---- Agent transcript -------------------------------------------------- */
+
+  .agent-transcript {
+    --transcript-width: 46rem;
+  }
+
+  /* The fallback matters: composers and banners sit outside .agent-transcript,
+     where --transcript-width is not in scope. Without it the custom property
+     resolves to nothing, max-width is dropped, and those rows go full-bleed. */
+  .transcript-column {
+    width: 100%;
+    max-width: var(--transcript-width, 46rem);
+    margin-inline: auto;
+  }
+
+  /* Streaming assistant text keeps a caret at the live edge. */
+  .streaming-caret::after {
+    content: "";
+    display: inline-block;
+    width: 0.45em;
+    height: 1em;
+    margin-left: 0.15em;
+    vertical-align: text-bottom;
+    border-radius: 1px;
+    background: currentColor;
+    animation: agent-caret 1.1s steps(1, end) infinite;
+  }
+
+  /* Aside's "working" label sweeps a highlight across the text rather than
+     spinning, which reads quieter in a window that stays open for hours. */
+  .thinking-shimmer {
+    background: linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--foreground) 38%, transparent) 0%,
+      color-mix(in srgb, var(--foreground) 38%, transparent) 35%,
+      var(--foreground) 50%,
+      color-mix(in srgb, var(--foreground) 38%, transparent) 65%,
+      color-mix(in srgb, var(--foreground) 38%, transparent) 100%
+    );
+    background-size: 220% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: agent-shimmer 2.4s linear infinite;
+  }
+
+  /* Launch is the wordmark and nothing else. It fades up once and a highlight
+     travels across it — slower and over a wider gradient than the working
+     shimmer, because at this size a 2.4s sweep reads as a loading bar. Whatever
+     the app is doing before its first paint is not the learner's business. */
+  .boot-wordmark {
+    background: linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--foreground) 30%, transparent) 0%,
+      color-mix(in srgb, var(--foreground) 30%, transparent) 40%,
+      var(--foreground) 50%,
+      color-mix(in srgb, var(--foreground) 30%, transparent) 60%,
+      color-mix(in srgb, var(--foreground) 30%, transparent) 100%
+    );
+    background-size: 300% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation:
+      boot-wordmark-in 0.45s ease-out both,
+      agent-shimmer 3.4s linear infinite;
+  }
+
+  /* ---- Glass -------------------------------------------------------------- */
+
+  /* Liquid Glass proper is a native material — on macOS 26 it is the window's
+     own NSGlassEffectView, which the main process installs behind the web
+     contents (see main/surface.ts). It cannot be reached from CSS, so DOM
+     surfaces reproduce its *read* instead, which is three things and not the
+     heavy blur everyone reaches for first:
+       1. a lightly frosted, mostly-opaque fill — glass tints, it does not fog;
+       2. a bright 1px inset rim, the specular edge of a curved surface, which
+          is what actually says "glass" rather than "translucent rectangle";
+       3. a 0.5px outer hairline so the shape stays legible on any backdrop.
+     The blur is deliberately small (8px). Past ~12px small text behind the
+     surface turns to mush and the material reads as frosted plastic. */
+  .glass {
+    background: color-mix(in oklab, var(--popover) var(--glass-fill), transparent);
+    box-shadow:
+      inset 0 0 0 1px var(--glass-rim),
+      inset 0 1px 0 0 var(--glass-sheen),
+      0 0 0 0.5px var(--glass-hairline),
+      var(--glass-shadow);
+    backdrop-filter: blur(8px) saturate(120%);
+    -webkit-backdrop-filter: blur(8px) saturate(120%);
+    /* Keeps the blur from bleeding past the rounded corner in WebKit. */
+    isolation: isolate;
+  }
+
+  /* ---- Composer ---------------------------------------------------------- */
+
+  .composer-shell {
+    border-radius: var(--radius-2xl);
+    background: color-mix(in oklab, var(--popover) var(--glass-fill), transparent);
+    box-shadow:
+      inset 0 0 0 1px var(--glass-rim),
+      inset 0 1px 0 0 var(--glass-sheen),
+      0 0 0 0.5px var(--glass-hairline),
+      var(--app-shadow-composer);
+    backdrop-filter: blur(8px) saturate(120%);
+    -webkit-backdrop-filter: blur(8px) saturate(120%);
+    isolation: isolate;
+    transition: box-shadow 0.15s ease;
+  }
+
+  /* Focus reads as the surface lifting, not as a coloured outline — the same
+     move macOS makes when a text field takes the caret. */
+  .composer-shell:focus-within {
+    box-shadow:
+      inset 0 0 0 1px var(--glass-rim),
+      inset 0 1px 0 0 var(--glass-sheen),
+      0 0 0 0.5px color-mix(in oklab, var(--foreground) 32%, transparent),
+      var(--app-shadow-composer);
+  }
+
+  /* Fades transcript content into the composer instead of clipping it hard. */
+  .composer-fade {
+    background: linear-gradient(to bottom, transparent, color-mix(in oklab, var(--app-window-fill) var(--app-glass-fill), transparent) 62%);
+  }
+
+  /* ---- Scrolling drum ----------------------------------------------------- */
+
+  /* A list taller than the room it was given, presented the way a physical picker
+     drum reads: rows near each edge fade and soften as though rotating away,
+     rather than being cut in half by a boundary.
+
+     Two layers doing two different jobs. The mask fades the content itself, so it
+     dissolves into whatever is genuinely behind the pane — a gradient in a guessed
+     background colour cannot, because the pane is a translucent tint over the
+     window's own material and the "background" is the desktop. The edge strips
+     then taper a small backdrop blur across the same distance, which is what turns
+     a flat fade into a surface curving away from you.
+
+     Each end fades only while there is content past it, driven from the scroll
+     position. A picker drum can get away with fading both ends permanently
+     because its rows are small and interchangeable; these are cards you read, and
+     a first card that is half dissolved when the list is already at the top does
+     not read as rotation — it reads as broken rendering. */
+  .drum {
+    --drum-fade: 2.25rem;
+    mask-image: linear-gradient(
+      to bottom,
+      transparent 0,
+      #000 var(--drum-top),
+      #000 calc(100% - var(--drum-bottom)),
+      transparent 100%
+    );
+    -webkit-mask-image: linear-gradient(
+      to bottom,
+      transparent 0,
+      #000 var(--drum-top),
+      #000 calc(100% - var(--drum-bottom)),
+      transparent 100%
+    );
+    transition:
+      --drum-top 180ms ease,
+      --drum-bottom 180ms ease;
+  }
+
+  .drum-edge {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 2.25rem;
+    pointer-events: none;
+    /* Small on purpose. Past ~4px the half-visible card stops reading as one on
+       its way out and starts reading as a smear over the list. */
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+    /* Matched to the mask's transition so the softening and the fade arrive
+       together; separately they read as two effects. */
+    transition: opacity 180ms ease;
+  }
+
+  .drum-edge-top {
+    top: 0;
+    mask-image: linear-gradient(to bottom, #000, transparent);
+    -webkit-mask-image: linear-gradient(to bottom, #000, transparent);
+  }
+
+  .drum-edge-bottom {
+    bottom: 0;
+    mask-image: linear-gradient(to top, #000, transparent);
+    -webkit-mask-image: linear-gradient(to top, #000, transparent);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .drum,
+    .drum-edge {
+      transition: none;
+    }
+  }
+
+  /* ---- Floating panels ---------------------------------------------------- */
+
+  .floating-surface {
+    border-radius: var(--radius-menu);
+    corner-shape: round;
+    box-shadow:
+      inset 0 0 0 1px var(--glass-rim),
+      inset 0 1px 0 0 var(--glass-sheen),
+      0 0 0 0.5px var(--glass-hairline),
+      var(--app-shadow-overlay);
+    background: color-mix(in oklab, var(--popover) var(--glass-fill), transparent);
+    backdrop-filter: blur(8px) saturate(120%);
+    -webkit-backdrop-filter: blur(8px) saturate(120%);
+    isolation: isolate;
+  }
+
+  /* Menus sit closer to opaque than panels do: they are almost entirely small
+     text, and every point of transparency costs contrast against whatever
+     happens to be behind them.
+
+     A tight arc, not a squircle: a menu is a list of 24px rows, and a corner
+     wider than the row it clips eats the first and last items' highlight. */
+  .menu-surface {
+    border-radius: var(--radius-menu);
+    corner-shape: round;
+    background: color-mix(in oklab, var(--popover) var(--glass-fill-solid), transparent);
+    box-shadow:
+      inset 0 0 0 1px var(--glass-rim),
+      inset 0 1px 0 0 var(--glass-sheen),
+      0 0 0 0.5px var(--glass-hairline),
+      var(--app-shadow-menu);
+    backdrop-filter: blur(8px) saturate(120%);
+    -webkit-backdrop-filter: blur(8px) saturate(120%);
+    isolation: isolate;
+  }
+
+  /* The same shell without the glass, for a surface that moves while you are
+     looking at it. An item-aligned select slides its whole popup as you scroll —
+     that is the behaviour, not a bug — and a backdrop-filter underneath has to
+     recompute the blur against whatever it is passing over on every frame, which
+     is what turns a slide into a judder. A menu never moves once it is open, so
+     a menu keeps the glass. */
+  .menu-surface-opaque {
+    border-radius: var(--radius-menu);
+    corner-shape: round;
+    background: var(--popover);
+    box-shadow:
+      inset 0 0 0 1px var(--glass-rim),
+      inset 0 1px 0 0 var(--glass-sheen),
+      0 0 0 0.5px var(--glass-hairline),
+      var(--app-shadow-menu);
+    isolation: isolate;
+  }
+
+  /* ---- Work blobs --------------------------------------------------------- */
+
+  /* The workspace is laid out the way a browser window is: one continuous
+     surface — here the conversation rather than tab-strip chrome — with the
+     working panes inset into it as rounded sheets. The gutter between them is
+     what carries the relationship; the sheets themselves stay quiet so the
+     result still reads as a workspace and not as a chat with widgets in it. */
+  .work-canvas {
+    /* Deliberately paints nothing: the conversation's surface *is* the pane's
+       glass, and the working sheets are what sits on top of it. */
+    background: transparent;
+  }
+
+  /* A sheet is inset into a canvas of almost its own value, so the 0.5px
+     hairline the glass surfaces use disappears and the panes read as one
+     undivided field. A full 1px edge plus a wider ambient shadow is what makes
+     the inset legible as an inset. */
+  .work-blob {
+    position: relative;
+    border-radius: var(--radius-2xl);
+    box-shadow: var(--app-shadow-sheet);
+    overflow: hidden;
+    /* Contains the rounded clip against a child that paints its own background
+       (Monaco does) and gives the rings something to stack against. */
+    isolation: isolate;
+  }
+
+  /* The edge is drawn over the content, not under it. As an inset shadow on the
+     element it is covered by any child that paints its own background — which is
+     every pane here — so it survived only where the clip curves away from the
+     child's own antialiased corner. That is why the corners were the one place
+     the rim showed, and why they read as lumpy: outer ring, stray rim and the
+     child's clipped edge all landing on the same arc. One ring on top is the
+     same line the whole way round. */
+  .work-blob::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    border-radius: inherit;
+    box-shadow: inset 0 0 0 1px var(--sheet-edge);
+    pointer-events: none;
+  }
+
+  /* Working state: the rim breathes rather than a light going round it.
+     A constant-speed arc on a loop is a machine — it reads as a progress
+     spinner disguised as an edge, and it never stops, so it competes with the
+     content for the rest of the run. Brightening the whole rim in and out is
+     the same information with none of that: ambient, ignorable, and it has no
+     "position" that the eye starts tracking. */
+  .work-blob[data-busy="true"]::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    padding: 1px;
+    border-radius: inherit;
+    background: var(--shimmer-tint);
+    /* Border-only: punch the content box out of the mask so just the 1px
+       padding ring survives. */
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    /* The phase offset is per-blob. Two panes breathing in lockstep is what
+       makes a pair of them look driven by one clock. */
+    animation: blob-breathe 3.4s cubic-bezier(0.4, 0, 0.6, 1) var(--shimmer-phase, 0s) infinite alternate;
+    pointer-events: none;
+  }
+
+  /* Settling is the one moment a direction is meaningful — something finished,
+     and the light running once around says so and then leaves. Slow, and the
+     arc is wide and soft so it reads as a highlight sliding over the edge
+     rather than a marker travelling along it. */
+  .work-blob[data-settled="true"]::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    padding: 1px;
+    border-radius: inherit;
+    background: conic-gradient(
+      from var(--shimmer-angle),
+      transparent 0turn,
+      color-mix(in oklab, var(--shimmer-tint) 55%, transparent) 0.14turn,
+      color-mix(in oklab, var(--shimmer-tint) 90%, transparent) 0.25turn,
+      color-mix(in oklab, var(--shimmer-tint) 55%, transparent) 0.36turn,
+      transparent 0.5turn
+    );
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    animation: blob-sweep 1.5s cubic-bezier(0.32, 0.72, 0, 1) 1 forwards;
+    pointer-events: none;
+  }
+
+  /* ---- Code -------------------------------------------------------------- */
+
+  .code-inline {
+    border-radius: 0.35rem;
+    border: 1px solid color-mix(in srgb, var(--border) 82%, var(--foreground) 8%);
+    background: color-mix(in srgb, var(--muted) 70%, transparent);
+    padding: 0.05em 0.32em;
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+    /* A long identifier in a narrow column has to wrap. Cloning the decoration
+       gives each wrapped fragment its own complete border and padding, so it
+       reads as two chips rather than one torn in half. Breaking at word
+       boundaries first keeps `foo(bar)` intact whenever it actually fits. */
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+    overflow-wrap: break-word;
+    word-break: normal;
+  }
+
+  .code-block {
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border);
+    background: color-mix(in srgb, var(--muted) 45%, transparent);
+    font-family: var(--font-mono);
+  }
+
+  /* ==== Construct-only, below this line ==================================
+     Everything above is Spar's. Everything below exists because Construct
+     renders inside a vendored Opaline shell that ships its own material. */
 
   /* ---- Opaline shell overrides ------------------------------------------- */
 
@@ -355,315 +865,20 @@
   .app-settings-surface > div > .flex.flex-col.gap-6 {
     gap: 0;
   }
+}
 
-  /* ---- Scrollbars -------------------------------------------------------- */
-
-  .app-scroll {
-    scrollbar-width: thin;
-    scrollbar-color: color-mix(in srgb, var(--foreground) 18%, transparent) transparent;
+@keyframes sidebar-title-marquee {
+  0%,
+  10% {
+    transform: translateX(0);
   }
-
-  .app-scroll::-webkit-scrollbar {
-    width: 9px;
-    height: 9px;
-  }
-
-  .app-scroll::-webkit-scrollbar-thumb {
-    border: 2px solid transparent;
-    /* A pill, not a squircle — the universal rule above would square its ends. */
-    corner-shape: round;
-    border-radius: 9999px;
-    background-clip: content-box;
-    background-color: color-mix(in srgb, var(--foreground) 16%, transparent);
-  }
-
-  .app-scroll::-webkit-scrollbar-thumb:hover {
-    background-color: color-mix(in srgb, var(--foreground) 28%, transparent);
-  }
-
-  .app-scroll::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  /* ---- Agent transcript -------------------------------------------------- */
-
-  .agent-transcript {
-    --transcript-width: 46rem;
-  }
-
-  /* The fallback matters: composers and banners sit outside .agent-transcript,
-     where --transcript-width is not in scope. Without it the custom property
-     resolves to nothing, max-width is dropped, and those rows go full-bleed. */
-  .transcript-column {
-    width: 100%;
-    max-width: var(--transcript-width, 46rem);
-    margin-inline: auto;
-  }
-
-  /* Aside's "working" label sweeps a highlight across the text rather than
-     spinning, which reads quieter in a window that stays open for hours. */
-  .thinking-shimmer {
-    background: linear-gradient(
-      90deg,
-      color-mix(in srgb, var(--foreground) 38%, transparent) 0%,
-      color-mix(in srgb, var(--foreground) 38%, transparent) 35%,
-      var(--foreground) 50%,
-      color-mix(in srgb, var(--foreground) 38%, transparent) 65%,
-      color-mix(in srgb, var(--foreground) 38%, transparent) 100%
-    );
-    background-size: 220% 100%;
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    animation: spar-shimmer 2.4s linear infinite;
-  }
-
-  /* ---- Glass ------------------------------------------------------------- */
-
-  .glass {
-    background: color-mix(in oklab, var(--popover) var(--glass-fill), transparent);
-    box-shadow:
-      inset 0 0 0 1px var(--glass-rim),
-      inset 0 1px 0 0 var(--glass-sheen),
-      0 0 0 0.5px var(--glass-hairline),
-      var(--app-shadow-card);
-    backdrop-filter: blur(8px) saturate(120%);
-    -webkit-backdrop-filter: blur(8px) saturate(120%);
-    /* Keeps the blur from bleeding past the rounded corner in WebKit. */
-    isolation: isolate;
-  }
-
-  .floating-surface {
-    border-radius: var(--radius-menu);
-    corner-shape: round;
-    box-shadow:
-      inset 0 0 0 1px var(--glass-rim),
-      inset 0 1px 0 0 var(--glass-sheen),
-      0 0 0 0.5px var(--glass-hairline),
-      var(--app-shadow-overlay);
-    background: color-mix(in oklab, var(--popover) var(--glass-fill), transparent);
-    backdrop-filter: blur(8px) saturate(120%);
-    -webkit-backdrop-filter: blur(8px) saturate(120%);
-    isolation: isolate;
-  }
-
-  /* Menus sit closer to opaque than panels do: they are almost entirely small
-     text, and every point of transparency costs contrast against whatever
-     happens to be behind them.
-
-     A tight arc, not a squircle: a menu is a list of 26px rows, and a corner
-     wider than the row it clips eats the first and last items' highlight. */
-  .menu-surface {
-    border-radius: var(--radius-menu);
-    corner-shape: round;
-    background: color-mix(in oklab, var(--popover) var(--glass-fill-solid), transparent);
-    box-shadow:
-      inset 0 0 0 1px var(--glass-rim),
-      inset 0 1px 0 0 var(--glass-sheen),
-      0 0 0 0.5px var(--glass-hairline),
-      var(--app-shadow-menu);
-    backdrop-filter: blur(8px) saturate(120%);
-    -webkit-backdrop-filter: blur(8px) saturate(120%);
-    isolation: isolate;
-  }
-
-  /* ---- Composer ---------------------------------------------------------- */
-
-  .composer-shell {
-    border-radius: var(--radius-2xl);
-    background: color-mix(in oklab, var(--popover) var(--glass-fill), transparent);
-    box-shadow:
-      inset 0 0 0 1px var(--glass-rim),
-      inset 0 1px 0 0 var(--glass-sheen),
-      0 0 0 0.5px var(--glass-hairline),
-      var(--app-shadow-composer);
-    backdrop-filter: blur(8px) saturate(120%);
-    -webkit-backdrop-filter: blur(8px) saturate(120%);
-    isolation: isolate;
-    transition: box-shadow 0.15s ease;
-  }
-
-  /* Focus reads as the surface lifting, not as a coloured outline — the same
-     move macOS makes when a text field takes the caret. */
-  .composer-shell:focus-within {
-    box-shadow:
-      inset 0 0 0 1px var(--glass-rim),
-      inset 0 1px 0 0 var(--glass-sheen),
-      0 0 0 0.5px color-mix(in oklab, var(--foreground) 32%, transparent),
-      var(--app-shadow-composer);
-  }
-
-  /* Fades transcript content into the composer instead of clipping it hard. */
-  .composer-fade {
-    background: linear-gradient(
-      to bottom,
-      transparent,
-      color-mix(in oklab, var(--app-window-fill) var(--app-glass-fill), transparent) 62%
-    );
-  }
-
-  /* The vendored composer surfaces take the same glass, so a Construct chat and
-     the dashboard composer read as one control at two sizes. */
-  .opaline-v3-desktop-shell .chat-composer-surface,
-  .chat-composer-surface {
-    box-shadow:
-      inset 0 0 0 1px var(--glass-rim),
-      inset 0 1px 0 0 var(--glass-sheen),
-      0 0 0 0.5px var(--glass-hairline),
-      var(--app-shadow-composer);
-    backdrop-filter: blur(8px) saturate(120%);
-    -webkit-backdrop-filter: blur(8px) saturate(120%);
-    isolation: isolate;
-  }
-
-  /* ---- Scrolling drum ---------------------------------------------------- */
-
-  /* A list taller than the room it was given, presented the way a physical
-     picker drum reads: rows near each edge fade and soften as though rotating
-     away, rather than being cut in half by a boundary.
-
-     Two layers doing two different jobs. The mask fades the content itself, so
-     it dissolves into whatever is genuinely behind the pane — a gradient in a
-     guessed background colour cannot, because the pane is a translucent tint
-     over the window's own material and the "background" is the desktop. The edge
-     strips then taper a small backdrop blur across the same distance, which is
-     what turns a flat fade into a surface curving away from you. */
-  .drum {
-    --drum-fade: 2.25rem;
-    mask-image: linear-gradient(
-      to bottom,
-      transparent 0,
-      #000 var(--drum-top),
-      #000 calc(100% - var(--drum-bottom)),
-      transparent 100%
-    );
-    -webkit-mask-image: linear-gradient(
-      to bottom,
-      transparent 0,
-      #000 var(--drum-top),
-      #000 calc(100% - var(--drum-bottom)),
-      transparent 100%
-    );
-    transition:
-      --drum-top 180ms ease,
-      --drum-bottom 180ms ease;
-  }
-
-  .drum-edge {
-    position: absolute;
-    left: 0;
-    right: 0;
-    height: 2.25rem;
-    pointer-events: none;
-    /* Small on purpose. Past ~4px the half-visible card stops reading as one on
-       its way out and starts reading as a smear over the list. */
-    backdrop-filter: blur(3px);
-    -webkit-backdrop-filter: blur(3px);
-    transition: opacity 180ms ease;
-  }
-
-  .drum-edge-top {
-    top: 0;
-    mask-image: linear-gradient(to bottom, #000, transparent);
-    -webkit-mask-image: linear-gradient(to bottom, #000, transparent);
-  }
-
-  .drum-edge-bottom {
-    bottom: 0;
-    mask-image: linear-gradient(to top, #000, transparent);
-    -webkit-mask-image: linear-gradient(to top, #000, transparent);
-  }
-
-  /* ---- Work sheets ------------------------------------------------------- */
-
-  /* A sheet is inset into a canvas of almost its own value, so the 0.5px
-     hairline the glass surfaces use disappears and the panes read as one
-     undivided field. A full 1px edge plus a wider ambient shadow is what makes
-     the inset legible as an inset. */
-  .work-blob {
-    position: relative;
-    border-radius: var(--radius-2xl);
-    box-shadow: var(--app-shadow-sheet);
-    overflow: hidden;
-    isolation: isolate;
-  }
-
-  /* The edge is drawn over the content, not under it. As an inset shadow on the
-     element it is covered by any child that paints its own background — which is
-     every pane here — so it survived only where the clip curves away from the
-     child's own antialiased corner. One ring on top is the same line the whole
-     way round. */
-  .work-blob::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    z-index: 2;
-    border-radius: inherit;
-    box-shadow: inset 0 0 0 1px var(--sheet-edge);
-    pointer-events: none;
-  }
-
-  /* Working state: the rim breathes rather than a light going round it. A
-     constant-speed arc on a loop is a machine — it reads as a progress spinner
-     disguised as an edge, and it never stops, so it competes with the content
-     for the rest of the run. Brightening the whole rim in and out is the same
-     information with none of that. */
-  .work-blob[data-busy="true"]::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    z-index: 3;
-    padding: 1px;
-    border-radius: inherit;
-    background: var(--shimmer-tint);
-    -webkit-mask:
-      linear-gradient(#000 0 0) content-box,
-      linear-gradient(#000 0 0);
-    -webkit-mask-composite: xor;
-    mask:
-      linear-gradient(#000 0 0) content-box,
-      linear-gradient(#000 0 0);
-    mask-composite: exclude;
-    animation: spar-blob-breathe 3.4s cubic-bezier(0.4, 0, 0.6, 1) var(--shimmer-phase, 0s) infinite alternate;
-    pointer-events: none;
-  }
-
-  /* ---- Code -------------------------------------------------------------- */
-
-  .code-inline {
-    border-radius: 0.35rem;
-    border: 1px solid color-mix(in srgb, var(--border) 82%, var(--foreground) 8%);
-    background: color-mix(in srgb, var(--muted) 70%, transparent);
-    padding: 0.05em 0.32em;
-    font-family: var(--font-mono);
-    font-size: 0.92em;
-    /* A long identifier in a narrow column has to wrap. Cloning the decoration
-       gives each wrapped fragment its own complete border and padding, so it
-       reads as two chips rather than one torn in half. */
-    box-decoration-break: clone;
-    -webkit-box-decoration-break: clone;
-    overflow-wrap: break-word;
-    word-break: normal;
-  }
-
-  .code-block {
-    border-radius: var(--radius-lg);
-    border: 1px solid var(--border);
-    background: color-mix(in srgb, var(--muted) 45%, transparent);
-    font-family: var(--font-mono);
+  90%,
+  100% {
+    transform: translateX(var(--sidebar-title-shift, 0px));
   }
 }
 
-@keyframes spar-shimmer {
-  from {
-    background-position: 140% 0;
-  }
-  to {
-    background-position: -40% 0;
-  }
-}
-
-@keyframes spar-blob-breathe {
+@keyframes blob-breathe {
   from {
     opacity: 0.25;
   }
@@ -672,20 +887,184 @@
   }
 }
 
+@keyframes blob-sweep {
+  from {
+    --shimmer-angle: -90deg;
+    opacity: 1;
+  }
+  70% {
+    opacity: 1;
+  }
+  to {
+    --shimmer-angle: 270deg;
+    opacity: 0;
+  }
+}
+
+@keyframes agent-caret {
+  0%,
+  45% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes agent-shimmer {
+  from {
+    background-position: 140% 0;
+  }
+  to {
+    background-position: -40% 0;
+  }
+}
+
+@keyframes boot-wordmark-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes emblem-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes agent-orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes agent-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Long content inside a transcript row.
+   The agent's thinking and a tool's payload are both unbounded — a page fetch
+   runs to thousands of lines — and a row that grows to fit either one stops being
+   a row. Every one of them scrolls inside the same height instead, live and
+   settled alike: a thought that was 1.5in tall while it streamed must not reflow
+   the whole thread the moment it finishes.
+
+   The ends fade only where there is more to see. `data-fade` is set from the
+   element's own scroll position, because a mask applied unconditionally dims the
+   first line of text that is already fully in view and reads as a rendering
+   fault rather than as an invitation to scroll. */
+:root { --agent-scroll-max: 9rem; }
+.agent-scroll { max-height: var(--agent-scroll-max); overflow: auto; }
+.agent-scroll[data-fade="top"] { mask-image: linear-gradient(to bottom, transparent, black 1.15rem); }
+.agent-scroll[data-fade="bottom"] { mask-image: linear-gradient(to top, transparent, black 1.15rem); }
+.agent-scroll[data-fade="both"] {
+  mask-image: linear-gradient(to bottom, transparent, black 1.15rem, black calc(100% - 1.15rem), transparent);
+}
+
+/* Disclosure, animated.
+   Every collapsible in the transcript opens and closes on the same curve, so a
+   tool call folding out reads as the row growing rather than as the rest of the
+   thread jumping down to make room. Radix publishes the measured height as
+   --radix-collapsible-content-height, which is what lets `height: auto` be
+   animated at all; keying on data-state keeps it in one place instead of each
+   caller wiring its own AnimatePresence. */
+@keyframes disclosure-open {
+  from { height: 0; opacity: 0; }
+  to { height: var(--radix-collapsible-content-height); opacity: 1; }
+}
+@keyframes disclosure-close {
+  from { height: var(--radix-collapsible-content-height); opacity: 1; }
+  to { height: 0; opacity: 0; }
+}
+[data-slot="collapsible-content"] { overflow: hidden; }
+[data-slot="collapsible-content"][data-state="open"] { animation: disclosure-open 220ms cubic-bezier(0.32, 0.72, 0, 1); }
+[data-slot="collapsible-content"][data-state="closed"] { animation: disclosure-close 170ms cubic-bezier(0.32, 0.72, 0, 1); }
+/* Honour the OS setting: the point of the animation is continuity, and someone
+   who has asked for less motion still needs the disclosure to work. */
 @media (prefers-reduced-motion: reduce) {
-  .drum,
-  .drum-edge {
-    transition: none;
+  [data-slot="collapsible-content"][data-state="open"],
+  [data-slot="collapsible-content"][data-state="closed"] { animation-duration: 1ms; }
+}
+
+/* The app icon's dot grid, animated — see components/common/SparDots.tsx. Each
+   dot carries its own resting scale in --dot-rest, and every pattern departs from
+   that value and comes back to it, so the grid the learner sees between passes is
+   the mark exactly as the icon draws it. */
+@keyframes spar-dots-wave {
+  0%,
+  100% {
+    transform: scale(calc(var(--dot-rest) * 0.62));
+    opacity: calc(var(--dot-tone) * 0.55);
+  }
+  50% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* A tighter crest than the wave: the dot sits at rest for most of the cycle and
+   is only briefly lit, which is what turns a continuous swell into one pass. */
+@keyframes spar-dots-sweep {
+  0%,
+  62%,
+  100% {
+    transform: scale(calc(var(--dot-rest) * 0.72));
+    opacity: calc(var(--dot-tone) * 0.6);
+  }
+  24% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes spar-dots-pulse {
+  0%,
+  100% {
+    transform: scale(calc(var(--dot-rest) * 0.78));
+    opacity: calc(var(--dot-tone) * 0.62);
+  }
+  50% {
+    transform: scale(var(--dot-rest));
+    opacity: var(--dot-tone);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Collapse to the resting mark. A loading state that cannot move should still
+     be the logo rather than nothing. */
+  .spar-dots circle {
+    animation: none !important;
   }
 
   .thinking-shimmer,
-  .work-blob[data-busy="true"]::after {
+  .boot-wordmark,
+  .streaming-caret::after,
+  .work-blob[data-busy="true"]::after,
+  .work-blob[data-settled="true"]::after {
     animation: none;
     opacity: 0.55;
   }
 
-  .thinking-shimmer {
+  .thinking-shimmer,
+  .boot-wordmark {
     color: var(--muted-foreground);
     -webkit-text-fill-color: currentColor;
+  }
+
+  .boot-wordmark {
+    opacity: 1;
+    color: var(--foreground);
   }
 }

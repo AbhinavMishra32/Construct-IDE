@@ -1,20 +1,22 @@
-import * as React from "react";
-import { Dialog as DialogPrimitive } from "radix-ui";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { XIcon } from "lucide-react";
+"use client"
 
-import { cn } from "../../lib/utils";
-import { useControlledState } from "./hooks";
-import { modalContentVariants, modalOverlayVariants } from "./overlay-motion";
-import { SparButton } from "./button";
+import * as React from "react"
+import { Dialog as DialogPrimitive } from "radix-ui"
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion"
+
+import { useControlledState } from "../hooks"
+import { cn } from "../../../lib/utils"
+import { modalContentVariants, modalOverlayVariants } from "./overlay-motion"
+import { Button } from "./button"
+import { XIcon } from "lucide-react"
 
 /* Radix tears a closed dialog out of the tree immediately, so the scrim and the
    sheet would both vanish on the same frame. Mirroring the open state here lets
    AnimatePresence keep the portal alive for the length of the exit; the portal
    is `forceMount`ed and this state decides when it really goes. */
-const DialogOpenContext = React.createContext(false);
+const DialogOpenContext = React.createContext(false)
 
-function SparDialog({
+function Dialog({
   open,
   defaultOpen,
   onOpenChange,
@@ -24,7 +26,7 @@ function SparDialog({
     ...(open === undefined ? {} : { value: open }),
     defaultValue: defaultOpen ?? false,
     ...(onOpenChange ? { onChange: onOpenChange } : {}),
-  });
+  })
 
   return (
     <DialogOpenContext.Provider value={isOpen}>
@@ -36,18 +38,20 @@ function SparDialog({
         {...props}
       />
     </DialogOpenContext.Provider>
-  );
+  )
 }
 
-function SparDialogTrigger({ ...props }: React.ComponentProps<typeof DialogPrimitive.Trigger>) {
-  return <DialogPrimitive.Trigger data-slot="dialog-trigger" {...props} />;
+function DialogTrigger({
+  ...props
+}: React.ComponentProps<typeof DialogPrimitive.Trigger>) {
+  return <DialogPrimitive.Trigger data-slot="dialog-trigger" {...props} />
 }
 
-function SparDialogPortal({
+function DialogPortal({
   children,
   ...props
 }: Omit<React.ComponentProps<typeof DialogPrimitive.Portal>, "forceMount">) {
-  const isOpen = React.useContext(DialogOpenContext);
+  const isOpen = React.useContext(DialogOpenContext)
 
   return (
     <AnimatePresence>
@@ -57,47 +61,52 @@ function SparDialogPortal({
         </DialogPrimitive.Portal>
       )}
     </AnimatePresence>
-  );
+  )
 }
 
-function SparDialogClose({ ...props }: React.ComponentProps<typeof DialogPrimitive.Close>) {
-  return <DialogPrimitive.Close data-slot="dialog-close" {...props} />;
+function DialogClose({
+  ...props
+}: React.ComponentProps<typeof DialogPrimitive.Close>) {
+  return <DialogPrimitive.Close data-slot="dialog-close" {...props} />
 }
 
-function SparDialogOverlay({
+function DialogOverlay({
   className,
   ...props
 }: Omit<React.ComponentProps<typeof DialogPrimitive.Overlay>, "asChild" | "forceMount">) {
-  const overlay = React.useMemo(() => modalOverlayVariants(), []);
+  const overlay = React.useMemo(() => modalOverlayVariants(), [])
 
   return (
     <DialogPrimitive.Overlay asChild forceMount {...props}>
       <motion.div
         animate="visible"
-        className={cn("fixed inset-0 isolate z-50 bg-black/10 supports-backdrop-filter:backdrop-blur-xs", className)}
+        className={cn(
+          "fixed inset-0 isolate z-50 bg-black/10 supports-backdrop-filter:backdrop-blur-xs",
+          className
+        )}
         data-slot="dialog-overlay"
         exit="exit"
         initial="hidden"
         variants={overlay}
       />
     </DialogPrimitive.Overlay>
-  );
+  )
 }
 
-function SparDialogContent({
+function DialogContent({
   className,
   children,
   showCloseButton = true,
   ...props
 }: Omit<React.ComponentProps<typeof DialogPrimitive.Content>, "asChild" | "forceMount"> & {
-  showCloseButton?: boolean;
+  showCloseButton?: boolean
 }) {
-  const reduced = useReducedMotion() ?? false;
-  const content = React.useMemo(() => modalContentVariants(reduced), [reduced]);
+  const reduced = useReducedMotion() ?? false
+  const content = React.useMemo(() => modalContentVariants(reduced), [reduced])
 
   return (
-    <SparDialogPortal>
-      <SparDialogOverlay />
+    <DialogPortal>
+      <DialogOverlay />
       <DialogPrimitive.Content asChild forceMount {...props}>
         {/* The centering translate lives on Tailwind's `translate` property, so
             motion's `transform` (the scale and the lift) composes with it
@@ -106,7 +115,7 @@ function SparDialogContent({
           animate="visible"
           className={cn(
             "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 outline-none sm:max-w-sm data-closed:pointer-events-none",
-            className,
+            className
           )}
           data-slot="dialog-content"
           exit="exit"
@@ -116,60 +125,77 @@ function SparDialogContent({
           {children}
           {showCloseButton && (
             <DialogPrimitive.Close data-slot="dialog-close" asChild>
-              <SparButton variant="ghost" className="absolute top-2 right-2" size="icon-sm">
-                <XIcon />
+              <Button
+                variant="ghost"
+                className="absolute top-2 right-2"
+                size="icon-sm"
+              >
+                <XIcon
+                />
                 <span className="sr-only">Close</span>
-              </SparButton>
+              </Button>
             </DialogPrimitive.Close>
           )}
         </motion.div>
       </DialogPrimitive.Content>
-    </SparDialogPortal>
-  );
+    </DialogPortal>
+  )
 }
 
-function SparDialogHeader({ className, ...props }: React.ComponentProps<"div">) {
-  return <div data-slot="dialog-header" className={cn("flex flex-col gap-2", className)} {...props} />;
+function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
+  return (
+    <div
+      data-slot="dialog-header"
+      className={cn("flex flex-col gap-2", className)}
+      {...props}
+    />
+  )
 }
 
-function SparDialogFooter({
+function DialogFooter({
   className,
   showCloseButton = false,
   children,
   ...props
 }: React.ComponentProps<"div"> & {
-  showCloseButton?: boolean;
+  showCloseButton?: boolean
 }) {
   return (
     <div
       data-slot="dialog-footer"
       className={cn(
         "-mx-4 -mb-4 flex flex-col-reverse gap-2 rounded-b-xl border-t bg-muted/50 p-4 sm:flex-row sm:justify-end",
-        className,
+        className
       )}
       {...props}
     >
       {children}
       {showCloseButton && (
         <DialogPrimitive.Close asChild>
-          <SparButton variant="outline">Close</SparButton>
+          <Button variant="outline">Close</Button>
         </DialogPrimitive.Close>
       )}
     </div>
-  );
+  )
 }
 
-function SparDialogTitle({ className, ...props }: React.ComponentProps<typeof DialogPrimitive.Title>) {
+function DialogTitle({
+  className,
+  ...props
+}: React.ComponentProps<typeof DialogPrimitive.Title>) {
   return (
     <DialogPrimitive.Title
       data-slot="dialog-title"
-      className={cn("text-base leading-none font-medium", className)}
+      className={cn(
+        "font-heading text-base leading-none font-medium",
+        className
+      )}
       {...props}
     />
-  );
+  )
 }
 
-function SparDialogDescription({
+function DialogDescription({
   className,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Description>) {
@@ -178,22 +204,22 @@ function SparDialogDescription({
       data-slot="dialog-description"
       className={cn(
         "text-sm text-muted-foreground *:[a]:underline *:[a]:underline-offset-3 *:[a]:hover:text-foreground",
-        className,
+        className
       )}
       {...props}
     />
-  );
+  )
 }
 
 export {
-  SparDialog,
-  SparDialogClose,
-  SparDialogContent,
-  SparDialogDescription,
-  SparDialogFooter,
-  SparDialogHeader,
-  SparDialogOverlay,
-  SparDialogPortal,
-  SparDialogTitle,
-  SparDialogTrigger,
-};
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogOverlay,
+  DialogPortal,
+  DialogTitle,
+  DialogTrigger,
+}

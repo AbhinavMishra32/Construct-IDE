@@ -20,7 +20,6 @@ describe("Dashboard Projects sidebar", () => {
     assert.match(source, /group\/projects-header/);
     assert.match(source, /group-hover\/projects-header:opacity-100/);
     assert.match(source, /SparSectionLabel className="pr-14"/);
-    assert.match(appSource, /activeView=\{projectsViewOpen \? "projects" : "home"\}/);
     assert.match(appSource, /label: "New project"/);
     assert.match(appSource, /label: "Search"/);
     assert.match(appSource, /label: "Concepts"/);
@@ -32,7 +31,12 @@ describe("Dashboard Projects sidebar", () => {
     assert.match(source, /from "\.\.\/\.\.\/components\/spar"/);
     assert.match(source, /<SparSidebarRow/);
     assert.match(surfaceSource, /<SparSidebarAction/);
-    assert.match(surfaceSource, /<SparViewSwitch/);
+    // Home and Projects are destinations, so they are rows in a nav group rather
+    // than a segmented switch — a switch reads as a filter over the list under it.
+    assert.match(surfaceSource, /nav\?: ConstructSidebarAction\[\]/);
+    assert.doesNotMatch(surfaceSource, /ViewSwitch/);
+    assert.match(appSource, /label: "Home"/);
+    assert.match(appSource, /label: "Projects"/);
     // The sidebar is a hole onto the window's material: it must not paint a fill
     // of its own, or the native vibrancy behind it is flattened.
     assert.doesNotMatch(surfaceSource, /bg-(?:card|background|sidebar)\b/);
@@ -45,16 +49,17 @@ describe("Dashboard Projects sidebar", () => {
     assert.doesNotMatch(source, /updateProject|deleteProject/);
   });
 
-  it("gives each sidebar surface its own remembered width", () => {
-    // Settings and the dashboard hold lists of different shapes, so one shared
-    // measurement means dragging one to fit resizes the other.
-    assert.match(
-      appSource,
-      /sidebarResizeStorageKey=\{settingsSurface \? "construct\.settings\.sidebar\.width" : isDashboardHome \? "construct\.dashboard\.sidebar\.width" : undefined\}/,
-    );
-    assert.match(appSource, /onSidebarWidthChange=\{settingsSurface \? setSettingsSidebarWidth : isDashboardHome \? setDashboardSidebarWidth : setSidebarWidth\}/);
-    // Draggable at all: a remembered width for a sidebar pinned to one value is
-    // a key nothing ever writes to.
+  it("keeps one sidebar width for the whole app", () => {
+    // A source list is a fixed edge of the window, not a per-page measurement.
+    // Three widths and a fourth persisted per project is what made the sidebar
+    // resize itself on every navigation.
+    assert.match(appSource, /sidebarResizeStorageKey="construct\.sidebar\.width"/);
+    assert.match(appSource, /sidebarWidth=\{sidebarWidth\}/);
+    assert.match(appSource, /onSidebarWidthChange=\{setSidebarWidth\}/);
+    assert.match(appSource, /sidebarMinWidth=\{240\}/);
     assert.match(appSource, /sidebarMaxWidth=\{520\}/);
+    assert.doesNotMatch(appSource, /settingsSidebarWidth|dashboardSidebarWidth/);
+    // Opening a project must not restore a project-scoped width over it.
+    assert.doesNotMatch(appSource, /setSidebarWidth\(state\.sidebarWidth\)/);
   });
 });

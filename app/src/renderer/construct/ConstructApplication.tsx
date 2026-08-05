@@ -44,11 +44,14 @@ import {
   MessageCircleIcon,
   MessageCircleOffIcon,
   PanelRightIcon,
-  SearchIcon,
   SettingsIcon,
   TerminalSquareIcon,
   UserRoundIcon,
-  XIcon
+  XIcon,
+  House,
+  FolderClosed,
+  SquarePen,
+  Search
 } from "lucide-react";
 
 import {
@@ -439,13 +442,15 @@ export default function ConstructApp() {
   const [openBottomTabIds, setOpenBottomTabIds] = useState<string[]>([PRIMARY_TERMINAL_TAB_ID, OUTPUT_TAB_ID]);
   const [bottomPanelOpen, setBottomPanelOpen] = useState(false);
   const [bottomPanelExpanded, setBottomPanelExpanded] = useState(false);
-  const [sidebarWidth, setSidebarWidth] = useState(300);
-  const [settingsSidebarWidth, setSettingsSidebarWidth] = useState(256);
-  /* 275 is where the ChatGPT desktop sidebar opens, and it is the right place to
-     start for a list of project titles: they wrap and truncate worse than a chat
-     title does, so the narrow end of the 240–520 range is the wrong default.
-     Opaline's rail restores the dragged value from its own storage key. */
-  const [dashboardSidebarWidth, setDashboardSidebarWidth] = useState(275);
+  /* One width for the whole app, and one place it is stored.
+     There were three — 300 in a project, 256 in Settings, 275 on the dashboard —
+     plus a fourth persisted per project in the shell UI state, so the sidebar
+     resized itself whenever you changed page or opened a project. A source list
+     is a fixed edge of the window; it is not a per-page measurement.
+     275 is where the ChatGPT desktop sidebar opens, and it suits project titles,
+     which truncate worse than chat titles do. Opaline's rail restores the dragged
+     value from the storage key below. */
+  const [sidebarWidth, setSidebarWidth] = useState(275);
   const [inspectorWidth, setInspectorWidth] = useState(320);
   const [theme, setTheme] = useState<ThemeMode>(() => getInitialTheme());
   const [codeThemeId, setCodeThemeId] = useState<CodeThemeId>("construct");
@@ -1107,7 +1112,10 @@ export default function ConstructApp() {
     setOpenBottomTabIds(state.openBottomTabIds);
     setBottomPanelOpen(state.bottomPanelOpen);
     setBottomPanelExpanded(state.bottomPanelExpanded);
-    setSidebarWidth(state.sidebarWidth);
+    /* Deliberately not `state.sidebarWidth`. The field stays in the persisted
+       shape for compatibility with states already on disk, but the sidebar's
+       width is app-wide now — restoring a project-scoped one is what made the
+       edge jump every time a project opened. */
     setInspectorWidth(state.inspectorWidth);
   }
 
@@ -1672,17 +1680,16 @@ export default function ConstructApp() {
           onBottomPanelOpenChange={setBottomPanelOpen}
           bottomPanelExpanded={bottomPanelExpanded}
           onBottomPanelExpandedChange={setBottomPanelExpanded}
-          sidebarWidth={settingsSurface ? settingsSidebarWidth : activeProject ? sidebarWidth : dashboardSidebarWidth}
-          sidebarMinWidth={settingsSurface ? 208 : 240}
+          sidebarWidth={sidebarWidth}
+          sidebarMinWidth={240}
           sidebarMaxWidth={520}
-          sidebarMainMinWidth={settingsSurface ? 640 : undefined}
           /* Each surface remembers its own width. Settings and the dashboard hold
              lists of different shapes, and one shared measurement means dragging
              one to fit resizes the other to something it was never sized for.
              A project's file tree keeps the session width and is not persisted —
              it is dragged against the file being read, not against the list. */
-          sidebarResizeStorageKey={settingsSurface ? "construct.settings.sidebar.width" : isDashboardHome ? "construct.dashboard.sidebar.width" : undefined}
-          onSidebarWidthChange={settingsSurface ? setSettingsSidebarWidth : isDashboardHome ? setDashboardSidebarWidth : setSidebarWidth}
+          sidebarResizeStorageKey="construct.sidebar.width"
+          onSidebarWidthChange={setSidebarWidth}
           showHeader={!settingsSurface}
           inspectorWidth={inspectorWidth}
           onInspectorWidthChange={setInspectorWidth}
@@ -1890,27 +1897,32 @@ export default function ConstructApp() {
               />
             ) : knowledgeBaseOpen ? (
               <ConstructSidebarSurface
-                actions={activeProject ? [] : [
+                /* The same nav block as the dashboard's, in the same order and
+                   the same group, so the destinations do not move when Concepts
+                   is the page you are on. Icons are sized by the row, not by a
+                   per-call `size` — a row that sets its own glyph size is how
+                   three sidebars ended up with three of them. */
+                nav={activeProject ? [] : [
                   {
                     id: "home",
                     active: false,
-                    icon: <HomeIcon size={15} />,
+                    icon: <House />,
                     label: "Home",
                     onClick: handleBack
                   },
                   {
-                    id: "knowledge-base",
-                    active: true,
-                    icon: <BookOpen size={15} />,
-                    label: "Concepts",
-                    onClick: openKnowledgeBase
-                  },
-                  {
                     id: "projects",
                     active: false,
-                    icon: <FolderOpenIcon size={15} />,
+                    icon: <FolderClosed />,
                     label: "Projects",
                     onClick: openProjectsView
+                  },
+                  {
+                    id: "knowledge-base",
+                    active: true,
+                    icon: <BookOpen />,
+                    label: "Concepts",
+                    onClick: openKnowledgeBase
                   }
                 ]}
                 footer={
@@ -1971,36 +1983,52 @@ export default function ConstructApp() {
               </ConstructSidebarSurface>
             ) : (
               <ConstructSidebarSurface
-                activeView={projectsViewOpen ? "projects" : "home"}
                 actions={[
                   {
                     id: "new-project",
                     active: false,
-                    icon: <FileTextIcon size={15} />,
+                    icon: <SquarePen />,
                     label: "New project",
                     onClick: focusNewProjectComposer
                   },
                   {
                     id: "search",
-                    active: projectsViewOpen,
-                    icon: <SearchIcon size={15} />,
+                    active: false,
+                    icon: <Search />,
                     label: "Search",
+                    onClick: openProjectsView
+                  }
+                ]}
+                /* Home and Projects are pages, so they are rows in the nav block
+                   like every other destination. They were a segmented switch,
+                   which reads as a filter over the list underneath — two states
+                   of one view rather than two places to go. The switch also could
+                   not hold a third destination, which is why Concepts had to sit
+                   apart from them in the actions above. */
+                nav={[
+                  {
+                    id: "home",
+                    active: isDashboardHome,
+                    icon: <House />,
+                    label: "Home",
+                    onClick: handleBack
+                  },
+                  {
+                    id: "projects",
+                    active: projectsViewOpen,
+                    icon: <FolderClosed />,
+                    label: "Projects",
                     onClick: openProjectsView
                   },
                   {
                     id: "concepts",
-                    active: false,
-                    icon: <BookOpen size={15} />,
+                    active: knowledgeBaseOpen,
+                    icon: <BookOpen />,
                     label: "Concepts",
                     onClick: openKnowledgeBase
                   }
                 ]}
                 footer={<SidebarSettingsButton onClick={() => openSettingsSurface("workspace")} />}
-                onSelectView={(viewId) => viewId === "projects" ? openProjectsView() : handleBack()}
-                views={[
-                  { id: "home", label: "Home" },
-                  { id: "projects", label: "Projects" }
-                ]}
               >
                 <DashboardSidebar
                   onCreateProject={focusNewProjectComposer}
