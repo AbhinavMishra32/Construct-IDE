@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowDown } from "lucide-react";
 import { ThinkingOrb } from "thinking-orbs";
-import type { AgentActivityStep, SessionDetail } from "@spar/domain";
+import type { AgentActivityStep, SessionDetail } from "@construct/domain";
 import { cn } from "@/lib/utils";
 import { Markdown } from "./Markdown";
 import { ChallengePublished, LINKED_GAP, PROSE_GAP, Reasoning, RunFailure, SolveRead, STEP_GAP, ToolRow } from "./ActivityRow";

@@ -1,5 +1,5 @@
 import type { ComponentProps } from "react";
-import type { Language } from "@spar/domain";
+import type { Language } from "@construct/domain";
 import cSvg from "simple-icons/icons/c.svg?raw";
 import cppSvg from "simple-icons/icons/cplusplus.svg?raw";
 import goSvg from "simple-icons/icons/go.svg?raw";
@@ -15,7 +15,7 @@ import { LANGUAGE_BRAND_COLOR } from "@/lib/brand";
  * The languages' own marks, on the same terms as `ProviderGlyph`: the vendor
  * path in its canonical colour. JavaScript and TypeScript use their actual
  * two-tone tiles; the other marks come from Simple Icons' maintained vendor
- * paths rather than letter tiles invented by Spar.
+ * paths rather than letter tiles invented by Construct.
  *
  * The glyph itself carries no visible label. Compact chrome can use the mark
  * alone with an accessible name; choice surfaces may pair it with visible text
@@ -96,7 +96,7 @@ export function SelectableLanguageGlyph({
   );
 }
 
-/** The language a path or a fence tag names, or null when it is one Spar does not
+/** The language a path or a fence tag names, or null when it is one Construct does not
  *  train in — a `json` fence or a `.md` file has no mark, and inventing one would
  *  be the stand-in glyph this module exists to avoid. */
 export function languageOf(value: string): Language | null {
@@ -123,7 +123,7 @@ export function LanguageMark({ className, language }: { className?: string; lang
   );
 }
 
-/** A file's own mark, falling back to the generic file icon for everything Spar
+/** A file's own mark, falling back to the generic file icon for everything Construct
  *  has no logo for. Takes the fallback as a prop so each caller keeps the icon
  *  its surroundings already use. */
 export function FileGlyph({

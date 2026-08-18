@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
-import type { AuthRequest, AuthResult, SparApi } from "../shared/api";
+import type { AuthRequest, AuthResult, ConstructApi } from "../shared/api";
 import { AuthPage } from "./components/pages/AuthPage";
 import { OnboardingPage } from "./components/pages/OnboardingPage";
 import "./theme.css";
@@ -85,9 +85,9 @@ const api = {
   onNativeSurface: () => () => undefined,
   onSyncState: () => () => undefined,
   chrome: { platform: "darwin", surface: "none", controls: "left" },
-} as unknown as SparApi;
+} as unknown as ConstructApi;
 
-(window as unknown as { spar: SparApi }).spar = api;
+(window as unknown as { construct: ConstructApi }).construct = api;
 
 function Harness() {
   const [error, setError] = useState<string | null>(null);

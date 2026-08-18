@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { BrainCircuit, Check, ChevronDown, ExternalLink, Ellipsis, Eye, Globe, KeyRound, Laptop, Link2, Loader2, Lock, LogOut, Moon, Palette, Plus, RotateCw, Settings2, Sun, Trash2, UserRound } from "lucide-react";
-import { LANGUAGES as SUPPORTED_LANGUAGES, type BaselineState, type Language } from "@spar/domain";
-import type { SparApi, ProviderId, ProviderInventory, SubscriptionUsage, ThemePreference, UsageWindow } from "../../../shared/api";
+import { LANGUAGES as SUPPORTED_LANGUAGES, type BaselineState, type Language } from "@construct/domain";
+import type { ConstructApi, ProviderId, ProviderInventory, SubscriptionUsage, ThemePreference, UsageWindow } from "../../../shared/api";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -23,12 +23,12 @@ import { cn } from "@/lib/utils";
 import { refreshProviders } from "../../hooks/use-providers";
 import { LanguageGlyph, LANGUAGE_LABEL, SelectableLanguageGlyph } from "../common/LanguageGlyph";
 import { ProviderGlyph } from "../common/ProviderGlyph";
-import { SparWordmark } from "../common/SparWordmark";
-import { AboutSpar } from "../settings/AboutSpar";
+import { ConstructWordmark } from "../common/ConstructWordmark";
+import { AboutConstruct } from "../settings/AboutConstruct";
 import { PracticeSourceGroup } from "../settings/PracticeSource";
 import { UpdateSettings } from "../settings/UpdateSettings";
 import { ProviderConnectDialog } from "../settings/ProviderConnectDialog";
-import { SparDots } from "@/components/common/SparDots";
+import { ConstructDots } from "@/components/common/ConstructDots";
 
 type Provider = ProviderInventory["providers"][number];
 type SettingsSection = "account" | "models" | "connections" | "learning" | "privacy" | "appearance" | "advanced";
@@ -62,7 +62,7 @@ const KIND_ORDER: Array<Provider["kind"]> = ["subscription", "api-key", "local",
  * one is set and where it came from. A key supplied through `EXA_API_KEY` says
  * so rather than showing an empty box that mysteriously works.
  */
-function WebSearchRow({ api }: { api: SparApi | undefined }) {
+function WebSearchRow({ api }: { api: ConstructApi | undefined }) {
   const [source, setSource] = useState<"keychain" | "env" | "none" | "loading">("loading");
   const [enabled, setEnabled] = useState(true);
   const [draft, setDraft] = useState("");
@@ -233,7 +233,7 @@ function ModelPicker({ provider, onSelect }: { provider: Provider; onSelect(mode
 /** A subscription's remaining quota, in the only two windows either upstream
  *  rations by. The ring reads the weekly window because that is the one that
  *  ends a week's work; the card behind it spells both out. */
-function UsageRing({ provider, api }: { provider: Provider; api: SparApi | undefined }) {
+function UsageRing({ provider, api }: { provider: Provider; api: ConstructApi | undefined }) {
   const [usage, setUsage] = useState<SubscriptionUsage | null>(null);
   const [read, setRead] = useState(false);
 
@@ -318,7 +318,7 @@ function ProviderRow({
   onKeyUrl,
 }: {
   provider: Provider;
-  api: SparApi | undefined;
+  api: ConstructApi | undefined;
   isDefault: boolean;
   onModel(model: string): void;
   onMakeDefault(): void;
@@ -418,7 +418,7 @@ function ConnectRow({ available, onPick }: { available: Provider[]; onPick(provi
   );
 }
 
-function LearningEngineInspector({ api }: { api: SparApi | undefined }) {
+function LearningEngineInspector({ api }: { api: ConstructApi | undefined }) {
   const [snapshot,setSnapshot]=useState<Record<string,unknown>|null>(null);
   const [failure,setFailure]=useState("");
   const read=useCallback(()=>{if(!api)return;setFailure("");void api.learningEngine().then(setSnapshot).catch((cause)=>setFailure(message(cause)));},[api]);
@@ -428,7 +428,7 @@ function LearningEngineInspector({ api }: { api: SparApi | undefined }) {
     <Row><div className="min-w-0 flex-1"><p className="text-content font-medium">Internal learner system</p><p className="mt-0.5 text-ui text-muted-foreground">Structured state, evidence, patterns, training decisions, rating history, and model metadata. This is inspectability—not a normal training surface.</p></div><Button onClick={read} size="sm" variant="outline"><RotateCw data-icon="inline-start" />Refresh</Button></Row>
     <Row><div className="grid w-full grid-cols-3 gap-4 text-ui"><div><p className="text-muted-foreground">Schema</p><p className="mt-0.5 font-mono">v{String(model?.schemaVersion??"…")}</p></div><div><p className="text-muted-foreground">Policy</p><p className="mt-0.5 truncate font-mono">{String(model?.policyVersion??"…")}</p></div><div><p className="text-muted-foreground">Registry</p><p className="mt-0.5 truncate font-mono">{String(model?.abilityRegistry??"…")}</p></div></div></Row>
   </Group>
-  <Group label="Raw snapshot"><div className="max-h-[30rem] overflow-auto p-3.5">{failure?<p className="text-ui text-destructive">{failure}</p>:snapshot?<pre className="whitespace-pre-wrap break-words font-mono text-[0.68rem] leading-5 text-muted-foreground">{JSON.stringify(snapshot,null,2)}</pre>:<p className="flex items-center gap-2 text-ui text-muted-foreground"><SparDots pattern="pulse" size={16} />Reading learner state…</p>}</div></Group></>;
+  <Group label="Raw snapshot"><div className="max-h-[30rem] overflow-auto p-3.5">{failure?<p className="text-ui text-destructive">{failure}</p>:snapshot?<pre className="whitespace-pre-wrap break-words font-mono text-[0.68rem] leading-5 text-muted-foreground">{JSON.stringify(snapshot,null,2)}</pre>:<p className="flex items-center gap-2 text-ui text-muted-foreground"><ConstructDots pattern="pulse" size={16} />Reading learner state…</p>}</div></Group></>;
 }
 
 export function SettingsPage({
@@ -441,7 +441,7 @@ export function SettingsPage({
   onBaseline,
   theme,
 }: {
-  api: SparApi | undefined;
+  api: ConstructApi | undefined;
   language: Language;
   onLanguageChange(language: Language): void;
   onSignedOut(): Promise<void>;
@@ -601,7 +601,7 @@ export function SettingsPage({
         {section === "models" && <><Group label="Providers">
           {!inventory && (
             <Row>
-              <SparDots className="text-muted-foreground" pattern="pulse" size={16} />
+              <ConstructDots className="text-muted-foreground" pattern="pulse" size={16} />
               <span className="text-ui text-muted-foreground">Reading the provider inventory…</span>
             </Row>
           )}
@@ -634,7 +634,7 @@ export function SettingsPage({
         )}
 
         {/* Not under Providers, and deliberately above Web search: this is where
-            the problems come from, which is a bigger fact about how Spar behaves
+            the problems come from, which is a bigger fact about how Construct behaves
             than either of the things below it. */}
         <Group label="Web search">
           <WebSearchRow api={api} />
@@ -658,7 +658,7 @@ export function SettingsPage({
             </div>
             <Button onClick={() => setAccountAction("sign-out")} size="sm" variant="secondary"><LogOut />Sign out</Button>
           </Row>
-        </Group><AboutSpar /></>}
+        </Group><AboutConstruct /></>}
 
         {section === "privacy" && <Group label="Data & Privacy">
           <Row>
@@ -679,11 +679,11 @@ export function SettingsPage({
       <Dialog onOpenChange={(next) => { if (!next && !busy) setAccountAction(null); }} open={!!accountAction}>
         <DialogContent className="sm:max-w-[28rem]">
           <DialogHeader>
-            <DialogTitle>{accountAction === "delete" ? "Delete your account?" : "Sign out of Spar?"}</DialogTitle>
+            <DialogTitle>{accountAction === "delete" ? "Delete your account?" : "Sign out of Construct?"}</DialogTitle>
             <DialogDescription>
               {accountAction === "delete"
                 ? "This permanently deletes your account, synced sessions, attempts, ability evidence, and local workspaces."
-                : `This clears your sessions, challenges, and workspaces from this ${deviceNoun}. Spar pushes anything still pending first, and signing back in restores nothing that never reached the cloud.`}
+                : `This clears your sessions, challenges, and workspaces from this ${deviceNoun}. Construct pushes anything still pending first, and signing back in restores nothing that never reached the cloud.`}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

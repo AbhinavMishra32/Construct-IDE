@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { Check, Copy } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
-import { SparWordmark } from "../common/SparWordmark";
+import { ConstructWordmark } from "../common/ConstructWordmark";
 
 /** Resolved in the main process before the window paints, so it is already here. */
-const build = window.spar?.build;
+const build = window.construct?.build;
 
 /* Two backgrounds, both clipped to the glyphs. The one underneath is a vertical
    fade that gives the mark weight at this size — flat text at 5rem reads as a
@@ -48,7 +48,7 @@ function Mark() {
               transition: { duration: 1.15, ease: [0.33, 0, 0.15, 1], delay: sweep === 0 ? 0.45 : 0 },
             })}
       >
-        <SparWordmark />
+        <ConstructWordmark />
       </motion.div>
     </div>
   );
@@ -93,12 +93,12 @@ function Commit({ commit, branch }: { commit: string; branch: string | null }) {
 }
 
 /**
- * The bottom of Settings, where you go to answer "which Spar am I actually
+ * The bottom of Settings, where you go to answer "which Construct am I actually
  * running". The version alone cannot answer that off a release channel — every
  * build from source calls itself the same number — so the commit sits with it
  * and is the identity when there is no packaged version behind it.
  */
-export function AboutSpar() {
+export function AboutConstruct() {
   if (!build) return null;
 
   return (

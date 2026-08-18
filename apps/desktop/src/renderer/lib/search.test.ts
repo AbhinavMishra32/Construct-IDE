@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ChallengeHistorySummary, ConceptSummary, SessionSummary } from "@spar/domain";
+import type { ChallengeHistorySummary, ConceptSummary, SessionSummary } from "@construct/domain";
 import { matchRank, searchEverything } from "./search";
 
 function session(over: Partial<SessionSummary> & { id: string; title: string }): SessionSummary {

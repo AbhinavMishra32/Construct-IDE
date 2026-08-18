@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import type { ActiveQuestion } from "@spar/domain";
+import type { ActiveQuestion } from "@construct/domain";
 import { FileTree } from "./FileTree";
 
 /**

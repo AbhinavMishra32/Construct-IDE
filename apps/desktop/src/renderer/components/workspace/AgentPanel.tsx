@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { MessageSquare, SquareCode } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import type { ActiveQuestion, SessionDetail } from "@spar/domain";
+import type { ActiveQuestion, SessionDetail } from "@construct/domain";
 import { ViewSwitch } from "@/components/ui/view-switch";
 import { AgentThread } from "../agent/AgentThread";
 import { Composer, ComposerPill } from "../agent/Composer";

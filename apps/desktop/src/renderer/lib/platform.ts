@@ -4,7 +4,7 @@
  * worse than naming none, because this text is what tells someone where their
  * API key actually went.
  */
-const platform = window.spar?.chrome.platform ?? "darwin";
+const platform = window.construct?.chrome.platform ?? "darwin";
 
 export const isMac = platform === "darwin";
 

@@ -9,8 +9,8 @@ const WEEKLY_MINUTES = 7 * 24 * 60;
 /**
  * ChatGPT publishes a Codex subscription's remaining quota only on the headers
  * of the turn that spent it — there is no endpoint to ask. So this reads the
- * headers Spar already receives, and the caller keeps the last snapshot: until
- * a ChatGPT turn has actually run, Spar genuinely does not know the numbers and
+ * headers Construct already receives, and the caller keeps the last snapshot: until
+ * a ChatGPT turn has actually run, Construct genuinely does not know the numbers and
  * says so rather than showing a full ring it made up.
  */
 export function codexUsageFromHeaders(headers: Headers | Record<string, string>, now = Date.now()): SubscriptionUsage | null {

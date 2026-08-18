@@ -87,7 +87,7 @@ const PASS_TRAVEL = 0.62;
 /** Wall-clock length of one `pass`, for callers timing anything against it. */
 export const PASS_MS = (DURATION.pass + PASS_TRAVEL) * 1000;
 
-export function SparDots({
+export function ConstructDots({
   pattern = "wave",
   size = 20,
   label,
@@ -102,7 +102,7 @@ export function SparDots({
 }) {
   return (
     <span
-      className={cn("spar-dots inline-block shrink-0 align-middle", className)}
+      className={cn("construct-dots inline-block shrink-0 align-middle", className)}
       style={{ width: size, height: size }}
       {...(label ? { role: "status", "aria-label": label } : { "aria-hidden": true })}
     >
@@ -122,7 +122,7 @@ export function SparDots({
                 ? {}
                 : pattern === "pass"
                   ? {
-                      animationName: "spar-dots-pass",
+                      animationName: "construct-dots-pass",
                       animationDuration: `${DURATION.pass}s`,
                       animationIterationCount: 1,
                       animationTimingFunction: "ease-in-out",
@@ -134,7 +134,7 @@ export function SparDots({
                       animationFillMode: "both",
                     }
                   : {
-                      animationName: `spar-dots-${pattern}`,
+                      animationName: `construct-dots-${pattern}`,
                       animationDuration: `${DURATION[pattern]}s`,
                       animationIterationCount: "infinite",
                       animationTimingFunction: "ease-in-out",
@@ -156,7 +156,7 @@ export function SparDots({
 /** The dot mark beside a line of text, at text size. The pairing turns up often
  *  enough — every "doing something…" line in the app — to be worth naming, and
  *  it keeps the gap and the muted tone consistent between them. */
-export function SparDotsLine({
+export function ConstructDotsLine({
   children,
   pattern = "wave",
   size = 18,
@@ -169,7 +169,7 @@ export function SparDotsLine({
 }) {
   return (
     <p className={cn("flex items-center gap-2 text-ui text-muted-foreground", className)}>
-      <SparDots pattern={pattern} size={size} />
+      <ConstructDots pattern={pattern} size={size} />
       {children}
     </p>
   );

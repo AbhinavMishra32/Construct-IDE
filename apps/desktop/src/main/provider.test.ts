@@ -88,7 +88,7 @@ describe("provider service", () => {
         api: "openai-completions",
         baseUrl: "https://api.cline.bot/api/v1",
         apiKey: "cline-secret",
-        source: "spar-keychain",
+        source: "construct-keychain",
         reasoningEffort: "off",
       }]);
     } finally { store.close(); }
@@ -118,7 +118,7 @@ describe("provider service", () => {
   });
 
   /* The whole point of the readiness flag: with nothing connected there is no
-     credential anywhere on the machine that Spar is willing to run a turn on,
+     credential anywhere on the machine that Construct is willing to run a turn on,
      and the inventory says so rather than naming its default provider. */
   it("reports no runtime, and resolves nothing, until a provider is connected", async () => {
     const store = new LocalStore(":memory:");

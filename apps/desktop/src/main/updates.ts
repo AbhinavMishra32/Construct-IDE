@@ -101,7 +101,7 @@ export class UpdateService {
       this.patch({
         status: "unsupported",
         message: this.packaged
-          ? "Updates are unavailable for this installation. Download the latest installer from sparai.app."
+          ? "Updates are unavailable for this installation. Download the latest installer from construct.cc."
           : "Update checks run in packaged releases.",
       });
       return;
@@ -126,7 +126,7 @@ export class UpdateService {
       });
     });
     this.engine.on("update-downloaded", (info) => {
-      const notes = notesFrom(info) ?? (this.latestInfo ? notesFrom(this.latestInfo) : null) ?? "This release includes improvements and fixes across Spar.";
+      const notes = notesFrom(info) ?? (this.latestInfo ? notesFrom(this.latestInfo) : null) ?? "This release includes improvements and fixes across Construct.";
       this.store.setSetting(PENDING_CHANGELOG, JSON.stringify({ version: info.version, notes } satisfies PendingChangelog));
       this.patch({ status: "installing", version: info.version, notes, percent: 100, message: null });
       void this.install();
@@ -190,11 +190,11 @@ export class UpdateService {
     try {
       await this.prepareToInstall();
       // `false` keeps the install UI visible where the platform has one;
-      // `true` launches Spar again after the native installer succeeds.
+      // `true` launches Construct again after the native installer succeeds.
       this.engine.quitAndInstall(false, true);
     } catch (error) {
       this.installing = false;
-      this.patch({ status: "error", message: `The update is ready, but Spar could not save your work before restarting. ${this.publicError(error)}` });
+      this.patch({ status: "error", message: `The update is ready, but Construct could not save your work before restarting. ${this.publicError(error)}` });
     }
   }
 
@@ -206,9 +206,9 @@ export class UpdateService {
 
   private publicError(error: unknown) {
     const detail = error instanceof Error ? error.message : String(error);
-    if (/signature|signed/i.test(detail)) return "The update could not be verified as an authentic Spar release.";
-    if (/net::|ENOTFOUND|ECONN|network|timed? ?out/i.test(detail)) return "Spar could not reach the update service. Check your connection and try again.";
-    return detail || "Spar could not complete the update.";
+    if (/signature|signed/i.test(detail)) return "The update could not be verified as an authentic Construct release.";
+    if (/net::|ENOTFOUND|ECONN|network|timed? ?out/i.test(detail)) return "Construct could not reach the update service. Check your connection and try again.";
+    return detail || "Construct could not complete the update.";
   }
 
   private patch(next: Partial<UpdateState>) {

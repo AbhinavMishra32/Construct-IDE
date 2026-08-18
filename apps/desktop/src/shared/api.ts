@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { canonicalWorkspacePath } from "./workspacePath.js";
-import { attemptEventSchema, baselineStateSchema, languageSchema, learnerProfileSchema, sessionCheckpointSchema, sessionSummarySchema, trainingModeSchema, type AbilityDetail, type AbilityHistorySummary, type BaselineState, type ChallengeCodePreview, type ChallengeDetail, type ChallengeHistorySummary, type ConceptDetail, type ConceptSummary, type Language, type LearnerProfile, type LearnerProgress, type SessionDetail, type SessionSuggestion, type TodayRecommendation, type Track, type TrainingMode } from "@spar/domain";
+import { attemptEventSchema, baselineStateSchema, languageSchema, learnerProfileSchema, sessionCheckpointSchema, sessionSummarySchema, trainingModeSchema, type AbilityDetail, type AbilityHistorySummary, type BaselineState, type ChallengeCodePreview, type ChallengeDetail, type ChallengeHistorySummary, type ConceptDetail, type ConceptSummary, type Language, type LearnerProfile, type LearnerProgress, type SessionDetail, type SessionSuggestion, type TodayRecommendation, type Track, type TrainingMode } from "@construct/domain";
 
 export const ipc = {
   bootstrap: "app:bootstrap", sessionsCreate: "sessions:create", sessionsOpen: "sessions:open",
@@ -25,7 +25,7 @@ export const ipc = {
   challengeRun: "challenges:run", challengeCheck: "challenges:check", challengeReset: "challenges:reset",
   conceptRead: "concepts:read", abilityRead: "abilities:read", practiceStart: "practice:start",
   /* Practice sources: where real problems come from. Distinct from `practiceStart`
-     above, which is Spar's own word for drilling an ability — an unfortunate
+     above, which is Construct's own word for drilling an ability — an unfortunate
      collision, kept because renaming a channel the renderer already calls is a
      worse trade than a comment. */
   sourceInventory: "source:inventory", sourceConnect: "source:connect", sourceDisconnect: "source:disconnect",
@@ -136,7 +136,7 @@ export type NativeSurface = "liquid-glass" | "vibrancy" | "mica" | "none";
 export type WindowControls = "left" | "right" | "none";
 /** `process.platform`, narrowed to what the renderer branches on. */
 export type HostPlatform = "darwin" | "win32" | "linux" | (string & {});
-/** Which copy of Spar this is. Resolved once in the main process — see main/build.ts. */
+/** Which copy of Construct this is. Resolved once in the main process — see main/build.ts. */
 export type BuildInfo = {
   /** From package.json. Identifies a release; says nothing useful about a build from source. */
   version: string;
@@ -172,7 +172,7 @@ export type ProviderInventory = {
  *  window has been spent (0–100) — the same direction both upstreams report it
  *  in — and `resetsAt` is epoch seconds, or null when the upstream omitted it. */
 export type UsageWindow = { kind: "five-hour" | "weekly"; usedPercent: number; resetsAt: number | null };
-/** What Spar currently knows about a subscription's quota. Null, rather than an
+/** What Construct currently knows about a subscription's quota. Null, rather than an
  *  empty reading, whenever nothing has told it — see `subscriptionUsage`. */
 export type SubscriptionUsage = { windows: UsageWindow[]; capturedAt: number };
 export type ProviderOAuthEvent = {
@@ -290,7 +290,7 @@ export type BootstrapData ={ account: { id: string; displayName: string; email: 
    *  finished restoring or could not reach the server, and treating either as "no
    *  profile" is what sent onboarded learners back through intake. */
   restore: RestoreState;
-  /** True when this is a packaged build with no Spar server configured, so
+  /** True when this is a packaged build with no Construct server configured, so
    *  sign-in can say that rather than reporting a refused connection at
    *  localhost that reads as the app being broken. */
   serverConfigured: boolean };
@@ -345,7 +345,7 @@ export type UpdateState = {
   changelog: { version: string; notes: string } | null;
 };
 
-export interface SparApi {
+export interface ConstructApi {
   bootstrap(): Promise<BootstrapData>;
   createSession(input: z.infer<typeof createSessionInput>): Promise<{ sessionId: string }>;
   createTrack(input: z.infer<typeof createTrackInput>): Promise<{ track: Track; sessionId: string }>;
@@ -459,7 +459,7 @@ export interface SparApi {
   openExternal(url: string): Promise<void>;
   setTheme(theme: ThemePreference): Promise<void>;
   /** Read/check/download the host-owned application update. Downloading is the
-   *  user's consent point; after verification Spar flushes durable work, exits,
+   *  user's consent point; after verification Construct flushes durable work, exits,
    *  installs, and launches the new version. */
   updateState(): Promise<UpdateState>;
   checkForUpdate(): Promise<UpdateState>;

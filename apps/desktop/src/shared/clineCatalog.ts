@@ -4,7 +4,7 @@ import { getModels, type Api, type Model } from "@mariozechner/pi-ai";
  * Cline is one OpenAI-compatible Chat Completions endpoint in front of every
  * lab's models — https://docs.cline.bot/api/overview — and its usage-billing
  * catalog is OpenRouter's, addressed by the same `vendor/model` ids. So the
- * models Spar offers for it are pi-ai's OpenRouter catalog re-pointed at Cline,
+ * models Construct offers for it are pi-ai's OpenRouter catalog re-pointed at Cline,
  * which is how Cline's own client builds its picker, rather than a second list
  * of context windows and prices pinned here to rot.
  *
@@ -18,7 +18,7 @@ import { getModels, type Api, type Model } from "@mariozechner/pi-ai";
  */
 export const clineBaseUrl = "https://api.cline.bot/api/v1";
 /** Cline's own clients read their picker from this route and it takes no
- *  credential, which is why Spar can keep the free tier honest before the
+ *  credential, which is why Construct can keep the free tier honest before the
  *  learner has connected a key — and without spending theirs to ask. */
 export const clineTiersUrl = `${clineBaseUrl}/ai/cline/recommended-models`;
 
@@ -56,7 +56,7 @@ export function clineTiersFrom(payload: unknown): ClineTiers | null {
   if (!payload || typeof payload !== "object") return null;
   const value = payload as { free?: unknown; recommended?: unknown };
   // An empty `free` is a real answer — the promotion can end — but a payload
-  // carrying neither list is a shape Spar does not understand, and keeping the
+  // carrying neither list is a shape Construct does not understand, and keeping the
   // seed is better than emptying the picker over it.
   if (!Array.isArray(value.free) && !Array.isArray(value.recommended)) return null;
   return { free: refs(value.free), recommended: refs(value.recommended) };

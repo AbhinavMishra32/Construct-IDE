@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight, ArrowUp, Check, Loader2, Pencil } from "lucide-react";
-import type { AskUserQuestionRequest } from "@spar/domain";
+import type { AskUserQuestionRequest } from "@construct/domain";
 import { cn } from "@/lib/utils";
 
 type Answer = { type: "select"; labels: string[] } | { type: "custom"; value: string };

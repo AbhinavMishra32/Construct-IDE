@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { PASS_MS } from "../common/SparDots";
+import { PASS_MS } from "../common/ConstructDots";
 
 /* The two screens someone arrives through — signing in and the intake — are one
  *  surface in two parts, so their motion is defined once here rather than tuned
@@ -24,8 +24,8 @@ export const LINKS = { duration: 0.22, ease: EASE };
  *  `pass` is the animation's identity: bumping it remounts the dots, which is
  *  what restarts a run-once animation from its first frame instead of leaving it
  *  finished. `awake` is whether one is running. A request that outlasts a pass
- *  gets another, so the mark keeps moving for as long as Spar is working, and
- *  every pass ends on the resting grid — see `pattern="pass"` in SparDots. */
+ *  gets another, so the mark keeps moving for as long as Construct is working, and
+ *  every pass ends on the resting grid — see `pattern="pass"` in ConstructDots. */
 export function useMarkPass(busy: boolean) {
   const [pass, setPass] = useState(0);
   const [awake, setAwake] = useState(false);

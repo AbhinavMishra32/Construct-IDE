@@ -104,7 +104,7 @@
      list, which is the whole reason this stack turned around. It stays last as the
      fallback for platforms that ship no UI face worth having. */
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", "Geist Variable", sans-serif;
-  --font-spar: "Poppins", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-construct: "Poppins", -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: "SF Mono", "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
 
   --text-ui: 0.75rem;
@@ -1187,7 +1187,7 @@
    dot carries its own resting scale in --dot-rest, and every pattern departs from
    that value and comes back to it, so the grid the learner sees between passes is
    the mark exactly as the icon draws it. */
-@keyframes spar-dots-wave {
+@keyframes construct-dots-wave {
   0%,
   100% {
     transform: scale(calc(var(--dot-rest) * 0.62));
@@ -1201,7 +1201,7 @@
 
 /* A tighter crest than the wave: the dot sits at rest for most of the cycle and
    is only briefly lit, which is what turns a continuous swell into one pass. */
-@keyframes spar-dots-sweep {
+@keyframes construct-dots-sweep {
   0%,
   62%,
   100% {
@@ -1220,7 +1220,7 @@
    interrupted; this one is for the mark the learner is looking at while they
    wait, where the last thing they should see is the logo, drawn exactly as the
    icon draws it. */
-@keyframes spar-dots-pass {
+@keyframes construct-dots-pass {
   0% {
     transform: scale(var(--dot-rest));
     opacity: var(--dot-tone);
@@ -1235,7 +1235,7 @@
   }
 }
 
-@keyframes spar-dots-pulse {
+@keyframes construct-dots-pulse {
   0%,
   100% {
     transform: scale(calc(var(--dot-rest) * 0.78));
@@ -1318,7 +1318,7 @@
 
   /* Collapse to the resting mark. A loading state that cannot move should still
      be the logo rather than nothing. */
-  .spar-dots circle {
+  .construct-dots circle {
     animation: none !important;
   }
 

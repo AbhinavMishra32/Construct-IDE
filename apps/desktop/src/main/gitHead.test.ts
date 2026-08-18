@@ -10,7 +10,7 @@ const OTHER = "aaaabbbbccccddddeeeeffff00001111222233334";
 const roots: string[] = [];
 
 function scratch() {
-  const dir = mkdtempSync(path.join(tmpdir(), "spar-githead-"));
+  const dir = mkdtempSync(path.join(tmpdir(), "construct-githead-"));
   roots.push(dir);
   return dir;
 }

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import Database from "better-sqlite3";
 import { LocalStore } from "./store.js";
-import type { QuestionDesign } from "@spar/domain";
+import type { QuestionDesign } from "@construct/domain";
 
 const design=(title:string):QuestionDesign=>({title,language:"javascript",kind:"function",statement:"Implement the target behavior while preserving the declared invariant through every transition.",starterFiles:{"src/index.js":"export function solve(){ throw new Error(\"implement\") }"},referenceFiles:{"src/index.js":"export function solve(){ return true }"},visibleTests:{"tests/visible.test.js":"// visible"},hiddenTests:{"tests/hidden.test.js":"// hidden"},knownIncorrectFiles:[{"src/index.js":"export function solve(){ return false }"}],runCommand:"node --test",accidentalDifficulty:[],expectedFailureSignatures:["returns before restoring the invariant"]});
 
@@ -54,7 +54,7 @@ it("files a session away without disturbing what was last worked on",()=>{const 
   expect(store.pendingSync().map((item)=>item.kind)).toContain("session-rename");}finally{store.close();}});
 
 it("takes a deleted session's evidence with it and keeps the ability it taught",()=>{const store=new LocalStore(":memory:");try{const{sessionId}=store.createSession("Practise recursion");const target=store.setTrainingTarget(sessionId,{ability:"Recursion",specificGap:"Base cases",desiredEvidence:"States the base case before recurring",avoidTesting:[]});const question=store.createQuestion(sessionId,design("Sum a tree"),{valid:true});store.updateAbility({abilityId:target.abilityId,markdown:"# Recursion\n\nStates the base case before recurring.",evidenceEventIds:[]});store.addMessage(sessionId,"learner","Where should I start?");expect(store.deleteSession(sessionId)).toBe(true);expect(store.listSessions()).toEqual([]);expect(store.readSession(sessionId)).toBeNull();expect(store.readAttempt(question.attemptId)).toEqual([]);expect(store.listChallenges()).toEqual([]);
-  // What Spar learned about the learner is not the session's to take with it.
+  // What Construct learned about the learner is not the session's to take with it.
   expect(store.listAbilities()).toHaveLength(1);expect(store.pendingSync().map((item)=>item.kind)).toContain("session-delete");
   // A turn that outlived the row it was writing for, and a second delete of the
   // same session, both have to be survivable rather than throwing.

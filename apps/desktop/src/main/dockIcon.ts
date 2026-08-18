@@ -5,7 +5,7 @@ import path from "node:path";
  *  packages has no field for a second appearance, and the layered `.icon` that
  *  macOS 26 reads for that needs an Icon Composer document compiled into an asset
  *  catalog. What the app can do is set its own Dock icon while it runs, so the
- *  mark follows the system appearance for as long as Spar is open. Finder and
+ *  mark follows the system appearance for as long as Construct is open. Finder and
  *  Launchpad keep showing the dark mark from the bundle.
  *
  *  macOS only: no other platform lets a running app replace its own dock or

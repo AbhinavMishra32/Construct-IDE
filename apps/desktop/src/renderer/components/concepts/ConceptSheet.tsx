@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { ArrowUpRight, Dumbbell, Sparkles } from "lucide-react";
-import type { ConceptDetail, ConceptSummary } from "@spar/domain";
-import type { SparApi } from "../../../shared/api";
+import type { ConceptDetail, ConceptSummary } from "@construct/domain";
+import type { ConstructApi } from "../../../shared/api";
 import { cn } from "@/lib/utils";
 import { shortTime } from "@/lib/format";
 import { CONCEPT_KIND_SHORT, CONCEPT_KIND_VAR, outcomeBands, standingOf } from "@/lib/concepts";
@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Meter, MeterKey } from "@/components/ui/meter";
 import { LanguageMark, languageOf } from "../common/LanguageGlyph";
 import { OutcomeMark } from "./ConceptChip";
-import { SparDots } from "@/components/common/SparDots";
+import { ConstructDots } from "@/components/common/ConstructDots";
 
 /**
  * Everything the learner has done under one concept.
@@ -28,7 +28,7 @@ export function ConceptSheet({
   slug,
   summaries,
 }: {
-  api: SparApi | undefined;
+  api: ConstructApi | undefined;
   onOpenChange(open: boolean): void;
   onOpenSession(sessionId: string): void;
   onPractise(slug: string): void;
@@ -105,7 +105,7 @@ export function ConceptSheet({
                         <OutcomeMark outcome={challenge.outcome} />
                         {/* Resolved rather than cast: the evidence row carries the
                             language as plain text, and a value outside the three
-                            Spar trains in has no mark rather than a broken one. */}
+                            Construct trains in has no mark rather than a broken one. */}
                         {languageOf(challenge.language) && <LanguageMark language={languageOf(challenge.language)!} />}
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-ui text-foreground/90">{challenge.title}</span>
@@ -125,13 +125,13 @@ export function ConceptSheet({
                   </p>
                 )
               ) : (
-                <p className="flex items-center gap-2 text-ui text-muted-foreground"><SparDots pattern="pulse" size={16} />Reading your history…</p>
+                <p className="flex items-center gap-2 text-ui text-muted-foreground"><ConstructDots pattern="pulse" size={16} />Reading your history…</p>
               )}
             </Section>
 
             <footer className="sticky bottom-0 mt-auto flex items-center gap-2 border-t border-border bg-popover/95 px-4 py-3 backdrop-blur-sm">
               <p className="min-w-0 flex-1 text-ui-sm leading-[1.5] text-muted-foreground">
-                Spar aims the first challenge at whatever your evidence here says is still uncertain.
+                Construct aims the first challenge at whatever your evidence here says is still uncertain.
               </p>
               <Button onClick={() => onPractise(concept.slug)} size="sm">
                 <Dumbbell />
@@ -141,7 +141,7 @@ export function ConceptSheet({
           </div>
         ) : (
           <div className="grid h-40 place-items-center">
-            <p className="flex items-center gap-2 text-ui text-muted-foreground"><SparDots pattern="sweep" size={18} label="Opening" />Opening…</p>
+            <p className="flex items-center gap-2 text-ui text-muted-foreground"><ConstructDots pattern="sweep" size={18} label="Opening" />Opening…</p>
           </div>
         )}
       </DialogContent>

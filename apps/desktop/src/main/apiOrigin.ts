@@ -2,9 +2,9 @@ import { app } from "electron";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-/** Where this copy of Spar talks to the Spar API.
+/** Where this copy of Construct talks to the Construct API.
  *
- *  A packaged build cannot default to localhost. Someone who downloads Spar has
+ *  A packaged build cannot default to localhost. Someone who downloads Construct has
  *  no API running on their machine, so every sign-in fails with a refused
  *  connection that reads as the app being broken. Release builds are therefore
  *  stamped with the deployed origin.
@@ -30,7 +30,7 @@ export function apiOrigin(): string {
 }
 
 function resolve(): string {
-  const override = process.env.SPAR_API_ORIGIN?.trim();
+  const override = process.env.CONSTRUCT_API_ORIGIN?.trim();
   if (override) return trimSlash(override);
   const stamped = stampedOrigin();
   if (stamped) return trimSlash(stamped);
@@ -41,7 +41,7 @@ function stampedOrigin(): string | null {
   try {
     // Readable inside the asar as well as beside an unpackaged checkout.
     const manifest = readFileSync(path.join(app.getAppPath(), "package.json"), "utf8");
-    const value = (JSON.parse(manifest) as { sparHostedApiOrigin?: unknown }).sparHostedApiOrigin;
+    const value = (JSON.parse(manifest) as { constructHostedApiOrigin?: unknown }).constructHostedApiOrigin;
     if (typeof value !== "string" || !value.trim()) return null;
     // A malformed stamp must not take the app down on launch.
     const url = new URL(value.trim());

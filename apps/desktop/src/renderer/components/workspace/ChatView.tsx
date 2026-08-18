@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Flag, Sparkles } from "lucide-react";
-import type { SessionDetail } from "@spar/domain";
-import type { SparApi } from "../../../shared/api";
+import type { SessionDetail } from "@construct/domain";
+import type { ConstructApi } from "../../../shared/api";
 import { message } from "@/lib/format";
 import { Toolbar } from "../shell/Toolbar";
 import { AgentThread } from "../agent/AgentThread";
@@ -25,7 +25,7 @@ export function ChatView({
   onOpenSettings,
 }: {
   detail: SessionDetail;
-  api: SparApi | undefined;
+  api: ConstructApi | undefined;
   run: AgentRun | null;
   onRefresh(): Promise<void>;
   onError(value: string): void;

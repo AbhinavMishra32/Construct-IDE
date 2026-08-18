@@ -17,7 +17,7 @@ class FakeUpdater extends EventEmitter {
   disableWebInstaller = false;
   isUpdaterActive = () => true;
   checkForUpdates = vi.fn(async () => null);
-  downloadUpdate = vi.fn(async () => ["/tmp/Spar.zip"]);
+  downloadUpdate = vi.fn(async () => ["/tmp/Construct.zip"]);
   quitAndInstall = vi.fn();
 }
 
@@ -34,8 +34,8 @@ describe("UpdateService", () => {
     const service = new UpdateService(new MemorySettings() as never, window, async () => undefined, engine as unknown as Updater, "0.3.0", true);
     service.start();
     await vi.waitFor(() => expect(engine.checkForUpdates).toHaveBeenCalledOnce());
-    engine.emit("update-available", { version: "0.4.0", releaseNotes: "A sharper Spar.", files: [] });
-    expect(service.snapshot()).toMatchObject({ status: "available", version: "0.4.0", notes: "A sharper Spar." });
+    engine.emit("update-available", { version: "0.4.0", releaseNotes: "A sharper Construct.", files: [] });
+    expect(service.snapshot()).toMatchObject({ status: "available", version: "0.4.0", notes: "A sharper Construct." });
     expect(engine.downloadUpdate).not.toHaveBeenCalled();
     await service.download();
     expect(engine.downloadUpdate).toHaveBeenCalledOnce();
@@ -48,20 +48,20 @@ describe("UpdateService", () => {
     const prepare = vi.fn(async () => undefined);
     const service = new UpdateService(settings as never, window, prepare, engine as unknown as Updater, "0.3.0", true);
     service.start();
-    engine.emit("update-available", { version: "0.4.0", releaseNotes: "A sharper Spar.", files: [] });
-    engine.emit("update-downloaded", { version: "0.4.0", releaseNotes: "A sharper Spar.", files: [], downloadedFile: "/tmp/Spar.zip" });
+    engine.emit("update-available", { version: "0.4.0", releaseNotes: "A sharper Construct.", files: [] });
+    engine.emit("update-downloaded", { version: "0.4.0", releaseNotes: "A sharper Construct.", files: [], downloadedFile: "/tmp/Construct.zip" });
     await vi.waitFor(() => expect(engine.quitAndInstall).toHaveBeenCalledWith(false, true));
     expect(prepare).toHaveBeenCalledOnce();
-    expect(settings.getSetting("update.pending-changelog", "")).toContain("A sharper Spar.");
+    expect(settings.getSetting("update.pending-changelog", "")).toContain("A sharper Construct.");
     service.stop();
   });
 
   it("shows a changelog only when the installed version actually launches", () => {
     const settings = new MemorySettings();
-    settings.setSetting("update.pending-changelog", JSON.stringify({ version: "0.4.0", notes: "A sharper Spar." }));
+    settings.setSetting("update.pending-changelog", JSON.stringify({ version: "0.4.0", notes: "A sharper Construct." }));
     const oldVersion = new UpdateService(settings as never, window, async () => undefined, new FakeUpdater() as unknown as Updater, "0.3.0", false);
     const installedVersion = new UpdateService(settings as never, window, async () => undefined, new FakeUpdater() as unknown as Updater, "0.4.0", false);
     expect(oldVersion.snapshot().changelog).toBeNull();
-    expect(installedVersion.snapshot().changelog).toEqual({ version: "0.4.0", notes: "A sharper Spar." });
+    expect(installedVersion.snapshot().changelog).toEqual({ version: "0.4.0", notes: "A sharper Construct." });
   });
 });
