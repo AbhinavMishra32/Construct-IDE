@@ -102,13 +102,26 @@ export class ProjectStore {
   /* ---- Projects --------------------------------------------------------- */
 
   listProjects(): ProjectSummary[] {
-    /* rowid breaks the tie. Two projects created inside the same millisecond
-       share a timestamp, and without a second key SQLite is free to return
-       them in either order — which shows up as a project list that reshuffles
-       itself between launches. rowid rises with insertion, so it orders them
-       the way they were made. */
+    /* Three keys, and each one earns its place.
+
+       The timestamp is the real ordering: most recently opened, falling back to
+       created for a project never opened.
+
+       Then an actual open outranks a mere creation. Timestamps are millisecond
+       ISO strings, so opening one project in the same millisecond another was
+       created is a genuine tie — and resolving it by insertion order would put
+       the just-created project above the one the learner deliberately opened.
+
+       rowid last, because two projects created inside the same millisecond tie
+       on both keys above, and without a final one SQLite may return them in
+       either order — a project list that reshuffles itself between launches. */
     const rows = this.database
-      .prepare("SELECT * FROM projects ORDER BY COALESCE(opened_at, created_at) DESC, rowid DESC")
+      .prepare(
+        `SELECT * FROM projects
+         ORDER BY COALESCE(opened_at, created_at) DESC,
+                  (opened_at IS NOT NULL) DESC,
+                  rowid DESC`,
+      )
       .all() as ProjectRow[];
     return rows.map((row) => toSummary(row));
   }
