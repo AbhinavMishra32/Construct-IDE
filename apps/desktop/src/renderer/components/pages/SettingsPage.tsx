@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { BrainCircuit, Check, ChevronDown, ExternalLink, Ellipsis, Eye, Globe, KeyRound, Laptop, Link2, Loader2, Lock, LogOut, Moon, Palette, Plus, RotateCw, Settings2, Sun, Trash2, UserRound } from "lucide-react";
-import { LANGUAGES as SUPPORTED_LANGUAGES, type BaselineState, type Language } from "@construct/domain";
 import type { ConstructApi, ProviderId, ProviderInventory, SubscriptionUsage, ThemePreference, UsageWindow } from "../../../shared/api";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -25,18 +24,16 @@ import { LanguageGlyph, LANGUAGE_LABEL, SelectableLanguageGlyph } from "../commo
 import { ProviderGlyph } from "../common/ProviderGlyph";
 import { ConstructWordmark } from "../common/ConstructWordmark";
 import { AboutConstruct } from "../settings/AboutConstruct";
-import { PracticeSourceGroup } from "../settings/PracticeSource";
 import { UpdateSettings } from "../settings/UpdateSettings";
 import { ProviderConnectDialog } from "../settings/ProviderConnectDialog";
 import { ConstructDots } from "@/components/common/ConstructDots";
 
 type Provider = ProviderInventory["providers"][number];
-type SettingsSection = "account" | "models" | "connections" | "learning" | "privacy" | "appearance" | "advanced";
+type SettingsSection = "account" | "models" | "privacy" | "appearance";
 const SETTINGS_NAV: Array<{id:SettingsSection;label:string;icon:React.ComponentType<{className?:string}>}>=[
-  {id:"account",label:"Account",icon:UserRound},{id:"models",label:"Models",icon:BrainCircuit},{id:"connections",label:"Connections",icon:Link2},{id:"learning",label:"Learning",icon:Settings2},{id:"privacy",label:"Data & Privacy",icon:Eye},{id:"appearance",label:"Appearance",icon:Palette},{id:"advanced",label:"Learning Engine",icon:Globe},
+  {id:"account",label:"Account",icon:UserRound},{id:"models",label:"Models",icon:BrainCircuit},{id:"privacy",label:"Data & Privacy",icon:Eye},{id:"appearance",label:"Appearance",icon:Palette},
 ];
 
-const LANGUAGES: Language[] = [...SUPPORTED_LANGUAGES];
 
 const KIND_LABEL: Record<Provider["kind"], string> = {
   subscription: "Subscription",
@@ -418,36 +415,15 @@ function ConnectRow({ available, onPick }: { available: Provider[]; onPick(provi
   );
 }
 
-function LearningEngineInspector({ api }: { api: ConstructApi | undefined }) {
-  const [snapshot,setSnapshot]=useState<Record<string,unknown>|null>(null);
-  const [failure,setFailure]=useState("");
-  const read=useCallback(()=>{if(!api)return;setFailure("");void api.learningEngine().then(setSnapshot).catch((cause)=>setFailure(message(cause)));},[api]);
-  useEffect(read,[read]);
-  const model=snapshot?.model as Record<string,unknown>|undefined;
-  return <><Group label="Learning Engine">
-    <Row><div className="min-w-0 flex-1"><p className="text-content font-medium">Internal learner system</p><p className="mt-0.5 text-ui text-muted-foreground">Structured state, evidence, patterns, training decisions, rating history, and model metadata. This is inspectability—not a normal training surface.</p></div><Button onClick={read} size="sm" variant="outline"><RotateCw data-icon="inline-start" />Refresh</Button></Row>
-    <Row><div className="grid w-full grid-cols-3 gap-4 text-ui"><div><p className="text-muted-foreground">Schema</p><p className="mt-0.5 font-mono">v{String(model?.schemaVersion??"…")}</p></div><div><p className="text-muted-foreground">Policy</p><p className="mt-0.5 truncate font-mono">{String(model?.policyVersion??"…")}</p></div><div><p className="text-muted-foreground">Registry</p><p className="mt-0.5 truncate font-mono">{String(model?.abilityRegistry??"…")}</p></div></div></Row>
-  </Group>
-  <Group label="Raw snapshot"><div className="max-h-[30rem] overflow-auto p-3.5">{failure?<p className="text-ui text-destructive">{failure}</p>:snapshot?<pre className="whitespace-pre-wrap break-words font-mono text-[0.68rem] leading-5 text-muted-foreground">{JSON.stringify(snapshot,null,2)}</pre>:<p className="flex items-center gap-2 text-ui text-muted-foreground"><ConstructDots pattern="pulse" size={16} />Reading learner state…</p>}</div></Group></>;
-}
-
 export function SettingsPage({
   api,
-  language,
-  onLanguageChange,
   onSignedOut,
   onThemeChange,
-  baseline,
-  onBaseline,
   theme,
 }: {
   api: ConstructApi | undefined;
-  language: Language;
-  onLanguageChange(language: Language): void;
   onSignedOut(): Promise<void>;
   onThemeChange(theme: ThemePreference): Promise<void>;
-  baseline: BaselineState;
-  onBaseline(): void;
   theme: ThemePreference;
 }) {
   const [inventory, setInventory] = useState<ProviderInventory | null>(null);
@@ -493,13 +469,6 @@ export function SettingsPage({
     setError("");
     try { await api.disconnectProvider(provider.id); await refresh(); setSelected(null); }
     catch (cause) { setError(message(cause)); }
-  };
-
-  const changeLanguage = (next: Language) => {
-    if (!api) return;
-    setLanguageBusy(true);
-    setError("");
-    void api.setPreferredLanguage(next).then(() => onLanguageChange(next)).catch((cause) => setError(message(cause))).finally(() => setLanguageBusy(false));
   };
 
   const finishAccountAction = async () => {
@@ -554,50 +523,6 @@ export function SettingsPage({
           </Row>
         </Group>}
 
-        {section === "learning" && <><Group label="Baseline">
-          <Row><div className="min-w-0 flex-1"><p className="text-content font-medium">Build your baseline</p><p className="mt-0.5 text-ui text-muted-foreground">{baseline.status === "complete" ? `Complete · ${Math.round(baseline.confidence*100)}% confidence from ${baseline.directEvidenceCount} direct calibration attempts.` : "Direct adaptive calibration is required before personalization can fully begin."}</p></div><Button onClick={onBaseline} size="sm" variant="outline">{baseline.status === "not-started" || baseline.status === "skipped" ? "Begin" : baseline.status === "complete" ? "Recalibrate" : "Continue"}</Button></Row>
-        </Group><Group label="Training preferences">
-          <Row className="items-center gap-6 py-3">
-            <div className="min-w-0 flex-1">
-              <p className="text-content font-medium">Default language</p>
-              <p className="mt-0.5 max-w-[20rem] text-ui leading-[1.55] text-muted-foreground">New sessions start here. Asking for another language in a session still wins.</p>
-            </div>
-
-            {/* A compact two-row matrix keeps ten choices inside a normal setting
-                row. The colour and shape identify the languages; the accessible
-                name and native tooltip spell them out without making ten labels
-                compete with the setting itself. */}
-            <div
-              aria-busy={languageBusy}
-              aria-label="Default language for new sessions"
-              className="grid w-[13.5rem] shrink-0 grid-cols-5 gap-1"
-              role="radiogroup"
-            >
-              {LANGUAGES.map((option) => (
-                <button
-                  aria-checked={language === option}
-                  aria-label={LANGUAGE_LABEL[option]}
-                  className={cn(
-                    "grid size-10 place-items-center rounded-[var(--radius-lg)] outline-none transition-[background-color,box-shadow,transform] duration-150 hover:bg-accent/55 focus-visible:ring-2 focus-visible:ring-ring/40 active:scale-[0.96]",
-                    language === option
-                      ? "bg-accent shadow-[inset_0_0_0_1px_var(--border-strong),var(--app-shadow-card)]"
-                      : "",
-                    languageBusy && "opacity-60",
-                  )}
-                  disabled={languageBusy || !api}
-                  key={option}
-                  onClick={() => language !== option && changeLanguage(option)}
-                  role="radio"
-                  title={LANGUAGE_LABEL[option]}
-                  type="button"
-                >
-                  <SelectableLanguageGlyph className="size-[1.3rem]" language={option} selected={language === option} />
-                </button>
-              ))}
-            </div>
-          </Row>
-        </Group></>}
-
         {section === "models" && <><Group label="Providers">
           {!inventory && (
             <Row>
@@ -640,9 +565,6 @@ export function SettingsPage({
           <WebSearchRow api={api} />
         </Group></>}
 
-        {section === "connections" && <Group label="Practice sources">
-          <PracticeSourceGroup api={api} />
-        </Group>}
 
         {/* Its own group rather than a row under Providers: this is not a model,
             and grouping it with them would imply the agent could run on it. */}
@@ -670,7 +592,6 @@ export function SettingsPage({
           </Row>
         </Group>}
 
-        {section === "advanced" && <LearningEngineInspector api={api} />}
       </div>
       </div>
 
