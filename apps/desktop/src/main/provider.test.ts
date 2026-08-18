@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AuthService } from "./auth.js";
 import { ProviderService } from "./provider.js";
-import { LocalStore } from "./store.js";
+import { ProjectStore } from "./store/projectStore.js";
 
 class MemoryCredentials {
   readonly secrets = new Map<string, string>();
@@ -21,7 +21,7 @@ const offline: typeof fetch = () => Promise.reject(new Error("offline"));
 
 describe("provider service", () => {
   it("persists a selected API provider without exposing its key in inventory", async () => {
-    const store = new LocalStore(":memory:");
+    const store = new ProjectStore(":memory:");
     const credentials = new MemoryCredentials();
     const service = new ProviderService(credentials as unknown as AuthService, store, () => undefined, offline);
     try {
@@ -37,7 +37,7 @@ describe("provider service", () => {
   });
 
   it("keeps subscription providers distinct from direct API-key providers", async () => {
-    const store = new LocalStore(":memory:");
+    const store = new ProjectStore(":memory:");
     const service = new ProviderService(new MemoryCredentials() as unknown as AuthService, store, () => undefined, offline);
     try {
       const inventory = await service.inventory();
@@ -52,7 +52,7 @@ describe("provider service", () => {
      `setDefault` — which refuses a model the provider does not list — has to
      accept one, or selecting it from the picker fails. */
   it("offers the current ChatGPT tiers ahead of pi-ai's bundled catalog", async () => {
-    const store = new LocalStore(":memory:");
+    const store = new ProjectStore(":memory:");
     const service = new ProviderService(new MemoryCredentials() as unknown as AuthService, store, () => undefined, offline);
     try {
       const models = (await service.inventory()).providers.find((provider) => provider.id === "openai-codex")?.models ?? [];
@@ -69,7 +69,7 @@ describe("provider service", () => {
      in the picker, say so in their name, and — since `setDefault` refuses a
      model the provider does not list — be selectable from it. */
   it("offers Cline's free models first, and resolves one against Cline's own endpoint", async () => {
-    const store = new LocalStore(":memory:");
+    const store = new ProjectStore(":memory:");
     const credentials = new MemoryCredentials();
     const service = new ProviderService(credentials as unknown as AuthService, store, () => undefined, offline);
     try {
@@ -98,7 +98,7 @@ describe("provider service", () => {
      than pinned in the build — and a reading that lands has to reach the picker,
      including a model pi-ai's bundled catalog has never heard of. */
   it("takes Cline's current free tier over the one it shipped with", async () => {
-    const store = new LocalStore(":memory:");
+    const store = new ProjectStore(":memory:");
     const tiers = { free: [{ id: "acme/brand-new-flash", name: "brand-new-flash" }], recommended: [] };
     const service = new ProviderService(
       new MemoryCredentials() as unknown as AuthService,
@@ -121,7 +121,7 @@ describe("provider service", () => {
      credential anywhere on the machine that Construct is willing to run a turn on,
      and the inventory says so rather than naming its default provider. */
   it("reports no runtime, and resolves nothing, until a provider is connected", async () => {
-    const store = new LocalStore(":memory:");
+    const store = new ProjectStore(":memory:");
     const service = new ProviderService(new MemoryCredentials() as unknown as AuthService, store, () => undefined, offline);
     try {
       expect(await service.available()).toBe(false);
@@ -131,7 +131,7 @@ describe("provider service", () => {
   });
 
   it("stops being ready once the connected provider is disconnected", async () => {
-    const store = new LocalStore(":memory:");
+    const store = new ProjectStore(":memory:");
     const credentials = new MemoryCredentials();
     const service = new ProviderService(credentials as unknown as AuthService, store, () => undefined, offline);
     try {
@@ -146,7 +146,7 @@ describe("provider service", () => {
   /* A local runtime holds no secret, so nothing in the keychain can report it.
      Adding it is the connection, and inventory and `resolve` have to agree. */
   it("treats an added local runtime as connected without a key", async () => {
-    const store = new LocalStore(":memory:");
+    const store = new ProjectStore(":memory:");
     const service = new ProviderService(new MemoryCredentials() as unknown as AuthService, store, () => undefined, offline);
     try {
       expect((await service.inventory()).providers.find((provider) => provider.id === "ollama")?.state).toBe("disconnected");
@@ -162,7 +162,7 @@ describe("provider service", () => {
      else, so the last turn's reading is the only one that exists between turns
      — and a provider that has never run one has to report nothing, not zero. */
   it("keeps the Codex rate-limit reading a turn reported, and reports none before one has", async () => {
-    const store = new LocalStore(":memory:");
+    const store = new ProjectStore(":memory:");
     const service = new ProviderService(new MemoryCredentials() as unknown as AuthService, store, () => undefined, offline);
     try {
       expect(await service.subscriptionUsage("openai-codex")).toBeNull();
@@ -176,7 +176,7 @@ describe("provider service", () => {
   });
 
   it("surfaces an expired subscription without exposing or deleting its credentials", async () => {
-    const store = new LocalStore(":memory:");
+    const store = new ProjectStore(":memory:");
     const credentials = new MemoryCredentials();
     credentials.oauth.set("openai-codex", { refresh: "secret-refresh-token" });
     store.setSetting("provider-auth-expired:openai-codex", true);

@@ -215,13 +215,18 @@ export type ProviderOAuthEvent = {
 
 /* ---- Updates ------------------------------------------------------------- */
 export type UpdateState = {
-  status: "idle" | "checking" | "available" | "downloading" | "ready" | "error";
+  status: "idle" | "checking" | "available" | "downloading" | "installing" | "current" | "error" | "unsupported";
+  currentVersion: string;
   version: string | null;
   notes: string | null;
-  percent: number;
+  percent: number | null;
+  transferred: number | null;
+  total: number | null;
+  bytesPerSecond: number | null;
   message: string | null;
-  /** The version whose changelog has not been dismissed yet, if any. */
-  changelogVersion: string | null;
+  checkedAt: string | null;
+  /** Present only after an update was installed and this exact version launched. */
+  changelog: { version: string; notes: string } | null;
 };
 
 export type MenuCommand = "new-project" | "open-project" | "settings" | "toggle-sidebar" | "command-palette";

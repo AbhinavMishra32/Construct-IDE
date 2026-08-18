@@ -4,7 +4,7 @@ import { getModels, type Api, type Model, type OAuthCredentials } from "@marioze
 import { getOAuthApiKey, getOAuthProvider } from "@mariozechner/pi-ai/oauth";
 import { apiOrigin } from "./apiOrigin.js";
 import type { AuthService } from "./auth.js";
-import type { LocalStore } from "./store.js";
+import type { ProjectStore } from "./store/projectStore.js";
 import { anthropicUsage, codexUsageFromHeaders } from "./subscriptionUsage.js";
 import type { ProviderInventory, ProviderOAuthEvent, ReasoningEffort, SubscriptionUsage } from "../shared/api.js";
 import { clineModels, clineSeedTiers, fetchClineTiers, type ClineTiers } from "../shared/clineCatalog.js";
@@ -110,7 +110,7 @@ export class ProviderService {
 
   constructor(
     private readonly auth: AuthService,
-    private readonly store: LocalStore,
+    private readonly store: ProjectStore,
     private readonly emit: (event: ProviderOAuthEvent) => void,
     /** Only Cline's tier list is read over the network from here. Injected so a
      *  test exercises the catalog it seeds with rather than today's promotion. */

@@ -1,7 +1,7 @@
 import { app, ipcMain, type BrowserWindow } from "electron";
 import updater from "electron-updater";
 import type { AppUpdater, UpdateInfo } from "electron-updater";
-import type { LocalStore } from "./store.js";
+import type { ProjectStore } from "./store/projectStore.js";
 import { ipc, type UpdateState } from "../shared/api.js";
 
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1_000;
@@ -32,7 +32,7 @@ function notesFrom(info: Pick<UpdateInfo, "releaseNotes">): string | null {
   return notes ? notes.slice(0, MAX_NOTES_LENGTH) : null;
 }
 
-function readPending(store: LocalStore, currentVersion: string): PendingChangelog | null {
+function readPending(store: ProjectStore, currentVersion: string): PendingChangelog | null {
   try {
     const pending = JSON.parse(store.getSetting(PENDING_CHANGELOG, "null")) as PendingChangelog | null;
     if (!pending || pending.version !== currentVersion || !pending.notes) return null;
@@ -58,7 +58,7 @@ export class UpdateService {
   private supported = false;
 
   constructor(
-    private readonly store: LocalStore,
+    private readonly store: ProjectStore,
     private readonly window: () => BrowserWindow | null,
     private readonly prepareToInstall: () => Promise<void>,
     private readonly engine: Updater = updater.autoUpdater,
