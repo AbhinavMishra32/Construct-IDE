@@ -19,7 +19,10 @@ import path from "node:path";
  *  environment variable, and a build cut before anything was deployed still runs
  *  against a local API instead of a dead URL. */
 
-const DEV_API_ORIGIN = "http://localhost:4318";
+/** Where @construct/cloud-backend listens by default — see PORT in its
+ *  config.ts. Inherited as 4318 from Spar, whose API listened somewhere else
+ *  entirely, which made every local sign-in fail with a refused connection. */
+const DEV_API_ORIGIN = "http://localhost:8787";
 
 let cached: string | undefined;
 
