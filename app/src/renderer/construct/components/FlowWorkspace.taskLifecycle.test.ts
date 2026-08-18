@@ -4,24 +4,6 @@ import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const flowWorkspaceSource = readFileSync(fileURLToPath(new URL("./FlowWorkspace.tsx", import.meta.url)), "utf8");
-const asideHostSource = readFileSync(fileURLToPath(new URL("./AsideConstructThread.tsx", import.meta.url)), "utf8");
-const asideProtocolSource = readFileSync(fileURLToPath(new URL("./asideThreadProtocol.ts", import.meta.url)), "utf8");
-const asideEntrySource = readFileSync(
-  fileURLToPath(new URL("../../../../public/aside-thread/main.html", import.meta.url)),
-  "utf8",
-);
-const asideShimSource = readFileSync(
-  fileURLToPath(new URL("../../../../public/aside-thread/construct-runtime-shim.js", import.meta.url)),
-  "utf8",
-);
-const asideToolRendererSource = readFileSync(
-  fileURLToPath(new URL("../../../../public/aside-thread/assets/tool-renderer-Bj91yJjw.js", import.meta.url)),
-  "utf8",
-);
-const asideGlobalsSource = readFileSync(
-  fileURLToPath(new URL("../../../../public/aside-thread/assets/globals-BWsjXQ4T.css", import.meta.url)),
-  "utf8",
-);
 
 describe("FlowWorkspace task lifecycle rendering", () => {
   it("renders failed practice-task drafts without a persistent creating spinner", () => {
@@ -55,40 +37,17 @@ describe("FlowWorkspace task lifecycle rendering", () => {
     assert.match(source, /hideLearningMaterials/);
     assert.match(source, /allowSkip: typeof source\.allowSkip === "boolean" \? source\.allowSkip : false/);
     assert.match(source, /data-learning-materials-hidden=\{learningMaterialsHidden \? "true" : undefined\}/);
-    assert.match(asideHostSource, /const pendingQuestion = findPendingQuestion/);
-    assert.match(asideHostSource, /questionResponse:/);
-    assert.match(asideProtocolSource, /questions: activeQuestion\.questions/);
+    assert.match(source, /<FlowQuestionComposer/);
+    assert.match(source, /buildFlowQuestionResponse\(activeQuestion, "", true\)/);
+    assert.match(source, /onRunAgent\("Continue from the tracked question answer\.", \{ questionResponse: response \}\)/);
   });
 
-  it("mounts the compiled thread application while keeping Construct's domain bridge", () => {
-    assert.match(flowWorkspaceSource, /<AsideConstructThread/);
-    assert.match(flowWorkspaceSource, /onProviderChange=\{updateProvider\}/);
-    assert.match(asideHostSource, /aside-thread\/main\.html/);
-    assert.match(asideHostSource, /constructBridge/);
-    assert.match(asideHostSource, /buildAsideSession/);
-    assert.match(asideHostSource, /buildAsideMessages/);
-    assert.match(asideHostSource, /descriptor\.kind !== "session-subscription"/);
-    assert.match(asideHostSource, /\{ op: "update", session \}/);
-    assert.match(asideHostSource, /op: "snapshot"/);
-    assert.match(asideHostSource, /new AsideRunProjector/);
-    assert.match(asideHostSource, /await latest\.onRunAgent\(message, options\)/);
-    assert.match(asideEntrySource, /extension-main-BQoDRRY7\.js/);
-    assert.match(asideEntrySource, /construct-runtime-shim\.js/);
-    assert.match(asideGlobalsSource, /url\(\.\/geist-latin-wght-normal-Dm3htQBi\.woff2\)/);
-    assert.match(asideGlobalsSource, /url\(\.\/AsideDisplay-Variable-LuohODSt\.woff2\)/);
-    assert.doesNotMatch(asideGlobalsSource, /url\(\/assets\//);
-    assert.match(asideShimSource, /construct-aside-bridge:v1/);
-    assert.match(asideShimSource, /result: \{ data: values\[index\] \}/);
-    assert.match(asideShimSource, /aria-label="Open in tab"/);
-    assert.match(asideShimSource, /aria-label="Close side panel"/);
-    assert.match(asideShimSource, /chat-maximize/);
-    assert.match(asideShimSource, /chat-panel/);
-    assert.match(asideShimSource, /chat-close/);
-    assert.match(asideHostSource, /latest\.onChatMaximize\(\)/);
-    assert.match(asideHostSource, /latest\.onChatPanel\(\)/);
-    assert.match(asideHostSource, /latest\.onChatClose\(\)/);
-    assert.match(asideToolRendererSource, /construct_concept:ConstructConceptRenderer/);
-    assert.match(asideToolRendererSource, /construct_practice_task:ConstructTaskRenderer/);
-    assert.match(asideToolRendererSource, /construct_concept_exercise:ConstructExerciseRenderer/);
+  it("mounts the original Construct thread and keeps question ownership in Flow", () => {
+    assert.match(flowWorkspaceSource, /<AgentSessionSurface/);
+    assert.match(flowWorkspaceSource, /messages=\{messages\}/);
+    assert.match(flowWorkspaceSource, /<AgentSessionComposer/);
+    assert.match(flowWorkspaceSource, /<FlowQuestionComposer/);
+    assert.match(flowWorkspaceSource, /timelineScrollTop=\{chatScrollTop\}/);
+    assert.doesNotMatch(flowWorkspaceSource, /AsideConstructThread/);
   });
 });
