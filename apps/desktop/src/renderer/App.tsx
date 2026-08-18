@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { AlertCircle, X } from "lucide-react";
+import { AlertCircle, FolderOpen, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import type { BootstrapData, ConstructApi, ProjectSummary, ThemePreference } from "../shared/api";
 import { cn } from "@/lib/utils";
@@ -7,7 +7,6 @@ import { message } from "@/lib/format";
 import { Sidebar, type Page, type ProjectActions } from "./components/shell/Sidebar";
 import { Toolbar } from "./components/shell/Toolbar";
 import { ConstructWordmark } from "./components/common/ConstructWordmark";
-import { ConstructDots } from "@/components/common/ConstructDots";
 import { AuthPage } from "./components/pages/AuthPage";
 import { ProjectsPage } from "./components/pages/ProjectsPage";
 import { SettingsPage } from "./components/pages/SettingsPage";
@@ -192,12 +191,17 @@ export function App() {
 
           {page === "workspace" && activeProject && (
             /* The workspace itself — editor, file tree, terminal and the agent —
-               lands in M2 and M3. Until then opening a project confirms which one
-               is open rather than pretending to be an IDE. */
-            <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-              <ConstructDots pattern="wave" size={20} />
+               lands in M2 and M3. Until then this says so in words. It used to
+               animate a row of dots, which read as a spinner: a placeholder that
+               looks like it is loading is worse than no placeholder, because it
+               promises something is on its way. */
+            <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
+              <FolderOpen className="size-6 text-muted-foreground" />
               <p className="text-content font-medium">{activeProject.name}</p>
-              <p className="max-w-sm text-ui text-muted-foreground">{activeProject.directory}</p>
+              <p className="max-w-md truncate text-ui text-muted-foreground">{activeProject.directory}</p>
+              <p className="mt-2 max-w-sm text-ui text-muted-foreground">
+                The editor, file tree and terminal are not built yet. This project is open and ready for them.
+              </p>
             </div>
           )}
         </div>
