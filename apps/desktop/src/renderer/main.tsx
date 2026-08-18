@@ -1,6 +1,5 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
-import { loader } from "@monaco-editor/react";
 import * as monaco from "monaco-editor/esm/vs/editor/editor.api";
 import "monaco-editor/esm/vs/language/typescript/monaco.contribution";
 // The TypeScript language service supplies IntelliSense; colorization needs the
@@ -38,7 +37,6 @@ window.construct?.onNativeSurface((surface) => {
 });
 // The themes read resolved CSS variables, so they are defined after the stylesheet applies.
 defineEditorThemes(monaco);
-loader.config({ monaco });
 
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
