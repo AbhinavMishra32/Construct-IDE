@@ -11,6 +11,7 @@ import "monaco-editor/esm/vs/basic-languages/markdown/markdown.contribution";
 import EditorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
 import TypeScriptWorker from "monaco-editor/esm/vs/language/typescript/ts.worker?worker";
 import { MotionConfig } from "motion/react";
+import { TooltipProvider } from "./components/ui/tooltip";
 import { App } from "./App";
 import { UpdateExperience } from "./components/updates/UpdateExperience";
 import { defineEditorThemes } from "./lib/monaco-theme";
@@ -41,8 +42,14 @@ defineEditorThemes(monaco);
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <MotionConfig reducedMotion="user">
-      <App />
-      {window.construct && <UpdateExperience api={window.construct} />}
+      {/* Mounted at the root rather than per surface. Radix's Tooltip throws
+          rather than degrading when no provider is above it, so a single
+          tooltip added to any screen would otherwise take the whole render
+          tree down with it — which is exactly what happened. */}
+      <TooltipProvider delayDuration={400}>
+        <App />
+        {window.construct && <UpdateExperience api={window.construct} />}
+      </TooltipProvider>
     </MotionConfig>
   </React.StrictMode>,
 );
