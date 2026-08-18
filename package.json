@@ -1,22 +1,24 @@
 {
   "name": "construct",
   "private": true,
-  "version": "0.7.0-alpha",
+  "version": "1.0.0-alpha.1",
   "packageManager": "pnpm@10.23.0",
   "scripts": {
-    "dev": "turbo run dev --parallel",
+    "dev": "turbo run dev --filter=@construct/desktop",
+    "dev:website": "pnpm --filter construct-website dev",
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "verify": "pnpm typecheck && pnpm test && pnpm build",
-    "verify:no-build": "pnpm typecheck && pnpm test && pnpm release:preflight",
-    "release:preflight": "node scripts/release/preflight.mjs",
-    "release:publish": "node scripts/release/publish-gh.mjs"
+    "lint": "turbo run lint",
+    "verify": "pnpm typecheck && pnpm test && pnpm build"
+  },
+  "engines": {
+    "node": ">=22"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
     "tsx": "^4.19.2",
-    "turbo": "^2.4.0",
+    "turbo": "^2.5.5",
     "typescript": "^5.8.2"
   }
 }
