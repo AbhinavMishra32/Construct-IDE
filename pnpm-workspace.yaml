@@ -1,20 +1,16 @@
 packages:
-  - app
+  - apps/*
+  - packages/*
   - website
   - private/*
-  - opaline/packages/*
 
-allowBuilds:
-  '@homebridge/node-pty-prebuilt-multiarch': set this to true or false
-  better-sqlite3: true
-  esbuild: true
-  msw: true
-  node-pty: true
-  protobufjs: true
-  sharp: true
+# legacy/ is deliberately absent. The archived v0.7 tree must never be
+# installed, built, or importable from the live application.
 
 onlyBuiltDependencies:
+  - electron
   - esbuild
+  - keytar
   - node-pty
 
 overrides:
