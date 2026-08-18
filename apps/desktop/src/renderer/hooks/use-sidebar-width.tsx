@@ -1,8 +1,8 @@
 import { useCallback, useRef, useState } from "react";
 
-const STORAGE_KEY = "spar.sidebarWidth";
+const STORAGE_KEY = "construct.sidebarWidth";
 /* Matched to the ChatGPT desktop app, which clamps its sidebar to 240–520 and
-   opens at 275. Spar's rows carry session titles, which wrap and truncate worse
+   opens at 275. Construct's rows carry session titles, which wrap and truncate worse
    than a chat title does, so the narrow end of that range is the wrong place to
    start: the sidebar should be readable before anyone drags it. */
 export const SIDEBAR_DEFAULT_WIDTH = 275;

@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { buildInfo } from "./build.js";
 import { applyNativeSurface, planSurface, syncWindowControls } from "./surface.js";
 
-/** How far into Spar this window has got. The window is sized to what it is
+/** How far into Construct this window has got. The window is sized to what it is
  *  actually showing: one column of controls, one card of questions, or the app.
  *
  *  "restoring" is an account being pulled back down from the cloud, and it takes
@@ -65,12 +65,12 @@ export function createMainWindow({ stage }: { stage: WindowStage }) {
       // identity rides along the same way: it cannot change while the window
       // is open, so a channel for it would only be a slower constant.
       additionalArguments: [
-        `--spar-controls=${plan.controls}`,
-        `--spar-surface=${plan.surface}`,
-        `--spar-version=${build.version}`,
-        `--spar-commit=${build.commit ?? ""}`,
-        `--spar-branch=${build.branch ?? ""}`,
-        `--spar-packaged=${build.packaged ? "1" : "0"}`,
+        `--construct-controls=${plan.controls}`,
+        `--construct-surface=${plan.surface}`,
+        `--construct-version=${build.version}`,
+        `--construct-commit=${build.commit ?? ""}`,
+        `--construct-branch=${build.branch ?? ""}`,
+        `--construct-packaged=${build.packaged ? "1" : "0"}`,
       ],
     },
   });
@@ -103,7 +103,7 @@ export function createMainWindow({ stage }: { stage: WindowStage }) {
 
 /** Moves the window to the size the stage it has reached wants, animated.
  *
- *  Signing in is not the moment Spar becomes a workspace — finishing the intake
+ *  Signing in is not the moment Construct becomes a workspace — finishing the intake
  *  is. So signing in grows the window by a card's worth, enough to hold the
  *  questions, and only the finished profile opens it out to fill the screen.
  *  Signing out returns it, because the alternative is a full screen of emptiness

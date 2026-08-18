@@ -51,7 +51,7 @@ describe("credential-store bootstrap", () => {
 
     await expect(service().account()).resolves.toBeNull();
     expect(log).toHaveBeenCalledWith(
-      "Credential store unavailable; starting Spar signed out:",
+      "Credential store unavailable; starting Construct signed out:",
       expect.any(Error),
     );
   });
@@ -88,7 +88,7 @@ describe("signing in", () => {
     routes["sign-out"] = () => json({ success: true });
     await service().request({ action: "sign-in", email: "learner@example.com", password: "a-good-password" });
     await service().signOut();
-    expect(origins).toEqual(["spar://desktop", "spar://desktop"]);
+    expect(origins).toEqual(["construct://desktop", "construct://desktop"]);
   });
 
   it("says what a rejected password means rather than repeating a status code", async () => {

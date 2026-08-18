@@ -1,14 +1,14 @@
 {
-  "name": "@spar/desktop",
-  "version": "0.4.0",
+  "name": "@construct/desktop",
+  "version": "1.0.0-alpha.1",
   "private": true,
   "type": "module",
-  "description": "An adaptive coding gym that writes your next exercise from your own attempt history.",
-  "homepage": "https://github.com/AbhinavMishra32/spar",
+  "description": "An understanding-first IDE that teaches you the project you are building.",
+  "homepage": "https://construct.cc",
   "author": "Abhinav Mishra <AbhinavMishra32@users.noreply.github.com>",
   "main": "dist/main/main.js",
   "scripts": {
-    "dev": "concurrently -k --names renderer,main,electron --prefix-colors cyan,magenta,green \"vite\" \"node scripts/dev-main.mjs\" \"wait-on tcp:5173 file:dist/.main-ready file:../../packages/domain/dist/index.js file:../../packages/practice/dist/index.js && node scripts/dev-electron.mjs\"",
+    "dev": "concurrently -k --names renderer,main,electron --prefix-colors cyan,magenta,green \"vite\" \"node scripts/dev-main.mjs\" \"wait-on tcp:5173 file:dist/.main-ready && node scripts/dev-electron.mjs\"",
     "rebuild:native": "electron-builder install-app-deps",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.main.json",
     "test": "vitest run --passWithNoTests && ELECTRON_RUN_AS_NODE=1 electron node_modules/vitest/vitest.mjs run --config vitest.main.config.ts",
@@ -21,21 +21,14 @@
     "package:linux": "electron-builder --linux"
   },
   "dependencies": {
-    "@ai-sdk/openai": "^2.0.0",
     "@ai-sdk/provider": "2.0.3",
     "@fontsource-variable/geist": "^5.3.0",
     "@fontsource/poppins": "^5.3.0",
     "@mariozechner/pi-ai": "^0.73.1",
     "@mastra/core": "^1.49.0",
-    "@monaco-editor/react": "^4.7.0",
     "@phosphor-icons/react": "^2.1.7",
-    "@spar/domain": "workspace:*",
-    "@spar/practice": "workspace:*",
-    "@spar/provider": "workspace:*",
-    "@spar/training": "workspace:*",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/xterm": "^5.5.0",
-    "better-sqlite3": "^12.2.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
@@ -44,22 +37,20 @@
     "lucide-react": "^1.28.0",
     "monaco-editor": "^0.52.2",
     "motion": "^12.23.12",
+    "node-pty": "^1.1.0",
     "radix-ui": "^1.6.7",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-resizable-panels": "^2.1.9",
-    "shadcn": "^4.16.1",
     "simple-icons": "16.28.0",
     "tailwind-merge": "^3.6.0",
     "thinking-orbs": "^0.1.1",
-    "tsx": "^4.23.1",
     "tw-animate-css": "^1.4.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.11",
-    "@types/better-sqlite3": "^7.6.13",
-    "@types/node": "^22.15.30",
+    "@types/node": "^24.0.0",
     "@types/react": "^19.1.6",
     "@types/react-dom": "^19.1.5",
     "@vitejs/plugin-react": "^4.5.2",
@@ -74,8 +65,8 @@
     "wait-on": "^8.0.3"
   },
   "build": {
-    "appId": "ai.spar.desktop",
-    "productName": "Spar",
+    "appId": "cc.construct.desktop",
+    "productName": "Construct",
     "asar": true,
     "directories": {
       "output": "dist-release"
@@ -90,37 +81,26 @@
       "target": [
         {
           "target": "dmg",
-          "arch": [
-            "arm64",
-            "x64"
-          ]
+          "arch": ["arm64", "x64"]
         },
         {
           "target": "zip",
-          "arch": [
-            "arm64",
-            "x64"
-          ]
+          "arch": ["arm64", "x64"]
         }
       ]
     },
     "protocols": [
       {
-        "name": "Spar Auth",
-        "schemes": [
-          "spar"
-        ]
+        "name": "Construct Auth",
+        "schemes": ["construct"]
       }
     ],
     "publish": {
       "provider": "github",
       "owner": "AbhinavMishra32",
-      "repo": "spar"
+      "repo": "Construct-IDE"
     },
-    "files": [
-      "dist/**/*",
-      "package.json"
-    ],
+    "files": ["dist/**/*", "package.json"],
     "extraResources": [
       {
         "from": "build/runtime-icons",
@@ -128,16 +108,15 @@
       }
     ],
     "asarUnpack": [
-      "**/node_modules/electron-liquid-glass/**"
+      "**/node_modules/electron-liquid-glass/**",
+      "**/node_modules/node-pty/**"
     ],
     "win": {
       "icon": "build/icon.ico",
       "target": [
         {
           "target": "nsis",
-          "arch": [
-            "x64"
-          ]
+          "arch": ["x64"]
         }
       ],
       "artifactName": "${productName}-${version}-${arch}.${ext}"
@@ -145,20 +124,16 @@
     "linux": {
       "icon": "build/icons",
       "category": "Development",
-      "executableName": "spar",
-      "synopsis": "An adaptive coding gym",
+      "executableName": "construct",
+      "synopsis": "An understanding-first IDE",
       "target": [
         {
           "target": "AppImage",
-          "arch": [
-            "x64"
-          ]
+          "arch": ["x64"]
         },
         {
           "target": "deb",
-          "arch": [
-            "x64"
-          ]
+          "arch": ["x64"]
         }
       ],
       "artifactName": "${productName}-${version}-${arch}.${ext}"

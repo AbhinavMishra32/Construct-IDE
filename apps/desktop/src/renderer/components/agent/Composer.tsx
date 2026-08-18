@@ -24,7 +24,7 @@ export function Composer({
   onOpenSettings,
   busy = false,
   minLength = 1,
-  placeholder = "Ask Spar anything…",
+  placeholder = "Ask Construct anything…",
   autoFocus = false,
   hint,
   leading,
@@ -95,7 +95,7 @@ export function Composer({
             <Unplug className="size-3.5 shrink-0 text-warning" />
             <span className="min-w-0 flex-1 leading-[1.5] text-muted-foreground">
               <span className="font-medium text-foreground/90">No model provider connected.</span>{" "}
-              Spar has nothing to answer with until you connect one.
+              Construct has nothing to answer with until you connect one.
             </span>
             {onOpenSettings && (
               <button

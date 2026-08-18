@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Command } from "cmdk";
 import { History, LayoutGrid, Library, Map, Plus, Search, Settings, Target, Waypoints } from "lucide-react";
-import type { ChallengeHistorySummary, ConceptSummary, SessionSummary } from "@spar/domain";
+import type { ChallengeHistorySummary, ConceptSummary, SessionSummary } from "@construct/domain";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { LANGUAGE_LABEL } from "@/components/common/LanguageGlyph";
 import { CONCEPT_KIND_SHORT, CONCEPT_KIND_VAR } from "@/lib/concepts";
@@ -109,7 +109,7 @@ export function SearchPalette({
           Find a session, a challenge or a concept, or jump to a page.
         </DialogDescription>
 
-        <Command className="flex min-w-0 flex-col" label="Search Spar" loop shouldFilter={false}>
+        <Command className="flex min-w-0 flex-col" label="Search Construct" loop shouldFilter={false}>
           <div className="flex h-12 shrink-0 items-center gap-2.5 border-b border-border px-4">
             <Search className="size-4 shrink-0 text-muted-foreground" />
             <Command.Input

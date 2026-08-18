@@ -1,5 +1,5 @@
 import { ArrowUpRight, CheckCircle2, CircleDashed, CircleSlash, RefreshCw, XCircle } from "lucide-react";
-import type { ChallengeHistorySummary, ConceptSummary, ConceptTag } from "@spar/domain";
+import type { ChallengeHistorySummary, ConceptSummary, ConceptTag } from "@construct/domain";
 import { cn } from "@/lib/utils";
 import { shortTime } from "@/lib/format";
 import { CONCEPT_KIND_SHORT, CONCEPT_KIND_VAR, challengeOutcome, challengesUnder, outcomeBands, standingOf } from "@/lib/concepts";

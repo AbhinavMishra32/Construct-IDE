@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
 import { Check, Loader2, Trash2 } from "lucide-react";
-import type { ProviderId, ProviderInventory, ProviderOAuthEvent, SparApi } from "../../../shared/api";
+import type { ProviderId, ProviderInventory, ProviderOAuthEvent, ConstructApi } from "../../../shared/api";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { message } from "@/lib/format";
 import { credentialStore } from "@/lib/platform";
 import { ProviderGlyph } from "../common/ProviderGlyph";
-import { SparWordmark } from "../common/SparWordmark";
+import { ConstructWordmark } from "../common/ConstructWordmark";
 import { ModelSelectField } from "./ModelSelect";
 
 export type Provider = ProviderInventory["providers"][number];
@@ -27,7 +27,7 @@ export function ProviderConnectDialog({
   onConnected,
   allowDisconnect = true,
 }: {
-  api: SparApi | undefined;
+  api: ConstructApi | undefined;
   provider: Provider | null;
   onClose(): void;
   onConnected(): Promise<void> | void;
@@ -134,7 +134,7 @@ export function ProviderConnectDialog({
           {/* Inline flow, not flex: the wordmark opens the sentence, so it has to sit on the
               first line's baseline rather than centre itself against the wrapped block. */}
           <DialogDescription>
-            <SparWordmark className="text-foreground" />{" "}
+            <ConstructWordmark className="text-foreground" />{" "}
             {provider.kind === "subscription" ? `will use your subscription to reach ${provider.name} models. Sign in to connect the account.` : provider.description}
           </DialogDescription>
         </DialogHeader>
@@ -157,7 +157,7 @@ export function ProviderConnectDialog({
                 <Button disabled={busy || (!manualCode.trim() && !oauth.allowEmpty)} onClick={() => { if (api) void api.submitProviderOAuth(oauth.flowId, manualCode); }} size="sm">Continue</Button>
               </div>
             )}
-            {oauth?.status === "connected" && <p className="inline-flex items-center gap-1 text-ui text-success"><Check className="size-3.5" />Your subscription is ready for Spar.</p>}
+            {oauth?.status === "connected" && <p className="inline-flex items-center gap-1 text-ui text-success"><Check className="size-3.5" />Your subscription is ready for Construct.</p>}
           </div>
         ) : (
           <div className="space-y-3">

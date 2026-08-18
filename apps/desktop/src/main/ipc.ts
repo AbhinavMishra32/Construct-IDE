@@ -3,7 +3,7 @@ import { apiOriginIsUnconfigured } from "./apiOrigin.js";
 import { fitWindowTo } from "./window.js";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { baselineStateSchema, languageSchema, sessionCheckpointSchema, sessionSuggestionSchema, trainingModeSchema, type AgentActivityStep, type BaselineState, type ChallengeDetail, type LearnerProfile, type SessionSuggestion } from "@spar/domain";
+import { baselineStateSchema, languageSchema, sessionCheckpointSchema, sessionSuggestionSchema, trainingModeSchema, type AgentActivityStep, type BaselineState, type ChallengeDetail, type LearnerProfile, type SessionSuggestion } from "@construct/domain";
 import { attemptAppendInput, authRequestInput, challengeIdInput, challengeWriteInput, createSessionInput, createTrackInput, ipc, practiceInput, profileInput, providerSettingsInput, reasoningEffortSchema, runInput, sessionFlagInput, sessionRenameInput, sessionStatusInput, sourceConnectionInput, sourceJudgeInput, sourceRegionInput, sourceRunInput, sourceSearchInput, sourceSlugInput, sourceStartInput, themePreferenceSchema, workspacePathInput, workspaceStateInput, workspaceWriteInput, type ProviderId, type SourceRunReport } from "../shared/api.js";
 import type { PracticeVerdict } from "@spar/practice";
 import { runLimits } from "@spar/training";
@@ -137,7 +137,7 @@ export function installIpc(deps: { store: LocalStore; workspaces: WorkspaceServi
          otherwise the learner is looking at their own question sitting in the
          thread with nothing that will ever answer it. */
       const account=await deps.auth.account();const token=await deps.auth.accessToken();
-      if(!account)throw new Error("Sign in before starting Spar");
+      if(!account)throw new Error("Sign in before starting Construct");
       const providers=await deps.providers.resolve(account.id,token);
       if(!providers.length)throw new Error(NO_PROVIDER);
       deps.store.addMessage(sessionId,role,message);
@@ -450,7 +450,7 @@ export function installIpc(deps: { store: LocalStore; workspaces: WorkspaceServi
     // The problem's own examples, in the judge's wire format. See `judgeCaseBlock`.
     const testcases = await judgeCaseBlock(source, (slug) => deps.practice.judgeInput(source.source, slug));
     if (!testcases) {
-      throw new Error(`${source.source === "leetcode" ? "LeetCode" : "Codeforces"} runs a solution against cases you give it, and Spar could not read any published for this problem. Submit instead — the hidden suite runs there.`);
+      throw new Error(`${source.source === "leetcode" ? "LeetCode" : "Codeforces"} runs a solution against cases you give it, and Construct could not read any published for this problem. Submit instead — the hidden suite runs there.`);
     }
     const verdict = await deps.practice.run({ source, code, language: bundle.language, testcases });
     deps.store.appendNextEvent({
@@ -488,7 +488,7 @@ export function installIpc(deps: { store: LocalStore; workspaces: WorkspaceServi
    * the replay, the ability update, the next turn — needs to know which judge
    * answered. What differs is only what is true: the hidden cases are the
    * source's, the verdict is the source's, and a pass here means the problem was
-   * actually solved rather than that Spar's copy of two examples was satisfied.
+   * actually solved rather than that Construct's copy of two examples was satisfied.
    *
    * A judge that fails is recorded as nothing at all. `errored` is not a failed
    * submission — it is LeetCode being down or rate-limiting — and writing it into
@@ -535,7 +535,7 @@ export function installIpc(deps: { store: LocalStore; workspaces: WorkspaceServi
     /* Only an active attempt can be submitted, and submitting completes it — so
        the ordinary way to arrive here twice is a second submission of an attempt
        that already has its verdict. Said as that, rather than as a lookup miss. */
-    if(!bundle||bundle.session_id!==sessionId)throw new Error(deps.store.attemptSubject(attemptId)?"This attempt has already been graded. Spar is preparing what comes next.":"That attempt no longer exists.");
+    if(!bundle||bundle.session_id!==sessionId)throw new Error(deps.store.attemptSubject(attemptId)?"This attempt has already been graded. Construct is preparing what comes next.":"That attempt no longer exists.");
     /* A challenge from a source with a judge behind it is graded there, by the
        people who wrote the hidden cases. Everything after the verdict is the same
        either way — the same events, the same completion, the same turn — because
@@ -547,12 +547,12 @@ export function installIpc(deps: { store: LocalStore; workspaces: WorkspaceServi
     /* A failed submission leaves the attempt open. Solving it is the point, so a
        wrong answer is a step in the attempt rather than the end of it: the learner
        keeps working and submits again, every submission is recorded as evidence,
-       and Spar is not asked to judge a challenge that is still being solved.
+       and Construct is not asked to judge a challenge that is still being solved.
        Giving up is the other way out, and it is the learner's decision. */
     if(outcome==="failed")return{outcome,exitCode:result.exitCode,durationMs:result.durationMs,output,summary:"Some tests still fail. Keep going and submit again, or give up to move on."};
     append("attempt_completed",{outcome},"system");deps.store.completeAttempt(attemptId,outcome);const calibration=noteBaselineEvidence(sessionId);if(calibration.baseline){if(!calibration.complete)void startAgentTurn(sessionId,`Baseline probe ${attemptId} passed every visible and hidden test. Replay the full trajectory and interpret it as calibration evidence, not as proof of mastery. Update the relevant ability state and readable memory, then choose one materially different diagnostic target that reduces the largest remaining uncertainty. Create exactly one next probe; do not open a general chat or create a Track.`,"system","attempt-complete");}else void startAgentTurn(sessionId,`The learner solved attempt ${attemptId} — every visible and hidden test passes. They may have submitted several times before this one; every one of those is in the attempt's log. Replay attempt ${attemptId} first and read how they got here — which cases they fixed, which they never passed, which they broke, and when — then read its recorded evaluation, update the relevant ability document, commit exactly one next pedagogical action, and either ask the learner about a specific moment the replay could not explain or aim the next target and validated question. The verdict is already known; what you are looking for is the behaviour behind it. The new target and question must explicitly respond to this attempt without overreacting to it.`,"system","attempt-complete");return{outcome,exitCode:result.exitCode,durationMs:result.durationMs,output,summary:"All visible and hidden tests passed."};});
   /* Validated here rather than trusted from the window: the renderer is the one
-     process in Spar that runs anybody's markdown, and this is the channel that
+     process in Construct that runs anybody's markdown, and this is the channel that
      spends credentials. The union is the same one the form switches on. */
   ipcMain.handle(ipc.authRequest, async (_event, value) => {
     const result = await deps.auth.request(authRequestInput.parse(value));
@@ -582,7 +582,7 @@ export function installIpc(deps: { store: LocalStore; workspaces: WorkspaceServi
      evidence about them, and the intake it came from is already on disk. */
   ipcMain.handle(ipc.sessionsSuggest, async () => {
     const profile = deps.store.getProfile();
-    if (!profile) throw new Error("Finish the intake before Spar drafts sessions");
+    if (!profile) throw new Error("Finish the intake before Construct drafts sessions");
     const account = await deps.auth.account();
     const token = account ? await deps.auth.accessToken() : null;
     const providers = account ? await deps.providers.resolve(account.id, token) : [];
@@ -597,7 +597,7 @@ export function installIpc(deps: { store: LocalStore; workspaces: WorkspaceServi
       return { source: "starter" as const, suggestions: starterSuggestions(profile) };
     }
   });
-  /* The end of the intake is the moment Spar becomes a workspace rather than a
+  /* The end of the intake is the moment Construct becomes a workspace rather than a
      card, so it is where the window opens out. */
   ipcMain.handle(ipc.profileSave, (_event, value) => { const input = profileInput.parse(value); const profile = { ...input, completedAt: new Date().toISOString() }; deps.store.saveProfile(profile); fitWindowTo(deps.window(), "app"); return profile; });
   ipcMain.handle(ipc.profileLanguage, (_event, value) => { deps.store.setPreferredLanguage(languageSchema.parse(value)); });
@@ -618,7 +618,7 @@ export function installIpc(deps: { store: LocalStore; workspaces: WorkspaceServi
   ipcMain.handle(ipc.authDeleteAccount, async () => { await deps.auth.deleteAccount(); await deps.practice.clearAllCredentials(); deps.store.clearAccountData(); await deps.workspaces.clear(); resetAppearance(); fitWindowTo(deps.window(), "sign-in"); });
   /* Light or dark is a choice someone made for their account, and the device is
      about to be handed to whoever signs in next — including, often enough, nobody.
-     So the window goes back to following the OS, which is what a Spar nobody has
+     So the window goes back to following the OS, which is what a Construct nobody has
      signed into should look like. */
   const resetAppearance = () => {
     deps.store.setSetting("theme", "system");
@@ -674,7 +674,7 @@ export function installIpc(deps: { store: LocalStore; workspaces: WorkspaceServi
 const SUGGESTION_COUNT = 3;
 /** One sentence for every refusal to run a turn, so the renderer can recognise
  *  it and the learner reads the same instruction wherever they hit it. */
-const NO_PROVIDER = "Connect a model provider in Settings before starting Spar";
+const NO_PROVIDER = "Connect a model provider in Settings before starting Construct";
 
 /** Models fence JSON however they like. Take the outermost array and let the
  *  schema throw the rest away; a malformed draft falls back to the starter set. */
@@ -703,7 +703,7 @@ function starterSuggestions(profile: LearnerProfile): SessionSuggestion[] {
   }));
   const weakness = profile.weakness.trim();
   return weakness
-    ? [{ title: "Your stated weak spot", goal: weakness, why: "Straight from what you told Spar you get stuck on." }, ...seeds]
+    ? [{ title: "Your stated weak spot", goal: weakness, why: "Straight from what you told Construct you get stuck on." }, ...seeds]
     : seeds;
 }
 

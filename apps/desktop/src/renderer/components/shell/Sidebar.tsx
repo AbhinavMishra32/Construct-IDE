@@ -1,6 +1,6 @@
 import { Fragment, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { Archive, ArchiveRestore, Check, ChevronRight, CircleCheck, Command, EllipsisVertical, History, Library, Map, PanelLeftClose, Pencil, Pin, PinOff, Plus, RotateCcw, Settings, Target, Trash2, Waypoints } from "lucide-react";
-import type { SessionSummary } from "@spar/domain";
+import type { SessionSummary } from "@construct/domain";
 import type { BootstrapData } from "../../../shared/api";
 import { cn } from "@/lib/utils";
 import { formatDuration, initials, relativeTime } from "@/lib/format";
@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Meter } from "@/components/ui/meter";
-import { SparWordmark } from "../common/SparWordmark";
+import { ConstructWordmark } from "../common/ConstructWordmark";
 
 /* "challenge" is one challenge opened from History or Problems. Like
    "workspace" it draws its own toolbar and is not a destination in the nav; the
@@ -161,7 +161,7 @@ export function Sidebar({
           inset is the shared chrome token rather than a hand-measured margin, so the
           wordmark keeps its clearance if the button metrics ever move. */}
       <div className="flex h-[var(--titlebar-height)] shrink-0 items-center pl-[max(0.625rem,var(--window-controls-leading))] pr-2">
-        <SparWordmark className="text-[1.1rem] text-foreground" />
+        <ConstructWordmark className="text-[1.1rem] text-foreground" />
         <button
           className="app-no-drag ml-auto grid size-7 place-items-center rounded-lg text-muted-foreground hover:bg-[var(--sidebar-accent)] hover:text-foreground"
           onClick={onCollapse}
@@ -665,7 +665,7 @@ function DeleteSessionDialog({ session, onConfirm, onCancel }: { session: Sessio
         <DialogHeader>
           <DialogTitle>Delete this session?</DialogTitle>
           <DialogDescription>
-            {session?.title} loses {challenges ? `its ${challenges} ${challenges === 1 ? "challenge" : "challenges"}, the attempt evidence behind them,` : "its planning history"} and its workspace files, on this device and in the cloud. What Spar already learned about your abilities is kept. This cannot be undone.
+            {session?.title} loses {challenges ? `its ${challenges} ${challenges === 1 ? "challenge" : "challenges"}, the attempt evidence behind them,` : "its planning history"} and its workspace files, on this device and in the cloud. What Construct already learned about your abilities is kept. This cannot be undone.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>

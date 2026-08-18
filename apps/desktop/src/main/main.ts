@@ -28,7 +28,7 @@ let updates: UpdateService | null = null;
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
   void app.whenReady().then(async () => {
-    const root = path.join(app.getPath("userData"), "spar"); await mkdir(path.join(root, "workspaces"), { recursive: true });
+    const root = path.join(app.getPath("userData"), "construct"); await mkdir(path.join(root, "workspaces"), { recursive: true });
     store = new LocalStore(path.join(root, "state.sqlite3")); nativeTheme.themeSource = themePreferenceSchema.catch("system").parse(store.getSetting("theme", "system")); const origin = apiOrigin(); const auth = new AuthService(origin); const workspaces = new WorkspaceService(path.join(root, "workspaces"));
     const providers = new ProviderService(auth, store, (event) => mainWindow?.webContents.send("provider:oauth-event", event));
     /* Where real problems come from. Holds the source's session in the keychain,

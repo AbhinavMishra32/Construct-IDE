@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import type { Language } from "@spar/domain";
+import type { Language } from "@construct/domain";
 import { LanguageGlyph, LANGUAGE_LABEL, SelectableLanguageGlyph } from "./LanguageGlyph";
 
 const LANGUAGES: Language[] = ["javascript", "typescript", "python", "java", "c", "cpp", "go", "rust", "swift", "ruby"];

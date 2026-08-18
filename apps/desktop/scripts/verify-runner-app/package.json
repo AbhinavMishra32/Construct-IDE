@@ -1,6 +1,0 @@
-{
-  "name": "spar-runner-verification",
-  "private": true,
-  "type": "module",
-  "main": "../verify-runner.mjs"
-}

@@ -12,10 +12,10 @@ describe("Pi to Mastra model adapter", () => {
   });
 
   it("preserves text, JSON tool calls, finish reason, and usage", async () => {
-    const provider = registerFauxProvider({ api: "spar-faux", provider: "spar-faux", models: [{ id: "training-faux" }] });
+    const provider = registerFauxProvider({ api: "construct-faux", provider: "construct-faux", models: [{ id: "training-faux" }] });
     provider.setResponses([fauxAssistantMessage([fauxText("Inspecting evidence."), fauxToolCall("read_ability", { abilityId: "ability-1" }, { id: "call-1" })], { stopReason: "toolUse" })]);
     try {
-      const model = createPiMastraModel({ provider: "spar-faux", model: "training-faux", api: "spar-faux", baseUrl: "http://localhost:0", apiKey: "test" });
+      const model = createPiMastraModel({ provider: "construct-faux", model: "training-faux", api: "construct-faux", baseUrl: "http://localhost:0", apiKey: "test" });
       const result = await model.doGenerate({
         prompt: [
           { role: "system", content: "Use evidence." },
@@ -33,8 +33,8 @@ describe("Pi to Mastra model adapter", () => {
     } finally { provider.unregister(); }
   });
 
-  it.runIf(process.env.SPAR_VERIFY_CHATGPT === "1")("calls a tool through the connected ChatGPT subscription", async () => {
-    const raw = await keytar.getPassword("ai.spar.desktop", "provider-oauth:openai-codex");
+  it.runIf(process.env.CONSTRUCT_VERIFY_CHATGPT === "1")("calls a tool through the connected ChatGPT subscription", async () => {
+    const raw = await keytar.getPassword("cc.construct.desktop", "provider-oauth:openai-codex");
     if (!raw) throw new Error("ChatGPT subscription credential is not connected");
     const credentials = JSON.parse(raw) as OAuthCredentials;
     const resolved = await getOAuthApiKey("openai-codex", { "openai-codex": credentials });
@@ -57,12 +57,12 @@ describe("Pi to Mastra model adapter", () => {
 
   /* The Cline half of the exchange is asserted against a loopback server in
      shared/clineCatalog.test.ts, which needs no key. This is the other half:
-     that Cline itself accepts what Spar sends and calls the tool back. Run it
-     with a Cline key connected — `SPAR_VERIFY_CLINE=1 pnpm --filter @spar/desktop test`
+     that Cline itself accepts what Construct sends and calls the tool back. Run it
+     with a Cline key connected — `CONSTRUCT_VERIFY_CLINE=1 pnpm --filter @construct/desktop test`
      — and it spends nothing, because DeepSeek V4 Flash is one of the models
      Cline currently bills at zero. */
-  it.runIf(process.env.SPAR_VERIFY_CLINE === "1")("calls a tool through Cline's free DeepSeek V4 Flash", async () => {
-    const apiKey = await keytar.getPassword("ai.spar.desktop", "provider:cline");
+  it.runIf(process.env.CONSTRUCT_VERIFY_CLINE === "1")("calls a tool through Cline's free DeepSeek V4 Flash", async () => {
+    const apiKey = await keytar.getPassword("cc.construct.desktop", "provider:cline");
     if (!apiKey) throw new Error("Connect Cline in Settings before running this verification");
     const model = createPiMastraModel({ provider: "cline", model: "deepseek/deepseek-v4-flash", api: "openai-completions", baseUrl: clineBaseUrl, apiKey });
     const result = await model.doGenerate({

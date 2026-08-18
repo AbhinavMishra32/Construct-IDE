@@ -1,4 +1,4 @@
-import type { ChallengeHistorySummary, ConceptSummary, SessionSummary } from "@spar/domain";
+import type { ChallengeHistorySummary, ConceptSummary, SessionSummary } from "@construct/domain";
 import type { Page } from "@/components/shell/Sidebar";
 
 /**
@@ -31,7 +31,7 @@ export type PaletteAction = { id: "new-session"; label: string; keywords: string
 export type PalettePlace = { page: Exclude<Page, "workspace" | "challenge" | "baseline">; label: string; keywords: string };
 
 export const PALETTE_ACTIONS: PaletteAction[] = [
-  { id: "new-session", label: "Start a session", keywords: "new create begin spar practice goal" },
+  { id: "new-session", label: "Start a session", keywords: "new create begin project goal" },
 ];
 
 export const PALETTE_PLACES: PalettePlace[] = [

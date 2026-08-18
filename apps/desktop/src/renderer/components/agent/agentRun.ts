@@ -139,7 +139,7 @@ export function reduceRun(current: AgentRun | null, event: AgentStreamEvent): Ag
     }
 
     case "error":
-      parts.push({ kind: "error", id: `${event.runId}-e${parts.length}`, body: event.text ?? "Spar could not finish that turn." });
+      parts.push({ kind: "error", id: `${event.runId}-e${parts.length}`, body: event.text ?? "Construct could not finish that turn." });
       return { ...run, parts, status: "error" };
 
     case "done":

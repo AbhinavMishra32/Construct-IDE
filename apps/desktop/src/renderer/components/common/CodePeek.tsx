@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { ChallengeCodePreview } from "@spar/domain";
+import type { ChallengeCodePreview } from "@construct/domain";
 import { cn } from "@/lib/utils";
 import { fileName } from "@/lib/format";
 
@@ -22,7 +22,7 @@ import { fileName } from "@/lib/format";
 type Token = { text: string; kind: "plain" | "comment" | "string" | "keyword" | "number" | "function" | "punctuation" };
 
 const KEYWORDS = new Set([
-  // The three languages Spar trains in, in one set. Overlap is the point: a
+  // The three languages Construct trains in, in one set. Overlap is the point: a
   // keyword list per language would be three near-copies, and colouring `class`
   // in a file that happens to be C++ is right in either.
   "abstract", "as", "async", "auto", "await", "bool", "break", "case", "catch", "char", "class", "const", "constexpr",

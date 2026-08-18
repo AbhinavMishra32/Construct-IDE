@@ -12,7 +12,7 @@ afterEach(async () => {
 });
 
 async function workspace() {
-  const root = await mkdtemp(path.join(os.tmpdir(), "spar-workspaces-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "construct-workspaces-"));
   roots.push(root);
   return { service: new WorkspaceService(root), sessionId: randomUUID(), root };
 }

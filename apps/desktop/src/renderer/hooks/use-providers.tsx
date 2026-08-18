@@ -21,8 +21,8 @@ const subscribe = (listener: () => void) => {
 /** Re-read the inventory and push it to everyone. Rejects like any bridge call,
  *  so a screen that shows credential errors can still show this one. */
 export function refreshProviders(): Promise<ProviderInventory> {
-  const api = window.spar;
-  if (!api) return Promise.reject(new Error("Spar must run inside its Electron desktop shell."));
+  const api = window.construct;
+  if (!api) return Promise.reject(new Error("Construct must run inside its Electron desktop shell."));
   // Several composers mount at once on a page change; they share one read.
   inflight ??= api
     .listProviders()

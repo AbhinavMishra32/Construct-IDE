@@ -134,7 +134,7 @@ function Inline({ text }: { text: string }) {
 
 function CodeBlock({ language, body }: { language: string; body: string }) {
   const [copied, setCopied] = useState(false);
-  // A fence can say anything — `bash`, `json`, `text`. Only the three Spar trains
+  // A fence can say anything — `bash`, `json`, `text`. Only the three Construct trains
   // in have a mark; the rest keep the tag they were written with.
   const marked = languageOf(language);
   const copy = () => {

@@ -191,7 +191,7 @@ export function ComposerModelPicker({ onOpenSettings }: { onOpenSettings?(): voi
 
   const select = useCallback(
     async (provider: Provider, model: string) => {
-      const api = window.spar;
+      const api = window.construct;
       if (!api) return;
       // Paint the choice immediately; the reload reconciles with the store.
       patchProviders((current) => ({ ...current, defaultModel: { ...current.defaultModel, provider: provider.id, model } }));
@@ -202,7 +202,7 @@ export function ComposerModelPicker({ onOpenSettings }: { onOpenSettings?(): voi
 
   const setEffort = useCallback(
     async (effort: ReasoningEffort) => {
-      const api = window.spar;
+      const api = window.construct;
       if (!api) return;
       patchProviders((current) => ({ ...current, defaultModel: { ...current.defaultModel, reasoningEffort: effort } }));
       try { await api.setReasoningEffort(effort); } finally { reload(); }

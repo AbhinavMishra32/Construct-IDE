@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Check, Download, Loader2, RefreshCw, ShieldCheck } from "lucide-react";
-import type { SparApi, UpdateState } from "../../../shared/api";
+import type { ConstructApi, UpdateState } from "../../../shared/api";
 import { Button } from "@/components/ui/button";
 import { message } from "@/lib/format";
 
@@ -10,14 +10,14 @@ const STATUS: Record<UpdateState["status"], string> = {
   available: "Update available",
   downloading: "Downloading update…",
   installing: "Installing update…",
-  current: "Spar is up to date",
+  current: "Construct is up to date",
   error: "Couldn’t check for updates",
   unsupported: "Available in packaged releases",
 };
 
-/** A read-only policy row: Spar always checks automatically. The controls are
+/** A read-only policy row: Construct always checks automatically. The controls are
  *  immediate actions, never a checkbox that can disable the safety guarantee. */
-export function UpdateSettings({ api }: { api: SparApi | undefined }) {
+export function UpdateSettings({ api }: { api: ConstructApi | undefined }) {
   const [state, setState] = useState<UpdateState | null>(null);
   const [failure, setFailure] = useState("");
 
@@ -40,16 +40,16 @@ export function UpdateSettings({ api }: { api: SparApi | undefined }) {
 
   const busy = state?.status === "checking" || state?.status === "downloading" || state?.status === "installing";
   const detail = state?.status === "available"
-    ? `Spar ${state.version} is ready. Download it now and Spar will restart after saving your work.`
+    ? `Construct ${state.version} is ready. Download it now and Construct will restart after saving your work.`
     : state?.status === "downloading"
-      ? `${Math.round(state.percent ?? 0)}% downloaded. Spar will restart as soon as the verified update is ready.`
+      ? `${Math.round(state.percent ?? 0)}% downloaded. Construct will restart as soon as the verified update is ready.`
       : state?.status === "installing"
         ? "Saving your work and handing off to the verified installer."
         : state?.status === "error"
           ? state.message
           : state?.status === "unsupported"
             ? state.message
-            : "Spar checks securely when it opens and every few hours while it is running.";
+            : "Construct checks securely when it opens and every few hours while it is running.";
 
   return (
     <div className="flex items-center gap-4 px-4 py-3.5">

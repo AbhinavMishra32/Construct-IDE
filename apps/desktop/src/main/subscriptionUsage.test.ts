@@ -22,7 +22,7 @@ describe("codex rate-limit headers", () => {
     });
   });
 
-  /* A window Spar has no row for must not be filed as one it does. Codex has
+  /* A window Construct has no row for must not be filed as one it does. Codex has
      shipped windows other than the two before, and mislabelling a 24-hour
      window as the weekly one would misreport what is actually left. */
   it("drops windows it cannot name and reports nothing when none remain", () => {

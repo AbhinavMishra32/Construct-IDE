@@ -438,7 +438,7 @@ function clean(value: string): string {
 }
 
 /**
- * Spar reading how the challenge was actually solved.
+ * Construct reading how the challenge was actually solved.
  *
  * This is the step the rest of the turn is built on, and the learner should be
  * able to see it happen: what it looked at, and what it found in their own
@@ -533,7 +533,7 @@ export function RunFailure({ body }: { body: string }) {
         <div className="min-w-0 flex-1">
           <p className="text-ui font-medium text-foreground">That turn did not finish</p>
           <p className="mt-0.5 min-w-0 break-words text-ui leading-[1.55] text-muted-foreground">
-            {headline?.trim().replace(/\.$/, "") ?? "Spar could not complete that turn"}.
+            {headline?.trim().replace(/\.$/, "") ?? "Construct could not complete that turn"}.
           </p>
           {detail && (
             <>

@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowRight, Check, Download, RefreshCw, ShieldCheck, Sparkles } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import type { SparApi, UpdateState } from "../../../shared/api";
+import type { ConstructApi, UpdateState } from "../../../shared/api";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Markdown } from "@/components/agent/Markdown";
-import { SparDots } from "@/components/common/SparDots";
+import { ConstructDots } from "@/components/common/ConstructDots";
 import { message } from "@/lib/format";
 
 function bytes(value: number | null) {
@@ -20,14 +20,14 @@ function bytes(value: number | null) {
 function UpdateMark({ busy = false }: { busy?: boolean }) {
   return (
     <div className="grid size-11 shrink-0 place-items-center rounded-xl bg-foreground text-background shadow-[var(--app-shadow-card)]">
-      {busy ? <SparDots className="text-background" pattern="wave" size={21} /> : <Sparkles className="size-5" />}
+      {busy ? <ConstructDots className="text-background" pattern="wave" size={21} /> : <Sparkles className="size-5" />}
     </div>
   );
 }
 
 /** The global update surface. It stays mounted independently of navigation so a
  *  download started in Settings keeps its progress while the learner works. */
-export function UpdateExperience({ api }: { api: SparApi }) {
+export function UpdateExperience({ api }: { api: ConstructApi }) {
   const [state, setState] = useState<UpdateState | null>(null);
   const [offer, setOffer] = useState(false);
   const [failure, setFailure] = useState("");
@@ -77,16 +77,16 @@ export function UpdateExperience({ api }: { api: SparApi }) {
               <UpdateMark busy={state.status === "downloading" || state.status === "installing"} />
               <div className="min-w-0 flex-1 pt-0.5">
                 <p className="font-heading text-sm font-medium text-foreground">
-                  {state.status === "available" && `Spar ${state.version} is ready`}
-                  {state.status === "downloading" && `Downloading Spar ${state.version}`}
+                  {state.status === "available" && `Construct ${state.version} is ready`}
+                  {state.status === "downloading" && `Downloading Construct ${state.version}`}
                   {state.status === "installing" && "Finishing your update"}
                   {state.status === "error" && "Update paused"}
                 </p>
                 <p className="mt-1 text-ui leading-relaxed text-muted-foreground">
-                  {state.status === "available" && "A fresh round is waiting. Spar will save your work, restart, and bring you straight back."}
+                  {state.status === "available" && "A fresh round is waiting. Construct will save your work, restart, and bring you straight back."}
                   {state.status === "downloading" && `${Math.round(progress)}%${bytes(state.transferred) && bytes(state.total) ? ` · ${bytes(state.transferred)} of ${bytes(state.total)}` : ""}${bytes(state.bytesPerSecond) ? ` · ${bytes(state.bytesPerSecond)}/s` : ""}`}
-                  {state.status === "installing" && "Download verified. Saving your active work before Spar restarts."}
-                  {state.status === "error" && (state.message ?? failure ?? "Spar could not complete the update.")}
+                  {state.status === "installing" && "Download verified. Saving your active work before Construct restarts."}
+                  {state.status === "error" && (state.message ?? failure ?? "Construct could not complete the update.")}
                 </p>
                 {state.status === "available" && (
                   <div className="mt-3 flex items-center gap-2">
@@ -109,12 +109,12 @@ export function UpdateExperience({ api }: { api: SparApi }) {
             <div aria-hidden className="absolute -right-16 -top-20 size-56 rounded-full bg-foreground/[0.045] blur-2xl" />
             <UpdateMark />
             <DialogHeader className="mt-5">
-              <DialogTitle className="text-xl">A new round for Spar</DialogTitle>
-              <DialogDescription>Spar {state?.version} is ready to download. Your sessions and open work are saved before the restart.</DialogDescription>
+              <DialogTitle className="text-xl">A new round for Construct</DialogTitle>
+              <DialogDescription>Construct {state?.version} is ready to download. Your sessions and open work are saved before the restart.</DialogDescription>
             </DialogHeader>
           </div>
           <div className="app-scroll max-h-[19rem] overflow-y-auto px-6 py-4">
-            {state?.notes ? <Markdown source={state.notes} /> : <p className="text-ui text-muted-foreground">This release includes improvements and fixes across Spar.</p>}
+            {state?.notes ? <Markdown source={state.notes} /> : <p className="text-ui text-muted-foreground">This release includes improvements and fixes across Construct.</p>}
           </div>
           <DialogFooter className="m-0 rounded-none px-6">
             <Button onClick={() => setOffer(false)} variant="secondary">Later</Button>
@@ -130,7 +130,7 @@ export function UpdateExperience({ api }: { api: SparApi }) {
             <div className="flex items-center gap-3">
               <div className="grid size-10 place-items-center rounded-full bg-success/12 text-success"><Check className="size-5" /></div>
               <div>
-                <DialogTitle className="text-xl">Spar just got better</DialogTitle>
+                <DialogTitle className="text-xl">Construct just got better</DialogTitle>
                 <DialogDescription className="mt-1">You’re now on version {state?.changelog?.version}.</DialogDescription>
               </div>
             </div>
@@ -140,7 +140,7 @@ export function UpdateExperience({ api }: { api: SparApi }) {
           </div>
           <DialogFooter className="m-0 items-center rounded-none px-6 sm:justify-between">
             <span className="hidden items-center gap-1.5 text-ui text-muted-foreground sm:flex"><ShieldCheck className="size-3.5" />Installed and verified</span>
-            <Button onClick={dismissChangelog}>Let’s spar <ArrowRight /></Button>
+            <Button onClick={dismissChangelog}>Get started <ArrowRight /></Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

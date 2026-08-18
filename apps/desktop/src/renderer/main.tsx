@@ -30,10 +30,10 @@ document.documentElement.classList.toggle("dark", matchMedia("(prefers-color-sch
 // whether there is a material back there and which edge the buttons occupy.
 // The main process re-sends the surface once it knows whether Liquid Glass
 // actually attached, since that can still fall back to plain vibrancy.
-const chrome = window.spar?.chrome;
+const chrome = window.construct?.chrome;
 document.documentElement.dataset.nativeSurface = chrome?.surface ?? "none";
 document.documentElement.dataset.windowControls = chrome?.controls ?? "left";
-window.spar?.onNativeSurface((surface) => {
+window.construct?.onNativeSurface((surface) => {
   document.documentElement.dataset.nativeSurface = surface;
 });
 // The themes read resolved CSS variables, so they are defined after the stylesheet applies.
@@ -44,7 +44,7 @@ createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <MotionConfig reducedMotion="user">
       <App />
-      {window.spar && <UpdateExperience api={window.spar} />}
+      {window.construct && <UpdateExperience api={window.construct} />}
     </MotionConfig>
   </React.StrictMode>,
 );

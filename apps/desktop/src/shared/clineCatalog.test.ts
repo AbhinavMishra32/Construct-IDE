@@ -22,7 +22,7 @@ describe("Cline catalog", () => {
   });
 
   /* A promotion ending is a real answer and has to be believed — the models stop
-     reading as free. A payload Spar cannot make sense of is not an answer, and
+     reading as free. A payload Construct cannot make sense of is not an answer, and
      keeping the last tier list beats emptying the picker over it. */
   it("believes an ended promotion but not a shape it cannot read", () => {
     expect(clineTiersFrom({ free: [], recommended: [] })).toEqual({ free: [], recommended: [] });
@@ -61,7 +61,7 @@ describe("Cline catalog", () => {
 /**
  * The one thing no amount of catalog correctness proves: that a turn leaves for
  * the address Cline documents, in the shape Cline reads. Cline stands in here as
- * a loopback server, so this asserts Spar's half of the exchange — the live
+ * a loopback server, so this asserts Construct's half of the exchange — the live
  * round trip against a real key is the opt-in test at the bottom of
  * piMastraModel.test.ts.
  */

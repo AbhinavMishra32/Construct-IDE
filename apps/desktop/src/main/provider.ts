@@ -22,7 +22,7 @@ export type ResolvedProvider = {
   baseUrl: string;
   apiKey: string;
   headers?: Record<string, string>;
-  source: "spar-keychain" | "spar-oauth" | "gateway";
+  source: "construct-keychain" | "construct-oauth" | "gateway";
   reasoningEffort: ReasoningEffort;
 };
 
@@ -88,9 +88,9 @@ const codexTiers: Model<Api>[] = [
 
 const descriptorById = new Map(descriptors.map((item) => [item.id, item]));
 const oauthRuntimeId = (id: ProviderId) => id === "claude-code" ? "anthropic" : id;
-/** Spar's own gateway is the only credential the learner does not hold; it is
+/** Construct's own gateway is the only credential the learner does not hold; it is
  *  off unless the build enables it, so it is never a silent stand-in. */
-const gatewayEnabled = () => process.env.SPAR_AI_GATEWAY_ENABLED === "true";
+const gatewayEnabled = () => process.env.CONSTRUCT_AI_GATEWAY_ENABLED === "true";
 /** Matches the hover card's own staleness: a quota that moves once per turn does
  *  not need re-fetching every time the pointer crosses the row. */
 const USAGE_CACHE_MS = 60_000;
@@ -329,12 +329,12 @@ export class ProviderService {
             const provider = getOAuthProvider(runtimeId);
             const available = provider?.modifyModels?.(this.catalog(runtimeId), result.newCredentials) ?? this.catalog(runtimeId);
             const model = available.find((item) => item.id === modelId) ?? available[0];
-            if (model) values.push({ provider: model.provider, model: model.id, api: model.api, baseUrl: model.baseUrl, apiKey: result.apiKey, ...(model.headers ? { headers: model.headers } : {}), source: "spar-oauth", reasoningEffort: this.reasoningEffort() });
+            if (model) values.push({ provider: model.provider, model: model.id, api: model.api, baseUrl: model.baseUrl, apiKey: result.apiKey, ...(model.headers ? { headers: model.headers } : {}), source: "construct-oauth", reasoningEffort: this.reasoningEffort() });
           } else {
             this.store.setSetting(`provider-auth-expired:${selected}`, true);
           }
         } catch {
-          // A stale subscription must not prevent Construct-import or Spar gateway fallback.
+          // A stale subscription must not prevent Construct-import or Construct gateway fallback.
           this.store.setSetting(`provider-auth-expired:${selected}`, true);
         }
       }
@@ -344,7 +344,7 @@ export class ProviderService {
         const modelId = this.store.getSetting(`provider-model:${selected}`, selectedDescriptor.defaultModel);
         const model = this.catalog(selectedDescriptor.runtimeId).find((item) => item.id === modelId);
         const baseUrl = this.store.getSetting(`provider-base-url:${selected}`, selectedDescriptor.defaultBaseUrl ?? model?.baseUrl ?? "");
-        values.push({ provider: model?.provider ?? selectedDescriptor.runtimeId, model: modelId, api: model?.api ?? "openai-completions", baseUrl: baseUrl || model?.baseUrl || "", apiKey: secret ?? "local", ...(model?.headers ? { headers: model.headers } : {}), source: "spar-keychain", reasoningEffort: this.reasoningEffort() });
+        values.push({ provider: model?.provider ?? selectedDescriptor.runtimeId, model: modelId, api: model?.api ?? "openai-completions", baseUrl: baseUrl || model?.baseUrl || "", apiKey: secret ?? "local", ...(model?.headers ? { headers: model.headers } : {}), source: "construct-keychain", reasoningEffort: this.reasoningEffort() });
       }
     }
 
@@ -354,10 +354,10 @@ export class ProviderService {
     if (values.length) return dedupe(values);
 
     // Nothing the learner connected can serve this turn. The only remaining
-    // credential is Spar's own gateway, and it is off unless the build turns it
-    // on — an unconnected Spar resolves to nothing at all, and says so, rather
+    // credential is Construct's own gateway, and it is off unless the build turns it
+    // on — an unconnected Construct resolves to nothing at all, and says so, rather
     // than reaching for a key it found lying around on the machine.
-    if (accessToken && gatewayEnabled()) values.push({ provider: "spar-gateway", model: "spar-training", api: "openai-completions", baseUrl: `${apiOrigin()}/v1/ai`, apiKey: accessToken, source: "gateway", reasoningEffort: this.reasoningEffort() });
+    if (accessToken && gatewayEnabled()) values.push({ provider: "construct-gateway", model: "construct-agent", api: "openai-completions", baseUrl: `${apiOrigin()}/v1/ai`, apiKey: accessToken, source: "gateway", reasoningEffort: this.reasoningEffort() });
     return dedupe(values);
   }
 

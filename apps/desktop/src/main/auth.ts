@@ -1,20 +1,20 @@
 import keytar from "keytar";
 import type { AuthCodePurpose, AuthRequest, AuthResult } from "../shared/api.js";
 
-const service = "ai.spar.desktop";
+const service = "cc.construct.desktop";
 let reportedCredentialReadFailure = false;
 
 export class CredentialStoreError extends Error {
   constructor(operation: "read" | "write" | "delete", cause: unknown) {
     const store = process.platform === "darwin" ? "macOS Keychain" : "the operating system credential store";
     const recovery = process.platform === "darwin" ? " Unlock the login keychain in Keychain Access and try again." : " Unlock it and try again.";
-    super(`Spar could not ${operation} credentials in ${store}.${recovery}`, { cause });
+    super(`Construct could not ${operation} credentials in ${store}.${recovery}`, { cause });
     this.name = "CredentialStoreError";
   }
 }
 
 /** Reading the credential store is part of deciding which screen to show, but
- *  it must never be part of deciding whether Spar gets a window at all. macOS
+ *  it must never be part of deciding whether Construct gets a window at all. macOS
  *  Keychain can reject a read while the login keychain is locked or unhealthy;
  *  in that case the safe bootstrap state is signed out. Writes still reject so
  *  the UI cannot claim a credential was saved when it was not. */
@@ -24,7 +24,7 @@ async function readPassword(account: string): Promise<string | null> {
   } catch (cause) {
     if (!reportedCredentialReadFailure) {
       reportedCredentialReadFailure = true;
-      console.error("Credential store unavailable; starting Spar signed out:", cause);
+      console.error("Credential store unavailable; starting Construct signed out:", cause);
     }
     return null;
   }
@@ -59,7 +59,7 @@ const LEGACY_TOKEN = "access-token";
  *  nothing can serve a page from it, which means the value cannot be forged by
  *  one. The API trusts exactly this string — see `DESKTOP_ORIGIN` in
  *  apps/api/src/auth.ts, and change neither without the other. */
-const DESKTOP_ORIGIN = "spar://desktop";
+const DESKTOP_ORIGIN = "construct://desktop";
 
 type Account = { id: string; displayName: string; email: string };
 /** What Better Auth answers with. `token` is absent when a deployment wants an
@@ -151,14 +151,14 @@ export class AuthService {
     } catch {
       /* A refused connection is the one failure that is not about the credentials,
          and reporting it as one sends people to reset a password that was fine. */
-      throw new AuthError("Spar cannot reach its server. Check your connection and try again.", "UNREACHABLE");
+      throw new AuthError("Construct cannot reach its server. Check your connection and try again.", "UNREACHABLE");
     }
     /* `?? {}` because a failure is allowed to have no body at all, and JSON `null`
        parses to null rather than to nothing — reading a code off that is how an
        error about a password becomes an error about reading a property of null. */
     const payload = (await response.json().catch(() => null) as AuthPayload | null) ?? {};
     if (response.status === 429) throw new AuthError("Too many attempts. Wait a minute, then try again.", "RATE_LIMITED");
-    if (response.status >= 500) throw new AuthError("Spar's server could not complete that. Its log will say why.", "SERVER_ERROR");
+    if (response.status >= 500) throw new AuthError("Construct's server could not complete that. Its log will say why.", "SERVER_ERROR");
     if (!response.ok) throw new AuthError(REASON[payload.code ?? ""] ?? payload.message ?? `Sign-in failed (${response.status})`, payload.code);
     return { ...payload, token: response.headers.get("set-auth-token") ?? payload.token ?? null };
   }

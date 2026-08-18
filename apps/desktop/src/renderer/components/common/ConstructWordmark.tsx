@@ -6,13 +6,13 @@ import { cn } from "@/lib/utils";
  *  dropped into a sentence the wordmark then optically matches the copy around it instead of
  *  bulging out of the line. Callers that stand the wordmark on its own (sign-in, sidebar
  *  header) pass an explicit size. */
-export function SparWordmark({ className }: { className?: string }) {
+export function ConstructWordmark({ className }: { className?: string }) {
   return (
     <span
-      aria-label="Spar"
-      className={cn("font-spar text-[0.94em] font-semibold tracking-[-0.055em] whitespace-nowrap", className)}
+      aria-label="Construct"
+      className={cn("font-construct text-[0.94em] font-semibold tracking-[-0.055em] whitespace-nowrap", className)}
     >
-      Spar
+      Construct
     </span>
   );
 }

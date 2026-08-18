@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowRight, Eye, EyeOff } from "lucide-react";
 import { motion } from "motion/react";
-import type { AuthCodePurpose, AuthRequest, SparApi } from "../../../shared/api";
+import type { AuthCodePurpose, AuthRequest, ConstructApi } from "../../../shared/api";
 import { Button } from "@/components/ui/button";
 import { Segmented } from "@/components/ui/segmented";
 import { cn } from "@/lib/utils";
 import { message } from "@/lib/format";
-import { SparDots } from "../common/SparDots";
-import { SparWordmark } from "../common/SparWordmark";
+import { ConstructDots } from "../common/ConstructDots";
+import { ConstructWordmark } from "../common/ConstructWordmark";
 import { CodeField } from "../auth/CodeField";
 import { LINKS, PANEL, STEP, TEXT, useMarkPass } from "../auth/arrival";
 import { PasswordStrength } from "../auth/PasswordStrength";
@@ -50,7 +50,7 @@ function copyFor(step: Step, email: string) {
   const at = <span className="whitespace-nowrap text-foreground">{email.trim() || "your email"}</span>;
   switch (step.name) {
     case "credentials":
-      return { title: null, caption: step.mode === "sign-in" ? "Sign in to pick up where you left off." : "Create an account and start sparring.", action: step.mode === "sign-in" ? "Sign in" : "Create account", busy: step.mode === "sign-in" ? "Signing in…" : "Creating account…" };
+      return { title: null, caption: step.mode === "sign-in" ? "Sign in to pick up where you left off." : "Create an account to start building.", action: step.mode === "sign-in" ? "Sign in" : "Create account", busy: step.mode === "sign-in" ? "Signing in…" : "Creating account…" };
     case "code":
       return step.purpose === "email-verification"
         ? { title: "Confirm your email", caption: <>We sent a six-digit code to {at}.</>, action: "Confirm and sign in", busy: "Confirming…" }
@@ -83,9 +83,9 @@ export function AuthPage({
   onAuthenticated,
   onError,
 }: {
-  api: SparApi | undefined;
+  api: ConstructApi | undefined;
   error: string | null;
-  /** False when this build has no Spar server to sign in against. */
+  /** False when this build has no Construct server to sign in against. */
   serverConfigured: boolean;
   onAuthenticated(): Promise<void>;
   onError(value: string): void;
@@ -112,9 +112,9 @@ export function AuthPage({
   const problem = attempted ? problemWith(step, email, password, code) : null;
   /* A build with nowhere to sign in cannot be fixed by trying again, so it is said
      before the attempt rather than reported as its failure — otherwise the learner
-     reads a refused connection to localhost as Spar being broken. */
+     reads a refused connection to localhost as Construct being broken. */
   const unconfigured = !serverConfigured
-    ? "This build has no Spar server configured, so there is nothing to sign in to. See docs/hosting.md."
+    ? "This build has no Construct server configured, so there is nothing to sign in to. See docs/hosting.md."
     : null;
   const notice = problem?.text ?? error ?? unconfigured;
 
@@ -262,8 +262,8 @@ export function AuthPage({
           {/* The mark wakes up while a request is in flight. It is the only
               spinner on this window: a second one inside the button would be two
               things saying the same thing, half an inch apart. */}
-          <SparDots key={pass} pattern={awake ? "pass" : "still"} size={30} {...(busy ? { label: copy.busy } : {})} />
-          <SparWordmark className="block text-[2rem] leading-none text-foreground" />
+          <ConstructDots key={pass} pattern={awake ? "pass" : "still"} size={30} {...(busy ? { label: copy.busy } : {})} />
+          <ConstructWordmark className="block text-[2rem] leading-none text-foreground" />
         </motion.div>
 
         {/* One step replaces another: the outgoing one is gone the moment the

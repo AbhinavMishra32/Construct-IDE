@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertCircle, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import type { SessionDetail, SessionSummary, Track } from "@spar/domain";
-import type { BootstrapData, SparApi, ThemePreference } from "../shared/api";
+import type { SessionDetail, SessionSummary, Track } from "@construct/domain";
+import type { BootstrapData, ConstructApi, ThemePreference } from "../shared/api";
 import { cn } from "@/lib/utils";
 import { message } from "@/lib/format";
 import { Sidebar, type Page, type SessionActions } from "./components/shell/Sidebar";
-import { SparWordmark } from "./components/common/SparWordmark";
+import { ConstructWordmark } from "./components/common/ConstructWordmark";
 import { Toolbar } from "./components/shell/Toolbar";
 import { SearchPalette } from "./components/common/SearchPalette";
 import { TodayPage } from "./components/pages/TodayPage";
@@ -27,10 +27,10 @@ import { PlanningView } from "./components/workspace/PlanningView";
 import { ChatView } from "./components/workspace/ChatView";
 import { reduceRun, type AgentRun } from "./components/agent/agentRun";
 import { useSidebarWidth } from "./hooks/use-sidebar-width";
-import { SparDots } from "@/components/common/SparDots";
+import { ConstructDots } from "@/components/common/ConstructDots";
 import { Button } from "@/components/ui/button";
 
-const api: SparApi | undefined = window.spar;
+const api: ConstructApi | undefined = window.construct;
 
 /** Pages the shell puts a plain toolbar over. "workspace" and "challenge" draw
  *  their own, because both carry a back button and their own actions. */
@@ -75,14 +75,14 @@ export function App() {
      one of them has to open the same surface — nesting a second dialog inside the
      first is how you end up unable to get back out of it. */
   const [concept, setConcept] = useState<string | null>(null);
-  const [sidebar, setSidebar] = useState(() => localStorage.getItem("spar.sidebar") !== "hidden");
+  const [sidebar, setSidebar] = useState(() => localStorage.getItem("construct.sidebar") !== "hidden");
   const { width: sidebarWidth, dragging, handleProps: sidebarHandle } = useSidebarWidth();
   const [dark, setDark] = useState(() => matchMedia("(prefers-color-scheme: dark)").matches);
   const detailRef = useRef<SessionDetail | null>(null);
   detailRef.current = detail;
 
   const refresh = useCallback(async () => {
-    if (!api) throw new Error("Spar must run inside its Electron desktop shell.");
+    if (!api) throw new Error("Construct must run inside its Electron desktop shell.");
     const next = await api.bootstrap();
     setData(next);
     return next;
@@ -92,7 +92,7 @@ export function App() {
      one writes and then re-reads the bootstrap rather than patching the copy the
      sidebar is rendering from — pinning reorders the list, and archiving and
      deleting remove rows from it. */
-  const mutateSession = useCallback(async (work: (sdk: SparApi) => Promise<unknown>) => {
+  const mutateSession = useCallback(async (work: (sdk: ConstructApi) => Promise<unknown>) => {
     if (!api) return;
     try {
       await work(api);
@@ -151,7 +151,7 @@ export function App() {
   }, [openSession, refresh]);
 
   /* Starting a session is reachable before the shell exists: the last step of
-     onboarding opens the sparring session the learner picked, so this has to be
+     onboarding opens the session the learner picked, so this has to be
      declared above the early returns rather than beside the other page actions. */
   const start = useCallback(async (goal: string, trackId?: string) => {
     if (!api) return;
@@ -260,7 +260,7 @@ export function App() {
       if (key === "b") {
         event.preventDefault();
         setSidebar((value) => {
-          localStorage.setItem("spar.sidebar", value ? "hidden" : "shown");
+          localStorage.setItem("construct.sidebar", value ? "hidden" : "shown");
           return !value;
         });
       }
@@ -430,7 +430,7 @@ export function App() {
 
   const toggleSidebar = () =>
     setSidebar((value) => {
-      localStorage.setItem("spar.sidebar", value ? "hidden" : "shown");
+      localStorage.setItem("construct.sidebar", value ? "hidden" : "shown");
       return !value;
     });
   const expandSidebar = sidebar ? undefined : toggleSidebar;
@@ -692,7 +692,7 @@ function sessionMode(detail: SessionDetail): "challenge" | "chat" | "planning" {
 function BootShell() {
   return (
     <div aria-busy="true" className="app-drag app-pane grid h-full place-items-center" role="status">
-      <SparWordmark className="boot-wordmark text-[3.5rem] leading-none" />
+      <ConstructWordmark className="boot-wordmark text-[3.5rem] leading-none" />
     </div>
   );
 }
@@ -704,9 +704,9 @@ function RestoringShell() {
   return (
     <div aria-busy="true" className="app-drag app-pane grid h-full place-items-center" role="status">
       <div className="flex flex-col items-center gap-3">
-        <SparWordmark className="text-[2.5rem] leading-none text-foreground" />
+        <ConstructWordmark className="text-[2.5rem] leading-none text-foreground" />
         <p className="flex items-center gap-2 text-ui text-muted-foreground">
-          <SparDots pattern="wave" size={16} />
+          <ConstructDots pattern="wave" size={16} />
           Bringing your sessions back…
         </p>
       </div>
@@ -725,8 +725,8 @@ function RestoreFailed({ onRetry, busy }: { onRetry(): void; busy: boolean }) {
   return (
     <div className="app-drag app-pane grid h-full place-items-center px-8">
       <div className="app-no-drag max-w-[26rem] text-center">
-        <SparWordmark className="text-[2.25rem] leading-none text-foreground" />
-        <p className="mt-4 text-content text-foreground">Spar cannot reach its server.</p>
+        <ConstructWordmark className="text-[2.25rem] leading-none text-foreground" />
+        <p className="mt-4 text-content text-foreground">Construct cannot reach its server.</p>
         <p className="mt-1.5 text-ui leading-[1.65] text-muted-foreground">
           Your sessions and your profile live on your account, and this device has not got them yet. Reconnect and try again — nothing has been lost.
         </p>
@@ -742,7 +742,7 @@ function WorkspaceSkeleton() {
   return (
     <div className="grid h-full place-items-center">
       <div className="flex items-center gap-2 text-ui text-muted-foreground">
-        <SparDots pattern="sweep" size={18} label="Opening session" />
+        <ConstructDots pattern="sweep" size={18} label="Opening session" />
         Opening session…
       </div>
     </div>
@@ -755,7 +755,7 @@ function FatalError({ error }: { error: string }) {
       <div className="max-w-[32rem] rounded-xl border border-destructive/30 bg-card p-4 shadow-[var(--app-shadow-card)]">
         <p className="flex items-center gap-2 text-content font-semibold text-destructive">
           <AlertCircle className="size-4" />
-          Spar could not start
+          Construct could not start
         </p>
         <p className="mt-1.5 text-ui leading-[1.65] text-muted-foreground">{error}</p>
       </div>

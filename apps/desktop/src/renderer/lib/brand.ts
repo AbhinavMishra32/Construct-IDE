@@ -1,4 +1,4 @@
-import type { Language } from "@spar/domain";
+import type { Language } from "@construct/domain";
 import type { ProviderId } from "../../shared/api";
 
 /**
