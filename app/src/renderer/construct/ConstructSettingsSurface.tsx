@@ -6,32 +6,35 @@ import {
   Alert,
   AlertDescription,
   AlertTitle,
-  Button,
   ShadcnDialog,
   ShadcnDialogContent,
   ShadcnDialogDescription,
   ShadcnDialogFooter,
   ShadcnDialogHeader,
-  ShadcnDialogTitle,
-  Input,
-  SettingsPanel,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-  Textarea
+  ShadcnDialogTitle
 } from "@opaline/ui";
 import type { SettingsNavSection } from "@opaline/ui";
-/* The settings rows are Spar's, not Opaline's: a card with a real surface and a
-   contact shadow, 54px rows so a title-only row matches one with a description,
-   and the group label above the card rather than inside it. Aliased to the old
-   names so the call sites below read the same as every other settings screen. */
+/* Every settings screen is Spar's, not Opaline's: the same page frame, a card
+   with a real surface and a contact shadow, 54px rows so a title-only row matches
+   one with a description, and the group label above the card rather than inside
+   it. The controls come from the same place for the same reason — an Opaline
+   button on a Spar card is a 32px pill with a different radius sitting in a row
+   built to a different scale. Aliased to the old names so the call sites below
+   read the same as every other settings screen. */
 import {
+  SparButton as Button,
+  SparInput as Input,
+  SparSelect as Select,
+  SparSelectContent as SelectContent,
+  SparSelectItem as SelectItem,
+  SparSelectTrigger as SelectTrigger,
+  SparSelectValue as SelectValue,
   SparSettingsCard as SettingsCard,
   SparSettingsField as SettingsRow,
+  SparSettingsPage as SettingsPanel,
   SparSettingsSection as SettingsSection,
   SparSettingsToggle as SettingsToggle,
+  SparTextarea as Textarea,
 } from "../components/spar";
 
 import { ConstructAiSettingsSection } from "./components/settings/ConstructAiSettingsSection";

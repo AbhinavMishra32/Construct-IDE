@@ -18,10 +18,19 @@ pub fn create_main_window<R: Runtime>(
             .title_bar_style(tauri::TitleBarStyle::Overlay)
             .hidden_title(true)
             // Centred in the 44px titlebar row the renderer reserves through
-            // `--titlebar-height`: 16px buttons in a 44px row leave 14px above.
-            // Keep the two in step — the row is what the buttons are measured
-            // against, and moving one without the other lands them off-centre.
-            .traffic_light_position(tauri::LogicalPosition::new(16.0, 14.0))
+            // `--titlebar-height`. Keep the two in step — the row is what the
+            // buttons are measured against, and moving one without the other
+            // lands them off-centre.
+            //
+            // The y is NOT the gap above the buttons. tao resizes the standard
+            // title-bar container to `button_height + y` and leaves each button
+            // where it already sat inside it, so what lands on screen is
+            // `y - button_offset` — and on macOS 26 the buttons are 14x14 sitting
+            // 9px in from the top of a 32px container. Centring 14px in a 44px
+            // row wants a 15px inset, so y = 15 + 9. Read as a top gap this looks
+            // 10px too large; it is not, and shrinking it rides the buttons back
+            // up above the wordmark beside them.
+            .traffic_light_position(tauri::LogicalPosition::new(16.0, 24.0))
             .transparent(true);
     }
     #[cfg(target_os = "windows")]

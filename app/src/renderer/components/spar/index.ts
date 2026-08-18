@@ -102,6 +102,7 @@ export {
   SparSettingsCard,
   SparSettingsField,
   SparSettingsGroup,
+  SparSettingsPage,
   SparSettingsRow,
   SparSettingsSection,
   SparSettingsToggle,

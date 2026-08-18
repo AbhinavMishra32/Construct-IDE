@@ -2,15 +2,13 @@ import { useState, type ReactNode } from "react";
 import { DownloadSimple } from "@phosphor-icons/react";
 import { BotIcon, CloudIcon } from "lucide-react";
 import {
-  Button,
-  Input,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue
-} from "@opaline/ui";
-import {
+  SparButton as Button,
+  SparInput as Input,
+  SparSelect as Select,
+  SparSelectContent as SelectContent,
+  SparSelectItem as SelectItem,
+  SparSelectTrigger as SelectTrigger,
+  SparSelectValue as SelectValue,
   SparSettingsCard as SettingsCard,
   SparSettingsField as SettingsRow,
   SparSettingsSection as SettingsSection,
@@ -206,7 +204,7 @@ export function ConstructAiSettingsSection({
                 value={settings.source}
                 onValueChange={(value) => onSourceChange(value === "construct-cloud" ? "construct-cloud" : "byok")}
               >
-                <SelectTrigger className="h-[34px] w-44 text-xs">
+                <SelectTrigger className="w-44">
                   <SelectValue placeholder="Select source">
                     {settings.source === "construct-cloud" ? "Construct Cloud" : "BYOK"}
                   </SelectValue>
@@ -230,7 +228,7 @@ export function ConstructAiSettingsSection({
                     value === "openrouter" || value === "opencode-zen" ? value : "openai"
                   )}
                 >
-                  <SelectTrigger className="h-[34px] w-44 text-xs">
+                  <SelectTrigger className="w-44">
                     <SelectValue placeholder="Select provider">
                       {settings.provider === "openai"
                         ? "OpenAI"
@@ -268,7 +266,7 @@ export function ConstructAiSettingsSection({
                   type="password"
                   value={settings.openAiApiKey}
                   placeholder="sk-..."
-                  className="bg-background border-border hover:border-border/80 focus-visible:ring-2 focus-visible:ring-ring/30 text-foreground placeholder-muted-foreground/60 rounded-lg text-xs h-[34px] px-3 py-2 w-full transition-all mt-1"
+                  className="mt-1 w-full"
                   onChange={(event) => onOpenAiApiKeyChange(event.target.value)}
                 />
               </SettingsRow>
@@ -276,7 +274,7 @@ export function ConstructAiSettingsSection({
                 <Input
                   value={settings.openAiBaseUrl}
                   placeholder="https://api.openai.com/v1"
-                  className="bg-background border-border hover:border-border/80 focus-visible:ring-2 focus-visible:ring-ring/30 text-foreground placeholder-muted-foreground/60 rounded-lg text-xs h-[34px] px-3 py-2 w-full transition-all mt-1"
+                  className="mt-1 w-full"
                   onChange={(event) => onOpenAiBaseUrlChange(event.target.value)}
                 />
               </SettingsRow>
@@ -290,7 +288,7 @@ export function ConstructAiSettingsSection({
                   type="password"
                   value={settings.openRouterApiKey}
                   placeholder="sk-or-..."
-                  className="bg-background border-border hover:border-border/80 focus-visible:ring-2 focus-visible:ring-ring/30 text-foreground placeholder-muted-foreground/60 rounded-lg text-xs h-[34px] px-3 py-2 w-full transition-all mt-1"
+                  className="mt-1 w-full"
                   onChange={(event) => onOpenRouterApiKeyChange(event.target.value)}
                 />
               </SettingsRow>
@@ -298,7 +296,7 @@ export function ConstructAiSettingsSection({
                 <Input
                   value={settings.openRouterBaseUrl}
                   placeholder="https://openrouter.ai/api/v1"
-                  className="bg-background border-border hover:border-border/80 focus-visible:ring-2 focus-visible:ring-ring/30 text-foreground placeholder-muted-foreground/60 rounded-lg text-xs h-[34px] px-3 py-2 w-full transition-all mt-1"
+                  className="mt-1 w-full"
                   onChange={(event) => onOpenRouterBaseUrlChange(event.target.value)}
                 />
               </SettingsRow>
@@ -311,7 +309,7 @@ export function ConstructAiSettingsSection({
                 <div className="flex items-center gap-2 mt-1">
                   <Input
                     type="password"
-                    className="flex-1 bg-background border-border hover:border-border/80 focus-visible:ring-2 focus-visible:ring-ring/30 text-foreground placeholder-muted-foreground/60 rounded-lg text-xs h-[34px] px-3 py-2 transition-all"
+                    className="flex-1"
                     value={settings.opencodeZenApiKey}
                     placeholder="sk-..."
                     onChange={(event) => onOpencodeZenApiKeyChange(event.target.value)}
@@ -321,10 +319,9 @@ export function ConstructAiSettingsSection({
                       size="sm"
                       variant="secondary"
                       title="Import API key from opencode CLI auth file"
-                      className="bg-secondary hover:bg-secondary/80 text-secondary-foreground border border-border/80 font-medium text-xs px-3.5 py-1.5 h-[34px] rounded-lg transition-colors cursor-pointer flex items-center shrink-0"
                       onClick={() => { void onImportOpencodeAuth(); }}
                     >
-                      <DownloadSimple size={14} className="mr-1.5" />
+                      <DownloadSimple size={14} />
                       Import
                     </Button>
                   ) : null}
@@ -334,7 +331,7 @@ export function ConstructAiSettingsSection({
                 <Input
                   value={settings.opencodeZenBaseUrl}
                   placeholder="https://opencode.ai/zen/v1"
-                  className="bg-background border-border hover:border-border/80 focus-visible:ring-2 focus-visible:ring-ring/30 text-foreground placeholder-muted-foreground/60 rounded-lg text-xs h-[34px] px-3 py-2 w-full transition-all mt-1"
+                  className="mt-1 w-full"
                   onChange={(event) => onOpencodeZenBaseUrlChange(event.target.value)}
                 />
               </SettingsRow>
@@ -346,7 +343,7 @@ export function ConstructAiSettingsSection({
               type="password"
               value={settings.tavilyApiKey}
               placeholder="tvly-..."
-              className="bg-background border-border hover:border-border/80 focus-visible:ring-2 focus-visible:ring-ring/30 text-foreground placeholder-muted-foreground/60 rounded-lg text-xs h-[34px] px-3 py-2 w-full transition-all mt-1"
+              className="mt-1 w-full"
               onChange={(event) => onTavilyApiKeyChange(event.target.value)}
             />
           </SettingsRow>
@@ -390,7 +387,6 @@ export function ConstructAiSettingsSection({
               <Button
                 size="sm"
                 disabled={!canSave}
-                className="bg-primary hover:bg-primary/95 text-primary-foreground disabled:bg-muted disabled:text-muted-foreground font-medium text-xs px-5 py-1.5 h-[34px] rounded-lg transition-colors cursor-pointer border-none"
                 onClick={onSave}
               >
                 {aiBusy ? "Saving..." : "Save"}
@@ -409,7 +405,6 @@ export function ConstructAiSettingsSection({
               <Button
                 variant="secondary"
                 size="sm"
-                className="bg-secondary hover:bg-secondary/80 text-secondary-foreground border border-border/80 font-medium text-xs px-3.5 py-1.5 h-[34px] rounded-lg transition-colors cursor-pointer"
                 onClick={async () => {
                   try {
                     await window.constructProjects.openConfigFile();
@@ -452,7 +447,7 @@ function ModelSelectionControl({
     <div className="flex min-w-0 items-center gap-2">
       {!readOnlyCatalog ? (
         <Input
-          className="bg-background border-border hover:border-border/80 focus-visible:ring-2 focus-visible:ring-ring/30 text-foreground placeholder-muted-foreground/60 rounded-lg text-xs h-[34px] w-56 px-3 py-1.5"
+          className="w-56"
           value={model}
           placeholder="model-id"
           onChange={(event) => onModelChange(event.target.value)}
@@ -466,7 +461,7 @@ function ModelSelectionControl({
         disabled={disabled || models.length === 0}
       >
         <SelectTrigger
-          className="h-[34px] min-w-[14rem] max-w-[22rem] rounded-lg border-border bg-background text-xs"
+          className="min-w-[14rem] max-w-[22rem]"
           title={`Choose ${providerLabel} model`}
         >
           <BotIcon size={14} className="text-muted-foreground" />
@@ -487,39 +482,6 @@ function ModelSelectionControl({
   );
 }
 
-
-
-function CompactChoiceGroup<T extends string>({
-  onChange,
-  options,
-  value
-}: {
-  onChange: (value: T) => void;
-  options: { label: string; value: T }[];
-  value: T;
-}) {
-  return (
-    <div className="inline-flex items-center gap-0.5 rounded-lg bg-muted/40 p-0.5 border border-border/60">
-      {options.map((option) => {
-        const isActive = value === option.value;
-        return (
-          <button
-            key={option.value}
-            type="button"
-            className={`h-[28px] rounded-md px-3 text-xs font-semibold transition-all duration-150 cursor-pointer ${
-              isActive
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground bg-transparent"
-            }`}
-            onClick={() => onChange(option.value)}
-          >
-            {option.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
 
 
 function normalizeReasoningEffort(value: string): AiSettings["reasoningEffort"] {

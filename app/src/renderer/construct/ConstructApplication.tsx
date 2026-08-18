@@ -1,7 +1,7 @@
 import { AppErrorBoundary } from "./AppErrorBoundary";
 import { ConstructSettingsSurface, buildSettingsSections, settingsTitle } from "./ConstructSettingsSurface";
 import { LearningContextSurface } from "./LearningContextSurface";
-import { HeaderBottomPanelIcon, HeaderGuidePanelIcon, SavingIndicator, SidebarConceptsButton, SidebarLearningButton, SidebarSettingsButton } from "./ShellControls";
+import { ConstructWordmark, SavingIndicator, SidebarConceptsButton, SidebarLearningButton, SidebarSettingsButton } from "./ShellControls";
 import { applyDocumentTheme, getInitialTheme, resolveActiveTheme, type ThemeMode } from "./theme";
 import {
   applyCodeThemeToDocument,
@@ -37,12 +37,15 @@ import {
   FolderOpenIcon,
   HomeIcon,
   KeyRoundIcon,
+  ArrowLeftIcon,
+  ArrowRightIcon,
   ListChecksIcon,
   LogOutIcon,
   Maximize2Icon,
+  Minimize2Icon,
   MoreHorizontalIcon,
-  MessageCircleIcon,
-  MessageCircleOffIcon,
+  MessageSquareIcon,
+  PanelBottomIcon,
   PanelRightIcon,
   SettingsIcon,
   TerminalSquareIcon,
@@ -58,8 +61,6 @@ import {
 
 import {
   DesktopShell,
-  DesktopChromeButton,
-  DesktopHeaderToolButton,
   Badge,
   BottomPanel,
   Button,
@@ -1702,10 +1703,15 @@ export default function ConstructApp() {
              traffic lights need — and one collapse control on the trailing one.
              The cluster it replaces spent that row on four controls, including a
              bare circle standing in for Home and a pair of history arrows that
-             duplicate what the nav rows below already do. */
+             duplicate what the nav rows below already do.
+
+             Two children, not one wrapper: the shell marks its direct children
+             undraggable, so a div around the pair would take the whole row out of
+             the window's drag region. `spar-shell.css` pushes the last child to
+             the trailing edge, which leaves the space between them draggable. */
           sidebarChrome={(shellState) => (
             <>
-              <ConstructAuthLogo markClassName="size-4" />
+              <ConstructWordmark />
               <SparToolbarIconButton
                 icon={PanelLeftClose}
                 onClick={() => shellState.setSidebarOpen(false)}
@@ -1747,35 +1753,36 @@ export default function ConstructApp() {
                     return (
                       <>
                         <SavingIndicator isSaving={isSaving} />
-                        <div className="flex items-center gap-1" aria-label="Flow controls">
-                          <div className="flex h-7 items-center gap-1" role="group" aria-label="Construct agent layout">
-                            <DesktopChromeButton
-                              aria-label="Expand Construct agent"
-                              data-pressed={state.isRightPanelOpen && flowPanelView === "chat" && state.inspectorExpanded ? "" : undefined}
-                              onClick={maximizeFlowChat}
-                              title="Expand chat"
-                            >
-                              <Maximize2Icon size={16} strokeWidth={1.9} />
-                            </DesktopChromeButton>
-                            <DesktopChromeButton
-                              aria-label="Show Construct agent"
-                              data-pressed={state.isRightPanelOpen && flowPanelView === "chat" && !state.inspectorExpanded ? "" : undefined}
-                              onClick={panelFlowChat}
-                              title="Sidebar chat"
-                            >
-                              <MessageCircleIcon size={16} strokeWidth={1.9} />
-                            </DesktopChromeButton>
-                            <DesktopChromeButton
-                              aria-label="Hide Construct agent"
-                              data-pressed={!state.isRightPanelOpen || flowPanelView !== "chat" ? "" : undefined}
-                              onClick={closeFlowChat}
-                              title="Hide chat"
-                            >
-                              <MessageCircleOffIcon size={16} strokeWidth={1.9} />
-                            </DesktopChromeButton>
-                          </div>
-                          <DesktopHeaderToolButton
-                            data-active={state.isRightPanelOpen && flowPanelView === "project" ? "true" : "false"}
+                        {/* One control per panel, each named by what is in it, and
+                            each its own toggle. This row used to spend three
+                            buttons on the chat alone — expand, show, and a
+                            crossed-out bubble for hide — so two of the three were
+                            always showing you a state you were already in, and the
+                            slashed glyph had no counterpart anywhere else in the
+                            chrome. Clicking the open panel closes it, which is what
+                            the other two panels here already did.
+
+                            Expand rides with the chat rather than sitting beside
+                            it, and only while the chat is up: there is nothing to
+                            expand when the panel is closed. */}
+                        <div className="flex items-center gap-1" aria-label="Flow panels">
+                          <SparToolbarIconButton
+                            active={state.isRightPanelOpen && flowPanelView === "chat"}
+                            icon={MessageSquareIcon}
+                            onClick={state.isRightPanelOpen && flowPanelView === "chat" ? closeFlowChat : panelFlowChat}
+                            title={state.isRightPanelOpen && flowPanelView === "chat" ? "Hide Construct agent" : "Show Construct agent"}
+                          />
+                          {state.isRightPanelOpen && flowPanelView === "chat" ? (
+                            <SparToolbarIconButton
+                              active={state.inspectorExpanded}
+                              icon={state.inspectorExpanded ? Minimize2Icon : Maximize2Icon}
+                              onClick={state.inspectorExpanded ? panelFlowChat : maximizeFlowChat}
+                              title={state.inspectorExpanded ? "Collapse chat" : "Expand chat"}
+                            />
+                          ) : null}
+                          <SparToolbarIconButton
+                            active={state.isRightPanelOpen && flowPanelView === "project"}
+                            icon={ListChecksIcon}
                             onClick={() => {
                               if (state.isRightPanelOpen && flowPanelView === "project") {
                                 state.toggleRightPanel();
@@ -1789,19 +1796,14 @@ export default function ConstructApp() {
                                 state.setRightPanelOpen(true);
                               })();
                             }}
-                            aria-label="Open Flow project map"
                             title="Project map"
-                          >
-                            <ListChecksIcon size={16} strokeWidth={1.9} />
-                          </DesktopHeaderToolButton>
-                          <DesktopHeaderToolButton
-                            data-active={state.isBottomPanelOpen ? "true" : "false"}
+                          />
+                          <SparToolbarIconButton
+                            active={state.isBottomPanelOpen}
+                            icon={PanelBottomIcon}
                             onClick={() => openBottomTerminal(state)}
-                            aria-label="Toggle terminal"
                             title="Terminal"
-                          >
-                            <HeaderBottomPanelIcon open={state.isBottomPanelOpen} />
-                          </DesktopHeaderToolButton>
+                          />
                         </div>
                       </>
                     );
@@ -1821,69 +1823,62 @@ export default function ConstructApp() {
                         }}
                         style={{ cursor: !isAtFrontier ? "pointer" : "default" }}
                       >
-                        <DesktopChromeButton
-                          onClick={(e) => { e.stopPropagation(); void handlePrevBlock(); }}
+                        {/* Hand-drawn arrows at 1.5 against a chrome row of 1.9
+                            lucide glyphs: the same shape, a hair lighter, which is
+                            the kind of mismatch you feel before you can name. */}
+                        <SparToolbarIconButton
                           disabled={tapeProject.currentStepIndex === 0 && tapeProject.currentBlockIndex === 0}
-                          aria-label="Previous panel"
-                          title="Previous Panel"
-                        >
-                          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 14, height: 14 }}>
-                            <line x1="19" y1="12" x2="5" y2="12" />
-                            <polyline points="12 19 5 12 12 5" />
-                          </svg>
-                        </DesktopChromeButton>
+                          icon={ArrowLeftIcon}
+                          onClick={(event) => { event.stopPropagation(); void handlePrevBlock(); }}
+                          title="Previous panel"
+                        />
 
                         <Badge variant="secondary">
                           {currentBlockNumber(tapeProject)}/{totalBlocks(tapeProject.program)}
                         </Badge>
 
                         {!isAtFrontier && (
-                          <DesktopChromeButton
-                            onClick={(e) => { e.stopPropagation(); void handleNextBlock(); }}
+                          <SparToolbarIconButton
                             disabled={
                               isAtEnd ||
                               (isAtFrontier && !canContinue)
                             }
-                            aria-label="Next panel"
-                            title="Next Panel"
-                          >
-                            <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: 14, height: 14 }}>
-                              <line x1="5" y1="12" x2="19" y2="12" />
-                              <polyline points="12 5 19 12 12 19" />
-                            </svg>
-                          </DesktopChromeButton>
+                            icon={ArrowRightIcon}
+                            onClick={(event) => { event.stopPropagation(); void handleNextBlock(); }}
+                            title="Next panel"
+                          />
                         )}
 
                       </div>
 
                       <SavingIndicator isSaving={isSaving} />
+                      {/* The same three-control row the Flow header has, in the same
+                          order and the same control: what is in the side panel,
+                          then the panel itself, then the terminal. */}
                       <div className="flex items-center gap-1" aria-label="Workspace panels">
-                        <DesktopHeaderToolButton
-                          data-active={state.isRightPanelOpen && activeRightSlotId === "interact" ? "true" : "false"}
+                        <SparToolbarIconButton
+                          active={state.isRightPanelOpen && activeRightSlotId === "interact"}
+                          icon={MessageSquareIcon}
                           onClick={() => {
                             handleRightSlotChange("interact");
                             if (!state.isRightPanelOpen) {
                               state.toggleRightPanel();
                             }
                           }}
-                          aria-label="Open Construct Interact"
-                        >
-                          <MessageCircleIcon size={16} strokeWidth={1.9} />
-                        </DesktopHeaderToolButton>
-                        <DesktopHeaderToolButton
-                          data-active={state.isRightPanelOpen ? "true" : "false"}
+                          title="Construct Interact"
+                        />
+                        <SparToolbarIconButton
+                          active={state.isRightPanelOpen}
+                          icon={PanelRightIcon}
                           onClick={state.toggleRightPanel}
-                          aria-label="Toggle guide panel"
-                        >
-                          <HeaderGuidePanelIcon open={state.isRightPanelOpen} />
-                        </DesktopHeaderToolButton>
-                        <DesktopHeaderToolButton
-                          data-active={state.isBottomPanelOpen ? "true" : "false"}
+                          title="Guide panel"
+                        />
+                        <SparToolbarIconButton
+                          active={state.isBottomPanelOpen}
+                          icon={PanelBottomIcon}
                           onClick={() => openBottomTerminal(state)}
-                          aria-label="Toggle terminal"
-                        >
-                          <HeaderBottomPanelIcon open={state.isBottomPanelOpen} />
-                        </DesktopHeaderToolButton>
+                          title="Terminal"
+                        />
                       </div>
                     </>
                   );

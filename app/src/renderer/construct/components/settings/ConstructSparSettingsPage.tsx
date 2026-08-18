@@ -34,6 +34,7 @@ import {
   SparSegmented,
   SparSettingsGroup,
   SparSettingsField,
+  SparSettingsPage,
   SparModelSelectField,
 } from "../../../components/spar";
 import { ProviderGlyph } from "../../../components/spar/provider-glyph";
@@ -527,11 +528,8 @@ export function ConstructSparSettingsPage({
   };
 
   return (
-    <div className="app-scroll h-full overflow-y-auto">
-      <div className="mx-auto w-full max-w-[42rem] px-6 pb-20 pt-9">
-        <h1 className="text-[1.55rem] font-semibold tracking-[-0.035em]">Settings</h1>
-        <p className="mt-1 text-content text-muted-foreground">{`Appearance and model runtime for this ${deviceNoun}.`}</p>
-
+    <SparSettingsPage subtitle={`Appearance and model runtime for this ${deviceNoun}.`} title="Settings">
+      <>
         {error && !selected && (
           <p className="mt-5 rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-ui text-destructive">
             {error}
@@ -697,7 +695,7 @@ export function ConstructSparSettingsPage({
           <span aria-hidden className="construct-auth-logo__mark construct-auth-logo__mark--hero" />
           <p className="mt-6 text-ui text-muted-foreground">Version {releaseVersion}</p>
         </section>
-      </div>
+      </>
 
       {settings && (
         <ProviderConnectDialog
@@ -734,6 +732,6 @@ export function ConstructSparSettingsPage({
           </SparDialogFooter>
         </SparDialogContent>
       </SparDialog>
-    </div>
+    </SparSettingsPage>
   );
 }

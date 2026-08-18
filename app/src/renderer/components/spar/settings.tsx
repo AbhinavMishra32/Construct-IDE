@@ -4,6 +4,43 @@ import { Switch as SwitchPrimitive } from "radix-ui";
 import { cn } from "../../lib/utils";
 
 /**
+ * The frame every settings screen sits in: one measure, one scroll, one heading
+ * treatment.
+ *
+ * There were two of these. The landing screen had Spar's — a 42rem measure, a
+ * 24.8px heading at -0.035em, and a deep bottom gutter so the last card is not
+ * flush against the window — while every other page went through Opaline's
+ * `SettingsPanel`, which brought its own heading size, its own top padding, and a
+ * `bg-background` fill that stopped the window's material at the pane edge. Two
+ * frames is why the deep pages read as a different app to the page that links to
+ * them, and no amount of matching the cards inside fixes a heading that changes
+ * size when you click into it.
+ *
+ * `app-settings-surface` is kept as the hook `spar-shell.css` reaches for.
+ */
+export function SparSettingsPage({
+  title,
+  subtitle,
+  children,
+  className,
+}: {
+  title?: ReactNode;
+  subtitle?: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <main className={cn("app-scroll app-settings-surface h-full min-h-0 flex-1 overflow-y-auto", className)}>
+      <div className="mx-auto w-full max-w-[42rem] px-6 pt-9 pb-20">
+        {title != null && <h1 className="text-[1.55rem] font-semibold tracking-[-0.035em]">{title}</h1>}
+        {subtitle != null && <p className="mt-1 text-content text-muted-foreground">{subtitle}</p>}
+        {children}
+      </div>
+    </main>
+  );
+}
+
+/**
  * A labelled stack of rows. The label sits above the card, not inside it — the
  * card is then one uninterrupted surface instead of a header plus a body.
  *

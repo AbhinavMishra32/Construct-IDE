@@ -66,7 +66,9 @@ export function SparToolbarIconButton({
   disabled,
 }: {
   icon: React.ComponentType<{ className?: string }>;
-  onClick?(): void;
+  /** The event is passed through for the rows that have to stop it reaching a
+   *  clickable container — a stepper inside a "jump back to here" strip. */
+  onClick?(event: React.MouseEvent<HTMLButtonElement>): void;
   title: string;
   active?: boolean;
   disabled?: boolean;

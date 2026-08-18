@@ -1,20 +1,31 @@
 import { useEffect, useRef, useState } from "react";
 import { GearSix, Notebook } from "@phosphor-icons/react";
-import { BookOpenIcon, PanelBottomIcon, PanelRightIcon } from "lucide-react";
+import { BookOpenIcon } from "lucide-react";
 import { Spinner } from "@opaline/ui";
 
 import { SparSidebarAction } from "../components/spar";
 
-/* 14px in a 24px button: the AppKit toolbar glyph, not a web icon. The weight
-   steps up when the panel is open so the control reads as pressed without a fill
-   behind it. */
-export function HeaderGuidePanelIcon({ open }: { open: boolean }) {
-  return <PanelRightIcon aria-hidden="true" className="size-3.5" strokeWidth={open ? 2.1 : 1.9} />;
+/**
+ * The app's name, on the sidebar's first row.
+ *
+ * A wordmark rather than the mark it replaced: at 16px the mark was a shape too
+ * small to be read as anything, sitting in the middle of a row with the traffic
+ * lights on one side of it and nothing on the other. The name occupies that room
+ * and says what the window is — which is the only job the first row has.
+ */
+export function ConstructWordmark() {
+  return (
+    <span aria-label="Construct" className="construct-wordmark">
+      Construct
+    </span>
+  );
 }
 
-export function HeaderBottomPanelIcon({ open }: { open: boolean }) {
-  return <PanelBottomIcon aria-hidden="true" className="size-3.5" strokeWidth={open ? 2.1 : 1.9} />;
-}
+/* The panel icons that used to live here carried their own open state by stepping
+   the stroke weight up. `SparToolbarIconButton` marks a pressed control with a
+   fill, like the rest of the chrome does, so a second signal on the glyph was one
+   control speaking twice — and the two never quite agreed, because a 2.1 stroke on
+   an already-filled button just reads as a heavier icon. */
 
 export function SidebarLearningButton({ onClick }: { onClick: () => void }) {
   return <SparSidebarAction icon={<Notebook />} label="Context" onClick={onClick} />;

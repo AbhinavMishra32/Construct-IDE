@@ -3,13 +3,13 @@ import {
   AlertDescription,
   AlertTitle,
   Badge,
-  Button,
-  SettingsPanel,
   Spinner
 } from "@opaline/ui";
 import {
+  SparButton as Button,
   SparSettingsCard as SettingsCard,
   SparSettingsField as SettingsRow,
+  SparSettingsPage as SettingsPanel,
   SparSettingsSection as SettingsSection,
   SparSettingsToggle as SettingsToggle,
 } from "../../../components/spar";

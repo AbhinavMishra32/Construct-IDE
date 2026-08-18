@@ -3,6 +3,10 @@
 @import "@opaline/ui/styles.css";
 @import "@fontsource-variable/geist";
 @import "@fontsource-variable/geist-mono";
+/* The wordmark's font, and nothing else's. Outfit is the geometric display face
+   the brand mark is set in — bundled rather than reached for from the OS so
+   "Construct" is the same shape on every machine the app runs on. */
+@import "@fontsource-variable/outfit";
 /* Window chrome, glass surfaces, and the overrides that repoint the vendored
    Opaline shell at them. Imported after the shell's own stylesheet so its
    material tokens are the ones being replaced. */
@@ -260,10 +264,33 @@ html, body {
 }
 
 .construct-auth-logo__wordmark {
+  font-family: var(--font-brand);
   font-size: 0.9375rem;
-  font-weight: 700;
-  letter-spacing: 0;
+  font-weight: 600;
+  letter-spacing: -0.015em;
   color: var(--foreground);
+}
+
+/* The wordmark as window chrome: the name of the app on the first row of the
+   sidebar, where a mark used to float on its own.
+
+   13px at 600 rather than the UI's 12px at 400 — a wordmark has to outrank the
+   rows beneath it without being a heading, and weight does that where size alone
+   would make it a title. The negative tracking is Outfit's: a geometric face set
+   at default spacing reads loose at chrome size, because its round bowls already
+   carry their own air. */
+.construct-wordmark {
+  font-family: var(--font-brand);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: -0.018em;
+  line-height: 1;
+  color: color-mix(in srgb, var(--foreground) 92%, transparent);
+  user-select: none;
+  /* Optical, not metric: the cap of a C sits a hair below the box a flex row
+     centres, so a mathematically centred wordmark reads low against the icon
+     beside it. */
+  padding-block-start: 0.5px;
 }
 
 .construct-auth-card {
@@ -417,6 +444,10 @@ html, body {
 
   --font-sans: "Geist Variable", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Geist", sans-serif;
   --font-display: "Aside Display", "Geist Variable", "Geist", sans-serif;
+  /* The wordmark only. A geometric display face reads as a logo beside Geist's
+     UI text, which is the whole point of a wordmark — it should not look like a
+     row label that happens to be bold. */
+  --font-brand: "Outfit Variable", "Outfit", "Avenir Next", "Futura", var(--font-sans);
   --font-system-ui: "Geist Variable", "Geist", sans-serif;
   --font-mono: "SF Mono", "Berkeley Mono", "Geist Mono Variable", "Geist Mono", ui-monospace, monospace;
 
@@ -445,11 +476,13 @@ html, body {
      lights, on the trailing edge for the Windows caption buttons. `spar-shell.css`
      picks a side from data-window-controls on <html>.
 
-     macOS: measured on 26, the buttons are 16x16 and run x=18..80; 6rem clears
-     that with a 16px gap, and the row height centres them. Windows: the
-     minimise/maximise/close overlay is a fixed 138px at 100% scale. */
+     macOS: measured on 26, the buttons are 14x14 spaced 23px apart, so at the
+     x=16 origin `src-tauri/src/window.rs` sets they run x=16..76; 5.5rem clears
+     that with a 12px gap, which is the same air the row's own inset gives the
+     control on its trailing edge. Windows: the minimise/maximise/close overlay is
+     a fixed 138px at 100% scale. */
   --titlebar-height: 2.75rem;
-  --window-controls-leading: 6rem;
+  --window-controls-leading: 5.5rem;
   --window-controls-trailing: 0rem;
 
   /* Declared here as well as in `@theme inline`, and this copy is the one that
@@ -470,6 +503,7 @@ html, body {
   --radius-item: 0.375rem;
   --radius-menu: calc(var(--radius-item) + 0.375rem);
 
+  --font-brand: "Outfit Variable", "Outfit", "Avenir Next", "Futura", var(--font-sans);
   --opaline-font-sans: "Geist Variable", "Geist", sans-serif;
   --opaline-font-mono: "Berkeley Mono", "Geist Mono Variable", "Geist Mono", "JetBrains Mono", monospace;
   --font-ui-family: var(--font-sans);

@@ -2,8 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { PencilSimple, ShareNetwork, Trash, UploadSimple } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import {
-  Button,
-  Input,
   ShadcnDialog,
   ShadcnDialogContent,
   ShadcnDialogFooter,
@@ -11,6 +9,11 @@ import {
   ShadcnDialogTitle,
   Spinner
 } from "@opaline/ui";
+import {
+  SparButton as Button,
+  SparInput as Input,
+  SparSettingsPage,
+} from "../../../components/spar";
 
 import type { AiSettings, ConstructProfile, ConstructProfileActivityEvent, ConstructProfileSnapshot, ProjectSummary } from "../../types";
 import { getProfile, updateProfile } from "../../lib/bridge";
@@ -93,8 +96,8 @@ export function ConstructProfileSettingsPanel({
   }
 
   return (
-    <main className="app-settings-surface h-full min-h-0 flex-1 overflow-y-auto bg-background">
-      <div className="mx-auto flex w-full max-w-3xl flex-col gap-7 px-6 py-8 pb-12">
+    <SparSettingsPage>
+      <div className="flex flex-col gap-7">
         <div className="flex items-center justify-end gap-2">
           <Button variant="outline" size="sm" disabled={profileBusy} onClick={() => void shareProfile()}>
             <ShareNetwork data-icon="inline-start" />
@@ -109,8 +112,10 @@ export function ConstructProfileSettingsPanel({
         <header className="flex flex-col items-center gap-3 text-center">
           <ProfileAvatar profile={profile} className="size-16 shadow-sm" />
           <div className="flex flex-col items-center gap-1.5">
-            <h1 className="text-2xl font-semibold tracking-tight">{profile.name}</h1>
-            <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            {/* The page heading scale every settings screen uses, so a name here
+                is the same size as "Settings" is one click away. */}
+            <h1 className="text-[1.55rem] font-semibold tracking-[-0.035em]">{profile.name}</h1>
+            <div className="flex items-center gap-1.5 text-content text-muted-foreground">
               <span>{profile.handle}</span>
               <span aria-hidden>·</span>
               <span className="rounded-full border px-1.5 py-px text-xs">Construct</span>
@@ -165,7 +170,7 @@ export function ConstructProfileSettingsPanel({
             <p className="text-sm text-muted-foreground">Create a project to begin building your local activity profile.</p>
           )}
         </section>
-        {profileError ? <p role="alert" className="text-sm text-destructive">{profileError}</p> : null}
+        {profileError ? <p role="alert" className="text-content text-destructive">{profileError}</p> : null}
       </div>
 
       <EditProfileDialog
@@ -174,7 +179,7 @@ export function ConstructProfileSettingsPanel({
         onOpenChange={setEditOpen}
         onSave={saveProfile}
       />
-    </main>
+    </SparSettingsPage>
   );
 }
 

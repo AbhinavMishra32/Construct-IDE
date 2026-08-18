@@ -1,11 +1,10 @@
-import { Archive, ArchiveRestore, ListFilter, MessageSquare, Pin, PinOff, SquarePen } from "lucide-react";
+import { Archive, ArchiveRestore, ListFilter, Pin, PinOff, SquarePen } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   SparMenu,
   SparMenuCheckItem,
   SparMenuContent,
-  SparMenuItem,
   SparMenuLabel,
   SparMenuSeparator,
   SparMenuTrigger,
@@ -145,17 +144,16 @@ export function DashboardSidebar({
       },
     ];
 
+    /* No leading glyph. Every row in the list is a project, so an icon repeated
+       down the whole column identifies nothing — it just moves every title 22px
+       to the right and spends the narrowest part of the sidebar on a decoration.
+       The titles are what tell the rows apart, so they get the room. */
     return (
       <SparSidebarRow
         dimmed={isArchived}
         items={items}
         key={project.id}
         label={project.title}
-        leading={
-          <span className="grid size-3.5 shrink-0 place-items-center text-muted-foreground/70">
-            <MessageSquare className="size-3.5" />
-          </span>
-        }
         onOpen={() => onOpenProject(project.id)}
       />
     );
@@ -191,15 +189,15 @@ export function DashboardSidebar({
               >
                 <span className="min-w-0 flex-1 truncate">Created at</span>
               </SparMenuCheckItem>
+              {/* A check rather than an icon that flips between two metaphors: it
+                  is one thing being on or off, which is what the sort items above
+                  it already look like. */}
               {archivedCount > 0 ? (
                 <>
                   <SparMenuSeparator />
-                  <SparMenuItem onSelect={() => setShowArchived((current) => !current)}>
-                    {showArchived ? <MessageSquare /> : <Archive />}
-                    <span className="min-w-0 flex-1 truncate">
-                      {showArchived ? "Hide archived" : `Show archived (${archivedCount})`}
-                    </span>
-                  </SparMenuItem>
+                  <SparMenuCheckItem checked={showArchived} onSelect={() => setShowArchived((current) => !current)}>
+                    <span className="min-w-0 flex-1 truncate">{`Archived (${archivedCount})`}</span>
+                  </SparMenuCheckItem>
                 </>
               ) : null}
             </SparMenuContent>

@@ -2,7 +2,7 @@ import type { AuthView } from "@better-auth-ui/core";
 import { useSession } from "@better-auth-ui/react";
 import { createAuthClient } from "better-auth/react";
 import { useCallback, useEffect, useMemo, useState, type ComponentPropsWithoutRef, type PropsWithChildren } from "react";
-import { Button, Input } from "@opaline/ui";
+import { SparButton as Button, SparInput as Input } from "../../../components/spar";
 
 import { Auth } from "../../../components/auth/auth";
 import { AuthProvider } from "../../../components/auth/auth-provider";
