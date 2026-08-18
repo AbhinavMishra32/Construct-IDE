@@ -184,7 +184,7 @@ export class AuthService {
        stolen copy of the token is worth nothing. It is allowed to fail: signing
        out of a device has to work on a plane. */
     const token = await this.accessToken();
-    if (token) await fetch(`${this.apiOrigin}${AUTH_BASE}/sign-out`, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json", origin: DESKTOP_ORIGIN }, body: "{}" }).catch(() => undefined);
+    if (token) await fetch(`${this.apiOrigin}${AUTH_BASE}/sign-out`, { method: "POST", headers: { ...credentialHeaders(token), "content-type": "application/json" }, body: "{}" }).catch(() => undefined);
     await removePassword(TOKEN);
     await removePassword(LEGACY_TOKEN).catch(() => undefined);
     await removePassword("account");
@@ -195,7 +195,7 @@ export class AuthService {
   async deleteAccount() {
     const token = await this.accessToken();
     if (!token) throw new Error("Sign in before deleting your account");
-    const response = await fetch(`${this.apiOrigin}/v1/account`, { method: "DELETE", headers: { authorization: `Bearer ${token}`, origin: DESKTOP_ORIGIN } });
+    const response = await fetch(`${this.apiOrigin}/v1/account`, { method: "DELETE", headers: credentialHeaders(token) });
     /* The backend has no account-deletion route yet. Saying so is the point:
        silently signing the device out would look like the account was deleted
        while it still exists on the server. */
@@ -238,9 +238,30 @@ function sessionCookie(response: Response): string | null {
   const header = response.headers.getSetCookie?.() ?? [];
   for (const cookie of header) {
     const match = /^(?:__Secure-)?better-auth\.session_token=([^;]+)/.exec(cookie);
-    if (match?.[1]) return decodeURIComponent(match[1]);
+    /* Kept exactly as sent, percent-encoding and all, because it is handed
+       straight back in a Cookie header. Decoding it here would corrupt every
+       token containing a + or a / — which is most of them, the value being
+       base64. */
+    if (match?.[1]) return match[1];
   }
   return null;
+}
+
+/**
+ * How a stored credential is presented on an authenticated request.
+ *
+ * Both headers, deliberately. Construct's backend does not load Better Auth's
+ * bearer plugin, so `authorization` is read by nothing and a session lookup
+ * against it answers null — the cookie is what actually authenticates. The
+ * bearer header costs nothing and means the desktop keeps working unchanged if
+ * the plugin is ever added.
+ */
+function credentialHeaders(token: string): Record<string, string> {
+  return {
+    authorization: `Bearer ${token}`,
+    cookie: `better-auth.session_token=${token}`,
+    origin: DESKTOP_ORIGIN,
+  };
 }
 
 /** A failure with a sentence in it that can be shown as-is, and the server's own

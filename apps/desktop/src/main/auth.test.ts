@@ -83,11 +83,25 @@ describe("holding on to a session", () => {
     expect(keychain.get("session-token")).toBe("session-value");
   });
 
-  it("decodes a percent-encoded cookie rather than storing it raw", async () => {
-    routes["sign-in/email"] = () => cookieSession("a+b/c=d");
+  /* Better Auth's session cookie is `<token>.<base64 signature>`, so the value
+     is full of + / and = and arrives percent-encoded. It is handed straight
+     back in a Cookie header, so it must be stored exactly as sent — decoding
+     here would corrupt nearly every real token. */
+  it("stores the cookie value verbatim, encoding included", async () => {
+    routes["sign-in/email"] = () => cookieSession("tok.KQNaYMBib+F8R5/NQZ11NU=");
     await auth().request({ action: "sign-in", ...credentials });
 
-    expect(keychain.get("session-token")).toBe("a+b/c=d");
+    expect(keychain.get("session-token")).toBe(encodeURIComponent("tok.KQNaYMBib+F8R5/NQZ11NU="));
+  });
+
+  it("prefers the cookie over a body token, since only the cookie authenticates", async () => {
+    routes["sign-in/email"] = () =>
+      new Response(JSON.stringify({ token: "body-only", user }), {
+        headers: { "content-type": "application/json", "set-cookie": "better-auth.session_token=cookie-value; Path=/" },
+      });
+    await auth().request({ action: "sign-in", ...credentials });
+
+    expect(keychain.get("session-token")).toBe("cookie-value");
   });
 
   it("prefers set-auth-token, so adding the bearer plugin needs no desktop change", async () => {
@@ -154,6 +168,24 @@ describe("reporting failure", () => {
   it("survives a failure with no body, rather than reading a code off null", async () => {
     routes["sign-in/email"] = () => new Response("", { status: 500 });
     await expect(auth().request({ action: "sign-in", ...credentials })).rejects.toThrow(/could not complete that/);
+  });
+});
+
+describe("presenting the credential", () => {
+  it("sends it as a cookie, because Better Auth without the bearer plugin reads nothing else", async () => {
+    routes["sign-in/email"] = () => cookieSession("session-value");
+    const service = auth();
+    await service.request({ action: "sign-in", ...credentials });
+
+    let headers: Record<string, string> = {};
+    vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
+      headers = init.headers as Record<string, string>;
+      return new Response("{}", { status: 200 });
+    });
+    await service.signOut();
+
+    expect(headers.cookie).toBe("better-auth.session_token=session-value");
+    expect(headers.authorization).toBe("Bearer session-value");
   });
 });
 
