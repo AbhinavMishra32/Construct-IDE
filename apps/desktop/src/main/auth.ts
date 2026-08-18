@@ -57,9 +57,25 @@ const LEGACY_TOKEN = "access-token";
  *  Auth reads that as a browser calling and then refuses a request that brings no
  *  Origin with it. So the app sends one. The scheme is deliberately not http:
  *  nothing can serve a page from it, which means the value cannot be forged by
- *  one. The API trusts exactly this string — see `DESKTOP_ORIGIN` in
- *  apps/api/src/auth.ts, and change neither without the other. */
+ *  one. The API must trust exactly this string: it has to appear in the cloud
+ *  backend's `corsOrigins`, which is where Better Auth reads `trustedOrigins`
+ *  from. Change neither without the other. */
 const DESKTOP_ORIGIN = "construct://desktop";
+
+/** Where Better Auth is mounted on the cloud backend — see `app.all("/api/auth/*")`
+ *  in the backend's server.ts. */
+const AUTH_BASE = "/api/auth";
+
+/**
+ * Flows the desktop draws but the backend cannot serve yet.
+ *
+ * Construct's backend runs Better Auth with email and password only. The
+ * emailed one-time code flows need its `emailOTP` plugin, which is a backend
+ * change rather than a desktop one. Refusing them here — by name, with a
+ * sentence a person can act on — is better than letting the request 404 and
+ * surfacing as "Sign-in failed (404)".
+ */
+const UNSUPPORTED = "Emailed sign-in codes are not switched on for this account yet. Sign in with your password instead.";
 
 type Account = { id: string; displayName: string; email: string };
 /** What Better Auth answers with. `token` is absent when a deployment wants an
@@ -112,42 +128,31 @@ export class AuthService {
            and Better Auth has already sent it as part of the sign-up. */
         return payload.token ? this.persist(payload) : { status: "code-sent", purpose: "email-verification" };
       }
-      case "sign-in": {
-        const payload = await this.post("sign-in/email", { email: input.email, password: input.password }).catch(async (error: unknown) => {
-          /* An unconfirmed address is not a failed sign-in, it is an unfinished
-             sign-up. Better Auth refuses the password without sending anything,
-             so the code is asked for here and the window moves to the step that
-             was skipped rather than showing a dead end. */
-          if (!(error instanceof AuthError) || error.code !== "EMAIL_NOT_VERIFIED") throw error;
-          await this.post("email-otp/send-verification-otp", { email: input.email, type: "email-verification" });
-          return null;
-        });
-        return payload ? this.persist(payload) : { status: "code-sent", purpose: "email-verification" };
-      }
-      case "send-code":
-        /* Answers the same way whether or not the address has an account, so this
-           is not a way to ask the server who has signed up. */
-        await this.post("email-otp/send-verification-otp", { email: input.email, type: input.purpose });
-        return { status: "code-sent", purpose: input.purpose };
-      case "verify-email":
-        return this.persist(await this.post("email-otp/verify-email", { email: input.email, otp: input.code }));
-      case "sign-in-code":
-        return this.persist(await this.post("sign-in/email-otp", { email: input.email, otp: input.code }));
-      case "reset-password":
-        /* Resetting revokes every other session server-side and hands back none,
-           so the new password is spent immediately on a fresh one — otherwise the
-           learner would type a new password and land back on the sign-in form. */
-        await this.post("email-otp/reset-password", { email: input.email, otp: input.code, password: input.password });
+      case "sign-in":
         return this.persist(await this.post("sign-in/email", { email: input.email, password: input.password }));
+      /* Every code-carrying flow needs Better Auth's emailOTP plugin, which the
+         backend does not load. They stay in the union because the sign-in window
+         already draws them and the backend is expected to grow the plugin; until
+         it does they fail by name rather than as a bare 404. */
+      case "send-code":
+      case "verify-email":
+      case "sign-in-code":
+      case "reset-password":
+        throw new AuthError(UNSUPPORTED, "OTP_UNAVAILABLE");
     }
   }
 
-  /** POSTs to Better Auth and normalises the failure. The token, when there is
-   *  one, comes off the `set-auth-token` header the bearer plugin sets. */
+  /** POSTs to Better Auth and normalises the failure.
+   *
+   *  The session can arrive two ways. With the `bearer` plugin loaded it comes
+   *  back on `set-auth-token`; without it — which is how Construct's backend is
+   *  configured today — Better Auth sets a session cookie instead. Both are
+   *  accepted, and `authorization` header carries whichever one was stored, so
+   *  the desktop keeps working if the plugin is added later. */
   private async post(path: string, body: Record<string, unknown>): Promise<AuthPayload> {
     let response: Response;
     try {
-      response = await fetch(`${this.apiOrigin}/v1/auth/${path}`, { method: "POST", headers: { "content-type": "application/json", origin: DESKTOP_ORIGIN }, body: JSON.stringify(body) });
+      response = await fetch(`${this.apiOrigin}${AUTH_BASE}/${path}`, { method: "POST", headers: { "content-type": "application/json", origin: DESKTOP_ORIGIN }, body: JSON.stringify(body) });
     } catch {
       /* A refused connection is the one failure that is not about the credentials,
          and reporting it as one sends people to reset a password that was fine. */
@@ -160,7 +165,7 @@ export class AuthService {
     if (response.status === 429) throw new AuthError("Too many attempts. Wait a minute, then try again.", "RATE_LIMITED");
     if (response.status >= 500) throw new AuthError("Construct's server could not complete that. Its log will say why.", "SERVER_ERROR");
     if (!response.ok) throw new AuthError(REASON[payload.code ?? ""] ?? payload.message ?? `Sign-in failed (${response.status})`, payload.code);
-    return { ...payload, token: response.headers.get("set-auth-token") ?? payload.token ?? null };
+    return { ...payload, token: response.headers.get("set-auth-token") ?? sessionCookie(response) ?? payload.token ?? null };
   }
 
   /** Writes the credential to the keychain. The account is stored beside it
@@ -179,7 +184,7 @@ export class AuthService {
        stolen copy of the token is worth nothing. It is allowed to fail: signing
        out of a device has to work on a plane. */
     const token = await this.accessToken();
-    if (token) await fetch(`${this.apiOrigin}/v1/auth/sign-out`, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json", origin: DESKTOP_ORIGIN }, body: "{}" }).catch(() => undefined);
+    if (token) await fetch(`${this.apiOrigin}${AUTH_BASE}/sign-out`, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json", origin: DESKTOP_ORIGIN }, body: "{}" }).catch(() => undefined);
     await removePassword(TOKEN);
     await removePassword(LEGACY_TOKEN).catch(() => undefined);
     await removePassword("account");
@@ -190,20 +195,21 @@ export class AuthService {
   async deleteAccount() {
     const token = await this.accessToken();
     if (!token) throw new Error("Sign in before deleting your account");
-    const response = await fetch(`${this.apiOrigin}/v1/account`, { method: "DELETE", headers: { authorization: `Bearer ${token}` } });
+    const response = await fetch(`${this.apiOrigin}/v1/account`, { method: "DELETE", headers: { authorization: `Bearer ${token}`, origin: DESKTOP_ORIGIN } });
+    /* The backend has no account-deletion route yet. Saying so is the point:
+       silently signing the device out would look like the account was deleted
+       while it still exists on the server. */
+    if (response.status === 404) throw new Error("Deleting an account is not available yet. Contact support@construct.cc and it will be removed for you.");
     if (!response.ok) {
       const payload = await response.json().catch(() => ({})) as { error?: string };
       throw new Error(payload.error ?? `Account deletion failed (${response.status})`);
     }
     await this.signOut();
     await Promise.all([
-      // `exa` and the practice sessions are not model providers, but they are keys
-      // held under the same prefix, and deleting the account has to empty the
-      // keychain rather than most of it. A LeetCode session left behind would be a
-      // live credential for somebody else's account on a machine its owner
-      // believes they have wiped.
+      // `exa` is not a model provider, but it is a key held under the same
+      // prefix, and deleting the account has to empty the keychain rather than
+      // most of it.
       "openai-codex", "claude-code", "github-copilot", "openai", "anthropic", "google", "xai", "openrouter", "cline", "opencode", "opencode-go", "deepseek", "minimax", "moonshotai", "kimi-coding", "zai", "vercel-ai-gateway", "cloudflare-ai-gateway", "ollama", "lm-studio", "custom", "exa",
-      "practice:leetcode:global", "practice:leetcode:cn", "practice:codeforces:global",
     ].flatMap((provider) => [this.deleteSecret(provider), this.deleteProviderOAuth(provider)]));
   }
   saveSecret(account: string, secret: string) { return writePassword(`provider:${account}`, secret); }
@@ -216,6 +222,25 @@ export class AuthService {
     try { return JSON.parse(raw) as T; } catch { return null; }
   }
   deleteProviderOAuth(provider: string) { return removePassword(`provider-oauth:${provider}`).then(() => undefined); }
+}
+
+/**
+ * The session cookie Better Auth sets when the bearer plugin is not loaded.
+ *
+ * Only the cookie's value is kept, never its attributes — Path, SameSite and
+ * the rest govern a browser jar the desktop does not have. What is stored is a
+ * credential to present, and it is presented the same way a bearer token is.
+ * Returns null rather than an empty string when no session cookie is present,
+ * so `persist` refuses instead of writing a credential that authenticates
+ * nothing.
+ */
+function sessionCookie(response: Response): string | null {
+  const header = response.headers.getSetCookie?.() ?? [];
+  for (const cookie of header) {
+    const match = /^(?:__Secure-)?better-auth\.session_token=([^;]+)/.exec(cookie);
+    if (match?.[1]) return decodeURIComponent(match[1]);
+  }
+  return null;
 }
 
 /** A failure with a sentence in it that can be shown as-is, and the server's own

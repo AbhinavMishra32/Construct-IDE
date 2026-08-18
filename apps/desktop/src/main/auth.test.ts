@@ -20,8 +20,18 @@ let routes: Record<string, Handler>;
 let calls: string[];
 let origins: Array<string | undefined>;
 
-const json = (body: unknown, init: ResponseInit = {}) => new Response(JSON.stringify(body), { headers: { "content-type": "application/json" }, ...init });
-const session = (token: string) => json({ token, user: { id: "8f1c", email: "learner@example.com", name: "learner" } }, { headers: { "set-auth-token": `${token}.signature` } });
+const json = (body: unknown, init: ResponseInit = {}) =>
+  new Response(JSON.stringify(body), { headers: { "content-type": "application/json" }, ...init });
+
+const user = { id: "8f1c", email: "learner@example.com", name: "learner" };
+/** How the backend answers today: no bearer plugin, so the session is a cookie. */
+const cookieSession = (token: string) =>
+  new Response(JSON.stringify({ user }), {
+    headers: { "content-type": "application/json", "set-cookie": `better-auth.session_token=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax` },
+  });
+/** How it would answer with Better Auth's bearer plugin loaded. */
+const bearerSession = (token: string) =>
+  json({ token, user }, { headers: { "set-auth-token": token } });
 
 beforeEach(() => {
   keychain.clear();
@@ -32,7 +42,7 @@ beforeEach(() => {
   origins = [];
   routes = {};
   vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
-    const path = String(url).replace("https://api.test/v1/auth/", "");
+    const path = String(url).replace("https://api.test/api/auth/", "");
     calls.push(path);
     origins.push((init.headers as Record<string, string> | undefined)?.origin);
     const handler = routes[path];
@@ -40,139 +50,125 @@ beforeEach(() => {
     return handler(JSON.parse(String(init.body ?? "{}")) as Record<string, unknown>);
   });
 });
-afterEach(() => vi.unstubAllGlobals());
 
-const service = () => new AuthService("https://api.test");
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
-describe("credential-store bootstrap", () => {
-  it("starts signed out when the OS credential store cannot be read", async () => {
-    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    vi.mocked(keytar.getPassword).mockRejectedValueOnce(new Error("An unknown error occurred."));
+const auth = () => new AuthService("https://api.test");
+const credentials = { email: "learner@example.com", password: "correct-horse" } as const;
 
-    await expect(service().account()).resolves.toBeNull();
-    expect(log).toHaveBeenCalledWith(
-      "Credential store unavailable; starting Construct signed out:",
-      expect.any(Error),
-    );
+describe("talking to the cloud backend", () => {
+  it("calls Better Auth where the backend actually mounts it", async () => {
+    routes["sign-in/email"] = () => cookieSession("session-value");
+    await auth().request({ action: "sign-in", ...credentials });
+
+    expect(calls).toEqual(["sign-in/email"]);
   });
 
-  it("turns an opaque credential write failure into an actionable error", async () => {
-    routes["sign-in/email"] = () => session("raw-token");
-    vi.mocked(keytar.setPassword).mockRejectedValueOnce(new Error("An unknown error occurred."));
+  it("sends an Origin the backend can trust, since Node's fetch reads as CORS", async () => {
+    routes["sign-in/email"] = () => cookieSession("session-value");
+    await auth().request({ action: "sign-in", ...credentials });
 
-    await expect(service().request({ action: "sign-in", email: "learner@example.com", password: "a-good-password" }))
-      .rejects.toThrow(/Unlock the login keychain in Keychain Access/);
+    expect(origins).toEqual(["construct://desktop"]);
   });
 });
 
-describe("signing in", () => {
-  it("keeps the signed token from the bearer header, not the one in the body", async () => {
-    routes["sign-in/email"] = () => session("raw-token");
-    await expect(service().request({ action: "sign-in", email: "learner@example.com", password: "a-good-password" })).resolves.toEqual({ status: "signed-in" });
-    expect(keychain.get("session-token")).toBe("raw-token.signature");
-    expect(JSON.parse(keychain.get("account") ?? "{}")).toEqual({ id: "8f1c", email: "learner@example.com", displayName: "learner" });
+describe("holding on to a session", () => {
+  it("stores the session cookie's value as the credential", async () => {
+    routes["sign-in/email"] = () => cookieSession("session-value");
+    const result = await auth().request({ action: "sign-in", ...credentials });
+
+    expect(result).toEqual({ status: "signed-in" });
+    expect(keychain.get("session-token")).toBe("session-value");
   });
 
-  it("clears the fifteen-minute token the old scheme left in the keychain", async () => {
-    keychain.set("access-token", "an-expired-jwt");
-    routes["sign-in/email"] = () => session("raw-token");
-    await service().request({ action: "sign-in", email: "learner@example.com", password: "a-good-password" });
-    expect(keychain.has("access-token")).toBe(false);
+  it("decodes a percent-encoded cookie rather than storing it raw", async () => {
+    routes["sign-in/email"] = () => cookieSession("a+b/c=d");
+    await auth().request({ action: "sign-in", ...credentials });
+
+    expect(keychain.get("session-token")).toBe("a+b/c=d");
   });
 
-  /* Node's fetch stamps `sec-fetch-mode: cors` on everything, which Better Auth
-     reads as a browser calling; without an Origin it answers every request with
-     MISSING_OR_NULL_ORIGIN, and the app cannot sign anyone in at all. */
-  it("names itself with the origin the API trusts", async () => {
-    routes["sign-in/email"] = () => session("raw-token");
-    routes["sign-out"] = () => json({ success: true });
-    await service().request({ action: "sign-in", email: "learner@example.com", password: "a-good-password" });
-    await service().signOut();
-    expect(origins).toEqual(["construct://desktop", "construct://desktop"]);
+  it("prefers set-auth-token, so adding the bearer plugin needs no desktop change", async () => {
+    routes["sign-in/email"] = () => bearerSession("bearer-value");
+    await auth().request({ action: "sign-in", ...credentials });
+
+    expect(keychain.get("session-token")).toBe("bearer-value");
   });
 
-  it("says what a rejected password means rather than repeating a status code", async () => {
-    routes["sign-in/email"] = () => json({ code: "INVALID_EMAIL_OR_PASSWORD", message: "Invalid email or password" }, { status: 401 });
-    await expect(service().request({ action: "sign-in", email: "learner@example.com", password: "a-good-password" })).rejects.toThrow(/do not match an account/);
+  it("refuses a response carrying no session at all", async () => {
+    routes["sign-in/email"] = () => json({ user });
+    await expect(auth().request({ action: "sign-in", ...credentials })).rejects.toThrow(/did not return a session/);
+    expect(keychain.has("session-token")).toBe(false);
   });
 
-  it("does not blame the credentials when the server cannot be reached", async () => {
-    vi.stubGlobal("fetch", async () => { throw new TypeError("fetch failed"); });
-    await expect(service().request({ action: "sign-in", email: "learner@example.com", password: "a-good-password" })).rejects.toThrow(/cannot reach its server/);
-  });
+  it("keeps the account beside the token, so bootstrap can read it offline", async () => {
+    routes["sign-in/email"] = () => cookieSession("session-value");
+    await auth().request({ action: "sign-in", ...credentials });
 
-  it("reports a rate limit as one, whatever the endpoint says", async () => {
-    routes["sign-in/email"] = () => json({}, { status: 429 });
-    await expect(service().request({ action: "sign-in", email: "learner@example.com", password: "a-good-password" })).rejects.toMatchObject({ code: "RATE_LIMITED" });
-  });
-});
-
-describe("an account that has not confirmed its address", () => {
-  /* Better Auth refuses the password and sends nothing, so the unfinished
-     sign-up has to be picked back up here — otherwise the window shows a
-     password error for a password that is correct. */
-  it("asks for a fresh code and sends the window to the code step", async () => {
-    routes["sign-in/email"] = () => json({ code: "EMAIL_NOT_VERIFIED", message: "Email not verified" }, { status: 403 });
-    routes["email-otp/send-verification-otp"] = () => json({ success: true });
-    await expect(service().request({ action: "sign-in", email: "learner@example.com", password: "a-good-password" })).resolves.toEqual({ status: "code-sent", purpose: "email-verification" });
-    expect(calls).toEqual(["sign-in/email", "email-otp/send-verification-otp"]);
-    expect(keychain.size).toBe(0);
-  });
-
-  it("signs in once the code is confirmed", async () => {
-    routes["email-otp/verify-email"] = () => session("raw-token");
-    await expect(service().request({ action: "verify-email", email: "learner@example.com", code: "123456" })).resolves.toEqual({ status: "signed-in" });
-    expect(keychain.get("session-token")).toBe("raw-token.signature");
+    expect(JSON.parse(keychain.get("account") ?? "{}")).toMatchObject({ id: "8f1c", email: "learner@example.com" });
   });
 });
 
 describe("creating an account", () => {
-  it("waits for a code when the deployment answers without a session", async () => {
-    routes["sign-up/email"] = () => json({ token: null, user: { id: "8f1c", email: "learner@example.com", name: "learner" } });
-    await expect(service().request({ action: "sign-up", email: "learner@example.com", password: "a-good-password" })).resolves.toEqual({ status: "code-sent", purpose: "email-verification" });
-    expect(keychain.size).toBe(0);
-  });
+  it("signs the device in when the backend hands back a session immediately", async () => {
+    routes["sign-up/email"] = () => cookieSession("fresh");
+    const result = await auth().request({ action: "sign-up", ...credentials });
 
-  it("signs in immediately when one comes back", async () => {
-    routes["sign-up/email"] = () => session("raw-token");
-    await expect(service().request({ action: "sign-up", email: "learner@example.com", password: "a-good-password" })).resolves.toEqual({ status: "signed-in" });
+    expect(result).toEqual({ status: "signed-in" });
+    expect(keychain.get("session-token")).toBe("fresh");
   });
 });
 
-describe("recovering an account", () => {
-  it("spends the new password on a session so the learner is not sent back to the form", async () => {
-    routes["email-otp/reset-password"] = () => json({ success: true });
-    routes["sign-in/email"] = (body) => (body.password === "a-brand-new-password" ? session("raw-token") : json({ code: "INVALID_EMAIL_OR_PASSWORD" }, { status: 401 }));
-    await expect(service().request({ action: "reset-password", email: "learner@example.com", code: "123456", password: "a-brand-new-password" })).resolves.toEqual({ status: "signed-in" });
-    expect(calls).toEqual(["email-otp/reset-password", "sign-in/email"]);
+describe("flows the backend cannot serve yet", () => {
+  /* Better Auth's emailOTP plugin is not loaded. These must fail by name — a
+     bare 404 surfacing as "Sign-in failed (404)" tells nobody what to do. */
+  it.each([
+    { action: "send-code", email: credentials.email, purpose: "sign-in" },
+    { action: "sign-in-code", email: credentials.email, code: "123456" },
+    { action: "verify-email", email: credentials.email, code: "123456" },
+    { action: "reset-password", email: credentials.email, code: "123456", password: "correct-horse" },
+  ] as const)("refuses $action with a sentence rather than a status code", async (request) => {
+    await expect(auth().request(request)).rejects.toThrow(/Emailed sign-in codes are not switched on/);
+    expect(calls).toEqual([]);
+  });
+});
+
+describe("reporting failure", () => {
+  it("says a wrong password is a wrong password", async () => {
+    routes["sign-in/email"] = () => json({ code: "INVALID_EMAIL_OR_PASSWORD" }, { status: 401 });
+    await expect(auth().request({ action: "sign-in", ...credentials })).rejects.toThrow(/do not match an account/);
   });
 
-  it("leaves the password alone when the code is wrong", async () => {
-    routes["email-otp/reset-password"] = () => json({ code: "INVALID_OTP", message: "Invalid OTP" }, { status: 400 });
-    await expect(service().request({ action: "reset-password", email: "learner@example.com", code: "000000", password: "a-brand-new-password" })).rejects.toThrow(/not right/);
-    expect(calls).toEqual(["email-otp/reset-password"]);
+  it("distinguishes an unreachable server from a rejected credential", async () => {
+    vi.stubGlobal("fetch", async () => {
+      throw new TypeError("fetch failed");
+    });
+    const error = await auth().request({ action: "sign-in", ...credentials }).catch((cause: unknown) => cause);
+
+    expect(error).toBeInstanceOf(AuthError);
+    expect((error as InstanceType<typeof AuthError>).code).toBe("UNREACHABLE");
+  });
+
+  it("survives a failure with no body, rather than reading a code off null", async () => {
+    routes["sign-in/email"] = () => new Response("", { status: 500 });
+    await expect(auth().request({ action: "sign-in", ...credentials })).rejects.toThrow(/could not complete that/);
   });
 });
 
 describe("signing out", () => {
-  it("revokes the session on the server and empties the keychain", async () => {
-    keychain.set("session-token", "raw-token.signature");
-    keychain.set("account", "{}");
-    routes["sign-out"] = () => json({ success: true });
-    await service().signOut();
-    expect(calls).toEqual(["sign-out"]);
-    expect(keychain.size).toBe(0);
-  });
+  it("clears every credential even when the server cannot be told", async () => {
+    routes["sign-in/email"] = () => cookieSession("session-value");
+    const service = auth();
+    await service.request({ action: "sign-in", ...credentials });
 
-  it("empties the keychain even when the server cannot be told", async () => {
-    keychain.set("session-token", "raw-token.signature");
-    keychain.set("account", "{}");
-    vi.stubGlobal("fetch", async () => { throw new TypeError("fetch failed"); });
-    await service().signOut();
-    expect(keychain.size).toBe(0);
-  });
-});
+    vi.stubGlobal("fetch", async () => {
+      throw new TypeError("fetch failed");
+    });
+    await service.signOut();
 
-it("carries the server's own code for the one case the flow branches on", () => {
-  expect(new AuthError("nope", "EMAIL_NOT_VERIFIED").code).toBe("EMAIL_NOT_VERIFIED");
+    expect(keychain.has("session-token")).toBe(false);
+    expect(keychain.has("account")).toBe(false);
+  });
 });
