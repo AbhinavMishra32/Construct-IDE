@@ -136,6 +136,15 @@ export type ProjectDetail = {
   pendingLearnerQuestion: AskUserQuestionRequest | null;
 };
 
+/** One entry in a project's file tree. Listing is one level deep, so a
+ *  directory carries no children until the learner opens it. */
+export type WorkspaceEntry = {
+  name: string;
+  /** Project-relative, POSIX separators on every host. */
+  path: string;
+  type: "file" | "directory";
+};
+
 /* ---- Files --------------------------------------------------------------
    Paths crossing this boundary are canonicalised before validation, so a
    renderer cannot address anything outside the project it names. */

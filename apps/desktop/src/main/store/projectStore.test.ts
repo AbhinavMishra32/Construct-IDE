@@ -86,3 +86,17 @@ describe("projects", () => {
     expect(renamed?.directory).toBe(created.directory);
   });
 });
+
+describe("ordering ties", () => {
+  it("puts a project that was opened above one merely created in the same millisecond", () => {
+    const older = store.createProject(project({ name: "Older", directory: path.join(directory, "a") }));
+    store.markOpened(older.id);
+    /* Created after the open, so with millisecond timestamps the two keys are
+       very likely equal. Insertion order would put this one first; a deliberate
+       open should outrank it. */
+    const newer = store.createProject(project({ name: "Newer", directory: path.join(directory, "b") }));
+
+    const ordered = store.listProjects().map((row) => row.id);
+    expect(ordered.indexOf(older.id)).toBeLessThan(ordered.indexOf(newer.id));
+  });
+});
