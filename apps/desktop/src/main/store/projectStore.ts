@@ -64,15 +64,31 @@ export class ProjectStore {
 
   /* ---- Settings --------------------------------------------------------- */
 
-  getSetting<T extends string>(key: string, fallback: T): T {
+  /**
+   * Settings are stored as JSON, not as text.
+   *
+   * They are not all strings — the provider layer keeps a model catalogue, a
+   * timestamp, and several booleans in here. Storing text and having each
+   * caller remember which of them to parse is how a boolean comes back as the
+   * string "false" and reads as true.
+   *
+   * A row that fails to parse answers with the fallback rather than throwing.
+   * A corrupt preference should cost the preference, not the launch.
+   */
+  getSetting<T>(key: string, fallback: T): T {
     const row = this.database.prepare("SELECT value FROM settings WHERE key = ?").get(key) as { value: string } | undefined;
-    return (row?.value as T) ?? fallback;
+    if (row === undefined) return fallback;
+    try {
+      return JSON.parse(row.value) as T;
+    } catch {
+      return fallback;
+    }
   }
 
-  setSetting(key: string, value: string): void {
+  setSetting<T>(key: string, value: T): void {
     this.database
       .prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
-      .run(key, value);
+      .run(key, JSON.stringify(value));
   }
 
   theme(): ThemePreference {
