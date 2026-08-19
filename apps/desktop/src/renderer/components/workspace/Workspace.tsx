@@ -134,13 +134,13 @@ export function Workspace({ api, project, onBack, onError }: Props) {
       <Toolbar title={project.name} onBack={onBack} />
 
       <div className="flex min-h-0 flex-1">
-        <aside className="hairline-r flex w-[13.5rem] shrink-0 flex-col">
+        <aside className="app-pane app-panel-glass hairline-r flex w-[13.5rem] shrink-0 flex-col">
           <h2 className="px-3 pb-1 pt-2 text-ui-sm font-medium text-foreground/50">Files</h2>
           <FileTree api={api} projectId={project.id} activePath={active} onOpenFile={(path) => void openFile(path)} onError={onError} />
         </aside>
 
         <PanelGroup direction="horizontal" className="min-w-0 flex-1">
-        <Panel defaultSize={agentOpen ? 62 : 100} minSize={30} className="flex min-w-0 flex-col">
+        <Panel defaultSize={agentOpen ? 62 : 100} minSize={30} className="app-pane flex min-w-0 flex-col">
           {files.length > 0 && (
             <div role="tablist" className="hairline-b app-scroll flex h-8 shrink-0 items-stretch overflow-x-auto">
               {files.map((file) => (
@@ -243,7 +243,7 @@ export function Workspace({ api, project, onBack, onError }: Props) {
         {agentOpen && (
           <>
             <PanelResizeHandle className="relative w-px bg-[var(--border)] after:absolute after:inset-y-0 after:-left-1 after:w-2 after:content-[''] data-[resize-handle-state=drag]:bg-ring" />
-            <Panel defaultSize={38} minSize={22} className="flex min-w-0 flex-col">
+            <Panel defaultSize={38} minSize={22} className="app-pane app-panel-glass flex min-w-0 flex-col">
               <AgentPanel api={api} projectId={project.id} onError={onError} />
             </Panel>
           </>
