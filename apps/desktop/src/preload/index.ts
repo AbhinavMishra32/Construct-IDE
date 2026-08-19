@@ -37,6 +37,10 @@ const api: ConstructApi = {
   renameProject: (input) => ipcRenderer.invoke(ipc.projectsRename, input),
   deleteProject: (input) => ipcRenderer.invoke(ipc.projectsDelete, input),
 
+  listFiles: (input) => ipcRenderer.invoke(ipc.filesList, input),
+  readFile: (input) => ipcRenderer.invoke(ipc.filesRead, input),
+  writeFile: (input) => ipcRenderer.invoke(ipc.filesWrite, input),
+
   auth: (request) => ipcRenderer.invoke(ipc.authRequest, request),
   signOut: () => ipcRenderer.invoke(ipc.authSignOut),
   deleteAccount: () => ipcRenderer.invoke(ipc.authDeleteAccount),

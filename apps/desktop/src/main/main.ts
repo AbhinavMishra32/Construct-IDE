@@ -8,6 +8,7 @@ import { installIpc } from "./ipc.js";
 import { installMenu } from "./menu.js";
 import { ProjectService } from "./projects/projectService.js";
 import { ProviderService } from "./provider.js";
+import { WorkspaceService } from "./projects/workspaceService.js";
 import { ProjectStore } from "./store/projectStore.js";
 import { UpdateService } from "./updates.js";
 import { WebSearchService } from "./webSearch.js";
@@ -34,6 +35,7 @@ else {
 
       const auth = new AuthService(apiOrigin());
       const projects = new ProjectService(store);
+      const workspace = new WorkspaceService();
       const providers = new ProviderService(auth, store, (event) => mainWindow?.webContents.send("provider:oauth-event", event));
       /* The learner's own Exa key, read through the same keychain the provider
          keys live in. Held in the main process because that is the only side
@@ -57,7 +59,7 @@ else {
          the application correcting a mistake in front of the learner. */
       const stage = (await auth.account()) ? ("app" as const) : ("sign-in" as const);
 
-      installIpc({ store, auth, projects, providers, web, window: () => mainWindow });
+      installIpc({ store, auth, projects, providers, workspace, web, window: () => mainWindow });
       updates = new UpdateService(store, () => mainWindow, prepareToExit);
       updates.installIpc();
       installMenu(() => mainWindow);
