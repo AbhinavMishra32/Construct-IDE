@@ -45,6 +45,11 @@ export const ipc = {
   lspSend: "lsp:send",
   lspStop: "lsp:stop",
 
+  /* The Construct agent. */
+  agentMessages: "agent:messages",
+  agentSend: "agent:send",
+  agentAnswer: "agent:answer",
+
   /* Signing in, and the account behind it. */
   authRequest: "auth:request",
   authSignOut: "auth:sign-out",
@@ -197,6 +202,16 @@ export const lspStopInput = z.object({ sessionId: lspSessionId });
 
 export type LspEvent = { sessionId: string; kind: "message"; message: unknown } | { sessionId: string; kind: "exit"; code: number | null };
 
+export const agentSendInput = projectIdInput.extend({ body: z.string().trim().min(1).max(20_000) });
+export const agentAnswerInput = projectIdInput.extend({ answer: z.string().trim().min(1).max(5_000) });
+
+export type AgentEvent =
+  | { projectId: string; kind: "step"; text: string }
+  | { projectId: string; kind: "question"; request: AskUserQuestionRequest }
+  | { projectId: string; kind: "message"; message: AgentMessage }
+  | { projectId: string; kind: "error"; message: string }
+  | { projectId: string; kind: "done" };
+
 export type TerminalEvent =
   | { terminalId: string; kind: "data"; data: string }
   | { terminalId: string; kind: "exit"; exitCode: number };
@@ -335,6 +350,13 @@ export interface ConstructApi {
   sendToLanguageServer(input: z.infer<typeof lspSendInput>): Promise<void>;
   stopLanguageServer(input: z.infer<typeof lspStopInput>): Promise<void>;
   onLanguageServerEvent(listener: (event: LspEvent) => void): () => void;
+
+  /* The agent. Replies arrive on `onAgentEvent` rather than as a return value:
+     a turn runs for as long as it needs and reports progress while it does. */
+  agentMessages(input: z.infer<typeof projectIdInput>): Promise<AgentMessage[]>;
+  sendToAgent(input: z.infer<typeof agentSendInput>): Promise<void>;
+  answerAgent(input: z.infer<typeof agentAnswerInput>): Promise<void>;
+  onAgentEvent(listener: (event: AgentEvent) => void): () => void;
 
   /* Account. The main process owns the keychain and the API, so the window only
      ever learns which of the two things happened — see `AuthResult`. */

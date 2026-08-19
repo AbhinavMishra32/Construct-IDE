@@ -17,6 +17,8 @@ import {
   lspStartInput,
   lspSendInput,
   lspStopInput,
+  agentSendInput,
+  agentAnswerInput,
   providerSettingsInput,
   reasoningEffortSchema,
   themePreferenceSchema,
@@ -29,6 +31,7 @@ import type { ProviderService } from "./provider.js";
 import type { WorkspaceService } from "./projects/workspaceService.js";
 import type { TerminalService } from "./terminal/terminalService.js";
 import type { LspService } from "./lsp/lspService.js";
+import type { AgentService } from "./agent/agentService.js";
 import type { ProjectStore } from "./store/projectStore.js";
 import type { WebSearchService } from "./webSearch.js";
 
@@ -40,6 +43,7 @@ type Dependencies = {
   workspace: WorkspaceService;
   terminals: TerminalService;
   lsp: LspService;
+  agent: AgentService;
   web: WebSearchService;
   window: () => BrowserWindow | null;
 };
@@ -53,7 +57,7 @@ type Dependencies = {
  * allowed to reach the renderer as a message, because every one of these is
  * surfaced to a person who has to decide what to do next.
  */
-export function installIpc({ store, auth, projects, providers, workspace, terminals, lsp, web, window }: Dependencies): void {
+export function installIpc({ store, auth, projects, providers, workspace, terminals, lsp, agent, web, window }: Dependencies): void {
   const handle = <T>(channel: string, handler: (input: unknown) => T | Promise<T>) => {
     ipcMain.handle(channel, async (_event, input: unknown) => handler(input));
   };
@@ -145,6 +149,23 @@ export function installIpc({ store, auth, projects, providers, workspace, termin
   });
 
   handle(ipc.lspStop, (input) => lsp.stopSession(lspStopInput.parse(input).sessionId));
+
+  /* ---- The agent --------------------------------------------------------- */
+
+  handle(ipc.agentMessages, (input) => agent.messages(projectIdInput.parse(input).projectId));
+
+  handle(ipc.agentSend, (input) => {
+    const { projectId, body } = agentSendInput.parse(input);
+    /* Deliberately not awaited. A turn runs for minutes; the renderer's call
+       returns as soon as the turn is accepted and follows it on the event
+       channel instead of holding an IPC reply open. */
+    void agent.send(projectId, body);
+  });
+
+  handle(ipc.agentAnswer, (input) => {
+    const { projectId, answer } = agentAnswerInput.parse(input);
+    agent.answer(projectId, answer);
+  });
 
   /* ---- Account ---------------------------------------------------------- */
 

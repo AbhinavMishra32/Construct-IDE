@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import type { Language } from "@construct/domain";
+import type { AgentMessage, Language } from "@construct/domain";
 import type { ProjectSummary, ThemePreference } from "../../shared/api.js";
 import { openDatabase, type Database } from "./database.js";
 
@@ -23,6 +23,19 @@ const MIGRATIONS: readonly string[] = [
      opened_at  TEXT
    );
    CREATE INDEX projects_opened_at ON projects (opened_at DESC);`,
+
+  /* Agent turns. Stored per project so a conversation survives closing the
+     project, the window, and the application — a teaching thread that resets
+     every launch would make the agent unable to refer to anything it taught. */
+  `CREATE TABLE agent_messages (
+     id         TEXT PRIMARY KEY,
+     project_id TEXT NOT NULL REFERENCES projects (id) ON DELETE CASCADE,
+     role       TEXT NOT NULL,
+     body       TEXT NOT NULL,
+     activity   TEXT NOT NULL DEFAULT '[]',
+     created_at TEXT NOT NULL
+   );
+   CREATE INDEX agent_messages_project ON agent_messages (project_id, created_at);`,
 ];
 
 type ProjectRow = {
@@ -172,7 +185,45 @@ export class ProjectStore {
    *  those files are the learner's work, and Construct did not write most of
    *  them. */
   deleteProject(projectId: string): void {
+    /* The conversation goes with it. ON DELETE CASCADE would do this too, but
+       only with foreign keys enforced on every connection, and a thread
+       orphaned from its project is unreachable data still counted against the
+       file. */
+    this.database.prepare("DELETE FROM agent_messages WHERE project_id = ?").run(projectId);
     this.database.prepare("DELETE FROM projects WHERE id = ?").run(projectId);
+  }
+
+  /* ---- Agent conversation ------------------------------------------------ */
+
+  listMessages(projectId: string): AgentMessage[] {
+    const rows = this.database
+      .prepare("SELECT * FROM agent_messages WHERE project_id = ? ORDER BY created_at, rowid")
+      .all(projectId) as Array<{ id: string; role: string; body: string; activity: string; created_at: string }>;
+
+    return rows.map((row) => ({
+      id: row.id,
+      role: row.role as AgentMessage["role"],
+      body: row.body,
+      createdAt: row.created_at,
+      activity: parseActivity(row.activity),
+    }));
+  }
+
+  appendMessage(projectId: string, message: AgentMessage): void {
+    this.database
+      .prepare("INSERT INTO agent_messages (id, project_id, role, body, activity, created_at) VALUES (?, ?, ?, ?, ?, ?)")
+      .run(message.id, projectId, message.role, message.body, JSON.stringify(message.activity), message.createdAt);
+  }
+}
+
+/** A row written by an older build, or corrupted, still has a readable message
+ *  body — losing the activity trail is far better than losing the turn. */
+function parseActivity(value: string): AgentMessage["activity"] {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) ? (parsed as AgentMessage["activity"]) : [];
+  } catch {
+    return [];
   }
 }
 

@@ -8,6 +8,7 @@ import {
   type ProviderOAuthEvent,
   type TerminalEvent,
   type LspEvent,
+  type AgentEvent,
   type UpdateState,
   type WindowControls,
 } from "../shared/api.js";
@@ -53,6 +54,11 @@ const api: ConstructApi = {
   sendToLanguageServer: (input) => ipcRenderer.invoke(ipc.lspSend, input),
   stopLanguageServer: (input) => ipcRenderer.invoke(ipc.lspStop, input),
   onLanguageServerEvent: (listener) => subscribe<LspEvent>("lsp:event", listener),
+
+  agentMessages: (input) => ipcRenderer.invoke(ipc.agentMessages, input),
+  sendToAgent: (input) => ipcRenderer.invoke(ipc.agentSend, input),
+  answerAgent: (input) => ipcRenderer.invoke(ipc.agentAnswer, input),
+  onAgentEvent: (listener) => subscribe<AgentEvent>("agent:event", listener),
 
   auth: (request) => ipcRenderer.invoke(ipc.authRequest, request),
   signOut: () => ipcRenderer.invoke(ipc.authSignOut),

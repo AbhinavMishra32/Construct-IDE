@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FileCode2, SquareTerminal, X } from "lucide-react";
+import { FileCode2, MessageSquare, SquareTerminal, X } from "lucide-react";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { isLspLanguage, languageForPath } from "@construct/domain";
 import type { ConstructApi, ProjectSummary } from "../../../shared/api";
@@ -9,6 +9,7 @@ import { Toolbar } from "../shell/Toolbar";
 import { Editor } from "./Editor";
 import { FileTree } from "./FileTree";
 import { TerminalPanel } from "./TerminalPanel";
+import { AgentPanel } from "./AgentPanel";
 
 type OpenFile = { path: string; content: string; dirty: boolean };
 
@@ -32,6 +33,7 @@ export function Workspace({ api, project, onBack, onError }: Props) {
      returns to the same shell rather than leaving the old one running. */
   const [terminalId, setTerminalId] = useState(() => crypto.randomUUID());
   const [terminalOpen, setTerminalOpen] = useState(false);
+  const [agentOpen, setAgentOpen] = useState(true);
   /* One client per language, started when a file of that language is first
      opened. Starting every server up front would spawn a TypeScript server for
      a project with no TypeScript in it. */
@@ -137,7 +139,8 @@ export function Workspace({ api, project, onBack, onError }: Props) {
           <FileTree api={api} projectId={project.id} activePath={active} onOpenFile={(path) => void openFile(path)} onError={onError} />
         </aside>
 
-        <div className="flex min-w-0 flex-1 flex-col">
+        <PanelGroup direction="horizontal" className="min-w-0 flex-1">
+        <Panel defaultSize={agentOpen ? 62 : 100} minSize={30} className="flex min-w-0 flex-col">
           {files.length > 0 && (
             <div role="tablist" className="hairline-b app-scroll flex h-8 shrink-0 items-stretch overflow-x-auto">
               {files.map((file) => (
@@ -221,10 +224,31 @@ export function Workspace({ api, project, onBack, onError }: Props) {
             >
               <SquareTerminal className="size-3" /> Terminal
             </button>
+            <button
+              type="button"
+              aria-pressed={agentOpen}
+              onClick={() => setAgentOpen((open) => !open)}
+              className={cn(
+                "flex h-4 items-center gap-1 rounded-sm px-1 transition-colors hover:text-foreground",
+                agentOpen && "text-foreground",
+              )}
+            >
+              <MessageSquare className="size-3" /> Construct
+            </button>
             {current && <span className="truncate">{current.path}</span>}
             {current?.dirty && <span className="ml-auto">Saving…</span>}
           </footer>
-        </div>
+        </Panel>
+
+        {agentOpen && (
+          <>
+            <PanelResizeHandle className="relative w-px bg-[var(--border)] after:absolute after:inset-y-0 after:-left-1 after:w-2 after:content-[''] data-[resize-handle-state=drag]:bg-ring" />
+            <Panel defaultSize={38} minSize={22} className="flex min-w-0 flex-col">
+              <AgentPanel api={api} projectId={project.id} onError={onError} />
+            </Panel>
+          </>
+        )}
+        </PanelGroup>
       </div>
     </div>
   );
