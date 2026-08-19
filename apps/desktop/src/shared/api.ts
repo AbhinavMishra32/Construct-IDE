@@ -29,6 +29,11 @@ export const ipc = {
   projectsRename: "projects:rename",
   projectsDelete: "projects:delete",
 
+  /* Files inside the open project. */
+  filesList: "files:list",
+  filesRead: "files:read",
+  filesWrite: "files:write",
+
   /* Signing in, and the account behind it. */
   authRequest: "auth:request",
   authSignOut: "auth:sign-out",
@@ -151,6 +156,9 @@ export type WorkspaceEntry = {
 const workspacePath = z.string().min(1).max(500).transform(canonicalWorkspacePath);
 export const workspacePathInput = projectIdInput.extend({ path: workspacePath });
 export const workspaceWriteInput = workspacePathInput.extend({ content: z.string().max(2_000_000) });
+/** Listing the project root is the empty path, which `workspacePath` would
+ *  reject — so the directory is optional rather than defaulted to ".". */
+export const workspaceListInput = projectIdInput.extend({ directory: workspacePath.optional() });
 
 /* ---- Inference ----------------------------------------------------------- */
 export const providerSettingsInput = z.object({
@@ -266,6 +274,12 @@ export interface ConstructApi {
   /** Removes Construct's record of the project. Never deletes the directory —
    *  the files are the learner's, and Construct did not create most of them. */
   deleteProject(input: z.infer<typeof projectIdInput>): Promise<void>;
+
+  /* Files. Every path is project-relative; the main process resolves it inside
+     the project and refuses anything that leaves, symlinks included. */
+  listFiles(input: z.infer<typeof workspaceListInput>): Promise<WorkspaceEntry[]>;
+  readFile(input: z.infer<typeof workspacePathInput>): Promise<string>;
+  writeFile(input: z.infer<typeof workspaceWriteInput>): Promise<void>;
 
   /* Account. The main process owns the keychain and the API, so the window only
      ever learns which of the two things happened — see `AuthResult`. */

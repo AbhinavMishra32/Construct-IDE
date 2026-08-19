@@ -7,6 +7,9 @@ import {
   projectIdInput,
   projectImportInput,
   projectRenameInput,
+  workspaceListInput,
+  workspacePathInput,
+  workspaceWriteInput,
   providerSettingsInput,
   reasoningEffortSchema,
   themePreferenceSchema,
@@ -16,6 +19,7 @@ import {
 import type { AuthService } from "./auth.js";
 import type { ProjectService } from "./projects/projectService.js";
 import type { ProviderService } from "./provider.js";
+import type { WorkspaceService } from "./projects/workspaceService.js";
 import type { ProjectStore } from "./store/projectStore.js";
 import type { WebSearchService } from "./webSearch.js";
 
@@ -24,6 +28,7 @@ type Dependencies = {
   auth: AuthService;
   projects: ProjectService;
   providers: ProviderService;
+  workspace: WorkspaceService;
   web: WebSearchService;
   window: () => BrowserWindow | null;
 };
@@ -37,7 +42,7 @@ type Dependencies = {
  * allowed to reach the renderer as a message, because every one of these is
  * surfaced to a person who has to decide what to do next.
  */
-export function installIpc({ store, auth, projects, providers, web, window }: Dependencies): void {
+export function installIpc({ store, auth, projects, providers, workspace, web, window }: Dependencies): void {
   const handle = <T>(channel: string, handler: (input: unknown) => T | Promise<T>) => {
     ipcMain.handle(channel, async (_event, input: unknown) => handler(input));
   };
@@ -70,6 +75,32 @@ export function installIpc({ store, auth, projects, providers, web, window }: De
   });
 
   handle(ipc.projectsDelete, (input) => projects.delete(projectIdInput.parse(input).projectId));
+
+  /* ---- Files -------------------------------------------------------------
+     Every handler resolves the project first, so a renderer naming a project
+     it does not have open still cannot reach a path outside that project. */
+
+  const directoryOf = (projectId: string): string => {
+    const project = projects.list().find((row) => row.id === projectId);
+    if (!project) throw new Error("That project is no longer in Construct.");
+    if (!project.present) throw new Error(`Construct cannot find ${project.directory}.`);
+    return project.directory;
+  };
+
+  handle(ipc.filesList, (input) => {
+    const { projectId, directory } = workspaceListInput.parse(input);
+    return workspace.list(directoryOf(projectId), directory ?? "");
+  });
+
+  handle(ipc.filesRead, (input) => {
+    const { projectId, path: relative } = workspacePathInput.parse(input);
+    return workspace.read(directoryOf(projectId), relative);
+  });
+
+  handle(ipc.filesWrite, (input) => {
+    const { projectId, path: relative, content } = workspaceWriteInput.parse(input);
+    return workspace.write(directoryOf(projectId), relative, content);
+  });
 
   /* ---- Account ---------------------------------------------------------- */
 
