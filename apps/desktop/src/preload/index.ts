@@ -6,6 +6,7 @@ import {
   type NativeSurface,
   type ProviderId,
   type ProviderOAuthEvent,
+  type TerminalEvent,
   type UpdateState,
   type WindowControls,
 } from "../shared/api.js";
@@ -40,6 +41,12 @@ const api: ConstructApi = {
   listFiles: (input) => ipcRenderer.invoke(ipc.filesList, input),
   readFile: (input) => ipcRenderer.invoke(ipc.filesRead, input),
   writeFile: (input) => ipcRenderer.invoke(ipc.filesWrite, input),
+
+  createTerminal: (input) => ipcRenderer.invoke(ipc.terminalCreate, input),
+  writeTerminal: (input) => ipcRenderer.invoke(ipc.terminalWrite, input),
+  resizeTerminal: (input) => ipcRenderer.invoke(ipc.terminalResize, input),
+  disposeTerminal: (input) => ipcRenderer.invoke(ipc.terminalDispose, input),
+  onTerminalEvent: (listener) => subscribe<TerminalEvent>("terminal:event", listener),
 
   auth: (request) => ipcRenderer.invoke(ipc.authRequest, request),
   signOut: () => ipcRenderer.invoke(ipc.authSignOut),

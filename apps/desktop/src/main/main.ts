@@ -9,6 +9,7 @@ import { installMenu } from "./menu.js";
 import { ProjectService } from "./projects/projectService.js";
 import { ProviderService } from "./provider.js";
 import { WorkspaceService } from "./projects/workspaceService.js";
+import { TerminalService } from "./terminal/terminalService.js";
 import { ProjectStore } from "./store/projectStore.js";
 import { UpdateService } from "./updates.js";
 import { WebSearchService } from "./webSearch.js";
@@ -36,6 +37,7 @@ else {
       const auth = new AuthService(apiOrigin());
       const projects = new ProjectService(store);
       const workspace = new WorkspaceService();
+      const terminals = new TerminalService((event) => mainWindow?.webContents.send("terminal:event", event));
       const providers = new ProviderService(auth, store, (event) => mainWindow?.webContents.send("provider:oauth-event", event));
       /* The learner's own Exa key, read through the same keychain the provider
          keys live in. Held in the main process because that is the only side
@@ -51,6 +53,9 @@ else {
       const prepareToExit = () =>
         (shutdown ??= (async () => {
           updates?.stop();
+          /* Shells outlive the window that opened them, so they are killed
+             deliberately rather than left as orphans. */
+          terminals.stop();
           store.close();
         })());
 
@@ -59,7 +64,7 @@ else {
          the application correcting a mistake in front of the learner. */
       const stage = (await auth.account()) ? ("app" as const) : ("sign-in" as const);
 
-      installIpc({ store, auth, projects, providers, workspace, web, window: () => mainWindow });
+      installIpc({ store, auth, projects, providers, workspace, terminals, web, window: () => mainWindow });
       updates = new UpdateService(store, () => mainWindow, prepareToExit);
       updates.installIpc();
       installMenu(() => mainWindow);

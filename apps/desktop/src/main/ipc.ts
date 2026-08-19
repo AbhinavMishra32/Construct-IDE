@@ -10,6 +10,10 @@ import {
   workspaceListInput,
   workspacePathInput,
   workspaceWriteInput,
+  terminalCreateInput,
+  terminalWriteInput,
+  terminalResizeInput,
+  terminalIdInput,
   providerSettingsInput,
   reasoningEffortSchema,
   themePreferenceSchema,
@@ -20,6 +24,7 @@ import type { AuthService } from "./auth.js";
 import type { ProjectService } from "./projects/projectService.js";
 import type { ProviderService } from "./provider.js";
 import type { WorkspaceService } from "./projects/workspaceService.js";
+import type { TerminalService } from "./terminal/terminalService.js";
 import type { ProjectStore } from "./store/projectStore.js";
 import type { WebSearchService } from "./webSearch.js";
 
@@ -29,6 +34,7 @@ type Dependencies = {
   projects: ProjectService;
   providers: ProviderService;
   workspace: WorkspaceService;
+  terminals: TerminalService;
   web: WebSearchService;
   window: () => BrowserWindow | null;
 };
@@ -42,7 +48,7 @@ type Dependencies = {
  * allowed to reach the renderer as a message, because every one of these is
  * surfaced to a person who has to decide what to do next.
  */
-export function installIpc({ store, auth, projects, providers, workspace, web, window }: Dependencies): void {
+export function installIpc({ store, auth, projects, providers, workspace, terminals, web, window }: Dependencies): void {
   const handle = <T>(channel: string, handler: (input: unknown) => T | Promise<T>) => {
     ipcMain.handle(channel, async (_event, input: unknown) => handler(input));
   };
@@ -101,6 +107,25 @@ export function installIpc({ store, auth, projects, providers, workspace, web, w
     const { projectId, path: relative, content } = workspaceWriteInput.parse(input);
     return workspace.write(directoryOf(projectId), relative, content);
   });
+
+  /* ---- Terminals --------------------------------------------------------- */
+
+  handle(ipc.terminalCreate, (input) => {
+    const { projectId, terminalId, cols, rows } = terminalCreateInput.parse(input);
+    terminals.create({ terminalId, cwd: directoryOf(projectId), ...(cols ? { cols } : {}), ...(rows ? { rows } : {}) });
+  });
+
+  handle(ipc.terminalWrite, (input) => {
+    const { terminalId, data } = terminalWriteInput.parse(input);
+    terminals.write(terminalId, data);
+  });
+
+  handle(ipc.terminalResize, (input) => {
+    const { terminalId, cols, rows } = terminalResizeInput.parse(input);
+    terminals.resize(terminalId, cols, rows);
+  });
+
+  handle(ipc.terminalDispose, (input) => terminals.dispose(terminalIdInput.parse(input).terminalId));
 
   /* ---- Account ---------------------------------------------------------- */
 
