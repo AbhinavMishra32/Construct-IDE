@@ -9,9 +9,21 @@ let child;
 let restartTimer;
 let stopping = false;
 
+/* Where the renderer comes from in development.
+ *
+ * Without this the main process finds no VITE_DEV_SERVER_URL and falls back to
+ * loadFile(dist/renderer/index.html) — the last production build. Vite runs,
+ * hot reload reports success, and the window shows stale code regardless,
+ * which is a uniquely confusing failure because everything appears to work. */
+const devServerUrl = process.env.VITE_DEV_SERVER_URL ?? "http://localhost:5173";
+
 function launch() {
-  const debuggingPort = /^\d+$/.test(process.env.SPAR_REMOTE_DEBUGGING_PORT ?? "") ? process.env.SPAR_REMOTE_DEBUGGING_PORT : "";
-  child = spawn(electronBinary, [".", ...(debuggingPort ? [`--remote-debugging-port=${debuggingPort}`] : [])], { cwd: projectRoot, stdio: "inherit" });
+  const debuggingPort = /^\d+$/.test(process.env.CONSTRUCT_REMOTE_DEBUGGING_PORT ?? "") ? process.env.CONSTRUCT_REMOTE_DEBUGGING_PORT : "";
+  child = spawn(electronBinary, [".", ...(debuggingPort ? [`--remote-debugging-port=${debuggingPort}`] : [])], {
+    cwd: projectRoot,
+    stdio: "inherit",
+    env: { ...process.env, VITE_DEV_SERVER_URL: devServerUrl },
+  });
   child.once("exit", (code, signal) => {
     child = undefined;
     if (!stopping && !restartTimer && code && signal !== "SIGTERM") process.exitCode = code;
