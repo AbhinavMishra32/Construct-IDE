@@ -34,6 +34,12 @@ export const ipc = {
   filesRead: "files:read",
   filesWrite: "files:write",
 
+  /* Terminals inside the open project. */
+  terminalCreate: "terminal:create",
+  terminalWrite: "terminal:write",
+  terminalResize: "terminal:resize",
+  terminalDispose: "terminal:dispose",
+
   /* Signing in, and the account behind it. */
   authRequest: "auth:request",
   authSignOut: "auth:sign-out",
@@ -160,6 +166,23 @@ export const workspaceWriteInput = workspacePathInput.extend({ content: z.string
  *  reject — so the directory is optional rather than defaulted to ".". */
 export const workspaceListInput = projectIdInput.extend({ directory: workspacePath.optional() });
 
+/* ---- Terminals ----------------------------------------------------------
+   A terminal is a real shell in the project's directory. The renderer names
+   it; the main process owns the process. */
+const terminalId = z.string().uuid();
+export const terminalCreateInput = projectIdInput.extend({
+  terminalId,
+  cols: z.number().int().min(1).max(1000).optional(),
+  rows: z.number().int().min(1).max(1000).optional(),
+});
+export const terminalWriteInput = z.object({ terminalId, data: z.string().max(100_000) });
+export const terminalResizeInput = z.object({ terminalId, cols: z.number().int().min(1).max(1000), rows: z.number().int().min(1).max(1000) });
+export const terminalIdInput = z.object({ terminalId });
+
+export type TerminalEvent =
+  | { terminalId: string; kind: "data"; data: string }
+  | { terminalId: string; kind: "exit"; exitCode: number };
+
 /* ---- Inference ----------------------------------------------------------- */
 export const providerSettingsInput = z.object({
   provider: z.enum([
@@ -280,6 +303,14 @@ export interface ConstructApi {
   listFiles(input: z.infer<typeof workspaceListInput>): Promise<WorkspaceEntry[]>;
   readFile(input: z.infer<typeof workspacePathInput>): Promise<string>;
   writeFile(input: z.infer<typeof workspaceWriteInput>): Promise<void>;
+
+  /* Terminals. Output arrives on `onTerminalEvent` rather than as a return
+     value, because a shell produces output for as long as it lives. */
+  createTerminal(input: z.infer<typeof terminalCreateInput>): Promise<void>;
+  writeTerminal(input: z.infer<typeof terminalWriteInput>): Promise<void>;
+  resizeTerminal(input: z.infer<typeof terminalResizeInput>): Promise<void>;
+  disposeTerminal(input: z.infer<typeof terminalIdInput>): Promise<void>;
+  onTerminalEvent(listener: (event: TerminalEvent) => void): () => void;
 
   /* Account. The main process owns the keychain and the API, so the window only
      ever learns which of the two things happened — see `AuthResult`. */

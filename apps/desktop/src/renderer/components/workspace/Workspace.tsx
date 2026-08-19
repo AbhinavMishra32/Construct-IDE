@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, FileCode2, X } from "lucide-react";
+import { ArrowLeft, FileCode2, SquareTerminal, X } from "lucide-react";
 import type { ConstructApi, ProjectSummary } from "../../../shared/api";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Editor } from "./Editor";
 import { FileTree } from "./FileTree";
+import { TerminalPanel } from "./TerminalPanel";
+import { PanelGroup, Panel, PanelResizeHandle } from "react-resizable-panels";
 
 type OpenFile = { path: string; content: string; dirty: boolean };
 
@@ -24,6 +26,11 @@ export function Workspace({ api, project, onBack, onError }: Props) {
   const [files, setFiles] = useState<OpenFile[]>([]);
   const [active, setActive] = useState<string | null>(null);
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  /* One terminal id per project visit. Held in state rather than derived, so
+     the panel closing and reopening reuses the same shell instead of leaving
+     the old one running and starting another. */
+  const [terminalId, setTerminalId] = useState(() => crypto.randomUUID());
+  const [terminalOpen, setTerminalOpen] = useState(false);
 
   const openFile = useCallback(
     async (path: string) => {
@@ -123,16 +130,50 @@ export function Workspace({ api, project, onBack, onError }: Props) {
           </div>
         )}
 
-        <div className="min-h-0 flex-1">
-          {current ? (
-            <Editor path={current.path} content={current.content} onChange={(value) => edit(current.path, value)} />
-          ) : (
-            <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
-              <FileCode2 className="size-6 text-muted-foreground" />
-              <p className="text-ui text-muted-foreground">Pick a file to start reading.</p>
-            </div>
+        <PanelGroup direction="vertical" className="min-h-0 flex-1">
+          <Panel defaultSize={70} minSize={20}>
+            {current ? (
+              <Editor path={current.path} content={current.content} onChange={(value) => edit(current.path, value)} />
+            ) : (
+              <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
+                <FileCode2 className="size-6 text-muted-foreground" />
+                <p className="text-ui text-muted-foreground">Pick a file to start reading.</p>
+              </div>
+            )}
+          </Panel>
+
+          {terminalOpen && (
+            <>
+              <PanelResizeHandle className="h-px bg-border/60 data-[resize-handle-state=drag]:bg-ring" />
+              <Panel defaultSize={30} minSize={10}>
+                <TerminalPanel
+                  api={api}
+                  projectId={project.id}
+                  terminalId={terminalId}
+                  /* The shell exited on its own — `exit`, or a crash. A fresh id
+                     means reopening starts a new shell rather than writing into
+                     a pty that is gone. */
+                  onExit={() => {
+                    setTerminalOpen(false);
+                    setTerminalId(crypto.randomUUID());
+                  }}
+                />
+              </Panel>
+            </>
           )}
-        </div>
+        </PanelGroup>
+
+        <footer className="flex h-7 shrink-0 items-center border-t border-border/60 px-1.5">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-5 gap-1.5 px-1.5 text-ui"
+            aria-pressed={terminalOpen}
+            onClick={() => setTerminalOpen((open) => !open)}
+          >
+            <SquareTerminal className="size-3.5" /> Terminal
+          </Button>
+        </footer>
       </div>
     </div>
   );
