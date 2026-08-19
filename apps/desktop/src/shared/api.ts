@@ -40,6 +40,11 @@ export const ipc = {
   terminalResize: "terminal:resize",
   terminalDispose: "terminal:dispose",
 
+  /* Language servers for the open project. */
+  lspStart: "lsp:start",
+  lspSend: "lsp:send",
+  lspStop: "lsp:stop",
+
   /* Signing in, and the account behind it. */
   authRequest: "auth:request",
   authSignOut: "auth:sign-out",
@@ -179,6 +184,19 @@ export const terminalWriteInput = z.object({ terminalId, data: z.string().max(10
 export const terminalResizeInput = z.object({ terminalId, cols: z.number().int().min(1).max(1000), rows: z.number().int().min(1).max(1000) });
 export const terminalIdInput = z.object({ terminalId });
 
+/* ---- Language servers ---------------------------------------------------
+   The main process frames the protocol and passes messages through; what a
+   message means is decided in the renderer, beside the editor it concerns. */
+const lspSessionId = z.string().min(1).max(200);
+export const lspStartInput = projectIdInput.extend({
+  sessionId: lspSessionId,
+  language: z.enum(["typescript", "javascript", "python"]),
+});
+export const lspSendInput = z.object({ sessionId: lspSessionId, message: z.unknown() });
+export const lspStopInput = z.object({ sessionId: lspSessionId });
+
+export type LspEvent = { sessionId: string; kind: "message"; message: unknown } | { sessionId: string; kind: "exit"; code: number | null };
+
 export type TerminalEvent =
   | { terminalId: string; kind: "data"; data: string }
   | { terminalId: string; kind: "exit"; exitCode: number };
@@ -311,6 +329,12 @@ export interface ConstructApi {
   resizeTerminal(input: z.infer<typeof terminalResizeInput>): Promise<void>;
   disposeTerminal(input: z.infer<typeof terminalIdInput>): Promise<void>;
   onTerminalEvent(listener: (event: TerminalEvent) => void): () => void;
+
+  /* Language servers. */
+  startLanguageServer(input: z.infer<typeof lspStartInput>): Promise<void>;
+  sendToLanguageServer(input: z.infer<typeof lspSendInput>): Promise<void>;
+  stopLanguageServer(input: z.infer<typeof lspStopInput>): Promise<void>;
+  onLanguageServerEvent(listener: (event: LspEvent) => void): () => void;
 
   /* Account. The main process owns the keychain and the API, so the window only
      ever learns which of the two things happened — see `AuthResult`. */

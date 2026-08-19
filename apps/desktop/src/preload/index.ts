@@ -7,6 +7,7 @@ import {
   type ProviderId,
   type ProviderOAuthEvent,
   type TerminalEvent,
+  type LspEvent,
   type UpdateState,
   type WindowControls,
 } from "../shared/api.js";
@@ -47,6 +48,11 @@ const api: ConstructApi = {
   resizeTerminal: (input) => ipcRenderer.invoke(ipc.terminalResize, input),
   disposeTerminal: (input) => ipcRenderer.invoke(ipc.terminalDispose, input),
   onTerminalEvent: (listener) => subscribe<TerminalEvent>("terminal:event", listener),
+
+  startLanguageServer: (input) => ipcRenderer.invoke(ipc.lspStart, input),
+  sendToLanguageServer: (input) => ipcRenderer.invoke(ipc.lspSend, input),
+  stopLanguageServer: (input) => ipcRenderer.invoke(ipc.lspStop, input),
+  onLanguageServerEvent: (listener) => subscribe<LspEvent>("lsp:event", listener),
 
   auth: (request) => ipcRenderer.invoke(ipc.authRequest, request),
   signOut: () => ipcRenderer.invoke(ipc.authSignOut),
