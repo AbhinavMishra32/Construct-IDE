@@ -14,6 +14,9 @@ import {
   terminalWriteInput,
   terminalResizeInput,
   terminalIdInput,
+  lspStartInput,
+  lspSendInput,
+  lspStopInput,
   providerSettingsInput,
   reasoningEffortSchema,
   themePreferenceSchema,
@@ -25,6 +28,7 @@ import type { ProjectService } from "./projects/projectService.js";
 import type { ProviderService } from "./provider.js";
 import type { WorkspaceService } from "./projects/workspaceService.js";
 import type { TerminalService } from "./terminal/terminalService.js";
+import type { LspService } from "./lsp/lspService.js";
 import type { ProjectStore } from "./store/projectStore.js";
 import type { WebSearchService } from "./webSearch.js";
 
@@ -35,6 +39,7 @@ type Dependencies = {
   providers: ProviderService;
   workspace: WorkspaceService;
   terminals: TerminalService;
+  lsp: LspService;
   web: WebSearchService;
   window: () => BrowserWindow | null;
 };
@@ -48,7 +53,7 @@ type Dependencies = {
  * allowed to reach the renderer as a message, because every one of these is
  * surfaced to a person who has to decide what to do next.
  */
-export function installIpc({ store, auth, projects, providers, workspace, terminals, web, window }: Dependencies): void {
+export function installIpc({ store, auth, projects, providers, workspace, terminals, lsp, web, window }: Dependencies): void {
   const handle = <T>(channel: string, handler: (input: unknown) => T | Promise<T>) => {
     ipcMain.handle(channel, async (_event, input: unknown) => handler(input));
   };
@@ -126,6 +131,20 @@ export function installIpc({ store, auth, projects, providers, workspace, termin
   });
 
   handle(ipc.terminalDispose, (input) => terminals.dispose(terminalIdInput.parse(input).terminalId));
+
+  /* ---- Language servers -------------------------------------------------- */
+
+  handle(ipc.lspStart, (input) => {
+    const { projectId, sessionId, language } = lspStartInput.parse(input);
+    lsp.start({ sessionId, language, cwd: directoryOf(projectId) });
+  });
+
+  handle(ipc.lspSend, (input) => {
+    const { sessionId, message } = lspSendInput.parse(input);
+    lsp.send(sessionId, message);
+  });
+
+  handle(ipc.lspStop, (input) => lsp.stopSession(lspStopInput.parse(input).sessionId));
 
   /* ---- Account ---------------------------------------------------------- */
 

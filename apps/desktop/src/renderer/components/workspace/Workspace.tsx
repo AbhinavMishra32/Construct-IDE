@@ -7,6 +7,8 @@ import { Editor } from "./Editor";
 import { FileTree } from "./FileTree";
 import { TerminalPanel } from "./TerminalPanel";
 import { PanelGroup, Panel, PanelResizeHandle } from "react-resizable-panels";
+import { isLspLanguage, languageForPath } from "@construct/domain";
+import { LanguageClient } from "@/lib/lsp/client";
 
 type OpenFile = { path: string; content: string; dirty: boolean };
 
@@ -31,6 +33,37 @@ export function Workspace({ api, project, onBack, onError }: Props) {
      the old one running and starting another. */
   const [terminalId, setTerminalId] = useState(() => crypto.randomUUID());
   const [terminalOpen, setTerminalOpen] = useState(false);
+  /* One client per language, started when a file of that language is first
+     opened. Starting every server up front would spawn a TypeScript server for
+     a project that has no TypeScript in it. */
+  const clients = useRef(new Map<string, LanguageClient>());
+
+  const clientFor = useCallback(
+    async (filePath: string) => {
+      const language = languageForPath(filePath);
+      if (!api || !language || !isLspLanguage(language)) return null;
+
+      /* TypeScript and JavaScript share one server: it is the same server, and
+         two of them on one project would each index it. */
+      const key = language === "javascript" ? "typescript" : language;
+      const existing = clients.current.get(key);
+      if (existing) return existing;
+
+      const client = new LanguageClient(api, `${project.id}:${key}`, project.id, project.directory, key);
+      clients.current.set(key, client);
+      try {
+        await client.start();
+        return client;
+      } catch (cause) {
+        clients.current.delete(key);
+        /* Language intelligence failing is not the editor failing. The file is
+           still open and editable, so this is reported and moved past. */
+        console.error("Language server did not start:", cause);
+        return null;
+      }
+    },
+    [api, project.id, project.directory],
+  );
 
   const openFile = useCallback(
     async (path: string) => {
@@ -43,17 +76,22 @@ export function Workspace({ api, project, onBack, onError }: Props) {
       try {
         const content = await api!.readFile({ projectId: project.id, path });
         setFiles((current) => [...current, { path, content, dirty: false }]);
+        void clientFor(path).then((client) => client?.sync(path, content));
       } catch (cause) {
         onError(cause instanceof Error ? cause.message : "Construct could not open that file.");
         setActive((current) => (current === path ? null : current));
       }
     },
-    [api, files, project.id, onError],
+    [api, files, project.id, onError, clientFor],
   );
 
   const edit = useCallback(
     (path: string, value: string) => {
       setFiles((current) => current.map((file) => (file.path === path ? { ...file, content: value, dirty: true } : file)));
+      /* Sent on every keystroke rather than on save: diagnostics that only
+         appear once a file is written are diagnostics arriving after the
+         learner has moved on. */
+      void clientFor(path).then((client) => client?.sync(path, value));
 
       clearTimeout(timers.current.get(path));
       timers.current.set(
@@ -66,15 +104,18 @@ export function Workspace({ api, project, onBack, onError }: Props) {
         }, SAVE_DEBOUNCE_MS),
       );
     },
-    [api, project.id, onError],
+    [api, project.id, onError, clientFor],
   );
 
   /* Pending writes are flushed on unmount. Leaving the workspace within the
      debounce window would otherwise drop the last edit silently. */
   useEffect(() => {
     const pending = timers.current;
+    const running = clients.current;
     return () => {
       for (const timer of pending.values()) clearTimeout(timer);
+      for (const client of running.values()) client.dispose();
+      running.clear();
     };
   }, []);
 
