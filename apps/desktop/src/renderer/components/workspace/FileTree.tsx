@@ -21,7 +21,7 @@ type Props = {
  */
 export function FileTree({ api, projectId, activePath, onOpenFile, onError }: Props) {
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto py-1.5">
+    <div className="app-scroll min-h-0 flex-1 overflow-y-auto pb-2">
       <Directory api={api} projectId={projectId} directory="" depth={0} activePath={activePath} onOpenFile={onOpenFile} onError={onError} />
     </div>
   );
@@ -58,7 +58,7 @@ function Directory({
   if (!entries) return null;
 
   return (
-    <ul>
+    <ul className="px-1.5">
       {entries.map((entry) => {
         const expanded = open.has(entry.path);
         return (
@@ -78,24 +78,29 @@ function Directory({
                 });
               }}
               className={cn(
-                "flex h-[1.625rem] w-full items-center gap-1.5 pr-2 text-source outline-none",
+                /* The sidebar's own row metrics, so the tree reads as part of
+                   the same source list rather than a second one with its own
+                   rhythm. No transition on the fill for the same reason it is
+                   absent there: a crossfade per row leaves a wake behind a
+                   fast pointer. */
+                "flex h-[1.625rem] w-full items-center gap-1.5 rounded-md pr-2 text-source outline-none",
                 "focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
-                entry.path === activePath ? "bg-foreground/10" : "hover:bg-foreground/6",
+                entry.path === activePath ? "bg-sidebar-accent-active text-foreground" : "text-foreground/85 hover:bg-sidebar-accent",
               )}
               /* Indent by depth on the padding rather than a nested container,
                  so a deep row still spans the full width and its highlight
                  reaches both edges the way a source list's does. */
-              style={{ paddingLeft: `${0.5 + depth * 0.75}rem` }}
+              style={{ paddingLeft: `${0.375 + depth * 0.6875}rem` }}
             >
               {entry.type === "directory" ? (
-                <ChevronRight className={cn("size-3.5 shrink-0 text-foreground/50 transition-transform", expanded && "rotate-90")} />
+                <ChevronRight className={cn("size-3 shrink-0 text-foreground/45 transition-transform duration-150", expanded && "rotate-90")} />
               ) : (
                 <span className="size-3.5 shrink-0" />
               )}
               {entry.type === "directory" ? (
-                <Folder className="size-3.5 shrink-0 text-foreground/60" />
+                <Folder className="size-3.5 shrink-0 text-foreground/55" />
               ) : (
-                <FileIcon className="size-3.5 shrink-0 text-foreground/50" />
+                <FileIcon className="size-3.5 shrink-0 text-foreground/45" />
               )}
               <span className="truncate">{entry.name}</span>
             </button>

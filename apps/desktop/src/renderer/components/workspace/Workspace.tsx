@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, FileCode2, SquareTerminal, X } from "lucide-react";
+import { FileCode2, SquareTerminal, X } from "lucide-react";
+import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
+import { isLspLanguage, languageForPath } from "@construct/domain";
 import type { ConstructApi, ProjectSummary } from "../../../shared/api";
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
+import { LanguageClient } from "@/lib/lsp/client";
+import { Toolbar } from "../shell/Toolbar";
 import { Editor } from "./Editor";
 import { FileTree } from "./FileTree";
 import { TerminalPanel } from "./TerminalPanel";
-import { PanelGroup, Panel, PanelResizeHandle } from "react-resizable-panels";
-import { isLspLanguage, languageForPath } from "@construct/domain";
-import { LanguageClient } from "@/lib/lsp/client";
 
 type OpenFile = { path: string; content: string; dirty: boolean };
 
@@ -28,14 +28,13 @@ export function Workspace({ api, project, onBack, onError }: Props) {
   const [files, setFiles] = useState<OpenFile[]>([]);
   const [active, setActive] = useState<string | null>(null);
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
-  /* One terminal id per project visit. Held in state rather than derived, so
-     the panel closing and reopening reuses the same shell instead of leaving
-     the old one running and starting another. */
+  /* One terminal id per project visit, so closing and reopening the panel
+     returns to the same shell rather than leaving the old one running. */
   const [terminalId, setTerminalId] = useState(() => crypto.randomUUID());
   const [terminalOpen, setTerminalOpen] = useState(false);
   /* One client per language, started when a file of that language is first
      opened. Starting every server up front would spawn a TypeScript server for
-     a project that has no TypeScript in it. */
+     a project with no TypeScript in it. */
   const clients = useRef(new Map<string, LanguageClient>());
 
   const clientFor = useCallback(
@@ -43,7 +42,7 @@ export function Workspace({ api, project, onBack, onError }: Props) {
       const language = languageForPath(filePath);
       if (!api || !language || !isLspLanguage(language)) return null;
 
-      /* TypeScript and JavaScript share one server: it is the same server, and
+      /* TypeScript and JavaScript share one server — it is the same server, and
          two of them on one project would each index it. */
       const key = language === "javascript" ? "typescript" : language;
       const existing = clients.current.get(key);
@@ -68,9 +67,8 @@ export function Workspace({ api, project, onBack, onError }: Props) {
   const openFile = useCallback(
     async (path: string) => {
       setActive(path);
-      /* Already open: switch to it and keep whatever is in the buffer. Re-reading
-         from disk here would discard unsaved edits every time the learner
-         clicked the file in the tree. */
+      /* Already open: switch to it and keep the buffer. Re-reading from disk
+         would discard unsaved edits every time the file was clicked. */
       if (files.some((file) => file.path === path)) return;
 
       try {
@@ -85,12 +83,19 @@ export function Workspace({ api, project, onBack, onError }: Props) {
     [api, files, project.id, onError, clientFor],
   );
 
+  const closeFile = useCallback((path: string) => {
+    setFiles((current) => {
+      const remaining = current.filter((file) => file.path !== path);
+      setActive((currentPath) => (currentPath === path ? (remaining.at(-1)?.path ?? null) : currentPath));
+      return remaining;
+    });
+  }, []);
+
   const edit = useCallback(
     (path: string, value: string) => {
       setFiles((current) => current.map((file) => (file.path === path ? { ...file, content: value, dirty: true } : file)));
-      /* Sent on every keystroke rather than on save: diagnostics that only
-         appear once a file is written are diagnostics arriving after the
-         learner has moved on. */
+      /* Sent on every keystroke rather than on save: diagnostics that appear
+         only once a file is written arrive after the learner has moved on. */
       void clientFor(path).then((client) => client?.sync(path, value));
 
       clearTimeout(timers.current.get(path));
@@ -107,8 +112,6 @@ export function Workspace({ api, project, onBack, onError }: Props) {
     [api, project.id, onError, clientFor],
   );
 
-  /* Pending writes are flushed on unmount. Leaving the workspace within the
-     debounce window would otherwise drop the last edit silently. */
   useEffect(() => {
     const pending = timers.current;
     const running = clients.current;
@@ -122,99 +125,106 @@ export function Workspace({ api, project, onBack, onError }: Props) {
   const current = files.find((file) => file.path === active) ?? null;
 
   return (
-    <div className="flex h-full min-h-0">
-      <aside className="flex w-56 shrink-0 flex-col border-r border-border/60">
-        <header className="flex h-9 items-center gap-1.5 px-2">
-          <Button variant="ghost" size="icon" className="size-6" aria-label="Back to projects" onClick={onBack}>
-            <ArrowLeft className="size-4" />
-          </Button>
-          <span className="truncate text-source font-medium">{project.name}</span>
-        </header>
-        <FileTree api={api} projectId={project.id} activePath={active} onOpenFile={(path) => void openFile(path)} onError={onError} />
-      </aside>
+    <div className="flex h-full min-h-0 flex-col">
+      {/* The shell's own toolbar rather than a bespoke header: it carries the
+          title-bar height, the drag region, and the inset the OS window buttons
+          need, none of which a hand-rolled row would have had. */}
+      <Toolbar title={project.name} onBack={onBack} />
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        {files.length > 0 && (
-          <div role="tablist" className="flex h-9 shrink-0 items-stretch overflow-x-auto border-b border-border/60">
-            {files.map((file) => (
-              <div
-                key={file.path}
-                className={cn(
-                  "group/tab flex shrink-0 items-center gap-1.5 border-r border-border/60 pl-3 pr-1.5 text-source",
-                  file.path === active ? "bg-foreground/6" : "hover:bg-foreground/3",
-                )}
-              >
-                <button type="button" role="tab" aria-selected={file.path === active} onClick={() => setActive(file.path)} className="outline-none">
-                  {file.path.split("/").pop()}
-                </button>
-                {/* A dot, not an asterisk, and it becomes the close button on
-                    hover — the same affordance every editor uses, so an unsaved
-                    file never costs a separate column of chrome. */}
-                <button
-                  type="button"
-                  aria-label={`Close ${file.path}`}
-                  className="grid size-4 place-items-center rounded"
-                  onClick={() => {
-                    setFiles((rest) => rest.filter((entry) => entry.path !== file.path));
-                    setActive((currentPath) =>
-                      currentPath === file.path ? (files.find((entry) => entry.path !== file.path)?.path ?? null) : currentPath,
-                    );
-                  }}
+      <div className="flex min-h-0 flex-1">
+        <aside className="hairline-r flex w-[13.5rem] shrink-0 flex-col">
+          <h2 className="px-3 pb-1 pt-2 text-ui-sm font-medium text-foreground/50">Files</h2>
+          <FileTree api={api} projectId={project.id} activePath={active} onOpenFile={(path) => void openFile(path)} onError={onError} />
+        </aside>
+
+        <div className="flex min-w-0 flex-1 flex-col">
+          {files.length > 0 && (
+            <div role="tablist" className="hairline-b app-scroll flex h-8 shrink-0 items-stretch overflow-x-auto">
+              {files.map((file) => (
+                <div
+                  key={file.path}
+                  role="tab"
+                  aria-selected={file.path === active}
+                  className={cn(
+                    "group/tab relative flex shrink-0 items-center gap-1.5 pl-3 pr-1.5 text-ui transition-colors",
+                    file.path === active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+                  )}
                 >
-                  {file.dirty ? (
-                    <span className="size-1.5 rounded-full bg-foreground/60 group-hover/tab:hidden" />
-                  ) : null}
-                  <X className={cn("size-3 text-foreground/60", file.dirty && "hidden group-hover/tab:block")} />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
-        <PanelGroup direction="vertical" className="min-h-0 flex-1">
-          <Panel defaultSize={70} minSize={20}>
-            {current ? (
-              <Editor path={current.path} content={current.content} onChange={(value) => edit(current.path, value)} />
-            ) : (
-              <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
-                <FileCode2 className="size-6 text-muted-foreground" />
-                <p className="text-ui text-muted-foreground">Pick a file to start reading.</p>
-              </div>
-            )}
-          </Panel>
-
-          {terminalOpen && (
-            <>
-              <PanelResizeHandle className="h-px bg-border/60 data-[resize-handle-state=drag]:bg-ring" />
-              <Panel defaultSize={30} minSize={10}>
-                <TerminalPanel
-                  api={api}
-                  projectId={project.id}
-                  terminalId={terminalId}
-                  /* The shell exited on its own — `exit`, or a crash. A fresh id
-                     means reopening starts a new shell rather than writing into
-                     a pty that is gone. */
-                  onExit={() => {
-                    setTerminalOpen(false);
-                    setTerminalId(crypto.randomUUID());
-                  }}
-                />
-              </Panel>
-            </>
+                  {/* The active tab is marked by a rule along its base rather
+                      than a filled block: the strip sits on the same material as
+                      the editor, and a fill would read as a second surface
+                      floating on it. */}
+                  {file.path === active && <span className="absolute inset-x-0 bottom-0 h-px bg-foreground/70" />}
+                  <button type="button" onClick={() => setActive(file.path)} className="outline-none">
+                    {file.path.split("/").pop()}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Close ${file.path}`}
+                    className="grid size-4 place-items-center rounded-sm hover:bg-accent"
+                    onClick={() => closeFile(file.path)}
+                  >
+                    {/* A dot for unsaved, becoming the close control on hover —
+                        the affordance every editor uses, so an unsaved file
+                        costs no extra chrome. */}
+                    {file.dirty && <span className="size-1.5 rounded-full bg-foreground/50 group-hover/tab:hidden" />}
+                    <X className={cn("size-3", file.dirty && "hidden group-hover/tab:block")} />
+                  </button>
+                </div>
+              ))}
+            </div>
           )}
-        </PanelGroup>
 
-        <footer className="flex h-7 shrink-0 items-center border-t border-border/60 px-1.5">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-5 gap-1.5 px-1.5 text-ui"
-            aria-pressed={terminalOpen}
-            onClick={() => setTerminalOpen((open) => !open)}
-          >
-            <SquareTerminal className="size-3.5" /> Terminal
-          </Button>
-        </footer>
+          <PanelGroup direction="vertical" className="min-h-0 flex-1">
+            <Panel defaultSize={70} minSize={20}>
+              {current ? (
+                <Editor path={current.path} content={current.content} onChange={(value) => edit(current.path, value)} />
+              ) : (
+                <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
+                  <FileCode2 className="size-5 text-muted-foreground/70" />
+                  <p className="text-ui text-muted-foreground">Pick a file to start reading.</p>
+                </div>
+              )}
+            </Panel>
+
+            {terminalOpen && (
+              <>
+                {/* A one-pixel rule with an invisible grab area above it: a
+                    handle you can only hit dead-on is a handle you miss. */}
+                <PanelResizeHandle className="relative h-px bg-[var(--border)] after:absolute after:inset-x-0 after:-top-1 after:h-2 after:content-[''] data-[resize-handle-state=drag]:bg-ring" />
+                <Panel defaultSize={30} minSize={10}>
+                  <TerminalPanel
+                    api={api}
+                    projectId={project.id}
+                    terminalId={terminalId}
+                    /* The shell exited on its own. A fresh id means reopening
+                       starts a new shell rather than writing into a dead pty. */
+                    onExit={() => {
+                      setTerminalOpen(false);
+                      setTerminalId(crypto.randomUUID());
+                    }}
+                  />
+                </Panel>
+              </>
+            )}
+          </PanelGroup>
+
+          <footer className="hairline-t flex h-6 shrink-0 items-center gap-3 px-2 text-ui-sm text-muted-foreground">
+            <button
+              type="button"
+              aria-pressed={terminalOpen}
+              onClick={() => setTerminalOpen((open) => !open)}
+              className={cn(
+                "flex h-4 items-center gap-1 rounded-sm px-1 transition-colors hover:text-foreground",
+                terminalOpen && "text-foreground",
+              )}
+            >
+              <SquareTerminal className="size-3" /> Terminal
+            </button>
+            {current && <span className="truncate">{current.path}</span>}
+            {current?.dirty && <span className="ml-auto">Saving…</span>}
+          </footer>
+        </div>
       </div>
     </div>
   );
