@@ -11,6 +11,7 @@ import { ProviderService } from "./provider.js";
 import { WorkspaceService } from "./projects/workspaceService.js";
 import { TerminalService } from "./terminal/terminalService.js";
 import { LspService } from "./lsp/lspService.js";
+import { AgentService } from "./agent/agentService.js";
 import { ProjectStore } from "./store/projectStore.js";
 import { UpdateService } from "./updates.js";
 import { WebSearchService } from "./webSearch.js";
@@ -45,6 +46,8 @@ else {
          keys live in. Held in the main process because that is the only side
          with keychain access. */
       const web = new WebSearchService(() => auth.readSecret("exa"));
+      const agent = new AgentService(store, providers, workspace, (event) => mainWindow?.webContents.send("agent:event", event));
+
 
       /* One idempotent shutdown path serves both an ordinary quit and an
          update. quitAndInstall closes windows before Electron emits
@@ -61,6 +64,7 @@ else {
           /* Language servers are long-lived and memory-hungry; one left behind
              is a few hundred megabytes left behind. */
           lsp.stop();
+          agent.stop();
           store.close();
         })());
 
@@ -69,7 +73,7 @@ else {
          the application correcting a mistake in front of the learner. */
       const stage = (await auth.account()) ? ("app" as const) : ("sign-in" as const);
 
-      installIpc({ store, auth, projects, providers, workspace, terminals, lsp, web, window: () => mainWindow });
+      installIpc({ store, auth, projects, providers, workspace, terminals, lsp, agent, web, window: () => mainWindow });
       updates = new UpdateService(store, () => mainWindow, prepareToExit);
       updates.installIpc();
       installMenu(() => mainWindow);

@@ -3,7 +3,7 @@ import { Agent } from "@mastra/core/agent";
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { CONSTRUCT_AGENT_PROMPT } from "../main/agent/prompt.js";
-import { createPiMastraModel } from "./piMastraModel.js";
+import { createPiMastraModel, type PiProviderInput } from "./piMastraModel.js";
 
 /**
  * The Construct agent, in its own process.
@@ -91,10 +91,14 @@ const tools = {
 
 type TurnPayload = {
   requestId: string;
-  provider: { provider: string; model: string; api: string; baseUrl: string; apiKey: string; headers?: Record<string, string>; reasoningEffort?: string };
+  provider: PiProviderInput;
   /** Flow state and run mode, appended to the prompt exactly as v0.7 did. */
   stateSuffix?: string;
-  messages: Array<{ role: "user" | "assistant"; content: string }>;
+  /* A discriminated union rather than `role: "user" | "assistant"`. Mastra's
+     message type is itself a union, and a single object typed with a union
+     role matches none of its members — the compiler cannot tell which one is
+     meant until the role is fixed per element. */
+  messages: Array<{ role: "user"; content: string } | { role: "assistant"; content: string }>;
 };
 
 async function runTurn(payload: TurnPayload): Promise<{ text: string }> {
@@ -112,9 +116,9 @@ async function runTurn(payload: TurnPayload): Promise<{ text: string }> {
 
   const result = await agent.generate(payload.messages, {
     maxSteps: 40,
-    onStepFinish: (step: { text?: string; toolCalls?: unknown[] }) => {
+    onStepFinish: ((step: { text?: string; toolCalls?: unknown[] }) => {
       send({ kind: "event", requestId: payload.requestId, type: "step", text: step.text ?? "", toolCalls: step.toolCalls?.length ?? 0 });
-    },
+    }) as never,
   });
 
   return { text: result.text };

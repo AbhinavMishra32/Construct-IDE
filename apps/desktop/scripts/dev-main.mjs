@@ -11,7 +11,8 @@ const build = await context({
      went with its verticals; Construct's agent worker is added back here when
      it lands, alongside the Mastra worker it runs in. */
   entryPoints: {
-    "main/main": "src/main/main.ts"
+    "main/main": "src/main/main.ts",
+    "workers/agent": "src/workers/agent.ts"
   },
   outdir: outputDirectory,
   bundle: true,
