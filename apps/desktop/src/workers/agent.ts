@@ -1,0 +1,140 @@
+import { randomUUID } from "node:crypto";
+import { Agent } from "@mastra/core/agent";
+import { createTool } from "@mastra/core/tools";
+import { z } from "zod";
+import { CONSTRUCT_AGENT_PROMPT } from "../main/agent/prompt.js";
+import { createPiMastraModel } from "./piMastraModel.js";
+
+/**
+ * The Construct agent, in its own process.
+ *
+ * It runs here rather than in the main process for one reason: a turn is a long
+ * stretch of CPU-bound work — schema validation, tool orchestration, streaming
+ * — and doing it on the main process would block the window's IPC. That is the
+ * same arrangement v0.7 used, and the worker keeps the same message protocol so
+ * the main process side is unchanged.
+ *
+ * Tools do not execute here. The worker has no filesystem or terminal access of
+ * its own; every tool call is forwarded to the main process, which owns the
+ * project directory and the containment checks that go with it. A worker that
+ * could read files would be a second place those checks had to be right.
+ */
+
+type RequestMessage = { kind: "request"; id: string; method: string; payload: Record<string, unknown> };
+type ToolResultMessage = { kind: "tool-result"; id: string; ok: boolean; value?: unknown; error?: string };
+
+const pendingTools = new Map<string, { resolve(value: unknown): void; reject(error: Error): void }>();
+const send = (value: unknown) => process.parentPort?.postMessage(value);
+
+/* The worker's stdout is the process's, not a channel — anything written there
+   is invisible. Console output is routed to stderr so a crash still explains
+   itself in the terminal running the app. */
+for (const level of ["log", "info", "warn", "error"] as const) {
+  console[level] = (...args: unknown[]) => process.stderr.write(`[agent:${level}] ${args.map(String).join(" ")}\n`);
+}
+
+/** A tool the main process executes on the worker's behalf. */
+function hostTool(name: string, description: string, schema: z.ZodTypeAny, requestId: () => string) {
+  return createTool({
+    id: name,
+    description,
+    inputSchema: schema,
+    execute: async ({ context }) => {
+      const id = randomUUID();
+      const settled = new Promise((resolve, reject) => pendingTools.set(id, { resolve, reject }));
+      send({ kind: "tool-call", id, requestId: requestId(), name, input: context });
+      return settled;
+    },
+  });
+}
+
+let currentRequestId = "";
+const requestId = () => currentRequestId;
+
+const tools = {
+  "read-file": hostTool(
+    "read-file",
+    "Read a UTF-8 file in the active project.",
+    z.object({ path: z.string().describe("Path relative to the project root") }),
+    requestId,
+  ),
+  "write-file": hostTool(
+    "write-file",
+    "Write a UTF-8 file in the active project. Never use this to write the learner's implementation for them.",
+    z.object({ path: z.string(), content: z.string() }),
+    requestId,
+  ),
+  "list-files": hostTool(
+    "list-files",
+    "List a directory in the active project. Omit the directory to list the project root.",
+    z.object({ directory: z.string().optional() }),
+    requestId,
+  ),
+  "run-terminal-command": hostTool(
+    "run-terminal-command",
+    "Run a command inside the active project and return its output.",
+    z.object({ command: z.string() }),
+    requestId,
+  ),
+  ask_user_question: hostTool(
+    "ask_user_question",
+    "Ask the learner one tracked question and pause until they answer. Use this instead of writing required learner questions as prose.",
+    z.object({
+      question: z.string().min(1).max(600),
+      header: z.string().min(1).max(80).optional(),
+      choices: z.array(z.string().min(1).max(160)).max(6).optional(),
+      allowOther: z.boolean().default(true),
+    }),
+    requestId,
+  ),
+};
+
+type TurnPayload = {
+  requestId: string;
+  provider: { provider: string; model: string; api: string; baseUrl: string; apiKey: string; headers?: Record<string, string>; reasoningEffort?: string };
+  /** Flow state and run mode, appended to the prompt exactly as v0.7 did. */
+  stateSuffix?: string;
+  messages: Array<{ role: "user" | "assistant"; content: string }>;
+};
+
+async function runTurn(payload: TurnPayload): Promise<{ text: string }> {
+  currentRequestId = payload.requestId;
+
+  const agent = new Agent({
+    id: "construct-flow",
+    name: "Construct Flow",
+    /* The prompt is used as-is, with state appended rather than interpolated —
+       the same shape v0.7 used, so behaviour does not shift with the port. */
+    instructions: payload.stateSuffix ? `${CONSTRUCT_AGENT_PROMPT}\n\n${payload.stateSuffix}` : CONSTRUCT_AGENT_PROMPT,
+    model: createPiMastraModel(payload.provider),
+    tools,
+  });
+
+  const result = await agent.generate(payload.messages, {
+    maxSteps: 40,
+    onStepFinish: (step: { text?: string; toolCalls?: unknown[] }) => {
+      send({ kind: "event", requestId: payload.requestId, type: "step", text: step.text ?? "", toolCalls: step.toolCalls?.length ?? 0 });
+    },
+  });
+
+  return { text: result.text };
+}
+
+process.parentPort?.on("message", (event: { data: unknown }) => {
+  const message = event.data as RequestMessage | ToolResultMessage;
+
+  if (message.kind === "tool-result") {
+    const pending = pendingTools.get(message.id);
+    pendingTools.delete(message.id);
+    if (!pending) return;
+    if (message.ok) pending.resolve(message.value);
+    else pending.reject(new Error(message.error ?? "Tool failed"));
+    return;
+  }
+
+  if (message.kind === "request" && message.method === "turn") {
+    void runTurn(message.payload as unknown as TurnPayload)
+      .then((value) => send({ kind: "result", id: message.id, ok: true, value }))
+      .catch((error: unknown) => send({ kind: "result", id: message.id, ok: false, error: error instanceof Error ? error.message : String(error) }));
+  }
+});
