@@ -105,7 +105,7 @@ export function App() {
      that lost the learner's projects. */
   if (!data && !error) {
     return (
-      <div className="flex h-dvh items-center justify-center">
+      <div className="app-drag app-pane flex h-dvh items-center justify-center">
         <ConstructWordmark className="boot-wordmark text-[3.5rem] leading-none" />
       </div>
     );
@@ -124,7 +124,7 @@ export function App() {
   }
 
   return (
-    <div className="flex h-dvh overflow-hidden">
+    <div className="app-vibrant relative flex h-dvh overflow-hidden">
       <AnimatePresence initial={false}>
         {sidebar && (
           <motion.div
@@ -158,7 +158,16 @@ export function App() {
         )}
       </AnimatePresence>
 
-      <main className="flex min-w-0 flex-1 flex-col">
+      <main
+        className={cn(
+          "relative flex min-w-0 flex-1 flex-col",
+          /* Pages other than the workspace sit on the standard pane fill. The
+             workspace paints its own surfaces, because its editor wants a solid
+             ground while the agent beside it wants glass. */
+          page !== "workspace" && "app-pane",
+          sidebar && "app-content-pane",
+        )}
+      >
         {page !== "workspace" && (
           <Toolbar
             title={PAGE_TITLE[page]}
