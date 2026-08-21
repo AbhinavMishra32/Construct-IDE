@@ -17,6 +17,12 @@ type OpenFile = { path: string; content: string; dirty: boolean };
 type Props = {
   api: ConstructApi | undefined;
   project: ProjectSummary;
+  /** Concepts and the one being read are owned by the shell, since the sidebar
+   *  lists them and this panel opens them. */
+  concepts: ConceptSummary[];
+  concept: ConceptSummary | null;
+  onOpenConcept(concept: ConceptSummary): void;
+  onCloseConcept(): void;
   onOpenSettings(): void;
   /** The file the tree asked to open, lifted to the shell because the tree now
    *  lives in the sidebar rather than inside this component. */
@@ -29,7 +35,7 @@ type Props = {
  *  the window a second after stopping. */
 const SAVE_DEBOUNCE_MS = 600;
 
-export function Workspace({ api, project, openPath, onError, onOpenSettings }: Props) {
+export function Workspace({ api, project, openPath, onError, onOpenSettings, concepts, concept, onOpenConcept, onCloseConcept }: Props) {
   const [files, setFiles] = useState<OpenFile[]>([]);
   const [active, setActive] = useState<string | null>(null);
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
@@ -38,8 +44,6 @@ export function Workspace({ api, project, openPath, onError, onOpenSettings }: P
   const [terminalId, setTerminalId] = useState(() => crypto.randomUUID());
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [agentOpen, setAgentOpen] = useState(true);
-  const [concepts, setConcepts] = useState<ConceptSummary[]>([]);
-  const [openConcept, setOpenConcept] = useState<ConceptSummary | null>(null);
   /* One client per language, started when a file of that language is first
      opened. Starting every server up front would spawn a TypeScript server for
      a project with no TypeScript in it. */
@@ -120,20 +124,6 @@ export function Workspace({ api, project, openPath, onError, onOpenSettings }: P
     [api, project.id, onError, clientFor],
   );
 
-  /* Read on open and again whenever the agent records a reading. A turn is
-     exactly when mastery moves, so polling would be either late or wasteful. */
-  const loadConcepts = useCallback(() => {
-    void api?.listConcepts({ projectId: project.id }).then(setConcepts).catch(() => setConcepts([]));
-  }, [api, project.id]);
-
-  useEffect(loadConcepts, [loadConcepts]);
-
-  useEffect(() => {
-    return api?.onAgentEvent((event) => {
-      if (event.projectId === project.id && (event.kind === "concepts" || event.kind === "done")) loadConcepts();
-    });
-  }, [api, project.id, loadConcepts]);
-
   useEffect(() => {
     const pending = timers.current;
     const running = clients.current;
@@ -162,10 +152,8 @@ export function Workspace({ api, project, openPath, onError, onOpenSettings }: P
     <div className="flex h-full min-h-0 flex-col">
       <WorkspaceBar
         agentOpen={agentOpen}
-        concepts={concepts}
         onToggleAgent={() => setAgentOpen((open) => !open)}
         onToggleTerminal={() => setTerminalOpen((open) => !open)}
-        onOpenConcept={setOpenConcept}
         project={project}
         terminalOpen={terminalOpen}
       />
@@ -180,13 +168,18 @@ export function Workspace({ api, project, openPath, onError, onOpenSettings }: P
           <PanelGroup direction="vertical" className="min-h-0 flex-1 gap-1">
             <Panel className="app-blob flex min-w-0 flex-col" defaultSize={70} minSize={20}>
               {files.length > 0 && (
-                <div className="hairline-b app-scroll flex h-8 shrink-0 items-stretch overflow-x-auto" role="tablist">
+                <div className="hairline-b app-scroll flex h-9 shrink-0 items-stretch overflow-x-auto bg-[color-mix(in_oklab,var(--foreground)_3%,transparent)]" role="tablist">
                   {files.map((file) => (
                     <div
                       aria-selected={file.path === active}
                       className={cn(
                         "group/tab relative flex shrink-0 items-center gap-1.5 pl-3 pr-1.5 text-ui transition-colors",
-                        file.path === active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+                        /* The active tab is lifted out of the strip onto the
+                           editor's own surface, which is how a tab says it is
+                           the thing in front rather than one of a row. */
+                        file.path === active
+                          ? "bg-[var(--popover)] text-foreground"
+                          : "text-muted-foreground hover:bg-[color-mix(in_oklab,var(--foreground)_4%,transparent)] hover:text-foreground",
                       )}
                       key={file.path}
                       role="tab"
@@ -194,7 +187,11 @@ export function Workspace({ api, project, openPath, onError, onOpenSettings }: P
                       {/* A rule along the base rather than a filled block: the
                           strip shares a surface with the editor, and a fill would
                           read as a second one floating on it. */}
-                      {file.path === active && <span className="absolute inset-x-0 bottom-0 h-px bg-foreground/70" />}
+                      {/* A coloured seat at the top edge rather than a rule at
+                          the bottom: the bottom edge is where the tab meets the
+                          editor, and a line there would cut it off from the
+                          surface it is supposed to be part of. */}
+                      {file.path === active && <span className="absolute inset-x-0 top-0 h-[2px] bg-[var(--primary)]" />}
                       <button className="flex items-center gap-1.5 outline-none" onClick={() => setActive(file.path)} type="button">
                         <LanguageGlyph className="size-3.5 shrink-0" language={languageForPath(file.path) ?? "typescript"} />
                         {file.path.split("/").pop()}
@@ -239,9 +236,13 @@ export function Workspace({ api, project, openPath, onError, onOpenSettings }: P
                 {current ? (
                   <Editor content={current.content} onChange={(value) => edit(current.path, value)} path={current.path} />
                 ) : (
-                  <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
-                    <FileCode2 className="size-5 text-muted-foreground/70" />
-                    <p className="text-ui text-muted-foreground">Pick a file to start reading.</p>
+                  <div className="flex h-full flex-col items-center justify-center gap-1.5 px-8 text-center">
+                    <FileCode2 className="size-5 text-muted-foreground/50" />
+                    <p className="text-content text-muted-foreground">Pick a file from the sidebar</p>
+                    {/* The goal, again, because this is the emptiest moment in
+                        the window and the one where a reminder of what you are
+                        building is worth most. */}
+                    <p className="max-w-sm text-ui leading-[1.5] text-muted-foreground/60">{project.goal}</p>
                   </div>
                 )}
               </div>
@@ -293,15 +294,15 @@ export function Workspace({ api, project, openPath, onError, onOpenSettings }: P
               {/* One panel, two modes. A concept is read while looking at the
                   code it describes, so it takes the space the conversation was
                   in rather than covering the editor as a dialog would. */}
-              {openConcept ? (
-                <ConceptSidecar api={api} concept={openConcept} onBack={() => setOpenConcept(null)} />
+              {concept ? (
+                <ConceptSidecar api={api} concept={concept} onBack={onCloseConcept} />
               ) : (
                 <AgentPanel
                   api={api}
                   onError={onError}
                   onOpenConcept={(conceptId) => {
                     const found = concepts.find((entry) => entry.conceptId === conceptId);
-                    if (found) setOpenConcept(found);
+                    if (found) onOpenConcept(found);
                   }}
                   onOpenSettings={onOpenSettings}
                   projectId={project.id}

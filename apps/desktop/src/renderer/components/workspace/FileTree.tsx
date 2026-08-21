@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ChevronRight, File as FileIcon, Folder } from "lucide-react";
+import { languageForPath } from "@construct/domain";
+import { LanguageGlyph } from "../common/LanguageGlyph";
 import type { ConstructApi, WorkspaceEntry } from "../../../shared/api";
 import { cn } from "@/lib/utils";
 
@@ -100,7 +102,19 @@ function Directory({
               {entry.type === "directory" ? (
                 <Folder className="size-3.5 shrink-0 text-foreground/55" />
               ) : (
-                <FileIcon className="size-3.5 shrink-0 text-foreground/45" />
+                /* The language's own mark, which is the only colour a file tree
+                   has any business carrying — and the difference between a list
+                   of grey rows and a list you can scan. A file in a language
+                   Construct cannot name falls back to the generic glyph rather
+                   than being given a colour it has not earned. */
+                (() => {
+                  const language = languageForPath(entry.name);
+                  return language ? (
+                    <LanguageGlyph className="size-3.5 shrink-0" language={language} />
+                  ) : (
+                    <FileIcon className="size-3.5 shrink-0 text-foreground/40" />
+                  );
+                })()
               )}
               <span className="truncate">{entry.name}</span>
             </button>
