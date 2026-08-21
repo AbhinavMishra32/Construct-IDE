@@ -117,12 +117,17 @@ export function Workspace({ api, project, onBack, onError }: Props) {
   useEffect(() => {
     const pending = timers.current;
     const running = clients.current;
+    const shell = terminalId;
     return () => {
       for (const timer of pending.values()) clearTimeout(timer);
       for (const client of running.values()) client.dispose();
       running.clear();
+      /* The shell belongs to the project, not to the terminal panel — so it is
+         killed when the project closes, and survives the panel being collapsed
+         and reopened with a build still running in it. */
+      void api?.disposeTerminal({ terminalId: shell });
     };
-  }, []);
+  }, [api, terminalId]);
 
   const current = files.find((file) => file.path === active) ?? null;
 
