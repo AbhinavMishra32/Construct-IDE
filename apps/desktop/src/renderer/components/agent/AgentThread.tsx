@@ -13,9 +13,25 @@ import { groupParts, type AgentRun, type RunPart } from "./agentRun";
  *  adapter — only the name of the type it reads. */
 type Message = AgentMessage;
 
-function LiveRun({ run }: { run: AgentRun }) {
+const PHASE_LABEL: Record<string, string> = {
+  research: "Reading up on this project",
+  opening: "Getting started",
+};
+
+function LiveRun({ run, phase }: { run: AgentRun; phase?: string | null }) {
+  const label = phase ? PHASE_LABEL[phase] : undefined;
   return (
     <div className="min-w-0">
+      {/* Named when Construct started the turn itself. A learner who has just
+          made a project did not ask for this, so the first thing they see has to
+          say what it is — otherwise a minute of tool rows is a minute of
+          unexplained activity. */}
+      {label && (
+        <p className="mb-1.5 flex items-center gap-1.5 text-ui-sm font-medium tracking-wide text-muted-foreground uppercase">
+          <span className="size-1.5 rounded-full bg-[var(--brand)]" />
+          {label}
+        </p>
+      )}
       <Rows parts={run.parts} />
       {run.status === "streaming" && <div style={{ marginTop: STEP_GAP }}><WaitingLine parts={run.parts} /></div>}
     </div>
@@ -157,6 +173,7 @@ function LearnerMessage({ body }: { body: string }) {
 export function AgentThread({
   messages,
   run,
+  phase,
   header,
   empty,
   footer,
@@ -165,6 +182,8 @@ export function AgentThread({
 }: {
   messages: Message[];
   run: AgentRun | null;
+  /** What the live turn is, when Construct started it rather than the learner. */
+  phase?: "research" | "opening" | "reply" | null;
   header?: React.ReactNode;
   empty?: React.ReactNode;
   /** Rendered after the last message, inside the scroller. Used for a failed
@@ -233,7 +252,7 @@ export function AgentThread({
                     <AgentMessage key={item.id} activity={item.activity} body={item.body} onOpenConcept={onOpenConcept} />
                   ),
                 )}
-                {visibleRun && <LiveRun run={visibleRun} />}
+                {visibleRun && <LiveRun phase={phase} run={visibleRun} />}
                 {footer}
               </>
             )}

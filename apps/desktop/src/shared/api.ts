@@ -324,10 +324,18 @@ export type ConceptSummary = {
 };
 
 export type AgentEvent =
+  /** A turn has begun, and what kind it is. Emitted for every turn, including
+   *  the ones Construct starts itself — research and the opening turn — because
+   *  the window cannot otherwise tell that it is working. */
+  | { projectId: string; kind: "started"; phase: "research" | "opening" | "reply" }
   | { projectId: string; kind: "step"; text: string }
   /** A mastery reading landed. The window re-reads concepts rather than being
    *  handed them, because the store is what resolved the level. */
   | { projectId: string; kind: "concepts" }
+  /** Flow Memory or the path changed. Both are shown, so a silent write would
+   *  leave the window describing a project state that has moved on. */
+  | { projectId: string; kind: "memory" }
+  | { projectId: string; kind: "path" }
   | { projectId: string; kind: "question"; request: AskUserQuestionRequest }
   | { projectId: string; kind: "message"; message: AgentMessage }
   | { projectId: string; kind: "error"; message: string }
