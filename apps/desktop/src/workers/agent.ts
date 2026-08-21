@@ -76,6 +76,27 @@ function format(value: unknown): string {
   return text.length > 4_000 ? `${text.slice(0, 4_000)}\n… truncated` : text;
 }
 
+/**
+ * Pulls text out of whatever shape a step field arrives in.
+ *
+ * `step.reasoning` is not a string. Across AI SDK and Mastra versions it has
+ * been a string, an array of reasoning parts, and an array of plain strings —
+ * and calling .trim() on the array shape threw "step.reasoning?.trim is not a
+ * function", which killed every turn before a reply was produced.
+ *
+ * Normalising is the right fix rather than pinning to one shape: the worker
+ * only wants the words, and being wrong here costs a whole conversation.
+ */
+function textOf(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return value.map(textOf).filter(Boolean).join("");
+  if (value && typeof value === "object") {
+    const record = value as { text?: unknown; reasoning?: unknown; content?: unknown };
+    return textOf(record.text ?? record.reasoning ?? record.content);
+  }
+  return "";
+}
+
 let currentRequestId = "";
 const requestId = () => currentRequestId;
 
@@ -157,17 +178,22 @@ async function runTurn(payload: TurnPayload): Promise<{ text: string }> {
 
   const result = await agent.generate(payload.messages, {
     maxSteps: 40,
-    onStepFinish: ((step: { text?: string; reasoning?: string }) => {
+    onStepFinish: ((step: Record<string, unknown>) => {
       /* The model's prose and its reasoning are separate rows in the
          transcript: one is the answer, the other is how it got there, and
          collapsing them would make the reasoning read as part of the reply. */
-      if (step.reasoning?.trim()) send({ kind: "event", requestId: payload.requestId, type: "reasoning", text: step.reasoning });
-      if (step.text?.trim()) send({ kind: "event", requestId: payload.requestId, type: "text", text: step.text });
+      const reasoning = textOf(step.reasoning ?? step.reasoningText).trim();
+      const text = textOf(step.text).trim();
+      if (reasoning) send({ kind: "event", requestId: payload.requestId, type: "reasoning", text: reasoning });
+      if (text) send({ kind: "event", requestId: payload.requestId, type: "text", text });
     }) as never,
   });
 
   send({ kind: "event", requestId: payload.requestId, type: "done" });
-  return { text: result.text };
+  /* Normalised for the same reason: `result.text` has been a string and an
+     array of content parts depending on the provider, and a reply stored as
+     "[object Object]" is a lost turn. */
+  return { text: textOf(result.text) || textOf((result as unknown as { content?: unknown }).content) };
 }
 
 process.parentPort?.on("message", (event: { data: unknown }) => {
