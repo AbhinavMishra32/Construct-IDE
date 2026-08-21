@@ -52,8 +52,10 @@ export const ipc = {
   agentSend: "agent:send",
   agentAnswer: "agent:answer",
 
-  /* What the learner understands, per project. */
+  /* What the learner understands, per project — and across all of them, for the
+     atlas. */
   conceptsList: "concepts:list",
+  conceptsAtlas: "concepts:atlas",
 
   /* Signing in, and the account behind it. */
   authRequest: "auth:request",
@@ -255,6 +257,10 @@ export type AgentStreamEvent = {
  *  has got with it. `masteryLevel` indexes MASTERY_RUBRIC — level 3 is the
  *  boundary the concept firewall cares about, since that is where a scoped task
  *  becomes fair to set. */
+/** A concept plus where it was learned. The atlas spans projects, so a node
+ *  has to be able to say which one it came from. */
+export type AtlasConcept = ConceptSummary & { projectId: string; projectName: string };
+
 export type ConceptSummary = {
   conceptId: string;
   title: string;
@@ -436,6 +442,10 @@ export interface ConstructApi {
   /** The concepts this project has covered. Re-read after a turn, because a
    *  turn is exactly when mastery moves. */
   listConcepts(input: z.infer<typeof projectIdInput>): Promise<ConceptSummary[]>;
+  /** Every concept the learner has met, in any project. What the atlas draws:
+   *  understanding is the learner's, not the repository's, so the page that
+   *  shows it whole cannot be scoped to one project. */
+  conceptAtlas(): Promise<AtlasConcept[]>;
   onAgentEvent(listener: (event: AgentEvent) => void): () => void;
   /** The live transcript stream. Separate from `onAgentEvent`, which carries
    *  settled messages and lifecycle, because the transcript is redrawn many

@@ -8,6 +8,7 @@ import { Sidebar, type Page, type ProjectActions } from "./components/shell/Side
 import { Toolbar } from "./components/shell/Toolbar";
 import { ConstructWordmark } from "./components/common/ConstructWordmark";
 import { AuthPage } from "./components/pages/AuthPage";
+import { ConceptsPage } from "./components/pages/ConceptsPage";
 import { ProjectsPage } from "./components/pages/ProjectsPage";
 import { SettingsPage } from "./components/pages/SettingsPage";
 import { Workspace } from "./components/workspace/Workspace";
@@ -22,6 +23,7 @@ const api: ConstructApi | undefined = window.construct;
  *  it carries a back button and the project's own actions. */
 const PAGE_TITLE: Record<Exclude<Page, "workspace">, string> = {
   projects: "Projects",
+  concepts: "Atlas",
   settings: "Settings",
 };
 
@@ -269,7 +271,7 @@ export function App() {
           />
         )}
 
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className={cn("min-h-0 flex-1", page === "concepts" ? "overflow-hidden" : "overflow-y-auto")}>
           {page === "projects" && (
             <ProjectsPage
               api={api}
@@ -281,6 +283,8 @@ export function App() {
               onError={setError}
             />
           )}
+
+          {page === "concepts" && <ConceptsPage api={api} onError={setError} />}
 
           {page === "settings" && (
             <SettingsPage api={api} theme={data.theme} onThemeChange={setTheme} onSignedOut={load} />

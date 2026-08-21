@@ -50,6 +50,8 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+  --color-brand: var(--brand);
+  --color-brand-ink: var(--brand-ink);
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-border: var(--border);
@@ -167,8 +169,8 @@
   --card-foreground: var(--foreground);
   --popover: oklch(99% 0 0);
   --popover-foreground: var(--foreground);
-  --primary: oklch(14.5% 0 0 / 95%);
-  --primary-foreground: oklch(98.5% 0 0 / 95%);
+  --primary: var(--brand);
+  --primary-foreground: var(--brand-ink);
   --secondary: oklch(14.5% 0 0 / 6%);
   --secondary-foreground: oklch(14.5% 0 0 / 78%);
   --muted: oklch(14.5% 0 0 / 5%);
@@ -178,6 +180,19 @@
   --destructive: oklch(57.7% 0.245 27.325);
   --success: oklch(52% 0.11 158);
   --warning: oklch(62% 0.13 68);
+
+  /* Construct's one warm signal.
+     
+     The app was achromatic to a fault: an entire window of greys with a single
+     blue file icon in it, which is not restraint, it is an absence. Ember is
+     the accent because it is the one family a code editor does not already own
+     — blue is a syntax colour and a hundred other IDEs, violet is every AI
+     product shipped since 2023 — and because a warm mark on a cool slate
+     ground is the oldest way to make a surface look lit rather than switched
+     off. It leads `--primary`, so every affirmative control in the app is this
+     colour and nothing else is. */
+  --brand: oklch(58% 0.155 48);
+  --brand-ink: oklch(99% 0.008 60);
   --border: oklch(14.5% 0 0 / 10%);
   --border-strong: oklch(14.5% 0 0 / 16%);
   --input: oklch(14.5% 0 0 / 10%);
@@ -254,6 +269,27 @@
   --glass-hairline: color-mix(in oklab, var(--foreground) 18%, transparent);
   --shimmer-tint: oklch(14.5% 0 0 / 28%);
 
+  /* Mastery, as a temperature.
+     
+     Six levels need six values that a learner can read at a glance, in a 3px
+     mark, without a legend — so the ramp is a single sweep of hue rather than
+     six arbitrary colours: near-grey for an idea only just named, through violet
+     and cyan as it is understood, jade once it is practised, and gold at the
+     top. Warmth is the metaphor doing the work; nobody has to be told that gold
+     outranks slate.
+     
+     The cyan step is where the ramp visibly turns, and that is on purpose: level
+     3 is the boundary where Construct will start setting tasks, so the one place
+     the colour jumps is the one place the rules change. Every surface that draws
+     a level — the sidebar list, the transcript card, the atlas — reads these
+     through `masteryColor()` so the ramp has exactly one definition. */
+  --mastery-0: color-mix(in oklab, var(--foreground) 20%, transparent);
+  --mastery-1: oklch(57% 0.035 300);
+  --mastery-2: oklch(54% 0.12 300);
+  --mastery-3: oklch(56% 0.105 212);
+  --mastery-4: oklch(54% 0.115 162);
+  --mastery-5: oklch(60% 0.135 78);
+
   /* Concept kinds. Three hues in an otherwise monochrome app, so they are held to
      a strict brief: they appear as a 5px dot and a faint wash, never as coloured
      text or a filled pill. That is enough to tell a row of chips apart at a
@@ -278,6 +314,10 @@
 .dark {
   color-scheme: dark;
 
+  /* Neutral, and staying neutral. The window itself carries no hue: the colour
+     in this app is carried by the things that mean something — the ember accent,
+     the mastery ramp, a language's own mark — and a tinted ground would put all
+     of them in competition with the wall behind them. */
   --background: oklch(23.5% 0 0);
   --foreground: oklch(98.5% 0 0);
 
@@ -289,8 +329,8 @@
   --card-foreground: var(--foreground);
   --popover: oklch(29% 0 0);
   --popover-foreground: var(--foreground);
-  --primary: oklch(98.5% 0 0 / 90%);
-  --primary-foreground: oklch(14.5% 0 0 / 92%);
+  --primary: var(--brand);
+  --primary-foreground: var(--brand-ink);
   --secondary: oklch(98.5% 0 0 / 8%);
   --secondary-foreground: oklch(98.5% 0 0 / 78%);
   --muted: oklch(98.5% 0 0 / 10%);
@@ -298,6 +338,10 @@
   --accent: oklch(98.5% 0 0 / 10%);
   --accent-foreground: oklch(98.5% 0 0 / 85%);
   --destructive: oklch(70.4% 0.191 22.216);
+  /* Brighter and a touch less saturated than the light-theme ember: a warm hue
+     at full chroma on a dark ground glows and smears its own edge. */
+  --brand: oklch(76% 0.145 58);
+  --brand-ink: oklch(22% 0.045 52);
   --success: oklch(78% 0.14 158);
   --warning: oklch(82% 0.14 78);
   --border: oklch(98.5% 0 0 / 10%);
@@ -363,6 +407,13 @@
 
   /* Lifted and slightly desaturated for the dark pane: the same hues at the light
      values read as ink rather than as a lit dot. */
+  --mastery-0: color-mix(in oklab, var(--foreground) 18%, transparent);
+  --mastery-1: oklch(70% 0.035 300);
+  --mastery-2: oklch(70% 0.115 300);
+  --mastery-3: oklch(76% 0.10 205);
+  --mastery-4: oklch(76% 0.13 162);
+  --mastery-5: oklch(84% 0.14 88);
+
   --concept-dsa: oklch(74% 0.12 274);
   --concept-engineering: oklch(74% 0.09 203);
   --concept-craft: oklch(76% 0.10 45);
