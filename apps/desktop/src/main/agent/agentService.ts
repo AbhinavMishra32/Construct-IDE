@@ -13,6 +13,15 @@ import { executeAgentTool } from "./agentTools.js";
 import { openingRequest, RESEARCH_AGENT_PROMPT, researchDocument, researchRequest, wroteResearch } from "./researchPrompt.js";
 
 export type AgentEvent =
+  /* A turn has begun, and why.
+     
+     Emitted for every turn rather than only for the learner's, because the
+     window cannot otherwise tell that Construct is working: research and the
+     opening turn are started by the main process, and the panel used to draw
+     live rows only for turns the composer itself had sent. A project therefore
+     opened to a blank thread while the agent read up on it — the work was
+     happening and none of it was visible. */
+  | { projectId: string; kind: "started"; phase: "research" | "opening" | "reply" }
   | { projectId: string; kind: "step"; text: string }
   | { projectId: string; kind: "question"; request: AskUserQuestionRequest }
   | { projectId: string; kind: "message"; message: AgentMessage }
@@ -107,7 +116,7 @@ export class AgentService {
     this.store.appendMessage(projectId, question);
     this.emit({ projectId, kind: "message", message: question });
 
-    await this.runTurn(projectId, { history: true });
+    await this.runTurn(projectId, { history: true, phase: "reply" });
   }
 
   /**
@@ -139,6 +148,7 @@ export class AgentService {
          it the mentor's tools would let a research run start setting tasks
          before anything is known about the learner. */
       tools: ["read-file", "list-files", "flow-memory-fetch", "flow-memory-patch", "web-search", "web-fetch"],
+      phase: "research",
       /* Kept out of the transcript. The learner asked for a project, not for a
          literature review, and the research is durable in research.md where it
          belongs — but its tool rows still stream, so the window shows the work
@@ -161,7 +171,26 @@ export class AgentService {
       this.emit({ projectId, kind: "memory" });
     }
 
-    await this.runTurn(projectId, { history: true, message: openingRequest(research.ok) });
+    /* A line in the transcript saying the reading happened, and where it went.
+       
+       The research itself is not a chat message — it is a document, and it lives
+       in the file — but a project that silently spent a minute on the web and
+       then started teaching gives the learner no way to know that, or to go and
+       read it. Stored rather than streamed, so it is still there next time the
+       project is opened. */
+    if (research.ok) {
+      const note: AgentMessage = {
+        id: randomUUID(),
+        role: "system",
+        body: "Read up on this project before starting. Saved to .construct/research.md",
+        createdAt: new Date().toISOString(),
+        activity: research.steps,
+      };
+      this.store.appendMessage(projectId, note);
+      this.emit({ projectId, kind: "message", message: note });
+    }
+
+    await this.runTurn(projectId, { history: true, message: openingRequest(research.ok), phase: "opening" });
   }
 
   /**
@@ -185,6 +214,8 @@ export class AgentService {
       tools?: string[];
       /** Whether the reply is stored as a message in the transcript. */
       record?: boolean;
+      /** What this run is, for the window's benefit. */
+      phase: "research" | "opening" | "reply";
     },
   ): Promise<{ ok: boolean; text: string; lastText: string; steps: AgentActivityStep[] }> {
     const project = this.store.readProject(projectId);
@@ -217,6 +248,7 @@ export class AgentService {
     const turnId = randomUUID();
     this.running.set(turnId, projectId);
     this.activity.set(turnId, []);
+    this.emit({ projectId, kind: "started", phase: options.phase });
 
     const { promise } = this.worker.request("turn", {
       requestId: turnId,
@@ -398,5 +430,13 @@ const TOOL_LABEL: Record<string, string> = {
   "list-files": "Looked through the project",
   "run-terminal-command": "Ran a command",
   "record-concept": "Recorded what you understand",
+  /* The names a learner reads, not the tool ids. "flow-memory-patch" tells them
+     nothing; "Remembered something about this project" tells them what just
+     happened to their project. */
+  "flow-memory-fetch": "Recalled what it knows about this project",
+  "flow-memory-patch": "Remembered something about this project",
+  "plan-learning-path": "Planned what to teach next",
+  "web-search": "Searched the web",
+  "web-fetch": "Read a page",
   ask_user_question: "Asked you a question",
 };

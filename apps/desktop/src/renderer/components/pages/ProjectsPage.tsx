@@ -93,6 +93,7 @@ export function ProjectsPage({ api, defaults, projects, creating, onCreatingChan
         api={api}
         defaults={defaults}
         onChanged={onChanged}
+        onCreated={onOpen}
         onError={onError}
         onOpenChange={onCreatingChange}
         open={creating}
@@ -137,6 +138,7 @@ function NewProjectDialog({
   open,
   onOpenChange,
   onChanged,
+  onCreated,
   onError,
 }: {
   api: ConstructApi | undefined;
@@ -144,6 +146,8 @@ function NewProjectDialog({
   open: boolean;
   onOpenChange(open: boolean): void;
   onChanged(): Promise<void>;
+  /** Opens the project that was just made. */
+  onCreated(project: ProjectSummary): void;
   onError(message: string): void;
 }) {
   const [name, setName] = useState("");
@@ -245,7 +249,7 @@ function NewProjectDialog({
                 /* `parentDirectory` is only sent when the learner picked one:
                    omitting it is what tells the main process to use the folder
                    from Settings, and creating it if it is not there yet. */
-                await api.createProject({
+                const created = await api.createProject({
                   name: name.trim(),
                   goal: goal.trim(),
                   language,
@@ -253,6 +257,12 @@ function NewProjectDialog({
                 });
                 await onChanged();
                 onOpenChange(false);
+                /* Straight into the project, because Construct is already
+                   working on it: creating one starts a research pass and then
+                   the first teaching turn, and leaving the learner on the
+                   project list means all of that happens somewhere they cannot
+                   see — which reads exactly like nothing happening at all. */
+                onCreated(created);
                 setName("");
                 setGoal("");
                 setParent(null);

@@ -29,6 +29,10 @@ export function AgentPanel({ api, projectId, onError, onOpenSettings, onOpenConc
   const [run, setRun] = useState<AgentRun | null>(null);
   const [draft, setDraft] = useState("");
   const [running, setRunning] = useState(false);
+  /* What Construct is doing, when it started the turn itself. Research and the
+     opening turn arrive unprompted — a project that has just been created is
+     already working — and the thread has to be able to say so. */
+  const [phase, setPhase] = useState<"research" | "opening" | "reply" | null>(null);
   const [question, setQuestion] = useState<AskUserQuestionRequest | null>(null);
   /* The last turn's failure, kept in the thread rather than only in a toast.
      A message with no reply and a notification that has already faded is
@@ -64,6 +68,16 @@ export function AgentPanel({ api, projectId, onError, onOpenSettings, onOpenConc
     return api?.onAgentEvent((event) => {
       if (event.projectId !== projectId) return;
       switch (event.kind) {
+        case "started":
+          /* Whoever started it. This is the fix for a project opening to a blank
+             thread while the agent read up on it: the panel used to set
+             `running` only in its own send handler, so a turn the main process
+             began streamed rows that nothing rendered. */
+          setRunning(true);
+          setPhase(event.phase);
+          setRun(null);
+          setFailure(null);
+          break;
         case "message":
           setMessages((current) => [...current, event.message]);
           break;
@@ -76,6 +90,7 @@ export function AgentPanel({ api, projectId, onError, onOpenSettings, onOpenConc
           break;
         case "done":
           setRunning(false);
+          setPhase(null);
           setQuestion(null);
           break;
       }
@@ -100,6 +115,7 @@ export function AgentPanel({ api, projectId, onError, onOpenSettings, onOpenConc
       <AgentThread
         messages={messages}
         onOpenConcept={onOpenConcept}
+        phase={phase}
         run={running ? run : null}
         footer={
           failure ? (

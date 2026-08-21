@@ -256,6 +256,24 @@ export function toolVerb(tool: string, running: boolean, rejected = false): stri
 }
 
 const SAFE_TOOL_LABELS: Record<string, [string, string]> = {
+  /* Construct's own tools, as the learner reads them: what the agent is doing to
+     their project, in the present tense while it runs and the past tense once it
+     has. These were missing entirely — the map arrived from Spar, whose tool
+     names are all underscored — so every row in a live turn read "Used a tool",
+     which is a transcript that shows activity and says nothing about it. */
+  "read-file": ["Read a file", "Read a file"],
+  "write-file": ["Write a file", "Wrote a file"],
+  "list-files": ["Look through the project", "Looked through the project"],
+  "run-terminal-command": ["Run a command", "Ran a command"],
+  "record-concept": ["Record what you understand", "Recorded what you understand"],
+  /* Memory is named for what it is *for*. "flow-memory-patch" tells the learner
+     nothing; "Remembered something about this project" tells them what just
+     happened to it — and that it is theirs. */
+  "flow-memory-fetch": ["Recall this project", "Recalled what it knows about this project"],
+  "flow-memory-patch": ["Remember something", "Remembered something about this project"],
+  "plan-learning-path": ["Plan what to teach next", "Planned what to teach next"],
+  "web-search": ["Search the web", "Searched the web"],
+  "web-fetch": ["Read a page", "Read a page"],
   search_learner_model: ["Search learning history", "Searched learning history"],
   search_attempt_history: ["Review past attempts", "Reviewed past attempts"],
   search_challenge_history: ["Review challenge history", "Reviewed challenge history"],
