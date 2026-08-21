@@ -39,10 +39,15 @@ function hostTool(name: string, description: string, schema: z.ZodTypeAny, reque
     id: name,
     description,
     inputSchema: schema,
-    execute: async ({ context }) => {
+    /* Mastra v1 tools receive the validated input as the FIRST argument and the
+       execution context as the second — `execute(inputData, context)`. This
+       destructured `{ context }` off the first argument instead, so every tool
+       call arrived with an empty object: read-file asked for path "", and
+       ask_user_question put an empty question to the learner. */
+    execute: async (inputData: unknown) => {
       const id = randomUUID();
       const settled = new Promise((resolve, reject) => pendingTools.set(id, { resolve, reject }));
-      send({ kind: "tool-call", id, requestId: requestId(), name, input: context });
+      send({ kind: "tool-call", id, requestId: requestId(), name, input: inputData });
       return settled;
     },
   });

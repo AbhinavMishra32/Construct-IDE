@@ -7,6 +7,7 @@ import {
   projectIdInput,
   projectImportInput,
   projectRenameInput,
+  projectFlagInput,
   workspaceListInput,
   workspacePathInput,
   workspaceWriteInput,
@@ -87,6 +88,16 @@ export function installIpc({ store, auth, projects, providers, workspace, termin
   handle(ipc.projectsRename, (input) => {
     const { projectId, name } = projectRenameInput.parse(input);
     projects.rename(projectId, name);
+  });
+
+  handle(ipc.projectsPin, (input) => {
+    const { projectId, value } = projectFlagInput.parse(input);
+    projects.setPinned(projectId, value);
+  });
+
+  handle(ipc.projectsArchive, (input) => {
+    const { projectId, value } = projectFlagInput.parse(input);
+    projects.setArchived(projectId, value);
   });
 
   handle(ipc.projectsDelete, (input) => projects.delete(projectIdInput.parse(input).projectId));

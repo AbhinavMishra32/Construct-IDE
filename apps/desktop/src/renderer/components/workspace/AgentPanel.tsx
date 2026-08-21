@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowDown } from "lucide-react";
 import type { AgentMessage, AskUserQuestionRequest } from "@construct/domain";
 import type { ConstructApi } from "../../../shared/api";
-import { Button } from "@/components/ui/button";
+import { AskUserQuestion } from "../agent/AskUserQuestion";
 import { Composer } from "../agent/Composer";
 import { Markdown } from "../agent/Markdown";
 
@@ -109,7 +109,22 @@ export function AgentPanel({ api, projectId, onError }: Props) {
             )}
           </div>
 
-          {question && <QuestionCard api={api} projectId={projectId} request={question} onAnswered={() => setQuestion(null)} />}
+          {question && (
+            <div className="mt-3">
+              {/* Spar's own card: multi-step, digit accelerators for the first
+                  nine options, and a free-text branch. The agent sends the same
+                  request shape it was written against, so it needed no
+                  adaptation at all. */}
+              <AskUserQuestion
+                request={question}
+                busy={false}
+                onSubmit={(answer) => {
+                  void api?.answerAgent({ projectId, answer });
+                  setQuestion(null);
+                }}
+              />
+            </div>
+          )}
 
           {running && !question && (
             <div className="mt-2 flex items-center gap-2 px-1.5 py-0.5">
@@ -153,62 +168,3 @@ export function AgentPanel({ api, projectId, onError }: Props) {
     </div>
   );
 }
-
-/**
- * A question the agent is waiting on.
- *
- * The turn is genuinely blocked here, so this is not dismissible — answering is
- * how the lesson continues. Choices appear when the agent gave any, and free
- * text is always available, because an agent asking a real question should
- * accept an answer it did not anticipate.
- */
-function QuestionCard({
-  api,
-  projectId,
-  request,
-  onAnswered,
-}: {
-  api: ConstructApi | undefined;
-  projectId: string;
-  request: AskUserQuestionRequest;
-  onAnswered(): void;
-}) {
-  const [value, setValue] = useState("");
-  const question = request.questions[0];
-  if (!question) return null;
-
-  const answer = (text: string) => {
-    if (!text.trim()) return;
-    void api?.answerAgent({ projectId, answer: text.trim() });
-    onAnswered();
-  };
-
-  return (
-    <div className="mx-1.5 mt-3 rounded-[var(--radius-xl)] border border-border bg-card/50 p-3">
-      <p className="text-ui-sm font-medium text-muted-foreground">{question.header}</p>
-      <p className="mt-1 text-content leading-[1.55]">{question.question}</p>
-
-      {question.options.length > 0 && (
-        <div className="mt-2.5 flex flex-wrap gap-1.5">
-          {question.options.map((option) => (
-            <Button key={option.label} variant="outline" size="sm" className="h-7 text-ui" onClick={() => answer(option.label)}>
-              {option.label}
-            </Button>
-          ))}
-        </div>
-      )}
-
-      {question.custom && (
-        <div className="mt-2.5">
-          <Composer
-            value={value}
-            onChange={setValue}
-            onSubmit={() => answer(value)}
-            placeholder="Answer in your own words…"
-          />
-        </div>
-      )}
-    </div>
-  );
-}
-

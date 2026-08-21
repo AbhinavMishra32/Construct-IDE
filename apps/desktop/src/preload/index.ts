@@ -38,6 +38,8 @@ const api: ConstructApi = {
   importProject: (input) => ipcRenderer.invoke(ipc.projectsImport, input),
   openProject: (input) => ipcRenderer.invoke(ipc.projectsOpen, input),
   renameProject: (input) => ipcRenderer.invoke(ipc.projectsRename, input),
+  setProjectPinned: (input) => ipcRenderer.invoke(ipc.projectsPin, input),
+  setProjectArchived: (input) => ipcRenderer.invoke(ipc.projectsArchive, input),
   deleteProject: (input) => ipcRenderer.invoke(ipc.projectsDelete, input),
 
   listFiles: (input) => ipcRenderer.invoke(ipc.filesList, input),
