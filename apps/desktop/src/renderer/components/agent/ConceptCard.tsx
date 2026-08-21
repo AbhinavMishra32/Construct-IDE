@@ -72,13 +72,15 @@ export function ConceptCard({
  *
  *  Returns null rather than a partial card when the payload cannot be read: a
  *  concept card with no title is worse than the plain tool row it replaces. */
-export function conceptFromToolInput(input: string): { title: string; level: number; note?: string } | null {
+export function conceptFromToolInput(input: string): { conceptId: string; title: string; level: number; note?: string } | null {
   try {
     const parsed = JSON.parse(input) as { title?: unknown; conceptId?: unknown; masteryLevel?: unknown; note?: unknown };
     const title = String(parsed.title ?? parsed.conceptId ?? "").trim();
+    const conceptId = String(parsed.conceptId ?? "").trim();
     const level = Number(parsed.masteryLevel);
-    if (!title || !Number.isFinite(level)) return null;
+    if (!title || !conceptId || !Number.isFinite(level)) return null;
     return {
+      conceptId,
       title,
       level: Math.min(5, Math.max(0, Math.round(level))),
       ...(typeof parsed.note === "string" && parsed.note.trim() ? { note: parsed.note } : {}),

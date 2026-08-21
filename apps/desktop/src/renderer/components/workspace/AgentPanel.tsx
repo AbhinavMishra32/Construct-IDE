@@ -12,6 +12,7 @@ type Props = {
   projectId: string;
   onError(message: string): void;
   onOpenSettings(): void;
+  onOpenConcept(conceptId: string): void;
 };
 
 /**
@@ -22,7 +23,7 @@ type Props = {
  * it over: tool rows, reasoning blocks, per-row spacing, follow behaviour and
  * jump-to-latest all belong to the thread.
  */
-export function AgentPanel({ api, projectId, onError, onOpenSettings }: Props) {
+export function AgentPanel({ api, projectId, onError, onOpenSettings, onOpenConcept }: Props) {
   const [providers, setProviders] = useState<ProviderInventory | null>(null);
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [run, setRun] = useState<AgentRun | null>(null);
@@ -98,6 +99,7 @@ export function AgentPanel({ api, projectId, onError, onOpenSettings }: Props) {
     <div className="flex h-full min-h-0 flex-col">
       <AgentThread
         messages={messages}
+        onOpenConcept={onOpenConcept}
         run={running ? run : null}
         footer={
           failure ? (

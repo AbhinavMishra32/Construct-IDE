@@ -9,7 +9,7 @@ let root: string;
 let outside: string;
 let context: AgentToolContext;
 let asked: Array<{ question: string }>;
-let recorded: Array<{ conceptId: string; masteryLevel: number }>;
+let recorded: Array<{ conceptId: string; masteryLevel: number; docs: Array<{ title: string; url: string }> }>;
 
 beforeEach(() => {
   const base = mkdtempSync(path.join(tmpdir(), "construct-agent-"));
@@ -122,6 +122,40 @@ describe("recording a concept", () => {
   it("treats a non-numeric level as knowing nothing, never as knowing everything", async () => {
     await executeAgentTool("record-concept", { conceptId: "c", title: "C", masteryLevel: "lots", confidence: "x" }, context);
     expect(recorded.at(-1)?.masteryLevel).toBe(0);
+  });
+});
+
+describe("concept references", () => {
+  /* The note renders its references as real links, so a file: or javascript:
+     URL arriving from a model must never become one. */
+  it("keeps only http and https references", async () => {
+    await executeAgentTool(
+      "record-concept",
+      {
+        conceptId: "c",
+        title: "C",
+        masteryLevel: 1,
+        confidence: "x",
+        docs: [
+          { title: "Good", url: "https://example.com/a" },
+          { title: "Also good", url: "http://example.com/b" },
+          { title: "Local file", url: "file:///etc/passwd" },
+          { title: "Script", url: "javascript:alert(1)" },
+        ],
+      },
+      context,
+    );
+
+    expect(recorded.at(-1)?.docs.map((doc) => doc.url)).toEqual(["https://example.com/a", "http://example.com/b"]);
+  });
+
+  it("falls back to the url as the title when none is given", async () => {
+    await executeAgentTool(
+      "record-concept",
+      { conceptId: "c", title: "C", masteryLevel: 1, confidence: "x", docs: [{ url: "https://example.com/x" }] },
+      context,
+    );
+    expect(recorded.at(-1)?.docs[0]).toEqual({ title: "https://example.com/x", url: "https://example.com/x" });
   });
 });
 

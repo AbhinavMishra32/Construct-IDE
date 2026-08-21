@@ -18,7 +18,19 @@ export type AgentToolContext = {
   /** Records a mastery reading. The agent is the only thing that can judge
    *  understanding, so this is the one tool whose effect is on the learner's
    *  record rather than on their files. */
-  recordConcept(input: { conceptId: string; title: string; masteryLevel: number; confidence: string; note: string; reason: string }): void;
+  recordConcept(input: {
+    conceptId: string;
+    title: string;
+    masteryLevel: number;
+    confidence: string;
+    note: string;
+    reason: string;
+    summary: string;
+    why: string;
+    example: string;
+    docs: Array<{ title: string; url: string }>;
+    tags: string[];
+  }): void;
   /** Puts a question to the learner and resolves with their answer. The agent
    *  is a teaching system, so asking is a first-class move and the turn genuinely
    *  waits here. */
@@ -62,6 +74,20 @@ export async function executeAgentTool(name: string, input: unknown, context: Ag
         confidence: String(args.confidence ?? "introduced").trim(),
         note: String(args.note ?? ""),
         reason: String(args.reason ?? ""),
+        summary: String(args.summary ?? ""),
+        why: String(args.why ?? ""),
+        example: String(args.example ?? ""),
+        /* Only http(s) links are kept. A concept note is rendered with its
+           references as real links, and a file: or javascript: URL arriving
+           from a model must never become one. */
+        docs: Array.isArray(args.docs)
+          ? args.docs
+              .map((entry) => entry as { title?: unknown; url?: unknown })
+              .filter((entry) => /^https?:\/\//i.test(String(entry.url ?? "")))
+              .map((entry) => ({ title: String(entry.title ?? entry.url), url: String(entry.url) }))
+              .slice(0, 5)
+          : [],
+        tags: Array.isArray(args.tags) ? args.tags.map(String).slice(0, 8) : [],
       });
       return { recorded: true };
     }
