@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { AlertCircle, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import type { BootstrapData, ConstructApi, ProjectSummary, ThemePreference } from "../shared/api";
+import type { BootstrapData, ConceptSummary, ConstructApi, ProjectSummary, ThemePreference } from "../shared/api";
 import { cn } from "@/lib/utils";
 import { message } from "@/lib/format";
 import { Sidebar, type Page, type ProjectActions } from "./components/shell/Sidebar";
@@ -12,6 +12,7 @@ import { ProjectsPage } from "./components/pages/ProjectsPage";
 import { SettingsPage } from "./components/pages/SettingsPage";
 import { Workspace } from "./components/workspace/Workspace";
 import { FileTree } from "./components/workspace/FileTree";
+import { ConceptList } from "./components/workspace/ConceptList";
 import { useSidebarWidth } from "./hooks/use-sidebar-width";
 import { Button } from "@/components/ui/button";
 
@@ -34,6 +35,10 @@ export function App() {
      tree lives in the shell now, while the editor that answers it lives in the
      workspace. */
   const [openPath, setOpenPath] = useState<string | null>(null);
+  /* Concepts live here rather than in the workspace, because the sidebar shows
+     them and the workspace opens them — one owner, two consumers. */
+  const [concepts, setConcepts] = useState<ConceptSummary[]>([]);
+  const [openConcept, setOpenConcept] = useState<ConceptSummary | null>(null);
   const [sidebar, setSidebar] = useState(() => localStorage.getItem("construct.sidebar") !== "hidden");
   const { width } = useSidebarWidth();
   /* Room for the OS window buttons when they sit on the sidebar's edge. The
@@ -92,6 +97,23 @@ export function App() {
       settle(api?.deleteProject({ projectId: project.id }));
     },
   };
+
+  const loadConcepts = useCallback(async () => {
+    if (!api || !activeProject) return;
+    setConcepts(await api.listConcepts({ projectId: activeProject.id }).catch(() => []));
+  }, [activeProject]);
+
+  useEffect(() => {
+    void loadConcepts();
+  }, [loadConcepts]);
+
+  /* A turn is exactly when mastery moves, so the list is re-read then rather
+     than polled. */
+  useEffect(() => {
+    return api?.onAgentEvent((event) => {
+      if (event.projectId === activeProject?.id && (event.kind === "concepts" || event.kind === "done")) void loadConcepts();
+    });
+  }, [activeProject?.id, loadConcepts]);
 
   const setTheme = useCallback(async (theme: ThemePreference) => {
     await api?.setTheme(theme);
@@ -182,6 +204,13 @@ export function App() {
                           onError={setError}
                         />
                       ),
+                      concepts: (
+                        <ConceptList
+                          activeConceptId={openConcept?.conceptId ?? null}
+                          concepts={concepts}
+                          onOpen={setOpenConcept}
+                        />
+                      ),
                     }
                   : undefined
               }
@@ -190,6 +219,7 @@ export function App() {
                   ? () => {
                       setActiveProject(null);
                       setOpenPath(null);
+                      setOpenConcept(null);
                       setPage("projects");
                     }
                   : undefined
@@ -257,7 +287,17 @@ export function App() {
           )}
 
           {page === "workspace" && activeProject && (
-            <Workspace api={api} onError={setError} onOpenSettings={() => setPage("settings")} openPath={openPath} project={activeProject} />
+            <Workspace
+              api={api}
+              concept={openConcept}
+              concepts={concepts}
+              onCloseConcept={() => setOpenConcept(null)}
+              onError={setError}
+              onOpenConcept={setOpenConcept}
+              onOpenSettings={() => setPage("settings")}
+              openPath={openPath}
+              project={activeProject}
+            />
           )}
         </div>
       </main>

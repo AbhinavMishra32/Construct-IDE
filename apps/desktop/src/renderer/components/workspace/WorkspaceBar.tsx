@@ -1,8 +1,7 @@
 import { MessageSquare, SquareTerminal } from "lucide-react";
-import type { ConceptSummary, ProjectSummary } from "../../../shared/api";
+import type { ProjectSummary } from "../../../shared/api";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { ConceptRail } from "./ConceptRail";
 
 /**
  * Construct's top bar, which is deliberately not a title bar.
@@ -16,23 +15,24 @@ import { ConceptRail } from "./ConceptRail";
  * The goal is the one line worth keeping permanently visible: everything the
  * agent does is judged against it, and a learner who has lost track of what
  * they were building is the failure mode this whole product exists to prevent.
+ *
+ * The concepts used to sit here too, as a rail. They moved to the sidebar: a
+ * concept title is a sentence, so four across a toolbar was four truncations,
+ * and the goal ended up squeezed to nothing beside them. The bar now gives the
+ * goal the whole width it needs.
  */
 export function WorkspaceBar({
   project,
-  concepts,
   terminalOpen,
   agentOpen,
   onToggleTerminal,
   onToggleAgent,
-  onOpenConcept,
 }: {
   project: ProjectSummary;
-  concepts: ConceptSummary[];
   terminalOpen: boolean;
   agentOpen: boolean;
   onToggleTerminal(): void;
   onToggleAgent(): void;
-  onOpenConcept(concept: ConceptSummary): void;
 }) {
   return (
     <header
@@ -42,16 +42,13 @@ export function WorkspaceBar({
            rule here would be a third horizontal line within 40 pixels. */
       )}
     >
-      <div className="min-w-0 shrink">
+      <div className="min-w-0 flex-1">
         {/* The goal leads and the project name is the label above it, not the
             other way round. The name is a filing detail; the goal is the work. */}
         <p className="truncate text-ui-sm leading-tight text-muted-foreground">{project.name}</p>
         <p className="truncate text-content font-medium leading-tight text-foreground">{project.goal}</p>
       </div>
 
-      {concepts.length > 0 && <div className="h-6 w-px shrink-0 bg-border" />}
-
-      <ConceptRail className="min-w-0 shrink" concepts={concepts} onOpen={onOpenConcept} />
 
       <div className="ml-auto flex shrink-0 items-center gap-0.5">
         <BarToggle icon={SquareTerminal} label="Terminal" on={terminalOpen} onClick={onToggleTerminal} shortcut="⌘J" />

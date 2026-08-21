@@ -97,7 +97,7 @@ export function Sidebar({
   activeProjectId?: string | undefined;
   projectActions: ProjectActions;
   /** Rendered in place of the project list while a project is open. */
-  projectView?: { name: string; tree: React.ReactNode } | undefined;
+  projectView?: { name: string; tree: React.ReactNode; concepts: React.ReactNode } | undefined;
   onGoHome?: (() => void) | undefined;
   onPage(page: Page): void;
   onOpenProject(project: ProjectSummary): void;
@@ -207,9 +207,19 @@ export function Sidebar({
         /* Inside a project the sidebar is the file tree. The project's name
            takes the place of the section label, so the column still says what
            it is a list of. */
-        <div className="app-no-drag mt-3 flex min-h-0 flex-1 flex-col">
-          <SectionLabel>{projectView.name}</SectionLabel>
-          <div className="flex min-h-0 flex-1 flex-col">{projectView.tree}</div>
+        /* Files above, concepts below, both scrolling in one column. The two
+           are the project's two indexes — what it is made of, and what it has
+           taught — and they belong in the same place for the same reason a book
+           puts its contents and its index at either end rather than in separate
+           volumes. */
+        <div className="app-no-drag app-scroll mt-3 flex min-h-0 flex-1 flex-col overflow-y-auto">
+          <SectionLabel>Files</SectionLabel>
+          <div className="shrink-0">{projectView.tree}</div>
+
+          <div className="mt-4 shrink-0">
+            <SectionLabel>Concepts</SectionLabel>
+            {projectView.concepts}
+          </div>
         </div>
       ) : (
       <div className="app-no-drag app-scroll mt-4 min-h-0 flex-1 overflow-y-auto px-2 pb-2">
