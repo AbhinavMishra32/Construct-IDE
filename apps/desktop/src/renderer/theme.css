@@ -213,12 +213,15 @@
      glass is what keeps that surface feeling like part of the window. */
   --app-glass-fill: 100%;
   --app-glass-fill-translucent: 88%;
-  /* For the one panel that flanks the work rather than holds it: the agent.
-     Below `translucent`, so the desktop is present through it and the panel
-     reads as floating beside the editor — but only just. 66% was too far: at
-     that fill the wallpaper competes with the conversation and the whole window
-     turns into an effect rather than a tool. */
-  --app-glass-fill-panel: 84%;
+  /* Barely off solid. The panel is a surface with a hint of the desktop behind
+     it, not a window onto it.
+     
+     Every lower value tried — 66%, then 84% — had the same failure: a
+     translucent panel over a bright wallpaper washes towards the wallpaper's
+     value, so in a dark theme the frame goes pale while the text inside stays
+     dark-theme. Panel and contents end up in different appearances, which is
+     what read as the window being broken rather than tinted. */
+  --app-glass-fill-panel: 97%;
   --app-user-message-background: oklch(14.5% 0 0 / 6%);
   --app-shadow-overlay: 0 20px 25px -5px oklch(0% 0 0 / 10%), 0 8px 10px -6px oklch(0% 0 0 / 10%);
   --app-shadow-menu: 0 16px 40px -12px oklch(0% 0 0 / 20%), 0 4px 10px -4px oklch(0% 0 0 / 8%);
@@ -321,9 +324,9 @@
   --app-vibrant-tint: oklch(100% 0 0 / 6%);
   --app-glass-fill: 100%;
   --app-glass-fill-translucent: 86%;
-  /* Heavier than the light theme's: dark glass over a bright desktop loses
-     contrast faster than light glass over a dark one. */
-  --app-glass-fill-panel: 88%;
+  /* Heavier still in dark: dark glass over a bright desktop loses contrast
+     faster than light glass over a dark one. */
+  --app-glass-fill-panel: 98%;
   --app-user-message-background: oklch(98.5% 0 0 / 8%);
   --app-shadow-overlay: 0 20px 25px -5px oklch(0% 0 0 / 40%), 0 8px 10px -6px oklch(0% 0 0 / 40%);
   --app-shadow-menu: 0 16px 40px -10px oklch(0% 0 0 / 55%), 0 4px 12px -4px oklch(0% 0 0 / 40%);
@@ -563,12 +566,24 @@
      and close so the lift is felt rather than seen — a hard drop shadow on a
      translucent panel turns into a grey smear over the desktop behind it. */
   .app-blob {
-    border-radius: var(--radius-xl);
+    border-radius: var(--radius-lg);
+    /* Three passes. The inset ring draws the edge, the tight shadow seats the
+       panel, and the wide one lifts it. The wide pass is what makes a panel
+       read as in front of the shell rather than cut out of it. */
     box-shadow:
       inset 0 0 0 0.5px var(--glass-hairline),
-      0 1px 2px oklch(0% 0 0 / 4%),
-      0 8px 24px -12px oklch(0% 0 0 / 12%);
+      0 1px 2px oklch(0% 0 0 / 8%),
+      0 6px 16px -6px oklch(0% 0 0 / 18%);
     overflow: hidden;
+  }
+
+  /* A soft black shadow vanishes against a dark panel, so dark mode leans on a
+     brighter ring and a deeper drop instead of a wider one. */
+  .dark .app-blob {
+    box-shadow:
+      inset 0 0 0 0.5px oklch(100% 0 0 / 10%),
+      0 1px 2px oklch(0% 0 0 / 40%),
+      0 8px 20px -8px oklch(0% 0 0 / 55%);
   }
 
   .app-panel-glass {
