@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AtlasConcept } from "../../../shared/api";
-import { edges, galaxy, orbitRadius, planets, systemRadius, topicOf } from "./atlas";
+import { edges, galaxy, hubOf, orbitRadius, planets, spokes, systemRadius, topicOf } from "./atlas";
 
 function concept(id: string, level: AtlasConcept["masteryLevel"], tags: string[] = []): AtlasConcept {
   return {
@@ -136,5 +136,53 @@ describe("transfer lines", () => {
   it("draws nothing for a lonely tag", () => {
     const nodes = planets(galaxy([concept("a", 3, ["alone"]), concept("b", 2, ["solo"])]));
     expect(edges(nodes)).toHaveLength(0);
+  });
+});
+
+describe("the web view", () => {
+  it("hangs a topic off its furthest-along concept", () => {
+    const systems = galaxy([concept("a", 2, ["t"]), concept("b", 5, ["t"]), concept("c", 1, ["t"])], "web");
+    expect(hubOf(systems[0]!)!.concept.conceptId).toBe("b");
+  });
+
+  it("breaks a tie on id, so the root never moves for an invisible reason", () => {
+    const systems = galaxy([concept("b", 3, ["t"]), concept("a", 3, ["t"])], "web");
+    expect(hubOf(systems[0]!)!.concept.conceptId).toBe("a");
+  });
+
+  it("wires every other concept in the topic to that root, and not to each other", () => {
+    const systems = galaxy([concept("a", 5, ["t"]), concept("b", 2, ["t"]), concept("c", 1, ["t"])], "web");
+    const nodes = planets(systems);
+    const wires = spokes(systems, nodes);
+    expect(wires).toHaveLength(2);
+    expect(new Set(wires.map((wire) => nodes[wire.hub]!.concept.conceptId))).toEqual(new Set(["a"]));
+  });
+
+  it("draws no wire for a topic of one", () => {
+    const systems = galaxy([concept("a", 3, ["t"])], "web");
+    expect(spokes(systems, planets(systems))).toHaveLength(0);
+  });
+
+  it("still puts mastery at the radius it earns, in either arrangement", () => {
+    /* The two views are two readings of one fact, so the radius has to mean the
+       same thing in both. If this ever diverges the switch becomes two different
+       drawings instead of two angles on one. */
+    for (const mode of ["web", "solar"] as const) {
+      const systems = galaxy([concept("a", 5, ["t"]), concept("b", 0, ["t"])], mode);
+      const system = systems[0]!;
+      for (const node of system.nodes) {
+        const distance = Math.hypot(node.x - system.x, node.y - system.y, node.z - system.z);
+        expect(distance).toBeCloseTo(orbitRadius(node.concept.masteryLevel), 6);
+      }
+    }
+  });
+
+  it("gives a concept the same place every time here too", () => {
+    const first = planets(galaxy([concept("a", 3, ["t"]), concept("b", 3, ["t"])], "web"));
+    const again = planets(galaxy([concept("b", 3, ["t"]), concept("a", 3, ["t"])], "web"));
+    for (const node of first) {
+      const same = again.find((candidate) => candidate.concept.conceptId === node.concept.conceptId)!;
+      expect([same.x, same.y, same.z]).toEqual([node.x, node.y, node.z]);
+    }
   });
 });

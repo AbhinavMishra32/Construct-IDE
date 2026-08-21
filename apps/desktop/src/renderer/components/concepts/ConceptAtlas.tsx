@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AtlasConcept } from "../../../shared/api";
 import { resolveMasteryRamp, resolveToken } from "@/lib/mastery";
-import { edges, galaxy, planets, type AtlasEdge, type AtlasNode, type AtlasSystem } from "./atlas";
+import { edges, galaxy, hubOf, planets, spokes, type AtlasEdge, type AtlasMode, type AtlasNode, type AtlasSpoke, type AtlasSystem } from "./atlas";
 
 /** Camera distance in world units, and the focal length as a multiple of the
  *  viewport's short side. Together they set two things: how big the galaxy is —
@@ -20,6 +20,7 @@ const DRIFT = 0.05;
 type Props = {
   concepts: AtlasConcept[];
   selectedId: string | null;
+  mode: AtlasMode;
   onSelect(concept: AtlasConcept | null): void;
 };
 
@@ -39,14 +40,25 @@ type Props = {
  * and every part of it carries information. A library that solved the drawing
  * would have taken the meaning with it.
  */
-export function ConceptAtlas({ concepts, selectedId, onSelect }: Props) {
+export function ConceptAtlas({ concepts, selectedId, mode, onSelect }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [hovered, setHovered] = useState<AtlasConcept | null>(null);
   const [pointer, setPointer] = useState<{ x: number; y: number } | null>(null);
 
-  const systems = useMemo(() => galaxy(concepts), [concepts]);
+  const systems = useMemo(() => galaxy(concepts, mode), [concepts, mode]);
   const nodes = useMemo(() => planets(systems), [systems]);
   const links = useMemo(() => edges(nodes), [nodes]);
+  const wires = useMemo(() => spokes(systems, nodes), [systems, nodes]);
+  /* The root concepts, by index, so the draw loop can size and label them
+     without searching its own system for each one. */
+  const hubs = useMemo(() => {
+    const found = new Set<string>();
+    for (const system of systems) {
+      const hub = hubOf(system);
+      if (hub) found.add(hub.concept.conceptId);
+    }
+    return found;
+  }, [systems]);
 
   /* Everything the frame loop mutates lives in refs. State here would mean a
      React render per frame at 60fps, and a render per frame is how a canvas
@@ -58,11 +70,17 @@ export function ConceptAtlas({ concepts, selectedId, onSelect }: Props) {
   const systemsRef = useRef<AtlasSystem[]>(systems);
   const nodesRef = useRef<AtlasNode[]>(nodes);
   const linksRef = useRef<AtlasEdge[]>(links);
+  const wiresRef = useRef<AtlasSpoke[]>(wires);
+  const hubsRef = useRef<Set<string>>(hubs);
+  const modeRef = useRef<AtlasMode>(mode);
   const selectedRef = useRef<string | null>(selectedId);
 
   systemsRef.current = systems;
   nodesRef.current = nodes;
   linksRef.current = links;
+  wiresRef.current = wires;
+  hubsRef.current = hubs;
+  modeRef.current = mode;
   selectedRef.current = selectedId;
 
   /* Turns the selected concept's system to the front. The alternative is asking
@@ -155,9 +173,13 @@ export function ConceptAtlas({ concepts, selectedId, onSelect }: Props) {
          What every system's distance is measured from. Drawn as light rather
          than as an object: it is the origin, not a thing in the picture. */
       const core = project(0, 0, 0);
+      /* Fainter in the web view: there the clusters sit all round the origin
+         rather than out on a plane from it, so a bright core reads as a nebula
+         behind whichever cluster happens to be in front of it. */
+      const glow = modeRef.current === "solar" ? 1 : 0.45;
       const halo = context.createRadialGradient(core.x, core.y, 0, core.x, core.y, 80);
-      halo.addColorStop(0, withAlpha(brand, 0.26));
-      halo.addColorStop(0.45, withAlpha(brand, 0.07));
+      halo.addColorStop(0, withAlpha(brand, 0.26 * glow));
+      halo.addColorStop(0.45, withAlpha(brand, 0.07 * glow));
       halo.addColorStop(1, withAlpha(brand, 0));
       context.fillStyle = halo;
       context.beginPath();
@@ -181,7 +203,10 @@ export function ConceptAtlas({ concepts, selectedId, onSelect }: Props) {
         const fog = 0.4 + near * 0.6;
         const holds = system.nodes.some((node) => node.concept.conceptId === activeId);
 
-        for (const orbit of new Set(system.nodes.map((node) => node.orbit))) {
+        /* Rings belong to the solar view only. In the web view the wires do this
+           job, and drawing both would be two claims about the same relationship
+           laid on top of each other. */
+        for (const orbit of modeRef.current === "solar" ? new Set(system.nodes.map((node) => node.orbit)) : []) {
           context.beginPath();
           for (let step = 0; step <= 72; step += 1) {
             const angle = (step / 72) * Math.PI * 2;
@@ -195,20 +220,25 @@ export function ConceptAtlas({ concepts, selectedId, onSelect }: Props) {
         }
 
         /* The star burns at the colour of the best level anywhere in its system,
-           so a topic's state is legible from the star alone. */
+           so a topic's state is legible from the star alone. Solar only: in the
+           web view the root concept is itself a node and gets drawn as one,
+           because a cluster hanging off a marker you cannot click is a
+           relationship you cannot follow. */
         const heat = ramp[system.reach] ?? brand;
         const size = (2.6 + system.reach * 0.45) * (CAMERA / (depth + CAMERA));
-        const shine = context.createRadialGradient(x, y, 0, x, y, size * 7);
-        shine.addColorStop(0, withAlpha(heat, 0.5 * fog));
-        shine.addColorStop(1, withAlpha(heat, 0));
-        context.fillStyle = shine;
-        context.beginPath();
-        context.arc(x, y, size * 7, 0, Math.PI * 2);
-        context.fill();
-        context.fillStyle = withAlpha(ink, 0.7 + near * 0.3);
-        context.beginPath();
-        context.arc(x, y, size, 0, Math.PI * 2);
-        context.fill();
+        if (modeRef.current === "solar") {
+          const shine = context.createRadialGradient(x, y, 0, x, y, size * 7);
+          shine.addColorStop(0, withAlpha(heat, 0.5 * fog));
+          shine.addColorStop(1, withAlpha(heat, 0));
+          context.fillStyle = shine;
+          context.beginPath();
+          context.arc(x, y, size * 7, 0, Math.PI * 2);
+          context.fill();
+          context.fillStyle = withAlpha(ink, 0.7 + near * 0.3);
+          context.beginPath();
+          context.arc(x, y, size, 0, Math.PI * 2);
+          context.fill();
+        }
 
         /* The topics are the one label always worth printing: there is a handful
            of them, they are short, and they are the level at which anybody first
@@ -218,7 +248,28 @@ export function ConceptAtlas({ concepts, selectedId, onSelect }: Props) {
         context.font = "600 9.5px -apple-system, BlinkMacSystemFont, sans-serif";
         context.textAlign = "center";
         context.fillStyle = withAlpha(ink, holds ? 0.9 : 0.28 + near * 0.34);
-        context.fillText(system.topic.toUpperCase(), x, y - size - 8);
+        context.fillText(system.topic.toUpperCase(), x, y - (modeRef.current === "solar" ? size + 8 : maxOrbit(system) * scale / (depth + CAMERA) + 10));
+      }
+
+      /* --- the wires ------------------------------------------------------
+         What the web view is for: every concept joined to the root concept of
+         its topic. Brighter than the transfer lines below, because this is the
+         relation the agent actually asserted — it filed them together — while a
+         shared tag between topics is an inference. */
+      if (modeRef.current === "web") {
+        for (const wire of wiresRef.current) {
+          const hub = points[wire.hub];
+          const leaf = points[wire.leaf];
+          if (!hub || !leaf) continue;
+          const touched = activeId != null && (hub.node.concept.conceptId === activeId || leaf.node.concept.conceptId === activeId);
+          const fog = 0.4 + (1 - (leaf.depth + 1) / 2) * 0.6;
+          context.beginPath();
+          context.moveTo(hub.x, hub.y);
+          context.lineTo(leaf.x, leaf.y);
+          context.strokeStyle = touched ? withAlpha(brand, 0.55) : withAlpha(ink, 0.16 * fog);
+          context.lineWidth = touched ? 1.3 : 0.9;
+          context.stroke();
+        }
       }
 
       /* --- transfer --------------------------------------------------------
@@ -247,7 +298,11 @@ export function ConceptAtlas({ concepts, selectedId, onSelect }: Props) {
         const fog = 0.42 + (1 - (point.depth + 1) / 2) * 0.58;
         const selected = point.node.concept.conceptId === selectedRef.current;
         const isHovered = hoveredIndex.current !== null && points[hoveredIndex.current]?.node === point.node;
-        const radius = (2.4 + level * 0.6) * (CAMERA / (point.depth + CAMERA));
+        /* A root concept is drawn half again as large as what hangs off it: in a
+           cluster of equal dots there is no telling which one the wires converge
+           on, and that is the one fact the web view is built to show. */
+        const root = modeRef.current === "web" && hubsRef.current.has(point.node.concept.conceptId);
+        const radius = (2.4 + level * 0.6) * (root ? 1.7 : 1) * (CAMERA / (point.depth + CAMERA));
 
         if (level >= 3 || selected || isHovered) {
           const glow = context.createRadialGradient(point.x, point.y, 0, point.x, point.y, radius * 5);
@@ -358,6 +413,11 @@ export function ConceptAtlas({ concepts, selectedId, onSelect }: Props) {
       )}
     </div>
   );
+}
+
+/** The outer edge of a system, for placing its label clear of it. */
+function maxOrbit(system: AtlasSystem): number {
+  return system.nodes.reduce((widest, node) => Math.max(widest, node.orbit), 0);
 }
 
 /** A colour with an alpha, whatever notation the token arrived in. `color-mix`
