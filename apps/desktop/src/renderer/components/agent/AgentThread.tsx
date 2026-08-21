@@ -149,12 +149,17 @@ export function AgentThread({
   run,
   header,
   empty,
+  footer,
   className,
 }: {
   messages: Message[];
   run: AgentRun | null;
   header?: React.ReactNode;
   empty?: React.ReactNode;
+  /** Rendered after the last message, inside the scroller. Used for a failed
+   *  turn, which belongs in the transcript beside the message it failed to
+   *  answer rather than in a notification that fades. */
+  footer?: React.ReactNode;
   className?: string;
 }) {
   const viewport = useRef<HTMLDivElement>(null);
@@ -215,6 +220,7 @@ export function AgentThread({
                   ),
                 )}
                 {visibleRun && <LiveRun run={visibleRun} />}
+                {footer}
               </>
             )}
         </div>

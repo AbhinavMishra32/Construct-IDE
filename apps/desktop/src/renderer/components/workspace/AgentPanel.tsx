@@ -29,6 +29,10 @@ export function AgentPanel({ api, projectId, onError, onOpenSettings }: Props) {
   const [draft, setDraft] = useState("");
   const [running, setRunning] = useState(false);
   const [question, setQuestion] = useState<AskUserQuestionRequest | null>(null);
+  /* The last turn's failure, kept in the thread rather than only in a toast.
+     A message with no reply and a notification that has already faded is
+     indistinguishable from the agent ignoring you. */
+  const [failure, setFailure] = useState<string | null>(null);
 
   useEffect(() => {
     if (!api) return;
@@ -66,6 +70,7 @@ export function AgentPanel({ api, projectId, onError, onOpenSettings }: Props) {
           setQuestion(event.request);
           break;
         case "error":
+          setFailure(event.message);
           onError(event.message);
           break;
         case "done":
@@ -82,6 +87,7 @@ export function AgentPanel({ api, projectId, onError, onOpenSettings }: Props) {
     setDraft("");
     setRunning(true);
     setRun(null);
+    setFailure(null);
     void api.sendToAgent({ projectId, body }).catch((cause: unknown) => {
       setRunning(false);
       onError(cause instanceof Error ? cause.message : "The agent could not be reached.");
@@ -93,6 +99,14 @@ export function AgentPanel({ api, projectId, onError, onOpenSettings }: Props) {
       <AgentThread
         messages={messages}
         run={running ? run : null}
+        footer={
+          failure ? (
+            <div className="mx-1.5 mt-3 rounded-[var(--radius-lg)] border border-destructive/30 bg-destructive/5 px-3 py-2">
+              <p className="text-ui-sm font-medium text-destructive">That turn did not finish</p>
+              <p className="mt-0.5 text-ui-sm leading-[1.5] text-foreground/80">{failure}</p>
+            </div>
+          ) : undefined
+        }
         empty={
           <p className="px-1.5 text-ui text-muted-foreground">
             Ask about this project, or say what you want to build next. Construct teaches rather than writing it for you.
