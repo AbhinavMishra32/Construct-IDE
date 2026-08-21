@@ -213,6 +213,41 @@ export type LspEvent = { sessionId: string; kind: "message"; message: unknown } 
 export const agentSendInput = projectIdInput.extend({ body: z.string().trim().min(1).max(20_000) });
 export const agentAnswerInput = projectIdInput.extend({ answer: z.string().trim().min(1).max(5_000) });
 
+/** A file the agent touched, with the size of the change. Shown on a tool row
+ *  so an edit says how much it moved without opening the diff. */
+export type AgentActivityFile = { path: string; added: number; removed: number };
+
+/**
+ * One event from a turn in flight, as the transcript consumes it.
+ *
+ * Ported from Spar, because the transcript components were written against this
+ * exact shape. `callId` is what lets a tool row update in place rather than
+ * appearing twice — once starting, once finished.
+ */
+export type AgentStreamEvent = {
+  runId: string;
+  /** Which project this turn is working on. Stamped in the main process, since
+   *  the utility process only knows its own request id. */
+  projectId?: string;
+  type: "text" | "reasoning" | "tool" | "status" | "error" | "done";
+  text?: string;
+  tool?: string;
+  detail?: string;
+  /** Correlates a tool's start and end events so a row updates in place. */
+  callId?: string;
+  phase?: "start" | "end";
+  ok?: boolean;
+  /** Short human summary of the tool's input — host-generated, and distinct
+   *  from `actionTitle`, which is the agent's own caption for the step. */
+  label?: string;
+  actionTitle?: string;
+  /** Arguments and result as formatted JSON: what the learner opens a call to
+   *  read. */
+  input?: string;
+  output?: string;
+  files?: AgentActivityFile[];
+};
+
 export type AgentEvent =
   | { projectId: string; kind: "step"; text: string }
   | { projectId: string; kind: "question"; request: AskUserQuestionRequest }
@@ -367,6 +402,10 @@ export interface ConstructApi {
   sendToAgent(input: z.infer<typeof agentSendInput>): Promise<void>;
   answerAgent(input: z.infer<typeof agentAnswerInput>): Promise<void>;
   onAgentEvent(listener: (event: AgentEvent) => void): () => void;
+  /** The live transcript stream. Separate from `onAgentEvent`, which carries
+   *  settled messages and lifecycle, because the transcript is redrawn many
+   *  times per second and the two have different consumers. */
+  onAgentStream(listener: (event: AgentStreamEvent) => void): () => void;
 
   /* Account. The main process owns the keychain and the API, so the window only
      ever learns which of the two things happened — see `AuthResult`. */

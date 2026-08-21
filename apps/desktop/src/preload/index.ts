@@ -9,6 +9,7 @@ import {
   type TerminalEvent,
   type LspEvent,
   type AgentEvent,
+  type AgentStreamEvent,
   type UpdateState,
   type WindowControls,
 } from "../shared/api.js";
@@ -61,6 +62,7 @@ const api: ConstructApi = {
   sendToAgent: (input) => ipcRenderer.invoke(ipc.agentSend, input),
   answerAgent: (input) => ipcRenderer.invoke(ipc.agentAnswer, input),
   onAgentEvent: (listener) => subscribe<AgentEvent>("agent:event", listener),
+  onAgentStream: (listener) => subscribe<AgentStreamEvent>("agent:stream", listener),
 
   auth: (request) => ipcRenderer.invoke(ipc.authRequest, request),
   signOut: () => ipcRenderer.invoke(ipc.authSignOut),

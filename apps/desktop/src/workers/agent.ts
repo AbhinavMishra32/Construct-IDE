@@ -47,10 +47,33 @@ function hostTool(name: string, description: string, schema: z.ZodTypeAny, reque
     execute: async (inputData: unknown) => {
       const id = randomUUID();
       const settled = new Promise((resolve, reject) => pendingTools.set(id, { resolve, reject }));
+      /* Two stream events per call, correlated by callId, because the
+         transcript draws one row and updates it in place — a start and an end
+         without the correlation would be two rows for one call. */
+      send({ kind: "event", requestId: requestId(), type: "tool", tool: name, callId: id, phase: "start", input: format(inputData) });
       send({ kind: "tool-call", id, requestId: requestId(), name, input: inputData });
-      return settled;
+
+      try {
+        const value = await settled;
+        send({ kind: "event", requestId: requestId(), type: "tool", tool: name, callId: id, phase: "end", ok: true, output: format(value) });
+        return value;
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        send({ kind: "event", requestId: requestId(), type: "tool", tool: name, callId: id, phase: "end", ok: false, detail, output: detail });
+        throw error;
+      }
     },
   });
+}
+
+/** Arguments and results as the transcript shows them: formatted JSON when the
+ *  value is structured, the string itself when it already is one. Capped,
+ *  because a file's whole contents as a tool result would be a wall of text in
+ *  a row meant to be glanced at and opened deliberately. */
+function format(value: unknown): string {
+  const text = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+  if (!text) return "";
+  return text.length > 4_000 ? `${text.slice(0, 4_000)}\n… truncated` : text;
 }
 
 let currentRequestId = "";
@@ -121,11 +144,16 @@ async function runTurn(payload: TurnPayload): Promise<{ text: string }> {
 
   const result = await agent.generate(payload.messages, {
     maxSteps: 40,
-    onStepFinish: ((step: { text?: string; toolCalls?: unknown[] }) => {
-      send({ kind: "event", requestId: payload.requestId, type: "step", text: step.text ?? "", toolCalls: step.toolCalls?.length ?? 0 });
+    onStepFinish: ((step: { text?: string; reasoning?: string }) => {
+      /* The model's prose and its reasoning are separate rows in the
+         transcript: one is the answer, the other is how it got there, and
+         collapsing them would make the reasoning read as part of the reply. */
+      if (step.reasoning?.trim()) send({ kind: "event", requestId: payload.requestId, type: "reasoning", text: step.reasoning });
+      if (step.text?.trim()) send({ kind: "event", requestId: payload.requestId, type: "text", text: step.text });
     }) as never,
   });
 
+  send({ kind: "event", requestId: payload.requestId, type: "done" });
   return { text: result.text };
 }
 

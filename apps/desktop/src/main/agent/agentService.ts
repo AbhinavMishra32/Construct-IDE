@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { AgentMessage } from "@construct/domain";
+import type { AgentStreamEvent } from "../../shared/api.js";
 import type { AskUserQuestionRequest } from "@construct/domain";
 import type { ProjectStore } from "../store/projectStore.js";
 import type { ProviderService } from "../provider.js";
@@ -36,13 +37,23 @@ export class AgentService {
     private readonly providers: ProviderService,
     private readonly workspace: WorkspaceService,
     private readonly emit: (event: AgentEvent) => void,
+    private readonly stream: (event: AgentStreamEvent) => void,
   ) {
     this.worker = new UtilityClient(
       "agent",
       (event) => {
-        const projectId = this.running.get(String(event.requestId ?? ""));
+        const requestId = String(event.requestId ?? "");
+        const projectId = this.running.get(requestId);
         if (!projectId) return;
-        if (event.type === "step" && typeof event.text === "string" && event.text.trim()) {
+
+        /* Passed through as the transcript's own shape, stamped with the run and
+           the project. The worker knows only its request id, so the projectId a
+           card needs to claim the work has to be added here. */
+        this.stream({ ...(event as Record<string, unknown>), runId: requestId, projectId } as unknown as AgentStreamEvent);
+
+        /* The status line beside the composer wants one short phrase, which is
+           the agent's prose rather than its tool rows. */
+        if (event.type === "text" && typeof event.text === "string" && event.text.trim()) {
           this.emit({ projectId, kind: "step", text: event.text });
         }
       },
