@@ -52,6 +52,9 @@ export const ipc = {
   agentSend: "agent:send",
   agentAnswer: "agent:answer",
 
+  /* What the learner understands, per project. */
+  conceptsList: "concepts:list",
+
   /* Signing in, and the account behind it. */
   authRequest: "auth:request",
   authSignOut: "auth:sign-out",
@@ -248,8 +251,25 @@ export type AgentStreamEvent = {
   files?: AgentActivityFile[];
 };
 
+/** One concept the agent has taught in this project, and how far the learner
+ *  has got with it. `masteryLevel` indexes MASTERY_RUBRIC — level 3 is the
+ *  boundary the concept firewall cares about, since that is where a scoped task
+ *  becomes fair to set. */
+export type ConceptSummary = {
+  conceptId: string;
+  title: string;
+  masteryLevel: 0 | 1 | 2 | 3 | 4 | 5;
+  confidence: string;
+  note: string;
+  firstSeenAt: string;
+  updatedAt: string;
+};
+
 export type AgentEvent =
   | { projectId: string; kind: "step"; text: string }
+  /** A mastery reading landed. The window re-reads concepts rather than being
+   *  handed them, because the store is what resolved the level. */
+  | { projectId: string; kind: "concepts" }
   | { projectId: string; kind: "question"; request: AskUserQuestionRequest }
   | { projectId: string; kind: "message"; message: AgentMessage }
   | { projectId: string; kind: "error"; message: string }
@@ -401,6 +421,9 @@ export interface ConstructApi {
   agentMessages(input: z.infer<typeof projectIdInput>): Promise<AgentMessage[]>;
   sendToAgent(input: z.infer<typeof agentSendInput>): Promise<void>;
   answerAgent(input: z.infer<typeof agentAnswerInput>): Promise<void>;
+  /** The concepts this project has covered. Re-read after a turn, because a
+   *  turn is exactly when mastery moves. */
+  listConcepts(input: z.infer<typeof projectIdInput>): Promise<ConceptSummary[]>;
   onAgentEvent(listener: (event: AgentEvent) => void): () => void;
   /** The live transcript stream. Separate from `onAgentEvent`, which carries
    *  settled messages and lifecycle, because the transcript is redrawn many

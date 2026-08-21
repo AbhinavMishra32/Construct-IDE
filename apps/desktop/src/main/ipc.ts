@@ -178,6 +178,8 @@ export function installIpc({ store, auth, projects, providers, workspace, termin
     agent.answer(projectId, answer);
   });
 
+  handle(ipc.conceptsList, (input) => store.listConcepts(projectIdInput.parse(input).projectId));
+
   /* ---- Account ---------------------------------------------------------- */
 
   handle(ipc.authRequest, (input) => auth.request(authRequestInput.parse(input)));

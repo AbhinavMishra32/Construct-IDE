@@ -15,6 +15,10 @@ const MAX_OUTPUT_CHARS = 20_000;
 export type AgentToolContext = {
   projectDirectory: string;
   workspace: WorkspaceService;
+  /** Records a mastery reading. The agent is the only thing that can judge
+   *  understanding, so this is the one tool whose effect is on the learner's
+   *  record rather than on their files. */
+  recordConcept(input: { conceptId: string; title: string; masteryLevel: number; confidence: string; note: string; reason: string }): void;
   /** Puts a question to the learner and resolves with their answer. The agent
    *  is a teaching system, so asking is a first-class move and the turn genuinely
    *  waits here. */
@@ -46,6 +50,21 @@ export async function executeAgentTool(name: string, input: unknown, context: Ag
 
     case "run-terminal-command":
       return runCommand(String(args.command ?? ""), context.projectDirectory);
+
+    case "record-concept": {
+      const level = Number(args.masteryLevel ?? 0);
+      context.recordConcept({
+        conceptId: String(args.conceptId ?? "").trim(),
+        title: String(args.title ?? "").trim(),
+        /* Clamped rather than rejected. A model that answers 7 has still told
+           us the learner is fluent, and refusing the call would lose that. */
+        masteryLevel: Number.isFinite(level) ? Math.min(5, Math.max(0, Math.round(level))) : 0,
+        confidence: String(args.confidence ?? "introduced").trim(),
+        note: String(args.note ?? ""),
+        reason: String(args.reason ?? ""),
+      });
+      return { recorded: true };
+    }
 
     case "ask_user_question":
       return context.askLearner({

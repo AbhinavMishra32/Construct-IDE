@@ -61,6 +61,7 @@ const api: ConstructApi = {
   agentMessages: (input) => ipcRenderer.invoke(ipc.agentMessages, input),
   sendToAgent: (input) => ipcRenderer.invoke(ipc.agentSend, input),
   answerAgent: (input) => ipcRenderer.invoke(ipc.agentAnswer, input),
+  listConcepts: (input) => ipcRenderer.invoke(ipc.conceptsList, input),
   onAgentEvent: (listener) => subscribe<AgentEvent>("agent:event", listener),
   onAgentStream: (listener) => subscribe<AgentStreamEvent>("agent:stream", listener),
 

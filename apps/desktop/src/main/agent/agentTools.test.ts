@@ -9,6 +9,7 @@ let root: string;
 let outside: string;
 let context: AgentToolContext;
 let asked: Array<{ question: string }>;
+let recorded: Array<{ conceptId: string; masteryLevel: number }>;
 
 beforeEach(() => {
   const base = mkdtempSync(path.join(tmpdir(), "construct-agent-"));
@@ -18,9 +19,11 @@ beforeEach(() => {
   mkdirSync(outside);
   writeFileSync(path.join(outside, "keys.txt"), "do not read me");
   asked = [];
+  recorded = [];
   context = {
     projectDirectory: root,
     workspace: new WorkspaceService(),
+    recordConcept: (record) => void recorded.push(record),
     askLearner: vi.fn(async (request) => {
       asked.push({ question: request.question });
       return "the learner's answer";
@@ -91,6 +94,34 @@ describe("running commands", () => {
 
   it("refuses an empty command instead of running a shell that does nothing", async () => {
     await expect(executeAgentTool("run-terminal-command", { command: "   " }, context)).rejects.toThrow(/No command given/);
+  });
+});
+
+describe("recording a concept", () => {
+  it("passes the reading through", async () => {
+    await executeAgentTool(
+      "record-concept",
+      { conceptId: "rasterisation", title: "Rasterisation", masteryLevel: 3, confidence: "practicing" },
+      context,
+    );
+
+    expect(recorded).toEqual([expect.objectContaining({ conceptId: "rasterisation", masteryLevel: 3 })]);
+  });
+
+  /* A model that answers 7 has still told us the learner is fluent. Refusing
+     the call would throw that reading away, so it is clamped. */
+  it.each([
+    [7, 5],
+    [-2, 0],
+    [3.6, 4],
+  ])("clamps a level of %s to %s rather than refusing it", async (given, expected) => {
+    await executeAgentTool("record-concept", { conceptId: "c", title: "C", masteryLevel: given, confidence: "x" }, context);
+    expect(recorded.at(-1)?.masteryLevel).toBe(expected);
+  });
+
+  it("treats a non-numeric level as knowing nothing, never as knowing everything", async () => {
+    await executeAgentTool("record-concept", { conceptId: "c", title: "C", masteryLevel: "lots", confidence: "x" }, context);
+    expect(recorded.at(-1)?.masteryLevel).toBe(0);
   });
 });
 

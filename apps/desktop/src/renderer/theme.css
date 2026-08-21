@@ -571,12 +571,16 @@
      however it is shadowed — which is what happened the moment the pane fill
      was extended to cover the whole content area. `--popover` is the token for
      a surface that sits above the page, which is exactly what these are. */
+  /* A panel: Spar's radius and Spar's hairline, and nothing else.
+     
+     No shadow. The panel already differs from the pane by a value step, and a
+     drop shadow on top of that reads as the panel hovering rather than sitting
+     — which is what made three stacked panels look like floating cards instead
+     of one instrument. */
   .app-blob {
     background: var(--popover);
+    border: var(--hairline) solid var(--sidebar-border);
     border-radius: var(--radius-2xl);
-    box-shadow:
-      inset 0 0 0 0.5px var(--sidebar-border),
-      var(--app-shadow-pane);
     overflow: hidden;
   }
 

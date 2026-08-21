@@ -104,6 +104,19 @@ const tools = {
     z.object({ command: z.string() }),
     requestId,
   ),
+  "record-concept": hostTool(
+    "record-concept",
+    "Record what the learner now understands about one concept, and at what mastery level. Call this whenever you introduce an idea, see evidence of understanding, or find a gap. Levels: 0 unseen, 1 recognises pieces, 2 guided understanding, 3 practice ready, 4 applies reliably, 5 transfers and teaches. A scoped task is only fair at level 3 or above.",
+    z.object({
+      conceptId: z.string().min(1).max(120).describe("A stable slug, e.g. 'rasterisation' or 'array-destructuring'"),
+      title: z.string().min(1).max(120),
+      masteryLevel: z.number().int().min(0).max(5),
+      confidence: z.string().min(1).max(40).describe("One word for the reading, e.g. introduced, fragile, practicing, solid"),
+      note: z.string().max(600).optional().describe("What the learner said or did that supports this level"),
+      reason: z.string().max(300).optional().describe("Why the level changed"),
+    }),
+    requestId,
+  ),
   ask_user_question: hostTool(
     "ask_user_question",
     "Ask the learner one tracked question and pause until they answer. Use this instead of writing required learner questions as prose.",
