@@ -84,8 +84,19 @@ export class AgentService {
         : ({ role: "assistant", content: message.body } as const),
     );
 
-    const { id, promise } = this.worker.request("turn", {
-      requestId: randomUUID(),
+    /* One id for the turn, generated here and used as both the worker's
+       request id and this map's key.
+       
+       These were two different UUIDs: the map was keyed by the IPC envelope's
+       id while the worker reported tool calls under the payload's requestId.
+       Every lookup therefore missed, and every tool call the agent made came
+       back "That project is no longer open" — an agent that could talk but
+       could not read a single file. */
+    const turnId = randomUUID();
+    this.running.set(turnId, projectId);
+
+    const { promise } = this.worker.request("turn", {
+      requestId: turnId,
       provider: {
         provider: resolved.provider,
         model: resolved.model,
@@ -98,7 +109,6 @@ export class AgentService {
       stateSuffix: `Current project: ${project.name}\nProject goal: ${project.goal}\nProject language: ${project.language}`,
       messages: history,
     });
-    this.running.set(id, projectId);
 
     try {
       const result = (await promise) as { text: string };
@@ -114,7 +124,7 @@ export class AgentService {
     } catch (cause) {
       this.emit({ projectId, kind: "error", message: cause instanceof Error ? cause.message : "The agent could not finish that turn." });
     } finally {
-      this.running.delete(id);
+      this.running.delete(turnId);
       /* A turn that ended while the agent was waiting on an answer must not
          leave the window blocked on a question nobody will read. */
       this.awaiting.delete(projectId);

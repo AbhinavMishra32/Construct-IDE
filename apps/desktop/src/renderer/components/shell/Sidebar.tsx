@@ -56,6 +56,11 @@ const ROW_ICON_TONE = "text-foreground/70";
 
 type Props = {
   page: Page;
+  /** Rendered in place of the project list while a project is open. The sidebar
+   *  is the one column that persists, so the file tree belongs in it rather
+   *  than in a second column beside it. */
+  projectView?: { name: string; tree: React.ReactNode } | undefined;
+  onGoHome?(): void;
   projects: ProjectSummary[];
   activeProjectId: string | null;
   actions: ProjectActions;
@@ -67,7 +72,7 @@ type Props = {
   controlsInset: number;
 };
 
-export function Sidebar({ page, projects, activeProjectId, actions, onNavigate, onNewProject, onCollapse, width, controlsInset }: Props) {
+export function Sidebar({ page, projectView, onGoHome, projects, activeProjectId, actions, onNavigate, onNewProject, onCollapse, width, controlsInset }: Props) {
   const [renaming, setRenaming] = useState<ProjectSummary | null>(null);
   const [removing, setRemoving] = useState<ProjectSummary | null>(null);
 
@@ -78,7 +83,22 @@ export function Sidebar({ page, projects, activeProjectId, actions, onNavigate, 
       aria-label="Projects"
     >
       <header className="flex h-9 items-center justify-between pl-2.5 pr-1">
-        <ConstructWordmark className="text-[1.05rem] leading-none text-foreground" />
+        {/* The wordmark is the way home once a project is open — the same
+            gesture every application uses for its own logo, so it needs no
+            label. It stays inert on the home surface, where there is nowhere
+            to go. */}
+        {onGoHome ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button type="button" onClick={onGoHome} className="app-no-drag rounded-md outline-none focus-visible:ring-1 focus-visible:ring-ring">
+                <ConstructWordmark className="text-[1.05rem] leading-none text-foreground" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right">All projects</TooltipContent>
+          </Tooltip>
+        ) : (
+          <ConstructWordmark className="text-[1.05rem] leading-none text-foreground" />
+        )}
         <Tooltip>
           <TooltipTrigger asChild>
             <Button variant="ghost" size="icon" className="size-6" onClick={onCollapse} aria-label="Hide sidebar">
@@ -89,6 +109,13 @@ export function Sidebar({ page, projects, activeProjectId, actions, onNavigate, 
         </Tooltip>
       </header>
 
+      {projectView ? (
+        <>
+          <h2 className="truncate px-2.5 pb-1 pt-1 text-ui-sm font-medium text-foreground/50">{projectView.name}</h2>
+          <div className="flex min-h-0 flex-1 flex-col">{projectView.tree}</div>
+        </>
+      ) : (
+        <>
       {NAV.map((item) => (
         <button
           key={item.id}
@@ -164,6 +191,9 @@ export function Sidebar({ page, projects, activeProjectId, actions, onNavigate, 
           {projects.length === 0 && <li className="px-2.5 py-1 text-source text-foreground/50">No projects yet</li>}
         </ul>
       </div>
+
+        </>
+      )}
 
       <button
         type="button"

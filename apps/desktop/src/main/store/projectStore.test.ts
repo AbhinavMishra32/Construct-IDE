@@ -1,4 +1,5 @@
 import { mkdtempSync, rmSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -87,16 +88,51 @@ describe("projects", () => {
   });
 });
 
-describe("ordering ties", () => {
-  it("puts a project that was opened above one merely created in the same millisecond", () => {
-    const older = store.createProject(project({ name: "Older", directory: path.join(directory, "a") }));
-    store.markOpened(older.id);
-    /* Created after the open, so with millisecond timestamps the two keys are
-       very likely equal. Insertion order would put this one first; a deliberate
-       open should outrank it. */
-    const newer = store.createProject(project({ name: "Newer", directory: path.join(directory, "b") }));
 
+describe("ordering ties", () => {
+  /* The tie has to be forced. Writing two rows and hoping their millisecond
+     timestamps collide is a coin toss — the first version of this test asserted
+     a collision that usually did not happen, and failed for the wrong reason.
+     Setting the timestamps equal in SQL tests the ORDER BY itself, which is
+     what the tiebreak keys exist for. */
+  const forceEqualTimestamps = (file: string, stamp: string) => {
+    const requireBuiltin = createRequire(import.meta.url);
+    const { DatabaseSync } = requireBuiltin("node:sqlite") as typeof import("node:sqlite");
+    const database = new DatabaseSync(file);
+    try {
+      database.exec(`UPDATE projects SET created_at = '${stamp}'`);
+      database.exec(`UPDATE projects SET opened_at = '${stamp}' WHERE opened_at IS NOT NULL`);
+    } finally {
+      database.close();
+    }
+  };
+
+  it("puts a project that was opened above one merely created at the same instant", () => {
+    const file = path.join(directory, "state.sqlite3");
+    const older = store.createProject(project({ name: "Older", directory: path.join(directory, "a") }));
+    const newer = store.createProject(project({ name: "Newer", directory: path.join(directory, "b") }));
+    store.markOpened(older.id);
+    store.close();
+
+    forceEqualTimestamps(file, "2026-01-01T00:00:00.000Z");
+
+    store = new ProjectStore(file);
     const ordered = store.listProjects().map((row) => row.id);
+    /* Without the (opened_at IS NOT NULL) key, rowid would put the
+       later-inserted `newer` first even though the learner deliberately opened
+       `older`. */
     expect(ordered.indexOf(older.id)).toBeLessThan(ordered.indexOf(newer.id));
+  });
+
+  it("falls back to insertion order when neither project has been opened", () => {
+    const file = path.join(directory, "state.sqlite3");
+    const first = store.createProject(project({ name: "First", directory: path.join(directory, "a") }));
+    const second = store.createProject(project({ name: "Second", directory: path.join(directory, "b") }));
+    store.close();
+
+    forceEqualTimestamps(file, "2026-01-01T00:00:00.000Z");
+
+    store = new ProjectStore(file);
+    expect(store.listProjects().map((row) => row.id)).toEqual([second.id, first.id]);
   });
 });
