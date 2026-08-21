@@ -265,9 +265,12 @@ export type ConceptSummary = {
   /** The note the learner reads: what the idea is, why it matters, a worked
    *  example, and references. A concept with a level and nothing else is a card
    *  with no content, which is what the first cut of this shipped. */
+  /** One line for the rail and the cards. */
   summary: string;
-  why: string;
-  example: string;
+  /** The whole note, as Markdown — the encyclopedia entry the learner reads.
+   *  One field rather than a set of titled ones: the agent writes prose, and
+   *  asking it to fill six boxes produced six stubs instead of one entry. */
+  content: string;
   docs: Array<{ title: string; url: string }>;
   tags: string[];
   firstSeenAt: string;

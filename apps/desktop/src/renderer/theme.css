@@ -577,6 +577,87 @@
      drop shadow on top of that reads as the panel hovering rather than sitting
      — which is what made three stacked panels look like floating cards instead
      of one instrument. */
+  /* An encyclopedia entry's typography.
+     
+     The agent writes plain Markdown; the look has to come from here, or every
+     note depends on the model remembering to format nicely. Headings are set
+     small and lettered rather than large and bold — an entry read in a 400px
+     column wants its sections labelled, not shouted — and the space above a
+     heading is much larger than the space below it, which is what makes a
+     section read as belonging to its heading rather than floating between two. */
+  .concept-entry {
+    font-size: var(--text-content);
+    line-height: 1.65;
+    color: var(--foreground);
+  }
+
+  .concept-entry > :first-child {
+    margin-top: 0;
+  }
+
+  .concept-entry h2,
+  .concept-entry h3 {
+    margin-block: 1.5em 0.35em;
+    font-size: var(--text-ui-sm);
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: color-mix(in oklab, var(--foreground) 55%, transparent);
+  }
+
+  .concept-entry p {
+    margin-block: 0.7em;
+    /* A measure, not the full column. Long lines are the single biggest reason
+       a panel of prose goes unread. */
+    max-width: 62ch;
+  }
+
+  .concept-entry ul,
+  .concept-entry ol {
+    margin-block: 0.7em;
+    padding-inline-start: 1.15em;
+  }
+
+  .concept-entry li {
+    margin-block: 0.25em;
+  }
+
+  .concept-entry li::marker {
+    color: color-mix(in oklab, var(--foreground) 40%, transparent);
+  }
+
+  /* Inline code is a chip rather than tinted text: in an entry that names
+     types and identifiers constantly, a colour alone stops registering. */
+  .concept-entry :not(pre) > code {
+    border: var(--hairline) solid var(--sidebar-border);
+    border-radius: var(--radius-sm);
+    background: color-mix(in oklab, var(--foreground) 5%, transparent);
+    padding: 0.05em 0.3em;
+    font-size: 0.92em;
+  }
+
+  .concept-entry pre {
+    margin-block: 0.9em;
+    border: var(--hairline) solid var(--sidebar-border);
+    border-radius: var(--radius-lg);
+    background: color-mix(in oklab, var(--foreground) 3.5%, transparent);
+    padding: 0.7rem 0.85rem;
+    overflow-x: auto;
+    font-size: var(--text-source-sm);
+    line-height: 1.55;
+  }
+
+  .concept-entry blockquote {
+    margin-block: 0.9em;
+    border-inline-start: 2px solid color-mix(in oklab, var(--foreground) 18%, transparent);
+    padding-inline-start: 0.75rem;
+    color: color-mix(in oklab, var(--foreground) 70%, transparent);
+  }
+
+  .concept-entry strong {
+    font-weight: 600;
+  }
+
   .app-blob {
     background: var(--popover);
     border: var(--hairline) solid var(--sidebar-border);

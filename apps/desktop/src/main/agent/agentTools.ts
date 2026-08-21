@@ -26,8 +26,10 @@ export type AgentToolContext = {
     note: string;
     reason: string;
     summary: string;
-    why: string;
-    example: string;
+    /** The whole note, as Markdown. One field rather than a set of titled
+     *  ones: the agent writes prose, and asking it to fill six boxes produced
+     *  six stubs instead of one good entry. */
+    content: string;
     docs: Array<{ title: string; url: string }>;
     tags: string[];
   }): void;
@@ -75,8 +77,7 @@ export async function executeAgentTool(name: string, input: unknown, context: Ag
         note: String(args.note ?? ""),
         reason: String(args.reason ?? ""),
         summary: String(args.summary ?? ""),
-        why: String(args.why ?? ""),
-        example: String(args.example ?? ""),
+        content: String(args.content ?? ""),
         /* Only http(s) links are kept. A concept note is rendered with its
            references as real links, and a file: or javascript: URL arriving
            from a model must never become one. */
