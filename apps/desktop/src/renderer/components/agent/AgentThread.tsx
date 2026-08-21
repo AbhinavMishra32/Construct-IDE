@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { Markdown } from "./Markdown";
 import { ChallengePublished, LINKED_GAP, PROSE_GAP, Reasoning, RunFailure, SolveRead, STEP_GAP, ToolRow } from "./ActivityRow";
 import { SystemEvent } from "./SystemEvent";
+import { ConceptCard, conceptFromToolInput } from "./ConceptCard";
 import { groupParts, type AgentRun, type RunPart } from "./agentRun";
 
 /** Construct stores the same shape Spar streamed, so the thread needs no
@@ -48,7 +49,16 @@ function Rows({ parts }: { parts: RunPart[] }) {
 
         if (part.kind === "text") return wrap(<div className="px-1.5 text-foreground"><Markdown source={part.body} /></div>);
         if (part.kind === "reasoning") return wrap(<Reasoning part={part} />);
-        if (part.kind === "tool-row") return wrap(<ToolRow linked={linked} part={part.part} />);
+        if (part.kind === "tool-row") {
+          /* A mastery reading is the outcome of the turn rather than a step
+             toward it, so it gets a card rather than a tool row — the same
+             treatment a published challenge gets, and for the same reason. */
+          if (part.part.tool === "record-concept") {
+            const concept = conceptFromToolInput(part.part.input);
+            if (concept) return wrap(<ConceptCard level={concept.level} note={concept.note} title={concept.title} />);
+          }
+          return wrap(<ToolRow linked={linked} part={part.part} />);
+        }
         if (part.kind === "challenge") return wrap(<ChallengePublished part={part.part} />);
         if (part.kind === "solve-read") return wrap(<SolveRead part={part.part} />);
         if (part.kind === "error") return wrap(<RunFailure body={part.body} />);

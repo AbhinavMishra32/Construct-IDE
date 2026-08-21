@@ -6,6 +6,7 @@ import type { ConceptSummary, ConstructApi, ProjectSummary } from "../../../shar
 import { cn } from "@/lib/utils";
 import { LanguageClient } from "@/lib/lsp/client";
 import { WorkspaceBar } from "./WorkspaceBar";
+import { ConceptSheet } from "./ConceptSheet";
 import { Editor } from "./Editor";
 import { TerminalPanel } from "./TerminalPanel";
 import { AgentPanel } from "./AgentPanel";
@@ -38,6 +39,7 @@ export function Workspace({ api, project, openPath, onError, onOpenSettings }: P
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [agentOpen, setAgentOpen] = useState(true);
   const [concepts, setConcepts] = useState<ConceptSummary[]>([]);
+  const [openConcept, setOpenConcept] = useState<ConceptSummary | null>(null);
   /* One client per language, started when a file of that language is first
      opened. Starting every server up front would spawn a TypeScript server for
      a project with no TypeScript in it. */
@@ -163,9 +165,12 @@ export function Workspace({ api, project, openPath, onError, onOpenSettings }: P
         concepts={concepts}
         onToggleAgent={() => setAgentOpen((open) => !open)}
         onToggleTerminal={() => setTerminalOpen((open) => !open)}
+        onOpenConcept={setOpenConcept}
         project={project}
         terminalOpen={terminalOpen}
       />
+
+      <ConceptSheet concept={openConcept} onClose={() => setOpenConcept(null)} />
 
       <PanelGroup direction="horizontal" className="min-h-0 min-w-0 flex-1 gap-1 p-1 pt-0">
         {/* The editor column is layout only. Its children are the objects — the

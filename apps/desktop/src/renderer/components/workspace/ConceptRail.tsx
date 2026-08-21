@@ -15,7 +15,7 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/h
  * Only a few fit; the rest are a count, because a rail that wraps is a list and
  * a list belongs on its own page.
  */
-export function ConceptRail({ concepts, className }: { concepts: ConceptSummary[]; className?: string }) {
+export function ConceptRail({ concepts, className, onOpen }: { concepts: ConceptSummary[]; className?: string; onOpen(concept: ConceptSummary): void }) {
   if (concepts.length === 0) return null;
 
   const shown = concepts.slice(0, 4);
@@ -24,14 +24,14 @@ export function ConceptRail({ concepts, className }: { concepts: ConceptSummary[
   return (
     <div className={cn("flex min-w-0 items-center gap-1", className)}>
       {shown.map((concept) => (
-        <ConceptChip concept={concept} key={concept.conceptId} />
+        <ConceptChip concept={concept} key={concept.conceptId} onOpen={() => onOpen(concept)} />
       ))}
       {rest > 0 && <span className="shrink-0 px-1 text-ui-sm tabular-nums text-muted-foreground">+{rest}</span>}
     </div>
   );
 }
 
-function ConceptChip({ concept }: { concept: ConceptSummary }) {
+function ConceptChip({ concept, onOpen }: { concept: ConceptSummary; onOpen(): void }) {
   const rubric = rubricForLevel(concept.masteryLevel);
 
   return (
@@ -47,6 +47,7 @@ function ConceptChip({ concept }: { concept: ConceptSummary }) {
               ? "border-[var(--success)]/35 bg-[var(--success)]/10 text-foreground"
               : "border-border bg-transparent text-muted-foreground",
           )}
+          onClick={onOpen}
           type="button"
         >
           <MasteryDots level={concept.masteryLevel} ready={rubric.taskReady} />
@@ -73,6 +74,7 @@ function ConceptChip({ concept }: { concept: ConceptSummary }) {
         <p className="text-ui-sm text-muted-foreground/70">
           {rubric.taskReady ? "Construct may set scoped tasks on this." : "Construct will explain this rather than set work on it."}
         </p>
+        <p className="text-ui-sm text-muted-foreground/60">Click to read the whole ladder.</p>
       </HoverCardContent>
     </HoverCard>
   );
