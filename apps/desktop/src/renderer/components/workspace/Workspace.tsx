@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FileCode2, MessageSquare, SquareTerminal, X } from "lucide-react";
+import { FileCode2, MessageSquare, RotateCcw, SquareTerminal, Trash2, X } from "lucide-react";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { isLspLanguage, languageForPath } from "@construct/domain";
 import type { ConstructApi, ProjectSummary } from "../../../shared/api";
@@ -9,12 +9,14 @@ import { Toolbar } from "../shell/Toolbar";
 import { Editor } from "./Editor";
 import { TerminalPanel } from "./TerminalPanel";
 import { AgentPanel } from "./AgentPanel";
+import { LanguageGlyph } from "../common/LanguageGlyph";
 
 type OpenFile = { path: string; content: string; dirty: boolean };
 
 type Props = {
   api: ConstructApi | undefined;
   project: ProjectSummary;
+  onOpenSettings(): void;
   /** The file the tree asked to open, lifted to the shell because the tree now
    *  lives in the sidebar rather than inside this component. */
   openPath: string | null;
@@ -26,7 +28,7 @@ type Props = {
  *  the window a second after stopping. */
 const SAVE_DEBOUNCE_MS = 600;
 
-export function Workspace({ api, project, openPath, onError }: Props) {
+export function Workspace({ api, project, openPath, onError, onOpenSettings }: Props) {
   const [files, setFiles] = useState<OpenFile[]>([]);
   const [active, setActive] = useState<string | null>(null);
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
@@ -179,7 +181,8 @@ export function Workspace({ api, project, openPath, onError }: Props) {
                           strip shares a surface with the editor, and a fill would
                           read as a second one floating on it. */}
                       {file.path === active && <span className="absolute inset-x-0 bottom-0 h-px bg-foreground/70" />}
-                      <button className="outline-none" onClick={() => setActive(file.path)} type="button">
+                      <button className="flex items-center gap-1.5 outline-none" onClick={() => setActive(file.path)} type="button">
+                        <LanguageGlyph className="size-3.5 shrink-0" language={languageForPath(file.path) ?? "typescript"} />
                         {file.path.split("/").pop()}
                       </button>
                       <button
@@ -196,6 +199,25 @@ export function Workspace({ api, project, openPath, onError }: Props) {
                       </button>
                     </div>
                   ))}
+
+                  {/* The file's own actions, pushed to the trailing edge of the
+                      strip. Reverting is the one destructive thing the editor can
+                      do to unsaved work, so it lives where the file is named
+                      rather than in a menu. */}
+                  {current && (
+                    <div className="ml-auto flex shrink-0 items-center gap-0.5 pr-1.5">
+                      <PaneAction
+                        icon={RotateCcw}
+                        label="Revert to the file on disk"
+                        onClick={() => {
+                          void api
+                            ?.readFile({ projectId: project.id, path: current.path })
+                            .then((content) => setFiles((rest) => rest.map((file) => (file.path === current.path ? { ...file, content, dirty: false } : file))))
+                            .catch((cause: unknown) => onError(cause instanceof Error ? cause.message : "Could not reload that file."));
+                        }}
+                      />
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -217,7 +239,20 @@ export function Workspace({ api, project, openPath, onError }: Props) {
                     rather than drawn: a permanent rule between two objects that
                     are already separated is a line with nothing to do. */}
                 <PanelResizeHandle className="h-1 shrink-0 rounded-full transition-colors data-[resize-handle-state=drag]:bg-ring/60 data-[resize-handle-state=hover]:bg-ring/30" />
-                <Panel className="app-pane app-blob" defaultSize={30} minSize={10}>
+                <Panel className="app-pane app-blob flex min-w-0 flex-col" defaultSize={30} minSize={10}>
+                  <div className="hairline-b flex h-8 shrink-0 items-center gap-1.5 px-3">
+                    <SquareTerminal className="size-3.5 shrink-0 text-muted-foreground" />
+                    <span className="text-ui text-muted-foreground">Terminal</span>
+                    <div className="ml-auto flex items-center gap-0.5">
+                      <PaneAction
+                        icon={Trash2}
+                        label="Start a fresh shell"
+                        onClick={() => setTerminalId(crypto.randomUUID())}
+                      />
+                      <PaneAction icon={X} label="Close the terminal" onClick={() => setTerminalOpen(false)} />
+                    </div>
+                  </div>
+                  <div className="min-h-0 flex-1">
                   <TerminalPanel
                     api={api}
                     onExit={() => {
@@ -227,6 +262,7 @@ export function Workspace({ api, project, openPath, onError }: Props) {
                     projectId={project.id}
                     terminalId={terminalId}
                   />
+                  </div>
                 </Panel>
               </>
             )}
@@ -240,7 +276,7 @@ export function Workspace({ api, project, openPath, onError }: Props) {
                 should feel like it floats over the work; the editor and terminal
                 hold code, which needs a ground it can be read against. */}
             <Panel className="app-pane app-panel-glass app-blob flex min-w-0 flex-col" defaultSize={38} minSize={22}>
-              <AgentPanel api={api} onError={onError} projectId={project.id} />
+              <AgentPanel api={api} onError={onError} onOpenSettings={onOpenSettings} projectId={project.id} />
             </Panel>
           </>
         )}
@@ -272,6 +308,29 @@ function ToolbarToggle({
       type="button"
     >
       <Icon className="size-3.5" />
+    </button>
+  );
+}
+
+/** A small action on a pane header. Sized to the header row rather than to a
+ *  button, so a pane's chrome stays one line tall whatever is in it. */
+function PaneAction({
+  icon: Icon,
+  label,
+  onClick,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  onClick(): void;
+}) {
+  return (
+    <button
+      className="grid size-5 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+      onClick={onClick}
+      title={label}
+      type="button"
+    >
+      <Icon className="size-3" />
     </button>
   );
 }

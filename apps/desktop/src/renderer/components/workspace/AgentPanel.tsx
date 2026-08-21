@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useState } from "react";
 import type { AgentMessage, AskUserQuestionRequest } from "@construct/domain";
-import type { ConstructApi } from "../../../shared/api";
+import type { ConstructApi, ProviderInventory } from "../../../shared/api";
 import { AgentThread } from "../agent/AgentThread";
 import { AskUserQuestion } from "../agent/AskUserQuestion";
 import { Composer } from "../agent/Composer";
+import { ModelPicker } from "../agent/ModelPicker";
 import { reduceRun, type AgentRun } from "../agent/agentRun";
 
 type Props = {
   api: ConstructApi | undefined;
   projectId: string;
   onError(message: string): void;
+  onOpenSettings(): void;
 };
 
 /**
@@ -20,7 +22,8 @@ type Props = {
  * it over: tool rows, reasoning blocks, per-row spacing, follow behaviour and
  * jump-to-latest all belong to the thread.
  */
-export function AgentPanel({ api, projectId, onError }: Props) {
+export function AgentPanel({ api, projectId, onError, onOpenSettings }: Props) {
+  const [providers, setProviders] = useState<ProviderInventory | null>(null);
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [run, setRun] = useState<AgentRun | null>(null);
   const [draft, setDraft] = useState("");
@@ -31,6 +34,16 @@ export function AgentPanel({ api, projectId, onError }: Props) {
     if (!api) return;
     void api.agentMessages({ projectId }).then(setMessages).catch(() => setMessages([]));
   }, [api, projectId]);
+
+  /* Which model is answering, read once and after a turn. The composer shows it
+     because it is the single most useful thing to know before sending — and the
+     picker is how it changes, so it belongs beside the box rather than buried in
+     Settings. */
+  const loadProviders = useCallback(() => {
+    void api?.listProviders().then(setProviders).catch(() => setProviders(null));
+  }, [api]);
+
+  useEffect(loadProviders, [loadProviders]);
 
   /* The live transcript, reduced here rather than inside the thread so the run
      survives the thread remounting — resizing the panel should not clear the
@@ -107,6 +120,18 @@ export function AgentPanel({ api, projectId, onError }: Props) {
             onSubmit={send}
             busy={running}
             placeholder={running ? "Construct is working…" : "Ask Construct…"}
+            leading={
+              <ModelPicker
+                inventory={providers}
+                onSelect={(provider, model) => {
+                  void api
+                    ?.setDefaultProvider(provider.id, model)
+                    .then(loadProviders)
+                    .catch((cause: unknown) => onError(cause instanceof Error ? cause.message : "Could not switch model."));
+                }}
+                onOpenSettings={onOpenSettings}
+              />
+            }
           />
         )}
       </div>
