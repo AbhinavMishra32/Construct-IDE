@@ -213,15 +213,12 @@
      glass is what keeps that surface feeling like part of the window. */
   --app-glass-fill: 100%;
   --app-glass-fill-translucent: 88%;
-  /* A third tier, well below `translucent`, for the panels that flank the work
-     rather than hold it — the file tree and the agent. At 88% the material is
-     technically glass and reads as a flat surface; this is low enough that the
-     desktop is genuinely visible through it, which is what makes the panels
-     read as floating beside the editor instead of being more of it.
-
-     Not lower than this: the panels carry real text, and every point of fill
-     removed is contrast lost against a wallpaper nobody chose for legibility. */
-  --app-glass-fill-panel: 66%;
+  /* For the one panel that flanks the work rather than holds it: the agent.
+     Below `translucent`, so the desktop is present through it and the panel
+     reads as floating beside the editor — but only just. 66% was too far: at
+     that fill the wallpaper competes with the conversation and the whole window
+     turns into an effect rather than a tool. */
+  --app-glass-fill-panel: 84%;
   --app-user-message-background: oklch(14.5% 0 0 / 6%);
   --app-shadow-overlay: 0 20px 25px -5px oklch(0% 0 0 / 10%), 0 8px 10px -6px oklch(0% 0 0 / 10%);
   --app-shadow-menu: 0 16px 40px -12px oklch(0% 0 0 / 20%), 0 4px 10px -4px oklch(0% 0 0 / 8%);
@@ -324,9 +321,9 @@
   --app-vibrant-tint: oklch(100% 0 0 / 6%);
   --app-glass-fill: 100%;
   --app-glass-fill-translucent: 86%;
-  /* Slightly heavier than the light theme's. Dark glass over a bright desktop
-     loses contrast faster than light glass over a dark one. */
-  --app-glass-fill-panel: 70%;
+  /* Heavier than the light theme's: dark glass over a bright desktop loses
+     contrast faster than light glass over a dark one. */
+  --app-glass-fill-panel: 88%;
   --app-user-message-background: oklch(98.5% 0 0 / 8%);
   --app-shadow-overlay: 0 20px 25px -5px oklch(0% 0 0 / 40%), 0 8px 10px -6px oklch(0% 0 0 / 40%);
   --app-shadow-menu: 0 16px 40px -10px oklch(0% 0 0 / 55%), 0 4px 12px -4px oklch(0% 0 0 / 40%);
@@ -576,7 +573,10 @@
 
   .app-panel-glass {
     --app-glass-fill: var(--app-glass-fill-panel);
-    backdrop-filter: saturate(1.6) blur(24px);
+    /* Blur without the saturation boost. Saturating what is behind the window
+       made the glass tint whatever colour the wallpaper happened to be, which
+       is what read as the interface having no colours of its own. */
+    backdrop-filter: blur(20px);
   }
 
   .app-pane-glass {

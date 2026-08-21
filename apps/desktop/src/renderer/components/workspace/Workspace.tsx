@@ -141,123 +141,137 @@ export function Workspace({ api, project, openPath, onError }: Props) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* The shell's own toolbar rather than a bespoke header: it carries the
-          title-bar height, the drag region, and the inset the OS window buttons
-          need, none of which a hand-rolled row would have had. */}
-      <Toolbar title={current ? (current.path.split("/").pop() ?? project.name) : project.name} subtitle={current?.path} />
+      {/* The shell's toolbar, carrying the title-bar height, the drag region and
+          the window-control inset — and the panel toggles, which used to sit on
+          a strip along the bottom. A whole row of chrome for two switches and a
+          path the tab already showed was the worst trade in the window. */}
+      <Toolbar
+        title={current ? (current.path.split("/").pop() ?? project.name) : project.name}
+        subtitle={current?.dirty ? "Saving…" : current?.path}
+        actions={
+          <>
+            <ToolbarToggle icon={SquareTerminal} label="Terminal" on={terminalOpen} onClick={() => setTerminalOpen((open) => !open)} />
+            <ToolbarToggle icon={MessageSquare} label="Construct" on={agentOpen} onClick={() => setAgentOpen((open) => !open)} />
+          </>
+        }
+      />
 
-      <div className="flex min-h-0 flex-1">
-        <PanelGroup direction="horizontal" className="min-w-0 flex-1 gap-2 p-2">
-        <Panel defaultSize={agentOpen ? 62 : 100} minSize={30} className="app-pane app-blob flex min-w-0 flex-col">
-          {files.length > 0 && (
-            <div role="tablist" className="hairline-b app-scroll flex h-8 shrink-0 items-stretch overflow-x-auto">
-              {files.map((file) => (
-                <div
-                  key={file.path}
-                  role="tab"
-                  aria-selected={file.path === active}
-                  className={cn(
-                    "group/tab relative flex shrink-0 items-center gap-1.5 pl-3 pr-1.5 text-ui transition-colors",
-                    file.path === active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {/* The active tab is marked by a rule along its base rather
-                      than a filled block: the strip sits on the same material as
-                      the editor, and a fill would read as a second surface
-                      floating on it. */}
-                  {file.path === active && <span className="absolute inset-x-0 bottom-0 h-px bg-foreground/70" />}
-                  <button type="button" onClick={() => setActive(file.path)} className="outline-none">
-                    {file.path.split("/").pop()}
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={`Close ${file.path}`}
-                    className="grid size-4 place-items-center rounded-sm hover:bg-accent"
-                    onClick={() => closeFile(file.path)}
-                  >
-                    {/* A dot for unsaved, becoming the close control on hover —
-                        the affordance every editor uses, so an unsaved file
-                        costs no extra chrome. */}
-                    {file.dirty && <span className="size-1.5 rounded-full bg-foreground/50 group-hover/tab:hidden" />}
-                    <X className={cn("size-3", file.dirty && "hidden group-hover/tab:block")} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <PanelGroup direction="vertical" className="min-h-0 flex-1">
-            <Panel defaultSize={70} minSize={20}>
-              {current ? (
-                <Editor path={current.path} content={current.content} onChange={(value) => edit(current.path, value)} />
-              ) : (
-                <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
-                  <FileCode2 className="size-5 text-muted-foreground/70" />
-                  <p className="text-ui text-muted-foreground">Pick a file to start reading.</p>
+      <PanelGroup direction="horizontal" className="min-h-0 min-w-0 flex-1 gap-2 p-2 pt-0">
+        {/* The editor column is layout only. Its children are the objects — the
+            terminal used to be nested inside the editor's own panel, which is
+            why it could not read as a separate one however it was styled. */}
+        <Panel className="flex min-w-0 flex-col" defaultSize={agentOpen ? 62 : 100} minSize={30}>
+          <PanelGroup direction="vertical" className="min-h-0 flex-1 gap-2">
+            <Panel className="app-pane app-blob flex min-w-0 flex-col" defaultSize={70} minSize={20}>
+              {files.length > 0 && (
+                <div className="hairline-b app-scroll flex h-8 shrink-0 items-stretch overflow-x-auto" role="tablist">
+                  {files.map((file) => (
+                    <div
+                      aria-selected={file.path === active}
+                      className={cn(
+                        "group/tab relative flex shrink-0 items-center gap-1.5 pl-3 pr-1.5 text-ui transition-colors",
+                        file.path === active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+                      )}
+                      key={file.path}
+                      role="tab"
+                    >
+                      {/* A rule along the base rather than a filled block: the
+                          strip shares a surface with the editor, and a fill would
+                          read as a second one floating on it. */}
+                      {file.path === active && <span className="absolute inset-x-0 bottom-0 h-px bg-foreground/70" />}
+                      <button className="outline-none" onClick={() => setActive(file.path)} type="button">
+                        {file.path.split("/").pop()}
+                      </button>
+                      <button
+                        aria-label={`Close ${file.path}`}
+                        className="grid size-4 place-items-center rounded-sm hover:bg-accent"
+                        onClick={() => closeFile(file.path)}
+                        type="button"
+                      >
+                        {/* A dot for unsaved, becoming the close control on
+                            hover — the affordance every editor uses, so an
+                            unsaved file costs no extra chrome. */}
+                        {file.dirty && <span className="size-1.5 rounded-full bg-foreground/50 group-hover/tab:hidden" />}
+                        <X className={cn("size-3", file.dirty && "hidden group-hover/tab:block")} />
+                      </button>
+                    </div>
+                  ))}
                 </div>
               )}
+
+              <div className="min-h-0 flex-1">
+                {current ? (
+                  <Editor content={current.content} onChange={(value) => edit(current.path, value)} path={current.path} />
+                ) : (
+                  <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
+                    <FileCode2 className="size-5 text-muted-foreground/70" />
+                    <p className="text-ui text-muted-foreground">Pick a file to start reading.</p>
+                  </div>
+                )}
+              </div>
             </Panel>
 
             {terminalOpen && (
               <>
-                {/* A one-pixel rule with an invisible grab area above it: a
-                    handle you can only hit dead-on is a handle you miss. */}
-                <PanelResizeHandle className="relative my-1 h-1 shrink-0 rounded-full transition-colors data-[resize-handle-state=drag]:bg-ring/60 data-[resize-handle-state=hover]:bg-ring/30" />
-                <Panel defaultSize={30} minSize={10} className="app-pane app-panel-glass app-blob">
+                {/* The handle lives in the gap between panels, so it is felt
+                    rather than drawn: a permanent rule between two objects that
+                    are already separated is a line with nothing to do. */}
+                <PanelResizeHandle className="h-1 shrink-0 rounded-full transition-colors data-[resize-handle-state=drag]:bg-ring/60 data-[resize-handle-state=hover]:bg-ring/30" />
+                <Panel className="app-pane app-blob" defaultSize={30} minSize={10}>
                   <TerminalPanel
                     api={api}
-                    projectId={project.id}
-                    terminalId={terminalId}
-                    /* The shell exited on its own. A fresh id means reopening
-                       starts a new shell rather than writing into a dead pty. */
                     onExit={() => {
                       setTerminalOpen(false);
                       setTerminalId(crypto.randomUUID());
                     }}
+                    projectId={project.id}
+                    terminalId={terminalId}
                   />
                 </Panel>
               </>
             )}
           </PanelGroup>
-
-          <footer className="hairline-t flex h-6 shrink-0 items-center gap-3 px-2 text-ui-sm text-muted-foreground">
-            <button
-              type="button"
-              aria-pressed={terminalOpen}
-              onClick={() => setTerminalOpen((open) => !open)}
-              className={cn(
-                "flex h-4 items-center gap-1 rounded-sm px-1 transition-colors hover:text-foreground",
-                terminalOpen && "text-foreground",
-              )}
-            >
-              <SquareTerminal className="size-3" /> Terminal
-            </button>
-            <button
-              type="button"
-              aria-pressed={agentOpen}
-              onClick={() => setAgentOpen((open) => !open)}
-              className={cn(
-                "flex h-4 items-center gap-1 rounded-sm px-1 transition-colors hover:text-foreground",
-                agentOpen && "text-foreground",
-              )}
-            >
-              <MessageSquare className="size-3" /> Construct
-            </button>
-            {current && <span className="truncate">{current.path}</span>}
-            {current?.dirty && <span className="ml-auto">Saving…</span>}
-          </footer>
         </Panel>
 
         {agentOpen && (
           <>
-            <PanelResizeHandle className="relative w-1 rounded-full transition-colors data-[resize-handle-state=drag]:bg-ring/60 data-[resize-handle-state=hover]:bg-ring/30" />
-            <Panel defaultSize={38} minSize={22} className="app-pane app-panel-glass app-blob flex min-w-0 flex-col">
-              <AgentPanel api={api} projectId={project.id} onError={onError} />
+            <PanelResizeHandle className="w-1 shrink-0 rounded-full transition-colors data-[resize-handle-state=drag]:bg-ring/60 data-[resize-handle-state=hover]:bg-ring/30" />
+            {/* The one surface kept on glass. A conversation is transient and
+                should feel like it floats over the work; the editor and terminal
+                hold code, which needs a ground it can be read against. */}
+            <Panel className="app-pane app-panel-glass app-blob flex min-w-0 flex-col" defaultSize={38} minSize={22}>
+              <AgentPanel api={api} onError={onError} projectId={project.id} />
             </Panel>
           </>
         )}
-        </PanelGroup>
-      </div>
+      </PanelGroup>
     </div>
+  );
+}
+
+function ToolbarToggle({
+  icon: Icon,
+  label,
+  on,
+  onClick,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  on: boolean;
+  onClick(): void;
+}) {
+  return (
+    <button
+      aria-pressed={on}
+      className={cn(
+        "app-no-drag grid size-6 shrink-0 place-items-center rounded-md transition-colors",
+        on ? "bg-[var(--sidebar-accent-active)] text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+      )}
+      onClick={onClick}
+      title={label}
+      type="button"
+    >
+      <Icon className="size-3.5" />
+    </button>
   );
 }
