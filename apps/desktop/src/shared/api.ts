@@ -260,7 +260,16 @@ export type ConceptSummary = {
   title: string;
   masteryLevel: 0 | 1 | 2 | 3 | 4 | 5;
   confidence: string;
+  /** The evidence behind the current level. */
   note: string;
+  /** The note the learner reads: what the idea is, why it matters, a worked
+   *  example, and references. A concept with a level and nothing else is a card
+   *  with no content, which is what the first cut of this shipped. */
+  summary: string;
+  why: string;
+  example: string;
+  docs: Array<{ title: string; url: string }>;
+  tags: string[];
   firstSeenAt: string;
   updatedAt: string;
 };

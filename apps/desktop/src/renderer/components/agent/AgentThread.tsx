@@ -33,7 +33,7 @@ function LiveRun({ run }: { run: AgentRun }) {
  * what makes a turn scannable, because the shape of the page tells you where the
  * agent was working and where it was talking to you before you read a word.
  */
-function Rows({ parts }: { parts: RunPart[] }) {
+function Rows({ parts, onOpenConcept }: { parts: RunPart[]; onOpenConcept?: (conceptId: string) => void }) {
   const rows = groupParts(parts);
   return (
     <>
@@ -55,7 +55,7 @@ function Rows({ parts }: { parts: RunPart[] }) {
              treatment a published challenge gets, and for the same reason. */
           if (part.part.tool === "record-concept") {
             const concept = conceptFromToolInput(part.part.input);
-            if (concept) return wrap(<ConceptCard level={concept.level} note={concept.note} title={concept.title} />);
+            if (concept) return wrap(<ConceptCard level={concept.level} note={concept.note} onOpen={onOpenConcept ? () => onOpenConcept(concept.conceptId) : undefined} title={concept.title} />);
           }
           return wrap(<ToolRow linked={linked} part={part.part} />);
         }
@@ -101,10 +101,10 @@ function WaitingLine({ parts }: { parts: RunPart[] }) {
  * of storing them. A turn with no reply is still a turn worth seeing; that is
  * what an attempt-complete turn is, and it used to leave nothing behind at all.
  */
-function AgentMessage({ body, activity }: { body: string; activity: AgentActivityStep[] }) {
+function AgentMessage({ body, activity, onOpenConcept }: { body: string; activity: AgentActivityStep[]; onOpenConcept?: (conceptId: string) => void }) {
   return (
     <div className="min-w-0 space-y-1.5">
-      <Rows parts={activity.map(storedPart)} />
+      <Rows onOpenConcept={onOpenConcept} parts={activity.map(storedPart)} />
       {body.trim() && (
         <div className="min-w-0 px-1.5">
           <Markdown source={body} />
@@ -160,6 +160,7 @@ export function AgentThread({
   header,
   empty,
   footer,
+  onOpenConcept,
   className,
 }: {
   messages: Message[];
@@ -170,6 +171,9 @@ export function AgentThread({
    *  turn, which belongs in the transcript beside the message it failed to
    *  answer rather than in a notification that fades. */
   footer?: React.ReactNode;
+  /** Opens a concept the transcript mentions. Passed down rather than handled
+   *  here because the panel owns which concept is being read. */
+  onOpenConcept?: (conceptId: string) => void;
   className?: string;
 }) {
   const viewport = useRef<HTMLDivElement>(null);
@@ -226,7 +230,7 @@ export function AgentThread({
                   ) : item.role === "system" ? (
                     <SystemEvent key={item.id} body={item.body} />
                   ) : (
-                    <AgentMessage key={item.id} activity={item.activity} body={item.body} />
+                    <AgentMessage key={item.id} activity={item.activity} body={item.body} onOpenConcept={onOpenConcept} />
                   ),
                 )}
                 {visibleRun && <LiveRun run={visibleRun} />}

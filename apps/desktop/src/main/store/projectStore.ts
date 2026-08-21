@@ -73,6 +73,18 @@ const MIGRATIONS: readonly string[] = [
      created_at    TEXT NOT NULL
    );
    CREATE INDEX concept_events_project ON concept_events (project_id, created_at);`,
+
+  /* A concept is a note the learner can read, not just a level.
+     
+     v0.7's KnowledgeBaseRecord is the model: what the idea is, why it matters,
+     a worked example, real references, and the evidence behind the current
+     reading. Storing only a title and a number — which is what the first cut
+     did — produces a card with nothing in it, which is worse than no card. */
+  `ALTER TABLE concepts ADD COLUMN summary TEXT NOT NULL DEFAULT '';
+   ALTER TABLE concepts ADD COLUMN why TEXT NOT NULL DEFAULT '';
+   ALTER TABLE concepts ADD COLUMN example TEXT NOT NULL DEFAULT '';
+   ALTER TABLE concepts ADD COLUMN docs TEXT NOT NULL DEFAULT '[]';
+   ALTER TABLE concepts ADD COLUMN tags TEXT NOT NULL DEFAULT '[]';`,
 ];
 
 type ProjectRow = {
@@ -92,7 +104,19 @@ export type ConceptRecord = {
   title: string;
   masteryLevel: 0 | 1 | 2 | 3 | 4 | 5;
   confidence: string;
+  /** The evidence behind the current level — what the learner said or did. */
   note: string;
+  /** What the idea is, in a couple of sentences. */
+  summary: string;
+  /** Why it matters, which is the half a learner forgets first. */
+  why: string;
+  /** A worked example, usually drawn from the learner's own project. */
+  example: string;
+  /** Real references. Kept because a concept the learner can only read here is
+   *  a dead end, and the agent is better placed than they are to find the good
+   *  page. */
+  docs: Array<{ title: string; url: string }>;
+  tags: string[];
   firstSeenAt: string;
   updatedAt: string;
 };
@@ -281,24 +305,21 @@ export class ProjectStore {
            the learner is holding in their head, so it leads. */
         "SELECT * FROM concepts WHERE project_id = ? ORDER BY updated_at DESC, rowid DESC",
       )
-      .all(projectId) as Array<{
-      concept_id: string;
-      title: string;
-      mastery_level: number;
-      confidence: string;
-      note: string;
-      first_seen_at: string;
-      updated_at: string;
-    }>;
+      .all(projectId) as Array<Record<string, string | number>>;
 
     return rows.map((row) => ({
-      conceptId: row.concept_id,
-      title: row.title,
-      masteryLevel: Math.min(5, Math.max(0, row.mastery_level)) as ConceptRecord["masteryLevel"],
-      confidence: row.confidence,
-      note: row.note,
-      firstSeenAt: row.first_seen_at,
-      updatedAt: row.updated_at,
+      conceptId: String(row.concept_id),
+      title: String(row.title),
+      masteryLevel: Math.min(5, Math.max(0, Number(row.mastery_level))) as ConceptRecord["masteryLevel"],
+      confidence: String(row.confidence),
+      note: String(row.note ?? ""),
+      summary: String(row.summary ?? ""),
+      why: String(row.why ?? ""),
+      example: String(row.example ?? ""),
+      docs: parseJson<Array<{ title: string; url: string }>>(String(row.docs ?? "[]"), []),
+      tags: parseJson<string[]>(String(row.tags ?? "[]"), []),
+      firstSeenAt: String(row.first_seen_at),
+      updatedAt: String(row.updated_at),
     }));
   }
 
@@ -318,6 +339,11 @@ export class ProjectStore {
     confidence: string;
     note: string;
     reason: string;
+    summary: string;
+    why: string;
+    example: string;
+    docs: Array<{ title: string; url: string }>;
+    tags: string[];
   }): void {
     const now = new Date().toISOString();
     const existing = this.database
@@ -326,18 +352,40 @@ export class ProjectStore {
 
     const level = Math.min(5, Math.max(0, Math.round(input.masteryLevel)));
 
+    /* The written content is only overwritten when the agent sends something.
+       A later turn that just moves the level must not blank the explanation the
+       learner has been reading — COALESCE keeps whatever is already there. */
     this.database
       .prepare(
-        `INSERT INTO concepts (project_id, concept_id, title, mastery_level, confidence, note, first_seen_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO concepts (project_id, concept_id, title, mastery_level, confidence, note, summary, why, example, docs, tags, first_seen_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(project_id, concept_id) DO UPDATE SET
            title = excluded.title,
            mastery_level = excluded.mastery_level,
            confidence = excluded.confidence,
-           note = excluded.note,
+           note = CASE WHEN excluded.note <> '' THEN excluded.note ELSE concepts.note END,
+           summary = CASE WHEN excluded.summary <> '' THEN excluded.summary ELSE concepts.summary END,
+           why = CASE WHEN excluded.why <> '' THEN excluded.why ELSE concepts.why END,
+           example = CASE WHEN excluded.example <> '' THEN excluded.example ELSE concepts.example END,
+           docs = CASE WHEN excluded.docs <> '[]' THEN excluded.docs ELSE concepts.docs END,
+           tags = CASE WHEN excluded.tags <> '[]' THEN excluded.tags ELSE concepts.tags END,
            updated_at = excluded.updated_at`,
       )
-      .run(input.projectId, input.conceptId, input.title, level, input.confidence, input.note, now, now);
+      .run(
+        input.projectId,
+        input.conceptId,
+        input.title,
+        level,
+        input.confidence,
+        input.note,
+        input.summary,
+        input.why,
+        input.example,
+        JSON.stringify(input.docs),
+        JSON.stringify(input.tags),
+        now,
+        now,
+      );
 
     const kind = existing === undefined ? "introduced" : level > existing.mastery_level ? "leveled-up" : level < existing.mastery_level ? "leveled-down" : "referenced";
 
@@ -350,6 +398,15 @@ export class ProjectStore {
     this.database
       .prepare("INSERT INTO agent_messages (id, project_id, role, body, activity, created_at) VALUES (?, ?, ?, ?, ?, ?)")
       .run(message.id, projectId, message.role, message.body, JSON.stringify(message.activity), message.createdAt);
+  }
+}
+
+function parseJson<T>(value: string, fallback: T): T {
+  try {
+    const parsed = JSON.parse(value) as T;
+    return parsed ?? fallback;
+  } catch {
+    return fallback;
   }
 }
 

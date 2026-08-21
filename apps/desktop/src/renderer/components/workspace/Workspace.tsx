@@ -6,7 +6,7 @@ import type { ConceptSummary, ConstructApi, ProjectSummary } from "../../../shar
 import { cn } from "@/lib/utils";
 import { LanguageClient } from "@/lib/lsp/client";
 import { WorkspaceBar } from "./WorkspaceBar";
-import { ConceptSheet } from "./ConceptSheet";
+import { ConceptSidecar } from "./ConceptSidecar";
 import { Editor } from "./Editor";
 import { TerminalPanel } from "./TerminalPanel";
 import { AgentPanel } from "./AgentPanel";
@@ -170,7 +170,7 @@ export function Workspace({ api, project, openPath, onError, onOpenSettings }: P
         terminalOpen={terminalOpen}
       />
 
-      <ConceptSheet concept={openConcept} onClose={() => setOpenConcept(null)} />
+
 
       <PanelGroup direction="horizontal" className="min-h-0 min-w-0 flex-1 gap-1 p-1 pt-0">
         {/* The editor column is layout only. Its children are the objects — the
@@ -290,7 +290,23 @@ export function Workspace({ api, project, openPath, onError, onOpenSettings }: P
                 should feel like it floats over the work; the editor and terminal
                 hold code, which needs a ground it can be read against. */}
             <Panel className="app-blob flex min-w-0 flex-col" defaultSize={38} minSize={22}>
-              <AgentPanel api={api} onError={onError} onOpenSettings={onOpenSettings} projectId={project.id} />
+              {/* One panel, two modes. A concept is read while looking at the
+                  code it describes, so it takes the space the conversation was
+                  in rather than covering the editor as a dialog would. */}
+              {openConcept ? (
+                <ConceptSidecar api={api} concept={openConcept} onBack={() => setOpenConcept(null)} />
+              ) : (
+                <AgentPanel
+                  api={api}
+                  onError={onError}
+                  onOpenConcept={(conceptId) => {
+                    const found = concepts.find((entry) => entry.conceptId === conceptId);
+                    if (found) setOpenConcept(found);
+                  }}
+                  onOpenSettings={onOpenSettings}
+                  projectId={project.id}
+                />
+              )}
             </Panel>
           </>
         )}
