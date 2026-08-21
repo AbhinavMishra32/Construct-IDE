@@ -148,8 +148,11 @@ export function Workspace({ api, project, openPath, onError, onOpenSettings }: P
           a strip along the bottom. A whole row of chrome for two switches and a
           path the tab already showed was the worst trade in the window. */}
       <Toolbar
-        title={current ? (current.path.split("/").pop() ?? project.name) : project.name}
-        subtitle={current?.dirty ? "Saving…" : current?.path}
+        /* The project names the window; the file is named by its own tab. A
+           subtitle only earns its place when it says something the title does
+           not — a nested path, or that the file is saving. */
+        title={project.name}
+        subtitle={current?.dirty ? "Saving…" : current?.path.includes("/") ? current.path : undefined}
         actions={
           <>
             <ToolbarToggle icon={SquareTerminal} label="Terminal" on={terminalOpen} onClick={() => setTerminalOpen((open) => !open)} />
@@ -164,7 +167,7 @@ export function Workspace({ api, project, openPath, onError, onOpenSettings }: P
             why it could not read as a separate one however it was styled. */}
         <Panel className="flex min-w-0 flex-col" defaultSize={agentOpen ? 62 : 100} minSize={30}>
           <PanelGroup direction="vertical" className="min-h-0 flex-1 gap-1">
-            <Panel className="app-pane app-blob flex min-w-0 flex-col" defaultSize={70} minSize={20}>
+            <Panel className="app-blob flex min-w-0 flex-col" defaultSize={70} minSize={20}>
               {files.length > 0 && (
                 <div className="hairline-b app-scroll flex h-8 shrink-0 items-stretch overflow-x-auto" role="tablist">
                   {files.map((file) => (
@@ -239,7 +242,7 @@ export function Workspace({ api, project, openPath, onError, onOpenSettings }: P
                     rather than drawn: a permanent rule between two objects that
                     are already separated is a line with nothing to do. */}
                 <PanelResizeHandle className="h-0.5 shrink-0 rounded-full transition-colors data-[resize-handle-state=drag]:bg-ring/60 data-[resize-handle-state=hover]:bg-ring/30" />
-                <Panel className="app-pane app-blob flex min-w-0 flex-col" defaultSize={30} minSize={10}>
+                <Panel className="app-blob flex min-w-0 flex-col" defaultSize={30} minSize={10}>
                   <div className="hairline-b flex h-8 shrink-0 items-center gap-1.5 px-3">
                     <SquareTerminal className="size-3.5 shrink-0 text-muted-foreground" />
                     <span className="text-ui text-muted-foreground">Terminal</span>
@@ -275,7 +278,7 @@ export function Workspace({ api, project, openPath, onError, onOpenSettings }: P
             {/* The one surface kept on glass. A conversation is transient and
                 should feel like it floats over the work; the editor and terminal
                 hold code, which needs a ground it can be read against. */}
-            <Panel className="app-pane app-panel-glass app-blob flex min-w-0 flex-col" defaultSize={38} minSize={22}>
+            <Panel className="app-blob flex min-w-0 flex-col" defaultSize={38} minSize={22}>
               <AgentPanel api={api} onError={onError} onOpenSettings={onOpenSettings} projectId={project.id} />
             </Panel>
           </>

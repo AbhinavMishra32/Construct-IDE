@@ -23,13 +23,16 @@ type Palette = {
   punctuation: string;
 };
 
+/* The background matches --popover, the token the editor's panel is filled
+   with, so Monaco's canvas and the panel around it are one surface. They were
+   two different neutrals before, which put a seam inside every panel. */
 const LIGHT: Palette = {
-  background: "#fafafa",
+  background: "#fcfcfc",
   foreground: "#33363b",
-  lineHighlight: "#f2f2f2",
+  lineHighlight: "#f5f5f5",
   lineNumber: "#a3a3a3",
   lineNumberActive: "#0a0a0a",
-  border: "#e8e8e8",
+  border: "#e4e4e4",
   popover: "#ffffff",
   selection: "#dcdcdc",
   comment: "#727780",
@@ -42,12 +45,12 @@ const LIGHT: Palette = {
 };
 
 const DARK: Palette = {
-  background: "#141414",
+  background: "#2b2b2b",
   foreground: "#c9d1d9",
-  lineHighlight: "#1e1e1e",
+  lineHighlight: "#353535",
   lineNumber: "#6b6b6b",
   lineNumberActive: "#fafafa",
-  border: "#2a2a2a",
+  border: "#424242",
   popover: "#242424",
   selection: "#333333",
   comment: "#8b949e",

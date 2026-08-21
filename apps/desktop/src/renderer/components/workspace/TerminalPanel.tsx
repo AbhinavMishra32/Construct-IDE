@@ -40,13 +40,21 @@ export function TerminalPanel({ api, projectId, terminalId, onExit }: Props) {
   useEffect(() => {
     if (!host.current || !api) return;
 
+    const dark = document.documentElement.classList.contains("dark");
     const terminal = new Terminal({
       fontSize: 12,
       fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
       cursorBlink: true,
-      /* Transparent so the editor's surface shows through rather than xterm
-         painting an opaque black rectangle into a translucent window. */
-      theme: { background: "#00000000" },
+      /* Transparent background so the panel's own fill shows through, and a
+         foreground taken from the theme rather than xterm's default. Left to
+         itself xterm paints light grey text whatever the appearance, which on a
+         light panel is text you cannot read. */
+      theme: {
+        background: "#00000000",
+        foreground: dark ? "#c9d1d9" : "#33363b",
+        cursor: dark ? "#c9d1d9" : "#33363b",
+        selectionBackground: dark ? "#3a3a3a" : "#dcdcdc",
+      },
       allowTransparency: true,
       scrollback: 5000,
     });
