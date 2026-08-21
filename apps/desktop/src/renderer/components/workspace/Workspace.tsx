@@ -7,7 +7,6 @@ import { cn } from "@/lib/utils";
 import { LanguageClient } from "@/lib/lsp/client";
 import { Toolbar } from "../shell/Toolbar";
 import { Editor } from "./Editor";
-import { FileTree } from "./FileTree";
 import { TerminalPanel } from "./TerminalPanel";
 import { AgentPanel } from "./AgentPanel";
 
@@ -16,7 +15,9 @@ type OpenFile = { path: string; content: string; dirty: boolean };
 type Props = {
   api: ConstructApi | undefined;
   project: ProjectSummary;
-  onBack(): void;
+  /** The file the tree asked to open, lifted to the shell because the tree now
+   *  lives in the sidebar rather than inside this component. */
+  openPath: string | null;
   onError(message: string): void;
 };
 
@@ -25,7 +26,7 @@ type Props = {
  *  the window a second after stopping. */
 const SAVE_DEBOUNCE_MS = 600;
 
-export function Workspace({ api, project, onBack, onError }: Props) {
+export function Workspace({ api, project, openPath, onError }: Props) {
   const [files, setFiles] = useState<OpenFile[]>([]);
   const [active, setActive] = useState<string | null>(null);
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
@@ -129,6 +130,13 @@ export function Workspace({ api, project, onBack, onError }: Props) {
     };
   }, [api, terminalId]);
 
+  /* The sidebar owns the tree, so opening arrives as a prop rather than a
+     callback. Keyed on the path so asking for the same file twice is a no-op
+     rather than a re-read that would discard unsaved edits. */
+  useEffect(() => {
+    if (openPath) void openFile(openPath);
+  }, [openPath, openFile]);
+
   const current = files.find((file) => file.path === active) ?? null;
 
   return (
@@ -136,14 +144,9 @@ export function Workspace({ api, project, onBack, onError }: Props) {
       {/* The shell's own toolbar rather than a bespoke header: it carries the
           title-bar height, the drag region, and the inset the OS window buttons
           need, none of which a hand-rolled row would have had. */}
-      <Toolbar title={project.name} onBack={onBack} />
+      <Toolbar title={current ? (current.path.split("/").pop() ?? project.name) : project.name} subtitle={current?.path} />
 
       <div className="flex min-h-0 flex-1">
-        <aside className="app-pane app-panel-glass hairline-r flex w-[13.5rem] shrink-0 flex-col">
-          <h2 className="px-3 pb-1 pt-2 text-ui-sm font-medium text-foreground/50">Files</h2>
-          <FileTree api={api} projectId={project.id} activePath={active} onOpenFile={(path) => void openFile(path)} onError={onError} />
-        </aside>
-
         <PanelGroup direction="horizontal" className="min-w-0 flex-1">
         <Panel defaultSize={agentOpen ? 62 : 100} minSize={30} className="app-pane flex min-w-0 flex-col">
           {files.length > 0 && (

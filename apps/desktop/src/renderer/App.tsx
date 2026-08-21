@@ -11,6 +11,7 @@ import { AuthPage } from "./components/pages/AuthPage";
 import { ProjectsPage } from "./components/pages/ProjectsPage";
 import { SettingsPage } from "./components/pages/SettingsPage";
 import { Workspace } from "./components/workspace/Workspace";
+import { FileTree } from "./components/workspace/FileTree";
 import { useSidebarWidth } from "./hooks/use-sidebar-width";
 import { Button } from "@/components/ui/button";
 
@@ -29,6 +30,10 @@ export function App() {
   const [page, setPage] = useState<Page>("projects");
   const [activeProject, setActiveProject] = useState<ProjectSummary | null>(null);
   const [creating, setCreating] = useState(false);
+  /* Which file the sidebar's tree last asked to open. Lifted here because the
+     tree lives in the shell now, while the editor that answers it lives in the
+     workspace. */
+  const [openPath, setOpenPath] = useState<string | null>(null);
   const [sidebar, setSidebar] = useState(() => localStorage.getItem("construct.sidebar") !== "hidden");
   const { width } = useSidebarWidth();
   /* Room for the OS window buttons when they sit on the sidebar's edge. The
@@ -60,6 +65,7 @@ export function App() {
     try {
       const detail = await api.openProject({ projectId: project.id });
       setActiveProject(detail.summary);
+      setOpenPath(null);
       setPage("workspace");
       await refreshProjects();
     } catch (cause) {
@@ -136,6 +142,34 @@ export function App() {
           >
             <Sidebar
               page={page}
+              /* Inside a project the sidebar becomes the file tree: it is the
+                 one column that persists, so a second tree column beside it
+                 would be two navigators for one thing. */
+              projectView={
+                page === "workspace" && activeProject
+                  ? {
+                      name: activeProject.name,
+                      tree: (
+                        <FileTree
+                          api={api}
+                          projectId={activeProject.id}
+                          activePath={openPath}
+                          onOpenFile={setOpenPath}
+                          onError={setError}
+                        />
+                      ),
+                    }
+                  : undefined
+              }
+              onGoHome={
+                page === "workspace"
+                  ? () => {
+                      setActiveProject(null);
+                      setOpenPath(null);
+                      setPage("projects");
+                    }
+                  : undefined
+              }
               projects={data.projects}
               activeProjectId={activeProject?.id ?? null}
               actions={actions}
@@ -200,15 +234,7 @@ export function App() {
           )}
 
           {page === "workspace" && activeProject && (
-            <Workspace
-              api={api}
-              project={activeProject}
-              onBack={() => {
-                setActiveProject(null);
-                setPage("projects");
-              }}
-              onError={setError}
-            />
+            <Workspace api={api} project={activeProject} openPath={openPath} onError={setError} />
           )}
         </div>
       </main>
