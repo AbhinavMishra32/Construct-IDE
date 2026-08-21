@@ -158,12 +158,12 @@ export function Workspace({ api, project, openPath, onError, onOpenSettings }: P
         }
       />
 
-      <PanelGroup direction="horizontal" className="min-h-0 min-w-0 flex-1 gap-2 p-2 pt-0">
+      <PanelGroup direction="horizontal" className="min-h-0 min-w-0 flex-1 gap-1 p-1 pt-0">
         {/* The editor column is layout only. Its children are the objects — the
             terminal used to be nested inside the editor's own panel, which is
             why it could not read as a separate one however it was styled. */}
         <Panel className="flex min-w-0 flex-col" defaultSize={agentOpen ? 62 : 100} minSize={30}>
-          <PanelGroup direction="vertical" className="min-h-0 flex-1 gap-2">
+          <PanelGroup direction="vertical" className="min-h-0 flex-1 gap-1">
             <Panel className="app-pane app-blob flex min-w-0 flex-col" defaultSize={70} minSize={20}>
               {files.length > 0 && (
                 <div className="hairline-b app-scroll flex h-8 shrink-0 items-stretch overflow-x-auto" role="tablist">
@@ -238,7 +238,7 @@ export function Workspace({ api, project, openPath, onError, onOpenSettings }: P
                 {/* The handle lives in the gap between panels, so it is felt
                     rather than drawn: a permanent rule between two objects that
                     are already separated is a line with nothing to do. */}
-                <PanelResizeHandle className="h-1 shrink-0 rounded-full transition-colors data-[resize-handle-state=drag]:bg-ring/60 data-[resize-handle-state=hover]:bg-ring/30" />
+                <PanelResizeHandle className="h-0.5 shrink-0 rounded-full transition-colors data-[resize-handle-state=drag]:bg-ring/60 data-[resize-handle-state=hover]:bg-ring/30" />
                 <Panel className="app-pane app-blob flex min-w-0 flex-col" defaultSize={30} minSize={10}>
                   <div className="hairline-b flex h-8 shrink-0 items-center gap-1.5 px-3">
                     <SquareTerminal className="size-3.5 shrink-0 text-muted-foreground" />
@@ -271,7 +271,7 @@ export function Workspace({ api, project, openPath, onError, onOpenSettings }: P
 
         {agentOpen && (
           <>
-            <PanelResizeHandle className="w-1 shrink-0 rounded-full transition-colors data-[resize-handle-state=drag]:bg-ring/60 data-[resize-handle-state=hover]:bg-ring/30" />
+            <PanelResizeHandle className="w-0.5 shrink-0 rounded-full transition-colors data-[resize-handle-state=drag]:bg-ring/60 data-[resize-handle-state=hover]:bg-ring/30" />
             {/* The one surface kept on glass. A conversation is transient and
                 should feel like it floats over the work; the editor and terminal
                 hold code, which needs a ground it can be read against. */}
