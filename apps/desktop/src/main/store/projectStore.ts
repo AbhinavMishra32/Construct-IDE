@@ -278,11 +278,19 @@ export class ProjectStore {
    *  those files are the learner's work, and Construct did not write most of
    *  them. */
   deleteProject(projectId: string): void {
-    /* The conversation goes with it. ON DELETE CASCADE would do this too, but
-       only with foreign keys enforced on every connection, and a thread
-       orphaned from its project is unreachable data still counted against the
-       file. */
+    /* The conversation and the concept history go with it. ON DELETE CASCADE
+       would do this too, but only with foreign keys enforced on every
+       connection, and a thread orphaned from its project is unreachable data
+       still counted against the file.
+
+       The concept tables were missing here, and not harmlessly: their foreign
+       key made deleting any project that had taught the learner anything fail
+       outright — which is every project that has been used. Caught by the atlas
+       test, which is the first thing that ever deleted a project with concepts
+       in it. */
     this.database.prepare("DELETE FROM agent_messages WHERE project_id = ?").run(projectId);
+    this.database.prepare("DELETE FROM concept_events WHERE project_id = ?").run(projectId);
+    this.database.prepare("DELETE FROM concepts WHERE project_id = ?").run(projectId);
     this.database.prepare("DELETE FROM projects WHERE id = ?").run(projectId);
   }
 
@@ -313,19 +321,27 @@ export class ProjectStore {
       )
       .all(projectId) as Array<Record<string, string | number>>;
 
-    return rows.map((row) => ({
-      conceptId: String(row.concept_id),
-      title: String(row.title),
-      masteryLevel: Math.min(5, Math.max(0, Number(row.mastery_level))) as ConceptRecord["masteryLevel"],
-      confidence: String(row.confidence),
-      note: String(row.note ?? ""),
-      summary: String(row.summary ?? ""),
-      content: String(row.content ?? ""),
-      docs: parseJson<Array<{ title: string; url: string }>>(String(row.docs ?? "[]"), []),
-      tags: parseJson<string[]>(String(row.tags ?? "[]"), []),
-      firstSeenAt: String(row.first_seen_at),
-      updatedAt: String(row.updated_at),
-    }));
+    return rows.map(conceptFromRow);
+  }
+
+  /**
+   * Every concept in every project, newest first, each carrying its project.
+   *
+   * Joined rather than looped per project: the atlas asks for all of them at
+   * once, and a query per project is a query per project the day the learner has
+   * forty of them.
+   */
+  listAllConcepts(): Array<ConceptRecord & { projectId: string; projectName: string }> {
+    const rows = this.database
+      .prepare(
+        `SELECT concepts.*, projects.name AS project_name
+           FROM concepts
+           JOIN projects ON projects.id = concepts.project_id
+          ORDER BY concepts.updated_at DESC, concepts.rowid DESC`,
+      )
+      .all() as Array<Record<string, string | number>>;
+
+    return rows.map((row) => ({ ...conceptFromRow(row), projectId: String(row.project_id), projectName: String(row.project_name) }));
   }
 
   /**
@@ -443,5 +459,23 @@ function toSummary(row: ProjectRow): ProjectSummary {
     pinnedAt: row.pinned_at,
     archivedAt: row.archived_at,
     present: existsSync(row.directory),
+  };
+}
+
+/** One concept row, as a record. Shared by the per-project read and the atlas so
+ *  a column added to the table is read in one place. */
+function conceptFromRow(row: Record<string, string | number>): ConceptRecord {
+  return {
+    conceptId: String(row.concept_id),
+    title: String(row.title),
+    masteryLevel: Math.min(5, Math.max(0, Number(row.mastery_level))) as ConceptRecord["masteryLevel"],
+    confidence: String(row.confidence),
+    note: String(row.note ?? ""),
+    summary: String(row.summary ?? ""),
+    content: String(row.content ?? ""),
+    docs: parseJson<Array<{ title: string; url: string }>>(String(row.docs ?? "[]"), []),
+    tags: parseJson<string[]>(String(row.tags ?? "[]"), []),
+    firstSeenAt: String(row.first_seen_at),
+    updatedAt: String(row.updated_at),
   };
 }

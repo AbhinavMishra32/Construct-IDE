@@ -1,5 +1,5 @@
 import { Fragment, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
-import { Archive, ArchiveRestore, Check, ChevronRight, EllipsisVertical, FolderOpen, PanelLeftClose, Pencil, Pin, PinOff, Plus, Settings, Trash2, TriangleAlert } from "lucide-react";
+import { Archive, ArchiveRestore, Check, ChevronRight, EllipsisVertical, FolderOpen, Orbit, PanelLeftClose, Pencil, Pin, PinOff, Plus, Settings, Trash2, TriangleAlert } from "lucide-react";
 import type { ProjectSummary } from "../../../shared/api";
 import { cn } from "@/lib/utils";
 import { initials, relativeTime } from "@/lib/format";
@@ -12,7 +12,7 @@ import { ConstructWordmark } from "../common/ConstructWordmark";
 /** "workspace" is one open project. Like a document window it draws its own
  *  toolbar and is not a destination in the nav — the sidebar becomes its file
  *  tree instead. */
-export type Page = "projects" | "settings" | "workspace";
+export type Page = "projects" | "concepts" | "settings" | "workspace";
 
 /** What the sidebar can do to a project. Every one of these is a write the main
  *  process owns, so the row reports intent and never edits its own copy. */
@@ -25,6 +25,10 @@ export type ProjectActions = {
 
 const NAV: Array<{ id: Page; label: string; icon: React.ComponentType<{ className?: string }> }> = [
   { id: "projects", label: "Projects", icon: FolderOpen },
+  /* The atlas is a destination in its own right, and deliberately as high in the
+     nav as the projects are: what the learner understands outlives any one of
+     them, which is the whole claim Construct makes. */
+  { id: "concepts", label: "Atlas", icon: Orbit },
 ];
 
 /* 30px tall on a 13px label, cornered at --radius-lg, inset 8px from the sidebar's

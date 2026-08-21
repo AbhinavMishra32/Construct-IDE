@@ -136,3 +136,41 @@ describe("ordering ties", () => {
     expect(store.listProjects().map((row) => row.id)).toEqual([second.id, first.id]);
   });
 });
+
+describe("the atlas read", () => {
+  const concept = (projectId: string, conceptId: string, level: number) => ({
+    projectId,
+    conceptId,
+    title: conceptId,
+    masteryLevel: level,
+    confidence: "medium",
+    note: "",
+    reason: "taught",
+    summary: "",
+    content: "",
+    docs: [],
+    tags: [],
+  });
+
+  it("spans every project, and says which one each concept came from", () => {
+    /* Understanding is the learner's, not the repository's — so the page that
+       shows it whole cannot be scoped to one project, and a node that cannot
+       name where it was learned is a node you cannot follow back. */
+    const first = store.createProject(project({ name: "First", directory: path.join(directory, "a") }));
+    const second = store.createProject(project({ name: "Second", directory: path.join(directory, "b") }));
+    store.recordConcept(concept(first.id, "interfaces", 3));
+    store.recordConcept(concept(second.id, "assertions", 2));
+
+    const all = store.listAllConcepts();
+    expect(all.map((row) => row.conceptId).sort()).toEqual(["assertions", "interfaces"]);
+    expect(all.find((row) => row.conceptId === "interfaces")?.projectName).toBe("First");
+    expect(all.find((row) => row.conceptId === "assertions")?.projectId).toBe(second.id);
+  });
+
+  it("drops a deleted project's concepts rather than orphaning them", () => {
+    const created = store.createProject(project());
+    store.recordConcept(concept(created.id, "interfaces", 3));
+    store.deleteProject(created.id);
+    expect(store.listAllConcepts()).toEqual([]);
+  });
+});

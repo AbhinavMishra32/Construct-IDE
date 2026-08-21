@@ -1,6 +1,7 @@
 import { ArrowRight, GraduationCap } from "lucide-react";
 import { rubricForLevel } from "@construct/domain";
 import { cn } from "@/lib/utils";
+import { masteryColor } from "@/lib/mastery";
 
 /**
  * A mastery reading, as a card in the transcript.
@@ -36,14 +37,20 @@ export function ConceptCard({
         "group/concept flex w-full min-w-0 items-start gap-2.5 rounded-[var(--radius-lg)] border px-3 py-2 text-left transition-colors",
         /* Crossing into task-ready is the one change worth colouring: it is the
            moment the agent is allowed to set work on this idea. */
-        crossed && rubric.taskReady
-          ? "border-[var(--success)]/35 bg-[var(--success)]/8 hover:bg-[var(--success)]/12"
-          : "border-border bg-card/40 hover:bg-card/70",
+        crossed && rubric.taskReady ? "hover:brightness-105" : "border-border bg-card/40 hover:bg-card/70",
       )}
+      style={
+        crossed && rubric.taskReady
+          ? {
+              borderColor: `color-mix(in oklab, ${masteryColor(level)} 40%, transparent)`,
+              background: `color-mix(in oklab, ${masteryColor(level)} 10%, transparent)`,
+            }
+          : undefined
+      }
       onClick={onOpen}
       type="button"
     >
-      <GraduationCap className={cn("mt-0.5 size-4 shrink-0", rubric.taskReady ? "text-[var(--success)]" : "text-muted-foreground")} />
+      <GraduationCap className="mt-0.5 size-4 shrink-0" style={{ color: rubric.taskReady ? masteryColor(level) : "var(--muted-foreground)" }} />
 
       <span className="min-w-0 flex-1">
         <span className="flex min-w-0 flex-wrap items-center gap-1.5">

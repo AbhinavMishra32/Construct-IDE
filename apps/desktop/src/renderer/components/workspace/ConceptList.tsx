@@ -1,6 +1,7 @@
 import { rubricForLevel } from "@construct/domain";
 import type { ConceptSummary } from "../../../shared/api";
 import { cn } from "@/lib/utils";
+import { masteryColor } from "@/lib/mastery";
 
 /**
  * The project's concepts, as a section of the sidebar.
@@ -53,11 +54,12 @@ export function ConceptList({
               <span aria-label={`Level ${concept.masteryLevel} of 5`} className="mt-[5px] flex shrink-0 flex-col-reverse gap-[2px]">
                 {[1, 2, 3, 4, 5].map((step) => (
                   <span
-                    className={cn(
-                      "h-[3px] w-2.5 rounded-full",
-                      step <= concept.masteryLevel ? (rubric.taskReady ? "bg-[var(--success)]" : "bg-foreground/50") : "bg-foreground/12",
-                    )}
+                    className="h-[3px] w-2.5 rounded-full"
                     key={step}
+                    /* The level's own colour on every filled mark, from the one
+                       ramp the atlas also draws — so a concept is the same colour
+                       wherever in the app you meet it. */
+                    style={{ background: step <= concept.masteryLevel ? masteryColor(concept.masteryLevel) : "var(--mastery-0)" }}
                   />
                 ))}
               </span>

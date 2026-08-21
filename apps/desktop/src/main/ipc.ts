@@ -179,6 +179,7 @@ export function installIpc({ store, auth, projects, providers, workspace, termin
   });
 
   handle(ipc.conceptsList, (input) => store.listConcepts(projectIdInput.parse(input).projectId));
+  handle(ipc.conceptsAtlas, () => store.listAllConcepts());
 
   /* ---- Account ---------------------------------------------------------- */
 
