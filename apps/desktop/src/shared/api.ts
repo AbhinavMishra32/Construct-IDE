@@ -27,6 +27,8 @@ export const ipc = {
   projectsOpen: "projects:open",
   projectsImport: "projects:import",
   projectsRename: "projects:rename",
+  projectsPin: "projects:pin",
+  projectsArchive: "projects:archive",
   projectsDelete: "projects:delete",
 
   /* Files inside the open project. */
@@ -135,6 +137,7 @@ export const projectImportInput = z.object({
 });
 export const projectIdInput = z.object({ projectId: z.string().uuid() });
 export const projectRenameInput = projectIdInput.extend({ name: z.string().trim().min(1).max(80) });
+export const projectFlagInput = projectIdInput.extend({ value: z.boolean() });
 
 export type ProjectSummary = {
   id: string;
@@ -146,6 +149,11 @@ export type ProjectSummary = {
   language: Language;
   createdAt: string;
   openedAt: string | null;
+  /** Set while the learner keeps this project at the top of the list. */
+  pinnedAt: string | null;
+  /** Set once they have filed it away. Archiving is not deleting: Construct
+   *  still knows the project, it just stops offering it. */
+  archivedAt: string | null;
   /** False once the directory has been moved or deleted underneath us. The row
    *  stays listed so it can be repaired or removed deliberately. */
   present: boolean;
@@ -327,6 +335,8 @@ export interface ConstructApi {
   importProject(input: z.infer<typeof projectImportInput>): Promise<ProjectSummary>;
   openProject(input: z.infer<typeof projectIdInput>): Promise<ProjectDetail>;
   renameProject(input: z.infer<typeof projectRenameInput>): Promise<void>;
+  setProjectPinned(input: z.infer<typeof projectFlagInput>): Promise<void>;
+  setProjectArchived(input: z.infer<typeof projectFlagInput>): Promise<void>;
   /** Removes Construct's record of the project. Never deletes the directory —
    *  the files are the learner's, and Construct did not create most of them. */
   deleteProject(input: z.infer<typeof projectIdInput>): Promise<void>;

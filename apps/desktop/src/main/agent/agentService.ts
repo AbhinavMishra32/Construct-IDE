@@ -156,9 +156,10 @@ export class AgentService {
                 {
                   header: request.header ?? "Question",
                   question: request.question,
-                  /* The schema wants at least two options. A question the agent
-                     asked without any is an open one, so it is presented as
-                     free text rather than invented choices. */
+                  /* An open question keeps no options: Spar's card falls through
+                     to its free-text branch, which is the right shape for a
+                     question the agent did not enumerate answers for. Inventing
+                     choices to satisfy a schema would put words in its mouth. */
                   options: (request.choices ?? []).map((label) => ({ label })).slice(0, 6),
                   multiple: false,
                   custom: request.allowOther,

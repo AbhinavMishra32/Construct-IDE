@@ -73,22 +73,23 @@ export function App() {
     }
   }, [refreshProjects]);
 
+  /* Every action reports intent and re-reads the list rather than editing its
+     own copy: the main process owns the write, so the sidebar showing something
+     it decided for itself is how the two drift apart. */
+  const settle = (work: Promise<void> | undefined) =>
+    void work?.then(refreshProjects).catch((cause: unknown) => setError(message(cause)));
+
   const actions: ProjectActions = {
-    open: (project) => void openProject(project),
-    rename: (project, name) => {
-      void api?.renameProject({ projectId: project.id, name }).then(refreshProjects).catch((cause: unknown) => setError(message(cause)));
-    },
+    rename: (project, name) => settle(api?.renameProject({ projectId: project.id, name })),
+    setPinned: (project, pinned) => settle(api?.setProjectPinned({ projectId: project.id, value: pinned })),
+    setArchived: (project, archived) => settle(api?.setProjectArchived({ projectId: project.id, value: archived })),
     remove: (project) => {
-      void api
-        ?.deleteProject({ projectId: project.id })
-        .then(async () => {
-          if (activeProject?.id === project.id) {
-            setActiveProject(null);
-            setPage("projects");
-          }
-          await refreshProjects();
-        })
-        .catch((cause: unknown) => setError(message(cause)));
+      if (activeProject?.id === project.id) {
+        setActiveProject(null);
+        setOpenPath(null);
+        setPage("projects");
+      }
+      settle(api?.deleteProject({ projectId: project.id }));
     },
   };
 
@@ -142,9 +143,13 @@ export function App() {
           >
             <Sidebar
               page={page}
+              email={data.email ?? "Signed in"}
+              projects={data.projects}
+              activeProjectId={activeProject?.id ?? undefined}
+              projectActions={actions}
               /* Inside a project the sidebar becomes the file tree: it is the
-                 one column that persists, so a second tree column beside it
-                 would be two navigators for one thing. */
+                 one column that persists, so a second tree beside it would be
+                 two navigators for one thing. */
               projectView={
                 page === "workspace" && activeProject
                   ? {
@@ -170,13 +175,11 @@ export function App() {
                     }
                   : undefined
               }
-              projects={data.projects}
-              activeProjectId={activeProject?.id ?? null}
-              actions={actions}
-              onNavigate={(next) => {
+              onPage={(next) => {
                 setPage(next);
                 if (next !== "workspace") setActiveProject(null);
               }}
+              onOpenProject={(project) => void openProject(project)}
               onNewProject={() => {
                 setPage("projects");
                 setCreating(true);
@@ -185,8 +188,6 @@ export function App() {
                 setSidebar(false);
                 localStorage.setItem("construct.sidebar", "hidden");
               }}
-              width={width}
-              controlsInset={controlsInset}
             />
           </motion.div>
         )}

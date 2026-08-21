@@ -36,6 +36,13 @@ const MIGRATIONS: readonly string[] = [
      created_at TEXT NOT NULL
    );
    CREATE INDEX agent_messages_project ON agent_messages (project_id, created_at);`,
+
+  /* Pinning and archiving. Both are the learner filing their own work: a
+     project they keep returning to stays at the top, and one they are done with
+     leaves the list without being deleted — deleting is for projects Construct
+     should forget, which is a different intent entirely. */
+  `ALTER TABLE projects ADD COLUMN pinned_at TEXT;
+   ALTER TABLE projects ADD COLUMN archived_at TEXT;`,
 ];
 
 type ProjectRow = {
@@ -46,6 +53,8 @@ type ProjectRow = {
   language: string;
   created_at: string;
   opened_at: string | null;
+  pinned_at: string | null;
+  archived_at: string | null;
 };
 
 export type CreateProjectRecord = {
@@ -130,8 +139,12 @@ export class ProjectStore {
        either order — a project list that reshuffles itself between launches. */
     const rows = this.database
       .prepare(
+        /* Pinned first, then the timestamp ordering. Sorting pinned rows here
+           rather than in the sidebar means every surface that lists projects
+           agrees on the order without each one remembering to. */
         `SELECT * FROM projects
-         ORDER BY COALESCE(opened_at, created_at) DESC,
+         ORDER BY (pinned_at IS NOT NULL) DESC,
+                  COALESCE(opened_at, created_at) DESC,
                   (opened_at IS NOT NULL) DESC,
                   rowid DESC`,
       )
@@ -164,6 +177,8 @@ export class ProjectStore {
       language: record.language,
       created_at: new Date().toISOString(),
       opened_at: null,
+      pinned_at: null,
+      archived_at: null,
     };
     this.database
       .prepare("INSERT INTO projects (id, name, goal, directory, language, created_at, opened_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
@@ -173,6 +188,14 @@ export class ProjectStore {
 
   renameProject(projectId: string, name: string): void {
     this.database.prepare("UPDATE projects SET name = ? WHERE id = ?").run(name, projectId);
+  }
+
+  setPinned(projectId: string, pinned: boolean): void {
+    this.database.prepare("UPDATE projects SET pinned_at = ? WHERE id = ?").run(pinned ? new Date().toISOString() : null, projectId);
+  }
+
+  setArchived(projectId: string, archived: boolean): void {
+    this.database.prepare("UPDATE projects SET archived_at = ? WHERE id = ?").run(archived ? new Date().toISOString() : null, projectId);
   }
 
   /** Stamps the project as opened, which is also what orders the project list.
@@ -236,6 +259,8 @@ function toSummary(row: ProjectRow): ProjectSummary {
     language: row.language as Language,
     createdAt: row.created_at,
     openedAt: row.opened_at,
+    pinnedAt: row.pinned_at,
+    archivedAt: row.archived_at,
     present: existsSync(row.directory),
   };
 }

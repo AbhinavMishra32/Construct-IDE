@@ -109,6 +109,14 @@ export class ProjectService {
     this.store.renameProject(projectId, name);
   }
 
+  setPinned(projectId: string, pinned: boolean): void {
+    this.store.setPinned(projectId, pinned);
+  }
+
+  setArchived(projectId: string, archived: boolean): void {
+    this.store.setArchived(projectId, archived);
+  }
+
   /** Forgets the project. Never touches the directory — see ProjectStore. */
   delete(projectId: string): void {
     this.store.deleteProject(projectId);
