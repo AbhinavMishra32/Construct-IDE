@@ -32,6 +32,23 @@ export type AtlasNode = {
   system: number;
 };
 
+/**
+ * How the atlas is arranged.
+ *
+ * `web` is the main view and the one v0.7 had: clusters of connected stars, each
+ * cluster a topic, every concept wired to the root concept it hangs off. It is
+ * how you look at *what connects to what*.
+ *
+ * `solar` is the same facts arranged as systems on a disc — orbits instead of
+ * wires. It is how you look at *how far along* everything is, because an orbit
+ * is a distance you can compare across the whole picture at a glance and a wire
+ * is not.
+ *
+ * Both read the same layout code, and that is the point: two views of one truth,
+ * not two drawings that could disagree.
+ */
+export type AtlasMode = "web" | "solar";
+
 export type AtlasSystem = {
   topic: string;
   /** The star: the root concept every node in here hangs off. */
@@ -91,8 +108,16 @@ export function topicOf(concept: AtlasConcept): string {
   return tag[0]!.toUpperCase() + tag.slice(1);
 }
 
-/** Lays the galaxy out: systems on a thin disc, planets on orbits inside them. */
-export function galaxy(concepts: AtlasConcept[]): AtlasSystem[] {
+/**
+ * Lays the atlas out.
+ *
+ * `solar` puts the systems on a thin disc and their planets on flat orbits — a
+ * galaxy seen from slightly above its plane. `web` puts both on spheres instead,
+ * because a cluster of wired nodes has to be a ball: on a disc every wire would
+ * cross every other one and the connections, which are the whole subject of that
+ * view, would be the least legible thing in it.
+ */
+export function galaxy(concepts: AtlasConcept[], mode: AtlasMode = "solar"): AtlasSystem[] {
   const shelves = new Map<string, AtlasConcept[]>();
   for (const concept of concepts) {
     const topic = topicOf(concept);
@@ -131,15 +156,40 @@ export function galaxy(concepts: AtlasConcept[]): AtlasSystem[] {
          on y, so the planet stays exactly its orbit's distance from its star:
          the radius is the mastery level, and a radius that drifts by even a
          percent is the one number here that must not. */
-      const tilt = (((hash(concept.conceptId) >>> 9) % 100) / 100 - 0.5) * 0.5;
-      system.nodes.push({
-        concept,
-        orbit,
-        system: systems.length,
-        x: centre.x + Math.cos(theta) * orbit,
-        y: centre.y + Math.sin(theta) * orbit * Math.sin(tilt),
-        z: centre.z + Math.sin(theta) * orbit * Math.cos(tilt),
-      });
+      /* Where on the orbit, out of the star's plane.
+         
+         Solar tilts a flat orbit by a shallow inclination, so a system reads as a
+         disc you are looking across. Web takes a full polar angle instead, which
+         puts the concepts in a ball around their root — a cluster of wires has to
+         be a ball, or every wire crosses every other one and the connections, the
+         whole subject of that view, become the least legible thing in it.
+         
+         Written as two spherical forms rather than one clever expression, because
+         both have to hold the radius *exactly*: the distance from the star is the
+         mastery level, and it is the one number in this file that must not drift
+         by even a percent. */
+      const spin = ((hash(concept.conceptId) >>> 9) % 1000) / 1000;
+      if (mode === "solar") {
+        const inclination = (spin - 0.5) * 0.5;
+        system.nodes.push({
+          concept,
+          orbit,
+          system: systems.length,
+          x: centre.x + Math.cos(theta) * orbit,
+          y: centre.y + Math.sin(theta) * orbit * Math.sin(inclination),
+          z: centre.z + Math.sin(theta) * orbit * Math.cos(inclination),
+        });
+      } else {
+        const polar = Math.acos(1 - 2 * spin);
+        system.nodes.push({
+          concept,
+          orbit,
+          system: systems.length,
+          x: centre.x + Math.sin(polar) * Math.cos(theta) * orbit,
+          y: centre.y + Math.cos(polar) * orbit,
+          z: centre.z + Math.sin(polar) * Math.sin(theta) * orbit,
+        });
+      }
     });
 
     systems.push(system);
@@ -154,6 +204,48 @@ export function planets(systems: AtlasSystem[]): AtlasNode[] {
 }
 
 export type AtlasEdge = { from: number; to: number; tag: string };
+
+/** A wire from a topic's root concept to everything filed under it. */
+export type AtlasSpoke = { hub: number; leaf: number };
+
+/**
+ * The root concept of a system.
+ *
+ * The furthest-along concept in the topic, tie-broken by id so it never moves
+ * for a reason nobody can see. A real concept and not an invented label: the web
+ * view wires everything in a topic to this one, and hanging a cluster off a
+ * placeholder would be drawing a relationship the learner cannot click on.
+ */
+export function hubOf(system: AtlasSystem): AtlasNode | undefined {
+  return [...system.nodes].sort(
+    (a, b) => b.concept.masteryLevel - a.concept.masteryLevel || a.concept.conceptId.localeCompare(b.concept.conceptId),
+  )[0];
+}
+
+/**
+ * The wires of the web view: each topic's root concept to the rest of its topic.
+ *
+ * A star per cluster rather than every pair joined. Joining the pairs would say
+ * that each concept in a topic relates to each other one, which is not something
+ * the data knows — only that they were filed together, and the root is what they
+ * were filed under.
+ */
+export function spokes(systems: AtlasSystem[], nodes: AtlasNode[]): AtlasSpoke[] {
+  const index = new Map(nodes.map((node, position) => [node.concept.conceptId, position]));
+  const wires: AtlasSpoke[] = [];
+  for (const system of systems) {
+    const hub = hubOf(system);
+    if (!hub) continue;
+    const from = index.get(hub.concept.conceptId);
+    if (from === undefined) continue;
+    for (const node of system.nodes) {
+      const to = index.get(node.concept.conceptId);
+      if (to === undefined || to === from) continue;
+      wires.push({ hub: from, leaf: to });
+    }
+  }
+  return wires;
+}
 
 /**
  * The lines between planets in different systems: a shared tag.

@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { ChevronRight, Orbit, Search, X } from "lucide-react";
+import { ChevronRight, Orbit, Search, Share2, X } from "lucide-react";
 import type { AtlasConcept, ConstructApi } from "../../../shared/api";
 import { cn } from "@/lib/utils";
 import { masteryColor, masteryTitle } from "@/lib/mastery";
 import { ConceptAtlas } from "../concepts/ConceptAtlas";
-import { topicOf } from "../concepts/atlas";
+import { topicOf, type AtlasMode } from "../concepts/atlas";
+import { Segmented } from "@/components/ui/segmented";
 import { ConceptEntry } from "../concepts/ConceptEntry";
 import { EmptyState } from "../common/EmptyState";
 
@@ -31,6 +32,10 @@ export function ConceptsPage({ api, onError }: { api: ConstructApi | undefined; 
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  /* The web leads. It is what v0.7 showed and what the page is first asked —
+     what connects to what. Orbits are the second question, so they are the
+     second view. */
+  const [mode, setMode] = useState<AtlasMode>("web");
 
   useEffect(() => {
     if (!api) return;
@@ -166,15 +171,28 @@ export function ConceptsPage({ api, onError }: { api: ConstructApi | undefined; 
 
       {/* --- the atlas ------------------------------------------------------ */}
       <div className="hairline-l flex w-[clamp(19rem,32%,28rem)] shrink-0 flex-col bg-[color-mix(in_oklab,var(--foreground)_2.5%,transparent)]">
-        <div className="hairline-b flex h-9 shrink-0 items-center gap-1.5 px-3">
-          <Orbit className="size-3.5 text-muted-foreground" />
-          <span className="text-ui-sm font-semibold uppercase tracking-wide text-muted-foreground/60">Atlas</span>
-          <span className="ml-auto text-ui-sm text-muted-foreground/60">drag to turn</span>
+        <div className="hairline-b flex h-10 shrink-0 items-center gap-1.5 px-2">
+          <span className="px-1 text-ui-sm font-semibold uppercase tracking-wide text-muted-foreground/60">Atlas</span>
+          <Segmented<AtlasMode>
+            ariaLabel="How to arrange the atlas"
+            className="ml-auto"
+            onChange={setMode}
+            options={[
+              { value: "web", label: "Web", icon: Share2 },
+              { value: "solar", label: "Orbits", icon: Orbit },
+            ]}
+            value={mode}
+          />
         </div>
 
         <div className="min-h-0 flex-1">
           {concepts && (
-            <ConceptAtlas concepts={matched} onSelect={(concept) => setSelectedId(concept?.conceptId ?? selectedId)} selectedId={selectedId} />
+            <ConceptAtlas
+              concepts={matched}
+              mode={mode}
+              onSelect={(concept) => setSelectedId(concept?.conceptId ?? selectedId)}
+              selectedId={selectedId}
+            />
           )}
         </div>
 
@@ -182,7 +200,9 @@ export function ConceptsPage({ api, onError }: { api: ConstructApi | undefined; 
             learned before the page can be read — and the sentence above it is
             the whole idea of the drawing. */}
         <div className="hairline-t shrink-0 px-3 py-2">
-          <p className="mb-1.5 text-ui-sm font-semibold uppercase tracking-wide text-muted-foreground/60">Distance is mastery</p>
+          <p className="mb-1.5 text-ui-sm font-semibold uppercase tracking-wide text-muted-foreground/60">
+            {mode === "web" ? "Wired to its root concept" : "Distance is mastery"}
+          </p>
           <ol className="space-y-[3px]">
             {[5, 4, 3, 2, 1, 0].map((level) => (
               <li className="flex items-center gap-1.5 text-ui-sm text-muted-foreground" key={level}>
