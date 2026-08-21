@@ -37,6 +37,8 @@ import type { LspService } from "./lsp/lspService.js";
 import type { AgentService } from "./agent/agentService.js";
 import type { ProjectStore } from "./store/projectStore.js";
 import type { WebSearchService } from "./webSearch.js";
+import type { MemoryService } from "./memory/memoryService.js";
+import type { PathService } from "./learning/pathService.js";
 
 type Dependencies = {
   store: ProjectStore;
@@ -47,6 +49,8 @@ type Dependencies = {
   terminals: TerminalService;
   lsp: LspService;
   agent: AgentService;
+  memory: MemoryService;
+  learningPath: PathService;
   web: WebSearchService;
   window: () => BrowserWindow | null;
 };
@@ -60,7 +64,7 @@ type Dependencies = {
  * allowed to reach the renderer as a message, because every one of these is
  * surfaced to a person who has to decide what to do next.
  */
-export function installIpc({ store, auth, projects, providers, workspace, terminals, lsp, agent, web, window }: Dependencies): void {
+export function installIpc({ store, auth, projects, providers, workspace, terminals, lsp, agent, memory, learningPath, web, window }: Dependencies): void {
   const handle = <T>(channel: string, handler: (input: unknown) => T | Promise<T>) => {
     ipcMain.handle(channel, async (_event, input: unknown) => handler(input));
   };
@@ -82,7 +86,18 @@ export function installIpc({ store, auth, projects, providers, workspace, termin
 
   handle(ipc.projectsList, () => projects.list());
 
-  handle(ipc.projectsCreate, (input) => projects.create(projectCreateInput.parse(input)));
+  handle(ipc.projectsCreate, async (input) => {
+    const project = await projects.create(projectCreateInput.parse(input));
+    /* Deliberately not awaited. Creating a project returns as soon as the folder
+       exists; Construct then reads up on the domain and opens the project with
+       its first real teaching step, reporting itself on the agent event channel
+       like any other turn. Awaiting it here would leave the learner staring at a
+       dialog while a research pass ran. */
+    void agent.begin(project.id).catch((cause: unknown) => {
+      console.error("[construct] project start failed", cause);
+    });
+    return project;
+  });
 
   handle(ipc.projectsImport, (input) => projects.import(projectImportInput.parse(input)));
 
@@ -183,6 +198,14 @@ export function installIpc({ store, auth, projects, providers, workspace, termin
 
   handle(ipc.conceptsList, (input) => store.listConcepts(projectIdInput.parse(input).projectId));
   handle(ipc.conceptsAtlas, () => store.listAllConcepts());
+
+  handle(ipc.memoryRead, (input) => {
+    const project = store.readProject(projectIdInput.parse(input).projectId);
+    if (!project) throw new Error("That project is no longer in Construct.");
+    return memory.read(project.directory);
+  });
+
+  handle(ipc.pathRead, (input) => learningPath.read(projectIdInput.parse(input).projectId));
   handle(ipc.conceptsDelete, (input) => {
     const { projectId, conceptId } = conceptDeleteInput.parse(input);
     store.deleteConcept(projectId, conceptId);

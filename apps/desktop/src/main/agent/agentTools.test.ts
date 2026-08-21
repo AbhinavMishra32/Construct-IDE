@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WorkspaceService } from "../projects/workspaceService.js";
+import { MemoryService } from "../memory/memoryService.js";
 import { executeAgentTool, type AgentToolContext } from "./agentTools.js";
 
 let root: string;
@@ -10,6 +11,8 @@ let outside: string;
 let context: AgentToolContext;
 let asked: Array<{ question: string }>;
 let recorded: Array<{ conceptId: string; masteryLevel: number; docs: Array<{ title: string; url: string }> }>;
+let planned: Array<{ reason: string; nodes: Array<{ id: string }> }>;
+let searched: string[];
 
 beforeEach(() => {
   const base = mkdtempSync(path.join(tmpdir(), "construct-agent-"));
@@ -20,9 +23,24 @@ beforeEach(() => {
   writeFileSync(path.join(outside, "keys.txt"), "do not read me");
   asked = [];
   recorded = [];
+  planned = [];
+  searched = [];
+  const workspace = new WorkspaceService();
+  const memory = new MemoryService(workspace);
   context = {
     projectDirectory: root,
-    workspace: new WorkspaceService(),
+    workspace,
+    readMemory: (files) => memory.read(root, files),
+    patchMemory: (patches) => memory.patch(root, patches),
+    planPath: async (input) => {
+      planned.push({ reason: input.reason, nodes: input.nodes.map((node) => ({ id: node.id })) });
+      return { reason: input.reason, currentNodeId: input.nodes[0]?.id ?? null, nodes: [] };
+    },
+    webSearch: async (query) => {
+      searched.push(query);
+      return { configured: true, results: [] };
+    },
+    webFetch: async () => ({ configured: false, note: "No key." }),
     recordConcept: (record) => void recorded.push(record),
     askLearner: vi.fn(async (request) => {
       asked.push({ question: request.question });
@@ -171,5 +189,82 @@ describe("asking the learner", () => {
 describe("unknown tools", () => {
   it("names the tool it does not have rather than failing vaguely", async () => {
     await expect(executeAgentTool("delete-everything", {}, context)).rejects.toThrow(/Unknown tool: delete-everything/);
+  });
+});
+
+describe("memory tools", () => {
+  it("fetches the files it was asked for", async () => {
+    const result = (await executeAgentTool("flow-memory-fetch", { purpose: "check the goal", files: ["project.md"] }, context)) as Array<{
+      file: string;
+    }>;
+    expect(result.map((entry) => entry.file)).toEqual(["project.md"]);
+  });
+
+  it("falls back to all four rather than fetching nothing", async () => {
+    /* The prompt asks for a purpose and named files; a turn that forgets should
+       still get its memory rather than an empty array it will read as "no
+       memory exists". */
+    const result = (await executeAgentTool("flow-memory-fetch", { purpose: "everything" }, context)) as Array<{ file: string }>;
+    expect(result).toHaveLength(4);
+  });
+
+  it("refuses a memory file that is not one of the four", async () => {
+    await expect(
+      executeAgentTool("flow-memory-patch", { patches: [{ file: "../../etc/passwd", mode: "append", content: "x", reason: "y" }] }, context),
+    ).rejects.toThrow(/no memory file/);
+  });
+
+  it("refuses an unknown patch mode rather than guessing at one", async () => {
+    await expect(
+      executeAgentTool("flow-memory-patch", { patches: [{ file: "learner.md", mode: "overwrite", content: "x", reason: "y" }] }, context),
+    ).rejects.toThrow(/Unknown memory patch mode/);
+  });
+
+  it("patches and reports the diff", async () => {
+    const result = (await executeAgentTool(
+      "flow-memory-patch",
+      { patches: [{ file: "learner.md", mode: "append", content: "Prefers worked examples.", reason: "evidence" }] },
+      context,
+    )) as Array<{ diff: string }>;
+    expect(result[0]!.diff).toContain("+Prefers worked examples.");
+  });
+
+  it("refuses a patch call with nothing in it", async () => {
+    await expect(executeAgentTool("flow-memory-patch", { patches: [] }, context)).rejects.toThrow(/No memory patches/);
+  });
+});
+
+describe("the path tool", () => {
+  it("passes the steps through in order", async () => {
+    await executeAgentTool(
+      "plan-learning-path",
+      {
+        reason: "First plan",
+        nodes: [
+          { id: "basics", title: "Basics", summary: "Learn the shape of the problem" },
+          { id: "build", title: "Build", summary: "Write the first version" },
+        ],
+      },
+      context,
+    );
+    expect(planned[0]).toEqual({ reason: "First plan", nodes: [{ id: "basics" }, { id: "build" }] });
+  });
+
+  it("refuses an empty path", async () => {
+    await expect(executeAgentTool("plan-learning-path", { reason: "x", nodes: [] }, context)).rejects.toThrow(/at least one step/);
+  });
+});
+
+describe("web tools", () => {
+  it("passes the query through", async () => {
+    await executeAgentTool("web-search", { query: "how rasterisation works", limit: 3 }, context);
+    expect(searched).toEqual(["how rasterisation works"]);
+  });
+
+  it("reports an unconfigured key as an answer rather than throwing", async () => {
+    /* A thrown error would end the turn; the agent has other ways to make
+       progress and should hear "no key" as a result. */
+    const result = (await executeAgentTool("web-fetch", { urls: ["https://example.com"] }, context)) as { configured: boolean };
+    expect(result.configured).toBe(false);
   });
 });

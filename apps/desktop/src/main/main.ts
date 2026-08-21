@@ -15,6 +15,8 @@ import { AgentService } from "./agent/agentService.js";
 import { ProjectStore } from "./store/projectStore.js";
 import { UpdateService } from "./updates.js";
 import { WebSearchService } from "./webSearch.js";
+import { MemoryService } from "./memory/memoryService.js";
+import { PathService } from "./learning/pathService.js";
 import { createMainWindow } from "./window.js";
 import { themePreferenceSchema } from "../shared/api.js";
 
@@ -37,8 +39,11 @@ else {
       nativeTheme.themeSource = themePreferenceSchema.catch("system").parse(store.theme());
 
       const auth = new AuthService(apiOrigin());
-      const projects = new ProjectService(store);
       const workspace = new WorkspaceService();
+      /* Flow Memory: the four Markdown files in each project's own `.construct`.
+         Created with the project, so it exists before any agent runs. */
+      const memory = new MemoryService(workspace);
+      const projects = new ProjectService(store, memory);
       const terminals = new TerminalService((event) => mainWindow?.webContents.send("terminal:event", event));
       const lsp = new LspService((event) => mainWindow?.webContents.send("lsp:event", event));
       const providers = new ProviderService(auth, store, (event) => mainWindow?.webContents.send("provider:oauth-event", event));
@@ -46,10 +51,16 @@ else {
          keys live in. Held in the main process because that is the only side
          with keychain access. */
       const web = new WebSearchService(() => auth.readSecret("exa"));
+      /* The path: what Construct has decided to teach, in order — kept beside
+         memory because planning it rewrites `path.md`. */
+      const learningPath = new PathService(store, memory);
       const agent = new AgentService(
         store,
         providers,
         workspace,
+        memory,
+        learningPath,
+        web,
         (event) => mainWindow?.webContents.send("agent:event", event),
         (event) => mainWindow?.webContents.send("agent:stream", event),
       );
@@ -79,7 +90,7 @@ else {
          the application correcting a mistake in front of the learner. */
       const stage = (await auth.account()) ? ("app" as const) : ("sign-in" as const);
 
-      installIpc({ store, auth, projects, providers, workspace, terminals, lsp, agent, web, window: () => mainWindow });
+      installIpc({ store, auth, projects, providers, workspace, terminals, lsp, agent, memory, learningPath, web, window: () => mainWindow });
       updates = new UpdateService(store, () => mainWindow, prepareToExit);
       updates.installIpc();
       installMenu(() => mainWindow);

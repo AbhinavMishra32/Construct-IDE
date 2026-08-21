@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import type { AgentMessage, Language } from "@construct/domain";
 import type { ProjectSummary, ThemePreference } from "../../shared/api.js";
+import type { PathNode } from "../learning/pathService.js";
 import { openDatabase, type Database } from "./database.js";
 
 /**
@@ -93,6 +94,31 @@ const MIGRATIONS: readonly string[] = [
   `ALTER TABLE concepts ADD COLUMN content TEXT NOT NULL DEFAULT '';
    ALTER TABLE concepts ADD COLUMN common_mistake TEXT NOT NULL DEFAULT '';
    ALTER TABLE concepts ADD COLUMN language TEXT NOT NULL DEFAULT '';`,
+
+  /* The path: the ordered steps between where the learner is and the project
+     they set out to build.
+     
+     Its own table rather than JSON on the project row, because the path is read
+     and written a step at a time — marking one done, revising the tail — and a
+     blob would mean rewriting the whole plan to move one status. `current_node`
+     lives on the project because it is a property of the project's progress
+     rather than of any step. */
+  `CREATE TABLE path_nodes (
+     project_id     TEXT NOT NULL REFERENCES projects (id),
+     node_id        TEXT NOT NULL,
+     title          TEXT NOT NULL,
+     summary        TEXT NOT NULL DEFAULT '',
+     status         TEXT NOT NULL DEFAULT 'planned',
+     sort_order     INTEGER NOT NULL DEFAULT 0,
+     kind           TEXT NOT NULL DEFAULT 'custom',
+     concepts       TEXT NOT NULL DEFAULT '[]',
+     exit_criteria  TEXT NOT NULL DEFAULT '[]',
+     created_at     TEXT NOT NULL,
+     updated_at     TEXT NOT NULL,
+     PRIMARY KEY (project_id, node_id)
+   );
+   CREATE INDEX path_nodes_project ON path_nodes (project_id, sort_order);
+   ALTER TABLE projects ADD COLUMN current_path_node TEXT;`,
 ];
 
 type ProjectRow = {
@@ -106,6 +132,10 @@ type ProjectRow = {
   pinned_at: string | null;
   archived_at: string | null;
 };
+
+/** Re-exported so the store's callers do not have to know that the path's shape
+ *  is defined beside the service that plans it. */
+export type { PathNode } from "../learning/pathService.js";
 
 export type ConceptRecord = {
   conceptId: string;
@@ -290,6 +320,7 @@ export class ProjectStore {
        in it. */
     this.database.prepare("DELETE FROM agent_messages WHERE project_id = ?").run(projectId);
     this.database.prepare("DELETE FROM concept_events WHERE project_id = ?").run(projectId);
+    this.database.prepare("DELETE FROM path_nodes WHERE project_id = ?").run(projectId);
     this.database.prepare("DELETE FROM concepts WHERE project_id = ?").run(projectId);
     this.database.prepare("DELETE FROM projects WHERE id = ?").run(projectId);
   }
@@ -308,6 +339,78 @@ export class ProjectStore {
       createdAt: row.created_at,
       activity: parseActivity(row.activity),
     }));
+  }
+
+  /* ---- The path ---------------------------------------------------------- */
+
+  listPathNodes(projectId: string): PathNode[] {
+    const rows = this.database
+      .prepare("SELECT * FROM path_nodes WHERE project_id = ? ORDER BY sort_order, rowid")
+      .all(projectId) as Array<Record<string, string | number>>;
+
+    return rows.map((row) => ({
+      id: String(row.node_id),
+      title: String(row.title),
+      summary: String(row.summary ?? ""),
+      status: String(row.status) as PathNode["status"],
+      order: Number(row.sort_order),
+      kind: String(row.kind) as PathNode["kind"],
+      concepts: parseJson<string[]>(String(row.concepts ?? "[]"), []),
+      exitCriteria: parseJson<string[]>(String(row.exit_criteria ?? "[]"), []),
+      createdAt: String(row.created_at),
+      updatedAt: String(row.updated_at),
+    }));
+  }
+
+  currentPathNode(projectId: string): string | null {
+    const row = this.database.prepare("SELECT current_path_node FROM projects WHERE id = ?").get(projectId) as
+      | { current_path_node: string | null }
+      | undefined;
+    return row?.current_path_node ?? null;
+  }
+
+  /**
+   * Replaces the whole path in one transaction.
+   *
+   * Replace rather than merge, because a revision is the agent's new opinion of
+   * the *whole* plan — steps get reordered, renamed and dropped — and a merge
+   * would leave the abandoned ones behind with no way to tell them from the
+   * live ones. What survives a replacement is decided a level up, in
+   * `PathService`, which is where the rule that finished work stays finished
+   * lives.
+   */
+  replacePath(projectId: string, nodes: PathNode[], currentNodeId: string | null): void {
+    /* Explicit BEGIN/COMMIT rather than a `transaction()` helper: `node:sqlite`'s
+       DatabaseSync has no such method — that is better-sqlite3's API — and a
+       half-written path is worse than no path, so the boundary has to be real. */
+    this.database.exec("BEGIN");
+    try {
+      this.database.prepare("DELETE FROM path_nodes WHERE project_id = ?").run(projectId);
+      const insert = this.database.prepare(
+        `INSERT INTO path_nodes (project_id, node_id, title, summary, status, sort_order, kind, concepts, exit_criteria, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      );
+      for (const node of nodes) {
+        insert.run(
+          projectId,
+          node.id,
+          node.title,
+          node.summary,
+          node.status,
+          node.order,
+          node.kind,
+          JSON.stringify(node.concepts),
+          JSON.stringify(node.exitCriteria),
+          node.createdAt,
+          node.updatedAt,
+        );
+      }
+      this.database.prepare("UPDATE projects SET current_path_node = ? WHERE id = ?").run(currentNodeId, projectId);
+      this.database.exec("COMMIT");
+    } catch (cause) {
+      this.database.exec("ROLLBACK");
+      throw cause;
+    }
   }
 
   /* ---- Concepts ---------------------------------------------------------- */

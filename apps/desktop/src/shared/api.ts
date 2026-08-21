@@ -58,6 +58,11 @@ export const ipc = {
   conceptsAtlas: "concepts:atlas",
   conceptsDelete: "concepts:delete",
 
+  /* What Construct remembers about a project: four Markdown files in the
+     project's own `.construct`, and the ordered steps it plans to teach. */
+  memoryRead: "memory:read",
+  pathRead: "path:read",
+
   /* Signing in, and the account behind it. */
   authRequest: "auth:request",
   authSignOut: "auth:sign-out",
@@ -271,6 +276,31 @@ export type AgentStreamEvent = {
  *  has to be able to say which one it came from. */
 export type AtlasConcept = ConceptSummary & { projectId: string; projectName: string };
 
+/** One of the four memory files, as the window shows it. */
+export type MemoryFileState = {
+  file: "research.md" | "project.md" | "path.md" | "learner.md";
+  path: string;
+  content: string;
+  exists: boolean;
+  updatedAt: string | null;
+};
+
+/** One step of the teaching path. */
+export type PathStep = {
+  id: string;
+  title: string;
+  summary: string;
+  status: "planned" | "active" | "completed" | "blocked" | "revising";
+  order: number;
+  kind: "profile" | "foundation" | "build" | "connect" | "polish" | "ship" | "custom";
+  concepts: string[];
+  exitCriteria: string[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ProjectPath = { reason: string; currentNodeId: string | null; nodes: PathStep[] };
+
 export type ConceptSummary = {
   conceptId: string;
   title: string;
@@ -470,6 +500,11 @@ export interface ConstructApi {
   /** Forgets a concept. The learner's correction for a concept the agent filed
    *  wrongly — an atlas that cannot be corrected is one they stop trusting. */
   deleteConcept(input: z.infer<typeof conceptDeleteInput>): Promise<void>;
+  /** Flow Memory, as the learner would read it. Shown rather than hidden: memory
+   *  that only the agent can see is memory nobody can correct. */
+  readMemory(input: z.infer<typeof projectIdInput>): Promise<MemoryFileState[]>;
+  /** The teaching path: what Construct plans to teach next, in order. */
+  readPath(input: z.infer<typeof projectIdInput>): Promise<ProjectPath>;
   onAgentEvent(listener: (event: AgentEvent) => void): () => void;
   /** The live transcript stream. Separate from `onAgentEvent`, which carries
    *  settled messages and lifecycle, because the transcript is redrawn many

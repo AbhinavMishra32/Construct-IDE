@@ -3,6 +3,8 @@ import { mkdir } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { MemoryService } from "../memory/memoryService.js";
+import { WorkspaceService } from "./workspaceService.js";
 import { ProjectStore } from "../store/projectStore.js";
 import { availableDirectory, directorySlug, ProjectService } from "./projectService.js";
 
@@ -13,7 +15,7 @@ let projects: ProjectService;
 beforeEach(() => {
   root = mkdtempSync(path.join(tmpdir(), "construct-projects-"));
   store = new ProjectStore(path.join(root, "state.sqlite3"));
-  projects = new ProjectService(store);
+  projects = new ProjectService(store, new MemoryService(new WorkspaceService()));
 });
 
 afterEach(() => {
@@ -52,16 +54,27 @@ describe("creating a project", () => {
     expect(readFileSync(path.join(created.directory, "main.py"), "utf8")).toContain("def main()");
   });
 
-  it("writes the goal into the project, not only into Construct's database", async () => {
+  it("writes the goal into the project's own memory, not only into Construct's database", async () => {
+    /* `.construct/project.md`, where v0.7 kept it — not a GOAL.md at the top of
+       the learner's repository that only Construct ever wrote. */
     const created = await projects.create({ ...input, parentDirectory: root });
 
-    expect(readFileSync(path.join(created.directory, "GOAL.md"), "utf8")).toContain("Understand the graphics pipeline");
+    expect(readFileSync(path.join(created.directory, ".construct", "project.md"), "utf8")).toContain("Understand the graphics pipeline");
+    expect(existsSync(path.join(created.directory, "GOAL.md"))).toBe(false);
+  });
+
+  it("gives a new project all four memory files", async () => {
+    const created = await projects.create({ ...input, parentDirectory: root });
+
+    for (const file of ["research.md", "project.md", "path.md", "learner.md"]) {
+      expect(existsSync(path.join(created.directory, ".construct", file))).toBe(true);
+    }
   });
 
   it("does not seed an entry point for a language Construct has no template for", async () => {
     const created = await projects.create({ ...input, language: "rust", parentDirectory: root });
 
-    expect(readFileSync(path.join(created.directory, "GOAL.md"), "utf8")).toContain("Software Renderer");
+    expect(readFileSync(path.join(created.directory, ".construct", "project.md"), "utf8")).toContain("Software Renderer");
     expect(() => readFileSync(path.join(created.directory, "main.rs"), "utf8")).toThrow();
   });
 
@@ -130,7 +143,7 @@ describe("deleting a project", () => {
     projects.delete(created.id);
 
     expect(projects.list()).toHaveLength(0);
-    expect(readFileSync(path.join(created.directory, "GOAL.md"), "utf8")).toContain("Stay on disk");
+    expect(readFileSync(path.join(created.directory, ".construct", "project.md"), "utf8")).toContain("Stay on disk");
   });
 });
 
