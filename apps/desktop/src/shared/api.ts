@@ -56,6 +56,7 @@ export const ipc = {
      atlas. */
   conceptsList: "concepts:list",
   conceptsAtlas: "concepts:atlas",
+  conceptsDelete: "concepts:delete",
 
   /* Signing in, and the account behind it. */
   authRequest: "auth:request",
@@ -143,6 +144,9 @@ export const projectImportInput = z.object({
 export const projectIdInput = z.object({ projectId: z.string().uuid() });
 export const projectRenameInput = projectIdInput.extend({ name: z.string().trim().min(1).max(80) });
 export const projectFlagInput = projectIdInput.extend({ value: z.boolean() });
+/** A concept, identified by the project that taught it: concept ids are the
+ *  agent's own slugs, so they are only unique within a project. */
+export const conceptDeleteInput = projectIdInput.extend({ conceptId: z.string().trim().min(1).max(200) });
 
 export type ProjectSummary = {
   id: string;
@@ -446,6 +450,9 @@ export interface ConstructApi {
    *  understanding is the learner's, not the repository's, so the page that
    *  shows it whole cannot be scoped to one project. */
   conceptAtlas(): Promise<AtlasConcept[]>;
+  /** Forgets a concept. The learner's correction for a concept the agent filed
+   *  wrongly — an atlas that cannot be corrected is one they stop trusting. */
+  deleteConcept(input: z.infer<typeof conceptDeleteInput>): Promise<void>;
   onAgentEvent(listener: (event: AgentEvent) => void): () => void;
   /** The live transcript stream. Separate from `onAgentEvent`, which carries
    *  settled messages and lifecycle, because the transcript is redrawn many
