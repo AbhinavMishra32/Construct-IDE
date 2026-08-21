@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BrainCircuit, Check, ChevronDown, ExternalLink, Ellipsis, Eye, Globe, KeyRound, Laptop, Link2, Loader2, Lock, LogOut, Moon, Palette, Plus, RotateCw, Settings2, Sun, Trash2, UserRound } from "lucide-react";
-import type { ConstructApi, ProviderId, ProviderInventory, SubscriptionUsage, ThemePreference, UsageWindow } from "../../../shared/api";
+import { BrainCircuit, Check, ChevronDown, ExternalLink, Ellipsis, Eye, FolderOpen, Globe, KeyRound, Laptop, Link2, Loader2, Lock, LogOut, Moon, Palette, Plus, RotateCw, Settings2, Sun, Trash2, UserRound } from "lucide-react";
+import { LANGUAGES, type Language } from "@construct/domain";
+import type { ConstructApi, ProjectDefaults, ProviderId, ProviderInventory, SubscriptionUsage, ThemePreference, UsageWindow } from "../../../shared/api";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -15,6 +16,7 @@ import {
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Input } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/segmented";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { message } from "@/lib/format";
 import { credentialStore, deviceNoun } from "@/lib/platform";
@@ -28,10 +30,13 @@ import { UpdateSettings } from "../settings/UpdateSettings";
 import { ProviderConnectDialog } from "../settings/ProviderConnectDialog";
 import { ConstructDots } from "@/components/common/ConstructDots";
 
+/** The host capabilities the preload exposes beside the Construct API. */
+declare const constructHost: { chooseDirectory(): Promise<string | null> };
+
 type Provider = ProviderInventory["providers"][number];
-type SettingsSection = "account" | "models" | "privacy" | "appearance";
+type SettingsSection = "account" | "models" | "projects" | "privacy" | "appearance";
 const SETTINGS_NAV: Array<{id:SettingsSection;label:string;icon:React.ComponentType<{className?:string}>}>=[
-  {id:"account",label:"Account",icon:UserRound},{id:"models",label:"Models",icon:BrainCircuit},{id:"privacy",label:"Data & Privacy",icon:Eye},{id:"appearance",label:"Appearance",icon:Palette},
+  {id:"account",label:"Account",icon:UserRound},{id:"models",label:"Models",icon:BrainCircuit},{id:"projects",label:"Projects",icon:FolderOpen},{id:"privacy",label:"Data & Privacy",icon:Eye},{id:"appearance",label:"Appearance",icon:Palette},
 ];
 
 
@@ -182,6 +187,93 @@ function Group({ label, children, className }: { label: string; children: React.
         <div className="divide-y divide-border">{children}</div>
       </div>
     </section>
+  );
+}
+
+/**
+ * Where new projects go, and what they are written in.
+ *
+ * Both are here rather than in the New project dialog because they are the same
+ * answer every time: the dialog used to make choosing a folder through the OS
+ * picker mandatory, so every project began with a decision nobody has an opinion
+ * about after the first one — and it stood in front of the only two things that
+ * matter, which are what you want to build and what you want to understand.
+ *
+ * The dialog still shows where the project will land and still lets one project
+ * go somewhere else. This is the default it starts from.
+ */
+function ProjectDefaultsRows({
+  api,
+  defaults,
+  onChange,
+  onError,
+}: {
+  api: ConstructApi | undefined;
+  defaults: ProjectDefaults;
+  onChange(defaults: ProjectDefaults): void;
+  onError(message: string): void;
+}) {
+  const [busy, setBusy] = useState(false);
+
+  /* The main process answers with what actually settled, because it is what
+     knows whether the folder could be made — so the row shows a path that
+     exists rather than one that was merely typed. */
+  const save = (input: { directory?: string; language?: Language }) => {
+    if (!api) return;
+    setBusy(true);
+    onError("");
+    void api
+      .setProjectDefaults(input)
+      .then(onChange)
+      .catch((cause: unknown) => onError(message(cause)))
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <>
+      <Row className="gap-4 py-2.5">
+        <div className="min-w-0 flex-1">
+          <p className="text-content font-medium">Projects folder</p>
+          <p className="mt-0.5 truncate font-mono text-ui text-muted-foreground" title={defaults.directory}>
+            {defaults.directory}
+          </p>
+        </div>
+        <Button
+          disabled={busy}
+          onClick={async () => {
+            const chosen = await constructHost.chooseDirectory();
+            if (chosen) save({ directory: chosen });
+          }}
+          size="sm"
+          variant="outline"
+        >
+          <FolderOpen className="size-4" /> Change
+        </Button>
+        <Button disabled={busy} onClick={() => void api?.openExternal(`file://${defaults.directory}`)} size="sm" variant="ghost">
+          Reveal
+        </Button>
+      </Row>
+
+      <Row className="gap-4 py-2.5">
+        <div className="min-w-0 flex-1">
+          <p className="text-content font-medium">Language</p>
+          <p className="mt-0.5 text-ui text-muted-foreground">What a new project is scaffolded in, unless you change it for that project.</p>
+        </div>
+        <Select disabled={busy} onValueChange={(value) => save({ language: value as Language })} value={defaults.language}>
+          <SelectTrigger className="w-40">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {LANGUAGES.map((language) => (
+              <SelectItem key={language} value={language}>
+                <LanguageGlyph className="size-3.5" language={language} />
+                {LANGUAGE_LABEL[language]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </Row>
+    </>
   );
 }
 
@@ -417,13 +509,19 @@ function ConnectRow({ available, onPick }: { available: Provider[]; onPick(provi
 
 export function SettingsPage({
   api,
+  onProjectDefaults,
   onSignedOut,
   onThemeChange,
+  projectDefaults,
   theme,
 }: {
   api: ConstructApi | undefined;
+  /** Reports settled defaults back to the shell, which holds them for the New
+   *  project dialog. */
+  onProjectDefaults(defaults: ProjectDefaults): void;
   onSignedOut(): Promise<void>;
   onThemeChange(theme: ThemePreference): Promise<void>;
+  projectDefaults: ProjectDefaults;
   theme: ThemePreference;
 }) {
   const [inventory, setInventory] = useState<ProviderInventory | null>(null);
@@ -522,6 +620,12 @@ export function SettingsPage({
             />
           </Row>
         </Group>}
+
+        {section === "projects" && (
+          <Group label="New projects">
+            <ProjectDefaultsRows api={api} defaults={projectDefaults} onChange={onProjectDefaults} onError={setError} />
+          </Group>
+        )}
 
         {section === "models" && <><Group label="Providers">
           {!inventory && (

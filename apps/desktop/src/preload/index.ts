@@ -87,6 +87,7 @@ const api: ConstructApi = {
 
   openExternal: (url: string) => ipcRenderer.invoke(ipc.settingsOpenExternal, url),
   setTheme: (theme) => ipcRenderer.invoke(ipc.settingsTheme, theme),
+  setProjectDefaults: (input) => ipcRenderer.invoke(ipc.settingsProjectDefaults, input),
   updateState: () => ipcRenderer.invoke(ipc.updateState),
   checkForUpdate: () => ipcRenderer.invoke(ipc.updateCheck),
   downloadUpdate: () => ipcRenderer.invoke(ipc.updateDownload),

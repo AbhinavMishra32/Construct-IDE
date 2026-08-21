@@ -1,5 +1,6 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdir } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ProjectStore } from "../store/projectStore.js";
@@ -130,5 +131,59 @@ describe("deleting a project", () => {
 
     expect(projects.list()).toHaveLength(0);
     expect(readFileSync(path.join(created.directory, "GOAL.md"), "utf8")).toContain("Stay on disk");
+  });
+});
+
+describe("project defaults", () => {
+  it("starts at a folder in the learner's home, so creating a project asks nothing", () => {
+    /* The whole point: a name and a goal are the only two things a project
+       needs, because the folder already has an answer. */
+    expect(projects.defaults().directory).toBe(path.join(homedir(), "Construct"));
+    expect(projects.defaults().language).toBe("typescript");
+  });
+
+  it("remembers what it is changed to", async () => {
+    const chosen = path.join(root, "elsewhere");
+    const settled = await projects.setDefaults({ directory: chosen, language: "rust" });
+    expect(settled).toEqual({ directory: chosen, language: "rust" });
+    expect(projects.defaults()).toEqual({ directory: chosen, language: "rust" });
+  });
+
+  it("makes the folder while the learner is still looking at the setting", async () => {
+    /* Rather than at the next project, which would report the failure in a
+       dialog about something else entirely. */
+    const chosen = path.join(root, "deep", "nested", "projects");
+    await projects.setDefaults({ directory: chosen });
+    expect(existsSync(chosen)).toBe(true);
+  });
+
+  it("creates a project inside the default when none is named", async () => {
+    const chosen = path.join(root, "default-home");
+    await projects.setDefaults({ directory: chosen });
+    const created = await projects.create({ name: "Renderer", goal: "Understand rasterisation", language: "typescript" });
+    expect(path.dirname(created.directory)).toBe(chosen);
+    expect(existsSync(created.directory)).toBe(true);
+  });
+
+  it("creates the default folder on demand rather than failing", async () => {
+    /* A missing default is Construct's own housekeeping — it is the folder we
+       chose — so it gets made. A folder the learner named is not invented for
+       them; see the test above about a chosen folder that no longer exists. */
+    await projects.setDefaults({ directory: path.join(root, "not-yet") });
+    await projects.setDefaults({ directory: path.join(root, "gone-again") });
+    const created = await projects.create({ name: "Fresh", goal: "Start clean", language: "typescript" });
+    expect(existsSync(created.directory)).toBe(true);
+  });
+
+  it("still honours a folder chosen for one project, without changing the default", async () => {
+    const home = path.join(root, "home");
+    const oneOff = path.join(root, "one-off");
+    await projects.setDefaults({ directory: home });
+    await mkdir(oneOff, { recursive: true });
+
+    const created = await projects.create({ name: "Aside", goal: "Try something", language: "typescript", parentDirectory: oneOff });
+
+    expect(path.dirname(created.directory)).toBe(oneOff);
+    expect(projects.defaults().directory).toBe(home);
   });
 });

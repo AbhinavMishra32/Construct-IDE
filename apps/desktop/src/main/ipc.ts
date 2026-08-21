@@ -5,6 +5,7 @@ import {
   ipc,
   projectCreateInput,
   conceptDeleteInput,
+  projectDefaultsInput,
   projectIdInput,
   projectImportInput,
   projectRenameInput,
@@ -70,6 +71,7 @@ export function installIpc({ store, auth, projects, providers, workspace, termin
       signedIn: Boolean(account),
       email: account?.email ?? null,
       theme: store.theme(),
+      projectDefaults: projects.defaults(),
       projects: projects.list(),
       providers: await providers.inventory(),
       notices: [],
@@ -223,6 +225,8 @@ export function installIpc({ store, auth, projects, providers, workspace, termin
   handle(ipc.settingsWebSearchEnabled, (input) => store.setSetting("web-search-enabled", Boolean(input)));
 
   /* ---- Application ------------------------------------------------------ */
+
+  handle(ipc.settingsProjectDefaults, (input) => projects.setDefaults(projectDefaultsInput.parse(input)));
 
   handle(ipc.settingsTheme, (input) => {
     const theme = themePreferenceSchema.parse(input);
