@@ -1,4 +1,5 @@
-import { ArrowLeft, ExternalLink, GraduationCap } from "lucide-react";
+import { useState } from "react";
+import { ArrowLeft, ChevronRight, ExternalLink } from "lucide-react";
 import { MASTERY_RUBRIC, rubricForLevel } from "@construct/domain";
 import type { ConceptSummary, ConstructApi } from "../../../shared/api";
 import { cn } from "@/lib/utils";
@@ -6,18 +7,17 @@ import { relativeTime } from "@/lib/format";
 import { Markdown } from "../agent/Markdown";
 
 /**
- * One concept, in full, as a panel beside the work.
+ * One concept, as an encyclopedia entry beside the work.
  *
- * A sidecar rather than a dialog, and the distinction is not cosmetic: a
- * concept note is something the learner reads *while* looking at the code it
- * describes. A modal covers the code and forces a choice between the
- * explanation and the thing being explained, which is exactly the wrong trade
- * for a teaching tool.
+ * A sidecar rather than a dialog, and that is not cosmetic: a concept note is
+ * read *while* looking at the code it describes, and a modal forces a choice
+ * between the explanation and the thing being explained.
  *
- * The content is the point. v0.7's concept records carry a summary, why the
- * idea matters, a worked example and real references — a knowledge base the
- * learner accumulates — and a card showing only a level and a timestamp is the
- * shape of a concept with none of the substance.
+ * The note is one Markdown body rather than a set of titled fields. Asking the
+ * agent to fill boxes for "why" and "common mistake" produced six stubs; asking
+ * it for an entry produces an entry. The structure lives in the prompt and the
+ * typography, which is where structure belongs when the author is writing
+ * prose.
  */
 export function ConceptSidecar({
   api,
@@ -29,7 +29,6 @@ export function ConceptSidecar({
   onBack(): void;
 }) {
   const rubric = rubricForLevel(concept.masteryLevel);
-  const empty = !concept.summary && !concept.why && !concept.example;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -42,62 +41,69 @@ export function ConceptSidecar({
         >
           <ArrowLeft className="size-4" />
         </button>
-        <GraduationCap className={cn("size-3.5 shrink-0", rubric.taskReady ? "text-[var(--success)]" : "text-muted-foreground")} />
-        <span className="truncate text-ui font-medium">{concept.title}</span>
+        {/* Labelled with what it is before it is named — what makes a panel read
+            as a kind of thing rather than a one-off. */}
+        <span className="shrink-0 text-ui-sm font-semibold uppercase tracking-wide text-muted-foreground/60">Concept</span>
       </header>
 
-      <div className="app-scroll min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-3">
-        <div className="space-y-1.5">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span
-              className={cn(
-                "rounded-full border px-2 py-0.5 text-ui-sm",
-                rubric.taskReady ? "border-[var(--success)]/35 bg-[var(--success)]/10" : "border-border",
-              )}
-            >
-              Level {concept.masteryLevel} · {rubric.title}
-            </span>
+      <div className="app-scroll min-h-0 flex-1 overflow-y-auto px-5 py-4">
+        {/* The entry's masthead: title, one-line gloss, and the level as a
+            single quiet line. The note is what the panel is for; the level is
+            context for it. */}
+        <h1 className="text-title font-semibold leading-tight tracking-[-0.01em]">{concept.title}</h1>
+
+        {concept.summary && <p className="mt-1 text-content leading-[1.55] text-muted-foreground">{concept.summary}</p>}
+
+        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-ui-sm text-muted-foreground">
+          <span className="flex shrink-0 items-center gap-[2px]" aria-label={`Level ${concept.masteryLevel} of 5`}>
+            {MASTERY_RUBRIC.slice(1).map((step) => (
+              <span
+                className={cn(
+                  "h-2.5 w-[3px] rounded-full",
+                  step.level <= concept.masteryLevel ? (rubric.taskReady ? "bg-[var(--success)]" : "bg-foreground/55") : "bg-foreground/15",
+                )}
+                key={step.level}
+              />
+            ))}
+          </span>
+          <span className="text-foreground/80">{rubric.title}</span>
+          {rubric.taskReady && <span className="text-[var(--success)]">tasks allowed</span>}
+          <span className="text-muted-foreground/60">· {relativeTime(concept.updatedAt)}</span>
+        </div>
+
+        {concept.tags.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1">
             {concept.tags.map((tag) => (
               <span className="rounded-full border border-border/60 px-2 py-0.5 text-ui-sm text-muted-foreground" key={tag}>
                 {tag}
               </span>
             ))}
           </div>
-          <p className="text-ui-sm text-muted-foreground">
-            First seen {relativeTime(concept.firstSeenAt)} · last moved {relativeTime(concept.updatedAt)}
-          </p>
-        </div>
-
-        {empty ? (
-          /* Said plainly rather than dressed up. A concept the agent recorded
-             before it wrote the explanation is a real state, and pretending
-             otherwise with an empty card is what made this panel useless. */
-          <p className="rounded-[var(--radius-lg)] border border-dashed border-border px-3 py-2 text-ui text-muted-foreground">
-            Construct has tracked your level on this but has not written the explanation yet. Ask it to explain this concept and the note will fill in.
-          </p>
-        ) : (
-          <>
-            {concept.summary && <Section body={concept.summary} title="What it is" />}
-            {concept.why && <Section body={concept.why} title="Why it matters" />}
-            {concept.example && <Section body={concept.example} title="Example" />}
-          </>
         )}
 
-        {concept.note && (
-          <section className="rounded-[var(--radius-lg)] border border-border bg-card/40 px-3 py-2">
-            <h3 className="text-ui-sm font-medium text-muted-foreground">What your level is based on</h3>
-            <p className="mt-1 text-content leading-[1.55]">{concept.note}</p>
-          </section>
+        <hr className="my-4 border-border/60" />
+
+        {concept.content ? (
+          /* The entry itself. `concept-entry` is where the encyclopedia look
+             lives — heading rhythm, measure, code blocks — so the agent can
+             write plain Markdown and have it typeset properly. */
+          <div className="concept-entry">
+            <Markdown source={concept.content} />
+          </div>
+        ) : (
+          <p className="rounded-[var(--radius-lg)] border border-dashed border-border px-3 py-2 text-ui text-muted-foreground">
+            Construct is tracking your level on this but has not written the entry yet. Ask it to explain the concept and this will fill in.
+          </p>
         )}
 
         {concept.docs.length > 0 && (
-          <section>
-            <h3 className="mb-1 text-ui-sm font-medium text-muted-foreground">Worth reading</h3>
-            <ul className="space-y-0.5">
+          <section className="mt-5 border-t border-border/60 pt-3">
+            <h2 className="mb-1 text-ui-sm font-semibold uppercase tracking-wide text-muted-foreground/60">Further reading</h2>
+            <ul>
               {concept.docs.map((doc) => (
                 <li key={doc.url}>
                   <button
-                    className="group/doc flex w-full items-center gap-1.5 rounded-md px-1 py-0.5 text-left text-content text-foreground/85 hover:bg-accent hover:text-foreground"
+                    className="flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-left text-ui text-foreground/85 hover:bg-accent hover:text-foreground"
                     onClick={() => void api?.openExternal(doc.url)}
                     type="button"
                   >
@@ -110,53 +116,54 @@ export function ConceptSidecar({
           </section>
         )}
 
-        <section>
-          <h3 className="mb-1.5 text-ui-sm font-medium text-muted-foreground">The ladder</h3>
-          <ol className="space-y-0.5">
-            {MASTERY_RUBRIC.map((step) => {
-              const reached = step.level <= concept.masteryLevel;
-              const current = step.level === concept.masteryLevel;
-              return (
-                <li
-                  className={cn("flex gap-2 rounded-[var(--radius-md)] px-2 py-1.5", current && "bg-[var(--sidebar-accent-active)]")}
-                  key={step.level}
-                >
-                  <span
-                    className={cn(
-                      "mt-[3px] grid size-4 shrink-0 place-items-center rounded-full text-[10px] tabular-nums",
-                      reached ? (step.taskReady ? "bg-[var(--success)]/20 text-foreground" : "bg-foreground/12 text-foreground") : "bg-foreground/6 text-muted-foreground/70",
-                    )}
-                  >
-                    {step.level}
-                  </span>
-                  <span className="min-w-0">
-                    <span className={cn("block text-ui", reached ? "font-medium text-foreground" : "text-muted-foreground")}>
-                      {step.title}
-                      {/* Marked once, where it starts, rather than on every rung
-                          above it: the boundary is the fact. */}
-                      {step.level === 3 && <span className="ml-1.5 text-ui-sm font-normal text-[var(--success)]">tasks allowed from here</span>}
-                    </span>
-                    <span className="mt-0.5 block text-ui-sm leading-[1.5] text-muted-foreground">{step.text}</span>
-                  </span>
-                </li>
-              );
-            })}
-          </ol>
-        </section>
+        {concept.note && (
+          <section className="mt-5 border-t border-border/60 pt-3">
+            <h2 className="mb-1 text-ui-sm font-semibold uppercase tracking-wide text-muted-foreground/60">Why this level</h2>
+            <p className="text-ui leading-[1.6] text-muted-foreground">{concept.note}</p>
+          </section>
+        )}
+
+        <Ladder level={concept.masteryLevel} />
       </div>
     </div>
   );
 }
 
-/** Rendered as Markdown, because the agent writes code fences into the example
- *  and a concept note without formatted code is a wall of text. */
-function Section({ title, body }: { title: string; body: string }) {
+/**
+ * The ladder, folded away.
+ *
+ * It was the loudest thing in the panel, which had it backwards: the six levels
+ * are reference material you read once to learn what the numbers mean, not
+ * something to re-read beside every concept. Folded, it is still there when the
+ * number needs context.
+ */
+function Ladder({ level }: { level: number }) {
+  const [open, setOpen] = useState(false);
+
   return (
-    <section>
-      <h3 className="mb-1 text-ui-sm font-medium text-muted-foreground">{title}</h3>
-      <div className="text-content leading-[1.55]">
-        <Markdown source={body} />
-      </div>
-    </section>
+    <div className="mt-5 border-t border-border/60 pt-2">
+      <button
+        className="flex items-center gap-1 text-ui-sm text-muted-foreground transition-colors hover:text-foreground"
+        onClick={() => setOpen((value) => !value)}
+        type="button"
+      >
+        <ChevronRight className={cn("size-3 transition-transform", open && "rotate-90")} />
+        What the levels mean
+      </button>
+
+      {open && (
+        <ol className="mt-1.5 space-y-1.5 pl-4">
+          {MASTERY_RUBRIC.map((step) => (
+            <li className="text-ui-sm leading-[1.5]" key={step.level}>
+              <span className={cn(step.level === level ? "font-medium text-foreground" : "text-muted-foreground")}>
+                <span className="tabular-nums">{step.level}</span> · {step.title}
+              </span>
+              {step.level === 3 && <span className="text-[var(--success)]"> — tasks allowed from here</span>}
+              <span className="block text-muted-foreground/75">{step.text}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
   );
 }

@@ -85,6 +85,14 @@ const MIGRATIONS: readonly string[] = [
    ALTER TABLE concepts ADD COLUMN example TEXT NOT NULL DEFAULT '';
    ALTER TABLE concepts ADD COLUMN docs TEXT NOT NULL DEFAULT '[]';
    ALTER TABLE concepts ADD COLUMN tags TEXT NOT NULL DEFAULT '[]';`,
+
+  /* The remaining fields v0.7's concept card actually renders: the untitled
+     body, the mistake this idea is usually got wrong by, and the language its
+     example is written in. `summary` stays as the one-line gloss the rail and
+     cards use; `content` is the body the sidecar reads from. */
+  `ALTER TABLE concepts ADD COLUMN content TEXT NOT NULL DEFAULT '';
+   ALTER TABLE concepts ADD COLUMN common_mistake TEXT NOT NULL DEFAULT '';
+   ALTER TABLE concepts ADD COLUMN language TEXT NOT NULL DEFAULT '';`,
 ];
 
 type ProjectRow = {
@@ -108,10 +116,8 @@ export type ConceptRecord = {
   note: string;
   /** What the idea is, in a couple of sentences. */
   summary: string;
-  /** Why it matters, which is the half a learner forgets first. */
-  why: string;
-  /** A worked example, usually drawn from the learner's own project. */
-  example: string;
+  /** The whole note, as Markdown: the encyclopedia entry the learner reads. */
+  content: string;
   /** Real references. Kept because a concept the learner can only read here is
    *  a dead end, and the agent is better placed than they are to find the good
    *  page. */
@@ -314,8 +320,7 @@ export class ProjectStore {
       confidence: String(row.confidence),
       note: String(row.note ?? ""),
       summary: String(row.summary ?? ""),
-      why: String(row.why ?? ""),
-      example: String(row.example ?? ""),
+      content: String(row.content ?? ""),
       docs: parseJson<Array<{ title: string; url: string }>>(String(row.docs ?? "[]"), []),
       tags: parseJson<string[]>(String(row.tags ?? "[]"), []),
       firstSeenAt: String(row.first_seen_at),
@@ -340,8 +345,7 @@ export class ProjectStore {
     note: string;
     reason: string;
     summary: string;
-    why: string;
-    example: string;
+    content: string;
     docs: Array<{ title: string; url: string }>;
     tags: string[];
   }): void {
@@ -357,8 +361,8 @@ export class ProjectStore {
        learner has been reading — COALESCE keeps whatever is already there. */
     this.database
       .prepare(
-        `INSERT INTO concepts (project_id, concept_id, title, mastery_level, confidence, note, summary, why, example, docs, tags, first_seen_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO concepts (project_id, concept_id, title, mastery_level, confidence, note, summary, why, example, docs, tags, content, common_mistake, language, first_seen_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(project_id, concept_id) DO UPDATE SET
            title = excluded.title,
            mastery_level = excluded.mastery_level,
@@ -369,6 +373,9 @@ export class ProjectStore {
            example = CASE WHEN excluded.example <> '' THEN excluded.example ELSE concepts.example END,
            docs = CASE WHEN excluded.docs <> '[]' THEN excluded.docs ELSE concepts.docs END,
            tags = CASE WHEN excluded.tags <> '[]' THEN excluded.tags ELSE concepts.tags END,
+           content = CASE WHEN excluded.content <> '' THEN excluded.content ELSE concepts.content END,
+           common_mistake = CASE WHEN excluded.common_mistake <> '' THEN excluded.common_mistake ELSE concepts.common_mistake END,
+           language = CASE WHEN excluded.language <> '' THEN excluded.language ELSE concepts.language END,
            updated_at = excluded.updated_at`,
       )
       .run(
@@ -379,10 +386,13 @@ export class ProjectStore {
         input.confidence,
         input.note,
         input.summary,
-        input.why,
-        input.example,
+        "",
+        "",
         JSON.stringify(input.docs),
         JSON.stringify(input.tags),
+        input.content,
+        "",
+        "",
         now,
         now,
       );
