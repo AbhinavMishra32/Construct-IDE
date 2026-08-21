@@ -13,6 +13,7 @@ export type AgentEvent =
   | { projectId: string; kind: "question"; request: AskUserQuestionRequest }
   | { projectId: string; kind: "message"; message: AgentMessage }
   | { projectId: string; kind: "error"; message: string }
+  | { projectId: string; kind: "concepts" }
   | { projectId: string; kind: "done" };
 
 /**
@@ -155,6 +156,11 @@ export class AgentService {
     return executeAgentTool(name, input, {
       projectDirectory: project.directory,
       workspace: this.workspace,
+      recordConcept: (record) => {
+        if (!record.conceptId || !record.title) return;
+        this.store.recordConcept({ projectId, ...record });
+        this.emit({ projectId, kind: "concepts" });
+      },
       askLearner: (request) =>
         new Promise<string>((resolve) => {
           this.awaiting.set(projectId, { resolve });

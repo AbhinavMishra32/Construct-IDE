@@ -2,10 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { FileCode2, MessageSquare, RotateCcw, SquareTerminal, Trash2, X } from "lucide-react";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { isLspLanguage, languageForPath } from "@construct/domain";
-import type { ConstructApi, ProjectSummary } from "../../../shared/api";
+import type { ConceptSummary, ConstructApi, ProjectSummary } from "../../../shared/api";
 import { cn } from "@/lib/utils";
 import { LanguageClient } from "@/lib/lsp/client";
-import { Toolbar } from "../shell/Toolbar";
+import { WorkspaceBar } from "./WorkspaceBar";
 import { Editor } from "./Editor";
 import { TerminalPanel } from "./TerminalPanel";
 import { AgentPanel } from "./AgentPanel";
@@ -37,6 +37,7 @@ export function Workspace({ api, project, openPath, onError, onOpenSettings }: P
   const [terminalId, setTerminalId] = useState(() => crypto.randomUUID());
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [agentOpen, setAgentOpen] = useState(true);
+  const [concepts, setConcepts] = useState<ConceptSummary[]>([]);
   /* One client per language, started when a file of that language is first
      opened. Starting every server up front would spawn a TypeScript server for
      a project with no TypeScript in it. */
@@ -117,6 +118,20 @@ export function Workspace({ api, project, openPath, onError, onOpenSettings }: P
     [api, project.id, onError, clientFor],
   );
 
+  /* Read on open and again whenever the agent records a reading. A turn is
+     exactly when mastery moves, so polling would be either late or wasteful. */
+  const loadConcepts = useCallback(() => {
+    void api?.listConcepts({ projectId: project.id }).then(setConcepts).catch(() => setConcepts([]));
+  }, [api, project.id]);
+
+  useEffect(loadConcepts, [loadConcepts]);
+
+  useEffect(() => {
+    return api?.onAgentEvent((event) => {
+      if (event.projectId === project.id && (event.kind === "concepts" || event.kind === "done")) loadConcepts();
+    });
+  }, [api, project.id, loadConcepts]);
+
   useEffect(() => {
     const pending = timers.current;
     const running = clients.current;
@@ -143,22 +158,13 @@ export function Workspace({ api, project, openPath, onError, onOpenSettings }: P
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* The shell's toolbar, carrying the title-bar height, the drag region and
-          the window-control inset — and the panel toggles, which used to sit on
-          a strip along the bottom. A whole row of chrome for two switches and a
-          path the tab already showed was the worst trade in the window. */}
-      <Toolbar
-        /* The project names the window; the file is named by its own tab. A
-           subtitle only earns its place when it says something the title does
-           not — a nested path, or that the file is saving. */
-        title={project.name}
-        subtitle={current?.dirty ? "Saving…" : current?.path.includes("/") ? current.path : undefined}
-        actions={
-          <>
-            <ToolbarToggle icon={SquareTerminal} label="Terminal" on={terminalOpen} onClick={() => setTerminalOpen((open) => !open)} />
-            <ToolbarToggle icon={MessageSquare} label="Construct" on={agentOpen} onClick={() => setAgentOpen((open) => !open)} />
-          </>
-        }
+      <WorkspaceBar
+        agentOpen={agentOpen}
+        concepts={concepts}
+        onToggleAgent={() => setAgentOpen((open) => !open)}
+        onToggleTerminal={() => setTerminalOpen((open) => !open)}
+        project={project}
+        terminalOpen={terminalOpen}
       />
 
       <PanelGroup direction="horizontal" className="min-h-0 min-w-0 flex-1 gap-1 p-1 pt-0">

@@ -43,6 +43,36 @@ const MIGRATIONS: readonly string[] = [
      should forget, which is a different intent entirely. */
   `ALTER TABLE projects ADD COLUMN pinned_at TEXT;
    ALTER TABLE projects ADD COLUMN archived_at TEXT;`,
+
+  /* What the learner understands, per project.
+     
+     Mastery is per concept and per project because that is how the agent
+     reasons about it: a concept introduced while building a renderer is
+     evidence about this learner, but the level it reached is evidence about
+     this project's use of it. The event log beside it is the record of how the
+     level moved, which is what the agent reads back to avoid re-teaching. */
+  `CREATE TABLE concepts (
+     project_id    TEXT NOT NULL REFERENCES projects (id),
+     concept_id    TEXT NOT NULL,
+     title         TEXT NOT NULL,
+     mastery_level INTEGER NOT NULL DEFAULT 0,
+     confidence    TEXT NOT NULL DEFAULT 'introduced',
+     note          TEXT NOT NULL DEFAULT '',
+     first_seen_at TEXT NOT NULL,
+     updated_at    TEXT NOT NULL,
+     PRIMARY KEY (project_id, concept_id)
+   );
+   CREATE TABLE concept_events (
+     id            TEXT PRIMARY KEY,
+     project_id    TEXT NOT NULL,
+     concept_id    TEXT NOT NULL,
+     kind          TEXT NOT NULL,
+     previous_level INTEGER,
+     mastery_level INTEGER,
+     reason        TEXT NOT NULL DEFAULT '',
+     created_at    TEXT NOT NULL
+   );
+   CREATE INDEX concept_events_project ON concept_events (project_id, created_at);`,
 ];
 
 type ProjectRow = {
@@ -55,6 +85,16 @@ type ProjectRow = {
   opened_at: string | null;
   pinned_at: string | null;
   archived_at: string | null;
+};
+
+export type ConceptRecord = {
+  conceptId: string;
+  title: string;
+  masteryLevel: 0 | 1 | 2 | 3 | 4 | 5;
+  confidence: string;
+  note: string;
+  firstSeenAt: string;
+  updatedAt: string;
 };
 
 export type CreateProjectRecord = {
@@ -230,6 +270,80 @@ export class ProjectStore {
       createdAt: row.created_at,
       activity: parseActivity(row.activity),
     }));
+  }
+
+  /* ---- Concepts ---------------------------------------------------------- */
+
+  listConcepts(projectId: string): ConceptRecord[] {
+    const rows = this.database
+      .prepare(
+        /* Most recently moved first. A concept the agent just taught is the one
+           the learner is holding in their head, so it leads. */
+        "SELECT * FROM concepts WHERE project_id = ? ORDER BY updated_at DESC, rowid DESC",
+      )
+      .all(projectId) as Array<{
+      concept_id: string;
+      title: string;
+      mastery_level: number;
+      confidence: string;
+      note: string;
+      first_seen_at: string;
+      updated_at: string;
+    }>;
+
+    return rows.map((row) => ({
+      conceptId: row.concept_id,
+      title: row.title,
+      masteryLevel: Math.min(5, Math.max(0, row.mastery_level)) as ConceptRecord["masteryLevel"],
+      confidence: row.confidence,
+      note: row.note,
+      firstSeenAt: row.first_seen_at,
+      updatedAt: row.updated_at,
+    }));
+  }
+
+  /**
+   * Records what the agent observed about one concept.
+   *
+   * Upsert rather than insert: a concept is taught, practised and assessed over
+   * many turns, and each of those is a new reading of the same thing. The event
+   * log keeps the history that the row itself overwrites, so a level that moved
+   * down is still explicable afterwards.
+   */
+  recordConcept(input: {
+    projectId: string;
+    conceptId: string;
+    title: string;
+    masteryLevel: number;
+    confidence: string;
+    note: string;
+    reason: string;
+  }): void {
+    const now = new Date().toISOString();
+    const existing = this.database
+      .prepare("SELECT mastery_level FROM concepts WHERE project_id = ? AND concept_id = ?")
+      .get(input.projectId, input.conceptId) as { mastery_level: number } | undefined;
+
+    const level = Math.min(5, Math.max(0, Math.round(input.masteryLevel)));
+
+    this.database
+      .prepare(
+        `INSERT INTO concepts (project_id, concept_id, title, mastery_level, confidence, note, first_seen_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(project_id, concept_id) DO UPDATE SET
+           title = excluded.title,
+           mastery_level = excluded.mastery_level,
+           confidence = excluded.confidence,
+           note = excluded.note,
+           updated_at = excluded.updated_at`,
+      )
+      .run(input.projectId, input.conceptId, input.title, level, input.confidence, input.note, now, now);
+
+    const kind = existing === undefined ? "introduced" : level > existing.mastery_level ? "leveled-up" : level < existing.mastery_level ? "leveled-down" : "referenced";
+
+    this.database
+      .prepare("INSERT INTO concept_events (id, project_id, concept_id, kind, previous_level, mastery_level, reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(randomUUID(), input.projectId, input.conceptId, kind, existing?.mastery_level ?? null, level, input.reason, now);
   }
 
   appendMessage(projectId: string, message: AgentMessage): void {
