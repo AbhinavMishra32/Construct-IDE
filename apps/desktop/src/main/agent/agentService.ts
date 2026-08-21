@@ -5,8 +5,12 @@ import type { AskUserQuestionRequest } from "@construct/domain";
 import type { ProjectStore } from "../store/projectStore.js";
 import type { ProviderService } from "../provider.js";
 import type { WorkspaceService } from "../projects/workspaceService.js";
+import type { MemoryService } from "../memory/memoryService.js";
+import type { PathService } from "../learning/pathService.js";
+import type { WebSearchService } from "../webSearch.js";
 import { UtilityClient } from "../utilityClient.js";
 import { executeAgentTool } from "./agentTools.js";
+import { openingRequest, RESEARCH_AGENT_PROMPT, researchDocument, researchRequest, wroteResearch } from "./researchPrompt.js";
 
 export type AgentEvent =
   | { projectId: string; kind: "step"; text: string }
@@ -14,6 +18,8 @@ export type AgentEvent =
   | { projectId: string; kind: "message"; message: AgentMessage }
   | { projectId: string; kind: "error"; message: string }
   | { projectId: string; kind: "concepts" }
+  | { projectId: string; kind: "memory" }
+  | { projectId: string; kind: "path" }
   | { projectId: string; kind: "done" };
 
 /**
@@ -48,6 +54,9 @@ export class AgentService {
     private readonly store: ProjectStore,
     private readonly providers: ProviderService,
     private readonly workspace: WorkspaceService,
+    private readonly memory: MemoryService,
+    private readonly path: PathService,
+    private readonly web: WebSearchService,
     private readonly emit: (event: AgentEvent) => void,
     private readonly stream: (event: AgentStreamEvent) => void,
   ) {
@@ -94,21 +103,108 @@ export class AgentService {
     if (!project) throw new Error("That project is no longer in Construct.");
     if (!project.present) throw new Error(`Construct cannot find ${project.directory}.`);
 
+    const question: AgentMessage = { id: randomUUID(), role: "learner", body, createdAt: new Date().toISOString(), activity: [] };
+    this.store.appendMessage(projectId, question);
+    this.emit({ projectId, kind: "message", message: question });
+
+    await this.runTurn(projectId, { history: true });
+  }
+
+  /**
+   * What happens when a project is created: read up, then start teaching.
+   *
+   * Two runs, and the order is the point. The research pass writes research.md
+   * from the goal the learner just typed, with the web and the workspace but no
+   * ability to teach or to touch their files; the mentor then opens the project
+   * having already read it. v0.7 did exactly this, and the difference it makes is
+   * whether the learner's first screen is "hello, what would you like to build?"
+   * — which they just answered — or the first real step of their project.
+   *
+   * Never awaited by the caller. Creating a project returns as soon as the
+   * directory exists; this runs behind it and reports itself through the same
+   * events as any other turn, so the window shows it happening.
+   */
+  async begin(projectId: string): Promise<void> {
+    const project = this.store.readProject(projectId);
+    if (!project) return;
+
+    /* Memory first, and before research, because research writes into it. */
+    await this.memory.ensure(project);
+
+    const research = await this.runTurn(projectId, {
+      history: false,
+      systemPrompt: RESEARCH_AGENT_PROMPT,
+      message: researchRequest(project),
+      /* No writing, no commands, no teaching: this pass exists to read. Handing
+         it the mentor's tools would let a research run start setting tasks
+         before anything is known about the learner. */
+      tools: ["read-file", "list-files", "flow-memory-fetch", "flow-memory-patch", "web-search", "web-fetch"],
+      /* Kept out of the transcript. The learner asked for a project, not for a
+         literature review, and the research is durable in research.md where it
+         belongs — but its tool rows still stream, so the window shows the work
+         rather than an unexplained wait. */
+      record: false,
+    });
+
+    /* If the research run replied without saving anything, the host saves it.
+       
+       v0.7 did exactly this and it is not belt-and-braces: the pass is worth
+       nothing unless research.md ends up written, and a model that answers with
+       a good summary but forgets the tool call is a common enough failure that
+       leaving the file at its starter — which is what happened the first time
+       this ran — throws away the whole run and the tokens it cost. */
+    if (research.ok && research.lastText.trim() && !research.steps.some(wroteResearch)) {
+      /* The last step's prose, not the aggregate: the aggregate carries the
+         narration from every earlier step, and research.md is a document rather
+         than a log of how it was written. */
+      await this.memory.update(project.directory, [{ file: "research.md", content: researchDocument(research.lastText) }]);
+      this.emit({ projectId, kind: "memory" });
+    }
+
+    await this.runTurn(projectId, { history: true, message: openingRequest(research.ok) });
+  }
+
+  /**
+   * One run of the agent, whatever the run is for.
+   *
+   * The single place a turn is assembled and settled: the mentor's reply, the
+   * research pass and the opening handoff differ only in which prompt they use,
+   * which tools they are given, and whether what they say is kept.
+   */
+  private async runTurn(
+    projectId: string,
+    options: {
+      /** Whether the stored conversation is sent. False for research, which is
+       *  about the project rather than about anything the learner said. */
+      history: boolean;
+      /** An instruction to run now, appended after any history. */
+      message?: string;
+      /** Overrides the mentor prompt. */
+      systemPrompt?: string;
+      /** Restricts the tool set. All of them when omitted. */
+      tools?: string[];
+      /** Whether the reply is stored as a message in the transcript. */
+      record?: boolean;
+    },
+  ): Promise<{ ok: boolean; text: string; lastText: string; steps: AgentActivityStep[] }> {
+    const project = this.store.readProject(projectId);
+    if (!project) throw new Error("That project is no longer in Construct.");
+    if (!project.present) throw new Error(`Construct cannot find ${project.directory}.`);
+
     /* Resolved per turn rather than cached: the learner can connect a provider
        or switch models between turns, and a cached credential would keep using
        the one they moved away from. */
     const resolved = (await this.providers.resolve("local", null))[0];
     if (!resolved) throw new Error("Connect a model in Settings before starting a conversation.");
 
-    const question: AgentMessage = { id: randomUUID(), role: "learner", body, createdAt: new Date().toISOString(), activity: [] };
-    this.store.appendMessage(projectId, question);
-    this.emit({ projectId, kind: "message", message: question });
-
-    const history = this.store.listMessages(projectId).map((message) =>
-      message.role === "learner"
-        ? ({ role: "user", content: message.body } as const)
-        : ({ role: "assistant", content: message.body } as const),
-    );
+    const history = options.history
+      ? this.store.listMessages(projectId).map((message) =>
+          message.role === "learner"
+            ? ({ role: "user", content: message.body } as const)
+            : ({ role: "assistant", content: message.body } as const),
+        )
+      : [];
+    const messages = options.message ? [...history, { role: "user", content: options.message } as const] : history;
 
     /* One id for the turn, generated here and used as both the worker's
        request id and this map's key.
@@ -133,25 +229,32 @@ export class AgentService {
         ...(resolved.headers ? { headers: resolved.headers } : {}),
         reasoningEffort: resolved.reasoningEffort,
       },
-      stateSuffix: `Current project: ${project.name}\nProject goal: ${project.goal}\nProject language: ${project.language}`,
-      messages: history,
+      stateSuffix: this.stateSuffix(project),
+      ...(options.systemPrompt ? { systemPrompt: options.systemPrompt } : {}),
+      ...(options.tools ? { tools: options.tools } : {}),
+      messages,
     });
 
     try {
-      const result = (await promise) as { text: string };
-      const reply: AgentMessage = {
-        id: randomUUID(),
-        role: "agent",
-        body: result.text,
-        createdAt: new Date().toISOString(),
-        /* Stored with the reply, so the turn still accounts for itself after
-           the live run is gone. */
-        activity: this.activity.get(turnId) ?? [],
-      };
-      this.store.appendMessage(projectId, reply);
-      this.emit({ projectId, kind: "message", message: reply });
+      const result = (await promise) as { text: string; lastText?: string };
+      const steps = this.activity.get(turnId) ?? [];
+      if (options.record !== false) {
+        const reply: AgentMessage = {
+          id: randomUUID(),
+          role: "agent",
+          body: result.text,
+          createdAt: new Date().toISOString(),
+          /* Stored with the reply, so the turn still accounts for itself after
+             the live run is gone. */
+          activity: steps,
+        };
+        this.store.appendMessage(projectId, reply);
+        this.emit({ projectId, kind: "message", message: reply });
+      }
+      return { ok: true, text: result.text ?? "", lastText: result.lastText ?? result.text ?? "", steps };
     } catch (cause) {
       this.emit({ projectId, kind: "error", message: cause instanceof Error ? cause.message : "The agent could not finish that turn." });
+      return { ok: false, text: "", lastText: "", steps: this.activity.get(turnId) ?? [] };
     } finally {
       this.running.delete(turnId);
       this.activity.delete(turnId);
@@ -160,6 +263,35 @@ export class AgentService {
       this.awaiting.delete(projectId);
       this.emit({ projectId, kind: "done" });
     }
+  }
+
+  /**
+   * The project state appended to the prompt, as v0.7 appended it.
+   *
+   * The path belongs here rather than only in `path.md`: it is the state the
+   * agent has to honour on every turn — what it decided to teach next — and a
+   * fact that important should not depend on the model choosing to fetch a
+   * memory file first.
+   */
+  private stateSuffix(project: { id: string; name: string; goal: string; language: string }): string {
+    const nodes = this.store.listPathNodes(project.id);
+    const currentId = this.store.currentPathNode(project.id);
+    const lines = [
+      `Current project: ${project.name}`,
+      `Project goal: ${project.goal}`,
+      `Project language: ${project.language}`,
+      `Flow Memory lives in .construct/ — research.md, project.md, path.md, learner.md. Fetch it with flow-memory-fetch; record durable changes with flow-memory-patch.`,
+    ];
+
+    if (nodes.length === 0) {
+      lines.push("Path: not planned yet. Use plan-learning-path once you know enough about the learner and the project.");
+    } else {
+      const current = nodes.find((node) => node.id === currentId);
+      lines.push(`Path: ${nodes.length} step${nodes.length === 1 ? "" : "s"}; now on ${current ? `"${current.title}"` : "no step"}.`);
+      lines.push(...nodes.map((node) => `  ${node.order + 1}. [${node.status}] ${node.title}`));
+    }
+
+    return lines.join("\n");
   }
 
   stop(): void {
@@ -174,6 +306,22 @@ export class AgentService {
     return executeAgentTool(name, input, {
       projectDirectory: project.directory,
       workspace: this.workspace,
+      readMemory: (files) => this.memory.read(project.directory, files),
+      patchMemory: async (patches) => {
+        const results = await this.memory.patch(project.directory, patches);
+        /* The window re-reads memory after a turn touches it, the same way it
+           re-reads concepts: memory is shown, so a silent write would leave the
+           panel describing a project state that has moved on. */
+        this.emit({ projectId, kind: "memory" });
+        return results;
+      },
+      planPath: async (input) => {
+        const planned = await this.path.plan(project, input);
+        this.emit({ projectId, kind: "path" });
+        return planned;
+      },
+      webSearch: (query, limit) => this.web.search(query, limit),
+      webFetch: (urls) => this.web.fetch(urls),
       recordConcept: (record) => {
         if (!record.conceptId || !record.title) return;
         this.store.recordConcept({ projectId, ...record });

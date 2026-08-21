@@ -1,6 +1,10 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { WorkspaceService } from "../projects/workspaceService.js";
+import type { MemoryFile, MemoryPatch, MemoryRead, MemoryPatchResult } from "../memory/memoryService.js";
+import { MEMORY_FILES } from "../memory/memoryService.js";
+import type { PathNodeInput, PlannedPath } from "../learning/pathService.js";
+import type { WebSearchResult } from "../webSearch.js";
 
 const run = promisify(execFile);
 
@@ -33,6 +37,19 @@ export type AgentToolContext = {
     docs: Array<{ title: string; url: string }>;
     tags: string[];
   }): void;
+  /** Flow Memory: the four Markdown files in the project's own `.construct`.
+   *  Read by purpose rather than by habit, and patched rather than rewritten —
+   *  see `memoryService.ts` for why both of those matter. */
+  readMemory(files: MemoryFile[]): Promise<MemoryRead[]>;
+  patchMemory(patches: MemoryPatch[]): Promise<MemoryPatchResult[]>;
+  /** Records or revises the teaching path: the ordered steps between where the
+   *  learner is and the project they set out to build. */
+  planPath(input: { reason: string; currentNodeId?: string | undefined; nodes: PathNodeInput[] }): Promise<PlannedPath>;
+  /** The web, when a key is configured. Unconfigured is an answer rather than an
+   *  error: the agent has other ways to make progress and a thrown error would
+   *  end the turn. */
+  webSearch(query: string, limit: number): Promise<WebSearchResult>;
+  webFetch(urls: string[]): Promise<WebSearchResult>;
   /** Puts a question to the learner and resolves with their answer. The agent
    *  is a teaching system, so asking is a first-class move and the turn genuinely
    *  waits here. */
@@ -92,6 +109,63 @@ export async function executeAgentTool(name: string, input: unknown, context: Ag
       });
       return { recorded: true };
     }
+
+    case "flow-memory-fetch": {
+      /* Named files only, and defaulted to all four when the model asks for
+         nothing in particular — the prompt tells it to fetch by purpose, but a
+         turn that fetches badly should still get its memory. */
+      const asked = Array.isArray(args.files) ? args.files.map(String) : [];
+      const files = asked.filter((file): file is MemoryFile => (MEMORY_FILES as readonly string[]).includes(file));
+      return context.readMemory(files.length > 0 ? files : [...MEMORY_FILES]);
+    }
+
+    case "flow-memory-patch": {
+      const patches = Array.isArray(args.patches) ? args.patches : [];
+      if (patches.length === 0) throw new Error("No memory patches were given.");
+      return context.patchMemory(
+        patches.slice(0, 6).map((entry) => {
+          const patch = entry as Record<string, unknown>;
+          const file = String(patch.file ?? "");
+          if (!(MEMORY_FILES as readonly string[]).includes(file)) throw new Error(`Construct has no memory file called ${file}.`);
+          const mode = String(patch.mode ?? "append");
+          if (mode !== "append" && mode !== "prepend" && mode !== "replace") throw new Error(`Unknown memory patch mode: ${mode}`);
+          return {
+            file: file as MemoryFile,
+            mode,
+            content: String(patch.content ?? ""),
+            reason: String(patch.reason ?? "Updated memory."),
+            ...(patch.find ? { find: String(patch.find) } : {}),
+          };
+        }),
+      );
+    }
+
+    case "plan-learning-path": {
+      const nodes = Array.isArray(args.nodes) ? args.nodes : [];
+      if (nodes.length === 0) throw new Error("A path needs at least one step.");
+      return context.planPath({
+        reason: String(args.reason ?? "Planned the path."),
+        ...(args.currentNodeId ? { currentNodeId: String(args.currentNodeId) } : {}),
+        nodes: nodes.slice(0, 14).map((entry) => {
+          const node = entry as Record<string, unknown>;
+          return {
+            id: String(node.id ?? "").trim(),
+            title: String(node.title ?? "").trim(),
+            summary: String(node.summary ?? "").trim(),
+            ...(node.kind ? { kind: String(node.kind) } : {}),
+            ...(node.status ? { status: String(node.status) } : {}),
+            ...(Array.isArray(node.concepts) ? { concepts: node.concepts.map(String).slice(0, 16) } : {}),
+            ...(Array.isArray(node.exitCriteria) ? { exitCriteria: node.exitCriteria.map(String).slice(0, 8) } : {}),
+          } as PathNodeInput;
+        }),
+      });
+    }
+
+    case "web-search":
+      return context.webSearch(String(args.query ?? ""), Number(args.limit ?? 5));
+
+    case "web-fetch":
+      return context.webFetch(Array.isArray(args.urls) ? args.urls.map(String) : []);
 
     case "ask_user_question":
       return context.askLearner({

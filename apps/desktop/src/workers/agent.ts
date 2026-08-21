@@ -151,6 +151,81 @@ const tools = {
     }),
     requestId,
   ),
+  "flow-memory-fetch": hostTool(
+    "flow-memory-fetch",
+    [
+      "Read Flow Memory: what Construct remembers about this project between turns.",
+      "research.md is the project background gathered before teaching started. project.md is the goal, stack, important files and commands. path.md is where the teaching has got to. learner.md is how this person learns and what they already know.",
+      "Say why you need it and ask only for the files that bear on it — fetching all four every turn spends the context on things you are not about to use.",
+    ].join("\n"),
+    z.object({
+      purpose: z.string().min(1).max(500).describe("Why you need memory right now"),
+      files: z.array(z.enum(["research.md", "project.md", "path.md", "learner.md"])).min(1).max(4),
+    }),
+    requestId,
+  ),
+  "flow-memory-patch": hostTool(
+    "flow-memory-patch",
+    [
+      "Record a durable change to Flow Memory. Prefer this over rewriting a whole file: a patch says what changed, and the learner sees the diff.",
+      "append adds a note at the end; prepend puts one at the top; replace swaps exact text, and needs `find` to match once and only once.",
+      "Patch when something is worth knowing next session: a decision made, a preference observed, a file that turned out to matter. Not for every message.",
+    ].join("\n"),
+    z.object({
+      patches: z
+        .array(
+          z.object({
+            file: z.enum(["research.md", "project.md", "path.md", "learner.md"]),
+            mode: z.enum(["append", "prepend", "replace"]),
+            content: z.string().min(1).max(4_000),
+            find: z.string().max(4_000).optional().describe("Required by replace: the exact text to swap out"),
+            reason: z.string().min(1).max(500).describe("Why this is worth remembering"),
+          }),
+        )
+        .min(1)
+        .max(6),
+    }),
+    requestId,
+  ),
+  "plan-learning-path": hostTool(
+    "plan-learning-path",
+    [
+      "Set or revise the path: the ordered steps between where this learner is now and the project they set out to build.",
+      "This is the teaching plan, not a filesystem path. Plan it once you know enough about the learner and the project, and revise it whenever what they can do changes.",
+      "Steps the learner has already finished stay finished across a revision. Order matters: the first unfinished step becomes the current one unless you name another.",
+    ].join("\n"),
+    z.object({
+      reason: z.string().min(1).max(800).describe("Why the path is being set or revised now"),
+      currentNodeId: z.string().max(120).optional(),
+      nodes: z
+        .array(
+          z.object({
+            id: z.string().min(1).max(120).describe("A stable slug, e.g. 'first-triangle'"),
+            title: z.string().min(1).max(120),
+            summary: z.string().min(1).max(500),
+            kind: z.enum(["profile", "foundation", "build", "connect", "polish", "ship", "custom"]).optional(),
+            status: z.enum(["planned", "active", "completed", "blocked", "revising"]).optional(),
+            concepts: z.array(z.string().max(120)).max(16).optional().describe("Concept ids this step teaches"),
+            exitCriteria: z.array(z.string().max(220)).max(8).optional().describe("What the learner can do once this step is done"),
+          }),
+        )
+        .min(1)
+        .max(14),
+    }),
+    requestId,
+  ),
+  "web-search": hostTool(
+    "web-search",
+    "Search the web. Short queries and few results: this is for finding pages worth reading, not for pulling the web into the conversation.",
+    z.object({ query: z.string().min(1).max(300), limit: z.number().int().min(1).max(10).default(5) }),
+    requestId,
+  ),
+  "web-fetch": hostTool(
+    "web-fetch",
+    "Read named URLs in full. Use once you know which pages you want.",
+    z.object({ urls: z.array(z.string().max(500)).min(1).max(5) }),
+    requestId,
+  ),
   ask_user_question: hostTool(
     "ask_user_question",
     "Ask the learner one tracked question and pause until they answer. Use this instead of writing required learner questions as prose.",
@@ -169,6 +244,12 @@ type TurnPayload = {
   provider: PiProviderInput;
   /** Flow state and run mode, appended to the prompt exactly as v0.7 did. */
   stateSuffix?: string;
+  /** Replaces the mentor prompt. The research pass runs on the same worker with
+   *  its own instructions and a narrower tool set, rather than in a second
+   *  process — it is the same model doing a different job. */
+  systemPrompt?: string;
+  /** Restricts which tools this run may call. Omitted means all of them. */
+  tools?: string[];
   /* A discriminated union rather than `role: "user" | "assistant"`. Mastra's
      message type is itself a union, and a single object typed with a union
      role matches none of its members — the compiler cannot tell which one is
@@ -176,17 +257,33 @@ type TurnPayload = {
   messages: Array<{ role: "user"; content: string } | { role: "assistant"; content: string }>;
 };
 
-async function runTurn(payload: TurnPayload): Promise<{ text: string }> {
+async function runTurn(payload: TurnPayload): Promise<{ text: string; lastText: string }> {
   currentRequestId = payload.requestId;
+  /* The final step's prose, kept separately from the aggregate.
+     
+     `result.text` concatenates the text of every step, so a run that narrated
+     "let me look at that file" before each tool call comes back with those
+     fragments glued to the actual answer — mid-sentence, since none of them
+     ended in a full stop. The transcript already streams them as their own
+     lines, so anything that wants *the answer* wants only the last one. */
+  let lastText = "";
+
+  const base = payload.systemPrompt ?? CONSTRUCT_AGENT_PROMPT;
+  /* A run that names its tools gets exactly those. Withholding tools rather than
+     asking the prompt not to use them is the difference between a research pass
+     that cannot write to the learner's files and one that has been told not to. */
+  const available = payload.tools
+    ? Object.fromEntries(Object.entries(tools).filter(([name]) => payload.tools?.includes(name)))
+    : tools;
 
   const agent = new Agent({
     id: "construct-flow",
     name: "Construct Flow",
     /* The prompt is used as-is, with state appended rather than interpolated —
        the same shape v0.7 used, so behaviour does not shift with the port. */
-    instructions: payload.stateSuffix ? `${CONSTRUCT_AGENT_PROMPT}\n\n${payload.stateSuffix}` : CONSTRUCT_AGENT_PROMPT,
+    instructions: payload.stateSuffix ? `${base}\n\n${payload.stateSuffix}` : base,
     model: createPiMastraModel(payload.provider),
-    tools,
+    tools: available,
   });
 
   const result = await agent.generate(payload.messages, {
@@ -198,7 +295,10 @@ async function runTurn(payload: TurnPayload): Promise<{ text: string }> {
       const reasoning = textOf(step.reasoning ?? step.reasoningText).trim();
       const text = textOf(step.text).trim();
       if (reasoning) send({ kind: "event", requestId: payload.requestId, type: "reasoning", text: reasoning });
-      if (text) send({ kind: "event", requestId: payload.requestId, type: "text", text });
+      if (text) {
+        lastText = text;
+        send({ kind: "event", requestId: payload.requestId, type: "text", text });
+      }
     }) as never,
   });
 
@@ -206,7 +306,8 @@ async function runTurn(payload: TurnPayload): Promise<{ text: string }> {
   /* Normalised for the same reason: `result.text` has been a string and an
      array of content parts depending on the provider, and a reply stored as
      "[object Object]" is a lost turn. */
-  return { text: textOf(result.text) || textOf((result as unknown as { content?: unknown }).content) };
+  const text = textOf(result.text) || textOf((result as unknown as { content?: unknown }).content);
+  return { text, lastText: lastText || text };
 }
 
 process.parentPort?.on("message", (event: { data: unknown }) => {

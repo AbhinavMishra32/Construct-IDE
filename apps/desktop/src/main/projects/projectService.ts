@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 import type { Language } from "@construct/domain";
 import type { ProjectDefaults, ProjectDetail, ProjectSummary } from "../../shared/api.js";
+import type { MemoryService } from "../memory/memoryService.js";
 import type { ProjectStore } from "../store/projectStore.js";
 
 /** Turns a name a person typed into a directory name. Falls back rather than
@@ -57,7 +58,13 @@ const SEED: Record<Language, { file: string; content: string } | null> = {
  * records only where a project is and deleting one never removes it.
  */
 export class ProjectService {
-  constructor(private readonly store: ProjectStore) {}
+  constructor(
+    private readonly store: ProjectStore,
+    /** Flow Memory is written when the project is made, not when an agent first
+     *  runs: the four files are part of what a Construct project *is*, and a
+     *  learner with no model connected should still find them there. */
+    private readonly memory: MemoryService,
+  ) {}
 
   list(): ProjectSummary[] {
     return this.store.listProjects();
@@ -116,12 +123,14 @@ export class ProjectService {
 
     const seed = SEED[input.language];
     if (seed) await writeFile(path.join(directory, seed.file), seed.content, "utf8");
-    /* The goal is written into the project rather than kept only in Construct's
-       database. A learner who opens the directory in another editor, or comes
-       back to it in a year, should still find what they set out to build. */
-    await writeFile(path.join(directory, "GOAL.md"), `# ${input.name}\n\n${input.goal}\n`, "utf8");
+    /* No GOAL.md. The goal is written into `.construct/project.md` along with
+       everything else Construct remembers, which is where v0.7 kept it — one
+       place the learner can read and edit, rather than a file at the top of
+       their repository that only Construct writes and nothing reads back. */
 
-    return this.store.createProject({ name: input.name, goal: input.goal, directory, language: input.language });
+    const project = this.store.createProject({ name: input.name, goal: input.goal, directory, language: input.language });
+    await this.memory.ensure(project);
+    return project;
   }
 
   async import(input: { directory: string; goal: string }): Promise<ProjectSummary> {
@@ -130,12 +139,16 @@ export class ProjectService {
     const existing = this.store.readProjectAt(input.directory);
     if (existing) return existing;
 
-    return this.store.createProject({
+    const project = this.store.createProject({
       name: path.basename(input.directory) || "Project",
       goal: input.goal,
       directory: input.directory,
       language: await dominantLanguage(input.directory),
     });
+    /* An imported project gets memory too. It is an existing codebase, so
+       research and the path have more to work from, not less. */
+    await this.memory.ensure(project);
+    return project;
   }
 
   /** Opens a project and stamps it, which is also what orders the project list. */
