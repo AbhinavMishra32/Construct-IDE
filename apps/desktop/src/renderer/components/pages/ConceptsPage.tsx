@@ -1,11 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
+import { Panel, PanelGroup } from "react-resizable-panels";
 import { ChevronRight, Orbit, Search, Share2, X } from "lucide-react";
 import type { AtlasConcept, ConstructApi } from "../../../shared/api";
 import { cn } from "@/lib/utils";
-import { masteryColor, masteryTitle } from "@/lib/mastery";
+import { masteryTitle } from "@/lib/mastery";
+import { useDark } from "../../hooks/use-dark";
+import { conceptColor, topicColor } from "../concepts/palette";
 import { ConceptAtlas } from "../concepts/ConceptAtlas";
 import { topicOf, type AtlasMode } from "../concepts/atlas";
 import { Segmented } from "@/components/ui/segmented";
+import { PaneHandle } from "../workspace/PaneHandle";
 import { ConceptEntry } from "../concepts/ConceptEntry";
 import { EmptyState } from "../common/EmptyState";
 
@@ -36,6 +40,7 @@ export function ConceptsPage({ api, onError }: { api: ConstructApi | undefined; 
      what connects to what. Orbits are the second question, so they are the
      second view. */
   const [mode, setMode] = useState<AtlasMode>("web");
+  const dark = useDark();
 
   useEffect(() => {
     if (!api) return;
@@ -79,13 +84,16 @@ export function ConceptsPage({ api, onError }: { api: ConstructApi | undefined; 
   }
 
   return (
-    <div className="flex h-full min-h-0">
+    /* Resizable, and remembered: how much of this page is index, how much is
+       reading and how much is atlas is a matter of what you came to do, and
+       nobody wants to answer that twice. */
+    <PanelGroup autoSaveId="construct.concepts" className="flex h-full min-h-0" direction="horizontal">
       {/* --- the index ------------------------------------------------------
           Grouped by topic rather than listed flat, because a flat list of forty
           sentences is a wall. The group is the concept's own first tag: the
           agent files them, so the shelves are the ones it built. */}
-      <div className="hairline-r flex w-[15.5rem] shrink-0 flex-col">
-        <div className="hairline-b flex h-9 shrink-0 items-center gap-2 px-3">
+      <Panel className="flex min-w-0 flex-col" defaultSize={19} maxSize={34} minSize={12} order={1}>
+        <div className="hairline-b flex h-10 shrink-0 items-center gap-2 px-3">
           <Search className="size-3.5 shrink-0 text-muted-foreground" />
           <input
             className="min-w-0 flex-1 bg-transparent text-source text-foreground outline-none placeholder:text-muted-foreground/70"
@@ -135,13 +143,14 @@ export function ConceptsPage({ api, onError }: { api: ConstructApi | undefined; 
                           onClick={() => setSelectedId(concept.conceptId)}
                           type="button"
                         >
-                          {/* The same dot the atlas draws, at the same colour.
-                              The list and the map are one thing seen twice, and
-                              the colour is what says so. */}
+                          {/* The same dot the atlas draws, in the same colour:
+                              its topic's hue at the depth its level earns. The
+                              list and the map are one thing seen twice, and the
+                              colour is what says so. */}
                           <span
                             aria-hidden
                             className="mt-[7px] size-2 shrink-0 rounded-full"
-                            style={{ background: masteryColor(concept.masteryLevel) }}
+                            style={{ background: conceptColor(topic, concept.masteryLevel, dark) }}
                             title={masteryTitle(concept.masteryLevel)}
                           />
                           <span className="min-w-0 flex-1 truncate text-source leading-[1.35] text-foreground">{concept.title}</span>
@@ -155,11 +164,13 @@ export function ConceptsPage({ api, onError }: { api: ConstructApi | undefined; 
           })}
           {groups.length === 0 && <p className="px-3 py-2 text-source-sm text-muted-foreground">Nothing matches that.</p>}
         </div>
-      </div>
+      </Panel>
+
+      <PaneHandle />
 
       {/* --- the entry ------------------------------------------------------
           The middle and the most room, because reading is what the page is for. */}
-      <div className="app-scroll min-h-0 min-w-0 flex-1 overflow-y-auto px-7 py-5">
+      <Panel className="app-scroll min-h-0 min-w-0 overflow-y-auto px-7 py-5" defaultSize={51} minSize={26} order={2}>
         {selected ? (
           <div className="mx-auto max-w-[46rem]">
             <ConceptEntry api={api} concept={selected} where={selected.projectName} />
@@ -167,10 +178,17 @@ export function ConceptsPage({ api, onError }: { api: ConstructApi | undefined; 
         ) : (
           <EmptyState className="mt-10" description="Pick one from the list, or from the atlas." icon={Orbit} title="Nothing open" />
         )}
-      </div>
+      </Panel>
+
+      <PaneHandle />
 
       {/* --- the atlas ------------------------------------------------------ */}
-      <div className="hairline-l flex w-[clamp(19rem,32%,28rem)] shrink-0 flex-col bg-[color-mix(in_oklab,var(--foreground)_2.5%,transparent)]">
+      <Panel
+        className="flex min-w-0 flex-col bg-[color-mix(in_oklab,var(--foreground)_2.5%,transparent)]"
+        defaultSize={30}
+        minSize={16}
+        order={3}
+      >
         <div className="hairline-b flex h-10 shrink-0 items-center gap-1.5 px-2">
           <span className="px-1 text-ui-sm font-semibold uppercase tracking-wide text-muted-foreground/60">Atlas</span>
           <Segmented<AtlasMode>
@@ -196,25 +214,48 @@ export function ConceptsPage({ api, onError }: { api: ConstructApi | undefined; 
           )}
         </div>
 
-        {/* The ramp, once. It is the one thing on this page that has to be
-            learned before the page can be read — and the sentence above it is
-            the whole idea of the drawing. */}
-        <div className="hairline-t shrink-0 px-3 py-2">
-          <p className="mb-1.5 text-ui-sm font-semibold uppercase tracking-wide text-muted-foreground/60">
-            {mode === "web" ? "Wired to its root concept" : "Distance is mastery"}
-          </p>
-          <ol className="space-y-[3px]">
-            {[5, 4, 3, 2, 1, 0].map((level) => (
-              <li className="flex items-center gap-1.5 text-ui-sm text-muted-foreground" key={level}>
-                <span className="size-1.5 shrink-0 rounded-full" style={{ background: masteryColor(level) }} />
-                <span className="min-w-0 truncate">{masteryTitle(level)}</span>
-                {level === 3 && <span className="ml-auto shrink-0 text-muted-foreground/60">tasks unlock</span>}
+        {/* The legend, and it has two jobs because the map uses two channels:
+            which hue is which topic, and what depth of that hue means. Both are
+            things you learn once and then read for good, which is the only kind
+            of legend worth the space it takes. */}
+        <div className="hairline-t shrink-0 px-3 py-2.5">
+          <p className="mb-1.5 text-ui-sm font-semibold uppercase tracking-wide text-muted-foreground/60">Hue is the topic</p>
+          <ul className="flex flex-wrap gap-x-3 gap-y-1">
+            {groups.slice(0, 8).map(([topic, members]) => (
+              <li className="flex min-w-0 items-center gap-1.5 text-ui-sm text-muted-foreground" key={topic}>
+                <span
+                  className="size-2 shrink-0 rounded-full"
+                  style={{ background: topicColor(topic, Math.max(...members.map((member) => member.masteryLevel)), dark) }}
+                />
+                <span className="min-w-0 truncate">{topic}</span>
               </li>
             ))}
-          </ol>
+            {groups.length > 8 && <li className="text-ui-sm text-muted-foreground/60">+{groups.length - 8} more</li>}
+          </ul>
+
+          <p className="mt-2.5 mb-1 text-ui-sm font-semibold uppercase tracking-wide text-muted-foreground/60">
+            {dark ? "Brighter is further along" : "Deeper is further along"}
+          </p>
+          <div className="flex items-center gap-1.5">
+            {/* The ramp drawn in one topic's own hue rather than in six unrelated
+                colours, because that is exactly what it does on the map. */}
+            <span aria-hidden className="flex flex-1 overflow-hidden rounded-full">
+              {[0, 1, 2, 3, 4, 5].map((level) => (
+                <span
+                  className="h-1.5 flex-1"
+                  key={level}
+                  style={{ background: conceptColor(groups[0]?.[0] ?? "Types", level, dark) }}
+                />
+              ))}
+            </span>
+          </div>
+          <div className="mt-1 flex justify-between text-ui-sm text-muted-foreground/60">
+            <span>{masteryTitle(0)}</span>
+            <span>{masteryTitle(5)}</span>
+          </div>
         </div>
-      </div>
-    </div>
+      </Panel>
+    </PanelGroup>
   );
 }
 
