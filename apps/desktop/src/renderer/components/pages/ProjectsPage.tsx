@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { FolderOpen, FolderPlus, Import, TriangleAlert } from "lucide-react";
 import { LANGUAGES, type Language } from "@construct/domain";
-import type { ConstructApi, ProjectSummary } from "../../../shared/api";
+import type { ConstructApi, ProjectDefaults, ProjectSummary } from "../../../shared/api";
 import { cn } from "@/lib/utils";
 import { relativeTime } from "@/lib/format";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,9 @@ declare const constructHost: { chooseDirectory(): Promise<string | null> };
 
 type Props = {
   api: ConstructApi | undefined;
+  /** What a new project inherits: where it goes, and what it is written in.
+   *  Owned by Settings so this page never has to ask. */
+  defaults: ProjectDefaults;
   projects: ProjectSummary[];
   creating: boolean;
   onCreatingChange(open: boolean): void;
@@ -26,7 +29,7 @@ type Props = {
   onError(message: string): void;
 };
 
-export function ProjectsPage({ api, projects, creating, onCreatingChange, onOpen, onChanged, onError }: Props) {
+export function ProjectsPage({ api, defaults, projects, creating, onCreatingChange, onOpen, onChanged, onError }: Props) {
   return (
     <div className="mx-auto w-full max-w-3xl px-6 py-6">
       {projects.length === 0 ? (
@@ -86,7 +89,14 @@ export function ProjectsPage({ api, projects, creating, onCreatingChange, onOpen
         </>
       )}
 
-      <NewProjectDialog api={api} open={creating} onOpenChange={onCreatingChange} onChanged={onChanged} onError={onError} />
+      <NewProjectDialog
+        api={api}
+        defaults={defaults}
+        onChanged={onChanged}
+        onError={onError}
+        onOpenChange={onCreatingChange}
+        open={creating}
+      />
     </div>
   );
 }
@@ -123,12 +133,14 @@ function ImportButton({ api, onChanged, onError }: { api: ConstructApi | undefin
 
 function NewProjectDialog({
   api,
+  defaults,
   open,
   onOpenChange,
   onChanged,
   onError,
 }: {
   api: ConstructApi | undefined;
+  defaults: ProjectDefaults;
   open: boolean;
   onOpenChange(open: boolean): void;
   onChanged(): Promise<void>;
@@ -136,11 +148,17 @@ function NewProjectDialog({
 }) {
   const [name, setName] = useState("");
   const [goal, setGoal] = useState("");
-  const [language, setLanguage] = useState<Language>("typescript");
+  /* Both start from the learner's defaults. `parent` stays null unless they pick
+     somewhere else for this one project, so the main process keeps using the
+     configured folder — and a project made now still lands in the right place if
+     the default changes before the dialog is submitted. */
+  const [language, setLanguage] = useState<Language>(defaults.language);
   const [parent, setParent] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const ready = name.trim().length > 0 && goal.trim().length >= 3 && Boolean(parent);
+  /* No folder to choose, so the form is ready as soon as it has been told what
+     to build and what to understand. */
+  const ready = name.trim().length > 0 && goal.trim().length >= 3;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -186,13 +204,33 @@ function NewProjectDialog({
           </Select>
         </Field>
 
-        <Field>
-          <FieldLabel>Location</FieldLabel>
-          <Button variant="outline" className="justify-start font-normal" onClick={async () => setParent(await constructHost.chooseDirectory())}>
-            <FolderOpen className="size-4" />
-            <span className="truncate">{parent ?? "Choose a folder…"}</span>
-          </Button>
-        </Field>
+        {/* Where it lands, stated rather than asked. A line of text and a way to
+            change your mind: the folder is a decision nobody has an opinion
+            about after the first time, and it used to stand between the learner
+            and a project as a mandatory trip through the OS dialog. */}
+        <p className="flex min-w-0 items-center gap-1.5 text-ui text-muted-foreground">
+          <FolderOpen className="size-3.5 shrink-0" />
+          <span className="min-w-0 flex-1 truncate">{parent ?? defaults.directory}</span>
+          <button
+            className="shrink-0 rounded-sm text-foreground/70 underline underline-offset-2 outline-none hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
+            onClick={async () => {
+              const chosen = await constructHost.chooseDirectory();
+              if (chosen) setParent(chosen);
+            }}
+            type="button"
+          >
+            Change
+          </button>
+          {parent && (
+            <button
+              className="shrink-0 rounded-sm text-muted-foreground underline underline-offset-2 outline-none hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
+              onClick={() => setParent(null)}
+              type="button"
+            >
+              Reset
+            </button>
+          )}
+        </p>
 
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
@@ -201,14 +239,23 @@ function NewProjectDialog({
           <Button
             disabled={!ready || busy}
             onClick={async () => {
-              if (!api || !parent) return;
+              if (!api) return;
               setBusy(true);
               try {
-                await api.createProject({ name: name.trim(), goal: goal.trim(), parentDirectory: parent, language });
+                /* `parentDirectory` is only sent when the learner picked one:
+                   omitting it is what tells the main process to use the folder
+                   from Settings, and creating it if it is not there yet. */
+                await api.createProject({
+                  name: name.trim(),
+                  goal: goal.trim(),
+                  language,
+                  ...(parent ? { parentDirectory: parent } : {}),
+                });
                 await onChanged();
                 onOpenChange(false);
                 setName("");
                 setGoal("");
+                setParent(null);
               } catch (error) {
                 onError(error instanceof Error ? error.message : "Construct could not create that project.");
               } finally {

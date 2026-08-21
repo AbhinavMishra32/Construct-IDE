@@ -1,8 +1,9 @@
 import { mkdir, readdir, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { homedir } from "node:os";
 import path from "node:path";
 import type { Language } from "@construct/domain";
-import type { ProjectDetail, ProjectSummary } from "../../shared/api.js";
+import type { ProjectDefaults, ProjectDetail, ProjectSummary } from "../../shared/api.js";
 import type { ProjectStore } from "../store/projectStore.js";
 
 /** Turns a name a person typed into a directory name. Falls back rather than
@@ -62,10 +63,55 @@ export class ProjectService {
     return this.store.listProjects();
   }
 
-  async create(input: { name: string; goal: string; parentDirectory: string; language: Language }): Promise<ProjectSummary> {
-    if (!existsSync(input.parentDirectory)) throw new Error("That folder no longer exists. Pick another one.");
+  /**
+   * Where new projects go, and what they are written in.
+   *
+   * Defaulted rather than asked for. Making a project used to require picking a
+   * folder through the OS dialog every single time — a decision nobody has an
+   * opinion about after the first one, standing between the learner and the only
+   * two things that matter, which are what they want to build and what they want
+   * to understand.
+   *
+   * `~/Construct` because it is where somebody would look for their Construct
+   * projects without being told, and it stays out of Documents, which belongs to
+   * the learner rather than to us.
+   */
+  defaults(): ProjectDefaults {
+    return {
+      directory: this.store.getSetting<string>("projects-directory", path.join(homedir(), "Construct")),
+      language: this.store.getSetting<Language>("projects-language", "typescript"),
+    };
+  }
 
-    const directory = availableDirectory(input.parentDirectory, directorySlug(input.name));
+  /**
+   * Changes what new projects inherit, and answers with what actually settled.
+   *
+   * The folder is created here rather than at the next project, so a path that
+   * cannot be made fails while the learner is still looking at the setting that
+   * caused it — not minutes later, in a dialog about something else.
+   */
+  async setDefaults(input: { directory?: string | undefined; language?: Language | undefined }): Promise<ProjectDefaults> {
+    if (input.directory !== undefined) {
+      const directory = path.resolve(input.directory);
+      if (!path.isAbsolute(directory)) throw new Error("A projects folder has to be an absolute path.");
+      await mkdir(directory, { recursive: true });
+      this.store.setSetting("projects-directory", directory);
+    }
+    if (input.language !== undefined) this.store.setSetting("projects-language", input.language);
+    return this.defaults();
+  }
+
+  async create(input: { name: string; goal: string; parentDirectory?: string | undefined; language: Language }): Promise<ProjectSummary> {
+    const parent = input.parentDirectory ?? this.defaults().directory;
+    /* The default folder is created on demand; one the learner named is not.
+       A missing default is Construct's own housekeeping — it is the folder we
+       chose — while a missing chosen folder means the path is wrong or the disk
+       is gone, and silently making it somewhere unexpected is worse than saying
+       so. */
+    if (!input.parentDirectory) await mkdir(parent, { recursive: true });
+    else if (!existsSync(parent)) throw new Error("That folder no longer exists. Pick another one.");
+
+    const directory = availableDirectory(parent, directorySlug(input.name));
     await mkdir(directory, { recursive: true });
 
     const seed = SEED[input.language];

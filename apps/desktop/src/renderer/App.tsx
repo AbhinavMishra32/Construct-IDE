@@ -275,6 +275,7 @@ export function App() {
           {page === "projects" && (
             <ProjectsPage
               api={api}
+              defaults={data.projectDefaults}
               projects={data.projects}
               creating={creating}
               onCreatingChange={setCreating}
@@ -287,7 +288,14 @@ export function App() {
           {page === "concepts" && <ConceptsPage api={api} onError={setError} />}
 
           {page === "settings" && (
-            <SettingsPage api={api} theme={data.theme} onThemeChange={setTheme} onSignedOut={load} />
+            <SettingsPage
+              api={api}
+              onProjectDefaults={(projectDefaults) => setData((current) => (current ? { ...current, projectDefaults } : current))}
+              onSignedOut={load}
+              onThemeChange={setTheme}
+              projectDefaults={data.projectDefaults}
+              theme={data.theme}
+            />
           )}
 
           {page === "workspace" && activeProject && (

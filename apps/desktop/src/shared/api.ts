@@ -82,6 +82,7 @@ export const ipc = {
   /* The application itself. */
   settingsOpenExternal: "settings:open-external",
   settingsTheme: "settings:theme",
+  settingsProjectDefaults: "settings:project-defaults",
   updateState: "update:state",
   updateCheck: "update:check",
   updateDownload: "update:download",
@@ -133,8 +134,13 @@ export const projectCreateInput = z.object({
   goal: projectGoalField,
   name: z.string().trim().min(1).max(80),
   /** Where the directory is made. Absolute, chosen through the OS picker, so
-   *  the renderer never composes a filesystem path itself. */
-  parentDirectory: z.string().min(1).max(4000),
+   *  the renderer never composes a filesystem path itself.
+   *
+   *  Optional, and that is the point: the main process falls back to the
+   *  learner's projects folder from Settings, so making a project asks for a
+   *  name, a goal and nothing else. Naming a folder here overrides that for one
+   *  project without changing the default. */
+  parentDirectory: z.string().min(1).max(4000).optional(),
   language: languageSchema,
 });
 export const projectImportInput = z.object({
@@ -318,6 +324,14 @@ export const providerSettingsInput = z.object({
     ),
   secret: z.string().max(20_000),
 });
+/** What a new project inherits when the learner does not say otherwise. Both
+ *  live in Settings; both can still be overridden per project in the dialog. */
+export const projectDefaultsInput = z.object({
+  directory: z.string().min(1).max(4000).optional(),
+  language: languageSchema.optional(),
+});
+export type ProjectDefaults = { directory: string; language: Language };
+
 export const themePreferenceSchema = z.enum(["system", "light", "dark"]);
 /** Mirrors pi-ai's `ModelThinkingLevel`: "off" sends no reasoning directive at all. */
 export const reasoningEffortSchema = z.enum(["off", "low", "medium", "high", "xhigh"]);
@@ -395,6 +409,9 @@ export type BootstrapData = {
   signedIn: boolean;
   email: string | null;
   theme: ThemePreference;
+  /** Where new projects go, and what they are written in, unless the learner
+   *  says otherwise for one of them. */
+  projectDefaults: ProjectDefaults;
   projects: ProjectSummary[];
   providers: ProviderInventory;
   notices: ConstructNotice[];
@@ -485,6 +502,9 @@ export interface ConstructApi {
   /* Application. */
   openExternal(url: string): Promise<void>;
   setTheme(theme: ThemePreference): Promise<void>;
+  /** Changes what new projects inherit. Returns the settled defaults, because
+   *  the main process is what knows whether the folder could be made. */
+  setProjectDefaults(input: z.infer<typeof projectDefaultsInput>): Promise<ProjectDefaults>;
   updateState(): Promise<UpdateState>;
   checkForUpdate(): Promise<UpdateState>;
   downloadUpdate(): Promise<void>;
