@@ -254,7 +254,7 @@ export function App() {
           )}
 
           {page === "workspace" && activeProject && (
-            <Workspace api={api} project={activeProject} openPath={openPath} onError={setError} />
+            <Workspace api={api} onError={setError} onOpenSettings={() => setPage("settings")} openPath={openPath} project={activeProject} />
           )}
         </div>
       </main>
