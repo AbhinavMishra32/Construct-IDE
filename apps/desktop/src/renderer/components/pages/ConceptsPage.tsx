@@ -123,13 +123,21 @@ export function ConceptsPage({ api, onError }: { api: ConstructApi | undefined; 
 
       {/* Resizable, and remembered: how much of this page is index, how much is
           reading and how much is atlas depends on what you came to do, and nobody
-          wants to answer that twice. */}
-      <PanelGroup autoSaveId="construct.concepts" className="flex min-h-0 flex-1 gap-1 p-1 pt-0" direction="horizontal">
+          wants to answer that twice.
+          
+          The index and the entry are plain columns on the pane's own surface,
+          divided by a hairline. Only the atlas is a blob — and that asymmetry is
+          the point rather than an oversight: a blob says "this is a thing sitting
+          on the page", which is true of a turning three-dimensional map and false
+          of a list and a page of prose. Carding those two up made the page look
+          like three widgets that had been arranged rather than one document you
+          read. */}
+      <PanelGroup autoSaveId="construct.concepts" className="flex min-h-0 flex-1" direction="horizontal">
         {/* --- the index ---------------------------------------------------
             Grouped by topic rather than listed flat: a flat list of forty
             sentences is a wall. The group is the concept's own first tag — the
             agent files them, so the shelves are the ones it built. */}
-        <Panel className="app-blob flex min-w-0 flex-col overflow-hidden" defaultSize={19} maxSize={34} minSize={12} order={1}>
+        <Panel className="hairline-r flex min-w-0 flex-col overflow-hidden" defaultSize={19} maxSize={34} minSize={12} order={1}>
           <div className="flex h-9 shrink-0 items-center gap-2 px-3">
             <Search className="size-3.5 shrink-0 text-muted-foreground" />
             <input
@@ -211,7 +219,10 @@ export function ConceptsPage({ api, onError }: { api: ConstructApi | undefined; 
         <PaneHandle />
 
         {/* --- the entry --------------------------------------------------- */}
-        <Panel className="app-blob relative flex min-w-0 flex-col overflow-hidden" defaultSize={51} minSize={26} order={2}>
+        {/* No hairline on this one: the atlas blob's own edge is already the
+            boundary on that side, and a rule a few pixels from a ring reads as a
+            mistake even to someone who could not say why. */}
+        <Panel className="relative flex min-w-0 flex-col overflow-hidden" defaultSize={51} minSize={26} order={2}>
           {selected && (
             <ConceptMenu
               className="absolute top-2 right-3 z-10 opacity-60 hover:opacity-100 data-[state=open]:opacity-100"
@@ -241,7 +252,8 @@ export function ConceptsPage({ api, onError }: { api: ConstructApi | undefined; 
         <PaneHandle />
 
         {/* --- the atlas --------------------------------------------------- */}
-        <Panel className="app-blob flex min-w-0 flex-col overflow-hidden" defaultSize={30} minSize={16} order={3}>
+        <Panel className="flex min-w-0 flex-col p-1 pl-0" defaultSize={30} minSize={16} order={3}>
+          <div className="app-blob flex min-h-0 flex-1 flex-col overflow-hidden">
           <div className="flex h-10 shrink-0 items-center gap-1.5 px-2">
             <span className="px-1 text-ui-sm font-semibold uppercase tracking-wide text-muted-foreground/60">Atlas</span>
             <Segmented<AtlasMode>
@@ -300,6 +312,7 @@ export function ConceptsPage({ api, onError }: { api: ConstructApi | undefined; 
               <span>{masteryTitle(0)}</span>
               <span>{masteryTitle(5)}</span>
             </div>
+          </div>
           </div>
         </Panel>
       </PanelGroup>
