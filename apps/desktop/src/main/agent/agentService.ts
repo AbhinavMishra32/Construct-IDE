@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { AgentMessage } from "@construct/domain";
+import type { AgentActivityStep, AgentMessage } from "@construct/domain";
 import type { AgentStreamEvent } from "../../shared/api.js";
 import type { AskUserQuestionRequest } from "@construct/domain";
 import type { ProjectStore } from "../store/projectStore.js";
@@ -32,6 +32,17 @@ export class AgentService {
   /** Questions the agent is waiting on, by project. A turn genuinely blocks
    *  here — the agent asked, and the answer is what it continues from. */
   private readonly awaiting = new Map<string, { resolve(answer: string): void }>();
+  /**
+   * The steps of each turn in flight, accumulated so they can be stored on the
+   * reply.
+   *
+   * Without this a finished turn has no account of itself: the live stream
+   * draws tool rows while the turn runs and then the run is dropped, so
+   * reopening a project showed prose with no sign that the agent had read a
+   * file, run a command, or recorded a concept. The transcript renders a stored
+   * message from `activity`, and it was being written empty.
+   */
+  private readonly activity = new Map<string, AgentActivityStep[]>();
 
   constructor(
     private readonly store: ProjectStore,
@@ -51,6 +62,9 @@ export class AgentService {
            the project. The worker knows only its request id, so the projectId a
            card needs to claim the work has to be added here. */
         this.stream({ ...(event as Record<string, unknown>), runId: requestId, projectId } as unknown as AgentStreamEvent);
+
+        const steps = this.activity.get(requestId);
+        if (steps) steps.push(...stepsFor(event));
 
         /* The status line beside the composer wants one short phrase, which is
            the agent's prose rather than its tool rows. */
@@ -106,6 +120,7 @@ export class AgentService {
        could not read a single file. */
     const turnId = randomUUID();
     this.running.set(turnId, projectId);
+    this.activity.set(turnId, []);
 
     const { promise } = this.worker.request("turn", {
       requestId: turnId,
@@ -129,7 +144,9 @@ export class AgentService {
         role: "agent",
         body: result.text,
         createdAt: new Date().toISOString(),
-        activity: [],
+        /* Stored with the reply, so the turn still accounts for itself after
+           the live run is gone. */
+        activity: this.activity.get(turnId) ?? [],
       };
       this.store.appendMessage(projectId, reply);
       this.emit({ projectId, kind: "message", message: reply });
@@ -137,6 +154,7 @@ export class AgentService {
       this.emit({ projectId, kind: "error", message: cause instanceof Error ? cause.message : "The agent could not finish that turn." });
     } finally {
       this.running.delete(turnId);
+      this.activity.delete(turnId);
       /* A turn that ended while the agent was waiting on an answer must not
          leave the window blocked on a question nobody will read. */
       this.awaiting.delete(projectId);
@@ -188,3 +206,49 @@ export class AgentService {
     });
   }
 }
+
+/**
+ * Turns one worker event into the steps the transcript stores.
+ *
+ * Only the end of a tool call becomes a step: the start already drew a row in
+ * the live stream, and storing both would leave every call listed twice in the
+ * saved turn.
+ */
+function stepsFor(event: Record<string, unknown>): AgentActivityStep[] {
+  const type = String(event.type ?? "");
+
+  if (type === "tool" && event.phase === "end") {
+    const tool = String(event.tool ?? "");
+    return [
+      {
+        kind: "tool",
+        tool,
+        label: TOOL_LABEL[tool] ?? tool,
+        actionTitle: "",
+        detail: String(event.detail ?? ""),
+        ok: event.ok !== false,
+        text: "",
+        seconds: 0,
+        input: String(event.input ?? ""),
+        output: String(event.output ?? ""),
+      },
+    ];
+  }
+
+  if (type === "reasoning" && typeof event.text === "string" && event.text.trim()) {
+    return [{ kind: "reasoning", tool: "", label: "", actionTitle: "", detail: "", ok: true, text: event.text, seconds: 0, input: "", output: "" }];
+  }
+
+  return [];
+}
+
+/** What each tool is called in the transcript. The learner's words for the
+ *  action, not the tool's identifier. */
+const TOOL_LABEL: Record<string, string> = {
+  "read-file": "Read a file",
+  "write-file": "Wrote a file",
+  "list-files": "Looked through the project",
+  "run-terminal-command": "Ran a command",
+  "record-concept": "Recorded what you understand",
+  ask_user_question: "Asked you a question",
+};

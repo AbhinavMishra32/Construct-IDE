@@ -24,6 +24,7 @@ export function WorkspaceBar({
   agentOpen,
   onToggleTerminal,
   onToggleAgent,
+  onOpenConcept,
 }: {
   project: ProjectSummary;
   concepts: ConceptSummary[];
@@ -31,6 +32,7 @@ export function WorkspaceBar({
   agentOpen: boolean;
   onToggleTerminal(): void;
   onToggleAgent(): void;
+  onOpenConcept(concept: ConceptSummary): void;
 }) {
   return (
     <header
@@ -49,7 +51,7 @@ export function WorkspaceBar({
 
       {concepts.length > 0 && <div className="h-6 w-px shrink-0 bg-border" />}
 
-      <ConceptRail className="min-w-0 shrink" concepts={concepts} />
+      <ConceptRail className="min-w-0 shrink" concepts={concepts} onOpen={onOpenConcept} />
 
       <div className="ml-auto flex shrink-0 items-center gap-0.5">
         <BarToggle icon={SquareTerminal} label="Terminal" on={terminalOpen} onClick={onToggleTerminal} shortcut="⌘J" />
