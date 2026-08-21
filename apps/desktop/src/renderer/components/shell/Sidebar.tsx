@@ -160,6 +160,8 @@ export function Sidebar({
         </button>
       </div>
 
+      {!projectView && (
+      <>
       <div className="app-no-drag space-y-0.5 px-2">
         <button
           className={cn(ROW, "hover:bg-[var(--sidebar-accent)]")}
@@ -198,7 +200,18 @@ export function Sidebar({
           </button>
         ))}
       </nav>
+      </>
+      )}
 
+      {projectView ? (
+        /* Inside a project the sidebar is the file tree. The project's name
+           takes the place of the section label, so the column still says what
+           it is a list of. */
+        <div className="app-no-drag mt-3 flex min-h-0 flex-1 flex-col">
+          <SectionLabel>{projectView.name}</SectionLabel>
+          <div className="flex min-h-0 flex-1 flex-col">{projectView.tree}</div>
+        </div>
+      ) : (
       <div className="app-no-drag app-scroll mt-4 min-h-0 flex-1 overflow-y-auto px-2 pb-2">
         {pinned.length > 0 && (
           <>
@@ -234,6 +247,7 @@ export function Sidebar({
           </>
         )}
       </div>
+      )}
 
       {/* One row rather than three. The address under the name repeated what the
           avatar and the name already say, and the sync line spent a whole line of

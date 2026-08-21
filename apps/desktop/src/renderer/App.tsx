@@ -98,6 +98,25 @@ export function App() {
     setData((current) => (current ? { ...current, theme } : current));
   }, []);
 
+  /* Resolves the preference into the `dark` class every token in theme.css is
+     keyed off, and keeps following the system while the preference is "system".
+     
+     This was missing entirely: main.tsx set the class once at boot from the
+     system query and nothing ever changed it again, so choosing Light or Dark
+     in Settings updated Electron's nativeTheme — the window material — while
+     every colour in the interface stayed where it started. Half the app
+     switched and half did not. */
+  useEffect(() => {
+    const query = matchMedia("(prefers-color-scheme: dark)");
+    const sync = () => {
+      const resolvedDark = data?.theme === "dark" || (data?.theme !== "light" && query.matches);
+      document.documentElement.classList.toggle("dark", resolvedDark);
+    };
+    sync();
+    if (data?.theme === "system" || !data) query.addEventListener("change", sync);
+    return () => query.removeEventListener("change", sync);
+  }, [data?.theme]);
+
   useEffect(() => {
     return api?.onMenuCommand((command) => {
       if (command === "new-project") setCreating(true);

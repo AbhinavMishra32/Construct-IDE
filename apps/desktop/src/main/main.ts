@@ -46,7 +46,13 @@ else {
          keys live in. Held in the main process because that is the only side
          with keychain access. */
       const web = new WebSearchService(() => auth.readSecret("exa"));
-      const agent = new AgentService(store, providers, workspace, (event) => mainWindow?.webContents.send("agent:event", event));
+      const agent = new AgentService(
+        store,
+        providers,
+        workspace,
+        (event) => mainWindow?.webContents.send("agent:event", event),
+        (event) => mainWindow?.webContents.send("agent:stream", event),
+      );
 
 
       /* One idempotent shutdown path serves both an ordinary quit and an

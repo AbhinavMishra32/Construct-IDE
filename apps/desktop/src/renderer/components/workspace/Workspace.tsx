@@ -147,8 +147,8 @@ export function Workspace({ api, project, openPath, onError }: Props) {
       <Toolbar title={current ? (current.path.split("/").pop() ?? project.name) : project.name} subtitle={current?.path} />
 
       <div className="flex min-h-0 flex-1">
-        <PanelGroup direction="horizontal" className="min-w-0 flex-1">
-        <Panel defaultSize={agentOpen ? 62 : 100} minSize={30} className="app-pane flex min-w-0 flex-col">
+        <PanelGroup direction="horizontal" className="min-w-0 flex-1 gap-2 p-2">
+        <Panel defaultSize={agentOpen ? 62 : 100} minSize={30} className="app-pane app-blob flex min-w-0 flex-col">
           {files.length > 0 && (
             <div role="tablist" className="hairline-b app-scroll flex h-8 shrink-0 items-stretch overflow-x-auto">
               {files.map((file) => (
@@ -202,8 +202,8 @@ export function Workspace({ api, project, openPath, onError }: Props) {
               <>
                 {/* A one-pixel rule with an invisible grab area above it: a
                     handle you can only hit dead-on is a handle you miss. */}
-                <PanelResizeHandle className="relative h-px bg-[var(--border)] after:absolute after:inset-x-0 after:-top-1 after:h-2 after:content-[''] data-[resize-handle-state=drag]:bg-ring" />
-                <Panel defaultSize={30} minSize={10}>
+                <PanelResizeHandle className="relative my-1 h-1 shrink-0 rounded-full transition-colors data-[resize-handle-state=drag]:bg-ring/60 data-[resize-handle-state=hover]:bg-ring/30" />
+                <Panel defaultSize={30} minSize={10} className="app-pane app-panel-glass app-blob">
                   <TerminalPanel
                     api={api}
                     projectId={project.id}
@@ -250,8 +250,8 @@ export function Workspace({ api, project, openPath, onError }: Props) {
 
         {agentOpen && (
           <>
-            <PanelResizeHandle className="relative w-px bg-[var(--border)] after:absolute after:inset-y-0 after:-left-1 after:w-2 after:content-[''] data-[resize-handle-state=drag]:bg-ring" />
-            <Panel defaultSize={38} minSize={22} className="app-pane app-panel-glass flex min-w-0 flex-col">
+            <PanelResizeHandle className="relative w-1 rounded-full transition-colors data-[resize-handle-state=drag]:bg-ring/60 data-[resize-handle-state=hover]:bg-ring/30" />
+            <Panel defaultSize={38} minSize={22} className="app-pane app-panel-glass app-blob flex min-w-0 flex-col">
               <AgentPanel api={api} projectId={project.id} onError={onError} />
             </Panel>
           </>

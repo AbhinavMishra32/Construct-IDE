@@ -23,6 +23,9 @@ window.MonacoEnvironment = {
   },
 };
 
+/* The first frame only. App owns the class from then on, resolving the stored
+   preference and following the system while it is "system" — this line exists
+   so the very first paint is not light on a dark desktop. */
 document.documentElement.classList.toggle("dark", matchMedia("(prefers-color-scheme: dark)").matches);
 
 // Chrome the OS owns. Both land before first paint — the sidebar is a
