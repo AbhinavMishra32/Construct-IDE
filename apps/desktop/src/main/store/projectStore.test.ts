@@ -174,3 +174,50 @@ describe("the atlas read", () => {
     expect(store.listAllConcepts()).toEqual([]);
   });
 });
+
+describe("forgetting a concept", () => {
+  const concept = (projectId: string, conceptId: string, level: number) => ({
+    projectId,
+    conceptId,
+    title: conceptId,
+    masteryLevel: level,
+    confidence: "medium",
+    note: "",
+    reason: "taught",
+    summary: "",
+    content: "",
+    docs: [],
+    tags: [],
+  });
+
+  it("removes it from the project it was learned in, and nowhere else", () => {
+    /* Concept ids are the agent's own slugs, so they are only unique within a
+       project — two projects can both be teaching "interfaces", and forgetting
+       one must not forget the other. */
+    const first = store.createProject(project({ name: "First", directory: path.join(directory, "a") }));
+    const second = store.createProject(project({ name: "Second", directory: path.join(directory, "b") }));
+    store.recordConcept(concept(first.id, "interfaces", 3));
+    store.recordConcept(concept(second.id, "interfaces", 2));
+
+    store.deleteConcept(first.id, "interfaces");
+
+    expect(store.listConcepts(first.id)).toEqual([]);
+    expect(store.listConcepts(second.id).map((row) => row.conceptId)).toEqual(["interfaces"]);
+  });
+
+  it("takes the level history with it", () => {
+    const created = store.createProject(project());
+    store.recordConcept(concept(created.id, "interfaces", 2));
+    store.recordConcept(concept(created.id, "interfaces", 3));
+    store.deleteConcept(created.id, "interfaces");
+    /* Recording it again must start clean rather than inheriting the history of
+       the concept the learner threw away. */
+    store.recordConcept(concept(created.id, "interfaces", 1));
+    expect(store.listConcepts(created.id).map((row) => row.masteryLevel)).toEqual([1]);
+  });
+
+  it("says nothing and changes nothing for a concept that is not there", () => {
+    const created = store.createProject(project());
+    expect(() => store.deleteConcept(created.id, "never-taught")).not.toThrow();
+  });
+});

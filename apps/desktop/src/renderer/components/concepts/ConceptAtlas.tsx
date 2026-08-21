@@ -4,6 +4,7 @@ import type { AtlasConcept } from "../../../shared/api";
 import { resolveToken } from "@/lib/mastery";
 import { edges, galaxy, hubOf, planets, spokes, type AtlasEdge, type AtlasMode, type AtlasNode, type AtlasSpoke, type AtlasSystem } from "./atlas";
 import { conceptColor } from "./palette";
+import { fit, wrap, LABEL_WIDTH } from "./labels";
 
 /** Camera distance in world units, and the focal length as a multiple of the
  *  viewport's short side. Together they set two things: how big the galaxy is —
@@ -122,15 +123,32 @@ export function ConceptAtlas({ concepts, selectedId, mode, onSelect }: Props) {
      entry open: the reading and the camera are different things, and losing a
      page you were halfway through because you clicked past a dot would be a
      rotten trade. */
+  /**
+   * How far back the whole atlas has to sit to fill the pane.
+   *
+   * Computed from what is actually there rather than fixed, because the layout's
+   * extent depends on the learner: four concepts in two topics all sit near the
+   * core, and framing them at the distance a hundred would need leaves a pane of
+   * darkness with a few specks in the middle of it — which is exactly what the
+   * page looked like.
+   */
+  const fitted = useMemo(() => {
+    const reach = nodes.reduce((widest, node) => Math.max(widest, Math.hypot(node.x, node.y, node.z)), 0);
+    /* FOCAL / 0.4 puts the outermost node at four-tenths of the short side, so
+       the body spans about 80% of it and the labels have somewhere to go. */
+    return Math.max(NEAREST + 0.3, Math.min(FURTHEST, Math.max(0.35, reach) * (FOCAL / 0.4)));
+  }, [nodes]);
+
   const focus = useCallback((node: AtlasNode | null) => {
     const state = camera.current;
     state.pivotTo = node ? { x: node.x, y: node.y, z: node.z } : { x: 0, y: 0, z: 0 };
-    /* Well in: a focused concept should fill its neighbourhood, which is also
-       the range where the labels have faded up and its wires are readable. */
-    state.distanceTo = node ? 1.35 : CAMERA;
+    /* Well in for a concept — the range where its labels have faded up and its
+       wires are readable — and framed to the whole layout when nothing is
+       chosen. */
+    state.distanceTo = node ? Math.min(1.35, fitted * 0.45) : fitted;
     state.spinYaw = 0;
     state.spinPitch = 0;
-  }, []);
+  }, [fitted]);
 
   useEffect(() => {
     focus(nodes.find((candidate) => candidate.concept.conceptId === selectedId) ?? null);
@@ -266,6 +284,15 @@ export function ConceptAtlas({ concepts, selectedId, mode, onSelect }: Props) {
       const points = nodesRef.current.map((node) => ({ node, ...project(node.x, node.y, node.z) }));
       const activeId = hoveredIndex.current !== null ? points[hoveredIndex.current]?.node.concept.conceptId : selectedRef.current;
 
+      /* What the text already occupies, as boxes. A dozen names in a pane this
+         narrow will collide, and two names crossing each other is worse than one
+         name and a dot you can hover — so labels are dropped rather than
+         overlapped, and the topic names claim their space first because they are
+         the level at which anybody scans this. */
+      const taken: Array<{ x1: number; y1: number; x2: number; y2: number }> = [];
+      const collides = (box: { x1: number; y1: number; x2: number; y2: number }) =>
+        taken.some((other) => other.x1 - 3 < box.x2 && box.x1 < other.x2 + 3 && other.y1 - 2 < box.y2 && box.y1 < other.y2 + 2);
+
       /* --- the systems -----------------------------------------------------
          A star per root concept, and one ring per orbit its planets ride. The
          rings sit in the galaxy's plane, which is what makes a system read as a
@@ -325,11 +352,11 @@ export function ConceptAtlas({ concepts, selectedId, mode, onSelect }: Props) {
         context.font = "600 9.5px -apple-system, BlinkMacSystemFont, sans-serif";
         context.textAlign = "center";
         context.fillStyle = withAlpha(holds ? heat : ink, holds ? 0.95 : 0.28 + near * 0.34);
-        context.fillText(
-          system.topic.toUpperCase(),
-          x,
-          y - (modeRef.current === "solar" ? size + 8 : (maxOrbit(system) * scale) / (depth + state.distance) + 10),
-        );
+        const topic = system.topic.toUpperCase();
+        const above = y - (modeRef.current === "solar" ? size + 8 : (maxOrbit(system) * scale) / (depth + state.distance) + 10);
+        const half = context.measureText(topic).width / 2;
+        context.fillText(topic, x, above);
+        taken.push({ x1: x - half, y1: above - 9, x2: x + half, y2: above + 3 });
       }
 
       /* --- the wires ------------------------------------------------------
@@ -428,10 +455,25 @@ export function ConceptAtlas({ concepts, selectedId, mode, onSelect }: Props) {
          Drawn in a pass after the nodes so a name is never half-covered by the
          next planet along, and only on the near half: a label behind the cluster
          is a label written over the thing it is behind. */
-      for (const point of [...points].sort((a, b) => b.depth - a.depth)) {
+      /* Nearest first, and the selected one before all of them: labels are
+         dropped rather than overlapped, so the order here decides which name
+         survives a crowd. The thing you are reading always keeps its name; after
+         that, whatever is closest to you. */
+      const labelling = [...points].sort((a, b) => {
+        const chosen = (point: (typeof points)[number]) => (point.node.concept.conceptId === selectedRef.current ? 0 : 1);
+        return chosen(a) - chosen(b) || a.depth - b.depth;
+      });
+      /* The dots themselves are occupied too. A name printed across a
+         neighbouring planet is the one collision that looks like a bug rather
+         than a crowd, because the label appears to belong to the wrong dot. */
+      for (const point of points) {
+        const size = bodySize(0.014, point.depth, scale, state.distance);
+        taken.push({ x1: point.x - size, y1: point.y - size, x2: point.x + size, y2: point.y + size });
+      }
+
+      for (const point of labelling) {
         const near = 1 - (point.depth + 1) / 2;
         if (near < 0.34) continue;
-
         const level = point.node.concept.masteryLevel;
         const root = modeRef.current === "web" && hubsRef.current.has(point.node.concept.conceptId);
         const radius = bodySize((0.0075 + level * 0.0019) * (root ? 1.7 : 1), point.depth, scale, state.distance);
@@ -449,36 +491,64 @@ export function ConceptAtlas({ concepts, selectedId, mode, onSelect }: Props) {
         const strong = selected || isHovered;
         const dim = (alpha: number) => withAlpha(ink, alpha * (0.5 + near * 0.5));
 
-        context.font = `${strong ? 600 : 500} ${glossed ? 11.5 : 10}px -apple-system, BlinkMacSystemFont, sans-serif`;
-        /* Flips to the other side of the node rather than running off the pane,
-           then trims to the room that side actually has. The atlas lives in a
-           narrow column and focusing puts the subject in the middle of it, so a
-           label that only ever sits to the right, at whatever length it happens
-           to be, is a label cut off by the window exactly when it matters most. */
-        const flip = width - (point.x + radius + 9) < context.measureText(point.node.concept.title).width;
+        const size = glossed ? 11.5 : 10;
+        context.font = `${strong ? 600 : 500} ${size}px -apple-system, BlinkMacSystemFont, sans-serif`;
+        /* Flips to the other side of the node rather than running off the pane.
+           The atlas lives in a narrow column and focusing puts the subject in the
+           middle of it, so a label that only ever sits to the right is one the
+           window cuts off exactly when it matters most. */
+        const flip = width - (point.x + radius + 9) < Math.min(LABEL_WIDTH, width * 0.4);
         const anchor = flip ? point.x - radius - 5 : point.x + radius + 5;
-        const room = (flip ? anchor : width - anchor) - 8;
+        /* Capped well short of the room available. A concept title is a sentence,
+           and a sentence set on one line runs half the width of the pane, crosses
+           whatever is behind it and turns the map into a bibliography — so the
+           cap is a measure a title *wraps* into rather than a limit it grows to.
+           Two lines, then an ellipsis: past that it is a paragraph, and the entry
+           beside it is where paragraphs belong. */
+        const room = Math.min(LABEL_WIDTH, (flip ? anchor : width - anchor) - 8);
         context.textAlign = flip ? "right" : "left";
 
+        const lines = wrap(context, point.node.concept.title, room, 2);
+        if (lines.length === 0) continue;
+        const leading = size + 2;
+        /* Centred on the node when it is a block, so a two-line name does not
+           read as hanging off the dot. */
+        const top = point.y + 3.5 - ((lines.length - 1) * leading) / 2;
+
+        const measured = Math.max(...lines.map((line) => context.measureText(line).width));
+        const block = {
+          x1: flip ? anchor - measured : anchor,
+          y1: top - size,
+          x2: flip ? anchor : anchor + measured,
+          y2: top + (lines.length - 1) * leading + (glossed ? 20 : 4),
+        };
+        /* Padded by a couple of pixels: two labels that merely touch still read
+           as one run of text. */
+        if (collides(block)) continue;
+        taken.push(block);
+
         context.fillStyle = dim(strong ? 0.95 : 0.42 + reveal * 0.4);
-        context.fillText(fit(context, point.node.concept.title, room), anchor, point.y + 3.5);
+        lines.forEach((line, index) => context.fillText(line, anchor, top + index * leading));
 
         if (glossed) {
-          /* The level in its own colour, so every label teaches the ramp as well
-             as the legend does. */
+          /* The level in the concept's own colour, so every label teaches the
+             palette as well as the legend does. */
           const rubric = LEVEL_NAMES[level] ?? "";
+          const under = top + lines.length * leading + 2;
           context.font = "500 9.5px -apple-system, BlinkMacSystemFont, sans-serif";
           context.fillStyle = withAlpha(
             conceptColor(systemsRef.current[point.node.system]?.topic ?? "", level, dark),
             (strong ? 0.95 : 0.7) * (0.5 + near * 0.5),
           );
-          context.fillText(rubric, anchor, point.y + 16);
+          context.fillText(rubric, anchor, under);
 
+          /* The gloss only when the name fitted one line. Three stacked lines per
+             dot is the bibliography again. */
           const gloss = point.node.concept.summary.trim();
           const offset = context.measureText(rubric).width + 7;
-          if (gloss && room - offset > 40) {
+          if (gloss && lines.length === 1 && room - offset > 48) {
             context.fillStyle = dim(strong ? 0.55 : 0.3);
-            context.fillText(fit(context, gloss, room - offset), flip ? anchor - offset : anchor + offset, point.y + 16);
+            context.fillText(fit(context, gloss, room - offset), flip ? anchor - offset : anchor + offset, under);
           }
         }
       }
@@ -600,27 +670,6 @@ function bodySize(world: number, depth: number, scale: number, distance: number)
  *  the labels a learner reads on the map have to be the labels the agent is held
  *  to. */
 const LEVEL_NAMES = MASTERY_RUBRIC.map((step) => step.title);
-
-/**
- * Text cut to the pixels available, measured in the font that will draw it.
- *
- * By width and not by a character count, because a character count is a guess
- * about a proportional face: "Illiterate" and "Wallpaper" are the same ten
- * letters and nowhere near the same label. Binary search rather than a loop per
- * character — this runs for every visible node, every frame.
- */
-function fit(context: CanvasRenderingContext2D, text: string, room: number): string {
-  if (room <= 0) return "";
-  if (context.measureText(text).width <= room) return text;
-  let low = 0;
-  let high = text.length;
-  while (low < high) {
-    const middle = Math.ceil((low + high) / 2);
-    if (context.measureText(`${text.slice(0, middle).trimEnd()}…`).width <= room) low = middle;
-    else high = middle - 1;
-  }
-  return low > 0 ? `${text.slice(0, low).trimEnd()}…` : "";
-}
 
 /** The outer edge of a system, for placing its label clear of it. */
 function maxOrbit(system: AtlasSystem): number {

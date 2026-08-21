@@ -312,6 +312,24 @@ export class ProjectStore {
 
   /* ---- Concepts ---------------------------------------------------------- */
 
+  /**
+   * Forgets one concept, and its history with it.
+   *
+   * The learner's own call, and it has to exist: the agent files a concept from
+   * whatever the conversation touched, so a stray one — a typo it heard as a
+   * topic, an idea that turned out to belong to a different project — is
+   * inevitable, and an atlas you cannot correct is an atlas you stop trusting.
+   *
+   * The events go too. Keeping them would leave a level history for a concept
+   * that no longer exists, which is unreachable data that still counts against
+   * the file.
+   */
+  deleteConcept(projectId: string, conceptId: string): void {
+    this.database.prepare("DELETE FROM concept_events WHERE project_id = ? AND concept_id = ?").run(projectId, conceptId);
+    this.database.prepare("DELETE FROM concepts WHERE project_id = ? AND concept_id = ?").run(projectId, conceptId);
+  }
+
+
   listConcepts(projectId: string): ConceptRecord[] {
     const rows = this.database
       .prepare(

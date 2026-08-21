@@ -4,6 +4,7 @@ import {
   authRequestInput,
   ipc,
   projectCreateInput,
+  conceptDeleteInput,
   projectIdInput,
   projectImportInput,
   projectRenameInput,
@@ -180,6 +181,10 @@ export function installIpc({ store, auth, projects, providers, workspace, termin
 
   handle(ipc.conceptsList, (input) => store.listConcepts(projectIdInput.parse(input).projectId));
   handle(ipc.conceptsAtlas, () => store.listAllConcepts());
+  handle(ipc.conceptsDelete, (input) => {
+    const { projectId, conceptId } = conceptDeleteInput.parse(input);
+    store.deleteConcept(projectId, conceptId);
+  });
 
   /* ---- Account ---------------------------------------------------------- */
 

@@ -24,13 +24,20 @@ import { Markdown } from "../agent/Markdown";
 export function ConceptEntry({
   api,
   concept,
+  siblings,
   where,
+  onOpen,
 }: {
   api: ConstructApi | undefined;
   concept: ConceptSummary;
+  /** The rest of its topic, for the trail at the foot of the entry. An
+   *  encyclopedia entry that ends in nothing is a dead end; one that ends in
+   *  "see also" is a place to keep reading. */
+  siblings?: ConceptSummary[] | undefined;
   /** Where the concept was learned. Shown only in the atlas, which spans
    *  projects; inside a project it would name the project you are in. */
   where?: string | undefined;
+  onOpen?: ((concept: ConceptSummary) => void) | undefined;
 }) {
   const rubric = rubricForLevel(concept.masteryLevel);
 
@@ -78,9 +85,24 @@ export function ConceptEntry({
           <Markdown source={concept.content} />
         </div>
       ) : (
-        <p className="rounded-[var(--radius-lg)] border border-dashed border-border px-3 py-2 text-ui text-muted-foreground">
-          Construct is tracking your level on this but has not written the entry yet. Ask it to explain the concept and this will fill in.
-        </p>
+        /* No body yet. This used to be a small dashed box adrift in a tall empty
+           column, which read as a page that had failed to load rather than a
+           concept Construct has met but not yet written up. So the space says
+           what *is* known — the level, the evidence, when it was seen — and what
+           to do about the part that is not. */
+        <section className="rounded-[var(--radius-xl)] border border-dashed border-border/80 px-4 py-3.5">
+          <h2 className="text-content font-medium text-foreground">No entry written yet</h2>
+          <p className="mt-1 text-ui leading-[1.6] text-muted-foreground">
+            Construct has been tracking your level on this, but has not written it up. Ask it about {`"${concept.title}"`} in the
+            project and the entry appears here.
+          </p>
+          <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 border-t border-border/60 pt-3">
+            <Fact label="Level">{`${rubric.title} · ${concept.masteryLevel} of 5`}</Fact>
+            <Fact label="Confidence">{concept.confidence || "not recorded"}</Fact>
+            <Fact label="First seen">{relativeTime(concept.firstSeenAt)}</Fact>
+            <Fact label="Last moved">{relativeTime(concept.updatedAt)}</Fact>
+          </dl>
+        </section>
       )}
 
       {concept.docs.length > 0 && (
@@ -110,8 +132,44 @@ export function ConceptEntry({
         </section>
       )}
 
+      {siblings && siblings.length > 0 && (
+        <section className="mt-5 border-t border-border/60 pt-3">
+          <h2 className="mb-1.5 text-ui-sm font-semibold uppercase tracking-wide text-muted-foreground/60">The rest of this topic</h2>
+          <ul className="grid gap-1">
+            {siblings.map((sibling) => (
+              <li key={sibling.conceptId}>
+                <button
+                  className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-accent"
+                  onClick={() => onOpen?.(sibling)}
+                  type="button"
+                >
+                  <span
+                    aria-hidden
+                    className="size-1.5 shrink-0 rounded-full"
+                    style={{ background: masteryColor(sibling.masteryLevel) }}
+                  />
+                  <span className="min-w-0 flex-1 truncate text-ui text-foreground/85">{sibling.title}</span>
+                  <span className="shrink-0 text-ui-sm text-muted-foreground/70">{rubricForLevel(sibling.masteryLevel).title}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <Ladder level={concept.masteryLevel} />
     </>
+  );
+}
+
+/** One labelled fact. Two columns of these read as a record; the same strings in
+ *  a sentence read as an apology. */
+function Fact({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-ui-sm uppercase tracking-wide text-muted-foreground/60">{label}</dt>
+      <dd className="truncate text-ui text-foreground/85">{children}</dd>
+    </div>
   );
 }
 

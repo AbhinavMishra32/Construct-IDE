@@ -63,6 +63,7 @@ const api: ConstructApi = {
   answerAgent: (input) => ipcRenderer.invoke(ipc.agentAnswer, input),
   listConcepts: (input) => ipcRenderer.invoke(ipc.conceptsList, input),
   conceptAtlas: () => ipcRenderer.invoke(ipc.conceptsAtlas),
+  deleteConcept: (input) => ipcRenderer.invoke(ipc.conceptsDelete, input),
   onAgentEvent: (listener) => subscribe<AgentEvent>("agent:event", listener),
   onAgentStream: (listener) => subscribe<AgentStreamEvent>("agent:stream", listener),
 
