@@ -215,10 +215,13 @@ export function App() {
       <main
         className={cn(
           "relative flex min-w-0 flex-1 flex-col",
-          /* Pages other than the workspace sit on the standard pane fill. The
-             workspace paints its own surfaces, because its editor wants a solid
-             ground while the agent beside it wants glass. */
-          page !== "workspace" && "app-pane",
+          /* The pane fill covers everything to the right of the sidebar,
+             including the toolbar row. Excluding the workspace from it left the
+             toolbar sitting on bare vibrancy: a band of wallpaper blue above
+             near-opaque panels, which is the single ugliest thing in the window.
+             The sidebar stays translucent — it is the one surface where the
+             native material is the point. */
+          "app-pane",
           sidebar && "app-content-pane",
         )}
       >

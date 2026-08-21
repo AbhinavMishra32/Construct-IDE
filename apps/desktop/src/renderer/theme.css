@@ -557,33 +557,27 @@
      the translucent one, and carries a backdrop blur so the desktop showing
      through is diffused rather than sharp — text over a sharp photograph is
      unreadable however much fill sits between them. */
-  /* A panel that reads as its own object: rounded, ringed, and lifted off what
-     is behind it.
-     
-     The shadow is doing the work, not the radius. Two panels of the same fill
-     meeting at a hairline read as one surface with a line drawn on it however
-     round their corners are; a shadow is what says one is in front. Kept soft
-     and close so the lift is felt rather than seen — a hard drop shadow on a
-     translucent panel turns into a grey smear over the desktop behind it. */
-  .app-blob {
-    border-radius: var(--radius-lg);
-    /* Three passes. The inset ring draws the edge, the tight shadow seats the
-       panel, and the wide one lifts it. The wide pass is what makes a panel
-       read as in front of the shell rather than cut out of it. */
-    box-shadow:
-      inset 0 0 0 0.5px var(--glass-hairline),
-      0 1px 2px oklch(0% 0 0 / 8%),
-      0 6px 16px -6px oklch(0% 0 0 / 18%);
-    overflow: hidden;
-  }
+  /* Spar's own pane edge, copied rather than reinvented: the same radius token,
+     the same inset ring against --sidebar-border, and the same --app-shadow-pane
+     pair — a tight contact pass that sharpens the hairline into an edge with
+     depth behind it, and a wide shallow ambient pass.
 
-  /* A soft black shadow vanishes against a dark panel, so dark mode leans on a
-     brighter ring and a deeper drop instead of a wider one. */
-  .dark .app-blob {
+     The one difference is that all four corners are rounded. Spar's pane is an
+     inset sheet with a sidebar on its leading edge, so only that side curves;
+     these are free panels with air on every side. */
+  /* The panel's own fill, one value step off the pane it sits on.
+     
+     Without it a panel and its pane share a colour and the blob is invisible
+     however it is shadowed — which is what happened the moment the pane fill
+     was extended to cover the whole content area. `--popover` is the token for
+     a surface that sits above the page, which is exactly what these are. */
+  .app-blob {
+    background: var(--popover);
+    border-radius: var(--radius-2xl);
     box-shadow:
-      inset 0 0 0 0.5px oklch(100% 0 0 / 10%),
-      0 1px 2px oklch(0% 0 0 / 40%),
-      0 8px 20px -8px oklch(0% 0 0 / 55%);
+      inset 0 0 0 0.5px var(--sidebar-border),
+      var(--app-shadow-pane);
+    overflow: hidden;
   }
 
   .app-panel-glass {
