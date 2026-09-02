@@ -642,22 +642,33 @@
   }
 }
 
+/* Windows puts its caption buttons on the trailing edge, so the reservation
+   moves with them: nothing to clear on the leading edge, the caption overlay to
+   clear on the trailing one.
+
+   The width comes from the overlay itself. `titleBarOverlay` publishes the
+   draggable strip it left us as env(titlebar-area-*), so the reservation is
+   whatever Windows actually took rather than a number we measured once — it
+   follows the display scale and the zoom level. The fallback is that measured
+   number, 138px at 100%, for the case where the vars are not published.
+
+   These sit outside every @layer on purpose. An unlayered declaration beats a
+   layered one whatever its specificity, so the base :root above would win over
+   a copy of these inside @layer components — Windows would keep the macOS
+   leading inset and reserve nothing for its own caption buttons, which is
+   exactly the overlap this reservation exists to prevent. */
+:root[data-window-controls="right"] {
+  --window-controls-leading: 0rem;
+  --window-controls-trailing: calc(100vw - env(titlebar-area-width, calc(100vw - 8.625rem)));
+}
+
+/* A native frame keeps its buttons outside our content: reserve nothing. */
+:root[data-window-controls="none"] {
+  --window-controls-leading: 0rem;
+  --window-controls-trailing: 0rem;
+}
+
 @layer components {
-  /* ---- macOS window chrome ---------------------------------------------- */
-
-  /* Windows puts its caption buttons on the trailing edge, so the reservation
-     moves with them: nothing to clear on the left, 138px to clear on the right. */
-  :root[data-window-controls="right"] {
-    --window-controls-leading: 0rem;
-    --window-controls-trailing: 8.625rem;
-  }
-
-  /* A native frame keeps its buttons outside our content: reserve nothing. */
-  :root[data-window-controls="none"] {
-    --window-controls-leading: 0rem;
-    --window-controls-trailing: 0rem;
-  }
-
   .app-drag {
     -webkit-app-region: drag;
   }

@@ -66,11 +66,6 @@ export function App() {
      anything Construct did not already have. */
   const [retaking, setRetaking] = useState<LearnerProfile | null>(null);
   const { width, dragging, handleProps } = useSidebarWidth();
-  /* Room for the OS window buttons when they sit on the sidebar's edge. The
-     preload reports which edge before first paint, so the inset is known
-     without measuring anything. */
-  const controlsInset = api?.chrome.controls === "left" ? 28 : 0;
-
   const load = useCallback(async () => {
     if (!api) throw new Error("Construct must run inside its Electron desktop shell.");
     setData(await api.bootstrap());
