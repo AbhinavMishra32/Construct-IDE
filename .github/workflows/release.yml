@@ -2,274 +2,239 @@ name: Release
 
 on:
   push:
-    tags:
-      - "v*"
+    tags: ["v*"]
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag (optional, e.g. v0.2.2). If omitted, an automated canary pre-release will be created."
-        required: false
+        description: "Release tag to build, e.g. v0.8.0. Must already exist."
+        required: true
         type: string
-
 
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
 jobs:
-  preflight:
-    name: No-build release preflight
-    runs-on: ubuntu-latest
+  verify:
+    name: Verify
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      version: ${{ steps.tag.outputs.version }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
+      - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
           submodules: false
 
-      - name: Checkout Opaline submodule
+      - name: Resolve tag
+        id: tag
         run: |
-          git submodule sync opaline
-          git submodule update --init --depth=1 opaline
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v5
-
-      - name: Setup Node
-        uses: actions/setup-node@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 24
-          package-manager-cache: false
+          cache: pnpm
 
-      - name: Release pipeline preflight
-        run: node scripts/release/preflight.mjs
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsecret-1-dev
+
+      # A tag that disagrees with the manifests produces installers whose in-app
+      # version does not match the release they were downloaded from, and an
+      # updater that never settles. Fail here instead.
+      - name: Check the tag matches the manifests
+        run: |
+          EXPECTED="${{ steps.tag.outputs.version }}"
+          for manifest in package.json apps/desktop/package.json; do
+            ACTUAL="$(node -p "require('./${manifest}').version")"
+            if [ "$ACTUAL" != "$EXPECTED" ]; then
+              echo "::error::${manifest} is at ${ACTUAL} but the tag says ${EXPECTED}"
+              exit 1
+            fi
+          done
+
+      # Release notes are written by hand and read twice: stamped into the update
+      # feed at package time, and used as the body of the GitHub release. A tag
+      # with no notes would ship an update nobody can read.
+      - name: Check the release notes exist
+        run: test -s "docs/releases/${{ steps.tag.outputs.version }}.md"
+
+      - run: node scripts/release/preflight.mjs
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm turbo run build --filter=@construct/desktop...
+      - run: pnpm --filter @construct/desktop verify:build
 
   package:
     name: Package ${{ matrix.platform }}
-    needs: preflight
+    needs: verify
     strategy:
       fail-fast: false
       matrix:
         include:
           - platform: macos
-            os: macos-latest
+            os: macos-15
+            flag: "--mac"
           - platform: windows
-            os: windows-latest
+            os: windows-2025
+            flag: "--win"
           - platform: linux
-            os: ubuntu-22.04
+            os: ubuntu-24.04
+            flag: "--linux"
     runs-on: ${{ matrix.os }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
+      - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
           submodules: false
 
-      - name: Checkout Opaline submodule
-        run: |
-          git submodule sync opaline
-          git submodule update --init --depth=1 opaline
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v5
-
-      - name: Setup Node
-        uses: actions/setup-node@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: pnpm
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Rust
-        uses: swatinem/rust-cache@v2
-        with:
-          workspaces: app/src-tauri -> target
-
-      - name: Install Linux Tauri dependencies
+      # keytar links against libsecret, and the runner image ships neither the
+      # headers nor a prebuild for this Electron ABI.
+      - name: Install Linux build dependencies
         if: matrix.platform == 'linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libxdo-dev libsoup-3.0-dev
+          sudo apt-get install -y libsecret-1-dev
 
-      - name: Cache Turbo
-        uses: actions/cache@v5
-        with:
-          path: .turbo/cache
-          key: ${{ runner.os }}-turbo-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-turbo-
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo run build --filter=@construct/desktop...
 
-      - name: Install
-        run: pnpm install --frozen-lockfile
+      # Packaging is happy to wrap a build that opens a blank window. This is the
+      # gate for that, run on every platform because each one packages its own.
+      - name: Verify the built output can launch
+        run: pnpm --filter @construct/desktop verify:build
 
-      - name: Verify app
-        run: pnpm turbo run typecheck test --filter=@construct/app
+      # node-pty and keytar are compiled against Node's ABI by `pnpm install`, and
+      # Electron's is a different one.
+      - name: Rebuild native modules for Electron
+        run: pnpm --filter @construct/desktop rebuild:native
 
-      - name: Calculate Release Tag
-        id: release
+      # Signing is optional for this distribution. When identities are configured
+      # we use them; otherwise auto-discovery is turned off, so an unsigned build
+      # is deliberate and repeatable rather than dependent on whatever happens to
+      # be in a runner keychain.
+      - name: Package
+        working-directory: apps/desktop
         shell: bash
+        env:
+          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_ID_INPUT: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD_INPUT: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID_INPUT: ${{ secrets.APPLE_TEAM_ID }}
+          WINDOWS_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          RELEASE_VERSION: ${{ needs.verify.outputs.version }}
         run: |
-          INPUT_TAG="${{ github.event.inputs.tag }}"
-
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -z "$INPUT_TAG" ]; then
-            # Calculate dynamic pre-release version
-            BASE_VERSION=$(node -e "console.log(require('./package.json').version)")
-            DATE_STR=$(node -e "const d = new Date(); console.log(d.getUTCFullYear() + String(d.getUTCMonth() + 1).padStart(2, '0') + String(d.getUTCDate()).padStart(2, '0'))")
-            SHA_SHORT=$(git rev-parse --short HEAD)
-            NEW_VERSION="${BASE_VERSION}-canary.${DATE_STR}.${SHA_SHORT}"
-            TAG="v${NEW_VERSION}"
-
-            echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
-            echo "version=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
-            echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-
-            # Update every package manifest Tauri uses for a coherent canary version.
-            node -e "
-              const fs = require('fs');
-              const newVer = '${NEW_VERSION}';
-              ['package.json', 'app/package.json'].forEach(p => {
-                const pkg = JSON.parse(fs.readFileSync(p, 'utf8'));
-                pkg.version = newVer;
-                fs.writeFileSync(p, JSON.stringify(pkg, null, 2) + '\n');
-              });
-              const conf = 'app/src-tauri/tauri.conf.json';
-              const tc = JSON.parse(fs.readFileSync(conf, 'utf8'));
-              tc.version = newVer;
-              fs.writeFileSync(conf, JSON.stringify(tc, null, 2) + '\n');
-              const cargo = 'app/src-tauri/Cargo.toml';
-              const cargoSource = fs.readFileSync(cargo, 'utf8');
-              const nextCargoSource = cargoSource.replace(/^version = ".*"$/m, 'version = "' + newVer + '"');
-              if (nextCargoSource === cargoSource) throw new Error('Could not update app/src-tauri/Cargo.toml version.');
-              fs.writeFileSync(cargo, nextCargoSource);
-            "
-            echo "Updated package.json, Cargo.toml, and tauri.conf.json to version ${NEW_VERSION}"
-          else
-            # For tag push or manual dispatch with tag
-            if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-              TAG="$INPUT_TAG"
+          if [ "${{ matrix.platform }}" = "macos" ]; then
+            if [ -n "$MACOS_CERTIFICATE_BASE64" ] && [ -n "$MACOS_CERTIFICATE_PASSWORD" ] && [ -n "$APPLE_ID_INPUT" ] && [ -n "$APPLE_APP_SPECIFIC_PASSWORD_INPUT" ] && [ -n "$APPLE_TEAM_ID_INPUT" ]; then
+              export CSC_LINK="$MACOS_CERTIFICATE_BASE64"
+              export CSC_KEY_PASSWORD="$MACOS_CERTIFICATE_PASSWORD"
+              export APPLE_ID="$APPLE_ID_INPUT"
+              export APPLE_APP_SPECIFIC_PASSWORD="$APPLE_APP_SPECIFIC_PASSWORD_INPUT"
+              export APPLE_TEAM_ID="$APPLE_TEAM_ID_INPUT"
             else
-              TAG="${GITHUB_REF_NAME}"
+              export CSC_IDENTITY_AUTO_DISCOVERY=false
+              echo "::warning title=Unsigned macOS build::No Developer ID identity is configured. Users will have to open the downloaded app past Gatekeeper by hand, and automatic updates can be unavailable."
             fi
-            VERSION="${TAG#v}"
-            echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
-            echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-            echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Warn when macOS signing is not configured
-        if: matrix.platform == 'macos'
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-        shell: bash
-        run: |
-          if [ -z "$APPLE_CERTIFICATE" ]; then
-            echo "::warning title=macOS signing certificate missing::MACOS_CERTIFICATE is not configured, so the macOS app will be ad-hoc signed and Gatekeeper may report it as damaged."
-          fi
-          if [ -z "$APPLE_ID" ]; then
-            echo "::warning title=macOS notarization credentials missing::APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, and APPLE_TEAM_ID are not fully configured, so the macOS app may not be notarized."
-          fi
-
-      - name: Package desktop (Tauri)
-        working-directory: app
-        shell: bash
-        env:
-          # Use neutral names here: Tauri treats its signing variables as enabled
-          # when they exist, even if GitHub supplied an empty secret value.
-          MACOS_CERTIFICATE_INPUT: ${{ secrets.MACOS_CERTIFICATE }}
-          MACOS_CERTIFICATE_PASSWORD_INPUT: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
-          MACOS_SIGNING_IDENTITY_INPUT: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          MACOS_APPLE_ID_INPUT: ${{ secrets.APPLE_ID }}
-          MACOS_APPLE_PASSWORD_INPUT: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          MACOS_TEAM_ID_INPUT: ${{ secrets.APPLE_TEAM_ID }}
-        run: |
-          if [ -n "$MACOS_CERTIFICATE_INPUT" ]; then
-            export APPLE_CERTIFICATE="$MACOS_CERTIFICATE_INPUT"
-            export APPLE_CERTIFICATE_PASSWORD="$MACOS_CERTIFICATE_PASSWORD_INPUT"
-            export APPLE_SIGNING_IDENTITY="$MACOS_SIGNING_IDENTITY_INPUT"
-            export APPLE_ID="$MACOS_APPLE_ID_INPUT"
-            export APPLE_PASSWORD="$MACOS_APPLE_PASSWORD_INPUT"
-            export APPLE_TEAM_ID="$MACOS_TEAM_ID_INPUT"
-          fi
-          if [ "${{ matrix.platform }}" = "windows" ]; then
-            # WiX/MSI accepts a prerelease only when its identifier is numeric.
-            # Keep the public app/release version (for example, 0.7.0-alpha)
-            # while supplying a valid installer ProductVersion.
-            WINDOWS_BUNDLE_VERSION="$(node -e 'const version = require("./package.json").version; const [core, prerelease] = version.split("-", 2); process.stdout.write(prerelease ? `${core}-1` : core)')"
-            pnpm tauri build --config "{\"version\":\"${WINDOWS_BUNDLE_VERSION}\"}"
+          elif [ "${{ matrix.platform }}" = "windows" ]; then
+            if [ -n "$WINDOWS_CERTIFICATE_BASE64" ] && [ -n "$WINDOWS_CERTIFICATE_PASSWORD" ]; then
+              export CSC_LINK="$WINDOWS_CERTIFICATE_BASE64"
+              export CSC_KEY_PASSWORD="$WINDOWS_CERTIFICATE_PASSWORD"
+            else
+              export CSC_IDENTITY_AUTO_DISCOVERY=false
+              echo "::warning title=Unsigned Windows build::No Authenticode identity is configured. SmartScreen will ask for manual approval."
+            fi
           else
-            pnpm tauri build
+            export CSC_IDENTITY_AUTO_DISCOVERY=false
+          fi
+          # electron-builder is invoked directly rather than through a package
+          # script: forwarding flags through `pnpm run package -- --publish never`
+          # does not reach it, and electron-builder publishes by default on CI
+          # when a tag is present — so a dropped flag means every matrix job
+          # races to publish, and fails on a token it was never given.
+          pnpm exec electron-builder ${{ matrix.flag }} --publish never \
+            -c.releaseInfo.releaseNotesFile="../../docs/releases/${RELEASE_VERSION}.md"
+
+      # This YAML is the updater API. An installer can exist while the feed is
+      # missing notes or an architecture, so check the contract before uploading
+      # anything a running copy of Construct could discover.
+      - name: Verify update feed
+        working-directory: apps/desktop
+        shell: bash
+        run: |
+          case "${{ matrix.platform }}" in
+            macos) FEED=dist-release/latest-mac.yml ;;
+            windows) FEED=dist-release/latest.yml ;;
+            linux) FEED=dist-release/latest-linux.yml ;;
+          esac
+          test -s "$FEED"
+          grep -q "^version: ${{ needs.verify.outputs.version }}$" "$FEED"
+          grep -q "^releaseNotes:" "$FEED"
+          if [ "${{ matrix.platform }}" = "macos" ]; then
+            grep -q -- "-arm64-mac.zip" "$FEED"
+            grep -q -- "-mac.zip" "$FEED"
           fi
 
-      - name: Upload package artifacts
-        uses: actions/upload-artifact@v5
+      # latest*.yml is what electron-updater reads, so it is a release asset like
+      # any installer, not a build leftover. The blockmaps beside it are what
+      # makes an update a delta rather than a second full download.
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
         with:
           name: construct-${{ matrix.platform }}
-          path: |
-            app/src-tauri/target/release/bundle/dmg/*.dmg
-            app/src-tauri/target/release/bundle/macos/*.app.tar.gz
-            app/src-tauri/target/release/bundle/nsis/*.exe
-            app/src-tauri/target/release/bundle/msi/*.msi
-            app/src-tauri/target/release/bundle/appimage/*.AppImage
-            app/src-tauri/target/release/bundle/deb/*.deb
-            app/src-tauri/target/release/bundle/rpm/*.rpm
           if-no-files-found: error
+          path: |
+            apps/desktop/dist-release/*.dmg
+            apps/desktop/dist-release/*.zip
+            apps/desktop/dist-release/*.exe
+            apps/desktop/dist-release/*.AppImage
+            apps/desktop/dist-release/*.deb
+            apps/desktop/dist-release/latest*.yml
+            apps/desktop/dist-release/*.blockmap
 
   publish:
-    name: Publish GitHub release
-    needs: package
-    runs-on: ubuntu-latest
+    name: Publish release
+    needs: [verify, package]
+    runs-on: ubuntu-24.04
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
+      - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
           submodules: false
 
-      - name: Download package artifacts
-        uses: actions/download-artifact@v5
+      - name: Download installers
+        uses: actions/download-artifact@v4
         with:
           path: release-artifacts
           merge-multiple: true
 
-      - name: Setup Node
-        uses: actions/setup-node@v5
+      - uses: actions/setup-node@v4
         with:
           node-version: 24
           package-manager-cache: false
 
-      - name: Calculate Release Tag
-        id: release
-        shell: bash
-        run: |
-          INPUT_TAG="${{ github.event.inputs.tag }}"
-
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -z "$INPUT_TAG" ]; then
-            # Calculate dynamic pre-release version
-            BASE_VERSION=$(node -e "console.log(require('./package.json').version)")
-            DATE_STR=$(node -e "const d = new Date(); console.log(d.getUTCFullYear() + String(d.getUTCMonth() + 1).padStart(2, '0') + String(d.getUTCDate()).padStart(2, '0'))")
-            SHA_SHORT=$(git rev-parse --short HEAD)
-            NEW_VERSION="${BASE_VERSION}-canary.${DATE_STR}.${SHA_SHORT}"
-            TAG="v${NEW_VERSION}"
-
-            echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
-            echo "version=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
-            echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-          else
-            # For tag push or manual dispatch with tag
-            if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-              TAG="$INPUT_TAG"
-            else
-              TAG="${GITHUB_REF_NAME}"
-            fi
-            VERSION="${TAG#v}"
-            echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
-            echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-            echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Create or update release
+      - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.release.outputs.tag }}
-          IS_PRERELEASE: ${{ steps.release.outputs.is_prerelease }}
+          TAG: ${{ needs.verify.outputs.tag }}
           RELEASE_ARTIFACT_DIR: release-artifacts
-        run: node scripts/release/publish-gh.mjs
+        run: |
+          ls -la release-artifacts
+          node scripts/release/publish-gh.mjs

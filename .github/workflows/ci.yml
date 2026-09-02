@@ -6,49 +6,47 @@ on:
     branches:
       - main
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   verify:
     name: Verify
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
+      # The private backend is a submodule of its own, with its own lockfile and
+      # its own deployment. Nothing here needs it, and no CI token can read it.
+      - uses: actions/checkout@v4
         with:
           submodules: false
 
-      - name: Checkout Opaline submodule
-        run: |
-          git submodule sync opaline
-          git submodule update --init --depth=1 opaline
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v5
-
-      - name: Setup Node
-        uses: actions/setup-node@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: pnpm
 
+      # keytar links against libsecret, and the runner image ships neither the
+      # headers nor a prebuild for this Electron ABI.
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsecret-1-dev
+
       - name: Release pipeline preflight
         run: node scripts/release/preflight.mjs
 
-      - name: Cache Turbo
-        uses: actions/cache@v5
-        with:
-          path: .turbo/cache
-          key: ${{ runner.os }}-turbo-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-turbo-
+      - run: pnpm install --frozen-lockfile
 
-      - name: Install
-        run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
 
-      - name: Typecheck
-        run: pnpm typecheck
+      # Scoped to the app and what it depends on. The marketing site is built
+      # and deployed by its own host, and a failure there is not a reason to
+      # block a change to the IDE.
+      - run: pnpm turbo run build --filter=@construct/desktop...
 
-      - name: Test
-        run: pnpm test
-
-      - name: Build
-        run: pnpm build
+      # The build can succeed and still ship something that opens a blank
+      # window. This is the check for that.
+      - run: pnpm --filter @construct/desktop verify:build

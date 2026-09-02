@@ -2,106 +2,95 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+/**
+ * The parts of the release pipeline that cannot be checked by building it.
+ *
+ * Everything here has broken a release at least once, costs nothing to check,
+ * and would otherwise only be discovered by a matrix job forty minutes in, or —
+ * worse — by whoever downloaded the result. It runs before `pnpm install`, so it
+ * may only read files.
+ */
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const failures = [];
 
 const packageJson = readJson("package.json");
-const appPackageJson = readJson("app/package.json");
-const tauriConfig = readJson("app/src-tauri/tauri.conf.json");
-const cargoToml = read("app/src-tauri/Cargo.toml");
-const viteConfig = read("app/vite.config.ts");
+const desktopPackageJson = readJson("apps/desktop/package.json");
+const build = desktopPackageJson.build ?? {};
 const ciWorkflow = read(".github/workflows/ci.yml");
 const releaseWorkflow = read(".github/workflows/release.yml");
-const gitmodules = read(".gitmodules");
-const copyCss = read("opaline/packages/ui/scripts/copy-css.mjs");
+const workspace = read("pnpm-workspace.yaml");
+const lockfile = read("pnpm-lock.yaml");
 const publishScript = read("scripts/release/publish-gh.mjs");
 
-check(packageJson.scripts?.["release:preflight"] === "node scripts/release/preflight.mjs", "package.json exposes release:preflight.");
-check(packageJson.scripts?.["verify:no-build"]?.includes("release:preflight"), "package.json verify:no-build includes release:preflight.");
-check(appPackageJson.name === "@construct/app", "app/package.json is readable and still points at @construct/app.");
-check(packageJson.version === appPackageJson.version, "Root and app package versions stay aligned for release tags.");
+// --- versions -------------------------------------------------------------
+check(packageJson.version === desktopPackageJson.version, "Root and desktop package versions stay aligned, since the tag is checked against both.");
+check(existsSync(path.join(root, "docs", "releases", `${packageJson.version}.md`)), `docs/releases/${packageJson.version}.md exists — the notes are stamped into the update feed and used as the release body.`);
 
-check(exists("opaline/packages/ui/src"), "opaline/packages/ui/src exists for the @opaline/ui CSS copy step.");
+// --- what a downloaded app talks to ---------------------------------------
+// A packaged build cannot default to localhost: whoever downloads Construct is
+// not running the API, and every sign-in fails with a refused connection that
+// reads as the app being broken.
 check(
-  /base:\s*["']\.\/["']/.test(viteConfig),
-  "Vite renderer build uses relative asset URLs so the Tauri webview can load packaged assets."
-);
-check(
-  copyCss.includes("dirname(dirname(fileURLToPath(import.meta.url)))") && !copyCss.includes(".replace(/\\/scripts$/"),
-  "Opaline CSS copy script derives packageRoot with platform-safe path helpers."
+  typeof desktopPackageJson.constructHostedApiOrigin === "string" && /^https?:\/\//.test(desktopPackageJson.constructHostedApiOrigin),
+  "apps/desktop/package.json stamps constructHostedApiOrigin with the deployed API origin."
 );
 
-// --- Tauri packaging configuration ----------------------------------------
-check(exists("app/src-tauri/tauri.conf.json"), "Tauri config exists at app/src-tauri/tauri.conf.json.");
-check(exists("app/src-tauri/Cargo.toml"), "Tauri Rust crate exists at app/src-tauri/Cargo.toml.");
-check(tauriConfig.version === appPackageJson.version, "tauri.conf.json version stays aligned with app/package.json.");
+// --- electron-builder configuration ---------------------------------------
+check(build.appId === "cc.construct.desktop", "electron-builder keeps the cc.construct.desktop application id, which is what an installed copy updates in place.");
+check(build.directories?.output === "dist-release", "electron-builder writes to apps/desktop/dist-release, which is where the workflow looks for installers.");
+check(build.publish?.provider === "github", "electron-builder publishes to GitHub, which is the feed electron-updater reads.");
+check(targets(build.mac).includes("dmg") && targets(build.mac).includes("zip"), "macOS builds a dmg to download and a zip for the updater, which cannot install from a dmg.");
+check(arches(build.mac).includes("arm64") && arches(build.mac).includes("x64"), "macOS builds both architectures, so an Intel Mac is not offered an Apple Silicon app.");
+check(targets(build.win).includes("nsis"), "Windows builds an NSIS installer.");
+check(targets(build.linux).includes("AppImage") && targets(build.linux).includes("deb"), "Linux builds an AppImage and a deb.");
+check(build.mac?.hardenedRuntime === true && typeof build.mac?.entitlements === "string", "macOS uses the hardened runtime with entitlements, without which notarization is refused.");
+check(existsSync(path.join(root, "apps/desktop", build.mac?.entitlements ?? "")), "The macOS entitlements file exists at the path the build points to.");
+// asar packs node_modules into an archive that dlopen cannot read from.
+const unpack = build.asarUnpack ?? [];
+check(unpack.some((glob) => glob.includes("node-pty")), "node-pty is unpacked from the asar; the terminal cannot load a native module out of an archive.");
+check(unpack.some((glob) => glob.includes("electron-liquid-glass")), "electron-liquid-glass is unpacked from the asar.");
 check(
-  new RegExp(`^version = "${escapeRegExp(appPackageJson.version)}"$`, "m").test(cargoToml),
-  "Cargo.toml version stays aligned with app/package.json."
+  (build.extraResources ?? []).some((entry) => entry?.to === "runtime-icons"),
+  "The runtime icons ship as extra resources; the tray and dock read them from disk at run time."
 );
-check(tauriConfig.identifier === "cc.tryconstruct.desktop", "tauri.conf.json keeps the cc.tryconstruct.desktop identifier.");
-check(
-  Array.isArray(tauriConfig.bundle?.externalBin) && tauriConfig.bundle.externalBin.includes("binaries/construct-mastra"),
-  "tauri.conf.json bundles only the on-demand Mastra runtime."
-);
-check(
-  tauriConfig.build?.beforeBuildCommand?.includes("tauri:before-build"),
-  "tauri.conf.json beforeBuildCommand runs the before-build step that stages Mastra."
-);
-check(
-  appPackageJson.scripts?.["tauri:before-build"]?.includes("mastra:prepare"),
-  "app tauri:before-build stages Mastra before packaging."
-);
-check(exists("app/scripts/prepare-mastra.mjs"), "prepare-mastra.mjs stages the minimal Mastra worker.");
-check(!exists("app/src/bridge/transport.ts"), "the localhost WebSocket bridge has been removed.");
-check(!exists("app/src/bridge/sidecar.ts"), "the full Node backend sidecar has been removed.");
-
-check(gitmodules.includes('path = opaline'), ".gitmodules still declares the opaline submodule.");
-check(
-  gitmodules.includes("url = https://github.com/AbhinavMishra32/opaline-ui.git"),
-  ".gitmodules points the opaline submodule at the public opaline-ui repository."
-);
-check(!/submodule "opaline"[\s\S]*?open-shell\.git/.test(gitmodules), ".gitmodules no longer points opaline at open-shell.");
-if (gitmodules.includes("private/construct-cloud-backend")) {
-  check(!ciWorkflow.includes("submodules: recursive"), "CI does not recursively clone the private backend submodule.");
-  check(!releaseWorkflow.includes("submodules: recursive"), "Release does not recursively clone the private backend submodule.");
+for (const icon of [build.mac?.icon, build.win?.icon, build.linux?.icon]) {
+  check(typeof icon === "string" && existsSync(path.join(root, "apps/desktop", icon)), `The packaged icon ${icon} exists.`);
 }
+
+// --- scripts the workflows call -------------------------------------------
+for (const script of ["build", "verify:build", "rebuild:native", "typecheck", "test"]) {
+  check(typeof desktopPackageJson.scripts?.[script] === "string", `apps/desktop exposes the ${script} script the release workflow runs.`);
+}
+check(existsSync(path.join(root, "apps/desktop/scripts/verify-build.mjs")), "verify-build.mjs exists — it is the gate against shipping a build that opens a blank window.");
+
+// --- the workspace a checkout without submodule access can install --------
+check(!/^\s*-\s*private\/\*/m.test(workspace), "pnpm-workspace.yaml leaves the private backend submodule out; no CI checkout can read it, and a frozen install would fail on the missing importer.");
+check(!lockfile.includes("private/construct-cloud-backend"), "pnpm-lock.yaml carries no importer for the private submodule.");
+
+// --- workflows -------------------------------------------------------------
 for (const [name, workflow] of [
   ["CI", ciWorkflow],
   ["Release", releaseWorkflow],
 ]) {
-  check(workflow.includes("actions/checkout@v5"), `${name} uses actions/checkout@v5.`);
-  if (workflow.includes("pnpm/action-setup")) {
-    check(workflow.includes("pnpm/action-setup@v5"), `${name} uses pnpm/action-setup@v5.`);
-  }
-  check(workflow.includes("submodules: false"), `${name} checkout keeps submodules disabled before the targeted opaline update.`);
-  check(workflow.includes("actions/setup-node@v5"), `${name} uses actions/setup-node@v5.`);
-  check(workflow.includes("node-version: 24"), `${name} pins Node 24 for shell steps.`);
-  check(workflow.includes("git submodule update --init --depth=1 opaline"), `${name} initializes only the opaline submodule.`);
+  check(workflow.includes("actions/checkout@v4"), `${name} uses actions/checkout@v4.`);
+  check(workflow.includes("submodules: false"), `${name} keeps the private submodule out of the checkout.`);
+  check(workflow.includes("libsecret-1-dev"), `${name} installs libsecret, which keytar links against.`);
+  check(workflow.includes("pnpm install --frozen-lockfile"), `${name} installs from the lockfile.`);
 }
-check(ciWorkflow.includes("actions/cache@v5"), "CI uses actions/cache@v5.");
-check(releaseWorkflow.includes("actions/cache@v5"), "Release uses actions/cache@v5.");
-check(releaseWorkflow.includes("actions/upload-artifact@v5"), "Release uses actions/upload-artifact@v5.");
-check(releaseWorkflow.includes("actions/download-artifact@v5"), "Release uses actions/download-artifact@v5.");
-check(releaseWorkflow.includes("node scripts/release/preflight.mjs"), "Release workflow runs the no-build preflight before packaging.");
-check(releaseWorkflow.includes("node scripts/release/publish-gh.mjs"), "Release workflow delegates GitHub publishing to the idempotent publish script.");
-check(releaseWorkflow.includes("shell: bash"), "Release package step explicitly uses bash for cross-platform shell steps.");
-
-// --- Tauri release workflow -----------------------------------------------
-check(releaseWorkflow.includes("dtolnay/rust-toolchain"), "Release installs a Rust toolchain for the Tauri build.");
-check(releaseWorkflow.includes("pnpm tauri build"), "Release packages the desktop app with `pnpm tauri build`.");
-check(releaseWorkflow.includes("libwebkit2gtk-4.1-dev"), "Release installs the Linux WebKitGTK dependency Tauri needs.");
-check(releaseWorkflow.includes("target/release/bundle"), "Release uploads artifacts from the Tauri bundle directory.");
-check(!releaseWorkflow.includes("electron-builder"), "Release no longer invokes electron-builder.");
-
-check(publishScript.includes("--clobber"), "GitHub release publisher uploads assets with --clobber.");
-check(!/gh release create "\\$TAG" \\$FILES/.test(releaseWorkflow), "Release workflow does not upload assets through gh release create.");
+check(!releaseWorkflow.includes("tauri"), "The release workflow no longer packages the app with Tauri.");
+check(releaseWorkflow.includes("--publish never"), "electron-builder is told not to publish; the publish job owns the release, and a matrix that publishes races itself.");
+check(releaseWorkflow.includes("releaseInfo.releaseNotesFile"), "The release notes are stamped into the update feed at package time.");
+check(releaseWorkflow.includes("latest-mac.yml") && releaseWorkflow.includes("latest-linux.yml"), "The release verifies the update feed each platform writes.");
+check(releaseWorkflow.includes("dist-release/latest*.yml"), "The update feed is uploaded as a release asset; without it no installed copy ever sees the release.");
+check(releaseWorkflow.includes("rebuild:native"), "Native modules are rebuilt for Electron's ABI before packaging.");
+check(releaseWorkflow.includes("node scripts/release/publish-gh.mjs"), "Publishing goes through the idempotent publish script, so a re-run repairs a release rather than failing on it.");
+check(publishScript.includes("--clobber"), "The publisher uploads assets with --clobber, so a re-run replaces an asset instead of erroring.");
+check(/latest\(-mac\|-linux\)\?/.test(publishScript), "The publisher uploads the update feed alongside the installers.");
 
 if (failures.length > 0) {
   console.error("Release preflight failed:");
-  for (const failure of failures) {
-    console.error(`- ${failure}`);
-  }
+  for (const failure of failures) console.error(`- ${failure}`);
   process.exit(1);
 }
 
@@ -115,16 +104,14 @@ function readJson(relativePath) {
   return JSON.parse(read(relativePath));
 }
 
-function exists(relativePath) {
-  return existsSync(path.join(root, relativePath));
+function targets(platform) {
+  return (platform?.target ?? []).map((entry) => (typeof entry === "string" ? entry : entry?.target));
+}
+
+function arches(platform) {
+  return (platform?.target ?? []).flatMap((entry) => (typeof entry === "string" ? [] : (entry?.arch ?? [])));
 }
 
 function check(condition, message) {
-  if (!condition) {
-    failures.push(message);
-  }
-}
-
-function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  if (!condition) failures.push(message);
 }
