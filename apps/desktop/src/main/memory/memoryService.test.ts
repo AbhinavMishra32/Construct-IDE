@@ -40,6 +40,21 @@ describe("ensure", () => {
     expect(read("learner.md")).toContain("Prefers worked examples.");
   });
 
+  it("opens learner.md with what the intake already established", async () => {
+    await memory.ensure(project(), undefined, ["- Goes by: Ada", "- Home language: rust"]);
+    const learner = read("learner.md");
+    expect(learner).toContain("## From their intake");
+    expect(learner).toContain("Goes by: Ada");
+    /* Under its own heading, above the placeholders — the agent must be able to
+       tell a preference the learner stated from an inference it made itself. */
+    expect(learner.indexOf("From their intake")).toBeLessThan(learner.indexOf("Learner style: not enough evidence yet."));
+  });
+
+  it("says nothing about an intake nobody went through", async () => {
+    await memory.ensure(project());
+    expect(read("learner.md")).not.toContain("From their intake");
+  });
+
   it("replaces one the learner deleted rather than failing", async () => {
     await memory.ensure(project());
     rmSync(path.join(root, ".construct", "path.md"));
@@ -149,5 +164,60 @@ describe("containment", () => {
     } finally {
       rmSync(outside, { recursive: true, force: true });
     }
+  });
+
+  /**
+   * What `find` is allowed to get wrong.
+   *
+   * The agent does not have the file in front of it when it writes a `find` — it
+   * has what a fetch showed it several steps ago, and it retypes that. Each of
+   * these is a difference that broke an exact `indexOf` while meaning nothing,
+   * and each one cost a failed tool call the model then retried identically.
+   */
+  it("forgives trailing whitespace the model did not reproduce", async () => {
+    await memory.ensure(project());
+    writeFileSync(path.join(root, ".construct", "project.md"), "# Project\n\nA line with trailing space.   \n", "utf8");
+    await memory.patch(root, [
+      { file: "project.md", mode: "replace", find: "A line with trailing space.", content: "Rewritten.", reason: "x" },
+    ]);
+    expect(read("project.md")).toContain("Rewritten.");
+  });
+
+  it("forgives a tab retyped as spaces", async () => {
+    await memory.ensure(project());
+    writeFileSync(path.join(root, ".construct", "project.md"), "# Project\n\n\tIndented note.\n", "utf8");
+    await memory.patch(root, [{ file: "project.md", mode: "replace", find: " Indented note.", content: "Flat note.", reason: "x" }]);
+    expect(read("project.md")).toContain("Flat note.");
+  });
+
+  it("matches a find that spans several lines", async () => {
+    await memory.ensure(project());
+    writeFileSync(path.join(root, ".construct", "project.md"), "# Project\n\nFirst line.  \nSecond line.\nThird line.\n", "utf8");
+    await memory.patch(root, [{ file: "project.md", mode: "replace", find: "First line.\nSecond line.", content: "Merged.", reason: "x" }]);
+    const after = read("project.md");
+    expect(after).toContain("Merged.");
+    expect(after).toContain("Third line.");
+    expect(after).not.toContain("First line.");
+  });
+
+  it("says what to do when the text is genuinely not there", async () => {
+    /* The tolerance is bounded on purpose: a fuzzy match that rewrote the wrong
+       paragraph would be worse than no match. The message has to carry the way
+       out, because the agent retries from it. */
+    await memory.ensure(project());
+    await expect(
+      memory.patch(root, [{ file: "project.md", mode: "replace", find: "Nothing like this.", content: "x", reason: "x" }]),
+    ).rejects.toThrow(/could not find that text[\s\S]*append/i);
+  });
+
+  it("refuses an ambiguous match found only by the forgiving pass", async () => {
+    await memory.ensure(project());
+    /* Both lines are tab-indented, so the space-indented `find` matches neither
+       exactly and only the forgiving pass sees them — as two identical
+       candidates, which it must refuse rather than pick between. */
+    writeFileSync(path.join(root, ".construct", "project.md"), "# Project\n\n\tRepeated.\n\tRepeated.\n", "utf8");
+    await expect(
+      memory.patch(root, [{ file: "project.md", mode: "replace", find: " Repeated.", content: "x", reason: "x" }]),
+    ).rejects.toThrow(/more than once/i);
   });
 });

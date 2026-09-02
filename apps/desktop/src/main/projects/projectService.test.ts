@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
@@ -47,11 +47,14 @@ describe("availableDirectory", () => {
 describe("creating a project", () => {
   const input = { name: "Software Renderer", goal: "Understand the graphics pipeline", language: "python" as const };
 
-  it("makes a real directory with an entry point for the language", async () => {
+  it("makes a real directory, and puts nothing in it but Construct's own memory", async () => {
     const created = await projects.create({ ...input, parentDirectory: root });
 
     expect(created.directory).toBe(path.join(root, "software-renderer"));
-    expect(readFileSync(path.join(created.directory, "main.py"), "utf8")).toContain("def main()");
+    /* No starter file. A learner opening a project they just made should see
+       their own empty folder, not a main.py printing the word Construct that
+       they did not write and cannot be expected to have opinions about. */
+    expect(readdirSync(created.directory)).toEqual([".construct"]);
   });
 
   it("writes the goal into the project's own memory, not only into Construct's database", async () => {
@@ -125,6 +128,22 @@ describe("opening a project", () => {
     rmSync(created.directory, { recursive: true, force: true });
 
     expect(() => projects.open(created.id)).toThrow(new RegExp(created.directory.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  });
+
+  it("returns the conversation that was already on disk", async () => {
+    const created = await projects.create({ name: "Threaded", goal: "Keep talking", parentDirectory: root, language: "typescript" });
+    store.appendMessage(created.id, {
+      id: "m1",
+      role: "learner",
+      body: "where were we?",
+      createdAt: new Date().toISOString(),
+      activity: [],
+    });
+
+    /* The regression this covers: `open` used to hard-code an empty array, so
+       leaving a project and coming back threw away a thread that had been
+       written to the store the whole time. */
+    expect(projects.open(created.id).messages.map((message) => message.body)).toEqual(["where were we?"]);
   });
 
   it("stamps the project so the list orders by what was opened last", async () => {

@@ -197,7 +197,7 @@ export function AuthPage({
   const group = cn(
     "overflow-hidden rounded-xl bg-[var(--color-background-elevated-secondary)] transition-shadow",
     "shadow-[inset_0_0_0_0.5px_var(--border-strong)]",
-    "focus-within:shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--foreground)_26%,transparent)]",
+    "",
     problem && problem.field !== "code" && "shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--destructive)_55%,transparent)]",
   );
 
@@ -249,10 +249,9 @@ export function AuthPage({
 
   return (
     <div className="app-drag app-pane relative grid h-full place-items-center overflow-hidden px-6">
-      {/* The mark's own grid at the scale of the room — see `.auth-field` in
-          theme.css. Behind everything, absent under the form, and carrying one
-          slow diagonal pass so the window is never quite still. */}
-      <div aria-hidden className="auth-field text-foreground" />
+      {/* The room the form stands in — see `.auth-field` in theme.css. A
+          vignette and nothing else: behind everything, under nothing. */}
+      <div aria-hidden className="auth-field" />
 
       <motion.div className="app-no-drag relative w-full max-w-[20.5rem] pb-[var(--titlebar-height)]" layout transition={PANEL}>
         {/* Mark and wordmark on one line, the way the lockup is set everywhere

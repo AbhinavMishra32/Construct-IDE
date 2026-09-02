@@ -22,8 +22,22 @@ export type AgentToolContext = {
   /** Records a mastery reading. The agent is the only thing that can judge
    *  understanding, so this is the one tool whose effect is on the learner's
    *  record rather than on their files. */
+  /** Sets or corrects a practice task. Status is not the agent's to set here —
+   *  a task it writes is open, and it moves through `judgeTask`. */
+  saveTask(input: {
+    taskId: string;
+    title: string;
+    brief: string;
+    criteria: string[];
+    concepts: string[];
+    files: string[];
+  }): void;
+  /** The agent's verdict on a submitted task. */
+  judgeTask(taskId: string, passed: boolean, outcome: string): void;
   recordConcept(input: {
     conceptId: string;
+    /** Omitted leaves the concept where it is; null moves it to the top. */
+    parentId?: string | null;
     title: string;
     masteryLevel: number;
     confidence: string;
@@ -84,8 +98,21 @@ export async function executeAgentTool(name: string, input: unknown, context: Ag
 
     case "record-concept": {
       const level = Number(args.masteryLevel ?? 0);
+      const conceptId = String(args.conceptId ?? "").trim();
+      /* Three distinct answers, and they have to stay distinct: absent means
+         "leave it where it is", null means "move it to the top", and a slug
+         means "put it under that". Coercing absent to null would flatten the
+         tree on every level update. */
+      const parent =
+        args.parentId === undefined
+          ? undefined
+          : args.parentId === null || String(args.parentId).trim() === ""
+            ? null
+            : String(args.parentId).trim();
+
       context.recordConcept({
-        conceptId: String(args.conceptId ?? "").trim(),
+        conceptId,
+        ...(parent === undefined ? {} : { parentId: parent }),
         title: String(args.title ?? "").trim(),
         /* Clamped rather than rejected. A model that answers 7 has still told
            us the learner is fluent, and refusing the call would lose that. */
@@ -108,6 +135,30 @@ export async function executeAgentTool(name: string, input: unknown, context: Ag
         tags: Array.isArray(args.tags) ? args.tags.map(String).slice(0, 8) : [],
       });
       return { recorded: true };
+    }
+
+    case "set-practice-task": {
+      const criteria = Array.isArray(args.criteria)
+        ? args.criteria.map(String).map((line) => line.trim()).filter(Boolean).slice(0, 8)
+        : [];
+      /* A task with nothing to check is not a task. Refused rather than stored
+         empty, because the learner would get a card with no way to finish it. */
+      if (criteria.length === 0) throw new Error("A practice task needs at least one success criterion.");
+
+      context.saveTask({
+        taskId: String(args.taskId ?? "").trim(),
+        title: String(args.title ?? "").trim(),
+        brief: String(args.brief ?? ""),
+        criteria,
+        concepts: Array.isArray(args.concepts) ? args.concepts.map(String).slice(0, 8) : [],
+        files: Array.isArray(args.files) ? args.files.map(String).slice(0, 8) : [],
+      });
+      return { set: true };
+    }
+
+    case "judge-practice-task": {
+      context.judgeTask(String(args.taskId ?? "").trim(), args.passed === true, String(args.outcome ?? ""));
+      return { judged: true };
     }
 
     case "flow-memory-fetch": {

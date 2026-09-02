@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ArrowUp, ChevronDown, Loader2, Paperclip, Plus, Square, Unplug } from "lucide-react";
+import { ArrowUp, ChevronDown, Paperclip, Plus, Square, Unplug } from "lucide-react";
+import { Orb } from "../common/Orb";
 import { cn } from "@/lib/utils";
 import { useProviders } from "../../hooks/use-providers";
 
@@ -169,7 +170,7 @@ export function Composer({
             title="Send"
             type="button"
           >
-            {busy ? <Loader2 className="size-3.5 animate-spin" /> : <ArrowUp className="size-3.5" />}
+            {busy ? <Orb invert label="Working" px={15} state="working" /> : <ArrowUp className="size-3.5" />}
           </button>
         )}
       </div>

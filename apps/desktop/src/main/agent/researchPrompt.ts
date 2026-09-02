@@ -53,8 +53,15 @@ export function researchRequest(project: { name: string; goal: string; language:
 export function openingRequest(researched: boolean): string {
   return [
     `Start this new project ${researched ? "now that research is complete" : "without prior research"}.`,
-    `Read your memory files first — research.md holds the project background, so continue from its assumptions instead of redoing discovery.`,
-    `Greet the learner in one line, then take the next useful mentor step without waiting for another message: look at the workspace, plan the path with plan-learning-path, and begin teaching or ask one focused question if the goal is genuinely ambiguous.`,
+    `Read your memory files first. research.md holds the project background, so continue from its assumptions instead of redoing discovery.`,
+    /* Not "greet the learner in one line", which is what produced "Welcome in,
+     Abhinav, Python being your home turf means we skip the what-is-a-variable
+     tour". A greeting instruction is an invitation to write a paragraph of
+     warmth about the learner before anything happens, and it is the single most
+     assistant-sounding thing in the product. The first line should be about
+     their project. */
+    `Open with one plain line about what this project is and where you are starting them, addressed to them by name if you have it. No welcome, no compliments on the idea, no summary of your own plan.`,
+    `Then take the next useful mentor step without waiting for another message: look at the workspace, plan the path with plan-learning-path, and begin teaching or ask one focused question if the goal is genuinely ambiguous.`,
   ].join("\n");
 }
 

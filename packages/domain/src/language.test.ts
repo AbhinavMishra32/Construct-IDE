@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isLspLanguage, languageForPath, LANGUAGES, LSP_LANGUAGES } from "./language.js";
+import { languageForPath } from "./language.js";
 
 describe("languageForPath", () => {
   it("names the languages Construct can open", () => {
@@ -18,19 +18,5 @@ describe("languageForPath", () => {
 
   it("ignores extension casing, which Windows checkouts produce", () => {
     expect(languageForPath("Legacy/Main.PY")).toBe("python");
-  });
-});
-
-describe("LSP language support", () => {
-  it("is a subset of the languages the interface can name", () => {
-    for (const language of LSP_LANGUAGES) {
-      expect(LANGUAGES).toContain(language);
-      expect(isLspLanguage(language)).toBe(true);
-    }
-  });
-
-  it("reports languages without a shipped server as unsupported", () => {
-    expect(isLspLanguage("rust")).toBe(false);
-    expect(isLspLanguage("go")).toBe(false);
   });
 });

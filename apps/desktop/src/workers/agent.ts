@@ -20,6 +20,12 @@ import { createPiMastraModel, type PiProviderInput } from "./piMastraModel.js";
  * could read files would be a second place those checks had to be right.
  */
 
+/** Only the chunks this worker reads. Mastra's own union covers a few dozen
+ *  types — network routing, workflow steps, output schemas — none of which this
+ *  turn subscribes to, and naming them all here would be a copy of their types
+ *  that goes stale the next time they add one. */
+type StreamChunk = { type: string; payload?: { text?: string } };
+
 type RequestMessage = { kind: "request"; id: string; method: string; payload: Record<string, unknown> };
 type ToolResultMessage = { kind: "tool-result"; id: string; ok: boolean; value?: unknown; error?: string };
 
@@ -47,19 +53,28 @@ function hostTool(name: string, description: string, schema: z.ZodTypeAny, reque
     execute: async (inputData: unknown) => {
       const id = randomUUID();
       const settled = new Promise((resolve, reject) => pendingTools.set(id, { resolve, reject }));
+      /* Carried on both events, not just the start.
+         
+         The live row merges start and end by callId, so it had the arguments;
+         the *stored* step is built from the end event alone, and so every tool
+         call ever written to a project's history had `input: ""`. Nothing
+         showed it until the detail views started reading the arguments to draw
+         a file's path or a command's text — and then every one of them fell
+         back to raw output with no way to know why. */
+      const shown = format(inputData);
       /* Two stream events per call, correlated by callId, because the
          transcript draws one row and updates it in place — a start and an end
          without the correlation would be two rows for one call. */
-      send({ kind: "event", requestId: requestId(), type: "tool", tool: name, callId: id, phase: "start", input: format(inputData) });
+      send({ kind: "event", requestId: requestId(), type: "tool", tool: name, callId: id, phase: "start", input: shown });
       send({ kind: "tool-call", id, requestId: requestId(), name, input: inputData });
 
       try {
         const value = await settled;
-        send({ kind: "event", requestId: requestId(), type: "tool", tool: name, callId: id, phase: "end", ok: true, output: format(value) });
+        send({ kind: "event", requestId: requestId(), type: "tool", tool: name, callId: id, phase: "end", ok: true, input: shown, output: format(value) });
         return value;
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error);
-        send({ kind: "event", requestId: requestId(), type: "tool", tool: name, callId: id, phase: "end", ok: false, detail, output: detail });
+        send({ kind: "event", requestId: requestId(), type: "tool", tool: name, callId: id, phase: "end", ok: false, detail, input: shown, output: detail });
         throw error;
       }
     },
@@ -133,12 +148,14 @@ const tools = {
       "",
       "`content` is the whole note, in Markdown. Write it as an encyclopedia entry: open with a short paragraph saying what the idea is, then use `## ` headings for the parts that earn one — why it matters, how it is usually got wrong, a worked example, how it relates to what they already know. Put code in fenced blocks with a language. Prefer examples from this learner's own project over generic ones. No heading above the opening paragraph, and no restating the title.",
       "",
+      "Concepts form a tree. Set `parentId` to the concept this one sits *inside* — virtual dispatch under polymorphism, polymorphism under object orientation — and nest as deep as the subject really goes. Record the parent first when you can, but naming one that does not exist yet is fine; it links up when you record it. Leave `parentId` out on later calls to keep the concept where it is, or send null to move it back to the top.",
       "Call this when you introduce an idea, see evidence of understanding, or find a gap.",
       "Levels: 0 unseen, 1 recognises pieces, 2 guided understanding, 3 practice ready, 4 applies reliably, 5 transfers and teaches. A scoped task is only fair at level 3 or above.",
       "On a later call you may send only the level and note; leaving `content` out keeps the note already written.",
     ].join("\n"),
     z.object({
       conceptId: z.string().min(1).max(120).describe("A stable slug, e.g. 'rasterisation' or 'function-types'"),
+      parentId: z.string().max(120).nullable().optional().describe("The concept slug this one sits under, or null for a top-level concept"),
       title: z.string().min(1).max(120),
       masteryLevel: z.number().int().min(0).max(5),
       confidence: z.string().min(1).max(40).describe("One word for the reading, e.g. introduced, fragile, practicing, solid"),
@@ -148,6 +165,40 @@ const tools = {
       tags: z.array(z.string().max(40)).max(8).optional(),
       note: z.string().max(600).optional().describe("What the learner said or did that supports this level"),
       reason: z.string().max(300).optional().describe("Why the level changed"),
+    }),
+    requestId,
+  ),
+  "set-practice-task": hostTool(
+    "set-practice-task",
+    [
+      "Set the learner a piece of work to do themselves, or update the one you already set.",
+      "This is how a task exists at all — describing one in prose leaves nothing on screen once the message scrolls away, and nothing for you to check against later.",
+      "",
+      "`criteria` is what finished means, one short checkable line each. The learner ticks them off and you judge against them, so write things you can actually verify by reading their code — not \"understands closures\".",
+      "Only set a task for concepts you have already recorded at level 3 or above. A task on an idea you have only introduced is a guessing game.",
+      "Call it again with the same taskId to correct or extend a task; use a new taskId for genuinely new work.",
+    ].join("\n"),
+    z.object({
+      taskId: z.string().min(1).max(120).describe("A stable slug, e.g. 'saxpy-kernel'"),
+      title: z.string().min(1).max(120),
+      brief: z.string().max(4_000).describe("What to build and why, in Markdown"),
+      criteria: z.array(z.string().max(200)).min(1).max(8).describe("What done means — checkable, one line each"),
+      concepts: z.array(z.string().max(120)).max(8).optional().describe("Concept ids this exercises"),
+      files: z.array(z.string().max(300)).max(8).optional().describe("Project-relative paths the work belongs in"),
+    }),
+    requestId,
+  ),
+  "judge-practice-task": hostTool(
+    "judge-practice-task",
+    [
+      "Record your verdict on a task the learner has submitted.",
+      "Read their files first. Pass it only when every criterion is genuinely met; otherwise send it back with `passed: false` and say plainly which criterion is not met and what to look at.",
+      "`outcome` is shown to the learner under the task, so write it to them.",
+    ].join("\n"),
+    z.object({
+      taskId: z.string().min(1).max(120),
+      passed: z.boolean(),
+      outcome: z.string().max(1_000).describe("What you found, written to the learner"),
     }),
     requestId,
   ),
@@ -228,7 +279,7 @@ const tools = {
   ),
   ask_user_question: hostTool(
     "ask_user_question",
-    "Ask the learner one tracked question and pause until they answer. Use this instead of writing required learner questions as prose.",
+    "Ask the learner one tracked question and pause until they answer. Use this instead of writing required learner questions as prose. Write the question and the choices the way you would say them out loud: plain words, no em dashes or en dashes, no dash holding two clauses together. Markdown and [[file:path|label]] references render, so point at real files by reference. Offer choices only when you genuinely have candidates in mind; leave them out when the honest answer is whatever the learner writes.",
     z.object({
       question: z.string().min(1).max(600),
       header: z.string().min(1).max(80).optional(),
@@ -238,6 +289,16 @@ const tools = {
     requestId,
   ),
 };
+
+/**
+ * The stop switch for each turn in flight, by request id.
+ *
+ * Mastra's loop takes an `AbortSignal` and stops between steps as well as
+ * mid-stream, so this is a real cancellation rather than the window hiding a
+ * turn that keeps running — which matters because a turn that keeps running
+ * keeps calling tools, and a tool call writes to the learner's project.
+ */
+const running = new Map<string, AbortController>();
 
 type TurnPayload = {
   requestId: string;
@@ -257,7 +318,7 @@ type TurnPayload = {
   messages: Array<{ role: "user"; content: string } | { role: "assistant"; content: string }>;
 };
 
-async function runTurn(payload: TurnPayload): Promise<{ text: string; lastText: string }> {
+async function runTurn(payload: TurnPayload): Promise<{ text: string; lastText: string; stopped?: boolean }> {
   currentRequestId = payload.requestId;
   /* The final step's prose, kept separately from the aggregate.
      
@@ -286,27 +347,108 @@ async function runTurn(payload: TurnPayload): Promise<{ text: string; lastText: 
     tools: available,
   });
 
-  const result = await agent.generate(payload.messages, {
-    maxSteps: 40,
-    onStepFinish: ((step: Record<string, unknown>) => {
-      /* The model's prose and its reasoning are separate rows in the
-         transcript: one is the answer, the other is how it got there, and
-         collapsing them would make the reasoning read as part of the reply. */
-      const reasoning = textOf(step.reasoning ?? step.reasoningText).trim();
-      const text = textOf(step.text).trim();
-      if (reasoning) send({ kind: "event", requestId: payload.requestId, type: "reasoning", text: reasoning });
-      if (text) {
-        lastText = text;
-        send({ kind: "event", requestId: payload.requestId, type: "text", text });
+  /* Streamed, not generated.
+     
+     This used to call `agent.generate` and emit text from `onStepFinish`, which
+     is a callback that fires once a whole *step* has finished — a step being the
+     model call plus every tool it invoked. Three separate complaints came out of
+     that one choice:
+     
+       - Nothing streamed. Text arrived one step at a time, in paragraph-sized
+         lumps, however fast the model produced it.
+       - The transcript ran backwards. Tool rows are emitted live from `hostTool`
+         the moment a tool is called, but the prose that introduced them
+         ("let me see where we are") only arrived when the step ended — so the
+         reader saw the actions first and the sentence explaining them after.
+       - A turn that ended on a question lost its preamble. The step never
+         finished, so `onStepFinish` never fired, and the learner got a bare
+         question with the passage it referred to nowhere on screen.
+     
+     Reading `fullStream` fixes all three: deltas go out as the model writes
+     them, in the order it writes them, and nothing is buffered behind a step
+     boundary. Tool events keep coming from `hostTool` — it holds the real input,
+     output and error detail, and the stream's own tool chunks would be a second
+     source for the same row. */
+  const control = new AbortController();
+  running.set(payload.requestId, control);
+  const run = await agent.stream(payload.messages, { maxSteps: 40, abortSignal: control.signal });
+
+  /* The text of the current assistant block, so `lastText` is the final answer
+     rather than every narration line glued together. Reset when the model
+     starts a new one. */
+  let block = "";
+
+  /* Wrapped, because a signal firing mid-iteration rejects the async iterator.
+     That is the ordinary way a stop arrives, and it is not an error: whatever
+     was streamed before it is kept and returned by the check below. */
+  try {
+    for await (const chunk of run.fullStream as AsyncIterable<StreamChunk>) {
+    switch (chunk.type) {
+      case "text-start":
+        block = "";
+        break;
+
+      case "text-delta": {
+        const delta = chunk.payload?.text ?? "";
+        if (!delta) break;
+        block += delta;
+        send({ kind: "event", requestId: payload.requestId, type: "text", text: delta });
+        break;
       }
-    }) as never,
-  });
+
+      case "text-end":
+        if (block.trim()) lastText = block.trim();
+        break;
+
+      /* The model's reasoning and its prose are separate rows in the transcript:
+         one is the answer, the other is how it got there, and collapsing them
+         would make the reasoning read as part of the reply. */
+      case "reasoning-delta": {
+        const delta = chunk.payload?.text ?? "";
+        if (delta) send({ kind: "event", requestId: payload.requestId, type: "reasoning", text: delta });
+        break;
+      }
+
+      /* No `reasoning-end` is forwarded, deliberately.
+         
+         Providers emit a start/delta/end triple per *reasoning part*, and a
+         single turn produces dozens of them — so closing the transcript's
+         thinking block on every one drew a separate "Thought for 1s" row per
+         fragment, each holding two or three words. The reducer already closes
+         the block at the right moment: when the first word of the answer
+         arrives. Consecutive reasoning therefore accumulates into one thought,
+         and thinking that resumes after a tool call starts a second. */
+
+      default:
+        break;
+      }
+    }
+  } catch (cause) {
+    if (!control.signal.aborted) throw cause;
+  } finally {
+    running.delete(payload.requestId);
+  }
+
+  /* A turn that ends on a question never sees `text-end` for its last block —
+     the model stops mid-step waiting for an answer — so the preamble is captured
+     here as well. Without this the question's own introduction streamed to the
+     screen and then vanished when the thread was stored and re-read. */
+  if (block.trim()) lastText = block.trim();
 
   send({ kind: "event", requestId: payload.requestId, type: "done" });
-  /* Normalised for the same reason: `result.text` has been a string and an
-     array of content parts depending on the provider, and a reply stored as
-     "[object Object]" is a lost turn. */
-  const text = textOf(result.text) || textOf((result as unknown as { content?: unknown }).content);
+
+  /* Stopped on purpose: return what was said rather than throwing.
+     
+     `run.text` rejects once the signal fires, and a stop is not a failure — the
+     learner asked for it, and everything the model wrote up to that point is
+     still theirs. Reading it behind the check also avoids awaiting a promise
+     that is already rejected. */
+  if (control.signal.aborted) return { text: lastText, lastText, stopped: true };
+
+  /* Normalised: the resolved text has been a string and an array of content
+     parts depending on the provider, and a reply stored as "[object Object]" is
+     a lost turn. */
+  const text = textOf(await run.text);
   return { text, lastText: lastText || text };
 }
 
@@ -319,6 +461,45 @@ process.parentPort?.on("message", (event: { data: unknown }) => {
     if (!pending) return;
     if (message.ok) pending.resolve(message.value);
     else pending.reject(new Error(message.error ?? "Tool failed"));
+    return;
+  }
+
+  /**
+   * A single model call with no tools, no memory and no project.
+   *
+   * Naming a project happens before the project exists, so it cannot go through
+   * `turn` — that builds an agent around a project's directory, prompt and
+   * state. This is the plain path: one instruction, one message, one string
+   * back.
+   */
+  if (message.kind === "request" && message.method === "complete") {
+    const payload = message.payload as unknown as {
+      provider: PiProviderInput;
+      instructions: string;
+      input: string;
+    };
+    void (async () => {
+      const agent = new Agent({
+        id: "construct-oneshot",
+        name: "Construct",
+        instructions: payload.instructions,
+        model: createPiMastraModel(payload.provider),
+      });
+      const result = await agent.generate([{ role: "user" as const, content: payload.input }]);
+      return textOf((result as { text?: unknown }).text);
+    })()
+      .then((value) => send({ kind: "result", id: message.id, ok: true, value }))
+      .catch((error: unknown) => send({ kind: "result", id: message.id, ok: false, error: error instanceof Error ? error.message : String(error) }));
+    return;
+  }
+
+  /* Stopping a turn. Resolves either way: a request to stop something that has
+     already finished is not an error, it is a race the window cannot avoid. */
+  if (message.kind === "request" && message.method === "abort") {
+    const requestId = String((message.payload as { requestId?: unknown }).requestId ?? "");
+    const control = running.get(requestId);
+    control?.abort();
+    send({ kind: "result", id: message.id, ok: true, value: { stopped: Boolean(control) } });
     return;
   }
 

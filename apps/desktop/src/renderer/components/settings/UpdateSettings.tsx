@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
-import { Check, Download, Loader2, RefreshCw, ShieldCheck } from "lucide-react";
+import { Check, Download, RefreshCw, ShieldCheck } from "lucide-react";
+import { Orb } from "../common/Orb";
 import type { ConstructApi, UpdateState } from "../../../shared/api";
 import { Button } from "@/components/ui/button";
 import { message } from "@/lib/format";
+import { SettingsControl, SettingsField, SettingsRow } from "./layout";
 
 const STATUS: Record<UpdateState["status"], string> = {
   idle: "Ready to check",
@@ -52,19 +54,18 @@ export function UpdateSettings({ api }: { api: ConstructApi | undefined }) {
             : "Construct checks securely when it opens and every few hours while it is running.";
 
   return (
-    <div className="flex items-center gap-4 px-4 py-3.5">
+    <SettingsRow>
       <div className="grid size-9 shrink-0 place-items-center rounded-lg bg-accent text-foreground">
-        {busy ? <Loader2 className="size-4 animate-spin" /> : state?.status === "current" ? <Check className="size-4 text-success" /> : <ShieldCheck className="size-4" />}
+        {busy ? <Orb label="Checking for updates" px={16} state="connecting" /> : state?.status === "current" ? <Check className="size-4 text-success" /> : <ShieldCheck className="size-4" />}
       </div>
-      <div className="min-w-0 flex-1">
-        <p className="text-content font-medium">{state ? STATUS[state.status] : "Automatic updates"}</p>
-        <p className="mt-0.5 text-ui leading-relaxed text-muted-foreground">{failure || detail}</p>
-      </div>
-      {state?.status === "available" ? (
-        <Button disabled={!api} onClick={download} size="sm"><Download />Update now</Button>
-      ) : (
-        <Button disabled={!api || busy || state?.status === "unsupported"} onClick={check} size="sm" variant="secondary"><RefreshCw />Check now</Button>
-      )}
-    </div>
+      <SettingsField description={failure || detail} title={state ? STATUS[state.status] : "Automatic updates"} />
+      <SettingsControl>
+        {state?.status === "available" ? (
+          <Button disabled={!api} onClick={download} size="sm"><Download />Update now</Button>
+        ) : (
+          <Button disabled={!api || busy || state?.status === "unsupported"} onClick={check} size="sm" variant="secondary"><RefreshCw />Check now</Button>
+        )}
+      </SettingsControl>
+    </SettingsRow>
   );
 }

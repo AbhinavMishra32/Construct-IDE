@@ -1,4 +1,4 @@
-import { mkdir, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -36,25 +36,11 @@ export function availableDirectory(parent: string, slug: string): string {
   throw new Error(`There are already too many projects named "${slug}" in that folder.`);
 }
 
-const SEED: Record<Language, { file: string; content: string } | null> = {
-  typescript: { file: "main.ts", content: 'export function main(): void {\n  console.log("Construct");\n}\n\nmain();\n' },
-  javascript: { file: "main.js", content: 'function main() {\n  console.log("Construct");\n}\n\nmain();\n' },
-  python: { file: "main.py", content: 'def main() -> None:\n    print("Construct")\n\n\nif __name__ == "__main__":\n    main()\n' },
-  java: null,
-  c: null,
-  cpp: null,
-  go: null,
-  rust: null,
-  swift: null,
-  ruby: null,
-};
-
 /**
  * Projects as directories on the learner's disk.
  *
- * Construct does not own a project's files. Creating one makes a directory and
- * a single entry point; importing one adopts a directory that already has
- * files in it. Everything after that is the learner's, which is why the store
+ * Construct does not own a project's files. Creating one makes an empty
+ * directory; importing one adopts a directory that already has files in it. Everything after that is the learner's, which is why the store
  * records only where a project is and deleting one never removes it.
  */
 export class ProjectService {
@@ -64,6 +50,13 @@ export class ProjectService {
      *  runs: the four files are part of what a Construct project *is*, and a
      *  learner with no model connected should still find them there. */
     private readonly memory: MemoryService,
+    /** What the learner said about themselves on the way into Construct, as
+     *  Markdown lines. A function rather than the profile itself because it is
+     *  read at the moment a project is made, and the learner may have edited it
+     *  since the application started. Empty when they have not been through the
+     *  intake, which is the case every project was written for before it
+     *  existed. */
+    private readonly intake: () => readonly string[] = () => [],
   ) {}
 
   list(): ProjectSummary[] {
@@ -108,7 +101,15 @@ export class ProjectService {
     return this.defaults();
   }
 
-  async create(input: { name: string; goal: string; parentDirectory?: string | undefined; language: Language }): Promise<ProjectSummary> {
+  async create(input: {
+    name: string;
+    goal: string;
+    parentDirectory?: string | undefined;
+    language: Language;
+    /** What the learner already holds, chosen from the atlas. Seeds `learner.md`
+     *  so the first turn knows what not to re-teach. */
+    foundation?: Array<{ title: string; level: number }> | undefined;
+  }): Promise<ProjectSummary> {
     const parent = input.parentDirectory ?? this.defaults().directory;
     /* The default folder is created on demand; one the learner named is not.
        A missing default is Construct's own housekeeping — it is the folder we
@@ -121,15 +122,23 @@ export class ProjectService {
     const directory = availableDirectory(parent, directorySlug(input.name));
     await mkdir(directory, { recursive: true });
 
-    const seed = SEED[input.language];
-    if (seed) await writeFile(path.join(directory, seed.file), seed.content, "utf8");
-    /* No GOAL.md. The goal is written into `.construct/project.md` along with
+    /* Nothing is written into it but `.construct`.
+       
+       A new project used to arrive with a main.ts or a main.py in it, printing
+       the word Construct. It was meant as somewhere to start and it is the
+       opposite: the first thing the learner sees is code they did not write and
+       did not ask for, in a file the agent is about to want to talk about, and
+       the empty folder they were promised is already not empty. The first file
+       is written when the first step calls for one, by whichever of them is
+       writing it.
+       
+       No GOAL.md either. The goal is written into `.construct/project.md` along with
        everything else Construct remembers, which is where v0.7 kept it — one
        place the learner can read and edit, rather than a file at the top of
        their repository that only Construct writes and nothing reads back. */
 
     const project = this.store.createProject({ name: input.name, goal: input.goal, directory, language: input.language });
-    await this.memory.ensure(project);
+    await this.memory.ensure(project, input.foundation, this.intake());
     return project;
   }
 
@@ -147,7 +156,7 @@ export class ProjectService {
     });
     /* An imported project gets memory too. It is an existing codebase, so
        research and the path have more to work from, not less. */
-    await this.memory.ensure(project);
+    await this.memory.ensure(project, undefined, this.intake());
     return project;
   }
 
@@ -158,10 +167,20 @@ export class ProjectService {
     if (!summary.present) throw new Error(`Construct cannot find ${summary.directory}. It may have been moved or deleted.`);
 
     this.store.markOpened(projectId);
-    /* Messages and the pending question are the agent's, and the agent lands in
-       M3. An empty thread is the honest answer for a project nobody has talked
-       to yet, and it is the same shape one with history will have. */
-    return { summary: this.store.readProject(projectId) ?? summary, messages: [], pendingLearnerQuestion: null };
+    /* The thread, read back from the store.
+       
+       This returned an empty array with a note saying the agent had not landed
+       yet. The agent landed; the note did not move. Every message has been
+       written to `agent_messages` the whole time, so leaving a project and
+       coming back threw away a conversation that was sitting on disk — the
+       window simply never asked for it. */
+    return {
+      summary: this.store.readProject(projectId) ?? summary,
+      messages: this.store.listMessages(projectId),
+      /* Still the agent's to answer. A question is only pending while the run
+         that asked it is alive, and runs do not outlive the process. */
+      pendingLearnerQuestion: null,
+    };
   }
 
   rename(projectId: string, name: string): void {

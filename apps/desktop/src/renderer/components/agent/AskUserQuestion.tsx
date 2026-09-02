@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRight, ArrowUp, Check, Loader2, Pencil } from "lucide-react";
+import { ArrowRight, ArrowUp, Check, Pencil } from "lucide-react";
+import { Orb } from "../common/Orb";
 import type { AskUserQuestionRequest } from "@construct/domain";
 import { cn } from "@/lib/utils";
+import { Inline } from "./Markdown";
 
 type Answer = { type: "select"; labels: string[] } | { type: "custom"; value: string };
 
@@ -28,7 +30,11 @@ export function AskUserQuestion({ request, busy, onSubmit }: { request: AskUserQ
   const customField = useRef<HTMLTextAreaElement>(null);
   const card = useRef<HTMLDivElement>(null);
   const question = request.questions[step];
-  const answer = answers[step] ?? { type: "select" as const, labels: [] };
+  /* A question with nothing to pick from is not a list with an escape hatch, it
+     is a written answer. Opening it in select mode left the learner looking at a
+     single button offering to let them do the only thing there was to do. */
+  const sole = question ? question.options.length === 0 && question.custom : false;
+  const answer = answers[step] ?? (sole ? { type: "custom" as const, value: "" } : { type: "select" as const, labels: [] });
   const last = step === request.questions.length - 1;
   const currentComplete = answer.type === "custom" ? answer.value.trim().length > 0 : answer.labels.length > 0;
   const allComplete = request.questions.every((_, index) => {
@@ -76,8 +82,7 @@ export function AskUserQuestion({ request, busy, onSubmit }: { request: AskUserQ
 
   /* Digits pick an option, Return commits — the two things the footer promises.
      Scoped to the card rather than the window, and both ignored while the custom
-     field has the caret, which handles its own keys: typing "2 years of
-     JavaScript" must not select the second option. */
+     field has the caret, which handles its own keys: typing "2 years of JavaScript" must not select the second option. */
   const shortcut = (event: React.KeyboardEvent) => {
     if (busy || event.metaKey || event.ctrlKey || event.altKey) return;
     if (event.target instanceof HTMLTextAreaElement) return;
@@ -113,7 +118,12 @@ export function AskUserQuestion({ request, busy, onSubmit }: { request: AskUserQ
 
         {/* Reads at the size of a chat message, because that is what it is: the
             agent's turn, waiting on yours. */}
-        <h3 className="mt-1 px-1 text-content font-medium leading-[1.5] text-foreground">{question.question}</h3>
+        <h3 className="mt-1 px-1 text-content font-medium leading-[1.5] text-foreground">
+          {/* The same renderer the thread uses. The agent writes a question in
+              the language it writes everything else in, so `[[file:…]]` has to
+              resolve to a link here too rather than print as its own source. */}
+          <Inline text={question.question} />
+        </h3>
 
         <div className="mt-2 flex flex-col gap-px" role={question.multiple ? "group" : "radiogroup"}>
           {question.options.map((option, index) => {
@@ -128,7 +138,7 @@ export function AskUserQuestion({ request, busy, onSubmit }: { request: AskUserQ
                    reachability, which is all a row of this kind needs. */
                 className={cn(
                   "group/option flex w-full items-center gap-2 rounded-[var(--radius-item)] px-2 py-1.5 text-left transition-colors outline-none",
-                  "focus-visible:ring-1 focus-visible:ring-ring",
+                  "",
                   selected ? "bg-accent/60" : "hover:bg-accent/35",
                   busy && "pointer-events-none opacity-60",
                 )}
@@ -139,7 +149,7 @@ export function AskUserQuestion({ request, busy, onSubmit }: { request: AskUserQ
               >
                 <Marker multiple={question.multiple} selected={selected} />
                 <span className={cn("min-w-0 flex-1 text-ui leading-[1.45]", selected ? "font-medium text-foreground" : "text-foreground/85")}>
-                  {option.label}
+                  <Inline text={option.label} />
                 </span>
                 {index < DIGITS && (
                   <kbd className="shrink-0 font-sans text-ui-sm tabular-nums text-muted-foreground/55 transition-colors group-hover/option:text-muted-foreground">
@@ -154,14 +164,22 @@ export function AskUserQuestion({ request, busy, onSubmit }: { request: AskUserQ
               made "Custom answer" look like a further thing the agent had offered,
               when it is the way out of the choices it offered. */}
           {question.custom && (custom ? (
-            <div className="mt-0.5 rounded-[var(--radius-item)] bg-accent/35 px-2 py-1.5">
-              <label className="flex items-center gap-1.5 text-ui-sm font-medium text-muted-foreground" htmlFor="ask-custom">
-                <Pencil className="size-3" />
-                In your own words
-              </label>
+            /* When writing is the only way to answer, the field is the card:
+                no tinted well inside the shell and no label repeating what the
+                question already said, just room to write. */
+            <div className={cn("rounded-[var(--radius-item)] px-2 py-1.5", sole ? "" : "mt-0.5 bg-accent/35")}>
+              {!sole && (
+                <label className="flex items-center gap-1.5 text-ui-sm font-medium text-muted-foreground" htmlFor="ask-custom">
+                  <Pencil className="size-3" />
+                  In your own words
+                </label>
+              )}
               <textarea
                 ref={customField}
-                className="app-scroll mt-1 field-sizing-content block max-h-40 min-h-[2.25rem] w-full resize-none bg-transparent text-ui leading-[1.55] outline-none placeholder:text-muted-foreground/55"
+                className={cn(
+                  "app-scroll field-sizing-content block max-h-40 w-full resize-none bg-transparent outline-none placeholder:text-muted-foreground/55",
+                  sole ? "min-h-[4rem] text-content leading-[1.6]" : "mt-1 min-h-[2.25rem] text-ui leading-[1.55]",
+                )}
                 disabled={busy}
                 id="ask-custom"
                 onChange={(event) => setAnswers((current) => ({ ...current, [step]: { type: "custom", value: event.target.value } }))}
@@ -171,7 +189,7 @@ export function AskUserQuestion({ request, busy, onSubmit }: { request: AskUserQ
                     proceed();
                   }
                 }}
-                placeholder="Whatever is actually true — it calibrates the first challenge."
+                placeholder={sole ? "Answer in your own words." : "Whatever is actually true. It sets where Construct starts you."}
                 value={answer.value}
               />
             </div>
@@ -183,7 +201,7 @@ export function AskUserQuestion({ request, busy, onSubmit }: { request: AskUserQ
               type="button"
             >
               <Pencil className="size-3.5 shrink-0 text-muted-foreground/70" />
-              None of these — let me write it
+              None of these, I will write my own
             </button>
           ))}
         </div>
@@ -226,7 +244,7 @@ export function AskUserQuestion({ request, busy, onSubmit }: { request: AskUserQ
           title={last ? "Send answer" : "Next question"}
           type="button"
         >
-          {busy ? <Loader2 className="size-3.5 animate-spin" /> : last ? <ArrowUp className="size-3.5" /> : <ArrowRight className="size-3.5" />}
+          {busy ? <Orb invert label="Sending" px={15} state="listening" /> : last ? <ArrowUp className="size-3.5" /> : <ArrowRight className="size-3.5" />}
         </button>
       </div>
     </div>

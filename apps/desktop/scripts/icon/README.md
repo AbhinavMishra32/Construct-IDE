@@ -37,13 +37,44 @@ Apple's own curve at every size instead of a bezier approximation of it.
 
 ## The mark
 
-A 5×5 square grid of dots, largest and brightest along the leading diagonal and
-tapering towards the two off-corners — a filled-in matrix, which is what an
-ability ledger looks like as it fills in.
+A 5×5 field of dots lit from a single centre. Size and tone both fall away with
+straight-line distance from that dot, so the middle is at full weight and the
+corners are the faintest thing in the mark.
+
+Two decisions carry it. The falloff is **radial** — hypot of the row and column
+offsets, not the larger of the two — so what glows is a disc inside a square
+footprint. A Chebyshev falloff makes square rings, which puts the corners at the
+same weight as the edge midpoints and reads as a frame rather than as light. And
+the grid is **odd**, so there is a middle cell: the mark is built around the one
+dot that sits in it, at full weight, with everything else measured from there.
+
+Five numbers define it, all at the top of `render-icon.swift` and all mirrored in
+`src/renderer/components/common/ConstructDots.tsx`, which animates the same field
+for loading states:
+
+- **Grid: 5×5.** The ramp runs from 0 at the centre dot to hypot(2, 2) at the
+  corners.
+- **Margin: 0.175 of the artwork box** to the outer dot centres. Sized so the
+  corner dots clear the squircle's curve rather than being clipped by it.
+- **Dot fill: 0.72** of the grid step, for the largest ring.
+- **Corners: 0.50 of that size and 0.62 alpha**, ramping to 1.0 at the centre. The
+  floor is high on purpose. The corners hold the mark's square footprint; taken
+  much below half, they stop holding it and the field collapses into a blob in the
+  middle with dust around it.
+- **Ease: 0.85.** Slightly under 1, so the mid dots sit nearer the centre than a
+  straight line would put them and most of the falloff happens at the rim.
 
 Both appearances are the same mark with the ink and the ground exchanged: dark is
 white dots on a graphite ramp, light is near-black dots on an off-white one. The
 palette stays on the app's own neutral `oklch(_ 0 0)` scale.
+
+The same field tiles the sign-in window's backdrop — see `.auth-field` in
+`theme.css`, where the motif is a mask over `currentColor` so it inherits the
+window's text colour in both appearances. Its ramp runs the other way, heavy at
+the outside and light at the core: as a mark the weight belongs at the centre so
+the eye lands there, but as wallpaper a heavy centre gives every tile a bright
+spot and the field reads as a grid of blobs. Inverted, the tiles meet edge to
+edge and read as one continuous texture.
 
 ## Light and dark
 

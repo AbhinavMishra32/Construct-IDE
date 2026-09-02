@@ -5,12 +5,20 @@ import { cn } from "@/lib/utils";
  * that slides between equal-width segments. Equal widths are what let the thumb
  * be pure CSS — no measuring, so it lands correctly on the first paint.
  */
+/** Two scales. `sm` exists for the sidebar, where the control has to share the
+ *  narrowest column in the window with a button and still fit its labels. */
+const SIZES = {
+  md: { button: "h-7 px-2.5 text-ui", icon: "size-3.5" },
+  sm: { button: "h-6 px-1.5 text-ui-sm", icon: "size-3" },
+} as const;
+
 export function Segmented<T extends string>({
   ariaLabel,
   className,
   disabled = false,
   onChange,
   options,
+  size = "md",
   value,
 }: {
   ariaLabel: string;
@@ -18,8 +26,10 @@ export function Segmented<T extends string>({
   disabled?: boolean;
   onChange(value: T): void;
   options: Array<{ value: T; label: string; icon?: React.ComponentType<{ className?: string }> }>;
+  size?: "sm" | "md";
   value: T;
 }) {
+  const scale = SIZES[size];
   const index = Math.max(0, options.findIndex((option) => option.value === value));
 
   return (
@@ -46,7 +56,8 @@ export function Segmented<T extends string>({
         <button
           aria-checked={option === value}
           className={cn(
-            "relative z-10 inline-flex h-7 items-center justify-center gap-1.5 px-2.5 text-ui font-medium transition-colors",
+            "relative z-10 inline-flex min-w-0 items-center justify-center gap-1.5 font-medium transition-colors",
+            scale.button,
             option === value ? "text-foreground" : "text-muted-foreground hover:text-foreground",
           )}
           key={option}
@@ -54,8 +65,8 @@ export function Segmented<T extends string>({
           role="radio"
           type="button"
         >
-          {Icon && <Icon className="size-3.5" />}
-          {label}
+          {Icon && <Icon className={scale.icon} />}
+          <span className="truncate">{label}</span>
         </button>
       ))}
     </div>

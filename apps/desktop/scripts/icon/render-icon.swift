@@ -23,12 +23,24 @@ let outURL = URL(fileURLWithPath: args[3])
 let boxScale: CGFloat = 824.0 / 1024.0
 let cornerRatio: CGFloat = 0.2597
 
-// The mark: a 5x5 square grid of dots, largest and brightest along the leading
-// diagonal and tapering towards the two off-corners.
+// The mark: a 5x5 field of dots lit from a single centre. Size and tone fall away
+// with straight-line distance from that dot, so what glows is a disc rather than a
+// square — the corners are the furthest thing from the middle and read as such,
+// which a square falloff cannot say. An odd grid is deliberate: there is a middle
+// cell, and the mark is built around the one dot that sits in it.
 let gridCount = 5
-let gridMargin: CGFloat = 0.185      // of the artwork box, to the outer dot centres
-let dotFill: CGFloat = 0.78          // largest dot as a fraction of the grid step
-let taper: CGFloat = 0.55            // how far size and tone fall off the diagonal
+let gridMargin: CGFloat = 0.175      // of the artwork box, to the outer dot centres
+let dotFill: CGFloat = 0.72          // largest dot as a fraction of the grid step
+/* The floor is high on purpose. The corners are the edge of the mark and the
+   thing that holds its square footprint — drop them too far and the field
+   collapses to a blob in the middle with dust round it. At half the centre dot's
+   size and nearly two-thirds its alpha the rim is plainly lit; the centre is still
+   unmistakably the centre. */
+let minScale: CGFloat = 0.50         // at the corners, as a fraction of the largest
+let minTone: CGFloat = 0.62          // at the corners
+/* Slightly under 1, so the middle ring sits nearer the core than a straight
+   line would put it and the falloff happens mostly at the rim. */
+let ease: CGFloat = 0.85
 
 let S = CGFloat(size)
 let box = S * boxScale
@@ -119,20 +131,32 @@ ctx.drawRadialGradient(sheen,
                        endCenter: sheenCentre, endRadius: box * 0.62,
                        options: [])
 
-// The dot grid. Row 0 is the top row so the layout can be read in reading order.
+// The falloff. Row 0 is the top row so the layout can be read in reading order.
+//
+// Distance is straight-line — hypot of the row and column offsets — which is what
+// makes the light round. The grid is odd, so the centre dot sits at distance 0 and
+// takes the full weight on its own; the corners at hypot(mid, mid) are the far end
+// of the ramp.
 let field = box * (1 - 2 * gridMargin)
 let step = field / CGFloat(gridCount - 1)
 let largestDot = step * dotFill
-let last = CGFloat(gridCount - 1)
+let mid = CGFloat(gridCount - 1) / 2
+let furthest = (mid * mid * 2).squareRoot()
 
 for row in 0..<gridCount {
   for column in 0..<gridCount {
-    let distance = abs(CGFloat(row) / last - CGFloat(column) / last)
-    let scale = 1 - taper * distance
+    let dx = CGFloat(row) - mid
+    let dy = CGFloat(column) - mid
+    let distance = (dx * dx + dy * dy).squareRoot()
+    // 1 at the centre dot, 0 at the corners: weight is spent in the middle and
+    // spread thin at the rim.
+    let weight = pow(1 - distance / furthest, ease)
+    let scale = minScale + (1 - minScale) * weight
+    let tone = minTone + (1 - minTone) * weight
     let centre = CGPoint(x: boxRect.minX + box * gridMargin + CGFloat(column) * step,
                          y: boxRect.maxY - box * gridMargin - CGFloat(row) * step)
     let radius = largestDot * scale / 2
-    ctx.setFillColor(gray(isDark ? 1 : 0.07, scale))
+    ctx.setFillColor(gray(isDark ? 1 : 0.07, tone))
     ctx.fillEllipse(in: CGRect(x: centre.x - radius, y: centre.y - radius,
                                width: radius * 2, height: radius * 2))
   }

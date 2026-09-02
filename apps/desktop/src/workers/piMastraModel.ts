@@ -91,13 +91,13 @@ export function createPiMastraModel(input: PiProviderInput): LanguageModelV2 {
                 if (event.type === "thinking_start") controller.enqueue({ type: "reasoning-start", id: contentId });
                 if (event.type === "thinking_delta") controller.enqueue({ type: "reasoning-delta", id: contentId, delta: event.delta });
                 if (event.type === "thinking_end") controller.enqueue({ type: "reasoning-end", id: contentId });
-                if (event.type === "toolcall_start") {
-                  const partial = event.partial.content[event.contentIndex];
-                  controller.enqueue({ type: "tool-input-start", id: contentId, toolName: partial?.type === "toolCall" ? partial.name : "tool" });
-                }
-                if (event.type === "toolcall_delta") controller.enqueue({ type: "tool-input-delta", id: contentId, delta: event.delta });
+                /* Pi reports one logical tool call as start/delta/end. Forwarding
+                   both the input lifecycle and a complete `tool-call` made
+                   Mastra execute it once when the input closed and again when
+                   the final call arrived. Construct never renders partial tool
+                   arguments, so the complete end event is the sole canonical
+                   call and every side effect happens exactly once. */
                 if (event.type === "toolcall_end") {
-                  controller.enqueue({ type: "tool-input-end", id: contentId });
                   controller.enqueue({ type: "tool-call", toolCallId: event.toolCall.id, toolName: event.toolCall.name, input: JSON.stringify(event.toolCall.arguments) });
                 }
                 if (event.type === "done") controller.enqueue({ type: "finish", usage: usage(event.message.usage), finishReason: finishReason(event.reason) });
@@ -129,9 +129,10 @@ function streamOptions(input: PiProviderInput, options: LanguageModelV2CallOptio
     ...(options.maxOutputTokens ? { maxTokens: options.maxOutputTokens } : {}),
     ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
     ...(input.headers ? { headers: input.headers } : {}),
-    // "off" (the default) sends no reasoning directive at all — each pi-ai provider
-    // already falls back to today's behavior in that case, so this never changes
-    // existing runs unless the composer's reasoning picker was actually touched.
+    // "off" sends no directive and lets the provider decide, which for a
+    // reasoning model means it still reasons — pi-ai's `ThinkingLevel` has no
+    // off, so there is nothing to send that would mean one. The picker calls
+    // this "Default" for that reason, and offers "minimal" as the real floor.
     ...(input.reasoningEffort && input.reasoningEffort !== "off" ? { reasoning: input.reasoningEffort } : {}),
   };
 }

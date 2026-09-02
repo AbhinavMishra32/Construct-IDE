@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Panel, PanelGroup } from "react-resizable-panels";
-import { ChevronRight, EllipsisVertical, Orbit, Search, Share2, Trash2, X } from "lucide-react";
+import { EllipsisVertical, Orbit, Share2, Trash2 } from "lucide-react";
 import type { AtlasConcept, ConstructApi } from "../../../shared/api";
 import { cn } from "@/lib/utils";
 import { masteryTitle } from "@/lib/mastery";
@@ -30,71 +30,71 @@ import { PaneHandle } from "../workspace/PaneHandle";
  * for — not "what have I covered" but "is any of it sinking in". How it answers
  * that is in `atlas.ts`.
  */
-export function ConceptsPage({ api, onError }: { api: ConstructApi | undefined; onError(message: string): void }) {
-  const [concepts, setConcepts] = useState<AtlasConcept[] | null>(null);
-  const [query, setQuery] = useState("");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+export function ConceptsPage({
+  api,
+  concepts,
+  onChanged,
+  onError,
+  onSelect,
+  selectedKey,
+}: {
+  api: ConstructApi | undefined;
+  /** Null while the first read is in flight. Owned by the shell, because the
+   *  sidebar lists these and this page reads them. */
+  concepts: AtlasConcept[] | null;
+  onChanged(): void;
+  onError(message: string): void;
+  onSelect(key: string | null): void;
+  /** `projectId:conceptId`, since a concept id is only unique in its project. */
+  selectedKey: string | null;
+}) {
   const [pendingDelete, setPendingDelete] = useState<AtlasConcept | null>(null);
   /* The web leads. It is what v0.7 showed and what the page is first asked —
      what connects to what. Orbits are the second question, so the second view. */
   const [mode, setMode] = useState<AtlasMode>("web");
   const dark = useDark();
 
-  const load = useCallback(async () => {
-    if (!api) return;
-    try {
-      const rows = await api.conceptAtlas();
-      setConcepts(rows);
-      /* Opens on the most recently moved concept — the atlas read is ordered by
-         that already. An empty reading pane on a page whose subject is reading is
-         a page that asks you to work before it shows you anything. */
-      setSelectedId((current) => (current && rows.some((row) => row.conceptId === current) ? current : rows[0]?.conceptId ?? null));
-    } catch (cause) {
-      onError(cause instanceof Error ? cause.message : "Construct could not read your concepts.");
-      setConcepts([]);
-    }
-  }, [api, onError]);
+  const all = useMemo(() => concepts ?? [], [concepts]);
+  const key = (concept: AtlasConcept) => `${concept.projectId}:${concept.conceptId}`;
 
+  /* Opens on the most recently moved concept — the atlas read is ordered by
+     that already. An empty reading pane on a page whose subject is reading is a
+     page that asks you to work before it shows you anything. */
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (all.length === 0) return;
+    if (selectedKey && all.some((concept) => key(concept) === selectedKey)) return;
+    onSelect(key(all[0]!));
+  }, [all, onSelect, selectedKey]);
 
-  const matched = useMemo(() => {
-    const all = concepts ?? [];
-    const needle = query.trim().toLowerCase();
-    if (!needle) return all;
-    return all.filter((concept) =>
-      [concept.title, concept.summary, concept.projectName, concept.tags.join(" ")].join(" ").toLowerCase().includes(needle),
-    );
-  }, [concepts, query]);
-
-  const groups = useMemo(() => group(matched), [matched]);
-  const selected = matched.find((concept) => concept.conceptId === selectedId) ?? null;
-  const siblings = selected ? matched.filter((row) => row.conceptId !== selected.conceptId && topicOf(row) === topicOf(selected)) : [];
+  /* Kept for the legend, which names the topics the map is painting. The index
+     this used to feed now lives in the sidebar. */
+  const groups = useMemo(() => group(all), [all]);
+  const selected = all.find((concept) => key(concept) === selectedKey) ?? null;
+  const siblings = selected
+    ? all.filter((row) => key(row) !== key(selected) && topicOf(row) === topicOf(selected))
+    : [];
 
   /* What the page can say about itself in one line. Task-ready is the one worth
      counting: it is the number that decides what Construct will set work on. */
   const totals = useMemo(() => {
-    const all = concepts ?? [];
     return {
       concepts: all.length,
       topics: new Set(all.map(topicOf)).size,
       ready: all.filter((concept) => concept.masteryLevel >= 3).length,
     };
-  }, [concepts]);
+  }, [all]);
 
   const forget = useCallback(
     async (concept: AtlasConcept) => {
       try {
         await api?.deleteConcept({ projectId: concept.projectId, conceptId: concept.conceptId });
-        if (selectedId === concept.conceptId) setSelectedId(null);
-        await load();
+        if (selectedKey === `${concept.projectId}:${concept.conceptId}`) onSelect(null);
+        onChanged();
       } catch (cause) {
         onError(cause instanceof Error ? cause.message : "Construct could not forget that concept.");
       }
     },
-    [api, load, onError, selectedId],
+    [api, onChanged, onError, onSelect, selectedKey],
   );
 
   if (concepts !== null && concepts.length === 0) {
@@ -127,97 +127,11 @@ export function ConceptsPage({ api, onError }: { api: ConstructApi | undefined; 
           
           The index and the entry are plain columns on the pane's own surface,
           divided by a hairline. Only the atlas is a blob — and that asymmetry is
-          the point rather than an oversight: a blob says "this is a thing sitting
-          on the page", which is true of a turning three-dimensional map and false
+          the point rather than an oversight: a blob says "this is a thing sitting on the page", which is true of a turning three-dimensional map and false
           of a list and a page of prose. Carding those two up made the page look
           like three widgets that had been arranged rather than one document you
           read. */}
       <PanelGroup autoSaveId="construct.concepts" className="flex min-h-0 flex-1" direction="horizontal">
-        {/* --- the index ---------------------------------------------------
-            Grouped by topic rather than listed flat: a flat list of forty
-            sentences is a wall. The group is the concept's own first tag — the
-            agent files them, so the shelves are the ones it built. */}
-        <Panel className="hairline-r flex min-w-0 flex-col overflow-hidden" defaultSize={19} maxSize={34} minSize={12} order={1}>
-          <div className="flex h-9 shrink-0 items-center gap-2 px-3">
-            <Search className="size-3.5 shrink-0 text-muted-foreground" />
-            <input
-              className="min-w-0 flex-1 bg-transparent text-source text-foreground outline-none placeholder:text-muted-foreground/70"
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search"
-              value={query}
-            />
-            {query && (
-              <button className="shrink-0 text-muted-foreground hover:text-foreground" onClick={() => setQuery("")} type="button">
-                <X className="size-3.5" />
-              </button>
-            )}
-          </div>
-
-          <div className="app-scroll min-h-0 flex-1 overflow-y-auto pb-2">
-            {groups.map(([topic, members]) => {
-              const shut = collapsed.has(topic);
-              return (
-                <section key={topic}>
-                  <button
-                    className="flex h-7 w-full items-center gap-1 px-2 text-left text-source-sm text-muted-foreground hover:text-foreground"
-                    onClick={() =>
-                      setCollapsed((current) => {
-                        const next = new Set(current);
-                        if (next.has(topic)) next.delete(topic);
-                        else next.add(topic);
-                        return next;
-                      })
-                    }
-                    type="button"
-                  >
-                    <ChevronRight className={cn("size-3.5 shrink-0 transition-transform", !shut && "rotate-90")} />
-                    <span className="min-w-0 flex-1 truncate font-medium">{topic}</span>
-                    <span className="shrink-0 tabular-nums text-muted-foreground/60">{members.length}</span>
-                  </button>
-
-                  {!shut && (
-                    <ul className="px-1.5 pb-1">
-                      {members.map((concept) => (
-                        <li className="group/row relative" key={`${concept.projectId}:${concept.conceptId}`}>
-                          <button
-                            className={cn(
-                              "flex w-full items-center gap-2 rounded-md py-1 pr-7 pl-3 text-left outline-none",
-                              "focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
-                              concept.conceptId === selectedId ? "bg-sidebar-accent-active" : "hover:bg-sidebar-accent",
-                            )}
-                            onClick={() => setSelectedId(concept.conceptId)}
-                            type="button"
-                          >
-                            {/* The same dot the atlas draws, in the same colour:
-                                its topic's hue at the depth its level earns. The
-                                list and the map are one thing seen twice, and the
-                                colour is what says so. */}
-                            <span
-                              aria-hidden
-                              className="size-2 shrink-0 rounded-full"
-                              style={{ background: conceptColor(topic, concept.masteryLevel, dark) }}
-                              title={masteryTitle(concept.masteryLevel)}
-                            />
-                            <span className="min-w-0 flex-1 truncate text-source leading-[1.35] text-foreground">{concept.title}</span>
-                          </button>
-
-                          <ConceptMenu
-                            className="absolute top-1/2 right-1 -translate-y-1/2 opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
-                            onDelete={() => setPendingDelete(concept)}
-                          />
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </section>
-              );
-            })}
-            {groups.length === 0 && <p className="px-3 py-2 text-source-sm text-muted-foreground">Nothing matches that.</p>}
-          </div>
-        </Panel>
-
-        <PaneHandle />
-
         {/* --- the entry --------------------------------------------------- */}
         {/* No hairline on this one: the atlas blob's own edge is already the
             boundary on that side, and a rule a few pixels from a ring reads as a
@@ -238,7 +152,7 @@ export function ConceptsPage({ api, onError }: { api: ConstructApi | undefined; 
                 <ConceptEntry
                   api={api}
                   concept={selected}
-                  onOpen={(concept) => setSelectedId(concept.conceptId)}
+                  onOpen={(concept) => onSelect(key(concept as AtlasConcept))}
                   siblings={siblings}
                   where={selected.projectName}
                 />
@@ -271,10 +185,10 @@ export function ConceptsPage({ api, onError }: { api: ConstructApi | undefined; 
           <div className="min-h-0 flex-1">
             {concepts && (
               <ConceptAtlas
-                concepts={matched}
+                concepts={all}
                 mode={mode}
-                onSelect={(concept) => setSelectedId(concept?.conceptId ?? selectedId)}
-                selectedId={selectedId}
+                onSelect={(concept) => onSelect(concept ? key(concept) : selectedKey)}
+                selectedId={selected?.conceptId ?? null}
               />
             )}
           </div>

@@ -33,8 +33,17 @@ export const ipc = {
 
   /* Files inside the open project. */
   filesList: "files:list",
+  filesCreate: "files:create",
+  filesCreateDirectory: "files:create-directory",
+  filesRename: "files:rename",
+  filesRemove: "files:remove",
   filesRead: "files:read",
   filesWrite: "files:write",
+
+  /* Source files anywhere on disk — see `sourcePathInput`. */
+  sourceStat: "source:stat",
+  sourceRead: "source:read",
+  sourceList: "source:list",
 
   /* Terminals inside the open project. */
   terminalCreate: "terminal:create",
@@ -46,10 +55,18 @@ export const ipc = {
   lspStart: "lsp:start",
   lspSend: "lsp:send",
   lspStop: "lsp:stop",
+  lspCatalog: "lsp:catalog",
+  lspInstall: "lsp:install",
+  lspUninstall: "lsp:uninstall",
 
   /* The Construct agent. */
   agentMessages: "agent:messages",
+  agentStatus: "agent:status",
   agentSend: "agent:send",
+  agentStop: "agent:stop",
+  agentEdit: "agent:edit",
+  agentSteer: "agent:steer",
+  agentUndoable: "agent:undoable",
   agentAnswer: "agent:answer",
 
   /* What the learner understands, per project — and across all of them, for the
@@ -86,8 +103,23 @@ export const ipc = {
 
   /* The application itself. */
   settingsOpenExternal: "settings:open-external",
+  showContextMenu: "app:context-menu",
+  suggestProjectName: "projects:suggest-name",
+  syncNow: "sync:now",
+  syncStatus: "sync:status-read",
+  tasksList: "tasks:list",
+  tasksSubmit: "tasks:submit",
   settingsTheme: "settings:theme",
   settingsProjectDefaults: "settings:project-defaults",
+  /* Who Construct is teaching. Read on the way in, written by the intake, and
+     editable afterwards from Settings. */
+  learnerRead: "learner:read",
+  learnerSave: "learner:save",
+  learnerQuestion: "learner:question",
+  learnerPortrait: "learner:portrait",
+  /** Moves the window to the size the stage it has reached wants. The renderer
+   *  owns which screen is showing, so it is what tells the main process. */
+  windowStage: "app:stage",
   updateState: "update:state",
   updateCheck: "update:check",
   updateDownload: "update:download",
@@ -147,6 +179,18 @@ export const projectCreateInput = z.object({
    *  project without changing the default. */
   parentDirectory: z.string().min(1).max(4000).optional(),
   language: languageSchema,
+  /** Concepts the learner already holds and wants this project to build on,
+   *  chosen from the atlas when they made it.
+   *
+   *  Carried into `learner.md` rather than into the goal. The goal is what the
+   *  agent teaches *towards*; this is what it can teach *from*, and folding the
+   *  two together loses the distinction the whole memory layer is built on —
+   *  the agent would re-teach a thing the learner already holds at level four
+   *  because it read it as part of the objective. */
+  foundation: z
+    .array(z.object({ title: z.string().trim().min(1).max(160), level: z.number().int().min(0).max(5) }))
+    .max(24)
+    .optional(),
 });
 export const projectImportInput = z.object({
   directory: z.string().min(1).max(4000),
@@ -200,9 +244,45 @@ export type WorkspaceEntry = {
 const workspacePath = z.string().min(1).max(500).transform(canonicalWorkspacePath);
 export const workspacePathInput = projectIdInput.extend({ path: workspacePath });
 export const workspaceWriteInput = workspacePathInput.extend({ content: z.string().max(2_000_000) });
+/* ---- Source files -------------------------------------------------------
+   Definitions land outside the project as often as inside it: `console.log`
+   is declared in a `.d.ts` under node_modules, and Python's `json.loads` is in
+   the interpreter's own standard library. Following one there is what makes
+   go-to-definition mean anything, so these three paths are absolute rather
+   than project-relative.
+
+   They are also read-only, which is what keeps that safe. Nothing outside the
+   project is the learner's to edit from here, so no absolute path ever reaches
+   a write — the editor's own saving still goes through `files:write` and the
+   containment check that comes with it. */
+const absolutePath = z
+  .string()
+  .min(1)
+  .max(4_000)
+  /* Windows drive letters as well as POSIX roots: the renderer builds these
+     from URIs a language server produced, and a server on Windows produces
+     `C:\...`. */
+  .refine((value) => value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value), "Not an absolute path.");
+export const sourcePathInput = z.object({ path: absolutePath });
+
+/** What the editor needs to know about a path before it reads it. `mtime` is
+ *  epoch milliseconds; `size` is bytes, and zero for a directory. */
+export type SourceStat = {
+  type: "file" | "directory";
+  size: number;
+  mtime: number;
+};
+
+/** One entry of a directory listing, named absolutely so the caller does not
+ *  have to join paths the way the host writes them. */
+export type SourceEntry = { path: string; name: string; type: "file" | "directory" };
+
 /** Listing the project root is the empty path, which `workspacePath` would
  *  reject — so the directory is optional rather than defaulted to ".". */
 export const workspaceListInput = projectIdInput.extend({ directory: workspacePath.optional() });
+/** Renaming is two paths, and both are canonicalised the same way: a rename is
+ *  the one file operation that can leave the project by way of its destination. */
+export const workspaceRenameInput = projectIdInput.extend({ from: workspacePath, to: workspacePath });
 
 /* ---- Terminals ----------------------------------------------------------
    A terminal is a real shell in the project's directory. The renderer names
@@ -223,14 +303,39 @@ export const terminalIdInput = z.object({ terminalId });
 const lspSessionId = z.string().min(1).max(200);
 export const lspStartInput = projectIdInput.extend({
   sessionId: lspSessionId,
-  language: z.enum(["typescript", "javascript", "python"]),
+  /* A catalog id rather than a language. Which languages a server covers is the
+     catalog's business — see `languageServers.ts` — and naming a language here
+     meant the contract had to be widened every time one was added. */
+  serverId: z.string().min(1).max(60),
 });
 export const lspSendInput = z.object({ sessionId: lspSessionId, message: z.unknown() });
 export const lspStopInput = z.object({ sessionId: lspSessionId });
+export const lspServerIdInput = z.object({ serverId: z.string().min(1).max(60) });
 
 export type LspEvent = { sessionId: string; kind: "message"; message: unknown } | { sessionId: string; kind: "exit"; code: number | null };
 
+/** One row of Settings → Languages: the catalog entry, and where this machine
+ *  stands with it. */
+export type LanguageServerStatus = {
+  id: string;
+  name: string;
+  blurb: string;
+  extensions: readonly string[];
+  /** How it is obtained, so the row can say "bundled" rather than offer an
+   *  install button for something already there. */
+  via: "bundled" | "npm" | "release" | "toolchain";
+  state: "bundled" | "installed" | "available" | "unavailable";
+  /** Why it cannot be installed here, when it cannot. */
+  reason?: string;
+  /** Whether an install is running for it right now. */
+  installing: boolean;
+};
+
+/** Progress on one install, pushed while it runs. */
+export type LanguageServerInstallEvent = { id: string; phase: "installing" | "done" | "failed"; detail: string };
+
 export const agentSendInput = projectIdInput.extend({ body: z.string().trim().min(1).max(20_000) });
+export const agentEditInput = agentSendInput.extend({ messageId: z.string().min(1).max(120) });
 export const agentAnswerInput = projectIdInput.extend({ answer: z.string().trim().min(1).max(5_000) });
 
 /** A file the agent touched, with the size of the change. Shown on a tool row
@@ -301,8 +406,65 @@ export type PathStep = {
 
 export type ProjectPath = { reason: string; currentNodeId: string | null; nodes: PathStep[] };
 
+/**
+ * One context menu, as data.
+ *
+ * Deliberately generic rather than a menu per surface: the renderer describes
+ * what it wants and reads back which item was picked, so the main process needs
+ * no knowledge of the tree, the transcript, or anything else that grows a menu
+ * later.
+ */
+export const contextMenuInput = z.object({
+  items: z
+    .array(
+      z.object({
+        /* Absent on a separator, which is the one item that cannot be chosen. */
+        id: z.string().max(80).optional(),
+        label: z.string().max(200).optional(),
+        type: z.enum(["normal", "separator"]).optional(),
+        enabled: z.boolean().optional(),
+        /* Destructive items are not styled differently by either platform's
+           menus, so this exists only to keep the caller's intent readable. */
+        danger: z.boolean().optional(),
+      }),
+    )
+    .max(30),
+});
+
+/**
+ * A practice task, as the window sees it.
+ *
+ * `status` is the learner's side and `outcome` is the agent's: a task goes open
+ * → submitted when they say they have done it, and comes back either passed or
+ * open again with a note saying what is still missing. The card reads "in
+ * review" from exactly that gap.
+ */
+export type TaskSummary = {
+  taskId: string;
+  title: string;
+  /** What to build and why, as Markdown. */
+  brief: string;
+  /** What "done" means, one line each — a checklist, not a paragraph. */
+  criteria: string[];
+  concepts: string[];
+  /** Project-relative paths the work belongs in. */
+  files: string[];
+  status: "open" | "submitted" | "passed";
+  outcome: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export const taskSubmitInput = projectIdInput.extend({ taskId: z.string().min(1).max(120) });
+
+export type { SyncResult, SyncStatus } from "./sync.js";
+import type { SyncResult, SyncStatus } from "./sync.js";
+
 export type ConceptSummary = {
   conceptId: string;
+  /** The concept this one sits under. Null for a root, and for a parent that no
+   *  longer exists — readers must not assume it resolves. */
+  parentId: string | null;
   title: string;
   masteryLevel: 0 | 1 | 2 | 3 | 4 | 5;
   confidence: string;
@@ -332,6 +494,14 @@ export type AgentEvent =
   /** A mastery reading landed. The window re-reads concepts rather than being
    *  handed them, because the store is what resolved the level. */
   | { projectId: string; kind: "concepts" }
+  | { projectId: string; kind: "tasks" }
+  /* History was rewound to an earlier message: the turns after it, and
+     everything they wrote, have been undone. The transcript re-reads. */
+  | { projectId: string; kind: "rewound" }
+  /* The project named itself. It is created under a literal name cut from the
+     goal so the folder exists immediately; the model writes the real one behind
+     the window, and this is how the window hears about it. */
+  | { projectId: string; kind: "renamed"; name: string }
   /** Flow Memory or the path changed. Both are shown, so a silent write would
    *  leave the window describing a project state that has moved on. */
   | { projectId: string; kind: "memory" }
@@ -370,9 +540,94 @@ export const projectDefaultsInput = z.object({
 });
 export type ProjectDefaults = { directory: string; language: Language };
 
+/* ---- The learner --------------------------------------------------------
+   Who Construct is teaching, held once for the whole application rather than
+   once per project.
+
+   Every project already keeps a `learner.md`, and that is the right place for
+   what this particular project revealed about them. But the things that do not
+   change between projects — that they have written Go for a decade, that they
+   want to be shown the shape before the syntax, that they are coming back to
+   code after eight years away — were being rediscovered from scratch every
+   time, which meant the first turn of every project was spent asking questions
+   the learner had already answered.
+
+   So it is collected once, on the way in, and handed to the agent as part of
+   its prompt. Not behind a tool: a mentor who has to decide to look you up is a
+   mentor who sometimes does not.
+*/
+
+/** Where someone is with code, in the coarsest terms that still change how you
+ *  would teach them. Four, because a slider from 1 to 10 asks for a precision
+ *  nobody has about themselves. */
+export const learnerFootingSchema = z.enum(["new", "some", "working", "returning"]);
+export type LearnerFooting = z.infer<typeof learnerFootingSchema>;
+
+/** What makes an explanation land for this person. Several may be true at once,
+ *  which is why it is a set rather than a choice. */
+export const learnerLeaningSchema = z.enum(["shape-first", "hands-first", "first-principles", "by-example"]);
+export type LearnerLeaning = z.infer<typeof learnerLeaningSchema>;
+
+/** How much ground to cover per sitting. */
+export const learnerPaceSchema = z.enum(["deep", "brisk"]);
+export type LearnerPace = z.infer<typeof learnerPaceSchema>;
+
+/** The one question Construct wrote for this person alone, and their answer.
+ *  Null when no model was connected to write one, which must never be the
+ *  reason the intake cannot finish. */
+export const learnerFollowUpSchema = z.object({
+  question: z.string().max(400),
+  answer: z.string().max(2000),
+});
+
+export const learnerProfileInput = z.object({
+  name: z.string().max(80),
+  footing: learnerFootingSchema,
+  language: languageSchema,
+  ambition: z.string().max(2000),
+  leanings: z.array(learnerLeaningSchema).max(4),
+  pace: learnerPaceSchema,
+  followUp: learnerFollowUpSchema.nullable(),
+  /** Second person, and the learner's to edit. Construct writes a draft from
+   *  everything above; what is stored is whatever they let stand. */
+  portrait: z.string().max(4000),
+});
+
+export type LearnerProfile = z.infer<typeof learnerProfileInput> & {
+  /** Absent until the intake has been finished once. */
+  updatedAt: string | null;
+};
+
+/** What the intake sends when it wants Construct to write something for it.
+ *  Partial, because it is asked mid-flow when only the first answers exist. */
+export const learnerDraftInput = z.object({
+  name: z.string().max(80),
+  footing: learnerFootingSchema,
+  language: languageSchema,
+  ambition: z.string().max(2000),
+  leanings: z.array(learnerLeaningSchema).max(4),
+  pace: learnerPaceSchema,
+  followUp: learnerFollowUpSchema.nullable(),
+});
+
+/** The three sizes the window has before it is a workspace, and the workspace
+ *  itself. Mirrors the main process's own type; declared here because the
+ *  renderer is what decides which one is showing. */
+export const windowStageSchema = z.enum(["sign-in", "onboarding", "app"]);
+export type WindowStage = z.infer<typeof windowStageSchema>;
+
 export const themePreferenceSchema = z.enum(["system", "light", "dark"]);
 /** Mirrors pi-ai's `ModelThinkingLevel`: "off" sends no reasoning directive at all. */
-export const reasoningEffortSchema = z.enum(["off", "low", "medium", "high", "xhigh"]);
+/**
+ * How hard the model should think.
+ *
+ * `off` is the provider's own default and not "no thinking" — pi-ai's request
+ * option is `ThinkingLevel`, which has no off. A model that reasons by default
+ * keeps reasoning when no directive is sent, so labelling that "Off" promised
+ * something the API cannot do. It is presented as "Default" now, and `minimal`
+ * is the real floor: the lowest level the provider actually accepts.
+ */
+export const reasoningEffortSchema = z.enum(["off", "minimal", "low", "medium", "high", "xhigh"]);
 export type ReasoningEffort = z.infer<typeof reasoningEffortSchema>;
 export type ThemePreference = z.infer<typeof themePreferenceSchema>;
 
@@ -450,6 +705,11 @@ export type BootstrapData = {
   /** Where new projects go, and what they are written in, unless the learner
    *  says otherwise for one of them. */
   projectDefaults: ProjectDefaults;
+  /** Who Construct is teaching, and whether they have been through the intake.
+   *  Both are here rather than behind a call because the first thing the window
+   *  has to decide is which of the two screens to draw. */
+  learner: LearnerProfile;
+  onboarded: boolean;
   projects: ProjectSummary[];
   providers: ProviderInventory;
   notices: ConstructNotice[];
@@ -478,6 +738,21 @@ export interface ConstructApi {
   listFiles(input: z.infer<typeof workspaceListInput>): Promise<WorkspaceEntry[]>;
   readFile(input: z.infer<typeof workspacePathInput>): Promise<string>;
   writeFile(input: z.infer<typeof workspaceWriteInput>): Promise<void>;
+  /** Creates an empty file, and any directories above it. Refuses to overwrite:
+   *  the tree's "new file" affordance must never be a way to blank one. */
+  createFile(input: z.infer<typeof workspacePathInput>): Promise<void>;
+  createDirectory(input: z.infer<typeof workspacePathInput>): Promise<void>;
+  renameFile(input: z.infer<typeof workspaceRenameInput>): Promise<void>;
+  /** Deletes a file, or a directory and everything in it. This one really does
+   *  remove the learner's work, so the window confirms before calling it. */
+  removeFile(input: z.infer<typeof workspacePathInput>): Promise<void>;
+
+  /* Source files, by absolute path and read-only. The editor's file system
+     reads through these so a definition in node_modules — or in a language's
+     own standard library — opens like any other file. */
+  statSource(input: z.infer<typeof sourcePathInput>): Promise<SourceStat>;
+  readSource(input: z.infer<typeof sourcePathInput>): Promise<string>;
+  listSource(input: z.infer<typeof sourcePathInput>): Promise<SourceEntry[]>;
 
   /* Terminals. Output arrives on `onTerminalEvent` rather than as a return
      value, because a shell produces output for as long as it lives. */
@@ -492,11 +767,43 @@ export interface ConstructApi {
   sendToLanguageServer(input: z.infer<typeof lspSendInput>): Promise<void>;
   stopLanguageServer(input: z.infer<typeof lspStopInput>): Promise<void>;
   onLanguageServerEvent(listener: (event: LspEvent) => void): () => void;
+  /* The catalog, and getting a server onto this machine. */
+  listLanguageServers(): Promise<LanguageServerStatus[]>;
+  installLanguageServer(input: z.infer<typeof lspServerIdInput>): Promise<void>;
+  uninstallLanguageServer(input: z.infer<typeof lspServerIdInput>): Promise<void>;
+  onLanguageServerInstall(listener: (event: LanguageServerInstallEvent) => void): () => void;
 
   /* The agent. Replies arrive on `onAgentEvent` rather than as a return value:
      a turn runs for as long as it needs and reports progress while it does. */
   agentMessages(input: z.infer<typeof projectIdInput>): Promise<AgentMessage[]>;
+  /** Whether a turn is in flight for this project right now, and what kind.
+   *  Asked on arrival, because `started` is an event and a window that was not
+   *  mounted when it fired has no other way to know. */
+  agentStatus(input: z.infer<typeof projectIdInput>): Promise<{
+    running: boolean;
+    phase: "research" | "opening" | "reply" | null;
+    /** The question the agent is blocked on, if it asked one and is still
+     *  waiting. Carried here so closing and reopening the chat pane puts the
+     *  card back rather than losing it. */
+    question: AskUserQuestionRequest | null;
+  }>;
   sendToAgent(input: z.infer<typeof agentSendInput>): Promise<void>;
+  /** Stops the turn in flight. What the agent already said is kept. */
+  stopAgent(input: z.infer<typeof projectIdInput>): Promise<void>;
+  /**
+   * Rewrites one of the learner's earlier messages and runs from there again.
+   *
+   * Everything the turns after it did is undone first — the files the agent
+   * wrote, the concepts, tasks and path it recorded, and the messages — from a
+   * snapshot taken before that turn.
+   */
+  editMessage(input: z.infer<typeof agentEditInput>): Promise<void>;
+  /** Redirects the turn in flight: stops it, keeps what it said, and sends this
+   *  as the next thing the agent answers. */
+  steerAgent(input: z.infer<typeof agentSendInput>): Promise<void>;
+  /** Which of this project's messages can be edited — the ones with an undo
+   *  point behind them. */
+  undoableMessages(input: z.infer<typeof projectIdInput>): Promise<string[]>;
   answerAgent(input: z.infer<typeof agentAnswerInput>): Promise<void>;
   /** The concepts this project has covered. Re-read after a turn, because a
    *  turn is exactly when mastery moves. */
@@ -505,6 +812,19 @@ export interface ConstructApi {
    *  understanding is the learner's, not the repository's, so the page that
    *  shows it whole cannot be scoped to one project. */
   conceptAtlas(): Promise<AtlasConcept[]>;
+  /** A model-written name for a stated goal, or null when no model is connected
+   *  or it could not produce one. Never throws: the dialog keeps a literal
+   *  fallback, and naming must not be what stops a project being created. */
+  suggestProjectName(input: { goal: string }): Promise<string | null>;
+  /** Runs a sync now, or joins the one already running. Null when nobody is
+   *  signed in — the app is fully usable without an account. */
+  syncNow(): Promise<SyncResult | null>;
+  syncStatus(): Promise<SyncStatus>;
+  onSyncStatus(listener: (status: SyncStatus) => void): () => void;
+  listTasks(input: z.infer<typeof projectIdInput>): Promise<TaskSummary[]>;
+  /** Says the learner believes the task is done. Moves it to "submitted" and
+   *  asks the agent to review it against its own criteria. */
+  submitTask(input: z.infer<typeof taskSubmitInput>): Promise<void>;
   /** Forgets a concept. The learner's correction for a concept the agent filed
    *  wrongly — an atlas that cannot be corrected is one they stop trusting. */
   deleteConcept(input: z.infer<typeof conceptDeleteInput>): Promise<void>;
@@ -544,10 +864,36 @@ export interface ConstructApi {
 
   /* Application. */
   openExternal(url: string): Promise<void>;
+  /**
+   * Pops the OS's own context menu and resolves to the chosen item's id, or
+   * null if it was dismissed.
+   *
+   * The menu is built and shown by the main process, so it is a real NSMenu on
+   * macOS and a real popup menu on Windows: it takes the platform's metrics,
+   * its keyboard handling, its scrolling near a screen edge, and its
+   * appearance, none of which an HTML menu gets right for free.
+   */
+  showContextMenu(input: z.infer<typeof contextMenuInput>): Promise<string | null>;
   setTheme(theme: ThemePreference): Promise<void>;
   /** Changes what new projects inherit. Returns the settled defaults, because
    *  the main process is what knows whether the folder could be made. */
   setProjectDefaults(input: z.infer<typeof projectDefaultsInput>): Promise<ProjectDefaults>;
+
+  /* Who Construct is teaching. */
+  readLearner(): Promise<LearnerProfile>;
+  /** Stores the profile and marks the intake finished. Also writes the home
+   *  language through to the project defaults, because a learner who names
+   *  their language on the way in has already answered that question. */
+  saveLearner(input: z.infer<typeof learnerProfileInput>): Promise<LearnerProfile>;
+  /** The one question Construct writes for this person, from what they have
+   *  said so far. Null when no model can be reached — the intake carries on
+   *  without it rather than stalling on it. */
+  learnerQuestion(input: z.infer<typeof learnerDraftInput>): Promise<string | null>;
+  /** The portrait, in Construct's words and the second person. Falls back to a
+   *  written-here summary when no model answers, so this never returns empty. */
+  learnerPortrait(input: z.infer<typeof learnerDraftInput>): Promise<string>;
+  /** Grows or shrinks the window for the screen now showing. */
+  setWindowStage(stage: WindowStage): Promise<void>;
   updateState(): Promise<UpdateState>;
   checkForUpdate(): Promise<UpdateState>;
   downloadUpdate(): Promise<void>;

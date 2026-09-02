@@ -1,31 +1,26 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { createRequire } from "node:module";
-import path from "node:path";
-import type { LspLanguage } from "@construct/domain";
+import type { LspEvent } from "../../shared/api.js";
 
-const requireFrom = createRequire(import.meta.url);
+export type { LspEvent };
 
-export type LspEvent = { sessionId: string; kind: "message"; message: unknown } | { sessionId: string; kind: "exit"; code: number | null };
-
-/** Which server serves which language, and how it is started.
- *
- *  Both are npm dependencies rather than binaries downloaded at runtime or
- *  found on PATH: a learner should not have to install a toolchain before
- *  Construct can tell them their Python has a typo. */
-const SERVERS: Record<LspLanguage, { module: string; bin: string; args: string[] }> = {
-  typescript: { module: "typescript-language-server/package.json", bin: "lib/cli.mjs", args: ["--stdio"] },
-  javascript: { module: "typescript-language-server/package.json", bin: "lib/cli.mjs", args: ["--stdio"] },
-  python: { module: "basedpyright/package.json", bin: "langserver.index.js", args: ["--stdio"] },
-};
+/** What it takes to start a server: a program and its arguments. Which program
+ *  is the catalog's business, and getting it onto the machine is the
+ *  installer's — see `languageServers.ts` and `serverInstaller.ts`. */
+export type ServerCommand = { command: string; args: readonly string[] };
 
 /**
- * Language servers, one per project and language.
+ * Language servers, one per project and server.
  *
  * The main process owns the processes and does no interpretation: it frames
  * and unframes LSP's `Content-Length` protocol and passes messages through in
  * both directions. Deciding what a message means belongs to the client in the
  * renderer, next to the editor it is talking about — and keeping this side
  * dumb means a protocol feature can be added without touching it.
+ *
+ * It knows nothing about languages, and that is the point. It used to hold a
+ * three-entry table of the servers Construct shipped, which is why adding a
+ * language meant editing this file. It is handed a command now, so a language
+ * is a row in a catalog and nothing more.
  */
 export class LspService {
   private readonly sessions = new Map<string, { child: ChildProcessWithoutNullStreams; buffer: Buffer }>();
@@ -33,20 +28,19 @@ export class LspService {
   constructor(private readonly emit: (event: LspEvent) => void) {}
 
   /** Starts a server, or does nothing if that session is already running.
-   *  Idempotent because the renderer starts one whenever a file of that
-   *  language is opened, which is many times per session. */
-  start(input: { sessionId: string; language: LspLanguage; cwd: string }): void {
+   *  Idempotent because the renderer starts one whenever a file that server
+   *  claims is opened, which is many times per session. */
+  start(input: { sessionId: string; server: ServerCommand; cwd: string }): void {
     if (this.sessions.has(input.sessionId)) return;
 
-    const server = SERVERS[input.language];
-    const entry = path.join(path.dirname(requireFrom.resolve(server.module)), server.bin);
-
-    /* Run under Electron's bundled Node rather than a system node, which may
-       not exist on a user's machine. ELECTRON_RUN_AS_NODE makes the same
-       binary behave as plain Node. */
-    const child = spawn(process.execPath, [entry, ...server.args], {
+    /* A server written in JavaScript is run under Electron's own Node rather
+       than a system one, which may not exist on a learner's machine —
+       ELECTRON_RUN_AS_NODE makes the same binary behave as plain Node. A
+       downloaded binary is simply executed. */
+    const node = /\.[cm]?js$/.test(input.server.command);
+    const child = spawn(node ? process.execPath : input.server.command, node ? [input.server.command, ...input.server.args] : [...input.server.args], {
       cwd: input.cwd,
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+      env: node ? { ...process.env, ELECTRON_RUN_AS_NODE: "1" } : process.env,
       stdio: ["pipe", "pipe", "pipe"],
     }) as ChildProcessWithoutNullStreams;
 
@@ -60,7 +54,15 @@ export class LspService {
     /* A language server's stderr is diagnostics about itself, not about the
        learner's code. Kept out of the interface, but not discarded — this is
        the only place a crashing server explains itself. */
-    child.stderr.on("data", (chunk: Buffer) => console.error(`[lsp:${input.language}]`, String(chunk).trimEnd()));
+    child.stderr.on("data", (chunk: Buffer) => console.error(`[lsp:${input.sessionId}]`, String(chunk).trimEnd()));
+    /* A server that cannot be spawned at all — a binary deleted from under
+       Construct, a toolchain uninstalled — reports as an exit rather than an
+       unhandled error, so the editor learns about it through the one channel it
+       already listens on. */
+    child.on("error", () => {
+      this.sessions.delete(input.sessionId);
+      this.emit({ sessionId: input.sessionId, kind: "exit", code: null });
+    });
     child.on("exit", (code) => {
       this.sessions.delete(input.sessionId);
       this.emit({ sessionId: input.sessionId, kind: "exit", code });

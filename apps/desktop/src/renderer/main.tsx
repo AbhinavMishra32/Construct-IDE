@@ -1,27 +1,15 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
-import * as monaco from "monaco-editor/esm/vs/editor/editor.api";
-import "monaco-editor/esm/vs/language/typescript/monaco.contribution";
-// The TypeScript language service supplies IntelliSense; colorization needs the
-// Monarch grammars, which are separate entry points.
-import "monaco-editor/esm/vs/basic-languages/typescript/typescript.contribution";
-import "monaco-editor/esm/vs/basic-languages/javascript/javascript.contribution";
-import "monaco-editor/esm/vs/basic-languages/cpp/cpp.contribution";
-import "monaco-editor/esm/vs/basic-languages/markdown/markdown.contribution";
-import EditorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
-import TypeScriptWorker from "monaco-editor/esm/vs/language/typescript/ts.worker?worker";
 import { MotionConfig } from "motion/react";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { App } from "./App";
+import { CodeThemeProvider, readCodeThemeSettings } from "./hooks/use-code-theme";
+import { startEditorPlatform } from "./lib/monaco/services";
+import { installSourceFileSystem } from "./lib/monaco/fileSystem";
+import { codeThemeConfiguration } from "./lib/monaco-theme";
+import { resolveCodeTheme } from "../shared/codeTheme";
 import { UpdateExperience } from "./components/updates/UpdateExperience";
-import { defineEditorThemes } from "./lib/monaco-theme";
 import "./theme.css";
-
-window.MonacoEnvironment = {
-  getWorker(_moduleId, label) {
-    return label === "typescript" || label === "javascript" ? new TypeScriptWorker() : new EditorWorker();
-  },
-};
 
 /* The first frame only. App owns the class from then on, resolving the stored
    preference and following the system while it is "system" — this line exists
@@ -40,7 +28,21 @@ window.construct?.onNativeSurface((surface) => {
   document.documentElement.dataset.nativeSurface = surface;
 });
 // The themes read resolved CSS variables, so they are defined after the stylesheet applies.
-defineEditorThemes(monaco);
+
+/* The editor platform comes up before React does.
+ *
+ * Awaited rather than started in an effect: a text model created before the
+ * language and theme services exist has no grammar and no colour, and nothing
+ * repaints it once they arrive. The palette is resolved from the same store the
+ * provider reads, so the platform starts on the theme it will keep. */
+const appearance = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+await startEditorPlatform(codeThemeConfiguration(resolveCodeTheme(readCodeThemeSettings(), appearance)));
+
+/* And then the disk, which is what makes the platform's file service worth
+   having. Registered here rather than per project: a definition can lead
+   anywhere, so the provider is not scoped to one directory — see
+   `installSourceFileSystem`. */
+if (window.construct) installSourceFileSystem(window.construct);
 
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
@@ -50,8 +52,13 @@ createRoot(document.getElementById("root")!).render(
           tooltip added to any screen would otherwise take the whole render
           tree down with it — which is exactly what happened. */}
       <TooltipProvider delayDuration={400}>
-        <App />
-        {window.construct && <UpdateExperience api={window.construct} />}
+        {/* Above App, because it writes the `--code-*` variables and defines
+            Monaco's theme — both of which have to be in place before anything
+            that draws code first paints. */}
+        <CodeThemeProvider>
+          <App />
+          {window.construct && <UpdateExperience api={window.construct} />}
+        </CodeThemeProvider>
       </TooltipProvider>
     </MotionConfig>
   </React.StrictMode>,

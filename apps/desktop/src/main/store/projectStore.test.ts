@@ -40,6 +40,41 @@ describe("settings", () => {
   });
 });
 
+describe("signing out", () => {
+  /* The bug this exists for: a second account opened onto the first one's
+     projects and was never asked a single intake question, because nothing in
+     this schema records whose work it is. */
+  it("leaves nothing of the account behind for whoever signs in next", () => {
+    const created = store.createProject(project());
+    store.setSetting("learner-profile", { name: "Someone", portrait: "A paragraph about them" });
+    store.setSetting("learner-onboarded", true);
+    store.setSetting("sync-cursor", "2026-09-02T00:00:00.000Z");
+    store.setSetting("sync-cursor-local", "2026-09-02T00:00:00.000Z");
+
+    store.clearAccountData();
+
+    expect(store.listProjects()).toEqual([]);
+    expect(store.getSetting("learner-profile", null)).toBeNull();
+    expect(store.getSetting("learner-onboarded", null)).toBeNull();
+    expect(store.getSetting("sync-cursor", null)).toBeNull();
+    expect(store.getSetting("sync-cursor-local", null)).toBeNull();
+    expect(store.readProject(created.id)).toBeNull();
+  });
+
+  /* Theme and the projects folder are true of the computer, not of the person
+     using it, and re-picking them on every sign-in would be the app forgetting
+     how it is set up rather than forgetting who was here. */
+  it("keeps what is true of the machine rather than of the account", () => {
+    store.setTheme("dark");
+    store.setSetting("projects-directory", "/somewhere/projects");
+
+    store.clearAccountData();
+
+    expect(store.theme()).toBe("dark");
+    expect(store.getSetting("projects-directory", "")).toBe("/somewhere/projects");
+  });
+});
+
 describe("projects", () => {
   it("adopts a directory once, so importing twice reopens rather than duplicates", () => {
     const first = store.createProject(project());
@@ -85,6 +120,48 @@ describe("projects", () => {
     const renamed = store.readProject(created.id);
     expect(renamed?.name).toBe("Software renderer");
     expect(renamed?.directory).toBe(created.directory);
+  });
+});
+
+describe("agent conversation repair", () => {
+  it("collapses legacy duplicate tool executions and kickoff notices without collapsing learner messages", () => {
+    const created = store.createProject(project());
+    const tool = {
+      kind: "tool" as const,
+      tool: "plan-learning-path",
+      label: "Planned what to teach next",
+      actionTitle: "",
+      detail: "",
+      ok: true,
+      text: "",
+      seconds: 0,
+      input: "{\"reason\":\"start\"}",
+      output: "{\"ok\":true}",
+    };
+    store.appendMessage(created.id, { id: "system-1", role: "system", body: "Read up before starting.", createdAt: "2026-01-01T00:00:00.000Z", activity: [] });
+    store.appendMessage(created.id, { id: "system-2", role: "system", body: "Read up before starting.", createdAt: "2026-01-01T00:00:01.000Z", activity: [] });
+    store.appendMessage(created.id, { id: "learner-1", role: "learner", body: "go", createdAt: "2026-01-01T00:00:02.000Z", activity: [] });
+    store.appendMessage(created.id, { id: "learner-2", role: "learner", body: "go", createdAt: "2026-01-01T00:00:03.000Z", activity: [] });
+    store.appendMessage(created.id, { id: "agent-1", role: "agent", body: "Starting.", createdAt: "2026-01-01T00:00:04.000Z", activity: [tool, { ...tool }] });
+
+    const messages = store.listMessages(created.id);
+    expect(messages.filter((message) => message.role === "system")).toHaveLength(1);
+    expect(messages.filter((message) => message.role === "learner")).toHaveLength(1);
+    expect(messages.find((message) => message.id === "agent-1")?.activity).toEqual([tool]);
+  });
+
+  it("rewrites a turn in place, so a reply saved while it was still being written survives", () => {
+    const created = store.createProject(project());
+
+    /* What a turn does as it runs: the same id, written again with more of the
+       answer under it. Two rows here would mean quitting mid-turn left the
+       learner reading the agent's first sentence twice. */
+    store.appendMessage(created.id, { id: "agent-1", role: "agent", body: "A triangle is", createdAt: "2026-01-01T00:00:00.000Z", activity: [] });
+    store.appendMessage(created.id, { id: "agent-1", role: "agent", body: "A triangle is three points.", createdAt: "2026-01-01T00:00:00.000Z", activity: [] });
+
+    const messages = store.listMessages(created.id);
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.body).toBe("A triangle is three points.");
   });
 });
 

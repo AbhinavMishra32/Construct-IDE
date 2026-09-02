@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import keytar from "keytar";
+import { Agent } from "@mastra/core/agent";
+import { createTool } from "@mastra/core/tools";
 import { fauxAssistantMessage, fauxText, fauxToolCall, getModels, registerFauxProvider } from "@mariozechner/pi-ai";
 import { getOAuthApiKey, type OAuthCredentials } from "@mariozechner/pi-ai/oauth";
+import { z } from "zod";
 import { clineBaseUrl } from "../shared/clineCatalog.js";
 import { createPiMastraModel, piTransportForApi } from "../workers/piMastraModel.js";
 
@@ -31,6 +34,37 @@ describe("Pi to Mastra model adapter", () => {
       ]);
       expect(result.usage.totalTokens).toBeGreaterThan(0);
     } finally { provider.unregister(); }
+  });
+
+  it("executes one streamed provider tool call exactly once", async () => {
+    const provider = registerFauxProvider({ api: "construct-stream-faux", provider: "construct-stream-faux", models: [{ id: "stream-faux" }] });
+    provider.setResponses([
+      fauxAssistantMessage([fauxToolCall("inspect", { path: "main.py" }, { id: "call-1" })], { stopReason: "toolUse" }),
+      fauxAssistantMessage([fauxText("Done.")], { stopReason: "stop" }),
+    ]);
+    let calls = 0;
+    try {
+      const agent = new Agent({
+        id: "stream-tool-regression",
+        name: "Stream tool regression",
+        instructions: "Inspect once.",
+        model: createPiMastraModel({ provider: "construct-stream-faux", model: "stream-faux", api: "construct-stream-faux", baseUrl: "http://localhost:0", apiKey: "test" }),
+        tools: {
+          inspect: createTool({
+            id: "inspect",
+            description: "Inspect one file.",
+            inputSchema: z.object({ path: z.string() }),
+            execute: async () => { calls += 1; return { ok: true }; },
+          }),
+        },
+      });
+      const run = await agent.stream([{ role: "user", content: "Inspect main.py." }], { maxSteps: 3 });
+      for await (const _chunk of run.fullStream) { /* consume the run */ }
+      await run.text;
+      expect(calls).toBe(1);
+    } finally {
+      provider.unregister();
+    }
   });
 
   it.runIf(process.env.CONSTRUCT_VERIFY_CHATGPT === "1")("calls a tool through the connected ChatGPT subscription", async () => {

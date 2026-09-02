@@ -4,6 +4,7 @@ import { edges, galaxy, hubOf, orbitRadius, planets, spokes, systemRadius, topic
 
 function concept(id: string, level: AtlasConcept["masteryLevel"], tags: string[] = []): AtlasConcept {
   return {
+    parentId: null,
     conceptId: id,
     title: id,
     masteryLevel: level,

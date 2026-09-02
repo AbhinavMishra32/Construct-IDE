@@ -42,6 +42,8 @@ beforeEach(() => {
     },
     webFetch: async () => ({ configured: false, note: "No key." }),
     recordConcept: (record) => void recorded.push(record),
+    saveTask: vi.fn(),
+    judgeTask: vi.fn(),
     askLearner: vi.fn(async (request) => {
       asked.push({ question: request.question });
       return "the learner's answer";

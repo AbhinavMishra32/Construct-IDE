@@ -20,3 +20,8 @@ apps/desktop/build/icons/.tmp
 **/.vercel
 .DS_Store
 **/.DS_Store
+
+# Local scratch, never part of a build
+_preview.html
+_preview.tsx
+.claude/skills/

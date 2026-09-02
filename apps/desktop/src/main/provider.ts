@@ -88,9 +88,10 @@ const codexTiers: Model<Api>[] = [
 
 const descriptorById = new Map(descriptors.map((item) => [item.id, item]));
 const oauthRuntimeId = (id: ProviderId) => id === "claude-code" ? "anthropic" : id;
-/** Construct's own gateway is the only credential the learner does not hold; it is
- *  off unless the build enables it, so it is never a silent stand-in. */
-const gatewayEnabled = () => process.env.CONSTRUCT_AI_GATEWAY_ENABLED === "true";
+/* Construct's own model gateway used to be resolvable here, on a build flag.
+   It is gone, along with the service behind it: the agent runs on the learner's
+   machine against a provider they hold the credential for, and a cloud path
+   made the one property that distinguishes this app optional. */
 /** Matches the hover card's own staleness: a quota that moves once per turn does
  *  not need re-fetching every time the pointer crosses the row. */
 const USAGE_CACHE_MS = 60_000;
@@ -172,7 +173,6 @@ export class ProviderService {
    *  Nothing else answers: a provider the learner never connected must never be
    *  quietly borrowed to make a turn look like it worked. */
   async available(): Promise<boolean> {
-    if (gatewayEnabled()) return true;
     const selected = this.store.getSetting<ProviderId>("provider-id", "openrouter");
     const descriptor = descriptorById.get(selected);
     if (!descriptor) return false;
@@ -357,7 +357,6 @@ export class ProviderService {
     // credential is Construct's own gateway, and it is off unless the build turns it
     // on — an unconnected Construct resolves to nothing at all, and says so, rather
     // than reaching for a key it found lying around on the machine.
-    if (accessToken && gatewayEnabled()) values.push({ provider: "construct-gateway", model: "construct-agent", api: "openai-completions", baseUrl: `${apiOrigin()}/v1/ai`, apiKey: accessToken, source: "gateway", reasoningEffort: this.reasoningEffort() });
     return dedupe(values);
   }
 

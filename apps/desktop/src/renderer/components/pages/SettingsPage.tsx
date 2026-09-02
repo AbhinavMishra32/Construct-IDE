@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BrainCircuit, Check, ChevronDown, ExternalLink, Ellipsis, Eye, FolderOpen, Globe, KeyRound, Laptop, Link2, Loader2, Lock, LogOut, Moon, Palette, Plus, RotateCw, Settings2, Sun, Trash2, UserRound } from "lucide-react";
+import { Braces, Check, ChevronDown, ExternalLink, Ellipsis, Folder, FolderOpen, Globe, KeyRound, Laptop, Link2, Lock, LogOut, Moon, Plus, RotateCw, Settings2, Sparkle, Sun, Trash2, UserRound } from "lucide-react";
+import { Orb } from "../common/Orb";
 import { LANGUAGES, type Language } from "@construct/domain";
-import type { ConstructApi, ProjectDefaults, ProviderId, ProviderInventory, SubscriptionUsage, ThemePreference, UsageWindow } from "../../../shared/api";
+import type { ConstructApi, LearnerProfile, ProjectDefaults, ProviderId, ProviderInventory, SubscriptionUsage, ThemePreference, UsageWindow } from "../../../shared/api";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -22,22 +23,79 @@ import { message } from "@/lib/format";
 import { credentialStore, deviceNoun } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import { refreshProviders } from "../../hooks/use-providers";
-import { LanguageGlyph, LANGUAGE_LABEL, SelectableLanguageGlyph } from "../common/LanguageGlyph";
+import { LanguageGlyph, LANGUAGE_LABEL } from "../common/LanguageGlyph";
 import { ProviderGlyph } from "../common/ProviderGlyph";
 import { ConstructWordmark } from "../common/ConstructWordmark";
 import { AboutConstruct } from "../settings/AboutConstruct";
+import { CodeThemeRows } from "../settings/CodeThemeRows";
 import { UpdateSettings } from "../settings/UpdateSettings";
 import { ProviderConnectDialog } from "../settings/ProviderConnectDialog";
+import { SettingsControl, SettingsField, SettingsGroup, SettingsHeader, SettingsRow, SettingsSection } from "../settings/layout";
+import { LearnerRows } from "../settings/LearnerRows";
+import { LanguageServerRows } from "../settings/LanguageServerRows";
 import { ConstructDots } from "@/components/common/ConstructDots";
 
 /** The host capabilities the preload exposes beside the Construct API. */
 declare const constructHost: { chooseDirectory(): Promise<string | null> };
 
+/** Resolved in the main process before the window paints, so it is already here. */
+const build = window.construct?.build;
+
 type Provider = ProviderInventory["providers"][number];
-type SettingsSection = "account" | "models" | "projects" | "privacy" | "appearance";
-const SETTINGS_NAV: Array<{id:SettingsSection;label:string;icon:React.ComponentType<{className?:string}>}>=[
-  {id:"account",label:"Account",icon:UserRound},{id:"models",label:"Models",icon:BrainCircuit},{id:"projects",label:"Projects",icon:FolderOpen},{id:"privacy",label:"Data & Privacy",icon:Eye},{id:"appearance",label:"Appearance",icon:Palette},
+type SettingsSection = "general" | "you" | "models" | "languages" | "projects";
+
+type NavItem = { id: SettingsSection; label: string; icon: React.ComponentType<{ className?: string }> };
+type NavGroup = { label: string; items: NavItem[] };
+
+/* Five pages under two headings, and the headings are what the sidebar was
+   missing rather than more pages.
+
+   Splitting a page is worth it when the page is long; splitting it when the
+   page is one row only moves the reading from the page into the sidebar. So the
+   count stays at five — but five unlabelled rows floating at the top of a tall
+   empty column read as an unfinished screen, and the fix is to say what the
+   five are rather than to invent a sixth. The division is the honest one: two
+   pages about this copy of Construct and the person using it, three about the
+   machinery it points at your code.
+
+   Within the first group, You now carries the account as well as the profile.
+   General opening on "Sign out" was a page whose first row had nothing to do
+   with its name. */
+const SETTINGS_NAV: NavGroup[] = [
+  {
+    label: "Construct",
+    items: [
+      { id: "general", label: "General", icon: Settings2 },
+      /* Above the agent's own settings on purpose: what Construct knows about
+         you shapes every turn it takes, so it belongs beside the account rather
+         than filed under the model. */
+      { id: "you", label: "You", icon: UserRound },
+    ],
+  },
+  {
+    label: "Coding",
+    items: [
+      /* One star, not a brain and not a constellation. A brain is a claim
+         about the software; a cluster of three is decoration at 16px, where the
+         two small ones read as noise around the one you can actually see. */
+      { id: "models", label: "Models", icon: Sparkle },
+      /* Beside Models rather than under Projects: a language server is the other
+         thing that reads your code and tells you something about it, and it is
+         installed once for the machine rather than chosen per project. */
+      { id: "languages", label: "Languages", icon: Braces },
+      { id: "projects", label: "Projects", icon: Folder },
+    ],
+  },
 ];
+
+/** Flat, for the one question the groups cannot answer: what is this page called. */
+const SETTINGS_PAGES: NavItem[] = SETTINGS_NAV.flatMap((group) => group.items);
+
+/* One string, because every row in the list has to agree about its height, its
+   resting colour, and what "selected" does to its glyph — and a row that
+   disagrees is visible immediately. */
+const NAV_ITEM =
+  "h-8 w-full justify-start text-left text-muted-foreground click-depth-effect-slightly [&_svg]:text-muted-foreground data-[active=true]:bg-muted! data-[active=true]:text-foreground data-[active=true]:[&_svg]:text-foreground";
 
 
 const KIND_LABEL: Record<Provider["kind"], string> = {
@@ -97,37 +155,39 @@ function WebSearchRow({ api }: { api: ConstructApi | undefined }) {
 
   return (
     <>
-      <Row className="gap-4">
+      <Row>
         <span className={cn("grid size-6 shrink-0 place-items-center transition-colors", active ? "text-foreground/85" : "text-muted-foreground/50")}>
           <Globe className="size-[1.15rem]" />
         </span>
-        <div className="min-w-0 flex-1">
-          <p className="text-content font-medium">Web search</p>
-          <p className="mt-0.5 text-ui text-muted-foreground">
-            {source === "loading"
+        <SettingsField
+          description={
+            source === "loading"
               ? "Checking…"
               : !held
                 ? "Needs an Exa key. Without one the agent works entirely from your own record."
                 : enabled
                   ? "The agent can look up what a company's interviews cover or what a library's current API is."
-                  : "Off. The agent works entirely from your own record."}
-          </p>
-        </div>
-        <Switch
-          aria-label="Web search"
-          checked={active}
-          disabled={busy || !held}
-          onCheckedChange={(next) => void act(async () => api?.setWebSearchEnabled(next))}
+                  : "Off. The agent works entirely from your own record."
+          }
+          title="Web search"
         />
+        <SettingsControl>
+          <Switch
+            aria-label="Web search"
+            checked={active}
+            disabled={busy || !held}
+            onCheckedChange={(next) => void act(async () => api?.setWebSearchEnabled(next))}
+          />
+        </SettingsControl>
       </Row>
 
       {/* The key. Shown while there is none to hold, and folded away once there
           is — replacing one is a deliberate act, not the default state. */}
       {held && !editing ? (
-        <Row className="gap-3">
+        <Row>
           <span className="grid size-6 shrink-0 place-items-center text-muted-foreground/70"><KeyRound className="size-4" /></span>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-ui text-muted-foreground">
+          <div className="min-w-0 grow px-1">
+            <p className="text-muted-foreground truncate text-xs font-medium">
               {source === "env" ? "Key supplied by the EXA_API_KEY environment variable." : `Key stored in ${credentialStore}.`}
             </p>
           </div>
@@ -137,7 +197,7 @@ function WebSearchRow({ api }: { api: ConstructApi | undefined }) {
                 aria-label="Exa key options"
                 className="grid size-7 shrink-0 place-items-center rounded-[var(--radius-md)] text-muted-foreground transition-colors outline-none hover:bg-accent hover:text-foreground aria-expanded:bg-accent aria-expanded:text-foreground"
               >
-                {busy ? <Loader2 className="size-4 animate-spin" /> : <Ellipsis className="size-4" />}
+                {busy ? <Orb label="Working" px={16} state="working" /> : <Ellipsis className="size-4" />}
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem onSelect={() => setEditing(true)}><KeyRound />Replace key</DropdownMenuItem>
@@ -151,7 +211,7 @@ function WebSearchRow({ api }: { api: ConstructApi | undefined }) {
           )}
         </Row>
       ) : source !== "loading" && (source === "none" || editing) ? (
-        <Row className="gap-3">
+        <Row>
           <span className="grid size-6 shrink-0 place-items-center text-muted-foreground/70"><KeyRound className="size-4" /></span>
           <Input
             autoComplete="off"
@@ -164,7 +224,7 @@ function WebSearchRow({ api }: { api: ConstructApi | undefined }) {
             value={draft}
           />
           <Button disabled={busy || !draft.trim()} onClick={() => void act(async () => api?.saveWebSearchKey(draft.trim()))} size="sm">
-            {busy ? <Loader2 className="size-3.5 animate-spin" /> : "Save"}
+            {busy ? <Orb invert label="Saving" px={15} state="working" /> : "Save"}
           </Button>
           {editing
             ? <Button onClick={() => { setEditing(false); setDraft(""); }} size="sm" variant="ghost">Cancel</Button>
@@ -172,21 +232,19 @@ function WebSearchRow({ api }: { api: ConstructApi | undefined }) {
         </Row>
       ) : null}
 
-      {failure && <Row><p className="text-ui text-destructive">{failure}</p></Row>}
+      {failure && <Row><p className="text-destructive px-1 text-xs font-medium">{failure}</p></Row>}
     </>
   );
 }
 
-/** A labelled stack of rows. The label sits above the card, not inside it — the
- *  card is then one uninterrupted surface instead of a header plus a body. */
+/** A labelled stack of rows: the page's most common shape, so it keeps a name of
+ *  its own. The label sits above the card, not inside it — the card is then one
+ *  uninterrupted surface rather than a header plus a body. */
 function Group({ label, children, className }: { label: string; children: React.ReactNode; className?: string }) {
   return (
-    <section className={cn("mt-7", className)}>
-      <h2 className="mb-2 px-0.5 text-ui font-medium text-muted-foreground">{label}</h2>
-      <div className="overflow-hidden rounded-[var(--radius-2xl)] border border-border bg-card shadow-[var(--app-shadow-card)]">
-        <div className="divide-y divide-border">{children}</div>
-      </div>
-    </section>
+    <SettingsSection title={label}>
+      <SettingsGroup className={className}>{children}</SettingsGroup>
+    </SettingsSection>
   );
 }
 
@@ -231,10 +289,10 @@ function ProjectDefaultsRows({
 
   return (
     <>
-      <Row className="gap-4 py-2.5">
-        <div className="min-w-0 flex-1">
-          <p className="text-content font-medium">Projects folder</p>
-          <p className="mt-0.5 truncate font-mono text-ui text-muted-foreground" title={defaults.directory}>
+      <Row>
+        <div className="min-w-0 grow px-1">
+          <h4 className="text-foreground text-sm font-medium" data-settings-field="Projects folder">Projects folder</h4>
+          <p className="text-muted-foreground truncate font-mono text-xs font-medium" title={defaults.directory}>
             {defaults.directory}
           </p>
         </div>
@@ -254,31 +312,30 @@ function ProjectDefaultsRows({
         </Button>
       </Row>
 
-      <Row className="gap-4 py-2.5">
-        <div className="min-w-0 flex-1">
-          <p className="text-content font-medium">Language</p>
-          <p className="mt-0.5 text-ui text-muted-foreground">What a new project is scaffolded in, unless you change it for that project.</p>
-        </div>
-        <Select disabled={busy} onValueChange={(value) => save({ language: value as Language })} value={defaults.language}>
-          <SelectTrigger className="w-40">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {LANGUAGES.map((language) => (
-              <SelectItem key={language} value={language}>
-                <LanguageGlyph className="size-3.5" language={language} />
-                {LANGUAGE_LABEL[language]}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <Row>
+        <SettingsField description="What a new project is scaffolded in, unless you change it for that project." title="Language" />
+        <SettingsControl>
+          <Select disabled={busy} onValueChange={(value) => save({ language: value as Language })} value={defaults.language}>
+            <SelectTrigger className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {LANGUAGES.map((language) => (
+                <SelectItem key={language} value={language}>
+                  <LanguageGlyph className="size-3.5" language={language} />
+                  {LANGUAGE_LABEL[language]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </SettingsControl>
       </Row>
     </>
   );
 }
 
 function Row({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <div className={cn("flex min-h-[3.375rem] items-center gap-3 px-3.5 py-2", className)}>{children}</div>;
+  return <SettingsRow className={className}>{children}</SettingsRow>;
 }
 
 /** Bare mark, no tile — the glyph reads as a logo rather than a favicon. */
@@ -296,7 +353,7 @@ function ModelPicker({ provider, onSelect }: { provider: Provider; onSelect(mode
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        className="inline-flex h-7 max-w-[11.5rem] shrink-0 items-center gap-1.5 rounded-[var(--radius-md)] border border-border bg-background px-2 text-ui text-foreground transition-colors outline-none hover:bg-accent aria-expanded:bg-accent focus-visible:border-[var(--border-strong)] dark:bg-input/30 dark:hover:bg-input/50"
+        className="inline-flex h-7 max-w-[11.5rem] shrink-0 items-center gap-1.5 rounded-[var(--radius-md)] border border-border bg-background px-2 text-ui text-foreground transition-colors outline-none hover:bg-accent aria-expanded:bg-accent dark:bg-input/30 dark:hover:bg-input/50"
         title={`${provider.name} model`}
       >
         <ProviderGlyph className="size-3.5 shrink-0 opacity-70" provider={provider.id} />
@@ -351,7 +408,7 @@ function UsageRing({ provider, api }: { provider: Provider; api: ConstructApi | 
       <HoverCardTrigger asChild>
         <button
           aria-label={`${provider.name} subscription usage`}
-          className="grid size-7 shrink-0 place-items-center rounded-[var(--radius-md)] text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:text-foreground"
+          className="grid size-7 shrink-0 place-items-center rounded-[var(--radius-md)] text-muted-foreground transition-colors outline-none hover:text-foreground"
           type="button"
         >
           <svg className={cn("size-4 -rotate-90", weekly ? "" : "opacity-30")} viewBox="0 0 20 20">
@@ -420,9 +477,9 @@ function ProviderRow({
   return (
     <Row>
       <Mark provider={provider.id} />
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 grow px-1">
         <div className="flex items-center gap-1.5">
-          <p className="truncate text-content font-medium">{provider.name}</p>
+          <h4 className="text-foreground truncate text-sm font-medium">{provider.name}</h4>
           {isDefault && (
             <span className="shrink-0 rounded-full bg-success/12 px-1.5 py-px text-ui-sm font-medium text-success">Default</span>
           )}
@@ -432,7 +489,7 @@ function ProviderRow({
             </span>
           )}
         </div>
-        <p className="truncate text-ui text-muted-foreground">{KIND_LABEL[provider.kind]}</p>
+        <p className="text-muted-foreground truncate text-xs font-medium">{KIND_LABEL[provider.kind]}</p>
       </div>
 
       {provider.models.length > 0 && <ModelPicker onSelect={onModel} provider={provider} />}
@@ -483,7 +540,7 @@ function ConnectRow({ available, onPick }: { available: Provider[]; onPick(provi
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger className="flex w-full items-center gap-2 px-3.5 py-2.5 text-ui text-muted-foreground transition-colors outline-none hover:bg-accent hover:text-foreground aria-expanded:bg-accent aria-expanded:text-foreground">
+      <DropdownMenuTrigger className="bg-surface-secondary text-muted-foreground dark:hover:bg-accent flex min-h-13 w-full cursor-default items-center gap-3 p-2.5 text-sm font-medium outline-none transition-colors hover:bg-neutral-100 hover:text-foreground aria-expanded:bg-accent aria-expanded:text-foreground">
         <span className="grid size-6 shrink-0 place-items-center">
           <Plus className="size-4" />
         </span>
@@ -510,6 +567,8 @@ function ConnectRow({ available, onPick }: { available: Provider[]; onPick(provi
 export function SettingsPage({
   api,
   onProjectDefaults,
+  onRetakeIntake,
+  onSection,
   onSignedOut,
   onThemeChange,
   projectDefaults,
@@ -519,6 +578,13 @@ export function SettingsPage({
   /** Reports settled defaults back to the shell, which holds them for the New
    *  project dialog. */
   onProjectDefaults(defaults: ProjectDefaults): void;
+  /** Runs the intake again, over the app. The shell owns which screen is
+   *  showing, so it is the shell that puts it there. */
+  onRetakeIntake(profile: LearnerProfile): void;
+  /** The toolbar above this page belongs to the shell, but the second half of
+   *  its title is the section you are standing in — so the page reports it up
+   *  rather than drawing a second title bar of its own. */
+  onSection?(label: string): void;
   onSignedOut(): Promise<void>;
   onThemeChange(theme: ThemePreference): Promise<void>;
   projectDefaults: ProjectDefaults;
@@ -531,7 +597,9 @@ export function SettingsPage({
   const [themeBusy, setThemeBusy] = useState(false);
   const [languageBusy, setLanguageBusy] = useState(false);
   const [accountAction, setAccountAction] = useState<"sign-out" | "delete" | null>(null);
-  const [section, setSection] = useState<SettingsSection>("account");
+  const [section, setSection] = useState<SettingsSection>("general");
+  const sectionLabel = SETTINGS_PAGES.find((item) => item.id === section)?.label ?? "";
+  useEffect(() => { onSection?.(sectionLabel); }, [onSection, sectionLabel]);
 
   /* Through the shared store, not the bridge directly: connecting here has to
      retire the "no model provider" notice on the composer waiting behind this
@@ -582,27 +650,85 @@ export function SettingsPage({
   };
 
   return (
-    <div className="flex h-full min-h-0">
-      <aside className="w-[12.5rem] shrink-0 border-r border-border bg-muted/20 px-3 py-5">
-        <nav className="flex flex-col gap-0.5" aria-label="Settings sections">
-          {SETTINGS_NAV.map(({id,label,icon:Icon})=><button className={cn("flex h-8 items-center gap-2 rounded-lg px-2.5 text-ui text-left outline-none transition-colors",section===id?"bg-accent font-medium text-foreground":"text-muted-foreground hover:bg-accent/60 hover:text-foreground")} key={id} onClick={()=>setSection(id)} type="button"><Icon className="size-4" />{label}</button>)}
+    /* Two surfaces, not one. The nav sits on the window's own ground — it is
+       chrome, and chrome belongs to the window — while the page it points at is
+       a sheet laid on top, the same blob every other content pane in the app
+       gets. A settings screen drawn as one flat field reads as a web page that
+       happened to open here rather than as a place in the app. */
+    <div className="flex h-full min-h-0 pt-1 pr-1.5 pb-1.5">
+      {/* Narrow, and padded only on the leading edge: the rows are the column, so
+          the space between them and the page is the page's, not the list's. */}
+      <aside className="relative flex h-full w-52 shrink-0 flex-col py-1 pr-0 pl-1.5">
+        {/* No search field. Five destinations is a list you read, not one you
+            query, and a search box over five rows is a control that exists to
+            look like a settings screen rather than to find anything. */}
+        <nav aria-label="Settings sections" className="app-scroll flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pt-1">
+          {SETTINGS_NAV.map((group) => (
+            <section key={group.label}>
+              {/* The same heading the page's own sections wear, one step
+                  quieter. It is doing two jobs: naming the pair, and giving the
+                  column something at the top that is not a button — a list of
+                  five identical rows has no reading order, and a heading is what
+                  gives it one.
+
+                  Sized and inset to the rows rather than spaced away from them:
+                  a 28px band on the same left edge as the glyphs, so the column
+                  is one ruled list of bands instead of headings floating at
+                  their own margin above groups of buttons. `pl-2` is the
+                  button's own leading inset once it carries an icon — the
+                  heading lines up with the glyph column, which is the line the
+                  eye actually follows down. */}
+              <h2 className="font-display text-muted-foreground/70 flex h-7 items-center pl-2 text-ui-sm font-[550]">{group.label}</h2>
+              <ul>
+                {group.items.map(({ id, label, icon: Icon }) => (
+                  <li key={id}>
+                    <Button
+                      className={NAV_ITEM}
+                      data-active={section === id || undefined}
+                      onClick={() => setSection(id)}
+                      size="lg"
+                      variant="ghost"
+                    >
+                      <Icon data-icon="inline-start" />
+                      <span className="grow">{label}</span>
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))}
         </nav>
+
+        {/* The bottom of the column, and the reason it no longer reads as empty:
+            a list that ends in mid-air looks unfinished, and one that ends on a
+            line of type looks placed. It also answers, from anywhere in
+            Settings, the question the About panel answers only from General. */}
+        {build && (
+          <p className="text-muted-foreground/60 shrink-0 pt-3 pb-1 pl-2 text-ui-sm">
+            Construct {build.version}
+            {!build.packaged && " · dev"}
+          </p>
+        )}
       </aside>
-      <div className="app-scroll min-w-0 flex-1 overflow-y-auto">
-      <div className="mx-auto w-full max-w-[42rem] px-6 pb-20 pt-9">
-        <h1 className="text-[1.55rem] font-semibold tracking-[-0.035em]">Settings</h1>
-        <p className="mt-1 text-content text-muted-foreground">{SETTINGS_NAV.find((item)=>item.id===section)?.label}</p>
+      <div className="app-blob app-scroll ml-1.5 min-w-0 grow overflow-y-auto">
+      {/* The column the page is read in. Wide top padding rather than a title bar:
+          the heading sits in air, which is what makes it read as the page's name
+          rather than as the first row of the list under it. */}
+      <main className="mx-auto w-full max-w-2xl px-8 pt-16 pb-40 text-left">
+        <SettingsHeader>
+          <h1>{sectionLabel}</h1>
+        </SettingsHeader>
 
         {error && !selected && (
-          <p className="mt-5 rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-ui text-destructive">{error}</p>
+          <p className="border-destructive/30 bg-destructive/5 text-destructive mb-6 rounded-xl border px-3 py-2 text-xs font-medium">{error}</p>
         )}
 
-        {section === "appearance" && <Group label="Appearance">
-          <Row className="gap-4 py-2.5">
-            <div className="min-w-0 flex-1">
-              <p className="text-content font-medium">Theme</p>
-              <p className="mt-0.5 text-ui text-muted-foreground">Pick an appearance, or follow the system setting.</p>
-            </div>
+        <div className="space-y-8">
+
+        {section === "general" && <><Group label="Appearance">
+          <Row>
+            <SettingsField description="Pick an appearance, or follow the system setting." title="Theme" />
+            <SettingsControl className="max-w-none">
             <Segmented
               ariaLabel="Application theme"
               disabled={themeBusy}
@@ -618,8 +744,65 @@ export function SettingsPage({
               ]}
               value={theme}
             />
+            </SettingsControl>
           </Row>
-        </Group>}
+        </Group>
+
+        {/* Its own group: the code palette is not an app-appearance setting, it
+            is the one preference that changes three surfaces at once. */}
+        <Group label="Code">
+          <CodeThemeRows />
+        </Group>
+
+        {/* Its own group rather than a row under Appearance: an update is not a
+            preference, and filing it under one implies it is optional. */}
+        <Group label="Updates">
+          <UpdateSettings api={api} />
+        </Group>
+
+        <AboutConstruct /></>}
+
+        {/* Account sits under You rather than under General, which is where it
+            was. A page called General that opened on "Sign out" was a page whose
+            first row had nothing to do with its name; and the profile, the
+            session and the record are three views of one subject — who is using
+            this copy of Construct. Splitting them across two destinations meant
+            deleting your account was filed under the same heading as the theme. */}
+        {section === "you" && <>
+          <LearnerRows api={api} onError={setError} onRetake={onRetakeIntake} />
+
+          <Group label="Account">
+            <Row>
+              <SettingsField
+                description={`Remove this account and clear its sessions from this ${deviceNoun}. Anything already synced stays in your cloud history.`}
+                title="Sign out"
+              />
+              <SettingsControl>
+                <Button onClick={() => setAccountAction("sign-out")} size="sm" variant="secondary"><LogOut />Sign out</Button>
+              </SettingsControl>
+            </Row>
+          </Group>
+
+          {/* Last, and deliberately: this is the only irreversible control in
+              Settings, and it should be the thing you have to travel furthest to. */}
+          <Group label="Data & Privacy">
+            <Row>
+              <SettingsField
+                description="Permanently remove your account and cloud-backed learning history. This cannot be undone."
+                title="Delete account"
+              />
+              <SettingsControl>
+                <Button onClick={() => setAccountAction("delete")} size="sm" variant="destructive"><Trash2 />Delete account</Button>
+              </SettingsControl>
+            </Row>
+          </Group>
+        </>}
+
+        {section === "languages" && (
+          <Group label="Language servers">
+            <LanguageServerRows api={api} onError={setError} />
+          </Group>
+        )}
 
         {section === "projects" && (
           <Group label="New projects">
@@ -631,7 +814,7 @@ export function SettingsPage({
           {!inventory && (
             <Row>
               <ConstructDots className="text-muted-foreground" pattern="pulse" size={16} />
-              <span className="text-ui text-muted-foreground">Reading the provider inventory…</span>
+              <span className="text-muted-foreground px-1 text-sm font-medium">Reading the provider inventory…</span>
             </Row>
           )}
           {connected.map((provider) => (
@@ -652,12 +835,11 @@ export function SettingsPage({
 
         {defaultProvider && (
           <Group label="Agent">
-            <Row className="gap-4">
-              <div className="min-w-0 flex-1">
-                <p className="text-content font-medium">Default model</p>
-                <p className="mt-0.5 text-ui text-muted-foreground">Every new run starts here until you switch provider.</p>
-              </div>
-              <ModelPicker onSelect={(model) => void setDefault(defaultProvider, model)} provider={defaultProvider} />
+            <Row>
+              <SettingsField description="Every new run starts here until you switch provider." title="Default model" />
+              <SettingsControl>
+                <ModelPicker onSelect={(model) => void setDefault(defaultProvider, model)} provider={defaultProvider} />
+              </SettingsControl>
             </Row>
           </Group>
         )}
@@ -670,33 +852,8 @@ export function SettingsPage({
         </Group></>}
 
 
-        {/* Its own group rather than a row under Providers: this is not a model,
-            and grouping it with them would imply the agent could run on it. */}
-        {section === "appearance" && <Group label="Updates">
-          <UpdateSettings api={api} />
-        </Group>}
-
-        {section === "account" && <><Group label="Account">
-          <Row>
-            <div className="min-w-0 flex-1">
-              <p className="text-content font-medium">Sign out</p>
-              <p className="mt-0.5 text-ui text-muted-foreground">Remove this account and clear its sessions from this {deviceNoun}. Anything already synced stays in your cloud history.</p>
-            </div>
-            <Button onClick={() => setAccountAction("sign-out")} size="sm" variant="secondary"><LogOut />Sign out</Button>
-          </Row>
-        </Group><AboutConstruct /></>}
-
-        {section === "privacy" && <Group label="Data & Privacy">
-          <Row>
-            <div className="min-w-0 flex-1">
-              <p className="text-content font-medium">Delete account</p>
-              <p className="mt-0.5 text-ui text-muted-foreground">Permanently remove your account and cloud-backed learning history. This cannot be undone.</p>
-            </div>
-            <Button onClick={() => setAccountAction("delete")} size="sm" variant="destructive"><Trash2 />Delete account</Button>
-          </Row>
-        </Group>}
-
-      </div>
+        </div>
+      </main>
       </div>
 
       <ProviderConnectDialog api={api} onClose={() => setSelected(null)} onConnected={refresh} provider={selected} />
@@ -714,7 +871,7 @@ export function SettingsPage({
           <DialogFooter>
             <Button disabled={busy} onClick={() => setAccountAction(null)} variant="secondary">Cancel</Button>
             <Button disabled={busy} onClick={() => void finishAccountAction()} variant={accountAction === "delete" ? "destructive" : "default"}>
-              {busy && <Loader2 className="animate-spin" />}{accountAction === "delete" ? "Delete permanently" : "Sign out"}
+              {busy && <Orb invert label="Working" px={15} state="working" />}{accountAction === "delete" ? "Delete permanently" : "Sign out"}
             </Button>
           </DialogFooter>
         </DialogContent>

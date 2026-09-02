@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Check, Loader2, Trash2 } from "lucide-react";
+import { Check, Trash2 } from "lucide-react";
+import { Orb } from "../common/Orb";
 import type { ProviderId, ProviderInventory, ProviderOAuthEvent, ConstructApi } from "../../../shared/api";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -144,7 +145,7 @@ export function ProviderConnectDialog({
             {oauth && (
               <div className="rounded-xl border border-border bg-[var(--color-background-elevated-secondary)] p-3 text-ui">
                 <p className="flex items-center gap-1.5 font-medium">
-                  {!["connected", "error", "cancelled"].includes(oauth.status) && <Loader2 className="size-3 animate-spin" />}
+                  {!["connected", "error", "cancelled"].includes(oauth.status) && <Orb label="Connecting" px={14} state="connecting" />}
                   {oauth.status === "connected" ? "Connected" : oauth.status === "error" ? "Sign-in failed" : "Waiting for sign-in"}
                 </p>
                 <p className="mt-1 text-muted-foreground">{oauth.message}</p>
@@ -179,8 +180,8 @@ export function ProviderConnectDialog({
           <div className="flex gap-2">
             <Button onClick={() => close(false)} variant="secondary">Cancel</Button>
             {provider.kind === "subscription"
-              ? <Button disabled={busy || (!!oauth && !["error", "cancelled"].includes(oauth.status))} onClick={() => void startOAuth()}>{busy && <Loader2 className="animate-spin" />}Connect</Button>
-              : <Button disabled={busy || !modelId.trim() || !baseUrl.trim() || (provider.kind === "api-key" && provider.state !== "connected" && !secret.trim())} onClick={() => void save()}>{busy && <Loader2 className="animate-spin" />}{provider.state === "connected" ? "Update" : "Connect"}</Button>}
+              ? <Button disabled={busy || (!!oauth && !["error", "cancelled"].includes(oauth.status))} onClick={() => void startOAuth()}>{busy && <Orb invert label="Connecting" px={15} state="connecting" />}Connect</Button>
+              : <Button disabled={busy || !modelId.trim() || !baseUrl.trim() || (provider.kind === "api-key" && provider.state !== "connected" && !secret.trim())} onClick={() => void save()}>{busy && <Orb invert label="Connecting" px={15} state="connecting" />}{provider.state === "connected" ? "Update" : "Connect"}</Button>}
           </div>
         </DialogFooter>
       </DialogContent>

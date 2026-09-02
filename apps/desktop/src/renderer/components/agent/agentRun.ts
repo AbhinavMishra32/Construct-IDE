@@ -294,7 +294,11 @@ const SAFE_TOOL_LABELS: Record<string, [string, string]> = {
   create_question: ["Build challenge", "Built challenge"],
   replace_current_question: ["Build replacement challenge", "Built replacement challenge"],
   create_fallback_question: ["Set a standard challenge", "Set a standard challenge"],
-  ask_user_question: ["Prepare a question", "Prepared a question"],
+  /* Named for the thing the learner watched happen. "Prepared a question" is
+     the tool's own view of itself — the question had already been asked, and
+     answered, by the time that row settled. */
+  ask_user_question: ["Asking you something", "Asked a question"],
+  "ask-user-question": ["Asking you something", "Asked a question"],
   /* The two that leave the learner's own record. Named for the fact of going out
      to the web, because that is the part worth noticing in a transcript that is
      otherwise entirely about them. */

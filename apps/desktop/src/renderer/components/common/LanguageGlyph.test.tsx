@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { Language } from "@construct/domain";
-import { LanguageGlyph, LANGUAGE_LABEL, SelectableLanguageGlyph } from "./LanguageGlyph";
+import { LanguageGlyph, LANGUAGE_LABEL } from "./LanguageGlyph";
 
 const LANGUAGES: Language[] = ["javascript", "typescript", "python", "java", "c", "cpp", "go", "rust", "swift", "ruby"];
 const FULL_COLOR_ASSETS = new Set<Language>(["python", "java"]);
@@ -17,12 +17,4 @@ describe("language glyphs", () => {
     expect(markup).not.toContain("<text");
   });
 
-  it("uses colour as selection state without making inactive marks look disabled", () => {
-    const inactive = renderToStaticMarkup(<SelectableLanguageGlyph language="typescript" selected={false} />);
-    const selected = renderToStaticMarkup(<SelectableLanguageGlyph language="typescript" selected />);
-
-    expect(inactive).toContain("grayscale");
-    expect(inactive).toContain("opacity-90");
-    expect(selected).not.toContain("grayscale");
-  });
 });

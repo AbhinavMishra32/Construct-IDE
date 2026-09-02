@@ -70,7 +70,7 @@ export function ViewSwitch<T extends string>({
             aria-selected={selected}
             className={cn(
               "relative z-10 inline-flex h-6 items-center justify-center gap-1.5 px-2 text-ui font-medium transition-colors outline-none",
-              "focus-visible:ring-2 focus-visible:ring-ring/60",
+              "",
               selected ? "text-foreground" : "text-muted-foreground hover:text-foreground",
             )}
             key={option}

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { claimProject, projectBusy } from "./turnRouting.js";
 
 /**
  * The turn id has to be the same value in three places, and it silently was
@@ -56,5 +57,23 @@ describe("routing a tool call back to its project", () => {
     running.delete(turnId);
 
     expect(routeToolCall(running, workerToolCall({ requestId: turnId }))).toBeNull();
+  });
+});
+
+describe("claiming a project kickoff", () => {
+  it("rejects an immediate second kickoff before the first model turn exists", () => {
+    const starting = new Set<string>();
+    const running = new Map<string, string>();
+
+    expect(claimProject(starting, running, "project-a")).toBe(true);
+    expect(claimProject(starting, running, "project-a")).toBe(false);
+    expect(projectBusy(starting, running, "project-a")).toBe(true);
+  });
+
+  it("also rejects a kickoff while a normal turn is running", () => {
+    const starting = new Set<string>();
+    const running = new Map([["turn-a", "project-a"]]);
+
+    expect(claimProject(starting, running, "project-a")).toBe(false);
   });
 });

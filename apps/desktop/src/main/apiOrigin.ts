@@ -9,15 +9,19 @@ import path from "node:path";
  *  connection that reads as the app being broken. Release builds are therefore
  *  stamped with the deployed origin.
  *
- *  Stamped through electron-builder's `extraMetadata`, which writes the value
- *  into the packaged `package.json`, rather than through the build environment: a
- *  packaged app does not inherit the environment of the machine that built it, so
- *  a `process.env` value set in CI would simply be undefined by the time anyone
- *  ran the app.
+ *  The stamp is `constructHostedApiOrigin` in this package's own manifest, not a
+ *  build-time environment variable: a packaged app does not inherit the
+ *  environment of the machine that built it, so a `process.env` value set in CI
+ *  would simply be undefined by the time anyone ran the app. Being in the source
+ *  manifest rather than injected at package time, it is also what development
+ *  reads — `electron .` runs with this directory as the app path — so a checkout
+ *  talks to the same deployed API a release does, and sign-in works on a clone
+ *  with nothing configured.
  *
- *  Precedence is override, then stamp, then localhost — so self-hosting is one
- *  environment variable, and a build cut before anything was deployed still runs
- *  against a local API instead of a dead URL. */
+ *  Precedence is override, then stamp, then localhost. Which makes running
+ *  against a local backend one environment variable — `CONSTRUCT_API_ORIGIN`,
+ *  the only way to reach `pnpm dev` in the cloud-backend repo now that the
+ *  hosted origin is the default. */
 
 /** Where @construct/cloud-backend listens by default — see PORT in its
  *  config.ts. Inherited as 4318 from Spar, whose API listened somewhere else

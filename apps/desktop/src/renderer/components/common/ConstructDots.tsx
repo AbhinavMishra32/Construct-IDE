@@ -1,34 +1,37 @@
 import { cn } from "@/lib/utils";
 
-/** The five-by-five grid the app icon is drawn from, animated.
+/** The concentric rings the app icon is drawn from, animated.
  *
- *  The icon's resting state already has a direction: dots are largest and
- *  brightest along the leading diagonal and taper towards the two off-corners.
- *  Every pattern here is that same diagonal put in motion, so a loading state
- *  reads as the mark coming alive rather than as a spinner that happens to be
- *  made of dots.
+ *  The icon's resting state already has a direction: dots fall away outward from
+ *  the single centre dot, brightest in the middle and faintest at the corners.
+ *  Every pattern here is that same axis put in motion, travelling from the core
+ *  outward — so a loading state reads as the mark radiating rather than as a
+ *  spinner that happens to be made of dots.
  *
- *  Motion is CSS only — a per-dot `animation-delay` off the dot's diagonal
- *  position. Nothing ticks in JavaScript, which matters because these run during
- *  exactly the moments the app is busy doing something else. */
+ *  Motion is CSS only — a per-dot `animation-delay` off which ring it sits on.
+ *  Nothing ticks in JavaScript, which matters because these run during exactly
+ *  the moments the app is busy doing something else. */
 
 const GRID = 5;
 /** Largest dot as a fraction of the grid step, from the icon renderer. */
-const DOT_FILL = 0.78;
-/** How far size and tone fall off the diagonal at rest, from the icon renderer. */
-const TAPER = 0.55;
+const DOT_FILL = 0.72;
+/** The corner dots' size, as a fraction of the largest. From the renderer. */
+const MIN_SCALE = 0.5;
+/** Slightly under 1, so the falloff happens mostly at the rim. From the
+ *  renderer. */
+const EASE = 0.85;
 
 export type DotPattern =
-  /** A band travelling down the diagonal — the mark waking up. For work that is
+  /** A band travelling outward, ring by ring — the mark waking up. For work that is
    *  actively producing something: a test run, a page being opened. */
   | "wave"
   /** One brighter pass with a longer gap behind it. For longer waits where a
    *  continuous wave would read as busier than the app actually is. */
   | "sweep"
-  /** The whole grid breathing, diagonal intact. For reading and thinking, where
+  /** The whole field breathing, the rings intact. For reading and thinking, where
    *  there is no progress to imply. */
   | "pulse"
-  /** One band, corner to corner, that begins and ends on the resting mark.
+  /** One band, core to outside, that begins and ends on the resting mark.
    *
    *  The three above loop, which means they are only ever *interrupted*: stop one
    *  and every dot snaps from wherever the cycle had it to its resting size. That
@@ -48,27 +51,35 @@ export type DotPattern =
    like it had lost its alignment. */
 const step = 100 / (GRID - 1 + DOT_FILL);
 const radius = (step * DOT_FILL) / 2;
+/* The grid is odd, so there is a middle cell: the centre dot sits at distance 0
+   and takes the full weight on its own, and the corners at hypot(mid, mid) are
+   the far end of the ramp. */
+const mid = (GRID - 1) / 2;
+const FURTHEST = Math.hypot(mid, mid);
 const dots = Array.from({ length: GRID * GRID }, (_, index) => {
   const row = Math.floor(index / GRID);
   const column = index % GRID;
-  const distance = Math.abs(row - column) / (GRID - 1);
-  const rest = 1 - TAPER * distance;
+  /* Straight-line distance from the centre, which is what makes the light round
+     rather than square. 0 at the centre dot, 1 at the corners; weight runs the
+     other way. */
+  const spread = Math.hypot(row - mid, column - mid) / FURTHEST;
+  const weight = Math.pow(1 - spread, EASE);
+  const rest = MIN_SCALE + (1 - MIN_SCALE) * weight;
   return {
     key: index,
     cx: radius + column * step,
     cy: radius + row * step,
-    /** Resting scale, identical to the icon's taper. */
+    /** Resting scale, identical to the icon's ring ramp. */
     rest,
     /* The icon ties tone to size, but the icon is never smaller than 16px square
-       in total. Here a 16px loader gives each dot about three pixels, and at the
-       icon's alpha the off-diagonal corners simply vanish — leaving a mark that
-       reads as a diagonal line rather than as a grid. So the tone range is
-       compressed and the diagonal is carried by size, which survives being
-       small. */
-    restTone: 0.45 + 0.55 * rest,
-    /** Position along the diagonal, 0 at the top-left corner and 1 at the
-     *  bottom-right. Drives the delay, so a band travels corner to corner. */
-    along: (row + column) / (2 * (GRID - 1)),
+       in total. Here a 16px loader gives the outer ring about two pixels, and at
+       the icon's alpha those dots simply vanish — leaving a mark that reads as a
+       lone blob rather than as rings. So the tone range is compressed and the
+       ramp is carried by size, which survives being small. */
+    restTone: 0.66 + 0.34 * weight,
+    /** Which ring, 0 at the core and 1 at the outside. Drives the delay, so a
+     *  band travels outward rather than across. */
+    along: spread,
   };
 });
 
@@ -82,7 +93,7 @@ const DURATION: Record<Exclude<DotPattern, "still">, number> = {
 /** How much of the cycle the travel occupies. The rest is the band off-screen,
  *  which is what separates one pass from the next. */
 const TRAVEL = 0.55;
-/** How long the single pass takes to cross the grid, corner to corner. */
+/** How long the single pass takes to travel from the core to the outer ring. */
 const PASS_TRAVEL = 0.62;
 /** Wall-clock length of one `pass`, for callers timing anything against it. */
 export const PASS_MS = (DURATION.pass + PASS_TRAVEL) * 1000;

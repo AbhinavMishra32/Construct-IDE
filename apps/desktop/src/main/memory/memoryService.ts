@@ -61,12 +61,21 @@ export class MemoryService {
   /** Creates whatever is missing, and answers with all four. Called when a
    *  project is created and again when one is opened, because a learner who
    *  deletes a memory file should get a fresh one rather than an error. */
-  async ensure(project: { directory: string; name: string; goal: string; language: string }): Promise<MemoryRead[]> {
+  async ensure(
+    project: { directory: string; name: string; goal: string; language: string },
+    foundation?: Foundation,
+    /* What the learner said about themselves on the way into Construct, as
+       lines. Written into this project's `learner.md` as well as being in the
+       agent's prompt, because this file is the one a learner can open, and a
+       file that says "no evidence yet" about someone who filled in an intake is
+       a file that is simply wrong. */
+    intake?: readonly string[],
+  ): Promise<MemoryRead[]> {
     await mkdir(await this.folder(project.directory), { recursive: true });
 
     for (const file of MEMORY_FILES) {
       const target = await this.pathTo(project.directory, file);
-      if (!existsSync(target)) await writeFile(target, starter(project, file), "utf8");
+      if (!existsSync(target)) await writeFile(target, starter(project, file, foundation, intake), "utf8");
     }
 
     return this.read(project.directory);
@@ -151,15 +160,82 @@ function apply(before: string, patch: MemoryPatch): string {
 
   const find = patch.find ?? "";
   if (!find) throw new Error("A replace patch needs the exact text to replace.");
-  const first = before.indexOf(find);
-  if (first < 0) throw new Error(`Construct could not find that text in ${patch.file}.`);
+
+  const span = locate(before, find);
+  if (span === "missing") {
+    /* Says what to do instead. The agent gets this back as a tool result and
+       retries from it, so an error that only reports failure costs a whole
+       round trip to learn nothing. */
+    throw new Error(
+      `Construct could not find that text in ${patch.file}. Fetch the file and copy the lines exactly, or use mode "append" to add to it instead.`,
+    );
+  }
   /* Ambiguity is refused rather than resolved. The model supplies `find`, and
      silently patching the first of several matches is how memory ends up saying
      something nobody wrote. */
-  if (before.indexOf(find, first + find.length) >= 0) {
+  if (span === "ambiguous") {
     throw new Error(`That text appears more than once in ${patch.file}. Use a longer, unique find string.`);
   }
-  return `${before.slice(0, first)}${content}${before.slice(first + find.length)}`;
+  return `${before.slice(0, span.start)}${content}${before.slice(span.end)}`;
+}
+
+/**
+ * Finds `find` in `before`, forgiving the differences that are not differences.
+ *
+ * An exact match is tried first and is what almost always runs. The fallback
+ * exists because the model does not have the file in front of it — it has what a
+ * fetch showed it several steps ago, and it retypes that from memory. Trailing
+ * spaces, a tab against four spaces, and CRLF against LF all break `indexOf`
+ * while meaning nothing, and every one of those failures cost a whole retry
+ * that failed the same way.
+ *
+ * Matching is line-based, so what is forgiven is bounded: whitespace at the ends
+ * of lines and the exact characters used to indent. A line whose words differ
+ * still does not match, which is the point — a fuzzy match that rewrites the
+ * wrong paragraph is worse than no match at all.
+ */
+type Span = { start: number; end: number };
+
+function locate(before: string, find: string): Span | "missing" | "ambiguous" {
+  const exact = before.indexOf(find);
+  if (exact >= 0) {
+    return before.indexOf(find, exact + find.length) >= 0 ? "ambiguous" : { start: exact, end: exact + find.length };
+  }
+
+  const key = (line: string) => line.replace(/\r$/, "").replace(/\s+$/, "").replace(/^\s+/, (run) => " ".repeat(run.length));
+  const lines = before.split("\n");
+  const wanted = find.split("\n").map(key);
+  /* A find string that ends in a newline splits to a trailing empty line, which
+     would only ever match an empty line in the file. */
+  while (wanted.length > 1 && wanted[wanted.length - 1] === "") wanted.pop();
+  if (wanted.length === 0) return "missing";
+
+  /* Offset of the start of each line, so a line range can be turned back into a
+     span of the original text — the replacement has to be spliced into the file
+     as it really is, not into the normalised copy. */
+  const offsets: number[] = [];
+  let at = 0;
+  for (const line of lines) {
+    offsets.push(at);
+    at += line.length + 1;
+  }
+
+  let found: Span | null = null;
+  for (let index = 0; index + wanted.length <= lines.length; index += 1) {
+    let same = true;
+    for (let step = 0; step < wanted.length; step += 1) {
+      if (key(lines[index + step]!) !== wanted[step]) {
+        same = false;
+        break;
+      }
+    }
+    if (!same) continue;
+    if (found) return "ambiguous";
+    const last = index + wanted.length - 1;
+    found = { start: offsets[index]!, end: offsets[last]! + lines[last]!.length };
+  }
+
+  return found ?? "missing";
 }
 
 /**
@@ -205,7 +281,10 @@ function diff(file: string, before: string, after: string): string {
  * v0.7's early builds got six stub sections instead of notes. A starter that
  * states plainly that nothing is known yet is a starter the agent replaces.
  */
-function starter(project: { name: string; goal: string; language: string }, file: MemoryFile): string {
+/** Concepts the learner brought with them, as the dialog collected them. */
+type Foundation = ReadonlyArray<{ title: string; level: number }>;
+
+function starter(project: { name: string; goal: string; language: string }, file: MemoryFile, foundation?: Foundation, intake?: readonly string[]): string {
   switch (file) {
     case "research.md":
       return normalise(`# Research\n\nNo research captured yet.\n\nProject goal: ${project.goal}`);
@@ -248,6 +327,26 @@ function starter(project: { name: string; goal: string; language: string }, file
         [
           "# Learner",
           "",
+          /* The global profile first: it is what is known before this project
+             starts, and the placeholders below are what this project has yet to
+             find out. Kept apart from them under its own heading so the agent
+             never mistakes a stated preference for an inference it made. */
+          ...(intake?.length ? ["## From their intake", "", ...intake, ""] : []),
+          /* Written on the first line because it is the one thing here that is
+             evidence rather than a placeholder: the learner chose these from
+             their own atlas, so the levels are earned rather than guessed. An
+             agent that opens this file and re-teaches them has wasted the
+             session. */
+          ...(foundation?.length
+            ? [
+                "Already holds (chosen by the learner, from other projects):",
+                ...foundation.map((concept) => `- ${concept.title} — level ${concept.level}`),
+                "",
+                "Build on these rather than re-teaching them. Check rather than assume:",
+                "a level is evidence from another project, not a guarantee it transfers here.",
+                "",
+              ]
+            : []),
           "Learner style: not enough evidence yet.",
           "",
           "Preferences and constraints: none recorded yet.",

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MASTERY_RUBRIC } from "@construct/domain";
 import type { AtlasConcept } from "../../../shared/api";
 import { resolveToken } from "@/lib/mastery";
-import { edges, galaxy, hubOf, planets, spokes, type AtlasEdge, type AtlasMode, type AtlasNode, type AtlasSpoke, type AtlasSystem } from "./atlas";
+import { edges, galaxy, hubOf, planets, spokes, systemRadius, type AtlasEdge, type AtlasMode, type AtlasNode, type AtlasSpoke, type AtlasSystem } from "./atlas";
 import { conceptColor } from "./palette";
 import { fit, wrap, LABEL_WIDTH } from "./labels";
 
@@ -24,6 +24,68 @@ const FOCAL = 1.45;
  *  carousel: this is something you read, and text that moves is text you cannot
  *  read. */
 const DRIFT = 0.05;
+
+const TAU = Math.PI * 2;
+
+/**
+ * The ground the galaxy sits on.
+ *
+ * Both of these exist for one reason: without something of a known size in the
+ * world, a zoom is indistinguishable from a resize. The systems all scale
+ * together, so pulling the wheel just made everything bigger and you could not
+ * tell whether you had moved or the galaxy had grown — which is what made the
+ * view feel untethered.
+ *
+ * The motes fix the motion. They are fixed points at fixed sizes scattered
+ * through the volume, so zooming visibly carries you past them and turning gives
+ * parallax against them. The rings fix the extent. There is one per mastery
+ * level, at exactly the distance `systemRadius` puts a system of that level, so
+ * they are not decoration: they are the scale the layout is already using, made
+ * visible. The innermost ring is where fluency sits and the outermost is the
+ * edge of the map.
+ *
+ * Both are drawn as dots rather than as lines, which is the app's own mark at
+ * world scale — and a dotted ring in perspective reads as a ring lying flat far
+ * better than a stroked ellipse does.
+ */
+const RINGS = [5, 4, 3, 2, 1, 0].map(systemRadius);
+/** Points around each ring. Enough to read as continuous at the near edge, few
+ *  enough that six rings cost one path build per frame rather than six hundred. */
+const RING_STEPS = 84;
+/** Dot radii in world units, so perspective sizes them the same way it sizes
+ *  everything else — near motes are bigger, and that is the whole effect. */
+const RING_DOT = 0.0055;
+const DUST_DOT = 0.0042;
+
+/** Scattered once, at module scope: the motes are a fixed feature of the space,
+ *  not of any particular set of concepts, and regenerating them on a re-render
+ *  would make the ground shimmer every time a concept was taught. */
+const DUST = (() => {
+  /* A seeded PRNG rather than Math.random, so the same sky is drawn on every
+     machine and across reloads — the point of the motes is that they are
+     landmarks, and a landmark that moves is not one. */
+  let seed = 0x9e3779b9;
+  const random = () => {
+    seed = Math.imul(seed ^ (seed >>> 15), 2246822507) >>> 0;
+    return seed / 4294967296;
+  };
+  return Array.from({ length: 220 }, () => {
+    /* Out to well past the outermost ring, so there is still something to pass
+       when you push the camera to its limit — and biased outward, because the
+       middle is where the concepts are and the motes must not compete. */
+    const radius = 0.4 + Math.pow(random(), 0.6) * 2.1;
+    const angle = random() * TAU;
+    return {
+      x: Math.cos(angle) * radius,
+      /* A thicker slab than the galaxy's own 0.16, so the sky has depth above
+         and below the disc rather than lying in it. */
+      y: (random() - 0.5) * 0.62,
+      z: Math.sin(angle) * radius,
+      size: 0.55 + random() * 0.95,
+      bucket: Math.floor(random() * 4),
+    };
+  });
+})();
 
 type Props = {
   concepts: AtlasConcept[];
@@ -91,7 +153,12 @@ export function ConceptAtlas({ concepts, selectedId, mode, onSelect }: Props) {
     distance: CAMERA,
     distanceTo: CAMERA,
   });
-  const dragging = useRef<{ x: number; y: number; at: number } | null>(null);
+  /* `x`/`y`/`at` are the last move, which is what the spin velocity is measured
+     from. `travelled` is the whole path length of the gesture, which is what
+     decides whether it was a drag or a click — and it has to be accumulated
+     rather than measured from the origin, because a drag that loops back to
+     where it started is still a drag. */
+  const dragging = useRef<{ x: number; y: number; at: number; travelled: number } | null>(null);
   const projected = useRef<Array<{ node: AtlasNode; x: number; y: number }>>([]);
   const hoveredIndex = useRef<number | null>(null);
   const systemsRef = useRef<AtlasSystem[]>(systems);
@@ -163,13 +230,13 @@ export function ConceptAtlas({ concepts, selectedId, mode, onSelect }: Props) {
        ink are theme tokens, and a canvas that keeps its own copy of them is a
        canvas that stays in light mode after the window goes dark. */
     let ink = resolveToken("--foreground") || "#fff";
-    let brand = resolveToken("--brand") || "#f59e0b";
+    let brand = resolveToken("--brand") || "#111111";
     /* Which way the value channel runs: on a dark ground mastery brightens, on a
        light one it deepens — see `palette.ts`. */
     let dark = document.documentElement.classList.contains("dark");
     const theme = new MutationObserver(() => {
       ink = resolveToken("--foreground") || "#fff";
-      brand = resolveToken("--brand") || "#f59e0b";
+      brand = resolveToken("--brand") || "#111111";
       dark = document.documentElement.classList.contains("dark");
     });
     theme.observe(document.documentElement, { attributeFilter: ["class"] });
@@ -199,7 +266,11 @@ export function ConceptAtlas({ concepts, selectedId, mode, onSelect }: Props) {
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
       const state = camera.current;
-      state.distance = Math.max(NEAREST, Math.min(FURTHEST, state.distance * Math.exp(event.deltaY * 0.0016)));
+      /* The target, not the current distance. The frame loop eases `distance`
+         toward `distanceTo` every tick, so a wheel that moved `distance` alone
+         was undone before the next frame drew — the view sprang straight back to
+         whatever the last focus had set. */
+      state.distanceTo = Math.max(NEAREST, Math.min(FURTHEST, state.distanceTo * Math.exp(event.deltaY * 0.0016)));
     };
     canvas.addEventListener("wheel", onWheel, { passive: false });
 
@@ -261,6 +332,50 @@ export function ConceptAtlas({ concepts, selectedId, mode, onSelect }: Props) {
 
       context.clearRect(0, 0, width, height);
 
+      /* --- the ground ------------------------------------------------------
+         Drawn first and dimmest: this is what everything else is read against,
+         and the moment it competes with a concept it has failed. See RINGS. */
+      const groundLift = dark ? 1 : 1.25;
+
+      if (modeRef.current === "solar") {
+        for (let index = 0; index < RINGS.length; index += 1) {
+          const radius = RINGS[index]!;
+          const ring = new Path2D();
+          for (let step = 0; step < RING_STEPS; step += 1) {
+            const angle = (step / RING_STEPS) * TAU;
+            const point = project(Math.cos(angle) * radius, 0, Math.sin(angle) * radius);
+            const depth = point.depth + state.distance;
+            /* Behind the camera, or so far that the dot is smaller than the
+               antialiasing can show — either way there is nothing to draw. */
+            if (depth <= 0.08) continue;
+            const dot = (RING_DOT * scale) / depth;
+            if (dot < 0.16) continue;
+            ring.moveTo(point.x + dot, point.y);
+            ring.arc(point.x, point.y, dot, 0, TAU);
+          }
+          /* Brightest at the core and fading outward, matching the icon's own
+             ring ramp — and keeping the busiest part of the map the quietest. */
+          context.fillStyle = withAlpha(ink, 0.13 * groundLift * (1 - index * 0.1));
+          context.fill(ring);
+        }
+      }
+
+      const motes = [new Path2D(), new Path2D(), new Path2D(), new Path2D()];
+      for (const mote of DUST) {
+        const point = project(mote.x, mote.y, mote.z);
+        const depth = point.depth + state.distance;
+        if (depth <= 0.08) continue;
+        const dot = (mote.size * DUST_DOT * scale) / depth;
+        if (dot < 0.14) continue;
+        const path = motes[mote.bucket]!;
+        path.moveTo(point.x + dot, point.y);
+        path.arc(point.x, point.y, dot, 0, TAU);
+      }
+      for (let index = 0; index < motes.length; index += 1) {
+        context.fillStyle = withAlpha(ink, 0.085 * groundLift * (0.55 + index * 0.2));
+        context.fill(motes[index]!);
+      }
+
       /* --- the galactic core ----------------------------------------------
          What every system's distance is measured from, drawn as light rather
          than as an object: it is the origin, not a thing in the picture.
@@ -271,9 +386,13 @@ export function ConceptAtlas({ concepts, selectedId, mode, onSelect }: Props) {
          meant to be a clean wired graph rather than a sky. */
       if (modeRef.current === "solar") {
         const core = project(0, 0, 0);
+        /* Lighter in light mode. The brand is achromatic now, so on a pale
+           ground this pool is grey rather than warm — and grey at the strength
+           that reads as light on black reads as a stain on white. */
+        const lift = dark ? 1 : 0.45;
         const halo = context.createRadialGradient(core.x, core.y, 0, core.x, core.y, 80);
-        halo.addColorStop(0, withAlpha(brand, 0.26));
-        halo.addColorStop(0.45, withAlpha(brand, 0.07));
+        halo.addColorStop(0, withAlpha(brand, 0.26 * lift));
+        halo.addColorStop(0.45, withAlpha(brand, 0.07 * lift));
         halo.addColorStop(1, withAlpha(brand, 0));
         context.fillStyle = halo;
         context.beginPath();
@@ -296,8 +415,7 @@ export function ConceptAtlas({ concepts, selectedId, mode, onSelect }: Props) {
       /* --- the systems -----------------------------------------------------
          A star per root concept, and one ring per orbit its planets ride. The
          rings sit in the galaxy's plane, which is what makes a system read as a
-         system: a ring seen edge-on says "this is flat and you are looking along
-         it", and that is the whole reason the layout is a disc. */
+         system: a ring seen edge-on says "this is flat and you are looking along it", and that is the whole reason the layout is a disc. */
       const stars = systemsRef.current
         .map((system) => ({ system, ...project(system.x, system.y, system.z) }))
         .sort((a, b) => b.depth - a.depth);
@@ -413,17 +531,23 @@ export function ConceptAtlas({ concepts, selectedId, mode, onSelect }: Props) {
         const radius = bodySize((0.0075 + level * 0.0019) * (root ? 1.7 : 1), point.depth, scale, state.distance);
 
         /* Bloom in the orbits view, where the nodes are bodies in space and a
-           lit one reads as burning. Not in the web view: a wired graph wants
-           flat, solid marks — glow on every third node turns the wires into a
-           smear of light and the whole thing into a screensaver. There, only
-           the node under the pointer or the one being read gets it. */
-        if (modeRef.current === "solar" ? level >= 3 || selected || isHovered : selected || isHovered) {
-          const glow = context.createRadialGradient(point.x, point.y, 0, point.x, point.y, radius * 5);
-          glow.addColorStop(0, withAlpha(colour, 0.42 * fog));
+           well-held one reads as burning. Not in the web view: a wired graph
+           wants flat, solid marks — glow on every third node turns the wires
+           into a smear of light and the whole thing into a screensaver.
+
+           Ambient only. Selection used to borrow this same effect at five times
+           the node's radius, which on a light ground is a coloured smudge with a
+           dot in the middle of it rather than a thing that looks chosen. It is
+           also weaker in light mode: a saturated haze reads as bloom against
+           black and as a stain against white. */
+        if (modeRef.current === "solar" && level >= 3) {
+          const reach = radius * 3.6;
+          const glow = context.createRadialGradient(point.x, point.y, 0, point.x, point.y, reach);
+          glow.addColorStop(0, withAlpha(colour, 0.3 * fog * (dark ? 1 : 0.5)));
           glow.addColorStop(1, withAlpha(colour, 0));
           context.fillStyle = glow;
           context.beginPath();
-          context.arc(point.x, point.y, radius * 5, 0, Math.PI * 2);
+          context.arc(point.x, point.y, reach, 0, Math.PI * 2);
           context.fill();
         }
 
@@ -432,12 +556,41 @@ export function ConceptAtlas({ concepts, selectedId, mode, onSelect }: Props) {
         context.arc(point.x, point.y, radius, 0, Math.PI * 2);
         context.fill();
 
+        /* Chosen, or under the pointer.
+           
+           Two parts, and neither of them is a haze. First a tight bloom that
+           stops at two and a half radii, so the node itself brightens instead of
+           the region around it. Then a ring of dots — the app's own mark at node
+           scale, which is both quieter and more legible than a stroked circle,
+           and which keeps its weight in either theme because it is drawn in the
+           foreground ink rather than in the concept's colour.
+           
+           The ring's offset scales with the node. A fixed 4.5px sat almost on
+           top of a big planet and floated free of a small one. */
         if (selected || isHovered) {
-          context.strokeStyle = withAlpha(brand, 0.9);
-          context.lineWidth = 1.4;
+          const lit = selected ? 1 : 0.55;
+          const reach = radius * 2.5;
+          const bloom = context.createRadialGradient(point.x, point.y, radius * 0.6, point.x, point.y, reach);
+          bloom.addColorStop(0, withAlpha(colour, 0.55 * lit * (dark ? 1 : 0.62)));
+          bloom.addColorStop(1, withAlpha(colour, 0));
+          context.fillStyle = bloom;
           context.beginPath();
-          context.arc(point.x, point.y, radius + 4.5, 0, Math.PI * 2);
-          context.stroke();
+          context.arc(point.x, point.y, reach, 0, Math.PI * 2);
+          context.fill();
+
+          const orbit = radius + Math.max(4, radius * 0.85);
+          const dots = new Path2D();
+          const count = 18;
+          for (let step = 0; step < count; step += 1) {
+            const angle = (step / count) * TAU;
+            const dot = Math.max(0.75, Math.min(1.7, radius * 0.22));
+            const dx = point.x + Math.cos(angle) * orbit;
+            const dy = point.y + Math.sin(angle) * orbit;
+            dots.moveTo(dx + dot, dy);
+            dots.arc(dx, dy, dot, 0, TAU);
+          }
+          context.fillStyle = withAlpha(ink, 0.85 * lit);
+          context.fill(dots);
         }
       }
 
@@ -584,7 +737,7 @@ export function ConceptAtlas({ concepts, selectedId, mode, onSelect }: Props) {
         className="h-full w-full touch-none select-none"
         onPointerDown={(event) => {
           event.currentTarget.setPointerCapture(event.pointerId);
-          dragging.current = { x: event.clientX, y: event.clientY, at: event.timeStamp };
+          dragging.current = { x: event.clientX, y: event.clientY, at: event.timeStamp, travelled: 0 };
           camera.current.spinYaw = 0;
           camera.current.spinPitch = 0;
         }}
@@ -599,10 +752,12 @@ export function ConceptAtlas({ concepts, selectedId, mode, onSelect }: Props) {
             /* A drag turns the galaxy under the pointer rather than moving a
                camera around it: 0.006 radians per pixel puts a half turn at
                roughly the width of the pane, which is the ratio that makes the
-               thing feel like it has mass. Pitch is clamped short of the poles,
-               where a disc collapses to a line. */
-            const dx = (event.clientX - drag.x) * 0.006;
-            const dy = (event.clientY - drag.y) * 0.005;
+               thing feel like it has mass. Neither angle is bounded — see the
+               camera ref for why the pitch clamp came out. */
+            const movedX = event.clientX - drag.x;
+            const movedY = event.clientY - drag.y;
+            const dx = movedX * 0.006;
+            const dy = movedY * 0.005;
             camera.current.yaw += dx;
             camera.current.pitch += dy;
             /* The velocity to coast on, in radians per second, taken from the
@@ -612,7 +767,12 @@ export function ConceptAtlas({ concepts, selectedId, mode, onSelect }: Props) {
             const elapsed = Math.max(4, event.timeStamp - drag.at);
             camera.current.spinYaw = (dx / elapsed) * 1000;
             camera.current.spinPitch = (dy / elapsed) * 1000;
-            dragging.current = { x: event.clientX, y: event.clientY, at: event.timeStamp };
+            dragging.current = {
+              x: event.clientX,
+              y: event.clientY,
+              at: event.timeStamp,
+              travelled: drag.travelled + Math.hypot(movedX, movedY),
+            };
             return;
           }
           const { x, y, hit } = pick(event);
@@ -625,8 +785,14 @@ export function ConceptAtlas({ concepts, selectedId, mode, onSelect }: Props) {
           dragging.current = null;
           /* A click is a drag that went nowhere. Without the threshold every
              spin of the galaxy would also select whatever was under the finger
-             when it stopped. */
-          if (!drag || Math.hypot(event.clientX - drag.x, event.clientY - drag.y) > 4) return;
+             when it stopped — and selecting re-frames the camera, so the view
+             you had just turned to would snap away the moment you let go.
+             
+             Measured against the gesture's whole travel, not against the last
+             move event. `drag` is rewritten on every move, so comparing with it
+             asked "did the pointer move since the last frame", which is nearly
+             always no — every drag ended in a click. */
+          if (!drag || drag.travelled > 4) return;
           const { hit } = pick(event);
           const node = hit ? projected.current[hit.index]?.node ?? null : null;
           if (node) onSelect(node.concept);

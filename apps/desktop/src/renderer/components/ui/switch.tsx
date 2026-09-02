@@ -23,7 +23,7 @@ function Switch({ className, ...props }: React.ComponentProps<typeof SwitchPrimi
         "peer inline-flex h-[1.35rem] w-[2.3rem] shrink-0 items-center rounded-full border border-transparent p-px outline-none transition-colors duration-200",
         "bg-[var(--color-background-elevated-secondary)] inset-shadow-[0_1px_0_0_color-mix(in_srgb,var(--foreground)_6%,transparent)]",
         "data-[state=checked]:bg-primary data-[state=checked]:inset-shadow-none",
-        "focus-visible:ring-[3px] focus-visible:ring-ring/50",
+        "",
         "disabled:pointer-events-none disabled:opacity-50",
         className,
       )}

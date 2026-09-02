@@ -119,16 +119,28 @@ function SelectItem({
     <SelectPrimitive.Item
       className={cn(
         "relative flex min-h-[1.625rem] w-full cursor-default items-center gap-2 rounded-[var(--radius-item)] py-1 pr-7 pl-2.5 text-content leading-none outline-none transition-colors duration-75 select-none focus:bg-accent focus:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-45 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
+        /* The label's own box, reached from out here. See below for why it
+           cannot be dressed directly. A row is an icon beside a word often
+           enough that the row has to be a line, not a paragraph. */
+        "[&>span[id]]:flex [&>span[id]]:min-w-0 [&>span[id]]:flex-1 [&>span[id]]:items-center [&>span[id]]:gap-2 [&>span[id]]:overflow-hidden [&>span[id]]:whitespace-nowrap",
         className
       )}
       data-slot="select-item"
       {...props}
     >
-      {/* No `asChild` here. Radix clones this node into the trigger to show the
-          current value, and handing it a child of our own to render breaks the
-          item's own selection — clicking a row closed the popup and changed
-          nothing. Style the span Radix renders instead. */}
-      <SelectPrimitive.ItemText className="min-w-0 flex-1 truncate">{children}</SelectPrimitive.ItemText>
+      {/* Bare, and both halves of that are forced. No `asChild`, because Radix
+          clones this node into the trigger to show the current value and handing
+          it a child of our own to render breaks the item's own selection —
+          clicking a row closed the popup and changed nothing. And no `className`
+          either: `ItemText` drops the prop on the floor, so the span it renders
+          is unstyled whatever we pass. It is styled from the item instead, by
+          the `[&>span[id]]` rules above — the id is Radix's own, and the only
+          thing telling this span apart from the hint and the indicator.
+
+          Left unstyled it is an inline span, and preflight makes `svg` a block,
+          so an item with a glyph in it came out two lines high with the label
+          underneath. A flex box is what makes the row a row. */}
+      <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
       {hint && <span className="shrink-0 text-ui text-muted-foreground">{hint}</span>}
       <span className="pointer-events-none absolute right-2 flex size-3.5 items-center justify-center opacity-70">
         <SelectPrimitive.ItemIndicator>

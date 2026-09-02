@@ -1,5 +1,9 @@
-import { ChevronLeft, PanelLeftOpen } from "lucide-react";
+import { ChevronLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { NavButtons } from "./NavButtons";
+import { ExpandSidebar } from "./ExpandSidebar";
+import { NAV_BUTTONS_WIDTH, SidebarReveal } from "./SidebarReveal";
+import { SIDEBAR_SLIDE_CSS } from "./sidebarMotion";
 
 /** Inset macOS toolbar: one title-bar row tall, hairline base, draggable but for the controls. */
 export function Toolbar({
@@ -7,6 +11,7 @@ export function Toolbar({
   subtitle,
   onBack,
   onExpandSidebar,
+  nav,
   actions,
   className,
 }: {
@@ -15,6 +20,9 @@ export function Toolbar({
   onBack?(): void;
   /** Present only while the sidebar is hidden, so the traffic lights get their inset. */
   onExpandSidebar?: (() => void) | undefined;
+  /** Supplied only while the sidebar is hidden — it carries this pair the rest
+   *  of the time, and two of them on screen would be one too many. */
+  nav?: { canBack: boolean; canForward: boolean; onBack(): void; onForward(): void } | undefined;
   actions?: React.ReactNode;
   className?: string;
 }) {
@@ -26,23 +34,25 @@ export function Toolbar({
         // always on the trailing edge, and on macOS they land here only once the
         // sidebar (which normally hosts them) is hidden.
         "pr-[max(0.625rem,var(--window-controls-trailing))]",
+        /* Eased rather than switched, on the sidebar's own curve: the inset
+           appears as the column vacates the space it needs. */
+        "transition-[padding-left]",
+        SIDEBAR_SLIDE_CSS,
         onExpandSidebar && "pl-[max(0.625rem,var(--window-controls-leading))]",
         className,
       )}
     >
-      {onExpandSidebar && (
-        <button
-          className="app-no-drag grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          onClick={onExpandSidebar}
-          title="Show sidebar  ⌘B"
-          type="button"
-        >
-          <PanelLeftOpen className="size-3.5" />
-        </button>
-      )}
+      <ExpandSidebar gap={8} onExpand={onExpandSidebar} />
+      {/* Revealed, not mounted. The history pair lives in the sidebar while there
+          is one, so it arrives in this row at the moment the column leaves — and
+          arriving at full width in one frame is what used to shove the title
+          sideways before the sidebar had moved at all. */}
+      <SidebarReveal gap={8} show={nav !== undefined} width={NAV_BUTTONS_WIDTH}>
+        {nav && <NavButtons canBack={nav.canBack} canForward={nav.canForward} onBack={nav.onBack} onForward={nav.onForward} />}
+      </SidebarReveal>
       {onBack && (
         <button
-          className="app-no-drag grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          className="app-no-drag grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           onClick={onBack}
           title="Back"
           type="button"

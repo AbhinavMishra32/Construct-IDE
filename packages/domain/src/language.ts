@@ -2,11 +2,13 @@ import { z } from "zod";
 
 /**
  * The languages Construct can name in the interface — a file glyph, a code
- * fence, an editor mode. This is deliberately wider than the set Construct has
- * language-server support for: the IDE opens files in languages it cannot yet
- * analyse, and refusing to label them would make the file tree read as broken.
+ * fence, the label on a project.
  *
- * See `LSP_LANGUAGES` for the narrower set that gets real intelligence.
+ * Nothing to do with language servers. This list used to be paired with a
+ * narrower one saying which of them got real intelligence; which languages
+ * Construct can analyse is the catalog's business now, it is keyed on file
+ * extensions rather than on this enum, and it is far longer than this list
+ * — see `shared/languageServers.ts` in the desktop app.
  */
 export const LANGUAGES = [
   "javascript",
@@ -23,15 +25,6 @@ export const LANGUAGES = [
 
 export const languageSchema = z.enum(LANGUAGES);
 export type Language = z.infer<typeof languageSchema>;
-
-/** The languages a language server is shipped for. Everything else falls back
- *  to syntax highlighting alone. */
-export const LSP_LANGUAGES = ["typescript", "javascript", "python"] as const satisfies readonly Language[];
-export type LspLanguage = (typeof LSP_LANGUAGES)[number];
-
-export function isLspLanguage(value: Language): value is LspLanguage {
-  return (LSP_LANGUAGES as readonly Language[]).includes(value);
-}
 
 const EXTENSION_LANGUAGE: Record<string, Language> = {
   js: "javascript",

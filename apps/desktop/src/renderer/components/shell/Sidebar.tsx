@@ -1,13 +1,17 @@
 import { Fragment, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
-import { Archive, ArchiveRestore, Check, ChevronRight, EllipsisVertical, FolderOpen, Orbit, PanelLeftClose, Pencil, Pin, PinOff, Plus, Settings, Trash2, TriangleAlert } from "lucide-react";
+import { Archive, ArchiveRestore, Check, ChevronDown, ChevronRight, EllipsisVertical, FolderOpen, Orbit, Pencil, Pin, PinOff, Plus, Settings, Trash2, TriangleAlert } from "lucide-react";
 import type { ProjectSummary } from "../../../shared/api";
+import type { ConstructApi } from "../../../shared/api";
 import { cn } from "@/lib/utils";
+import { Segmented } from "@/components/ui/segmented";
+import { NavButtons } from "./NavButtons";
+import { SyncBadge } from "./SyncBadge";
+import { HomeGlyph, SidebarGlyph } from "./NavIcons";
 import { initials, relativeTime } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
-import { ConstructWordmark } from "../common/ConstructWordmark";
 
 /** "workspace" is one open project. Like a document window it draws its own
  *  toolbar and is not a destination in the nav — the sidebar becomes its file
@@ -56,7 +60,7 @@ const NAV: Array<{ id: Page; label: string; icon: React.ComponentType<{ classNam
    fixed rows outrank the project titles — and a sidebar of semibold rows is the
    thing that makes an app look like it is shouting its own navigation at you. */
 const ROW =
-  "flex h-[1.875rem] w-full items-center gap-2 rounded-lg px-2.5 text-source font-normal text-foreground outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring";
+  "flex h-[1.875rem] w-full items-center gap-2 rounded-lg px-2.5 text-source font-normal text-foreground outline-none";
 
 /** Nav and row glyphs. Set against the label rather than chosen for its own sake:
  *  a source list wants the icon a little larger than the cap height it sits
@@ -82,14 +86,19 @@ function SectionLabel({ children, action }: { children: React.ReactNode; action?
   );
 }
 
+type ProjectLens = "path" | "concepts";
+
 export function Sidebar({
   page,
   email,
+  api,
   projects,
   activeProjectId,
   projectActions,
   projectView,
+  atlasView,
   onGoHome,
+  nav,
   onPage,
   onOpenProject,
   onNewProject,
@@ -97,12 +106,22 @@ export function Sidebar({
 }: {
   page: Page;
   email: string;
+  /** Only for the sync badge, which reads its own status. */
+  api: ConstructApi | undefined;
   projects: ProjectSummary[];
   activeProjectId?: string | undefined;
   projectActions: ProjectActions;
   /** Rendered in place of the project list while a project is open. */
-  projectView?: { name: string; tree: React.ReactNode; concepts: React.ReactNode } | undefined;
+  projectView?: { name: string; tree: React.ReactNode; path: React.ReactNode; concepts: React.ReactNode } | undefined;
+  /** Rendered in place of the project list on the Atlas. Two indexes side by
+   *  side — the projects you are not looking at, and the concepts you are — is
+   *  one too many for a column this narrow. */
+  atlasView?: React.ReactNode | undefined;
   onGoHome?: (() => void) | undefined;
+  /** Back and forward. Rendered here — beside the traffic lights — whenever the
+   *  sidebar is showing; the page bars carry the same pair when it is not, so
+   *  the control exists exactly once. */
+  nav: { canBack: boolean; canForward: boolean; onBack(): void; onForward(): void };
   onPage(page: Page): void;
   onOpenProject(project: ProjectSummary): void;
   onNewProject(): void;
@@ -111,6 +130,14 @@ export function Sidebar({
   const [renaming, setRenaming] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<ProjectSummary | null>(null);
   const [showArchived, setShowArchived] = useState(false);
+  /* Which of the project's two indexes the lower half is showing. Kept here
+     rather than in the workspace's per-project memory: it is a way of looking,
+     not a property of the project, and carrying it between projects is what a
+     view switch should do. */
+  const [lens, setLens] = useState<ProjectLens>("path");
+  /* Whether the lower half is showing at all. Collapsing it is how you give the
+     file tree the whole column on a project deep enough to need it. */
+  const [lensOpen, setLensOpen] = useState(true);
 
   // The store already sorts pinned first, then by last touched; the sidebar only
   // has to say where one group stops and the next starts.
@@ -145,22 +172,40 @@ export function Sidebar({
           inset is the shared chrome token rather than a hand-measured margin, so the
           wordmark keeps its clearance if the button metrics ever move. */}
       <div className="flex h-[var(--titlebar-height)] shrink-0 items-center pl-[max(0.625rem,var(--window-controls-leading))] pr-2">
-        {/* The wordmark is the way home once a project is open — the gesture
-            every application gives its own logo, so it needs no label. */}
-        {onGoHome ? (
-          <button className="app-no-drag rounded-md outline-none focus-visible:ring-1 focus-visible:ring-ring" onClick={onGoHome} title="All projects" type="button">
-            <ConstructWordmark className="text-[1.1rem] text-foreground" />
-          </button>
-        ) : (
-          <ConstructWordmark className="text-[1.1rem] text-foreground" />
-        )}
+        {/* Home, back, forward — one group of three, in the order they are
+            reached for. The wordmark stood here and doubled as the way home,
+            which is the convention on a web page and not in an application
+            window: it named the app to someone already looking at it, and hid
+            a navigation control inside a logo. A labelled button says what it
+            does, and gives the arrows beside it something to belong to. */}
         <button
-          className="app-no-drag ml-auto grid size-7 place-items-center rounded-lg text-muted-foreground hover:bg-[var(--sidebar-accent)] hover:text-foreground"
-          onClick={onCollapse}
-          title="Hide sidebar  ⌘B"
+          aria-label="All projects"
+          className={cn(
+            "app-no-drag grid size-7 shrink-0 place-items-center rounded-md transition-colors",
+            onGoHome
+              ? "text-muted-foreground hover:bg-[var(--sidebar-accent)] hover:text-foreground"
+              : /* Already home: kept in place, so the arrows never shift under
+                   the cursor as you move between pages. */
+                "cursor-default text-muted-foreground/30",
+          )}
+          disabled={!onGoHome}
+          onClick={onGoHome}
+          title="All projects"
           type="button"
         >
-          <PanelLeftClose className={ROW_ICON} />
+          <HomeGlyph />
+        </button>
+        <NavButtons canBack={nav.canBack} canForward={nav.canForward} onBack={nav.onBack} onForward={nav.onForward} />
+        <button
+          /* The same box as home and the arrows. It carried a `rounded-lg`
+             where they are `rounded-md`, so the one control on the trailing edge
+             of the row was shaped unlike everything on the leading edge. */
+          className="app-no-drag ml-auto grid size-7 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-[var(--sidebar-accent)] hover:text-foreground"
+          onClick={onCollapse}
+          title="Hide sidebar ⌘B"
+          type="button"
+        >
+          <SidebarGlyph />
         </button>
       </div>
 
@@ -207,22 +252,88 @@ export function Sidebar({
       </>
       )}
 
-      {projectView ? (
+      {atlasView ? (
+        <div className="app-no-drag mt-3 flex min-h-0 flex-1 flex-col">
+          <SectionLabel>Concepts</SectionLabel>
+          {atlasView}
+        </div>
+      ) : projectView ? (
         /* Inside a project the sidebar is the file tree. The project's name
            takes the place of the section label, so the column still says what
            it is a list of. */
-        /* Files above, concepts below, both scrolling in one column. The two
-           are the project's two indexes — what it is made of, and what it has
-           taught — and they belong in the same place for the same reason a book
+        /* Files above, the path below, both scrolling in one column. The two
+           are the project's two indexes — what it is made of, and where the
+           teaching is going — and they belong in the same place for the reason a book
            puts its contents and its index at either end rather than in separate
            volumes. */
-        <div className="app-no-drag app-scroll mt-3 flex min-h-0 flex-1 flex-col overflow-y-auto">
+        /* Two sections, one scrolls.
+           
+           They used to share a single scroller, so a long path pushed the file
+           tree up out of sight and a deep tree pushed the path off the bottom —
+           whichever you wanted, the other was in the way. The tree takes the
+           flexible space and scrolls inside it; the path sits on the floor of
+           the column at its natural height, where it is always visible and never
+           moves. */
+        <div className="app-no-drag mt-3 flex min-h-0 flex-1 flex-col">
           <SectionLabel>Files</SectionLabel>
-          <div className="shrink-0">{projectView.tree}</div>
+          <div className="app-scroll min-h-0 flex-1 overflow-y-auto">{projectView.tree}</div>
 
-          <div className="mt-4 shrink-0">
-            <SectionLabel>Concepts</SectionLabel>
-            {projectView.concepts}
+          {/* The cap lives on the flex item, not on the scroller inside it.
+              A percentage max-height only resolves against a parent with a
+              definite height, and the wrapper's height was content-derived — so
+              the path scrolled inside a cramped box with free space under it.
+              As a flex child of a column that does have a height, 45% means 45%,
+              and below that the section is simply as tall as its steps. */}
+          <div
+            className={cn(
+              /* No rule above it. The segmented control is already a hard
+                 shape sitting in open space, so a line over it made two
+                 horizontal edges within a few pixels of each other and read as
+                 a seam rather than a division. The gap does the separating. */
+              "mt-2 flex min-h-0 shrink-0 flex-col pt-2",
+              /* Collapsed, the section is its own switch and nothing else, and
+                 the tree above takes back every pixel it was holding. */
+              lensOpen && "max-h-[45%]",
+            )}
+          >
+            {/* Two readings of the same project, in one slot rather than two
+                sections stacked. They answer neighbouring questions — where the
+                teaching is going, and what it has already left behind — and
+                showing both at once would halve each of them in a column that is
+                already the narrowest thing on screen. */}
+            <div className="mx-2 mb-1.5 flex items-center gap-0.5">
+              <Segmented<ProjectLens>
+                ariaLabel="What to show about this project"
+                className="min-w-0 flex-1"
+                size="sm"
+                onChange={(value) => {
+                  setLens(value);
+                  /* Picking a lens is asking to see it. Switching tabs while
+                     collapsed and having nothing happen would read as broken. */
+                  setLensOpen(true);
+                }}
+                options={[
+                  { value: "path", label: "Path" },
+                  { value: "concepts", label: "Concepts" },
+                ]}
+                value={lens}
+              />
+              <button
+                aria-expanded={lensOpen}
+                aria-label={lensOpen ? "Hide this section" : "Show this section"}
+                className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-[var(--sidebar-accent)] hover:text-foreground"
+                onClick={() => setLensOpen((open) => !open)}
+                title={lensOpen ? "Hide this section" : "Show this section"}
+                type="button"
+              >
+                <ChevronDown className={cn("size-3.5 transition-transform duration-200", !lensOpen && "rotate-180")} />
+              </button>
+            </div>
+            {lensOpen && (
+              <div className="app-scroll min-h-0 overflow-y-auto">
+                {lens === "path" ? projectView.path : projectView.concepts}
+              </div>
+            )}
           </div>
         </div>
       ) : (
@@ -271,7 +382,7 @@ export function Sidebar({
           Taller than the rows above it, because the avatar is: this is the one
           place in the list where the leading glyph is a face rather than a line
           drawing, and it takes the room a face needs to read as one. */}
-      <div className="app-no-drag border-t border-[var(--sidebar-border)] p-2">
+      <div className="app-no-drag flex items-center gap-1 border-t border-[var(--sidebar-border)] p-2">
         {/* The avatar is 4px wider than a nav glyph, so the gap gives back the 4px:
             it starts on the icons' left edge and the name still lands on the one
             text column the whole list reads down. */}
@@ -287,6 +398,9 @@ export function Sidebar({
           <span className="min-w-0 flex-1 truncate text-left">{email}</span>
           <Settings className={cn(ROW_ICON, ROW_ICON_TONE)} />
         </button>
+        {/* Beside the account, because that is what it is about. Renders
+            nothing at all when there is nothing to say. */}
+        <SyncBadge api={api} />
       </div>
 
       <DeleteProjectDialog
@@ -303,7 +417,7 @@ export function Sidebar({
 
 /** The control cluster's buttons, in the order they sit in the row. */
 const ICON_BUTTON =
-  "grid size-6 shrink-0 place-items-center rounded-md text-foreground/70 hover:bg-[var(--sidebar-accent-active)] hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none";
+  "grid size-7 shrink-0 place-items-center rounded-md text-foreground/70 hover:bg-[var(--sidebar-accent-active)] hover:text-foreground";
 
 /**
  * One project in the list, with everything you can do to it behind ⋮ or a

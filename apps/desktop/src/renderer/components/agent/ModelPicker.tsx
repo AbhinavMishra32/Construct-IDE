@@ -19,8 +19,12 @@ import { ProviderGlyph } from "../common/ProviderGlyph";
 
 type Provider = ProviderInventory["providers"][number];
 
+/* "Default" rather than "Off": sending no directive leaves a reasoning model
+   reasoning, and the old label said otherwise. `minimal` is the floor the
+   provider actually offers. */
 const REASONING_EFFORTS: Array<{ id: ReasoningEffort; label: string }> = [
-  { id: "off", label: "Off" },
+  { id: "off", label: "Default" },
+  { id: "minimal", label: "Minimal" },
   { id: "low", label: "Low" },
   { id: "medium", label: "Medium" },
   { id: "high", label: "High" },
