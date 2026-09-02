@@ -12,7 +12,8 @@ function enclosingAtRules(index: number): string[] {
   while (i < index) {
     const at = /^@([a-zA-Z-]+)[^;{}]*\{/.exec(css.slice(i, index));
     if (at) {
-      stack.push(at[1]);
+      /* Always matched, but the group is optional to the type system. */
+      stack.push(at[1] ?? "at-rule");
       i += at[0].length;
       continue;
     }
