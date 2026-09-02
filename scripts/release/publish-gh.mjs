@@ -7,7 +7,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", ".
 const packageJson = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
 const tag = process.env.TAG?.trim() || `v${packageJson.version}`;
 const version = tag.replace(/^v/, "");
-const releaseDir = path.resolve(root, process.env.RELEASE_ARTIFACT_DIR || path.join("app", "release", version));
+const releaseDir = path.resolve(root, process.env.RELEASE_ARTIFACT_DIR || path.join("apps", "desktop", "dist-release"));
 const taggedNotesFile = path.join(root, "docs", "releases", `${version}.md`);
 // A public tag may use a shorter marketing label (for example, 0.7-alpha)
 // while manifests retain the canonical SemVer version (0.7.0-alpha).
@@ -66,11 +66,13 @@ function walk(dir) {
 
 function isReleaseArtifact(file) {
   const base = path.basename(file);
-  if (base.endsWith(".blockmap")) return false;
+  // latest*.yml is the update feed electron-updater polls, and a .blockmap is
+  // what makes the next update a delta rather than a second full download.
+  // Neither is named after the product, and both are release assets.
+  if (/^latest(-mac|-linux)?\.yml$/.test(base)) return true;
   if (base.startsWith("builder-")) return false;
-  // Tauri uses target-specific separators: Linux RPMs use `Construct-`,
-  // while DMG, MSI, NSIS, DEB, and AppImage artifacts use `_` or `.`.
   if (!/^Construct(?:[-_.]|$)/.test(base)) return false;
+  if (base.endsWith(".blockmap")) return true;
   const allowed = [
     ".dmg",
     ".zip",

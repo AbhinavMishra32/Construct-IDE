@@ -10,12 +10,19 @@ coverage
 *.log
 *.tsbuildinfo
 .pnpm-store
-app/release
-app/.electron-builder
-app/build/icons/.tmp
+out
+apps/desktop/release
+apps/desktop/dist-release
+apps/desktop/.electron-builder
+apps/desktop/build/icons/.tmp
 .construct
 **/.construct
 .vercel
 **/.vercel
 .DS_Store
 **/.DS_Store
+
+# Local scratch, never part of a build
+_preview.html
+_preview.tsx
+.claude/skills/

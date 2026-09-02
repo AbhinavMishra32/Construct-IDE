@@ -1,0 +1,272 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { WorkspaceService } from "../projects/workspaceService.js";
+import { MemoryService } from "../memory/memoryService.js";
+import { executeAgentTool, type AgentToolContext } from "./agentTools.js";
+
+let root: string;
+let outside: string;
+let context: AgentToolContext;
+let asked: Array<{ question: string }>;
+let recorded: Array<{ conceptId: string; masteryLevel: number; docs: Array<{ title: string; url: string }> }>;
+let planned: Array<{ reason: string; nodes: Array<{ id: string }> }>;
+let searched: string[];
+
+beforeEach(() => {
+  const base = mkdtempSync(path.join(tmpdir(), "construct-agent-"));
+  root = path.join(base, "project");
+  outside = path.join(base, "secrets");
+  mkdirSync(root);
+  mkdirSync(outside);
+  writeFileSync(path.join(outside, "keys.txt"), "do not read me");
+  asked = [];
+  recorded = [];
+  planned = [];
+  searched = [];
+  const workspace = new WorkspaceService();
+  const memory = new MemoryService(workspace);
+  context = {
+    projectDirectory: root,
+    workspace,
+    readMemory: (files) => memory.read(root, files),
+    patchMemory: (patches) => memory.patch(root, patches),
+    planPath: async (input) => {
+      planned.push({ reason: input.reason, nodes: input.nodes.map((node) => ({ id: node.id })) });
+      return { reason: input.reason, currentNodeId: input.nodes[0]?.id ?? null, nodes: [] };
+    },
+    webSearch: async (query) => {
+      searched.push(query);
+      return { configured: true, results: [] };
+    },
+    webFetch: async () => ({ configured: false, note: "No key." }),
+    recordConcept: (record) => void recorded.push(record),
+    saveTask: vi.fn(),
+    judgeTask: vi.fn(),
+    askLearner: vi.fn(async (request) => {
+      asked.push({ question: request.question });
+      return "the learner's answer";
+    }),
+  };
+});
+
+afterEach(() => {
+  rmSync(path.dirname(root), { recursive: true, force: true });
+});
+
+describe("filesystem tools", () => {
+  it("reads and writes inside the project", async () => {
+    await executeAgentTool("write-file", { path: "notes.md", content: "hello" }, context);
+    expect(await executeAgentTool("read-file", { path: "notes.md" }, context)).toBe("hello");
+  });
+
+  it("lists the project root when no directory is given", async () => {
+    await executeAgentTool("write-file", { path: "a.py", content: "" }, context);
+    const entries = (await executeAgentTool("list-files", {}, context)) as Array<{ name: string }>;
+    expect(entries.map((entry) => entry.name)).toContain("a.py");
+  });
+
+  /* The agent is bound by the same containment as the renderer. This is the
+     assertion that matters most in this file: a model that can be talked into
+     asking for ../../ must not get it. */
+  it.each(["../secrets/keys.txt", "/etc/passwd", "nested/../../secrets/keys.txt"])("refuses to read %s", async (candidate) => {
+    await expect(executeAgentTool("read-file", { path: candidate }, context)).rejects.toThrow();
+  });
+
+  it("refuses to write outside the project", async () => {
+    await expect(executeAgentTool("write-file", { path: "../secrets/planted.txt", content: "x" }, context)).rejects.toThrow();
+  });
+});
+
+describe("running commands", () => {
+  it("returns output from a command that succeeds", async () => {
+    const result = (await executeAgentTool("run-terminal-command", { command: "echo construct" }, context)) as { exitCode: number; output: string };
+    expect(result.exitCode).toBe(0);
+    expect(result.output).toContain("construct");
+  });
+
+  it("runs inside the project directory", async () => {
+    const result = (await executeAgentTool("run-terminal-command", { command: "pwd" }, context)) as { output: string };
+    /* realpath, because macOS reaches temporary directories through /tmp, which
+       is a symlink to /private/tmp. */
+    expect(result.output).toContain(path.basename(root));
+  });
+
+  /* A failed command is a result, not an exception. The agent asked what
+     happens when this runs, and the output explaining the failure is precisely
+     what it needs to teach from. */
+  it("reports a non-zero exit as a result rather than throwing", async () => {
+    const result = (await executeAgentTool("run-terminal-command", { command: "exit 3" }, context)) as { exitCode: number };
+    expect(result.exitCode).toBe(3);
+  });
+
+  it("keeps stderr, which is where a failing command explains itself", async () => {
+    const result = (await executeAgentTool("run-terminal-command", { command: "echo boom >&2; exit 1" }, context)) as { output: string };
+    expect(result.output).toContain("boom");
+  });
+
+  it("truncates output rather than spending the whole context on one result", async () => {
+    const result = (await executeAgentTool("run-terminal-command", { command: "printf 'x%.0s' $(seq 1 50000)" }, context)) as { output: string };
+    expect(result.output.length).toBeLessThan(21_000);
+    expect(result.output).toContain("truncated");
+  });
+
+  it("refuses an empty command instead of running a shell that does nothing", async () => {
+    await expect(executeAgentTool("run-terminal-command", { command: "   " }, context)).rejects.toThrow(/No command given/);
+  });
+});
+
+describe("recording a concept", () => {
+  it("passes the reading through", async () => {
+    await executeAgentTool(
+      "record-concept",
+      { conceptId: "rasterisation", title: "Rasterisation", masteryLevel: 3, confidence: "practicing" },
+      context,
+    );
+
+    expect(recorded).toEqual([expect.objectContaining({ conceptId: "rasterisation", masteryLevel: 3 })]);
+  });
+
+  /* A model that answers 7 has still told us the learner is fluent. Refusing
+     the call would throw that reading away, so it is clamped. */
+  it.each([
+    [7, 5],
+    [-2, 0],
+    [3.6, 4],
+  ])("clamps a level of %s to %s rather than refusing it", async (given, expected) => {
+    await executeAgentTool("record-concept", { conceptId: "c", title: "C", masteryLevel: given, confidence: "x" }, context);
+    expect(recorded.at(-1)?.masteryLevel).toBe(expected);
+  });
+
+  it("treats a non-numeric level as knowing nothing, never as knowing everything", async () => {
+    await executeAgentTool("record-concept", { conceptId: "c", title: "C", masteryLevel: "lots", confidence: "x" }, context);
+    expect(recorded.at(-1)?.masteryLevel).toBe(0);
+  });
+});
+
+describe("concept references", () => {
+  /* The note renders its references as real links, so a file: or javascript:
+     URL arriving from a model must never become one. */
+  it("keeps only http and https references", async () => {
+    await executeAgentTool(
+      "record-concept",
+      {
+        conceptId: "c",
+        title: "C",
+        masteryLevel: 1,
+        confidence: "x",
+        docs: [
+          { title: "Good", url: "https://example.com/a" },
+          { title: "Also good", url: "http://example.com/b" },
+          { title: "Local file", url: "file:///etc/passwd" },
+          { title: "Script", url: "javascript:alert(1)" },
+        ],
+      },
+      context,
+    );
+
+    expect(recorded.at(-1)?.docs.map((doc) => doc.url)).toEqual(["https://example.com/a", "http://example.com/b"]);
+  });
+
+  it("falls back to the url as the title when none is given", async () => {
+    await executeAgentTool(
+      "record-concept",
+      { conceptId: "c", title: "C", masteryLevel: 1, confidence: "x", docs: [{ url: "https://example.com/x" }] },
+      context,
+    );
+    expect(recorded.at(-1)?.docs[0]).toEqual({ title: "https://example.com/x", url: "https://example.com/x" });
+  });
+});
+
+describe("asking the learner", () => {
+  it("puts the question through and returns the answer", async () => {
+    const answer = await executeAgentTool("ask_user_question", { question: "What does this loop do?" }, context);
+
+    expect(asked).toEqual([{ question: "What does this loop do?" }]);
+    expect(answer).toBe("the learner's answer");
+  });
+});
+
+describe("unknown tools", () => {
+  it("names the tool it does not have rather than failing vaguely", async () => {
+    await expect(executeAgentTool("delete-everything", {}, context)).rejects.toThrow(/Unknown tool: delete-everything/);
+  });
+});
+
+describe("memory tools", () => {
+  it("fetches the files it was asked for", async () => {
+    const result = (await executeAgentTool("flow-memory-fetch", { purpose: "check the goal", files: ["project.md"] }, context)) as Array<{
+      file: string;
+    }>;
+    expect(result.map((entry) => entry.file)).toEqual(["project.md"]);
+  });
+
+  it("falls back to all four rather than fetching nothing", async () => {
+    /* The prompt asks for a purpose and named files; a turn that forgets should
+       still get its memory rather than an empty array it will read as "no
+       memory exists". */
+    const result = (await executeAgentTool("flow-memory-fetch", { purpose: "everything" }, context)) as Array<{ file: string }>;
+    expect(result).toHaveLength(4);
+  });
+
+  it("refuses a memory file that is not one of the four", async () => {
+    await expect(
+      executeAgentTool("flow-memory-patch", { patches: [{ file: "../../etc/passwd", mode: "append", content: "x", reason: "y" }] }, context),
+    ).rejects.toThrow(/no memory file/);
+  });
+
+  it("refuses an unknown patch mode rather than guessing at one", async () => {
+    await expect(
+      executeAgentTool("flow-memory-patch", { patches: [{ file: "learner.md", mode: "overwrite", content: "x", reason: "y" }] }, context),
+    ).rejects.toThrow(/Unknown memory patch mode/);
+  });
+
+  it("patches and reports the diff", async () => {
+    const result = (await executeAgentTool(
+      "flow-memory-patch",
+      { patches: [{ file: "learner.md", mode: "append", content: "Prefers worked examples.", reason: "evidence" }] },
+      context,
+    )) as Array<{ diff: string }>;
+    expect(result[0]!.diff).toContain("+Prefers worked examples.");
+  });
+
+  it("refuses a patch call with nothing in it", async () => {
+    await expect(executeAgentTool("flow-memory-patch", { patches: [] }, context)).rejects.toThrow(/No memory patches/);
+  });
+});
+
+describe("the path tool", () => {
+  it("passes the steps through in order", async () => {
+    await executeAgentTool(
+      "plan-learning-path",
+      {
+        reason: "First plan",
+        nodes: [
+          { id: "basics", title: "Basics", summary: "Learn the shape of the problem" },
+          { id: "build", title: "Build", summary: "Write the first version" },
+        ],
+      },
+      context,
+    );
+    expect(planned[0]).toEqual({ reason: "First plan", nodes: [{ id: "basics" }, { id: "build" }] });
+  });
+
+  it("refuses an empty path", async () => {
+    await expect(executeAgentTool("plan-learning-path", { reason: "x", nodes: [] }, context)).rejects.toThrow(/at least one step/);
+  });
+});
+
+describe("web tools", () => {
+  it("passes the query through", async () => {
+    await executeAgentTool("web-search", { query: "how rasterisation works", limit: 3 }, context);
+    expect(searched).toEqual(["how rasterisation works"]);
+  });
+
+  it("reports an unconfigured key as an answer rather than throwing", async () => {
+    /* A thrown error would end the turn; the agent has other ways to make
+       progress and should hear "no key" as a result. */
+    const result = (await executeAgentTool("web-fetch", { urls: ["https://example.com"] }, context)) as { configured: boolean };
+    expect(result.configured).toBe(false);
+  });
+});

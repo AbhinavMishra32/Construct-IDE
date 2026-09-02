@@ -1,0 +1,151 @@
+/* The editor's context menu, wherever it is drawn.
+ *
+ * The right-click menu is dressed to match the window for the same reason the
+ * hover in `theme.css` is: it is VSCode's widget, in VSCode's proportions, and
+ * next to the app's own menus it reads as borrowed. Everything here is surface
+ * — fill, rim, shadow, radius, type, spacing. Nothing changes what the menu
+ * does, what is in it, or when it opens.
+ *
+ * It is a separate file from the rest of the app's CSS because it has to be
+ * loaded twice, into two places a menu can be drawn. The editor renders a
+ * context view into a shadow root when it can, and a shadow root is exactly the
+ * thing a document stylesheet cannot reach — so `shadowStyles.ts` adopts this
+ * sheet into that root, which is the only way in short of forking the editor.
+ * But "when it can" is a condition the context view service re-decides on every
+ * open, and when it decides otherwise the menu is drawn in the page like
+ * anything else — so `theme.css` imports this file as well. The two placements
+ * are exclusive; the second copy only ever styles the menu the first cannot
+ * see.
+ *
+ * What does cross the boundary is custom properties: they inherit through it
+ * like any other inherited value, so every token below resolves against the
+ * window's palette and follows it into dark mode without being told.
+ *
+ * Plain CSS, deliberately. It is handed to `CSSStyleSheet.replaceSync` as text,
+ * so nothing here can be a Tailwind utility or an `@apply` — there is no build
+ * step between this file and the browser.
+ *
+ * Every rule is anchored on `.context-view.monaco-menu-container`, which is two
+ * classes VSCode's own selectors do not carry. That is what wins the specificity
+ * contest against declarations it writes `!important` itself. A submenu is not
+ * a context view — it is a `.monaco-submenu` built inside its parent's row — so
+ * it joins the anchor through `:is()`, which takes the specificity of its
+ * strongest branch and so costs the weaker one nothing. */
+
+/* The surface. Outline, radius, fill and shadow are all inline styles written
+   from theme colours, which is why each of them has to be taken back. */
+:is(.context-view.monaco-menu-container, .monaco-submenu) > .monaco-scrollable-element {
+  outline: none !important;
+  border-radius: var(--radius-menu) !important;
+  corner-shape: round;
+  background: color-mix(in oklab, var(--popover) var(--glass-fill-solid), transparent) !important;
+  box-shadow:
+    inset 0 0 0 1px var(--glass-rim),
+    inset 0 1px 0 0 var(--glass-sheen),
+    0 0 0 0.5px var(--glass-hairline),
+    var(--app-shadow-menu) !important;
+  color: var(--popover-foreground) !important;
+}
+
+/* The blur is on the container rather than on the surface it belongs to, and
+   that is not a preference.
+   
+   A submenu is `position: fixed`, and VSCode appends it *inside* the parent
+   menu — which is a scroll box, so `overflow: hidden`. Fixed positioning is
+   what lets it escape that clip and open beside the menu instead of being cut
+   to its width. `backdrop-filter` makes an element the containing block for
+   fixed descendants, so putting it on the scroll box took the escape away and
+   Peek opened into nothing. Here the containing block is the context view
+   instead, which is above the scroll box and clips nothing, and the submenu
+   escapes as it always did. The blur covers the same pixels either way: the
+   container wraps the surface exactly. */
+:is(.context-view.monaco-menu-container, .monaco-submenu) {
+  border-radius: var(--radius-menu);
+  corner-shape: round;
+  backdrop-filter: blur(8px) saturate(120%);
+  -webkit-backdrop-filter: blur(8px) saturate(120%);
+}
+
+:is(.context-view.monaco-menu-container, .monaco-submenu) .monaco-menu {
+  border-radius: var(--radius-menu);
+  min-width: 11rem;
+  font-family: var(--font-sans);
+  font-size: var(--text-content);
+}
+
+/* 6px of rim above the first row and below the last, and 6px either side of
+   every row: the inset that makes `--radius-menu` sit concentric around
+   `--radius-item` instead of clipping the corners off the highlight. */
+:is(.context-view.monaco-menu-container, .monaco-submenu) .monaco-menu .monaco-action-bar.vertical {
+  padding: 6px 0;
+}
+
+:is(.context-view.monaco-menu-container, .monaco-submenu) .monaco-menu .monaco-action-bar.vertical .action-menu-item {
+  height: 1.625rem;
+  margin: 0 6px;
+  border-radius: var(--radius-item);
+  /* The same 75ms the app's own menu rows settle on. Long enough to read as a
+     highlight arriving, short enough to keep up with the pointer. */
+  transition: background-color 75ms ease;
+}
+
+:is(.context-view.monaco-menu-container, .monaco-submenu) .monaco-menu .monaco-action-bar.vertical .action-label:not(.separator) {
+  padding: 0 0.625rem;
+  font-size: var(--text-content);
+}
+
+/* Dimmer than the label and set in the smaller face, so the shortcut reads as
+   an annotation on the row rather than a second column of equal weight. */
+:is(.context-view.monaco-menu-container, .monaco-submenu) .monaco-menu .monaco-action-bar.vertical .keybinding {
+  padding: 0 0.625rem 0 1.5rem;
+  font-size: var(--text-ui);
+  color: var(--muted-foreground);
+  opacity: 1;
+}
+
+:is(.context-view.monaco-menu-container, .monaco-submenu) .monaco-menu .monaco-action-bar.vertical .submenu-indicator {
+  color: var(--muted-foreground);
+  opacity: 1;
+}
+
+/* The arrow, not the hand. VSCode's own sheet asks for `default` over menu
+   rows and then contradicts itself one selector later with `pointer`, which
+   wins on specificity — so a right-click menu answers the pointer the way a
+   link does. No menu on any platform does that. */
+:is(.context-view.monaco-menu-container, .monaco-submenu) .monaco-menu .monaco-action-bar .action-item {
+  cursor: default;
+}
+
+/* Child combinators, not descendants, and that is load-bearing: a submenu is
+   built inside its parent row's `<li>`, so `.action-item.focused` followed by a
+   descendant combinator reaches every row of the open submenu as well as the
+   row that opened it — the whole Peek submenu came up highlighted.
+
+   Written from `menu.selectionBackground` straight onto the element, so the
+   resting state has to be cleared as explicitly as the highlighted one is set.
+   VSCode focuses the row under the pointer, so `.focused` is the hover state
+   as well as the keyboard one. */
+:is(.context-view.monaco-menu-container, .monaco-submenu) .monaco-menu .monaco-action-bar.vertical .action-item > .action-menu-item {
+  background-color: transparent !important;
+  color: var(--popover-foreground) !important;
+  outline: none !important;
+}
+
+:is(.context-view.monaco-menu-container, .monaco-submenu) .monaco-menu .monaco-action-bar.vertical .action-item.focused > .action-menu-item {
+  background-color: var(--accent) !important;
+  color: var(--accent-foreground) !important;
+}
+
+:is(.context-view.monaco-menu-container, .monaco-submenu) .monaco-menu .monaco-action-bar.vertical .action-item.disabled > .action-menu-item {
+  opacity: 0.45;
+}
+
+/* Inset to the rows rather than run wall to wall — a full-bleed rule in a menu
+   whose rows are already inset draws attention to the inset. */
+:is(.context-view.monaco-menu-container, .monaco-submenu) .monaco-menu .monaco-action-bar.vertical .action-label.separator {
+  margin: 5px 6px !important;
+  /* The whole edge rather than only its colour. VSCode's own declaration names
+     a theme variable, and a theme that never defines it leaves the rule invalid
+     and the separator a zero-width nothing. */
+  border-bottom: 1px solid var(--border) !important;
+}

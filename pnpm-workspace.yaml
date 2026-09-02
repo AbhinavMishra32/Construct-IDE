@@ -1,20 +1,20 @@
 packages:
-  - app
+  - apps/*
+  - packages/*
   - website
-  - private/*
-  - opaline/packages/*
 
-allowBuilds:
-  '@homebridge/node-pty-prebuilt-multiarch': set this to true or false
-  better-sqlite3: true
-  esbuild: true
-  msw: true
-  node-pty: true
-  protobufjs: true
-  sharp: true
+# legacy/ is deliberately absent. The archived v0.7 tree must never be
+# installed, built, or importable from the live application.
+#
+# private/construct-cloud-backend is absent too, and deliberately. It is a git
+# submodule with its own lockfile, deployed on its own; as a workspace member it
+# put an importer in the root lockfile that no checkout without submodule access
+# can satisfy, which is every CI and release run.
 
 onlyBuiltDependencies:
+  - electron
   - esbuild
+  - keytar
   - node-pty
 
 overrides:

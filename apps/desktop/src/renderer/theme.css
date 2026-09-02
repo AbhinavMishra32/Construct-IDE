@@ -1,0 +1,2020 @@
+/* Spar desktop theme.
+   The token layer follows the Aside/Synara desktop system already vendored into
+   Construct: a neutral oklch scale, squircle radii, hairline borders, and
+   translucent elevated surfaces that sit correctly on macOS window vibrancy. */
+
+@import "tailwindcss";
+@import "tw-animate-css";
+/* Elevation, as one stroke rather than two.
+   
+   A border and a shadow on the same element draw a hard 1px line and then a
+   soft edge starting just outside it — the double edge that makes a raised
+   surface look heavy and cheap. `smooth-shadow-ring-*` bakes the hairline into
+   the final shadow layer, so anything elevated in this app wears one continuous
+   edge. See .claude/skills/smooth-shadow-ring/SKILL.md for the rule. */
+@import "shadow-plugin";
+@import "@fontsource-variable/geist";
+@import "@fontsource/poppins/600.css";
+/* The editor's menus, in the light DOM.
+   
+   The same sheet is adopted into the editor's shadow root by
+   `lib/monaco/shadowStyles.ts`, because that is where the editor puts a context
+   menu when it can. But "when it can" is a condition, not a rule: the context
+   view service picks a shadow root only when the menu's container differs from
+   the layout container and shadow DOM is on, and it renders straight into the
+   page otherwise. The two placements are exclusive, so importing the sheet here
+   as well costs one copy of a dozen rules and removes the condition. Unlayered,
+   like everything that has to outrank VSCode's own chrome — see the editor
+   widgets section at the end of this file for why that matters. */
+@import "./lib/monaco/widgets.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* Registered so the rim sweep can interpolate; an unregistered custom property
+   animates discretely and the light would jump instead of travel. */
+@property --shimmer-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+/* The drum's two fade depths, registered for the same reason: they are driven from
+   whether the list is scrolled away from that end, and an unregistered length
+   would snap the mask on rather than ease it. Zero means no fade at all, which is
+   what an end with nothing past it gets. */
+@property --drum-top {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --drum-bottom {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  /* Modals get their own ground, apart from `--popover`.
+     
+     A popover is a small thing that has to lift off the surface under it, so it
+     sits lighter than the window. A modal covers the window behind a scrim and
+     is the only thing you can touch — it should read as a hole in the app, not
+     as a large pale card floating on it, which is what borrowing the popover
+     token made it look like. */
+  --color-modal: var(--modal);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-brand: var(--brand);
+  --color-brand-ink: var(--brand-ink);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-surface: var(--surface-primary);
+  --color-surface-raised: var(--color-background-elevated-primary);
+  --color-surface-sunken: var(--color-background-surface-under);
+  /* The three surface steps as colour utilities, so a settings row can name the
+     material it sits on (`bg-surface-secondary`) rather than reaching for a
+     card colour that means something else. */
+  --color-surface-primary: var(--surface-primary);
+  --color-surface-secondary: var(--surface-secondary);
+  --color-surface-tertiary: var(--surface-tertiary);
+
+  --radius: 0.625rem;
+  /* Controls and chrome: plain arcs at plain sizes. A superellipse only reads as
+     one once the corner is big enough to see the curve — under ~14px it just
+     makes a button look slightly inflated, which is what a browser app looks
+     like and a Mac app does not. Buttons, fields, rows, cards, menus live here.
+
+     The steps are sized to nest. A corner is concentric when the outer radius
+     equals the inner one plus the gap between them, and a corner that isn't
+     concentric reads as a mistake even to someone who could not name why: the
+     two arcs run at different speeds and the gap between them pinches. So the
+     2px steps are for a control wrapping a control at 2px of padding (the
+     segmented thumb in its track), and each larger jump matches the padding a
+     container of that size actually carries. */
+  --radius-sm: 0.3125rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.625rem;
+  --radius-xl: 0.875rem;
+  /* Sheets: the one place the squircle stays. The content pane, the work blobs
+     and the composer carry a corner long enough for the superellipse to be the
+     point rather than a rounding error. */
+  --radius-2xl: calc(1.125rem * var(--squircle-factor));
+
+  /* Menus are their own pair, and the pair is the point: a menu's rim is 6px, so
+     its shell has to be exactly 6px rounder than the row highlight inside it or
+     the highlight's corner drifts off the shell's. Change the rim in
+     `dropdown-menu.tsx` and this offset changes with it. */
+  --radius-item: 0.375rem;
+  --radius-menu: calc(var(--radius-item) + 0.375rem);
+
+  /* The platform's own UI face leads, and for one reason: the window is glass, so
+     Chromium cannot use subpixel antialiasing anywhere in it — every glyph in the
+     app is rendered grayscale against a backdrop we do not own. SF Pro and Segoe UI
+     Variable are hinted and optically sized for exactly that job at chrome sizes; a
+     webfont is not. Geist's stems came out soft and grey beside a native source
+     list, which is the whole reason this stack turned around. It stays last as the
+     fallback for platforms that ship no UI face worth having. */
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", sans-serif;
+  --font-construct: "Poppins", -apple-system, BlinkMacSystemFont, sans-serif;
+  /* The display face, used for headings and for the transcript's prose.
+     
+     The platform's own. Geist led here and was the one thing in
+     the window that did not come from the system — at title sizes the
+     difference between it and SF Pro Display is exactly the difference between
+     an app that looks native and one that looks like a web page in a frame. */
+  --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI Variable Display", "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+
+  --text-ui: 0.75rem;
+  --text-ui--line-height: 1.125rem;
+  --text-ui-sm: 0.6875rem;
+  --text-ui-sm--line-height: 1rem;
+  --text-content: 0.8125rem;
+  --text-content--line-height: 1.375rem;
+
+  /* The source list runs a step above the rest of the chrome, and deliberately.
+     A sidebar is read at a glance and from further away than a toolbar — it is
+     the one surface you navigate by shape rather than by reading — so its labels
+     are set at the size the platform's own source lists use rather than at the
+     dense size that suits a row of controls. Every sidebar text size comes from
+     this pair; nothing in there is set in `--text-ui`.
+
+     13px is that size literally: it is NSFont.systemFontSize, what AppKit sets a
+     source list in, and the size SF Pro switches from its Display cut to its Text
+     cut for. The 14px this used to be was a webfont's compensation for looking
+     light — with the system face leading the stack the compensation is a liability,
+     because the platform only hints the face at the size it designed it for. */
+  --text-source: 0.8125rem;
+  --text-source--line-height: 1.25rem;
+  --text-source-sm: 0.75rem;
+  --text-source-sm--line-height: 1.125rem;
+}
+
+:root {
+  color-scheme: light;
+  /* A superellipse stays closer to its corner box than the arc of the same
+     radius, so an identical value reads visibly tighter. The multiplier sits
+     above the arc-era 1.4 for that reason, and the large surfaces below
+     (menus, panels, the content pane) carry a bigger base value on top of it —
+     the larger the corner, the more of the curve you can see, and the more the
+     difference between an arc and a superellipse shows. */
+  --squircle-factor: 1.65;
+  --hairline: 0.5px;
+
+  /* Window chrome. The OS draws its own buttons over our first row, so these
+     tokens reserve the room they occupy — on the leading edge for macOS traffic
+     lights, on the trailing edge for the Windows caption buttons. `main/surface.ts`
+     stamps data-window-controls on <html> and the override below picks a side.
+
+     macOS: measured on 26, the buttons are 16x16 (up from 12x12 on earlier
+     releases) and run x=18..80; 6rem clears that with a 16px gap, and the row
+     height centres them against trafficLightPosition. Keep the two in step.
+     Windows: the minimise/maximise/close overlay is a fixed 138px at 100% scale. */
+  --titlebar-height: 2.75rem;
+  --window-controls-leading: 6rem;
+  --window-controls-trailing: 0rem;
+
+  --background: oklch(100% 0 0);
+  --foreground: oklch(14.5% 0 0);
+
+  --surface-primary: oklch(100% 0 0);
+  --surface-secondary: oklch(100% 0 0 / 85%);
+  --surface-tertiary: oklch(100% 0 0 / 55%);
+
+  --card: var(--surface-primary);
+  --card-foreground: var(--foreground);
+  --popover: oklch(99% 0 0);
+  --popover-foreground: var(--foreground);
+  /* On a light theme the scrim already darkens everything behind, so the sheet
+     stays white and the separation comes from the scrim rather than the fill. */
+  --modal: oklch(100% 0 0);
+  --primary: oklch(14.5% 0 0 / 95%);
+  --primary-foreground: oklch(98.5% 0 0 / 95%);
+  --secondary: oklch(14.5% 0 0 / 6%);
+  --secondary-foreground: oklch(14.5% 0 0 / 78%);
+  --muted: oklch(14.5% 0 0 / 5%);
+  --muted-foreground: oklch(14.5% 0 0 / 55%);
+
+  /* The transcript's two registers.
+     
+     A turn is the agent's work and the agent's words, and they were being drawn
+     at nearly the same weight — muted-foreground for a tool row, foreground for
+     a sentence — which left a screenful of steps competing with the one
+     paragraph that was actually addressed to the learner. The steps are the
+     margin notes. They sit further back than anything else in the window, and
+     `-strong` is where a row goes on hover: legible, still not prose.
+     
+     Tuned per mode rather than shared, because they are not symmetrical. Faint
+     ink on white stays crisp at low alpha; faint white on dark goes to mush
+     sooner, so dark holds a little more of it. */
+  --transcript-step: oklch(14.5% 0 0 / 44%);
+  --transcript-step-strong: oklch(14.5% 0 0 / 72%);
+  --transcript-step-mark: oklch(14.5% 0 0 / 34%);
+  --accent: oklch(14.5% 0 0 / 8%);
+  --accent-foreground: oklch(14.5% 0 0 / 85%);
+  --destructive: oklch(57.7% 0.245 27.325);
+  --success: oklch(52% 0.11 158);
+  --warning: oklch(62% 0.13 68);
+
+  /* Construct has no accent hue, and that is the position rather than an
+     oversight. The window is already full of colour it does not own — syntax,
+     provider marks, language glyphs — and an ember accent sitting among them
+     read as one more vendor's colour rather than as the app's. Ink is the
+     signal instead: the affirmative control is the darkest thing on the page,
+     which is a stronger claim on attention than any hue, and it is the one
+     colour that cannot clash with a theme somebody else wrote. */
+  --brand: oklch(14.5% 0 0);
+  --brand-ink: oklch(98.5% 0 0);
+  --border: oklch(14.5% 0 0 / 10%);
+  --border-strong: oklch(14.5% 0 0 / 16%);
+  --input: oklch(14.5% 0 0 / 10%);
+  --ring: oklch(14.5% 0 0 / 22%);
+
+  --sidebar: transparent;
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: oklch(14.5% 0 0 / 6%);
+  --sidebar-accent-active: oklch(14.5% 0 0 / 11%);
+  --sidebar-accent-foreground: var(--foreground);
+  --sidebar-border: oklch(14.5% 0 0 / 8%);
+  --sidebar-ring: var(--ring);
+
+  --color-background-surface: var(--background);
+  --color-background-surface-under: color-mix(in oklab, var(--foreground) 3%, var(--background));
+  --color-background-elevated-primary: var(--surface-secondary);
+  --color-background-elevated-secondary: var(--muted);
+  --color-background-editor: color-mix(in oklab, var(--foreground) 2%, var(--background));
+
+  --app-window-fill: oklch(97.6% 0 0);
+  /* Only painted when the platform gives us no native material to sit on. */
+  --app-sidebar-fill: oklch(95.5% 0 0);
+  --app-vibrant-tint: oklch(100% 0 0 / 30%);
+  /* Opaque, for every page that is mostly text: the desktop moving behind a
+     paragraph is the desktop competing with it, and the sidebar still shows the
+     native material, so the two surfaces stay told apart by the one that is meant
+     to be doing it.
+
+     The challenge surfaces opt back out — see `.app-pane-glass`. Working on a
+     problem is the one place the app is a tool rather than a document, and the
+     glass is what keeps that surface feeling like part of the window. */
+  --app-glass-fill: 100%;
+  --app-glass-fill-translucent: 88%;
+  /* Barely off solid. The panel is a surface with a hint of the desktop behind
+     it, not a window onto it.
+     
+     Every lower value tried — 66%, then 84% — had the same failure: a
+     translucent panel over a bright wallpaper washes towards the wallpaper's
+     value, so in a dark theme the frame goes pale while the text inside stays
+     dark-theme. Panel and contents end up in different appearances, which is
+     what read as the window being broken rather than tinted. */
+  --app-glass-fill-panel: 97%;
+  --app-user-message-background: oklch(14.5% 0 0 / 6%);
+  --app-shadow-overlay: 0 20px 25px -5px oklch(0% 0 0 / 10%), 0 8px 10px -6px oklch(0% 0 0 / 10%);
+  --app-shadow-menu: 0 16px 40px -12px oklch(0% 0 0 / 20%), 0 4px 10px -4px oklch(0% 0 0 / 8%);
+  --app-shadow-composer: 0 4px 18px -6px color-mix(in srgb, var(--foreground) 8%, transparent);
+  --app-shadow-card: 0 1px 2px oklch(0% 0 0 / 4%);
+  /* Working sheets sit on a canvas that is nearly their own colour, so the
+     contact shadow alone cannot separate them. A wider, softer ambient pass
+     underneath does the lifting; the edge below draws the shape. Two passes and
+     not three: shadows sum where two edges meet, so a mid pass on top of the
+     ambient one pools in the corners and the curve reads as a smudge rather
+     than a corner. */
+  --app-shadow-sheet:
+    0 1px 2px oklch(0% 0 0 / 4%),
+    0 8px 20px -12px oklch(0% 0 0 / 13%);
+  /* Cast leading-edge-only: the pane is full height, so a shadow with any
+     vertical offset would just fall off the window. The contact pass sharpens
+     the hairline into an edge with depth behind it; the ambient pass gives it
+     somewhere to fall.
+
+     The ambient pass is short — 7px, not 20. It lands on the sidebar, and the
+     sidebar is glass over the desktop, so on any wallpaper with colour in it a
+     wide black blur does not read as shade: it desaturates a band of the
+     picture and reads as a grey smear painted beside the pane. Kept inside a
+     few pixels it is a shadow again, because at that width the eye takes it as
+     the pane's own edge rather than as something applied to what is behind it. */
+  --app-shadow-pane:
+    -1px 0 2px -1px oklch(0% 0 0 / 5%),
+    -3px 0 7px -6px oklch(0% 0 0 / 8%);
+  --sheet-edge: color-mix(in oklab, var(--foreground) 16%, transparent);
+
+  /* Glass. In light the rim is a near-white specular edge; the sheen brightens
+     just the top line, where a curved surface would actually catch the light. */
+  --glass-fill: 82%;
+  --glass-fill-solid: 94%;
+  --glass-rim: oklch(100% 0 0 / 80%);
+  --glass-sheen: oklch(100% 0 0 / 90%);
+  --glass-hairline: color-mix(in oklab, var(--foreground) 18%, transparent);
+  --shimmer-tint: oklch(14.5% 0 0 / 28%);
+
+  /* Mastery, as a temperature.
+     
+     Six levels need six values that a learner can read at a glance, in a 3px
+     mark, without a legend — so the ramp is a single sweep of hue rather than
+     six arbitrary colours: near-grey for an idea only just named, through violet
+     and cyan as it is understood, jade once it is practised, and gold at the
+     top. Warmth is the metaphor doing the work; nobody has to be told that gold
+     outranks slate.
+     
+     The cyan step is where the ramp visibly turns, and that is on purpose: level
+     3 is the boundary where Construct will start setting tasks, so the one place
+     the colour jumps is the one place the rules change. Every surface that draws
+     a level — the sidebar list, the transcript card, the atlas — reads these
+     through `masteryColor()` so the ramp has exactly one definition. */
+  --mastery-0: color-mix(in oklab, var(--foreground) 20%, transparent);
+  --mastery-1: oklch(57% 0.035 300);
+  --mastery-2: oklch(54% 0.12 300);
+  --mastery-3: oklch(56% 0.105 212);
+  --mastery-4: oklch(54% 0.115 162);
+  --mastery-5: oklch(60% 0.135 78);
+
+  /* Concept kinds. Three hues in an otherwise monochrome app, so they are held to
+     a strict brief: they appear as a 5px dot and a faint wash, never as coloured
+     text or a filled pill. That is enough to tell a row of chips apart at a
+     glance — which is the whole job — without turning challenge history into a
+     bag of sweets. Chosen at one lightness and one modest chroma so no kind
+     shouts louder than the others, and rotated far enough apart to survive the
+     common red-green confusions. */
+  --concept-dsa: oklch(54% 0.14 274);
+  --concept-engineering: oklch(52% 0.09 203);
+  --concept-craft: oklch(55% 0.11 42);
+
+  /* First-paint fallbacks. `CodeThemeProvider` overwrites every one of these
+     on the document element as soon as it mounts; these exist so the window is
+     never unpainted in the frame before that, and so the light and dark blocks
+     still describe the built-in palettes in one readable place. */
+  --code-background: #fcfcfc;
+  --code-border: #e4e4e4;
+  --code-foreground: #33363b;
+  --code-comment: #727780;
+  --code-keyword: #ce2734;
+  --code-type: #7b4bd2;
+  --code-function: #1a6fc9;
+  --code-string: #185a96;
+  --code-number: #1660b5;
+  --code-punctuation: #6f747c;
+}
+
+.dark {
+  color-scheme: dark;
+
+  /* Neutral, and staying neutral. The window itself carries no hue: the colour
+     in this app is carried by the things that mean something — the mastery ramp,
+     a language's own mark, a provider's — and a tinted ground would put all of
+     them in competition with the wall behind them.
+
+     Dark, too. This sat at 23.5% for a long time, which is mid-grey rather than
+     dark: light enough that the mastery colours had nothing to glow against and
+     every raised surface above it had to be lighter still, so the whole window
+     drifted up the scale until nothing read as dark at all. Everything stacked
+     on this moved down with it. */
+  --background: oklch(15.5% 0 0);
+  --foreground: oklch(98.5% 0 0);
+
+  --surface-primary: oklch(98.5% 0 0 / 8%);
+  --surface-secondary: oklch(98.5% 0 0 / 6%);
+  --surface-tertiary: oklch(98.5% 0 0 / 4%);
+
+  --card: color-mix(in oklab, var(--foreground) 6%, var(--background));
+  --card-foreground: var(--foreground);
+  --popover: oklch(21.5% 0 0);
+  --popover-foreground: var(--foreground);
+  /* Under the window's own ground: the sheet reads as recessed, and the rim
+     light along its top edge is what gives it its shape. */
+  --modal: oklch(11.5% 0 0);
+  --primary: oklch(98.5% 0 0 / 95%);
+  --primary-foreground: oklch(14.5% 0 0 / 95%);
+  --secondary: oklch(98.5% 0 0 / 8%);
+  --secondary-foreground: oklch(98.5% 0 0 / 78%);
+  --muted: oklch(98.5% 0 0 / 10%);
+  --muted-foreground: oklch(98.5% 0 0 / 55%);
+  /* See the light block. Held a few points higher: white at 44% on a dark
+     ground reads dimmer than ink at 44% on a light one. */
+  --transcript-step: oklch(98.5% 0 0 / 50%);
+  --transcript-step-strong: oklch(98.5% 0 0 / 78%);
+  --transcript-step-mark: oklch(98.5% 0 0 / 40%);
+  --accent: oklch(98.5% 0 0 / 10%);
+  --accent-foreground: oklch(98.5% 0 0 / 85%);
+  --destructive: oklch(70.4% 0.191 22.216);
+  /* Inverted, for the same reason it is ink in light: the affirmative control
+     is the brightest thing on the page. */
+  --brand: oklch(98.5% 0 0);
+  --brand-ink: oklch(14.5% 0 0);
+  --success: oklch(78% 0.14 158);
+  --warning: oklch(82% 0.14 78);
+  --border: oklch(98.5% 0 0 / 10%);
+  --border-strong: oklch(98.5% 0 0 / 16%);
+  --input: oklch(98.5% 0 0 / 12%);
+  --ring: oklch(98.5% 0 0 / 26%);
+
+  --sidebar: transparent;
+  --sidebar-accent: oklch(98.5% 0 0 / 7%);
+  --sidebar-accent-active: oklch(98.5% 0 0 / 13%);
+  --sidebar-accent-foreground: var(--foreground);
+  --sidebar-border: oklch(98.5% 0 0 / 9%);
+
+  --color-background-surface: var(--background);
+  --color-background-surface-under: color-mix(in oklab, black 22%, var(--background));
+  --color-background-elevated-primary: var(--surface-primary);
+  --color-background-elevated-secondary: var(--surface-secondary);
+  --color-background-editor: color-mix(in oklab, black 14%, var(--background));
+
+  /* The window's own ground, and the value everything else is judged against.
+     Kept level with `--background`: they are the same surface seen with and
+     without the native material behind it, and letting them drift is what makes
+     a window look like two windows. */
+  --app-window-fill: oklch(15.5% 0 0);
+  /* Lighter than the pane, not darker: the sidebar is the surface the content
+     sits on, so it catches more light. Only painted with no native material. */
+  --app-sidebar-fill: oklch(20% 0 0);
+  --app-vibrant-tint: oklch(100% 0 0 / 6%);
+  --app-glass-fill: 100%;
+  --app-glass-fill-translucent: 86%;
+  /* Heavier still in dark: dark glass over a bright desktop loses contrast
+     faster than light glass over a dark one. */
+  --app-glass-fill-panel: 98%;
+  --app-user-message-background: oklch(98.5% 0 0 / 8%);
+  --app-shadow-overlay: 0 20px 25px -5px oklch(0% 0 0 / 40%), 0 8px 10px -6px oklch(0% 0 0 / 40%);
+  --app-shadow-menu: 0 16px 40px -10px oklch(0% 0 0 / 55%), 0 4px 12px -4px oklch(0% 0 0 / 40%);
+  --app-shadow-composer: 0 6px 24px -10px oklch(0% 0 0 / 45%);
+  --app-shadow-card: 0 1px 2px oklch(0% 0 0 / 20%);
+  --app-shadow-sheet:
+    0 1px 2px oklch(0% 0 0 / 26%),
+    0 10px 26px -14px oklch(0% 0 0 / 55%);
+  /* Dark separates with light, not with shadow. Black on a dark sidebar has
+     almost nothing left to darken — it turns the seam into a grey smear and takes
+     the glass down with it — so the first pass here is a *lit* edge instead: a 1px
+     white line offset one pixel out from the pane, which lands on the sidebar and
+     traces the pane's corner as it goes, the way the leading edge of a raised
+     surface catches the light. The dark pass stays, but only just: enough that the
+     line reads as an edge with air behind it rather than as drawn-on trim. */
+  --app-shadow-pane:
+    -1px 0 0 0 oklch(100% 0 0 / 11%),
+    -12px 0 24px -16px oklch(0% 0 0 / 22%);
+  /* No edge in dark. The sheet is already darker than the canvas it sits in, so
+     the value step does the separating and a ring on top of it only reads as a
+     drawn outline. Light mode needs the line because the two are nearly the
+     same value there. */
+  --sheet-edge: transparent;
+
+  /* Dark glass keeps the same anatomy, but a white rim at 80% would read as a
+     drawn outline rather than a lit edge — so the rim drops to a faint sheen
+     and the hairline carries the shape instead. */
+  --glass-fill: 78%;
+  --glass-fill-solid: 92%;
+  --glass-rim: oklch(100% 0 0 / 8%);
+  --glass-sheen: oklch(100% 0 0 / 12%);
+  --glass-hairline: oklch(0% 0 0 / 55%);
+  --shimmer-tint: oklch(100% 0 0 / 40%);
+
+  /* Lifted and slightly desaturated for the dark pane: the same hues at the light
+     values read as ink rather than as a lit dot. */
+  --mastery-0: color-mix(in oklab, var(--foreground) 18%, transparent);
+  --mastery-1: oklch(70% 0.035 300);
+  --mastery-2: oklch(70% 0.115 300);
+  --mastery-3: oklch(76% 0.10 205);
+  --mastery-4: oklch(76% 0.13 162);
+  --mastery-5: oklch(84% 0.14 88);
+
+  --concept-dsa: oklch(74% 0.12 274);
+  --concept-engineering: oklch(74% 0.09 203);
+  --concept-craft: oklch(76% 0.10 45);
+
+  --code-background: #191919;
+  --code-border: #2b2b2b;
+  --code-foreground: #c9d1d9;
+  --code-comment: #8b949e;
+  --code-keyword: #ff8177;
+  --code-type: #d2a8ff;
+  --code-function: #66b8ff;
+  --code-string: #8bd891;
+  --code-number: #79c0ff;
+  --code-punctuation: #b3bac2;
+}
+
+@layer base {
+  /* Real squircles, not merely bigger circles. `border-radius` always draws a
+     circular arc; `corner-shape` replaces that arc with a superellipse — the
+     curve macOS actually uses, whose curvature is continuous, so a straight edge
+     flows into its corner instead of meeting it at a visible seam.
+     superellipse(2) is the Apple constant.
+
+     Guarded because the property is Chromium 139+ (the bundled Electron clears
+     it comfortably): without support every corner keeps the arc it already had,
+     which is exactly the old appearance. */
+  @supports (corner-shape: superellipse(2)) {
+    *,
+    *::before,
+    *::after {
+      corner-shape: superellipse(2);
+    }
+
+    /* Circles must stay circles. A superellipse at a pill radius squares off an
+       avatar or a send button into a blob. */
+    [class~="rounded-full"],
+    [class*="rounded-full"],
+    .app-round {
+      corner-shape: round;
+    }
+
+    /* Everything below the sheet scale opts back out. The superellipse is a
+       feature of the big surfaces; applied to every button, field, menu row and
+       card it stops being a material and becomes a tic — and at those radii
+       nobody can see the difference anyway, only the extra weight it lends the
+       corner. Matched on the radius the element asks for rather than by
+       component, so a new control inherits the rule for free. */
+    :is(
+      [class~="rounded-xs"],
+      [class~="rounded-sm"],
+      [class~="rounded-md"],
+      [class~="rounded-lg"],
+      [class~="rounded-xl"],
+      [class*="--radius-sm"],
+      [class*="--radius-md"],
+      [class*="--radius-lg"],
+      [class*="--radius-xl"],
+      [class*="--radius-menu"],
+      [class*="--radius-item"],
+      [data-slot^="dropdown-menu"],
+      [data-slot^="context-menu"],
+      [data-slot^="command"],
+      [data-slot="tooltip-content"],
+      [data-slot="select-content"],
+      [data-slot="select-item"]
+    ) {
+      corner-shape: round;
+    }
+
+    /* The one control below the sheet scale that opts back in, and last so it
+       wins against the rule above.
+
+       A file tab is the most-looked-at piece of chrome in the window and the
+       one thing every native editor draws with a continuous corner.
+
+       The number is the superellipse's exponent as a log2 parameter, and it
+       runs the other way from intuition: 1 is a plain circular arc, and larger
+       values push the curve out towards its corner box, which is squarer. So
+       2 was the tightest corner of the three this went through, not the
+       roundest. The tab's radius is already at half its height and cannot go
+       further, which leaves the exponent as the only thing still holding the
+       corner back — 1.5 keeps a continuous corner while giving up the part of
+       the squircle that was reading as square. */
+    .app-squircle {
+      corner-shape: superellipse(1.5);
+    }
+  }
+
+  *,
+  *::before,
+  *::after {
+    border-color: var(--border);
+    box-sizing: border-box;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  html {
+    font-family: var(--font-sans);
+    font-size: 16px;
+    font-synthesis: none;
+  }
+
+  body {
+    margin: 0;
+    overflow: hidden;
+    /* Transparent so the native macOS vibrancy layer shows through the sidebar. */
+    background: transparent;
+    color: var(--foreground);
+    /* No `-webkit-font-smoothing: antialiased` here, and that is the point. On a
+       transparent window macOS is already rendering every glyph grayscale — it has
+       no opaque background to run subpixel against — so the property buys no
+       crispness it was not getting anyway, and costs stem weight: `antialiased`
+       skips the stem darkening `auto` applies, which on glass is the difference
+       between a label and a smudge. Left to the platform on purpose. */
+    font-size: var(--text-ui);
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+    color: inherit;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--foreground) 16%, transparent);
+  }
+}
+
+@layer components {
+  /* ---- macOS window chrome ---------------------------------------------- */
+
+  /* Windows puts its caption buttons on the trailing edge, so the reservation
+     moves with them: nothing to clear on the left, 138px to clear on the right. */
+  :root[data-window-controls="right"] {
+    --window-controls-leading: 0rem;
+    --window-controls-trailing: 8.625rem;
+  }
+
+  /* A native frame keeps its buttons outside our content: reserve nothing. */
+  :root[data-window-controls="none"] {
+    --window-controls-leading: 0rem;
+    --window-controls-trailing: 0rem;
+  }
+
+  .app-drag {
+    -webkit-app-region: drag;
+  }
+
+  /* AppKit shows the arrow over a source list, never the hand — the pointer
+     cursor is a web affordance, and on a sidebar of rows it is the single
+     clearest tell that a desktop app was built in a browser. Scoped here so
+     ordinary buttons elsewhere keep it. The resize handle overrides this itself
+     from the utilities layer. */
+  .app-sidebar button:not(:disabled),
+  .app-sidebar [role="button"]:not(:disabled),
+  .app-sidebar a[href] {
+    cursor: default;
+  }
+
+  .app-no-drag {
+    -webkit-app-region: no-drag;
+  }
+
+  /* The window is a hole the OS paints its material into — Liquid Glass on
+     macOS 26, vibrancy below that, Mica on Windows 11. This goes on the whole
+     shell, not just the sidebar: the content pane's rounded corner exposes
+     whatever sits behind the pane, and if the material stops at the sidebar's
+     edge then what it exposes is bare window. That is the dark notch under the
+     curve. Spanning the shell means the corner reveals the same surface the
+     sidebar shows, and the two read as one continuous sheet. */
+  .app-vibrant {
+    /* Not quite transparent: a tint over the native material. Glass alone takes
+       its value from whatever is behind the window, so on a dark desktop it
+       collapses to the same value as the content pane and the two stop reading
+       as separate surfaces. The wash keeps it reliably the lighter of the pair
+       however the wallpaper moves. */
+    background: var(--app-vibrant-tint);
+  }
+
+  /* No native material to sit on — Windows 10, Linux — so paint it outright,
+     or the hole shows the desktop straight through. */
+  :root[data-native-surface="none"] .app-vibrant {
+    background: var(--app-sidebar-fill);
+  }
+
+  /* Named for what it is rather than how it is built: this is the fill every
+     page sits on. It is a heavy tint over the native material rather than a
+     solid, so the window's glass carries through the whole app — kept close to
+     opaque because text on it has to hold contrast against an arbitrary
+     desktop. `--app-glass-fill` is the dial. */
+  .app-pane {
+    background: color-mix(in oklab, var(--app-window-fill) var(--app-glass-fill), transparent);
+  }
+
+  /* The challenge surfaces, back on glass. Set as the variable rather than as a
+     second `background`, so everything downstream that mixes against the pane fill
+     — `.composer-fade` is the one that matters — follows it instead of fading into
+     a colour the pane no longer is. */
+  /* The flanking panels: file tree and agent. Uses the panel tier rather than
+     the translucent one, and carries a backdrop blur so the desktop showing
+     through is diffused rather than sharp — text over a sharp photograph is
+     unreadable however much fill sits between them. */
+  /* Spar's own pane edge, copied rather than reinvented: the same radius token,
+     the same inset ring against --sidebar-border, and the same --app-shadow-pane
+     pair — a tight contact pass that sharpens the hairline into an edge with
+     depth behind it, and a short ambient pass behind that.
+
+     The one difference is that all four corners are rounded. Spar's pane is an
+     inset sheet with a sidebar on its leading edge, so only that side curves;
+     these are free panels with air on every side. */
+  /* The panel's own fill, one value step off the pane it sits on.
+     
+     Without it a panel and its pane share a colour and the blob is invisible
+     however it is shadowed — which is what happened the moment the pane fill
+     was extended to cover the whole content area. `--popover` is the token for
+     a surface that sits above the page, which is exactly what these are. */
+  /* A panel: Spar's radius and Spar's hairline, and nothing else.
+     
+     No shadow. The panel already differs from the pane by a value step, and a
+     drop shadow on top of that reads as the panel hovering rather than sitting
+     — which is what made three stacked panels look like floating cards instead
+     of one instrument. */
+  /* An encyclopedia entry's typography.
+     
+     The agent writes plain Markdown; the look has to come from here, or every
+     note depends on the model remembering to format nicely. Headings are set
+     small and lettered rather than large and bold — an entry read in a 400px
+     column wants its sections labelled, not shouted — and the space above a
+     heading is much larger than the space below it, which is what makes a
+     section read as belonging to its heading rather than floating between two. */
+  .concept-entry {
+    font-size: var(--text-content);
+    line-height: 1.65;
+    color: var(--foreground);
+  }
+
+  .concept-entry > :first-child {
+    margin-top: 0;
+  }
+
+  .concept-entry h2,
+  .concept-entry h3 {
+    margin-block: 1.5em 0.35em;
+    font-size: var(--text-ui-sm);
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: color-mix(in oklab, var(--foreground) 55%, transparent);
+  }
+
+  .concept-entry p {
+    margin-block: 0.7em;
+    /* A measure, not the full column. Long lines are the single biggest reason
+       a panel of prose goes unread. */
+    max-width: 62ch;
+  }
+
+  .concept-entry ul,
+  .concept-entry ol {
+    margin-block: 0.7em;
+    padding-inline-start: 1.15em;
+  }
+
+  .concept-entry li {
+    margin-block: 0.25em;
+  }
+
+  .concept-entry li::marker {
+    color: color-mix(in oklab, var(--foreground) 40%, transparent);
+  }
+
+  /* Inline code is a chip rather than tinted text: in an entry that names
+     types and identifiers constantly, a colour alone stops registering. */
+  .concept-entry :not(pre) > code {
+    border: var(--hairline) solid var(--sidebar-border);
+    border-radius: var(--radius-sm);
+    background: color-mix(in oklab, var(--foreground) 5%, transparent);
+    padding: 0.05em 0.3em;
+    font-size: 0.92em;
+  }
+
+  .concept-entry pre {
+    margin-block: 0.9em;
+    border: var(--hairline) solid var(--sidebar-border);
+    border-radius: var(--radius-lg);
+    background: color-mix(in oklab, var(--foreground) 3.5%, transparent);
+    padding: 0.7rem 0.85rem;
+    overflow-x: auto;
+    font-size: var(--text-source-sm);
+    line-height: 1.55;
+  }
+
+  .concept-entry blockquote {
+    margin-block: 0.9em;
+    border-inline-start: 2px solid color-mix(in oklab, var(--foreground) 18%, transparent);
+    padding-inline-start: 0.75rem;
+    color: color-mix(in oklab, var(--foreground) 70%, transparent);
+  }
+
+  .concept-entry strong {
+    font-weight: 600;
+  }
+
+  /* A control that gives under the pointer. The scale is small enough to read as
+     the surface taking the press rather than as an animation; `-slightly` is the
+     variant for things pressed constantly, like a source-list row, where the
+     full effect would be a twitch. */
+  .click-depth-effect {
+    transition-property: opacity, scale;
+    transition-timing-function: var(--tw-ease, var(--default-transition-timing-function));
+    transition-duration: var(--tw-duration, var(--default-transition-duration));
+    will-change: transform;
+  }
+
+  @media (hover: hover) {
+    .click-depth-effect:hover {
+      scale: 99%;
+    }
+  }
+
+  .click-depth-effect:active {
+    scale: 95%;
+    opacity: 0.9;
+  }
+
+  .click-depth-effect-slightly {
+    transition-property: opacity, scale;
+    transition-timing-function: var(--tw-ease, var(--default-transition-timing-function));
+    transition-duration: var(--tw-duration, var(--default-transition-duration));
+    will-change: transform;
+  }
+
+  .click-depth-effect-slightly:active {
+    scale: 97%;
+    opacity: 0.9;
+  }
+
+  /* ---- Agent prose ---------------------------------------------------------
+     ChatGPT's markdown scale, taken from its own stylesheet rather than
+     approximated. Everything derives from one unit — `--md-space`, which is the
+     body size over four — so the whole system moves together if the body size
+     changes, and no margin is a number somebody picked.
+
+     Resolved at the 15px body Construct uses: space 3.75px, line-height 24.4px
+     (1.625), small text 13.1px. The parts worth knowing, because they are the
+     ones that make it read like ChatGPT rather than like a generic prose sheet:
+
+       - Paragraphs are tight by default and only open up between siblings.
+         `p + p` gets four units; a paragraph after a heading gets none. That is
+         what stops the transcript looking double-spaced.
+       - List markers are semibold and in the text colour, not muted. They read
+         as structure rather than as punctuation, and it is the single most
+         recognisable thing about ChatGPT's lists.
+       - A blockquote's rule is an inset rounded bar drawn as a pseudo-element,
+         not a border — it stops short of the text's top and bottom.
+       - Inline code has `box-decoration-break: clone`, so a fragment that wraps
+         gets its corners on both lines instead of one long torn box.
+
+     Named `md-` rather than pasted onto the component so the transcript, concept
+     entries and anything else that renders agent prose can share one scale. */
+  .md-prose {
+    /* 13.5px: prose, not a headline.
+       
+       Chrome and prose are different jobs and want different sizes — the agent's
+       text was set at 13px, the size of a toolbar label, which is why a
+       paragraph of teaching had the density of a settings row. But ChatGPT's own
+       16px assumes a column about twice this panel's width, and at 380px that
+       reads as oversized.
+       
+       Half a step above the app's UI size is enough to change how it reads.
+       Every margin, heading, pill and list indent below is a multiple of this,
+       so moving this one line rescales the whole system together. */
+    --md-font-size: 0.84375rem;
+    /* The system face, and the system's own optical sizing.
+       
+       `--font-display` is named for the job rather than for a file: on macOS it
+       resolves through `-apple-system` exactly as `--font-sans` does, and the
+       platform picks the Text or Display cut from the size. Naming it here is
+       still worth it, because on Windows the two stacks genuinely differ. */
+    font-family: var(--font-display);
+    /* Slightly off the full foreground. Pure white text at this size on a dark
+       ground buzzes; ChatGPT's body sits just under its own maximum too. */
+    color: color-mix(in oklab, var(--foreground) 92%, transparent);
+    --md-line-height: calc(var(--md-font-size) * 1.625);
+    --md-small-font-size: max(0.8125rem, calc(var(--md-font-size) * 0.875));
+    --md-space: calc(var(--md-font-size) / 4);
+    font-size: var(--md-font-size);
+    line-height: var(--md-line-height);
+    /* A bare UUID or a long path must wrap rather than widen the column. */
+    overflow-wrap: anywhere;
+  }
+
+  .md-prose > :first-child { margin-top: 0; }
+  .md-prose > :last-child { margin-bottom: 0; }
+
+  .md-prose p {
+    margin: 0 0 var(--md-space);
+    white-space: pre-wrap;
+  }
+  .md-prose > p:not(:first-child) { margin-top: calc(var(--md-space) * 3.5); }
+  .md-prose > p + p { margin-block: calc(var(--md-space) * 4); }
+
+  /* 700, not 600. At prose sizes a semibold heading beside a semibold bold run
+     is not distinguishable from it, and the transcript loses its outline. */
+  .md-prose :is(h1, h2, h3, h4, h5, h6) {
+    font-weight: 700;
+    letter-spacing: -0.011em;
+    color: var(--foreground);
+  }
+  .md-prose h1 {
+    margin: 0 0 calc(var(--md-space) * 2);
+    font-size: calc(var(--md-font-size) * 1.5);
+    line-height: calc(var(--md-space) * 8);
+  }
+  .md-prose h2 {
+    margin: calc(var(--md-space) * 5) 0 calc(var(--md-space) * 2);
+    font-size: calc(var(--md-font-size) * 1.25);
+    line-height: calc(var(--md-space) * 7);
+  }
+  .md-prose h3 {
+    margin: calc(var(--md-space) * 5) 0 calc(var(--md-space) * 2);
+    font-size: calc(var(--md-font-size) * 1.125);
+    line-height: calc(var(--md-space) * 7);
+  }
+  .md-prose h4 {
+    margin: calc(var(--md-space) * 4) 0 0;
+    font-size: var(--md-font-size);
+    line-height: calc(var(--md-space) * 6);
+  }
+  .md-prose :is(h5, h6) {
+    margin: 0;
+    font-size: var(--md-font-size);
+    line-height: var(--md-line-height);
+  }
+  .md-prose h4 + p { margin-top: 0; }
+  .md-prose > ul + :is(h1, h2, h3, h4),
+  .md-prose > ol + :is(h1, h2, h3, h4) { margin-top: calc(var(--md-space) * 4); }
+
+  .md-prose :is(ul, ol) {
+    margin: 0;
+    /* Indented by the line height, so the text column lines up with the leading
+       rather than with an arbitrary padding. */
+    padding-inline-start: var(--md-line-height);
+    list-style-position: outside;
+  }
+  .md-prose ul { list-style-type: disc; }
+  .md-prose ul ul { list-style-type: circle; }
+  .md-prose ul ul ul { list-style-type: square; }
+  .md-prose ol { list-style-type: decimal; }
+  .md-prose > :is(ul, ol):not(:first-child) { margin-top: calc(var(--md-space) * 3); }
+  .md-prose > p + :is(ul, ol) { margin-top: 0; }
+
+  .md-prose li {
+    padding-inline-start: calc(var(--md-space) * 1.5);
+    display: list-item;
+  }
+  .md-prose li + li { margin-top: calc(var(--md-space) * 1.5); }
+  .md-prose li > :first-child { margin-top: 0; margin-bottom: 0; }
+  .md-prose li > :last-child { margin-bottom: 0; }
+  .md-prose li > p { margin: 0; }
+  .md-prose li > p + p { margin-top: calc(var(--md-space) * 4); }
+  .md-prose li > :is(ul, ol) { margin-top: 0; margin-bottom: 0; }
+  /* The tell. Muted markers make a list read as a run of dashes; these are the
+     same weight as a heading and the same colour as the text. */
+  .md-prose :is(ul, ol) > li::marker {
+    color: var(--foreground);
+    font-weight: 700;
+  }
+
+  /* Bold carries weight here rather than colour, so it has to be heavy enough to
+     read as emphasis in a paragraph rather than as a slightly darker word. */
+  .md-prose :is(strong, b) {
+    font-weight: 700;
+    color: var(--foreground);
+  }
+
+  .md-prose blockquote {
+    position: relative;
+    margin: 0 0 calc(var(--md-space) * 2);
+    border: 0;
+    padding-block: calc(var(--md-space) * 2);
+    padding-inline-start: calc(var(--md-space) * 6);
+    color: inherit;
+    font-style: normal;
+    line-height: calc(var(--md-space) * 6);
+  }
+  .md-prose blockquote::after {
+    content: "";
+    position: absolute;
+    inset-inline-start: 0;
+    top: calc(var(--md-space) * 2);
+    bottom: calc(var(--md-space) * 2);
+    width: var(--md-space);
+    border-radius: calc(var(--md-space) / 2);
+    background-color: var(--border-strong);
+  }
+  .md-prose blockquote > :first-child { margin-top: 0; }
+  .md-prose blockquote > :last-child { margin-bottom: 0; }
+
+  .md-prose hr {
+    clear: both;
+    height: 0;
+    margin: calc(var(--md-space) * 7) 0;
+    border: 0;
+    border-top: 1px solid var(--border-strong);
+  }
+  .md-prose hr + * { margin-top: 0; }
+
+  /* A pill, not a tint. ChatGPT's inline code is a clearly drawn object with
+     real horizontal padding — paths and identifiers are the thing a learner
+     copies out of a sentence, and they have to be findable at a glance. */
+  /* Inline code is code, so it takes the code palette. It used to be drawn from
+     `--muted` and the body colour, which meant an identifier in a sentence and
+     the same identifier in the editor two inches away were different colours —
+     the one comparison a learner makes constantly. */
+  .md-prose :not(pre) > code {
+    display: inline;
+    border-radius: calc(var(--radius-sm) + 1px);
+    background: color-mix(in oklab, var(--code-foreground) 10%, transparent);
+    color: var(--code-foreground);
+    padding: calc(var(--md-space) * 0.5) calc(var(--md-space) * 1.5);
+    font-family: var(--font-mono);
+    font-size: var(--md-small-font-size);
+    font-weight: 500;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    /* So a wrapped fragment keeps its corners on both lines. */
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+  }
+
+  .md-prose :is(table) { font-size: var(--md-small-font-size); }
+
+  /* No focus ring, anywhere.
+     
+     The keyboard-focus outline was the one piece of chrome in the window the
+     platform did not draw and nobody asked for: a ring that appeared around
+     whatever the last click happened to land on. Removed at the source — every
+     `focus-visible:` utility is gone from the components — and held here so a
+     new one cannot bring it back, including the engine's own default.
+     
+     This is a real accessibility cost and a deliberate one: focus still moves,
+     it is simply not painted. Text selection and carets are untouched, so
+     typing is unaffected. */
+  :focus,
+  :focus-visible,
+  :focus-within {
+    outline: none;
+  }
+
+  /* The arrow, never the hand.
+     
+     AppKit shows the pointer over a link and the arrow over everything else —
+     buttons, rows, tabs, toggles. The hand cursor over a button is the single
+     clearest tell that a desktop window is a web page, which is why the file
+     tree and the transcript already set this per row; this makes it the rule
+     rather than a thing each surface has to remember. */
+  button,
+  summary,
+  label,
+  [role="button"],
+  [role="tab"],
+  [role="radio"],
+  [role="menuitem"],
+  [role="option"] {
+    cursor: default;
+  }
+
+  .app-blob {
+    background: var(--popover);
+    border: var(--hairline) solid var(--sidebar-border);
+    border-radius: var(--radius-2xl);
+    overflow: hidden;
+  }
+
+  /* The floating concept card.
+
+     Painted in the window's own ground — the surface the conversation sits on —
+     rather than in `--popover` like the editor's blob. That is the whole trick:
+     matching the chat rather than the card underneath makes it read as a hole
+     cut through the editor to the window behind, instead of a dialog stacked on
+     top of it.
+
+     No edge and no shadow here: elevation comes from `smooth-shadow-ring-*` on
+     the element, which bakes the hairline into the shadow's last layer. The
+     hand-rolled pair this replaced drew a hard ring and then a soft shadow
+     starting just outside it — two stacked edges, which is what read as a grey
+     halo rather than a lift. */
+  .app-pip {
+    background: var(--app-window-fill);
+  }
+
+  /* The practice task.
+
+     Everything else in the transcript is a record of something that already
+     happened; a task is the one thing still outstanding, so it is given an edge
+     and a fill rather than being another paragraph in the scroll. The leading
+     rule is what makes it read as a panel at a glance without a heavy border
+     boxing it in — the same trick a blockquote uses, at a weight that says
+     "act on this" rather than "somebody said this". */
+  .app-task {
+    background: color-mix(in oklab, var(--foreground) 4%, transparent);
+    box-shadow:
+      inset 0 0 0 var(--hairline) color-mix(in oklab, var(--sidebar-border) 80%, transparent),
+      inset 0.1875rem 0 0 0 color-mix(in oklab, var(--foreground) 35%, transparent);
+  }
+
+  .app-panel-glass {
+    --app-glass-fill: var(--app-glass-fill-panel);
+    /* Blur without the saturation boost. Saturating what is behind the window
+       made the glass tint whatever colour the wallpaper happened to be, which
+       is what read as the interface having no colours of its own. */
+    backdrop-filter: blur(20px);
+  }
+
+  .app-pane-glass {
+    --app-glass-fill: var(--app-glass-fill-translucent);
+  }
+
+  /* The content pane as an inset sheet on the sidebar's material: rounded on the
+     leading edge, top and bottom, so the glass appears to continue behind it. The
+     hairline is drawn as an inset ring rather than a border so it follows the
+     curve, and overflow is clipped so toolbars and editors cannot square the
+     corners off from the inside.
+
+     The outer shadow is what actually separates the two: the pane and the
+     sidebar are close in value by design, so the hairline alone reads as a drawn
+     line rather than as one surface lying over another. It comes with the class,
+     which means it is there only while the sidebar is — collapsed, the pane
+     meets the window edge square and has nothing to cast onto. */
+  .app-content-pane {
+    border-start-start-radius: var(--radius-2xl);
+    border-end-start-radius: var(--radius-2xl);
+    box-shadow:
+      inset 0 0 0 0.5px var(--sidebar-border),
+      var(--app-shadow-pane);
+    overflow: hidden;
+  }
+
+  .hairline-r {
+    box-shadow: inset -1px 0 0 0 var(--sidebar-border);
+  }
+
+  .hairline-b {
+    box-shadow: inset 0 -1px 0 0 var(--border);
+  }
+
+  .hairline-t {
+    box-shadow: inset 0 1px 0 0 var(--border);
+  }
+
+  /* ---- Sidebar rows ------------------------------------------------------ */
+
+  /* A title longer than the sidebar fades out where it runs out of room rather
+     than ending in an ellipsis. The ellipsis has to be paid for three characters
+     before the edge, and it spends them saying "there is more" — which the fade
+     says for nothing. The mask is on the text itself rather than a scrim laid
+     over it because the sidebar is glass: a scrim would have to guess what is
+     behind it, and would be wrong on every wallpaper but one. */
+  .sidebar-title {
+    /* In px, not rem, because the marquee below has to travel exactly this far
+       to clear the fade and reads the same number out of TypeScript. Scaled with
+       the label: a fade has to be about two characters wide to read as a fade
+       rather than as a cut, and a character got wider. */
+    --sidebar-title-fade: 26px;
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  .sidebar-title[data-clipped="true"] {
+    mask-image: linear-gradient(to right, #000 0, #000 calc(100% - var(--sidebar-title-fade)), transparent 100%);
+  }
+
+  .sidebar-title > span {
+    display: block;
+    white-space: nowrap;
+  }
+
+  /* The row's controls take their room from the title, because the title is the
+     one thing in the row that can afford to be shorter. */
+  .sidebar-row:hover .sidebar-title,
+  .sidebar-row:has(:focus-visible) .sidebar-title,
+  .sidebar-row:has([data-row-controls][data-open="true"]) .sidebar-title {
+    margin-right: var(--sidebar-controls-width, 4rem);
+  }
+
+  [data-row-controls] {
+    display: none;
+  }
+
+  .sidebar-row:hover [data-row-controls],
+  .sidebar-row:has(:focus-visible) [data-row-controls],
+  [data-row-controls][data-open="true"] {
+    display: flex;
+  }
+
+  /* Hovering a clipped title walks the rest of it past the fade and back, so the
+     whole name is readable without asking for a tooltip. It rests at both ends
+     instead of turning the moment it arrives — the far end is the half you
+     hovered to read. */
+  .sidebar-row:hover .sidebar-title[data-clipped="true"] > span {
+    animation: sidebar-title-marquee var(--sidebar-title-duration, 4s) 0.45s ease-in-out infinite alternate;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sidebar-row:hover .sidebar-title[data-clipped="true"] > span {
+      animation: none;
+    }
+  }
+
+  /* ---- Scrollbars ------------------------------------------------------- */
+
+  .app-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--foreground) 18%, transparent) transparent;
+  }
+
+  .app-scroll::-webkit-scrollbar {
+    width: 9px;
+    height: 9px;
+  }
+
+  .app-scroll::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    /* A pill, not a squircle — the universal rule above would square its ends. */
+    corner-shape: round;
+    border-radius: 9999px;
+    background-clip: content-box;
+    background-color: color-mix(in srgb, var(--foreground) 16%, transparent);
+  }
+
+  .app-scroll::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in srgb, var(--foreground) 28%, transparent);
+  }
+
+  .app-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  /* ---- Agent transcript -------------------------------------------------- */
+
+  .agent-transcript {
+    --transcript-width: 46rem;
+  }
+
+  /* The fallback matters: composers and banners sit outside .agent-transcript,
+     where --transcript-width is not in scope. Without it the custom property
+     resolves to nothing, max-width is dropped, and those rows go full-bleed. */
+  .transcript-column {
+    width: 100%;
+    max-width: var(--transcript-width, 46rem);
+    margin-inline: auto;
+  }
+
+  /* Streaming assistant text keeps a caret at the live edge. */
+  .streaming-caret::after {
+    content: "";
+    display: inline-block;
+    width: 0.45em;
+    height: 1em;
+    margin-left: 0.15em;
+    vertical-align: text-bottom;
+    border-radius: 1px;
+    background: currentColor;
+    animation: agent-caret 1.1s steps(1, end) infinite;
+  }
+
+  /* Aside's "working" label sweeps a highlight across the text rather than
+     spinning, which reads quieter in a window that stays open for hours.
+     
+     Never pair this with a `text-*` utility. The sweep is a gradient clipped to
+     the glyphs, which needs `color: transparent` — and a colour utility sits in
+     a later layer, so it wins and the text renders solid with the animation
+     running invisibly behind it. That is why this never appeared to work. */
+  .thinking-shimmer {
+    background: linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--foreground) 38%, transparent) 0%,
+      color-mix(in srgb, var(--foreground) 38%, transparent) 35%,
+      var(--foreground) 50%,
+      color-mix(in srgb, var(--foreground) 38%, transparent) 65%,
+      color-mix(in srgb, var(--foreground) 38%, transparent) 100%
+    );
+    background-size: 220% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: agent-shimmer 2.4s linear infinite;
+  }
+
+  /* Launch is the wordmark and nothing else. It fades up once and a highlight
+     travels across it — slower and over a wider gradient than the working
+     shimmer, because at this size a 2.4s sweep reads as a loading bar. Whatever
+     the app is doing before its first paint is not the learner's business. */
+  .boot-wordmark {
+    background: linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--foreground) 30%, transparent) 0%,
+      color-mix(in srgb, var(--foreground) 30%, transparent) 40%,
+      var(--foreground) 50%,
+      color-mix(in srgb, var(--foreground) 30%, transparent) 60%,
+      color-mix(in srgb, var(--foreground) 30%, transparent) 100%
+    );
+    background-size: 300% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation:
+      boot-wordmark-in 0.45s ease-out both,
+      agent-shimmer 3.4s linear infinite;
+  }
+
+  /* ---- Glass -------------------------------------------------------------- */
+
+  /* Liquid Glass proper is a native material — on macOS 26 it is the window's
+     own NSGlassEffectView, which the main process installs behind the web
+     contents (see main/surface.ts). It cannot be reached from CSS, so DOM
+     surfaces reproduce its *read* instead, which is three things and not the
+     heavy blur everyone reaches for first:
+       1. a lightly frosted, mostly-opaque fill — glass tints, it does not fog;
+       2. a bright 1px inset rim, the specular edge of a curved surface, which
+          is what actually says "glass" rather than "translucent rectangle";
+       3. a 0.5px outer hairline so the shape stays legible on any backdrop.
+     The blur is deliberately small (8px). Past ~12px small text behind the
+     surface turns to mush and the material reads as frosted plastic. */
+  .glass {
+    background: color-mix(in oklab, var(--popover) var(--glass-fill), transparent);
+    box-shadow:
+      inset 0 0 0 1px var(--glass-rim),
+      inset 0 1px 0 0 var(--glass-sheen),
+      0 0 0 0.5px var(--glass-hairline),
+      var(--glass-shadow);
+    backdrop-filter: blur(8px) saturate(120%);
+    -webkit-backdrop-filter: blur(8px) saturate(120%);
+    /* Keeps the blur from bleeding past the rounded corner in WebKit. */
+    isolation: isolate;
+  }
+
+  /* ---- Composer ---------------------------------------------------------- */
+
+  .composer-shell {
+    border-radius: var(--radius-2xl);
+    background: color-mix(in oklab, var(--popover) var(--glass-fill), transparent);
+    box-shadow:
+      inset 0 0 0 1px var(--glass-rim),
+      inset 0 1px 0 0 var(--glass-sheen),
+      0 0 0 0.5px var(--glass-hairline),
+      var(--app-shadow-composer);
+    backdrop-filter: blur(8px) saturate(120%);
+    -webkit-backdrop-filter: blur(8px) saturate(120%);
+    isolation: isolate;
+    transition: box-shadow 0.15s ease;
+  }
+
+  /* Focus reads as the surface lifting, not as a coloured outline — the same
+     move macOS makes when a text field takes the caret. */
+  .composer-shell:focus-within {
+    box-shadow:
+      inset 0 0 0 1px var(--glass-rim),
+      inset 0 1px 0 0 var(--glass-sheen),
+      0 0 0 0.5px color-mix(in oklab, var(--foreground) 32%, transparent),
+      var(--app-shadow-composer);
+  }
+
+  /* Fades transcript content into the composer instead of clipping it hard. */
+  .composer-fade {
+    background: linear-gradient(to bottom, transparent, color-mix(in oklab, var(--app-window-fill) var(--app-glass-fill), transparent) 62%);
+  }
+
+  /* ---- Scrolling drum ----------------------------------------------------- */
+
+  /* A list taller than the room it was given, presented the way a physical picker
+     drum reads: rows near each edge fade and soften as though rotating away,
+     rather than being cut in half by a boundary.
+
+     Two layers doing two different jobs. The mask fades the content itself, so it
+     dissolves into whatever is genuinely behind the pane — a gradient in a guessed
+     background colour cannot, because the pane is a translucent tint over the
+     window's own material and the "background" is the desktop. The edge strips
+     then taper a small backdrop blur across the same distance, which is what turns
+     a flat fade into a surface curving away from you.
+
+     Each end fades only while there is content past it, driven from the scroll
+     position. A picker drum can get away with fading both ends permanently
+     because its rows are small and interchangeable; these are cards you read, and
+     a first card that is half dissolved when the list is already at the top does
+     not read as rotation — it reads as broken rendering. */
+  .drum {
+    --drum-fade: 2.25rem;
+    mask-image: linear-gradient(
+      to bottom,
+      transparent 0,
+      #000 var(--drum-top),
+      #000 calc(100% - var(--drum-bottom)),
+      transparent 100%
+    );
+    -webkit-mask-image: linear-gradient(
+      to bottom,
+      transparent 0,
+      #000 var(--drum-top),
+      #000 calc(100% - var(--drum-bottom)),
+      transparent 100%
+    );
+    transition:
+      --drum-top 180ms ease,
+      --drum-bottom 180ms ease;
+  }
+
+  .drum-edge {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 2.25rem;
+    pointer-events: none;
+    /* Small on purpose. Past ~4px the half-visible card stops reading as one on
+       its way out and starts reading as a smear over the list. */
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+    /* Matched to the mask's transition so the softening and the fade arrive
+       together; separately they read as two effects. */
+    transition: opacity 180ms ease;
+  }
+
+  .drum-edge-top {
+    top: 0;
+    mask-image: linear-gradient(to bottom, #000, transparent);
+    -webkit-mask-image: linear-gradient(to bottom, #000, transparent);
+  }
+
+  .drum-edge-bottom {
+    bottom: 0;
+    mask-image: linear-gradient(to top, #000, transparent);
+    -webkit-mask-image: linear-gradient(to top, #000, transparent);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .drum,
+    .drum-edge {
+      transition: none;
+    }
+  }
+
+  /* ---- Floating panels ---------------------------------------------------- */
+
+  .floating-surface {
+    border-radius: var(--radius-menu);
+    corner-shape: round;
+    box-shadow:
+      inset 0 0 0 1px var(--glass-rim),
+      inset 0 1px 0 0 var(--glass-sheen),
+      0 0 0 0.5px var(--glass-hairline),
+      var(--app-shadow-overlay);
+    background: color-mix(in oklab, var(--popover) var(--glass-fill), transparent);
+    backdrop-filter: blur(8px) saturate(120%);
+    -webkit-backdrop-filter: blur(8px) saturate(120%);
+    isolation: isolate;
+  }
+
+  /* Menus sit closer to opaque than panels do: they are almost entirely small
+     text, and every point of transparency costs contrast against whatever
+     happens to be behind them.
+
+     A tight arc, not a squircle: a menu is a list of 24px rows, and a corner
+     wider than the row it clips eats the first and last items' highlight. */
+  .menu-surface {
+    border-radius: var(--radius-menu);
+    corner-shape: round;
+    background: color-mix(in oklab, var(--popover) var(--glass-fill-solid), transparent);
+    box-shadow:
+      inset 0 0 0 1px var(--glass-rim),
+      inset 0 1px 0 0 var(--glass-sheen),
+      0 0 0 0.5px var(--glass-hairline),
+      var(--app-shadow-menu);
+    backdrop-filter: blur(8px) saturate(120%);
+    -webkit-backdrop-filter: blur(8px) saturate(120%);
+    isolation: isolate;
+  }
+
+  /* The same shell without the glass, for a surface that moves while you are
+     looking at it. An item-aligned select slides its whole popup as you scroll —
+     that is the behaviour, not a bug — and a backdrop-filter underneath has to
+     recompute the blur against whatever it is passing over on every frame, which
+     is what turns a slide into a judder. A menu never moves once it is open, so
+     a menu keeps the glass. */
+  .menu-surface-opaque {
+    border-radius: var(--radius-menu);
+    corner-shape: round;
+    background: var(--popover);
+    box-shadow:
+      inset 0 0 0 1px var(--glass-rim),
+      inset 0 1px 0 0 var(--glass-sheen),
+      0 0 0 0.5px var(--glass-hairline),
+      var(--app-shadow-menu);
+    isolation: isolate;
+  }
+
+  /* ---- Work blobs --------------------------------------------------------- */
+
+  /* The workspace is laid out the way a browser window is: one continuous
+     surface — here the conversation rather than tab-strip chrome — with the
+     working panes inset into it as rounded sheets. The gutter between them is
+     what carries the relationship; the sheets themselves stay quiet so the
+     result still reads as a workspace and not as a chat with widgets in it. */
+  .work-canvas {
+    /* Deliberately paints nothing: the conversation's surface *is* the pane's
+       glass, and the working sheets are what sits on top of it. */
+    background: transparent;
+  }
+
+  /* A sheet is inset into a canvas of almost its own value, so the 0.5px
+     hairline the glass surfaces use disappears and the panes read as one
+     undivided field. A full 1px edge plus a wider ambient shadow is what makes
+     the inset legible as an inset. */
+  .work-blob {
+    position: relative;
+    border-radius: var(--radius-2xl);
+    box-shadow: var(--app-shadow-sheet);
+    overflow: hidden;
+    /* Contains the rounded clip against a child that paints its own background
+       (Monaco does) and gives the rings something to stack against. */
+    isolation: isolate;
+  }
+
+  /* The edge is drawn over the content, not under it. As an inset shadow on the
+     element it is covered by any child that paints its own background — which is
+     every pane here — so it survived only where the clip curves away from the
+     child's own antialiased corner. That is why the corners were the one place
+     the rim showed, and why they read as lumpy: outer ring, stray rim and the
+     child's clipped edge all landing on the same arc. One ring on top is the
+     same line the whole way round. */
+  .work-blob::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    border-radius: inherit;
+    box-shadow: inset 0 0 0 1px var(--sheet-edge);
+    pointer-events: none;
+  }
+
+  /* Working state: the rim breathes rather than a light going round it.
+     A constant-speed arc on a loop is a machine — it reads as a progress
+     spinner disguised as an edge, and it never stops, so it competes with the
+     content for the rest of the run. Brightening the whole rim in and out is
+     the same information with none of that: ambient, ignorable, and it has no
+     "position" that the eye starts tracking. */
+  .work-blob[data-busy="true"]::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    padding: 1px;
+    border-radius: inherit;
+    background: var(--shimmer-tint);
+    /* Border-only: punch the content box out of the mask so just the 1px
+       padding ring survives. */
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    /* The phase offset is per-blob. Two panes breathing in lockstep is what
+       makes a pair of them look driven by one clock. */
+    animation: blob-breathe 3.4s cubic-bezier(0.4, 0, 0.6, 1) var(--shimmer-phase, 0s) infinite alternate;
+    pointer-events: none;
+  }
+
+  /* Settling is the one moment a direction is meaningful — something finished,
+     and the light running once around says so and then leaves. Slow, and the
+     arc is wide and soft so it reads as a highlight sliding over the edge
+     rather than a marker travelling along it. */
+  .work-blob[data-settled="true"]::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    padding: 1px;
+    border-radius: inherit;
+    background: conic-gradient(
+      from var(--shimmer-angle),
+      transparent 0turn,
+      color-mix(in oklab, var(--shimmer-tint) 55%, transparent) 0.14turn,
+      color-mix(in oklab, var(--shimmer-tint) 90%, transparent) 0.25turn,
+      color-mix(in oklab, var(--shimmer-tint) 55%, transparent) 0.36turn,
+      transparent 0.5turn
+    );
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    animation: blob-sweep 1.5s cubic-bezier(0.32, 0.72, 0, 1) 1 forwards;
+    pointer-events: none;
+  }
+
+  /* ---- Code -------------------------------------------------------------- */
+
+  .code-inline {
+    border-radius: 0.35rem;
+    border: 1px solid color-mix(in srgb, var(--code-border) 82%, var(--code-foreground) 8%);
+    background: color-mix(in srgb, var(--code-background) 70%, transparent);
+    color: var(--code-foreground);
+    padding: 0.05em 0.32em;
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+    /* A long identifier in a narrow column has to wrap. Cloning the decoration
+       gives each wrapped fragment its own complete border and padding, so it
+       reads as two chips rather than one torn in half. Breaking at word
+       boundaries first keeps `foo(bar)` intact whenever it actually fits. */
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+    overflow-wrap: break-word;
+    word-break: normal;
+  }
+
+  /* The block sits on the editor's own canvas colour, so a snippet in chat and
+     the file it came from are the same surface. */
+  .code-block {
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--code-border);
+    background: var(--code-background);
+    font-family: var(--font-mono);
+  }
+}
+
+/* The dwell at each end is 10% of the run, so a name that has been walked into
+   view stays still long enough to read before it goes back. */
+@keyframes sidebar-title-marquee {
+  0%,
+  10% {
+    transform: translateX(0);
+  }
+  90%,
+  100% {
+    transform: translateX(var(--sidebar-title-shift, 0px));
+  }
+}
+
+@keyframes blob-breathe {
+  from {
+    opacity: 0.25;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes blob-sweep {
+  from {
+    --shimmer-angle: -90deg;
+    opacity: 1;
+  }
+  70% {
+    opacity: 1;
+  }
+  to {
+    --shimmer-angle: 270deg;
+    opacity: 0;
+  }
+}
+
+@keyframes agent-caret {
+  0%,
+  45% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes agent-shimmer {
+  from {
+    background-position: 140% 0;
+  }
+  to {
+    background-position: -40% 0;
+  }
+}
+
+@keyframes boot-wordmark-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes emblem-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes agent-orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes agent-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Long content inside a transcript row.
+   The agent's thinking and a tool's payload are both unbounded — a page fetch
+   runs to thousands of lines — and a row that grows to fit either one stops being
+   a row. Every one of them scrolls inside the same height instead, live and
+   settled alike: a thought that was 1.5in tall while it streamed must not reflow
+   the whole thread the moment it finishes.
+
+   The ends fade only where there is more to see. `data-fade` is set from the
+   element's own scroll position, because a mask applied unconditionally dims the
+   first line of text that is already fully in view and reads as a rendering
+   fault rather than as an invitation to scroll. */
+:root { --agent-scroll-max: 9rem; }
+.agent-scroll { max-height: var(--agent-scroll-max); overflow: auto; }
+.agent-scroll[data-fade="top"] { mask-image: linear-gradient(to bottom, transparent, black 1.15rem); }
+.agent-scroll[data-fade="bottom"] { mask-image: linear-gradient(to top, transparent, black 1.15rem); }
+.agent-scroll[data-fade="both"] {
+  mask-image: linear-gradient(to bottom, transparent, black 1.15rem, black calc(100% - 1.15rem), transparent);
+}
+
+/* Disclosure, animated.
+   Every collapsible in the transcript opens and closes on the same curve, so a
+   tool call folding out reads as the row growing rather than as the rest of the
+   thread jumping down to make room. Radix publishes the measured height as
+   --radix-collapsible-content-height, which is what lets `height: auto` be
+   animated at all; keying on data-state keeps it in one place instead of each
+   caller wiring its own AnimatePresence. */
+@keyframes disclosure-open {
+  from { height: 0; opacity: 0; }
+  to { height: var(--radix-collapsible-content-height); opacity: 1; }
+}
+@keyframes disclosure-close {
+  from { height: var(--radix-collapsible-content-height); opacity: 1; }
+  to { height: 0; opacity: 0; }
+}
+[data-slot="collapsible-content"] { overflow: hidden; }
+[data-slot="collapsible-content"][data-state="open"] { animation: disclosure-open 220ms cubic-bezier(0.32, 0.72, 0, 1); }
+[data-slot="collapsible-content"][data-state="closed"] { animation: disclosure-close 170ms cubic-bezier(0.32, 0.72, 0, 1); }
+/* Honour the OS setting: the point of the animation is continuity, and someone
+   who has asked for less motion still needs the disclosure to work. */
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="collapsible-content"][data-state="open"],
+  [data-slot="collapsible-content"][data-state="closed"] { animation-duration: 1ms; }
+}
+
+/* The app icon's dot grid, animated — see components/common/ConstructDots.tsx.
+   Each dot carries its own resting scale in --dot-rest, and every pattern departs
+   from that value and comes back to it, so the grid the learner sees between
+   passes is the mark exactly as the icon draws it. */
+@keyframes construct-dots-wave {
+  0%,
+  100% {
+    transform: scale(calc(var(--dot-rest) * 0.62));
+    opacity: calc(var(--dot-tone) * 0.55);
+  }
+  50% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* A tighter crest than the wave: the dot sits at rest for most of the cycle and
+   is only briefly lit, which is what turns a continuous swell into one pass. */
+@keyframes construct-dots-sweep {
+  0%,
+  62%,
+  100% {
+    transform: scale(calc(var(--dot-rest) * 0.72));
+    opacity: calc(var(--dot-tone) * 0.6);
+  }
+  24% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* One pass, and back to the mark. Both ends are the dot's own resting values
+   rather than a dimmed version of them, so the animation does not have to be
+   stopped — it arrives. Every other pattern here loops and is therefore always
+   interrupted; this one is for the mark the learner is looking at while they
+   wait, where the last thing they should see is the logo, drawn exactly as the
+   icon draws it. */
+@keyframes construct-dots-pass {
+  0% {
+    transform: scale(var(--dot-rest));
+    opacity: var(--dot-tone);
+  }
+  45% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(var(--dot-rest));
+    opacity: var(--dot-tone);
+  }
+}
+
+@keyframes construct-dots-pulse {
+  0%,
+  100% {
+    transform: scale(calc(var(--dot-rest) * 0.78));
+    opacity: calc(var(--dot-tone) * 0.62);
+  }
+  50% {
+    transform: scale(var(--dot-rest));
+    opacity: var(--dot-tone);
+  }
+}
+
+/* The sign-in window's backdrop: the mark itself, tiled, at the scale of the
+   room rather than of a glyph. Two layers of the same field — one at rest, one
+   bright — and a diagonal band that drifts across the second, revealing it. Only
+   the band moves, so the field stays pinned to the window like printed wallpaper
+   instead of sliding across it, and the whole thing is one animated mask rather
+   than several hundred animated dots.
+
+   The tile is the icon's own ring geometry at wallpaper scale, drawn as a mask
+   over `currentColor` so the field inherits the window's text colour and needs no
+   separate light and dark values — and so the sweep composites into the same
+   mask rather than needing a second layer. */
+/* The room the window stands in.
+   This tiled the mark itself at 132px across the pane, with a diagonal band
+   passing over it every nine seconds to light the rings it crossed. Read at the
+   size of the window it actually ships in, that was not a texture behind a form,
+   it was six rows of logo competing with the one thing on screen worth looking
+   at — and a moving band drew the eye away from the field being typed into.
+
+   A plain grid instead, at a size you feel rather than read: one dot every
+   18px, a pixel and a half across, and faint enough that the pane still looks
+   like a pane. It is masked away from the middle, so nothing sits behind the
+   form, and it does not move. */
+.auth-field {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  /* Foreground rather than a colour of its own, so the grid on the dark pane
+     lightens by as much as the pane darkened. */
+  background-image: radial-gradient(circle at center, color-mix(in oklab, var(--foreground) 12%, transparent) 1.5px, transparent 1.6px);
+  background-size: 18px 18px;
+  /* Clear under the form, present out at the edges. */
+  mask-image: radial-gradient(105% 80% at 50% 42%, transparent 34%, black 82%);
+}
+.dark .auth-field {
+  /* Light dots lose more to a dark pane than dark ones do to a light one. */
+  background-image: radial-gradient(circle at center, color-mix(in oklab, var(--foreground) 16%, transparent) 1.5px, transparent 1.6px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Collapse to the resting mark. A loading state that cannot move should still
+     be the logo rather than nothing. */
+  .construct-dots circle {
+    animation: none !important;
+  }
+
+  .thinking-shimmer,
+  .boot-wordmark,
+  .streaming-caret::after,
+  .work-blob[data-busy="true"]::after,
+  .work-blob[data-settled="true"]::after {
+    animation: none;
+    opacity: 0.55;
+  }
+
+  .thinking-shimmer,
+  .boot-wordmark {
+    color: var(--muted-foreground);
+    -webkit-text-fill-color: currentColor;
+  }
+
+  .boot-wordmark {
+    opacity: 1;
+    color: var(--foreground);
+  }
+}
+
+/* ---- Editor widgets ------------------------------------------------------ */
+
+/* Monaco brings VSCode's own chrome with it: the hover that opens under the
+   cursor is a VSCode widget, drawn by VSCode's stylesheet in VSCode's
+   proportions — a 3px arc, a 1px grey box, a flat `0 2px 8px` drop shadow. Next
+   to a window whose every other floating thing is a pane of glass with a 6px
+   rim and a superelliptical corner, it reads as another application's UI
+   borrowed into this one.
+
+   So it is re-dressed in the same material as `.menu-surface`: the same fill,
+   the same rim and hairline, the same shadow, the same radius, the same type.
+   Only the surface — nothing here changes what the widget does, what it
+   contains, or when it appears.
+
+   The context menu wants exactly the same treatment and cannot be given it from
+   here: the editor renders context views inside a shadow root, which no rule in
+   this file can cross. Its half lives in `lib/monaco/widgets.css`, which is
+   adopted into that root — see the note there.
+
+   Deliberately outside `@layer components`. VSCode ships its CSS unlayered, and
+   an unlayered rule beats a layered one at any specificity, so an override that
+   lived in the layer would lose every time.
+
+   The leading `html` is doing the same job one tier down. The editor's own
+   stylesheet is injected after this one and several of its rules are written on
+   exactly the selectors below, so equal specificity would hand every one of
+   them to VSCode on source order alone. One element ahead of the class is the
+   smallest thing that settles it. */
+
+/* ---- The hover ----------------------------------------------------------- */
+
+html .monaco-editor .monaco-hover,
+html .monaco-editor .monaco-resizable-hover,
+html .monaco-hover.workbench-hover {
+  /* The border is kept rather than replaced by an inset ring: the resizable
+     hover measures itself `content-box`, so removing a border it has already
+     budgeted for moves the widget. Recolouring one costs nothing. */
+  border: 1px solid var(--glass-rim);
+  border-radius: var(--radius-menu);
+  /* A tight arc, for the same reason menus use one: this is a short stack of
+     rows, and a corner wider than the first row eats into it. */
+  corner-shape: round;
+  background: color-mix(in oklab, var(--popover) var(--glass-fill-solid), transparent);
+  box-shadow:
+    inset 0 1px 0 0 var(--glass-sheen),
+    0 0 0 0.5px var(--glass-hairline),
+    var(--app-shadow-menu);
+  color: var(--popover-foreground);
+  backdrop-filter: blur(8px) saturate(120%);
+  -webkit-backdrop-filter: blur(8px) saturate(120%);
+}
+
+/* The resizable wrapper and the hover inside it are two elements drawing one
+   widget. The outer one now carries the material, so the inner must go back to
+   painting nothing or the glass is laid down twice — twice the fill, twice the
+   blur, and a rim showing through itself. */
+html .monaco-editor .monaco-resizable-hover > .monaco-hover {
+  border: none;
+  border-radius: inherit;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* Prose in the window's own face; the signature above it stays in the editor's,
+   which is the whole point of showing a signature. Scoped to the markdown row
+   for exactly that reason — `.monaco-hover` as a whole would take the code with
+   it. */
+html .monaco-editor .monaco-hover .markdown-hover > .hover-contents:not(.code-hover-contents),
+html .monaco-hover.workbench-hover .hover-contents:not(.code-hover-contents) {
+  font-family: var(--font-sans);
+  font-size: var(--text-content);
+  line-height: var(--text-content--line-height);
+}
+
+html .monaco-editor .monaco-hover .hover-contents:not(.html-hover-contents),
+html .monaco-hover.workbench-hover .hover-contents:not(.html-hover-contents) {
+  padding: 6px 10px;
+}
+
+/* The rule between two hover parts is a divider, not an edge: the app's own
+   `--border`, and bled out to the new padding so it spans the widget. */
+/* The rule between two rows, and the space either side of it.
+   
+   The margins are reset, not only the colour. VSCode pairs a 4px top margin
+   with a -4px bottom one, which on its own 4px row padding comes out even; on
+   ours it put ten pixels above the line and two below, and a separator sitting
+   against the text under it reads as a mistake before you can say what it is.
+   Zero here leaves each row's own padding to do the spacing, symmetrically. */
+html .monaco-editor .monaco-hover hr,
+html .monaco-hover.workbench-hover hr {
+  height: 1px;
+  border: none;
+  background: var(--border);
+  margin: 0 -10px;
+}
+
+html .monaco-editor .monaco-hover .hover-row.status-bar .actions {
+  background-color: color-mix(in oklab, var(--foreground) 4%, transparent);
+}
+
+/* The inline chip, matched to `.code-inline` in the transcript, so the same
+   identifier is the same object wherever it is quoted. */
+html .monaco-editor .monaco-hover code {
+  border-radius: 0.35rem;
+  padding: 0 0.32em;
+  background-color: color-mix(in srgb, var(--code-background) 70%, transparent);
+}
