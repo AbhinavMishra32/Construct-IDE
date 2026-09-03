@@ -126,7 +126,7 @@ export function Composer({
           autoFocus={autoFocus}
           // Vertical padding matches the 28px control height, so the first line
           // sits on the same centre line as the attach button beside it.
-          className="app-scroll block w-full resize-none bg-transparent px-1.5 py-1 text-content leading-[1.55] outline-none placeholder:text-muted-foreground/65"
+          className="app-scroll block w-full resize-none bg-transparent px-1.5 py-1 text-content leading-[1.55] outline-none placeholder:text-muted-foreground/75"
           onBlur={() => setFocused(false)}
           onChange={(event) => onChange(event.target.value)}
           onFocus={() => setFocused(true)}
@@ -140,7 +140,7 @@ export function Composer({
 
       <div className="mt-1.5 flex items-center gap-1 px-0.5">
         {leading}
-        <div className="min-w-0 flex-1 truncate px-1 text-ui text-muted-foreground/65">
+        <div className="min-w-0 flex-1 truncate px-1 text-ui text-muted-foreground">
           {/* The notice above already says why nothing can be sent; a second
               line about Return would be instructions for a key that does nothing. */}
           {ready ? hint ?? (focused && !value ? "Return to send · Shift + Return for a new line" : null) : null}

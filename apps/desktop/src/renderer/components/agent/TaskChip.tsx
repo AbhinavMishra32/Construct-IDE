@@ -54,7 +54,7 @@ export function TaskChip({
       </span>
 
       <span className="min-w-0 flex-1">
-        <span className="block text-ui-sm font-semibold tracking-wide text-muted-foreground/70 uppercase">
+        <span className="block text-ui-sm font-semibold tracking-wide text-muted-foreground/85 uppercase">
           {done ? "Task complete" : waiting ? "Task in review" : "Task"}
         </span>
         <span className={cn("block truncate text-ui font-medium text-foreground", done && "line-through decoration-1")}>
@@ -66,12 +66,12 @@ export function TaskChip({
         <Orb label="Checking your work" px={15} state="solving" />
       ) : (
         !done && (
-          <span className="shrink-0 text-ui-sm tabular-nums text-muted-foreground/70">
+          <span className="shrink-0 text-ui-sm tabular-nums text-muted-foreground/85">
             {task.criteria.length} criteri{task.criteria.length === 1 ? "on" : "a"}
           </span>
         )
       )}
-      <ChevronRight className="size-3.5 shrink-0 text-muted-foreground/50 transition-colors group-hover/task:text-foreground" />
+      <ChevronRight className="size-3.5 shrink-0 text-muted-foreground transition-colors group-hover/task:text-foreground" />
     </button>
   );
 }

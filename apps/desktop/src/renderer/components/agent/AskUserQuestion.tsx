@@ -112,7 +112,7 @@ export function AskUserQuestion({ request, busy, onSubmit }: { request: AskUserQ
             {question.header}
           </p>
           {request.questions.length > 1 && (
-            <span className="shrink-0 text-ui-sm tabular-nums text-muted-foreground/60">{step + 1}/{request.questions.length}</span>
+            <span className="shrink-0 text-ui-sm tabular-nums text-muted-foreground">{step + 1}/{request.questions.length}</span>
           )}
         </div>
 
@@ -152,7 +152,7 @@ export function AskUserQuestion({ request, busy, onSubmit }: { request: AskUserQ
                   <Inline text={option.label} />
                 </span>
                 {index < DIGITS && (
-                  <kbd className="shrink-0 font-sans text-ui-sm tabular-nums text-muted-foreground/55 transition-colors group-hover/option:text-muted-foreground">
+                  <kbd className="shrink-0 font-sans text-ui-sm tabular-nums text-muted-foreground/60 transition-colors group-hover/option:text-muted-foreground">
                     {index + 1}
                   </kbd>
                 )}
@@ -177,7 +177,7 @@ export function AskUserQuestion({ request, busy, onSubmit }: { request: AskUserQ
               <textarea
                 ref={customField}
                 className={cn(
-                  "app-scroll field-sizing-content block max-h-40 w-full resize-none bg-transparent outline-none placeholder:text-muted-foreground/55",
+                  "app-scroll field-sizing-content block max-h-40 w-full resize-none bg-transparent outline-none placeholder:text-muted-foreground/75",
                   sole ? "min-h-[4rem] text-content leading-[1.6]" : "mt-1 min-h-[2.25rem] text-ui leading-[1.55]",
                 )}
                 disabled={busy}
@@ -200,7 +200,7 @@ export function AskUserQuestion({ request, busy, onSubmit }: { request: AskUserQ
               onClick={writeOwn}
               type="button"
             >
-              <Pencil className="size-3.5 shrink-0 text-muted-foreground/70" />
+              <Pencil className="size-3.5 shrink-0 text-muted-foreground/85" />
               None of these, I will write my own
             </button>
           ))}
@@ -210,7 +210,7 @@ export function AskUserQuestion({ request, busy, onSubmit }: { request: AskUserQ
       {/* The composer's own toolbar row: hint left, one round control right,
           outside the shell rather than inside it. */}
       <div className="mt-1.5 flex items-center gap-1 px-0.5">
-        <p className="min-w-0 flex-1 truncate px-1 text-ui text-muted-foreground/65">
+        <p className="min-w-0 flex-1 truncate px-1 text-ui text-muted-foreground">
           {busy
             ? "Sending…"
             : custom

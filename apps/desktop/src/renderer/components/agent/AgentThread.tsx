@@ -316,7 +316,7 @@ function LearnerMessage({ body, editable, onEdit }: { body: string; editable: bo
             value={draft}
           />
           <div className="mt-1 flex items-center justify-end gap-1.5 px-1">
-            <span className="mr-auto min-w-0 truncate text-ui-sm text-muted-foreground/70">Everything after this is undone</span>
+            <span className="mr-auto min-w-0 truncate text-ui-sm text-muted-foreground/85">Everything after this is undone</span>
             <button
               className="rounded-md px-2 py-0.5 text-ui text-muted-foreground transition-colors hover:text-foreground"
               onClick={() => {

@@ -218,7 +218,13 @@
   --secondary: oklch(14.5% 0 0 / 6%);
   --secondary-foreground: oklch(14.5% 0 0 / 78%);
   --muted: oklch(14.5% 0 0 / 5%);
-  --muted-foreground: oklch(14.5% 0 0 / 55%);
+  /* Higher than dark's identical-looking 55%, for the reason set out under the
+     transcript tokens below: the same alpha buys much less contrast over a
+     light ground. At 65% the two modes land within a tenth of a point of each
+     other. It also has to survive being dimmed further — a `/70` on this token
+     is a real pattern in the interface, and at 55% that landed at 2.4:1, which
+     is not text anybody reads. */
+  --muted-foreground: oklch(14.5% 0 0 / 65%);
 
   /* The transcript's two registers.
      
@@ -229,12 +235,24 @@
      margin notes. They sit further back than anything else in the window, and
      `-strong` is where a row goes on hover: legible, still not prose.
      
-     Tuned per mode rather than shared, because they are not symmetrical. Faint
-     ink on white stays crisp at low alpha; faint white on dark goes to mush
-     sooner, so dark holds a little more of it. */
-  --transcript-step: oklch(14.5% 0 0 / 44%);
-  --transcript-step-strong: oklch(14.5% 0 0 / 72%);
-  --transcript-step-mark: oklch(14.5% 0 0 / 34%);
+     Tuned per mode rather than shared, because they are not symmetrical — and
+     the asymmetry runs the other way from what this comment used to claim.
+     Alpha composites in sRGB, and a light ground sits near the top of that
+     range, so the same alpha buys much less separation from it: ink at 44% over
+     the light window fill measured 3.2:1 where white at 50% over the dark one
+     measures 5.2:1. Light mode was paying for the same recession with a third
+     of the legibility, which is what read as the tool rows being washed out
+     with nothing actually wrong with them.
+
+     So these are matched on measured contrast rather than on alpha, which is
+     why the two blocks do not look alike: 60/80/50 here reads as 50/78/40 does
+     there. theme.test.ts computes both and holds them within a tenth of each
+     other. */
+  --transcript-step: oklch(14.5% 0 0 / 60%);
+  --transcript-step-strong: oklch(14.5% 0 0 / 80%);
+  /* Marks are graphics, not text, so they may sit further back than a row's
+     words — but not below the 3:1 a shape needs to read as the shape it is. */
+  --transcript-step-mark: oklch(14.5% 0 0 / 50%);
   --accent: oklch(14.5% 0 0 / 8%);
   --accent-foreground: oklch(14.5% 0 0 / 85%);
   --destructive: oklch(57.7% 0.245 27.325);
@@ -418,8 +436,8 @@
   --secondary-foreground: oklch(98.5% 0 0 / 78%);
   --muted: oklch(98.5% 0 0 / 10%);
   --muted-foreground: oklch(98.5% 0 0 / 55%);
-  /* See the light block. Held a few points higher: white at 44% on a dark
-     ground reads dimmer than ink at 44% on a light one. */
+  /* See the light block. These are the values the light ones were matched to,
+     so they are the pair that moves last. */
   --transcript-step: oklch(98.5% 0 0 / 50%);
   --transcript-step-strong: oklch(98.5% 0 0 / 78%);
   --transcript-step-mark: oklch(98.5% 0 0 / 40%);

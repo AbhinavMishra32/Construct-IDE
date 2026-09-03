@@ -84,9 +84,9 @@ export function ModelPicker({
           className="flex min-h-[1.625rem] items-center gap-2 px-2.5"
           onKeyDown={(event) => event.stopPropagation()}
         >
-          <Search className="size-3.5 shrink-0 text-muted-foreground/70" />
+          <Search className="size-3.5 shrink-0 text-muted-foreground/85" />
           <input
-            className="w-full bg-transparent text-content leading-none outline-none placeholder:text-muted-foreground/60"
+            className="w-full bg-transparent text-content leading-none outline-none placeholder:text-muted-foreground/75"
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search models"
             value={query}

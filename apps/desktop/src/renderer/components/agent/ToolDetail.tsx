@@ -153,7 +153,7 @@ function useObject(body: string): Record<string, unknown> | null {
 /** The label above a field. One idiom for all of them, so a detail panel reads
  *  as one thing rather than as several. */
 function Eyebrow({ children }: { children: React.ReactNode }) {
-  return <p className="px-2.5 pt-2 pb-1 text-ui-sm font-medium tracking-wide text-muted-foreground/60 uppercase">{children}</p>;
+  return <p className="px-2.5 pt-2 pb-1 text-ui-sm font-medium tracking-wide text-muted-foreground uppercase">{children}</p>;
 }
 
 /**
@@ -264,7 +264,7 @@ function FileView({ body, path, wrote = false }: { body: string; path: string; w
         {marked ? (
           <LanguageGlyph className="size-3.5 shrink-0" language={marked} />
         ) : (
-          <CornerDownRight className="size-3.5 shrink-0 text-muted-foreground/60" />
+          <CornerDownRight className="size-3.5 shrink-0 text-muted-foreground" />
         )}
         <button
           className="min-w-0 truncate font-mono text-ui-sm text-foreground/85 transition-colors hover:text-foreground hover:underline"
@@ -274,7 +274,7 @@ function FileView({ body, path, wrote = false }: { body: string; path: string; w
         >
           {path}
         </button>
-        {wrote && <span className="shrink-0 text-ui-sm text-muted-foreground/60">written</span>}
+        {wrote && <span className="shrink-0 text-ui-sm text-muted-foreground">written</span>}
       </div>
       <Snippet body={body} language={language ?? "text"} />
     </div>
@@ -337,7 +337,7 @@ function Command({ command, exitCode, output }: { command: string; exitCode: num
   return (
     <div className="min-w-0">
       <div className="flex min-w-0 items-start gap-1.5 px-2.5 pt-2 pb-1.5">
-        <span aria-hidden className="mt-px shrink-0 font-mono text-ui-sm text-muted-foreground/50">
+        <span aria-hidden className="mt-px shrink-0 font-mono text-ui-sm text-muted-foreground">
           $
         </span>
         <code className="min-w-0 flex-1 font-mono text-ui-sm break-all text-foreground/85">{command}</code>
@@ -350,7 +350,7 @@ function Command({ command, exitCode, output }: { command: string; exitCode: num
       {output.trim() ? (
         <Lines body={output} />
       ) : (
-        <p className="px-2.5 pb-2 text-ui-sm text-muted-foreground/60">No output.</p>
+        <p className="px-2.5 pb-2 text-ui-sm text-muted-foreground">No output.</p>
       )}
     </div>
   );
@@ -380,11 +380,11 @@ function WebSearch({ query, result }: { query: string; result: unknown }) {
     <div className="min-w-0">
       <div className="flex min-w-0 items-center gap-2 px-2.5 pt-2.5 pb-1.5">
         <span className="flex min-w-0 flex-1 items-center gap-1.5 rounded-full bg-[var(--accent)] px-2.5 py-1">
-          <SearchMark className="size-3.5 shrink-0 text-muted-foreground/70 [&_*]:[stroke-width:1.8]" />
+          <SearchMark className="size-3.5 shrink-0 text-muted-foreground/85 [&_*]:[stroke-width:1.8]" />
           <span className="min-w-0 truncate text-ui text-foreground/90">{query}</span>
         </span>
         {rows.length > 0 && (
-          <span className="shrink-0 text-ui-sm tabular-nums text-muted-foreground/60">
+          <span className="shrink-0 text-ui-sm tabular-nums text-muted-foreground">
             {rows.length === 1 ? "1 result" : `${rows.length} results`}
           </span>
         )}
@@ -423,7 +423,7 @@ function WebPages({ result, urls }: { result: unknown; urls: string[] }) {
         </div>
       ))}
       {missing.map((url) => (
-        <div className="flex min-w-0 items-center gap-2 px-2.5 py-1.5 text-ui-sm text-muted-foreground/60" key={url}>
+        <div className="flex min-w-0 items-center gap-2 px-2.5 py-1.5 text-ui-sm text-muted-foreground" key={url}>
           <Favicon host={host(url)} />
           <span className="min-w-0 truncate">{host(url)} returned nothing to read.</span>
         </div>
@@ -454,7 +454,7 @@ function Result({ row }: { row: Record<string, unknown> }) {
         <span className="flex min-w-0 items-baseline gap-1.5">
           <span className="min-w-0 truncate text-ui text-foreground/90 group-hover/result:text-foreground">{title}</span>
         </span>
-        <span className="flex min-w-0 items-baseline gap-1.5 text-ui-sm text-muted-foreground/60">
+        <span className="flex min-w-0 items-baseline gap-1.5 text-ui-sm text-muted-foreground">
           <span className="min-w-0 truncate">{host(url)}</span>
           {when && <span className="shrink-0">· {when}</span>}
         </span>
@@ -469,7 +469,7 @@ function Result({ row }: { row: Record<string, unknown> }) {
 /** A short aside in the detail panel: an Exa error, an unset key, an empty
  *  result. Said in a sentence, where the raw payload used to be. */
 function Note({ children }: { children: React.ReactNode }) {
-  return <p className="px-2.5 pb-2 text-ui-sm leading-[1.5] text-muted-foreground/70">{children}</p>;
+  return <p className="px-2.5 pb-2 text-ui-sm leading-[1.5] text-muted-foreground/85">{children}</p>;
 }
 
 /** The results out of a `WebSearchResult`, whichever shape the turn stored —
@@ -593,8 +593,8 @@ function Patches({ patches }: { patches: unknown }) {
           {index > 0 && <div className="mx-2.5 border-t border-border/60" />}
           <div className="flex min-w-0 items-baseline gap-1.5 px-2.5 pt-2 pb-1">
             <span className="shrink-0 text-ui-sm text-foreground/85">{memoryLabel(text(row.file)) || "Memory"}</span>
-            <span className="shrink-0 text-ui-sm text-muted-foreground/60">{PATCH_MODE[text(row.mode)] ?? PATCH_MODE.append}</span>
-            {text(row.reason) && <span className="min-w-0 truncate text-ui-sm text-muted-foreground/60">· {text(row.reason)}</span>}
+            <span className="shrink-0 text-ui-sm text-muted-foreground">{PATCH_MODE[text(row.mode)] ?? PATCH_MODE.append}</span>
+            {text(row.reason) && <span className="min-w-0 truncate text-ui-sm text-muted-foreground">· {text(row.reason)}</span>}
           </div>
           <Lines body={text(row.content)} />
         </div>
@@ -646,7 +646,7 @@ function Exchange({ answer, choices, question }: { answer: string; choices: stri
         </p>
       ) : (
         /* The row is open while the card below it is still waiting. */
-        <p className="mt-2 text-ui-sm text-muted-foreground/70">Waiting for your answer.</p>
+        <p className="mt-2 text-ui-sm text-muted-foreground/85">Waiting for your answer.</p>
       )}
     </div>
   );

@@ -78,7 +78,7 @@ export function TaskPanel({
     <div className="flex max-h-[min(34rem,70vh)] w-[30rem] max-w-[calc(100vw-3rem)] flex-col">
       <header className="shrink-0 px-4 pt-3.5">
         <div className="flex items-center gap-2">
-          <span className="text-ui-sm font-semibold tracking-[0.08em] text-muted-foreground/70 uppercase">
+          <span className="text-ui-sm font-semibold tracking-[0.08em] text-muted-foreground/85 uppercase">
             Practice task
           </span>
           <StatusPill status={task.status} />
@@ -119,7 +119,7 @@ export function TaskPanel({
 
         {task.criteria.length > 0 && (
           <section className="mt-4">
-            <h3 className="mb-1 text-ui-sm font-semibold tracking-[0.08em] text-muted-foreground/70 uppercase">Done when</h3>
+            <h3 className="mb-1 text-ui-sm font-semibold tracking-[0.08em] text-muted-foreground/85 uppercase">Done when</h3>
             <ul className="-mx-1.5">
               {task.criteria.map((line) => (
                 <li key={line}>
@@ -160,7 +160,7 @@ export function TaskPanel({
             reading a task is open the file it names. */}
         {task.files.length > 0 && (
           <section className="mt-3.5">
-            <h3 className="mb-1.5 text-ui-sm font-semibold tracking-[0.08em] text-muted-foreground/70 uppercase">In</h3>
+            <h3 className="mb-1.5 text-ui-sm font-semibold tracking-[0.08em] text-muted-foreground/85 uppercase">In</h3>
             <div className="flex flex-wrap gap-1">
               {task.files.map((path) => (
                 <button
@@ -187,7 +187,7 @@ export function TaskPanel({
                 : "bg-[color-mix(in_oklab,var(--foreground)_6%,transparent)]",
             )}
           >
-            <h3 className="mb-1 text-ui-sm font-semibold tracking-[0.08em] text-muted-foreground/70 uppercase">
+            <h3 className="mb-1 text-ui-sm font-semibold tracking-[0.08em] text-muted-foreground/85 uppercase">
               {done ? "Passed" : "Not yet"}
             </h3>
             <p className="text-ui leading-[1.6] text-foreground/85">{task.outcome}</p>
@@ -212,7 +212,7 @@ export function TaskPanel({
           </span>
         ) : (
           <>
-            <span className="min-w-0 flex-1 truncate text-ui-sm text-muted-foreground/70">
+            <span className="min-w-0 flex-1 truncate text-ui-sm text-muted-foreground/85">
               {met === task.criteria.length && task.criteria.length > 0
                 ? "Everything ticked — send it over."
                 : "Tick as you go. Construct checks the code, not the ticks."}

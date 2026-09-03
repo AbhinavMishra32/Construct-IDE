@@ -88,7 +88,7 @@ export function ConceptCard({
           <span className="shrink-0">{rubric.title}</span>
           {changed && changed.length > 0 && (
             <>
-              <span className="shrink-0 text-muted-foreground/50">·</span>
+              <span className="shrink-0 text-muted-foreground">·</span>
               <ChangedFields fields={changed} />
             </>
           )}

@@ -672,7 +672,7 @@ export function ChallengePublished({ part }: { part: ToolPart }) {
       </span>
       <span className="min-w-0 truncate">
         <span className="text-ui font-medium text-foreground">{part.label || (sourced ? "Problem set" : replaced ? "Challenge replaced" : "Challenge ready")}</span>
-        <span className="ml-1.5 text-muted-foreground/60">
+        <span className="ml-1.5 text-muted-foreground">
           {sourced ? `· from ${sourceName} · judged there` : replaced ? "· replaced · validated" : "· validated"}
         </span>
       </span>
@@ -711,7 +711,7 @@ export function RunFailure({ body }: { body: string }) {
           {detail && (
             <>
               <button
-                className="mt-1.5 inline-flex items-center gap-1 text-ui-sm text-muted-foreground/70 transition-colors hover:text-foreground"
+                className="mt-1.5 inline-flex items-center gap-1 text-ui-sm text-muted-foreground/85 transition-colors hover:text-foreground"
                 onClick={() => setOpen((value) => !value)}
                 type="button"
               >

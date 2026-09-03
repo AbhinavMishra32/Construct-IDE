@@ -100,7 +100,7 @@ function Payload({ title, body }: { title: string; body: string }) {
   const lines = trimmed.split("\n").length;
   return (
     <div className="min-w-0">
-      <p className="px-2.5 pt-2 pb-1 text-ui-sm font-medium tracking-wide text-muted-foreground/70 uppercase">{title}</p>
+      <p className="px-2.5 pt-2 pb-1 text-ui-sm font-medium tracking-wide text-muted-foreground/85 uppercase">{title}</p>
       <FadedScroll uncapped={full} watch={body}>
         <pre className="px-2.5 pb-2 font-mono text-ui-sm leading-[1.5] whitespace-pre text-muted-foreground/90">{trimmed}</pre>
       </FadedScroll>

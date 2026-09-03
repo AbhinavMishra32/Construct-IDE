@@ -54,7 +54,7 @@ export function ConceptHistory({
 
   return (
     <section className="mt-5 border-t border-border/60 pt-3">
-      <h2 className="mb-2 text-ui-sm font-semibold tracking-wide text-muted-foreground/60 uppercase">How this moved</h2>
+      <h2 className="mb-2 text-ui-sm font-semibold tracking-wide text-muted-foreground uppercase">How this moved</h2>
       <ol className="relative">
         {/* The rail. Stops short at both ends so it reads as connecting the
             entries rather than running off past them. */}
@@ -91,12 +91,12 @@ function Entry({ event, newest }: { event: ConceptEvent; newest: boolean }) {
               {event.kind === "introduced" ? `first taught at L${event.masteryLevel}` : `held at L${event.masteryLevel}`}
             </span>
           )}
-          <span className="shrink-0 text-ui-sm text-muted-foreground/70">{rubric.title}</span>
-          <span className="ml-auto shrink-0 text-ui-sm text-muted-foreground/50">{relativeTime(event.createdAt)}</span>
+          <span className="shrink-0 text-ui-sm text-muted-foreground/85">{rubric.title}</span>
+          <span className="ml-auto shrink-0 text-ui-sm text-muted-foreground">{relativeTime(event.createdAt)}</span>
         </div>
         {event.reason && <p className="mt-0.5 text-ui leading-[1.5] text-foreground/80">{event.reason}</p>}
         {event.changed.length > 0 && (
-          <p className="mt-0.5 text-ui-sm text-muted-foreground/60">
+          <p className="mt-0.5 text-ui-sm text-muted-foreground">
             <ChangedFields fields={event.changed} />
           </p>
         )}

@@ -56,12 +56,12 @@ function Row({
         <Icon
           className={cn(
             "size-3.5",
-            tone === "success" ? "text-[var(--success)]" : tone === "destructive" ? "text-destructive" : "text-muted-foreground/70",
+            tone === "success" ? "text-[var(--success)]" : tone === "destructive" ? "text-destructive" : "text-muted-foreground/85",
           )}
         />
       </span>
       <span className="shrink-0 font-medium text-muted-foreground">{title}</span>
-      {meta && <span className="min-w-0 flex-1 truncate text-muted-foreground/65">{meta}</span>}
+      {meta && <span className="min-w-0 flex-1 truncate text-muted-foreground">{meta}</span>}
     </div>
   );
 }
@@ -76,11 +76,11 @@ function Collapsible({ body }: { body: string }) {
         type="button"
       >
         <span aria-hidden className="grid size-4 shrink-0 place-items-center">
-          <Info className="size-3.5 text-muted-foreground/70" />
+          <Info className="size-3.5 text-muted-foreground/85" />
         </span>
         <span className="shrink-0 font-medium text-muted-foreground">System</span>
-        <span className="min-w-0 flex-1 truncate text-muted-foreground/65">{body}</span>
-        <ChevronRight className={cn("size-3 shrink-0 text-muted-foreground/50 transition-transform", open && "rotate-90")} />
+        <span className="min-w-0 flex-1 truncate text-muted-foreground">{body}</span>
+        <ChevronRight className={cn("size-3 shrink-0 text-muted-foreground transition-transform", open && "rotate-90")} />
       </button>
       {/* Flush with the trigger, like every other disclosure in the transcript:
           the expanded text is the same event in full, not a child of it. */}
