@@ -66,17 +66,6 @@ const DESKTOP_ORIGIN = "construct://desktop";
  *  in the backend's server.ts. */
 const AUTH_BASE = "/api/auth";
 
-/**
- * Flows the desktop draws but the backend cannot serve yet.
- *
- * Construct's backend runs Better Auth with email and password only. The
- * emailed one-time code flows need its `emailOTP` plugin, which is a backend
- * change rather than a desktop one. Refusing them here — by name, with a
- * sentence a person can act on — is better than letting the request 404 and
- * surfacing as "Sign-in failed (404)".
- */
-const UNSUPPORTED = "Emailed sign-in codes are not switched on for this account yet. Sign in with your password instead.";
-
 type Account = { id: string; displayName: string; email: string };
 /** What Better Auth answers with. `token` is absent when a deployment wants an
  *  address confirmed before it hands out a session. */
@@ -128,27 +117,43 @@ export class AuthService {
            and Better Auth has already sent it as part of the sign-up. */
         return payload.token ? this.persist(payload) : { status: "code-sent", purpose: "email-verification" };
       }
-      case "sign-in":
-        return this.persist(await this.post("sign-in/email", { email: input.email, password: input.password }));
-      /* Every code-carrying flow needs Better Auth's emailOTP plugin, which the
-         backend does not load. They stay in the union because the sign-in window
-         already draws them and the backend is expected to grow the plugin; until
-         it does they fail by name rather than as a bare 404. */
+      case "sign-in": {
+        const payload = await this.post("sign-in/email", { email: input.email, password: input.password }).catch(async (error: unknown) => {
+          /* An unconfirmed address is not a failed sign-in, it is an unfinished
+             sign-up. Better Auth refuses the password without sending anything,
+             so the code is asked for here and the window moves to the step that
+             was skipped rather than showing a dead end. */
+          if (!(error instanceof AuthError) || error.code !== "EMAIL_NOT_VERIFIED") throw error;
+          await this.post("email-otp/send-verification-otp", { email: input.email, type: "email-verification" });
+          return null;
+        });
+        return payload ? this.persist(payload) : { status: "code-sent", purpose: "email-verification" };
+      }
       case "send-code":
+        /* Answers the same way whether or not the address has an account, so this
+           is not a way to ask the server who has signed up. */
+        await this.post("email-otp/send-verification-otp", { email: input.email, type: input.purpose });
+        return { status: "code-sent", purpose: input.purpose };
       case "verify-email":
+        return this.persist(await this.post("email-otp/verify-email", { email: input.email, otp: input.code }));
       case "sign-in-code":
+        return this.persist(await this.post("sign-in/email-otp", { email: input.email, otp: input.code }));
       case "reset-password":
-        throw new AuthError(UNSUPPORTED, "OTP_UNAVAILABLE");
+        /* Resetting revokes every other session server-side and hands back none,
+           so the new password is spent immediately on a fresh one — otherwise the
+           learner would type a new password and land back on the sign-in form. */
+        await this.post("email-otp/reset-password", { email: input.email, otp: input.code, password: input.password });
+        return this.persist(await this.post("sign-in/email", { email: input.email, password: input.password }));
     }
   }
 
   /** POSTs to Better Auth and normalises the failure.
    *
-   *  The session can arrive two ways. With the `bearer` plugin loaded it comes
-   *  back on `set-auth-token`; without it — which is how Construct's backend is
-   *  configured today — Better Auth sets a session cookie instead. Both are
-   *  accepted, and `authorization` header carries whichever one was stored, so
-   *  the desktop keeps working if the plugin is added later. */
+   *  The session can arrive two ways. With the `bearer` plugin loaded — which is
+   *  how Construct's backend is configured — it comes back on `set-auth-token`;
+   *  without it Better Auth sets a session cookie instead. Both are still
+   *  accepted, because a desktop build outlives the deployment it was made
+   *  against and an older backend must not lock a newer app out. */
   private async post(path: string, body: Record<string, unknown>): Promise<AuthPayload> {
     let response: Response;
     try {
@@ -250,11 +255,10 @@ function sessionCookie(response: Response): string | null {
 /**
  * How a stored credential is presented on an authenticated request.
  *
- * Both headers, deliberately. Construct's backend does not load Better Auth's
- * bearer plugin, so `authorization` is read by nothing and a session lookup
- * against it answers null — the cookie is what actually authenticates. The
- * bearer header costs nothing and means the desktop keeps working unchanged if
- * the plugin is ever added.
+ * Both headers, deliberately. `authorization` is what the backend's bearer
+ * plugin reads, and the cookie is what authenticates against a deployment
+ * without it. Whichever credential was stored is presented both ways, which
+ * costs one header and means this app works against either backend.
  */
 function credentialHeaders(token: string): Record<string, string> {
   return {

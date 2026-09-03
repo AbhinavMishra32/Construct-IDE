@@ -24,12 +24,12 @@ const json = (body: unknown, init: ResponseInit = {}) =>
   new Response(JSON.stringify(body), { headers: { "content-type": "application/json" }, ...init });
 
 const user = { id: "8f1c", email: "learner@example.com", name: "learner" };
-/** How the backend answers today: no bearer plugin, so the session is a cookie. */
+/** How a deployment without the bearer plugin answers: the session is a cookie. */
 const cookieSession = (token: string) =>
   new Response(JSON.stringify({ user }), {
     headers: { "content-type": "application/json", "set-cookie": `better-auth.session_token=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax` },
   });
-/** How it would answer with Better Auth's bearer plugin loaded. */
+/** How the backend answers today, with Better Auth's bearer plugin loaded. */
 const bearerSession = (token: string) =>
   json({ token, user }, { headers: { "set-auth-token": token } });
 
@@ -135,17 +135,80 @@ describe("creating an account", () => {
   });
 });
 
-describe("flows the backend cannot serve yet", () => {
-  /* Better Auth's emailOTP plugin is not loaded. These must fail by name — a
-     bare 404 surfacing as "Sign-in failed (404)" tells nobody what to do. */
-  it.each([
-    { action: "send-code", email: credentials.email, purpose: "sign-in" },
-    { action: "sign-in-code", email: credentials.email, code: "123456" },
-    { action: "verify-email", email: credentials.email, code: "123456" },
-    { action: "reset-password", email: credentials.email, code: "123456", password: "correct-horse" },
-  ] as const)("refuses $action with a sentence rather than a status code", async (request) => {
-    await expect(auth().request(request)).rejects.toThrow(/Emailed sign-in codes are not switched on/);
-    expect(calls).toEqual([]);
+describe("confirming a new address", () => {
+  /* With verification on, sign-up answers with an account and no session. That is
+     not a failure — the code is already in the post — so the window has to be
+     sent to the step that collects it rather than shown an error. */
+  it("asks for the code when sign-up hands back no session", async () => {
+    routes["sign-up/email"] = () => json({ user });
+    const result = await auth().request({ action: "sign-up", ...credentials });
+
+    expect(result).toEqual({ status: "code-sent", purpose: "email-verification" });
+    expect(keychain.has("session-token")).toBe(false);
+  });
+
+  it("signs the device in once the code is confirmed", async () => {
+    routes["email-otp/verify-email"] = () => bearerSession("verified");
+    const result = await auth().request({ action: "verify-email", email: credentials.email, code: "123456" });
+
+    expect(result).toEqual({ status: "signed-in" });
+    expect(keychain.get("session-token")).toBe("verified");
+  });
+
+  /* Someone who closed the window mid-sign-up comes back and types their
+     password. Better Auth refuses it with EMAIL_NOT_VERIFIED and sends nothing,
+     so the app asks for the code itself and resumes the step that was skipped —
+     otherwise a correct password reads as a wrong one, forever. */
+  it("resumes an unfinished sign-up instead of reporting a bad password", async () => {
+    routes["sign-in/email"] = () => json({ code: "EMAIL_NOT_VERIFIED" }, { status: 403 });
+    routes["email-otp/send-verification-otp"] = () => json({ success: true });
+    const result = await auth().request({ action: "sign-in", ...credentials });
+
+    expect(result).toEqual({ status: "code-sent", purpose: "email-verification" });
+    expect(calls).toEqual(["sign-in/email", "email-otp/send-verification-otp"]);
+  });
+});
+
+describe("codes instead of a password", () => {
+  it("asks for a code and reports which one is coming", async () => {
+    routes["email-otp/send-verification-otp"] = () => json({ success: true });
+    const result = await auth().request({ action: "send-code", email: credentials.email, purpose: "sign-in" });
+
+    expect(result).toEqual({ status: "code-sent", purpose: "sign-in" });
+  });
+
+  it("signs in on a code alone", async () => {
+    routes["sign-in/email-otp"] = () => bearerSession("by-code");
+    const result = await auth().request({ action: "sign-in-code", email: credentials.email, code: "123456" });
+
+    expect(result).toEqual({ status: "signed-in" });
+    expect(keychain.get("session-token")).toBe("by-code");
+  });
+
+  it("says a wrong code is a wrong code", async () => {
+    routes["sign-in/email-otp"] = () => json({ code: "INVALID_OTP" }, { status: 400 });
+    await expect(auth().request({ action: "sign-in-code", email: credentials.email, code: "123456" })).rejects.toThrow(/not right/);
+  });
+});
+
+describe("resetting a password", () => {
+  /* The reset revokes every session server-side and returns none, so the new
+     password is spent immediately on a fresh sign-in. Without that second call
+     the learner types a new password and lands back on the sign-in form. */
+  it("spends the new password on a session rather than ending signed out", async () => {
+    routes["email-otp/reset-password"] = () => json({ success: true });
+    routes["sign-in/email"] = () => bearerSession("after-reset");
+    const result = await auth().request({ action: "reset-password", email: credentials.email, code: "123456", password: "correct-horse" });
+
+    expect(result).toEqual({ status: "signed-in" });
+    expect(calls).toEqual(["email-otp/reset-password", "sign-in/email"]);
+    expect(keychain.get("session-token")).toBe("after-reset");
+  });
+
+  it("does not sign in when the reset itself is refused", async () => {
+    routes["email-otp/reset-password"] = () => json({ code: "OTP_EXPIRED" }, { status: 400 });
+    await expect(auth().request({ action: "reset-password", email: credentials.email, code: "123456", password: "correct-horse" })).rejects.toThrow(/expired/);
+    expect(calls).toEqual(["email-otp/reset-password"]);
   });
 });
 
