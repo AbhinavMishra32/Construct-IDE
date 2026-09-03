@@ -1,6 +1,6 @@
 {
   "name": "@construct/desktop",
-  "version": "0.8.2",
+  "version": "0.8.3",
   "private": true,
   "type": "module",
   "description": "An understanding-first IDE that teaches you the project you are building.",
