@@ -8,6 +8,7 @@ const task = (taskId: string, status: TaskSummary["status"]): TaskSummary => ({
   title: taskId,
   brief: "",
   criteria: [],
+  nodeId: "",
   concepts: [],
   files: [],
   status,

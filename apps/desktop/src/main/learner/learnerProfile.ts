@@ -46,6 +46,7 @@ export const EMPTY_PROFILE: LearnerProfile = {
   pace: "deep",
   followUp: null,
   portrait: "",
+  observations: [],
   updatedAt: null,
 };
 
@@ -57,7 +58,41 @@ export class LearnerProfileService {
   ) {}
 
   read(): LearnerProfile {
-    return this.store.getSetting<LearnerProfile>(RECORD, EMPTY_PROFILE);
+    const stored = this.store.getSetting<LearnerProfile>(RECORD, EMPTY_PROFILE);
+    /* Every profile saved before observations existed is missing the field, and
+       the type says it is there. Normalised on the way out rather than
+       migrated, because the record is one settings blob and a half-written
+       migration of it would lose a profile. */
+    return { ...stored, observations: stored.observations ?? [] };
+  }
+
+  /**
+   * Adds something the agent has seen to the learner's record.
+   *
+   * The intake answers are never touched: those are the learner's own words,
+   * and an agent that revised them would be overwriting what someone said about
+   * themselves with what it inferred. This appends alongside instead.
+   *
+   * Capped at the most recent 24. A profile that grows without limit ends up
+   * costing more prompt than the project state does, and the oldest
+   * observations are the ones most likely to have been overtaken.
+   */
+  async observe(note: string, basis: string): Promise<LearnerProfile> {
+    const profile = this.read();
+    const trimmed = note.trim();
+    if (!trimmed) return profile;
+
+    /* The same observation twice is the agent noticing the same thing twice,
+       not the learner doing it twice. Kept once, at its later date. */
+    const observations = [
+      ...profile.observations.filter((entry) => entry.note.trim().toLowerCase() !== trimmed.toLowerCase()),
+      { note: trimmed, basis: basis.trim(), at: new Date().toISOString() },
+    ].slice(-24);
+
+    const updated: LearnerProfile = { ...profile, observations, updatedAt: new Date().toISOString() };
+    this.store.setSetting(RECORD, updated);
+    await this.write(updated).catch(() => undefined);
+    return updated;
   }
 
   onboarded(): boolean {
@@ -182,6 +217,12 @@ export function profilePromptBlock(profile: LearnerProfile): string[] {
      reciting it back — which is the exact "so, you're a Go developer who wants
      to learn graphics!" opening that makes software feel like it is performing
      attentiveness rather than using it. */
+  if (profile.observations.length > 0) {
+    /* Newest first: what the learner can do now matters more than what they
+       could do a month ago, and a model reading a long list weights the top. */
+    lines.push("  What you have noticed since (yours, not theirs):");
+    for (const entry of [...profile.observations].reverse().slice(0, 8)) lines.push(`    - ${clip(entry.note, 300)}`);
+  }
   lines.push("  Use this to pitch the teaching. Do not recite it back to them.");
   return lines;
 }
@@ -270,6 +311,16 @@ export function renderProfile(profile: LearnerProfile): string {
 
   if (profile.portrait.trim()) {
     lines.push("", "## Portrait", "", profile.portrait.trim());
+  }
+
+  /* Shown to the learner rather than kept behind the agent's eyes. These are
+     claims about them, and a claim about someone they cannot read is one they
+     cannot correct. */
+  if (profile.observations.length > 0) {
+    lines.push("", "## What Construct has noticed", "");
+    for (const entry of [...profile.observations].reverse()) {
+      lines.push(`- ${entry.note}${entry.basis ? ` _(${entry.basis})_` : ""}`);
+    }
   }
 
   return `${lines.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd()}\n`;
@@ -367,7 +418,7 @@ function clipField(value: unknown, limit: number): string {
  * card is then the honest one: it is their own words, aimed at their own
  * language, and the agent's research pass is what turns it into a path.
  */
-export function composeOpenings(draft: Omit<LearnerProfile, "updatedAt" | "portrait">): LearnerOpening[] {
+export function composeOpenings(draft: Omit<LearnerProfile, "updatedAt" | "portrait" | "observations">): LearnerOpening[] {
   const language = draft.language;
   const ambition = clip(draft.ambition, 240);
   const ladder = FALLBACK_OPENINGS[draft.footing];
@@ -425,7 +476,7 @@ const FALLBACK_OPENINGS: Record<LearnerFooting, Array<Omit<LearnerOpening, "lang
  * reach a model" as the last screen of the intake is the worst possible first
  * impression. It says less than the model's version and nothing that is untrue.
  */
-export function composePortrait(draft: Omit<LearnerProfile, "updatedAt" | "portrait">): string {
+export function composePortrait(draft: Omit<LearnerProfile, "updatedAt" | "portrait" | "observations">): string {
   const opening = {
     new: "You are starting from the beginning",
     some: "You have written some code and know roughly where you stand",

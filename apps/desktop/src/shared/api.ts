@@ -75,6 +75,8 @@ export const ipc = {
   conceptsAtlas: "concepts:atlas",
   conceptsDelete: "concepts:delete",
   conceptsHistory: "concepts:history",
+  conceptsStandings: "concepts:standings",
+  conceptsEvidence: "concepts:evidence",
 
   /* What Construct remembers about a project: four Markdown files in the
      project's own `.construct`, and the ordered steps it plans to teach. */
@@ -451,6 +453,9 @@ export type TaskSummary = {
   concepts: string[];
   /** Project-relative paths the work belongs in. */
   files: string[];
+  /** The path step this task belongs to, or "" for one set before the path
+   *  existed. The timeline reads it back to show what a step actually asked. */
+  nodeId: string;
   status: "open" | "submitted" | "passed";
   outcome: string;
   createdAt: string;
@@ -461,6 +466,10 @@ export const taskSubmitInput = projectIdInput.extend({ taskId: z.string().min(1)
 
 export type { SyncResult, SyncStatus } from "./sync.js";
 import type { SyncResult, SyncStatus } from "./sync.js";
+export type { ConceptStanding, EvidenceRecord, Freshness } from "@construct/domain";
+import type { ConceptStanding, EvidenceRecord } from "@construct/domain";
+
+export const conceptEvidenceInput = z.object({ conceptId: z.string().min(1).max(200) });
 
 export type ConceptSummary = {
   conceptId: string;
@@ -532,6 +541,10 @@ export type AgentEvent =
   /** Flow Memory or the path changed. Both are shown, so a silent write would
    *  leave the window describing a project state that has moved on. */
   | { projectId: string; kind: "memory" }
+  /* The global profile, not this project's memory. Carried on the same channel
+     because the window learns about every other write here, and a profile that
+     changed silently would leave Settings showing yesterday's. */
+  | { projectId: string; kind: "learner" }
   | { projectId: string; kind: "path" }
   | { projectId: string; kind: "question"; request: AskUserQuestionRequest }
   | { projectId: string; kind: "message"; message: AgentMessage }
@@ -618,6 +631,20 @@ export const learnerProfileInput = z.object({
   /** Second person, and the learner's to edit. Construct writes a draft from
    *  everything above; what is stored is whatever they let stand. */
   portrait: z.string().max(4000),
+  /**
+   * What Construct has noticed since, one line each.
+   *
+   * Everything above is what the learner said about themselves on the day they
+   * arrived, and it stops being the whole truth almost immediately: someone who
+   * answered "some" a month ago has since shipped three things. The intake
+   * answers are theirs and stay untouched; this is the agent's column, written
+   * from what it has actually seen them do, and it is the only part of the
+   * profile that moves on its own.
+   */
+  observations: z
+    .array(z.object({ note: z.string().max(400), basis: z.string().max(300).default(""), at: z.string() }))
+    .max(24)
+    .default([]),
 });
 
 export type LearnerProfile = z.infer<typeof learnerProfileInput> & {
@@ -893,6 +920,12 @@ export interface ConstructApi {
   deleteConcept(input: z.infer<typeof conceptDeleteInput>): Promise<void>;
   /** How one concept got to where it is: every reading, newest first. */
   conceptHistory(input: z.infer<typeof conceptDeleteInput>): Promise<ConceptEvent[]>;
+  /** What is behind each level: when it was last tested, what the learner has
+   *  been asked to do with it, and how much of the reading is still good. */
+  conceptStandings(input: z.infer<typeof projectIdInput>): Promise<ConceptStanding[]>;
+  /** What the learner actually did with one concept, newest first, across every
+   *  project. The level is a conclusion; this is what it was drawn from. */
+  conceptEvidence(input: z.infer<typeof conceptEvidenceInput>): Promise<EvidenceRecord[]>;
   /** Flow Memory, as the learner would read it. Shown rather than hidden: memory
    *  that only the agent can see is memory nobody can correct. */
   readMemory(input: z.infer<typeof projectIdInput>): Promise<MemoryFileState[]>;

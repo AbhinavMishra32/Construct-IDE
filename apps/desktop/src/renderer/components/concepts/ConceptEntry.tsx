@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { relativeTime } from "@/lib/format";
 import { masteryColor } from "@/lib/mastery";
 import { Markdown } from "../agent/Markdown";
+import { ConceptEvidence } from "./ConceptEvidence";
 import { ConceptHistory } from "./ConceptHistory";
 
 /**
@@ -138,6 +139,7 @@ export function ConceptEntry({
         </section>
       )}
 
+      <ConceptEvidence api={api} conceptId={concept.conceptId} />
       <ConceptHistory api={api} conceptId={concept.conceptId} projectId={projectId} />
 
       {siblings && siblings.length > 0 && (

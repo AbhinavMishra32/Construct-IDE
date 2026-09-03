@@ -26,6 +26,7 @@ export function taskFromToolInput(input: string): TaskSummary | null {
       criteria: list(parsed.criteria, 8),
       concepts: list(parsed.concepts, 8),
       files: list(parsed.files, 8),
+      nodeId: String(parsed.nodeId ?? ""),
       status: "open",
       outcome: "",
       createdAt: now,

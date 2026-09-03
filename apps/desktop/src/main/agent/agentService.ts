@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { LANGUAGES } from "@construct/domain";
+import { describeStanding, dueForReview, LANGUAGES } from "@construct/domain";
+import type { ConceptStanding } from "@construct/domain";
 import type { AgentActivityStep, AgentMessage } from "@construct/domain";
 import type { AgentStreamEvent, LearnerOpening, LearnerProfile, learnerDraftInput } from "../../shared/api.js";
 import type { z } from "zod";
@@ -46,6 +47,7 @@ export type AgentEvent =
   /* History was rewound to an earlier message; the transcript re-reads. */
   | { projectId: string; kind: "rewound" }
   | { projectId: string; kind: "memory" }
+  | { projectId: string; kind: "learner" }
   | { projectId: string; kind: "path" }
   | { projectId: string; kind: "done" };
 
@@ -965,8 +967,43 @@ export class AgentService {
     if (concepts.length === 0) {
       lines.push("Concepts taught in this project: none yet.");
     } else {
+      /* Each concept carries what is behind its level as well as the level.
+         
+         A level on its own is a claim with no date on it: L4 read the same
+         whether the learner proved it this morning or in March, and the agent
+         built on both identically. What it could not infer was how long ago,
+         and what the learner had ever actually been asked to *do* — answering a
+         question and shipping working code are not the same evidence, and a
+         reading with neither behind it is a guess the agent should be told is a
+         guess. Computed here rather than stored, because staleness is a fact
+         about the clock and any stored copy is wrong the next day. */
+      const standings = new Map(this.store.conceptStandings(project.id).map((standing) => [standing.conceptId, standing]));
       lines.push(`Concepts taught in this project (${concepts.length}), as a tree — use an id as parentId to nest under it:`);
-      lines.push(...conceptOutline(concepts));
+      lines.push(...conceptOutline(concepts, standings));
+
+      const due = [...standings.values()].filter(dueForReview);
+      if (due.length > 0) {
+        lines.push(
+          `Going cold (${due.length}): ${due.map((standing) => standing.conceptId).join(", ")}. Work these back into what you are teaching rather than reintroducing them.`,
+        );
+      }
+    }
+
+    /* What they know from elsewhere, named but not granted.
+       
+       Concepts are recorded per project because permission is per project:
+       teaching from an idea this project never introduced is how a learner
+       ends up reading code built on something nobody told them. But the
+       learner is one person, and a system that makes them sit through
+       closures a third time because the first two were in other projects has
+       not been paying attention. So the agent is shown what they have already
+       done, told plainly that it still has to introduce it here, and left to
+       pitch the introduction at the level they actually have. */
+    const elsewhere = this.store.conceptsElsewhere(project.id);
+    if (elsewhere.length > 0) {
+      lines.push(`Already met in their other projects, not yet introduced in this one (${elsewhere.length}):`);
+      lines.push(...elsewhere.slice(0, 20).map((concept) => `  - ${concept.title} (${concept.conceptId}, L${concept.masteryLevel}, in ${concept.projectName})`));
+      lines.push("Introduce one here with record-concept before teaching from it, but pitch the introduction at the level they already have rather than starting from nothing.");
     }
 
     return lines.join("\n");
@@ -995,6 +1032,46 @@ export class AgentService {
     return executeAgentTool(name, input, {
       projectDirectory: project.directory,
       workspace: this.workspace,
+      fetchConcepts: (conceptIds, includeEvidence) => {
+        const known = new Map(this.store.listConcepts(projectId).map((concept) => [concept.conceptId, concept]));
+        const standings = new Map(this.store.conceptStandings(projectId).map((standing) => [standing.conceptId, standing]));
+        return conceptIds.map((conceptId) => {
+          const concept = known.get(conceptId);
+          /* A miss is an answer, not an error. The agent asks for a concept it
+             half-remembers teaching, and "not in this project" is exactly what
+             it needs to hear — throwing would end the turn over a question. */
+          if (!concept) return { conceptId, found: false as const };
+          const standing = standings.get(conceptId);
+          return {
+            conceptId,
+            found: true as const,
+            title: concept.title,
+            masteryLevel: concept.masteryLevel,
+            confidence: concept.confidence,
+            summary: concept.summary,
+            content: concept.content,
+            note: concept.note,
+            standing: standing ? describeStanding(standing) : "no evidence yet",
+            /* Newest first and few: this is for recognising what the learner
+               actually did, not for replaying the whole history into context. */
+            ...(includeEvidence
+              ? {
+                  evidence: this.store.listEvidence(conceptId, { limit: 6 }).map((row) => ({
+                    when: row.createdAt.slice(0, 10),
+                    did: row.kind,
+                    asked: row.demand,
+                    outcome: row.outcome,
+                    excerpt: row.excerpt.slice(0, 400),
+                  })),
+                }
+              : {}),
+          };
+        });
+      },
+      noteAboutLearner: async (note, basis) => {
+        await this.learner.observe(note, basis);
+        this.emit({ projectId, kind: "learner" });
+      },
       readMemory: (files) => this.memory.read(project.directory, files),
       patchMemory: async (patches) => {
         const results = await this.memory.patch(project.directory, patches);
@@ -1006,6 +1083,11 @@ export class AgentService {
       },
       planPath: async (input) => {
         const planned = await this.path.plan(project, input);
+        this.emit({ projectId, kind: "path" });
+        return planned;
+      },
+      completePathNode: async (nodeId, reason) => {
+        const planned = await this.path.complete(project, nodeId, reason);
         this.emit({ projectId, kind: "path" });
         return planned;
       },
@@ -1026,11 +1108,28 @@ export class AgentService {
       },
       judgeTask: (taskId, passed, outcome) => {
         this.store.setTaskStatus(projectId, taskId, passed ? "passed" : "open", outcome);
+        /* The rows written when the learner submitted have been waiting for
+           exactly this. They were filed unjudged because at submission time
+           nobody had read the work yet; the verdict settles all of them at
+           once, and the log never claims to have known before it did. */
+        this.store.judgeEvidence(projectId, `task:${taskId}`, passed ? "held" : "missed");
         this.emit({ projectId, kind: "tasks" });
       },
       recordConcept: (record) => {
         if (!record.conceptId || !record.title) return;
-        const change = this.store.recordConcept({ projectId, ...record });
+        const { evidence, ...concept } = record;
+        const change = this.store.recordConcept({ projectId, ...concept });
+        if (evidence) {
+          this.store.recordEvidence({
+            projectId,
+            conceptId: record.conceptId,
+            kind: evidence.kind,
+            demand: evidence.demand,
+            outcome: evidence.outcome,
+            source: `concept:${record.conceptId}`,
+            excerpt: evidence.excerpt,
+          });
+        }
         this.emit({ projectId, kind: "concepts" });
         return change;
       },
@@ -1140,7 +1239,14 @@ const TOOL_LABEL: Record<string, string> = {
  * because this text is the only picture the agent has of where things sit: a
  * concept it cannot see is one it will record a second time.
  */
-function conceptOutline(concepts: Array<{ conceptId: string; parentId: string | null; title: string; masteryLevel: number }>): string[] {
+function conceptOutline(
+  concepts: Array<{ conceptId: string; parentId: string | null; title: string; masteryLevel: number }>,
+  standings: Map<string, ConceptStanding> = new Map(),
+): string[] {
+  const describe = (conceptId: string): string => {
+    const standing = standings.get(conceptId);
+    return standing ? `, ${describeStanding(standing)}` : "";
+  };
   const byParent = new Map<string | null, Array<{ conceptId: string; parentId: string | null; title: string; masteryLevel: number }>>();
   const ids = new Set(concepts.map((concept) => concept.conceptId));
   for (const concept of concepts) {
@@ -1155,14 +1261,14 @@ function conceptOutline(concepts: Array<{ conceptId: string; parentId: string | 
     for (const concept of (byParent.get(parent) ?? []).sort((a, b) => a.title.localeCompare(b.title))) {
       if (seen.has(concept.conceptId)) continue;
       seen.add(concept.conceptId);
-      lines.push(`${"  ".repeat(depth + 1)}- ${concept.title} (${concept.conceptId}, L${concept.masteryLevel})`);
+      lines.push(`${"  ".repeat(depth + 1)}- ${concept.title} (${concept.conceptId}, L${concept.masteryLevel}${describe(concept.conceptId)})`);
       walk(concept.conceptId, depth + 1);
     }
   };
   walk(null, 0);
   /* Anything a cycle kept from being reached still has to be listed. */
   for (const concept of concepts) {
-    if (!seen.has(concept.conceptId)) lines.push(`  - ${concept.title} (${concept.conceptId}, L${concept.masteryLevel})`);
+    if (!seen.has(concept.conceptId)) lines.push(`  - ${concept.title} (${concept.conceptId}, L${concept.masteryLevel}${describe(concept.conceptId)})`);
   }
   return lines;
 }

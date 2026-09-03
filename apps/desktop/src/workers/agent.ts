@@ -190,6 +190,19 @@ const tools = {
       tags: z.array(z.string().max(40)).max(8).optional(),
       note: z.string().max(600).optional().describe("What the learner said or did that supports this level"),
       reason: z.string().max(300).optional().describe("Why the level changed"),
+      evidence: z
+        .object({
+          kind: z.enum(["answered", "wrote-code", "debugged", "taught-back", "observed"]).describe("What the learner did"),
+          demand: z
+            .enum(["recall", "recognise", "produce", "debug", "transfer"])
+            .describe("What it asked of them: recall from memory, recognise when shown, produce working code, debug something broken, or transfer to a new setting"),
+          outcome: z.enum(["held", "partial", "missed"]).describe("How it went"),
+          excerpt: z.string().max(2_000).optional().describe("The words or code you are judging, so the reading can be checked later"),
+        })
+        .optional()
+        .describe(
+          "Attach this only when the learner actually did something you are judging. Leave it out when you are writing or revising the note itself — an unearned row makes the record claim they were tested when they were not.",
+        ),
     }),
     requestId,
   ),
@@ -210,6 +223,7 @@ const tools = {
       criteria: z.array(z.string().max(200)).min(1).max(8).describe("What done means — checkable, one line each"),
       concepts: z.array(z.string().max(120)).max(8).optional().describe("Concept ids this exercises"),
       files: z.array(z.string().max(300)).max(8).optional().describe("Project-relative paths the work belongs in"),
+      nodeId: z.string().max(120).optional().describe("The path step this task belongs to"),
     }),
     requestId,
   ),
@@ -224,6 +238,33 @@ const tools = {
       taskId: z.string().min(1).max(120),
       passed: z.boolean(),
       outcome: z.string().max(1_000).describe("What you found, written to the learner"),
+    }),
+    requestId,
+  ),
+  "fetch-concepts": hostTool(
+    "fetch-concepts",
+    [
+      "Read back concept notes you wrote earlier, with the evidence behind their level.",
+      "The project state already lists every concept, its level, and how fresh that reading is. Come here when you need the actual note or what the learner did to earn it: before building on a concept you taught a while ago, before judging work against one, or when the learner asks what you told them.",
+      "Do not guess what a note said. A note you misremember is a note the learner will be corrected against.",
+    ].join("\n"),
+    z.object({
+      conceptIds: z.array(z.string().max(120)).min(1).max(8),
+      includeEvidence: z.boolean().default(true).describe("What the learner has been asked to do with it, and how it went"),
+    }),
+    requestId,
+  ),
+  "note-about-learner": hostTool(
+    "note-about-learner",
+    [
+      "Record one thing you have learned about this person, in their global profile.",
+      "This follows them into every project, so it is for what is true of the learner rather than of the code: how they take an explanation, what they already turn out to know, what reliably trips them up, how much scaffolding they actually need.",
+      "Their own intake answers are not yours to edit. This sits alongside them, and the learner can read it, so write it as something you would be willing to say to them.",
+      "Use it rarely and only from evidence. Once or twice a session at most, when something you saw would change how you teach them next month. Project-specific facts belong in flow-memory-patch instead.",
+    ].join("\n"),
+    z.object({
+      note: z.string().min(1).max(400).describe("What is true of this learner, in one line"),
+      basis: z.string().max(300).describe("What you saw that shows it"),
     }),
     requestId,
   ),
@@ -287,6 +328,19 @@ const tools = {
         )
         .min(1)
         .max(14),
+    }),
+    requestId,
+  ),
+  "complete-path-step": hostTool(
+    "complete-path-step",
+    [
+      "Mark the current path step finished and move to the next one.",
+      "Call this when the learner has actually met the step's exit criteria: they have done the work, and you have read it. Not when you have finished explaining, and not to keep the timeline moving.",
+      "The step stays finished across later revisions of the path, so a step marked done that was not done is a step the learner never gets back.",
+    ].join("\n"),
+    z.object({
+      nodeId: z.string().min(1).max(120),
+      reason: z.string().min(1).max(600).describe("What the learner can now do, in a sentence"),
     }),
     requestId,
   ),

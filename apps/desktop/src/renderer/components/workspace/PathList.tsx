@@ -1,6 +1,6 @@
 import { Check, CircleDashed, CircleDot, PauseCircle, RotateCw } from "lucide-react";
 
-import type { PathStep, ProjectPath } from "../../../shared/api";
+import type { ConceptStanding, ConceptSummary, Freshness, PathStep, ProjectPath, TaskSummary } from "../../../shared/api";
 import { cn } from "@/lib/utils";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { ConstructDots } from "../common/ConstructDots";
@@ -38,18 +38,54 @@ const STATUS_LABEL: Record<PathStep["status"], string> = {
   revising: "Rethinking",
 };
 
+/* How sure we still are of a reading, as one word and one colour.
+   
+   Shown because a level on its own is a claim with no date on it: L4 reads the
+   same whether it was earned this morning or in March, and the learner deserves
+   to see which. `untested` is the one that matters most — a level nobody has
+   ever checked is the system's guess, and saying so is the difference between a
+   record and a flattering one. */
+const FRESHNESS: Record<Freshness, { label: string; className: string }> = {
+  fresh: { label: "fresh", className: "text-success" },
+  fading: { label: "fading", className: "text-muted-foreground" },
+  stale: { label: "cold", className: "text-warning" },
+  untested: { label: "untested", className: "text-muted-foreground/60" },
+};
+
+const TASK_MARK: Record<TaskSummary["status"], { label: string; className: string }> = {
+  open: { label: "to do", className: "text-muted-foreground/70" },
+  submitted: { label: "in review", className: "text-muted-foreground" },
+  passed: { label: "passed", className: "text-success" },
+};
+
 export function PathList({
   activeStepId,
+  concepts = [],
   onOpen,
   path,
+  standings = [],
+  tasks = [],
 }: {
   /** The step the agent says it is on, from `currentNodeId`. */
   activeStepId: string | null;
+  /** Titles for the concept ids a step names. Optional, and a missing title
+   *  falls back to the id rather than hiding the concept: a step that teaches
+   *  something the tree has not caught up with is still teaching it. */
+  concepts?: ConceptSummary[];
   /** Opens a step's detail. Optional: the list is worth showing before there is
    *  anywhere to go from it. */
   onOpen?: ((step: PathStep) => void) | undefined;
   path: ProjectPath | null;
+  /** What is behind each level. Optional, and absent simply means the hover
+   *  shows a level without a freshness beside it. */
+  standings?: ConceptStanding[];
+  /** Every task in the project. Filtered here by node, because what a step
+   *  actually asked of the learner is the part of it they remember. */
+  tasks?: TaskSummary[];
 }) {
+  const titles = new Map(concepts.map((concept) => [concept.conceptId, concept.title]));
+  const standing = new Map(standings.map((entry) => [entry.conceptId, entry]));
+  const levels = new Map(concepts.map((concept) => [concept.conceptId, concept.masteryLevel]));
   const steps = [...(path?.nodes ?? [])].sort((a, b) => a.order - b.order);
 
   if (steps.length === 0) {
@@ -69,6 +105,7 @@ export function PathList({
         const current = step.id === activeStepId || step.status === "active";
         const done = step.status === "completed";
         const Icon = STATUS_ICON[step.status];
+        const stepTasks = tasks.filter((task) => task.nodeId === step.id);
         return (
           <li className="relative" key={step.id}>
             {/* The spine, drawn between the nodes rather than behind them, so a
@@ -141,10 +178,63 @@ export function PathList({
                 </span>
               )}
             </HoverCardTrigger>
-            {step.summary && (
-              <HoverCardContent align="start" className="w-72" side="right" sideOffset={10}>
+            {(step.summary || step.concepts.length > 0 || step.exitCriteria.length > 0 || stepTasks.length > 0) && (
+              /* The whole of a step, in the one place there is room for it.
+                 
+                 The sidebar column can hold a title and nothing else, so
+                 everything that makes a step mean something — what it teaches,
+                 what finished looks like, what was actually set — lived only in
+                 the agent's own state. Here it costs nothing until asked for. */
+              <HoverCardContent align="start" className="w-80" side="right" sideOffset={10}>
                 <p className="text-ui font-medium text-foreground">{step.title}</p>
-                <p className="mt-1 text-ui leading-[1.5] text-muted-foreground">{step.summary}</p>
+                {step.summary && <p className="mt-1 text-ui leading-[1.5] text-muted-foreground">{step.summary}</p>}
+
+                {step.concepts.length > 0 && (
+                  <div className="mt-3">
+                    <p className="text-ui-sm uppercase tracking-wide text-muted-foreground/70">Teaches</p>
+                    <ul className="mt-1 space-y-0.5">
+                      {step.concepts.map((conceptId) => {
+                        const mark = FRESHNESS[standing.get(conceptId)?.freshness ?? "untested"];
+                        const level = levels.get(conceptId);
+                        return (
+                          <li className="flex items-baseline gap-1.5 text-ui leading-[1.5]" key={conceptId}>
+                            <span className="min-w-0 flex-1 truncate text-foreground/85">{titles.get(conceptId) ?? conceptId}</span>
+                            {level !== undefined && <span className="shrink-0 text-ui-sm text-muted-foreground/70">L{level}</span>}
+                            <span className={cn("shrink-0 text-ui-sm", mark.className)}>{mark.label}</span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                )}
+
+                {step.exitCriteria.length > 0 && (
+                  <div className="mt-3">
+                    <p className="text-ui-sm uppercase tracking-wide text-muted-foreground/70">Done when</p>
+                    <ul className="mt-1 space-y-0.5">
+                      {step.exitCriteria.map((criterion) => (
+                        <li className="flex gap-1.5 text-ui leading-[1.5] text-muted-foreground" key={criterion}>
+                          <span aria-hidden className="text-muted-foreground/50">·</span>
+                          <span className="min-w-0 flex-1">{criterion}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {stepTasks.length > 0 && (
+                  <div className="mt-3">
+                    <p className="text-ui-sm uppercase tracking-wide text-muted-foreground/70">Work set</p>
+                    <ul className="mt-1 space-y-0.5">
+                      {stepTasks.map((task) => (
+                        <li className="flex items-baseline gap-1.5 text-ui leading-[1.5]" key={task.taskId}>
+                          <span className="min-w-0 flex-1 truncate text-foreground/85">{task.title}</span>
+                          <span className={cn("shrink-0 text-ui-sm", TASK_MARK[task.status].className)}>{TASK_MARK[task.status].label}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </HoverCardContent>
             )}
             </HoverCard>

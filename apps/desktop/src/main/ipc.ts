@@ -7,6 +7,7 @@ import {
   taskSubmitInput,
   projectCreateInput,
   conceptDeleteInput,
+  conceptEvidenceInput,
   projectDefaultsInput,
   learnerDraftInput,
   learnerOpeningInput,
@@ -287,6 +288,22 @@ export function installIpc({ store, auth, projects, providers, workspace, termin
     if (!task) throw new Error("That task no longer exists.");
 
     store.setTaskStatus(projectId, taskId, "submitted");
+    /* Filed now, judged later. Submitting is itself the evidence — the learner
+       produced something for these concepts — but whether it held is not known
+       until the agent has read it, so the rows go in unjudged and
+       `judge-practice-task` settles them. Guessing a verdict here and
+       correcting it afterwards would leave a log that had been wrong. */
+    for (const conceptId of task.concepts) {
+      store.recordEvidence({
+        projectId,
+        conceptId,
+        kind: "wrote-code",
+        demand: "produce",
+        outcome: "unjudged",
+        source: `task:${taskId}`,
+        excerpt: task.title,
+      });
+    }
     /* Sent on the same channel the agent's own events use, so the window has
        one place to learn that tasks changed. */
     window()?.webContents.send("agent:event", { projectId, kind: "tasks" });
@@ -328,6 +345,11 @@ export function installIpc({ store, auth, projects, providers, workspace, termin
   });
 
   handle(ipc.conceptsList, (input) => store.listConcepts(projectIdInput.parse(input).projectId));
+  handle(ipc.conceptsStandings, (input) => store.conceptStandings(projectIdInput.parse(input).projectId));
+  /* Not scoped to a project on purpose. What the learner did with an idea is
+     true of them wherever they did it, and the entry is answering "what is this
+     level based on" rather than "what happened in this project". */
+  handle(ipc.conceptsEvidence, (input) => store.listEvidence(conceptEvidenceInput.parse(input).conceptId, { limit: 20 }));
   handle(ipc.conceptsAtlas, () => store.listAllConcepts());
 
   handle(ipc.memoryRead, (input) => {

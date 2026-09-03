@@ -42,6 +42,9 @@ beforeEach(() => {
     },
     webFetch: async () => ({ configured: false, note: "No key." }),
     recordConcept: (record) => void recorded.push(record),
+    fetchConcepts: vi.fn(),
+    noteAboutLearner: vi.fn(async () => undefined),
+    completePathNode: vi.fn(async (nodeId: string, reason: string) => ({ reason, currentNodeId: nodeId, nodes: [] })),
     saveTask: vi.fn(),
     judgeTask: vi.fn(),
     askLearner: vi.fn(async (request) => {

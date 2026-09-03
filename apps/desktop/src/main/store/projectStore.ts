@@ -1,5 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
+import {
+  freshnessOf,
+  retentionAfter,
+  type ConceptStanding,
+  type EvidenceDemand,
+  type EvidenceKind,
+  type EvidenceOutcome,
+  type EvidenceRecord,
+} from "@construct/domain";
 import type { AgentMessage, Language } from "@construct/domain";
 import type { ProjectSummary, ThemePreference } from "../../shared/api.js";
 import type { PathNode } from "../learning/pathService.js";
@@ -231,6 +240,50 @@ const MIGRATIONS: readonly string[] = [
      happened and nobody wrote down which parts they touched. */
   `ALTER TABLE concept_events ADD COLUMN changed TEXT NOT NULL DEFAULT '[]';
    CREATE INDEX concept_events_concept ON concept_events (project_id, concept_id, created_at);`,
+
+  /* What the learner actually did.
+
+     Until now the only durable trace of a learner's work was a mastery number
+     and a sentence of prose behind it, both written by the model that drew the
+     conclusion. That is a summary, and a summary cannot be checked: a later
+     turn reading "L3, explained capture correctly" cannot find out what was
+     said, cannot recompute the 3, and cannot notice that every signal behind it
+     was a multiple-choice answer and the learner has never written one.
+
+     A row here points at the artefact instead — the message, the task, the
+     submitted diff — and carries what the artefact demanded of them. Mastery
+     becomes a conclusion drawn over these rather than a fact somebody wrote
+     down, which is what makes it auditable and what makes forgetting
+     expressible.
+
+     Keyed on the concept before the project on purpose. Understanding belongs
+     to the learner, not to the project it happened to be built in: `project_id`
+     is provenance, and the index that matters reads one concept's history
+     across everything they have ever worked on. */
+  `CREATE TABLE evidence (
+     id         TEXT PRIMARY KEY,
+     project_id TEXT NOT NULL,
+     concept_id TEXT NOT NULL,
+     kind       TEXT NOT NULL,
+     demand     TEXT NOT NULL,
+     outcome    TEXT NOT NULL,
+     source     TEXT NOT NULL DEFAULT '',
+     excerpt    TEXT NOT NULL DEFAULT '',
+     created_at TEXT NOT NULL
+   );
+   CREATE INDEX evidence_concept ON evidence (concept_id, created_at);
+   CREATE INDEX evidence_project ON evidence (project_id, created_at);
+   CREATE INDEX evidence_source ON evidence (project_id, source);`,
+
+  /* Which step of the path a task belongs to.
+
+     Both the prompt and the original brief say every task belongs to a path
+     node, and the table had nowhere to put that — so "the learner finished this
+     work" and "the plan moved on" were two unconnected facts, joined only by
+     whatever the model remembered. A node cannot be completed from evidence
+     without knowing which tasks were its. */
+  `ALTER TABLE tasks ADD COLUMN node_id TEXT NOT NULL DEFAULT '';
+   CREATE INDEX tasks_node ON tasks (project_id, node_id);`,
 ];
 
 type ProjectRow = {
@@ -315,6 +368,10 @@ export type TaskRecord = {
   concepts: string[];
   /** Project-relative paths the work belongs in. */
   files: string[];
+  /** The path node this task belongs to, or "" for a task set before the path
+   *  existed. A task is one step of one stage, and the timeline is where the
+   *  learner reads it back. */
+  nodeId: string;
   status: "open" | "submitted" | "passed";
   /** The agent's verdict, shown under the task once it has one. */
   outcome: string;
@@ -855,6 +912,138 @@ export class ProjectStore {
     }));
   }
 
+  /* ---- Evidence -----------------------------------------------------------
+
+     What the learner did, kept whole. See the migration for why a mastery
+     number and a sentence of prose was not enough, and `@construct/domain`
+     for what a demand is and how a reading decays. */
+
+  /** Files one thing the learner did. Never edited afterwards: a correction is
+   *  another row, and a verdict arriving later is `judgeEvidence`. */
+  recordEvidence(input: {
+    projectId: string;
+    conceptId: string;
+    kind: EvidenceKind;
+    demand: EvidenceDemand;
+    outcome: EvidenceOutcome;
+    source: string;
+    excerpt: string;
+  }): EvidenceRecord {
+    const now = new Date().toISOString();
+    const id = randomUUID();
+    /* Trimmed here rather than at the callers. An excerpt is for recognising
+       the artefact, and a whole submitted file would make the table the second
+       copy of the project. */
+    const excerpt = input.excerpt.length > 2_000 ? `${input.excerpt.slice(0, 2_000)}…` : input.excerpt;
+
+    this.database
+      .prepare(
+        "INSERT INTO evidence (id, project_id, concept_id, kind, demand, outcome, source, excerpt, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      )
+      .run(id, input.projectId, input.conceptId, input.kind, input.demand, input.outcome, input.source, excerpt, now);
+
+    return { id, projectId: input.projectId, conceptId: input.conceptId, kind: input.kind, demand: input.demand, outcome: input.outcome, source: input.source, excerpt, createdAt: now };
+  }
+
+  /**
+   * One concept's evidence, newest first — across every project by default.
+   *
+   * The default is the point. Understanding is the learner's: they wrote a
+   * closure in the renderer and that is true of them, not of the renderer. Pass
+   * a projectId only when the question really is about one project.
+   */
+  listEvidence(conceptId: string, options: { projectId?: string; limit?: number } = {}): EvidenceRecord[] {
+    const limit = Math.min(200, Math.max(1, options.limit ?? 50));
+    const rows = (
+      options.projectId
+        ? this.database
+            .prepare("SELECT * FROM evidence WHERE concept_id = ? AND project_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?")
+            .all(conceptId, options.projectId, limit)
+        : this.database.prepare("SELECT * FROM evidence WHERE concept_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?").all(conceptId, limit)
+    ) as Array<Record<string, string>>;
+    return rows.map(toEvidence);
+  }
+
+  /**
+   * Settles every unjudged row from one source.
+   *
+   * A submitted diff is evidence the moment it exists, but whether it held is
+   * not known until the agent has read it. Rather than guess at submission time
+   * and correct later, the row is written `unjudged` and the verdict lands
+   * here — so the log never claims to have known something before it did.
+   */
+  judgeEvidence(projectId: string, source: string, outcome: EvidenceOutcome): number {
+    const result = this.database
+      .prepare("UPDATE evidence SET outcome = ? WHERE project_id = ? AND source = ? AND outcome = 'unjudged'")
+      .run(outcome, projectId, source);
+    return Number(result.changes ?? 0);
+  }
+
+  /**
+   * The learner's standing on each of a project's concepts.
+   *
+   * Read across every project, not just this one: the level is what this
+   * project recorded, and the evidence behind it is everything the learner has
+   * ever done with the idea. Retention is computed here rather than stored,
+   * because it is a function of the clock and a stored copy would be wrong
+   * every day after it was written.
+   */
+  conceptStandings(projectId: string, now: Date = new Date()): ConceptStanding[] {
+    const concepts = this.database
+      .prepare("SELECT concept_id, mastery_level FROM concepts WHERE project_id = ?")
+      .all(projectId) as Array<{ concept_id: string; mastery_level: number }>;
+    if (concepts.length === 0) return [];
+
+    const placeholders = concepts.map(() => "?").join(", ");
+    const rows = this.database
+      .prepare(`SELECT concept_id, demand, outcome, created_at FROM evidence WHERE concept_id IN (${placeholders}) ORDER BY created_at`)
+      .all(...concepts.map((concept) => concept.concept_id)) as Array<Record<string, string>>;
+
+    const byConcept = new Map<string, Array<Record<string, string>>>();
+    for (const row of rows) byConcept.set(String(row.concept_id), [...(byConcept.get(String(row.concept_id)) ?? []), row]);
+
+    return concepts.map((concept) => standingFrom(concept.concept_id, Number(concept.mastery_level ?? 0), byConcept.get(concept.concept_id) ?? [], now));
+  }
+
+  /**
+   * Concepts the learner has met in their other projects, and not in this one.
+   *
+   * The permission rule stays as it was: a concept taught elsewhere grants
+   * nothing here, and the agent still has to introduce it in this project
+   * before teaching from it. What changes is that the agent can now see it at
+   * all. Without this, someone who spent a month on closures in a raytracer
+   * opens a new project and is taught closures from zero, which is the single
+   * most obvious way a system that claims to know you can prove it does not.
+   *
+   * The best level any project recorded, because understanding is the
+   * learner's: a concept they reached Level 4 on somewhere is not Level 1
+   * because a second project only introduced it.
+   */
+  conceptsElsewhere(projectId: string, limit = 40): Array<{ conceptId: string; title: string; masteryLevel: number; projectName: string }> {
+    return this.database
+      .prepare(
+        `SELECT c.concept_id, c.title, MAX(c.mastery_level) AS mastery_level, p.name AS project_name
+           FROM concepts c
+           JOIN projects p ON p.id = c.project_id
+          WHERE c.project_id != ?
+            AND p.deleted_at IS NULL
+            AND c.concept_id NOT IN (SELECT concept_id FROM concepts WHERE project_id = ?)
+          GROUP BY c.concept_id
+          ORDER BY mastery_level DESC, c.updated_at DESC
+          LIMIT ?`,
+      )
+      .all(projectId, projectId, limit)
+      .map((entry) => {
+        const row = entry as Record<string, string | number>;
+        return {
+          conceptId: String(row.concept_id),
+          title: String(row.title),
+          masteryLevel: Number(row.mastery_level ?? 0),
+          projectName: String(row.project_name ?? ""),
+        };
+      });
+  }
+
   /* ---- Practice tasks ---------------------------------------------------- */
 
   listTasks(projectId: string): TaskRecord[] {
@@ -871,6 +1060,7 @@ export class ProjectStore {
       criteria: parseJson<string[]>(String(row.criteria ?? "[]"), []),
       concepts: parseJson<string[]>(String(row.concepts ?? "[]"), []),
       files: parseJson<string[]>(String(row.files ?? "[]"), []),
+      nodeId: String(row.node_id ?? ""),
       status: (["open", "submitted", "passed"] as const).includes(row.status as never)
         ? (row.status as TaskRecord["status"])
         : "open",
@@ -883,18 +1073,19 @@ export class ProjectStore {
   /** Writes a task, or updates the one with this id. The agent sets these, so
    *  one call has to serve both "here is a new task" and "here is that task
    *  again, corrected". */
-  saveTask(projectId: string, task: Omit<TaskRecord, "createdAt" | "updatedAt">): void {
+  saveTask(projectId: string, task: Omit<TaskRecord, "createdAt" | "updatedAt" | "nodeId"> & { nodeId?: string }): void {
     const now = new Date().toISOString();
     this.database
       .prepare(
-        `INSERT INTO tasks (project_id, task_id, title, brief, criteria, concepts, files, status, outcome, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO tasks (project_id, task_id, title, brief, criteria, concepts, files, node_id, status, outcome, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(project_id, task_id) DO UPDATE SET
            title = excluded.title,
            brief = excluded.brief,
            criteria = excluded.criteria,
            concepts = excluded.concepts,
            files = excluded.files,
+           node_id = excluded.node_id,
            status = excluded.status,
            outcome = excluded.outcome,
            updated_at = excluded.updated_at`,
@@ -907,6 +1098,7 @@ export class ProjectStore {
         JSON.stringify(task.criteria),
         JSON.stringify(task.concepts),
         JSON.stringify(task.files),
+        task.nodeId ?? "",
         task.status,
         task.outcome,
         now,
@@ -1514,5 +1706,47 @@ function conceptFromRow(row: Record<string, string | number>): ConceptRecord {
     tags: parseJson<string[]>(String(row.tags ?? "[]"), []),
     firstSeenAt: String(row.first_seen_at),
     updatedAt: String(row.updated_at),
+  };
+}
+
+function toEvidence(row: Record<string, string>): EvidenceRecord {
+  return {
+    id: String(row.id),
+    projectId: String(row.project_id),
+    conceptId: String(row.concept_id),
+    kind: String(row.kind) as EvidenceKind,
+    demand: String(row.demand) as EvidenceDemand,
+    outcome: String(row.outcome) as EvidenceOutcome,
+    source: String(row.source ?? ""),
+    excerpt: String(row.excerpt ?? ""),
+    createdAt: String(row.created_at),
+  };
+}
+
+/**
+ * One concept's standing, from its rows.
+ *
+ * Two deliberate choices. Spacing counts distinct *days* rather than events,
+ * because four encounters in one sitting are worth much less than four across
+ * four days and counting events would reward cramming. And a demand only counts
+ * as met when the attempt actually held: an outcome of `missed` is evidence
+ * that they were asked, not evidence that they can.
+ */
+function standingFrom(conceptId: string, masteryLevel: number, rows: Array<Record<string, string>>, now: Date): ConceptStanding {
+  const days = new Set(rows.map((row) => String(row.created_at).slice(0, 10)));
+  const demands = [...new Set(rows.filter((row) => row.outcome === "held" || row.outcome === "partial").map((row) => String(row.demand) as EvidenceDemand))];
+  const last = rows.length > 0 ? String(rows[rows.length - 1]!.created_at) : null;
+  const ageDays = last ? (now.getTime() - new Date(last).getTime()) / 86_400_000 : 0;
+  const retention = last ? retentionAfter(masteryLevel, days.size, ageDays) : 0;
+
+  return {
+    conceptId,
+    masteryLevel,
+    lastEvidenceAt: last,
+    evidenceCount: rows.length,
+    distinctDays: days.size,
+    demands,
+    retention,
+    freshness: freshnessOf(retention, last !== null),
   };
 }

@@ -172,3 +172,167 @@ export type ConceptPolicyDecision = {
   reason: string;
   auditId: string;
 };
+
+/* ---- Evidence ------------------------------------------------------------
+ *
+ * What the learner actually did, as opposed to what an earlier model call
+ * concluded from it.
+ *
+ * Mastery used to be the whole record: a number and a sentence of prose
+ * explaining it. That is a summary, and a summary cannot be checked, recomputed
+ * or disagreed with — a later turn reading "L3, explained capture correctly"
+ * has no way to find out what was actually said, or to notice that every signal
+ * behind the 3 was a multiple-choice answer and the learner has never written
+ * one. Evidence rows point at the artefact instead: the message, the diff, the
+ * submitted file. The level becomes a conclusion drawn over them rather than a
+ * fact somebody wrote down.
+ */
+
+/** How the evidence arose. */
+export const EVIDENCE_KINDS = [
+  /** They answered a tracked question. */
+  "answered",
+  /** They wrote code in a task. */
+  "wrote-code",
+  /** They found and fixed something themselves. */
+  "debugged",
+  /** They explained it back well enough to teach from. */
+  "taught-back",
+  /** The agent's own reading, with no learner artefact behind it. The weakest
+   *  kind on purpose: it is what `record-concept` produces when it reports a
+   *  level without pointing at anything the learner did. */
+  "observed",
+] as const;
+export const evidenceKindSchema = z.enum(EVIDENCE_KINDS);
+export type EvidenceKind = z.infer<typeof evidenceKindSchema>;
+
+/**
+ * What the evidence asked of them.
+ *
+ * The reason a single mastery number cannot carry a concept: recall and produce
+ * dissociate constantly, and everybody has read a tutorial they cannot write
+ * from. A task whose demand is `produce` is not covered by three `recall`
+ * answers, however fluent they were — and until this field existed there was no
+ * way to say so.
+ */
+export const EVIDENCE_DEMANDS = ["recall", "recognise", "produce", "debug", "transfer"] as const;
+export const evidenceDemandSchema = z.enum(EVIDENCE_DEMANDS);
+export type EvidenceDemand = z.infer<typeof evidenceDemandSchema>;
+
+/** How it went. `unjudged` is honest rather than lazy: a submitted diff is
+ *  evidence the moment it exists, and the verdict lands later. */
+export const EVIDENCE_OUTCOMES = ["held", "partial", "missed", "unjudged"] as const;
+export const evidenceOutcomeSchema = z.enum(EVIDENCE_OUTCOMES);
+export type EvidenceOutcome = z.infer<typeof evidenceOutcomeSchema>;
+
+export const evidenceSchema = z.object({
+  id,
+  /** Where it happened. Provenance, not ownership: understanding is the
+   *  learner's, so evidence is read across every project they have. */
+  projectId: z.string(),
+  conceptId: z.string().min(1).max(200),
+  kind: evidenceKindSchema,
+  demand: evidenceDemandSchema,
+  outcome: evidenceOutcomeSchema,
+  /** The artefact this points at: `message:<id>`, `task:<taskId>`, `concept:<id>`. */
+  source: z.string().max(300),
+  /** Enough of the artefact to recognise it without opening it. Their words or
+   *  their diff, never a paraphrase. */
+  excerpt: z.string().max(2_000).default(""),
+  createdAt: isoDate,
+});
+export type EvidenceRecord = z.infer<typeof evidenceSchema>;
+
+/* ---- Retention -----------------------------------------------------------
+ *
+ * Forgetting is the one thing about a learner that needs no inference. A level
+ * recorded in March is not a claim about August, and until this existed
+ * Construct read it as one — which is the single commonest way a task comes out
+ * unfairly hard.
+ *
+ * What decays is confidence in the reading, never the reading itself. The
+ * evidence is a fact and the level is a conclusion drawn from it; only our
+ * certainty that the conclusion still holds is a function of time. Overwriting
+ * the level would destroy the record, for the same reason evidence is
+ * append-only.
+ */
+
+/** Days for confidence in a reading at each mastery level to halve.
+ *
+ *  Higher mastery is more durable, which is most of what the levels mean: an
+ *  idea you can transfer and teach survives a season away, and one you were
+ *  introduced to last week does not survive the fortnight. */
+const HALF_LIFE_DAYS = [3, 7, 14, 30, 75, 180] as const;
+
+/** How much longer each extra day of practice makes a reading last, and the
+ *  ceiling on that. Spacing is what turns exposure into retention: the same
+ *  four encounters spread over four days are worth far more than four in one
+ *  sitting, so what counts is distinct days rather than total events. */
+const SPACING_GAIN = 0.35;
+const SPACING_CEILING = 4;
+
+export type Freshness = "fresh" | "fading" | "stale" | "untested";
+
+/**
+ * The learner's standing on one concept: the level, and how much of it we can
+ * still expect them to have.
+ */
+export type ConceptStanding = {
+  conceptId: string;
+  masteryLevel: number;
+  lastEvidenceAt: string | null;
+  evidenceCount: number;
+  /** Separate days carrying evidence. The spacing input. */
+  distinctDays: number;
+  /** Every demand they have ever met on this. A task asking them to `produce`
+   *  wants to see `produce` here, not three `recall`s. */
+  demands: EvidenceDemand[];
+  /** 0 to 1. What is left of our confidence in the reading. */
+  retention: number;
+  freshness: Freshness;
+};
+
+/** The half-life for a reading, in days, given its level and how spread out the
+ *  practice behind it was. */
+export function halfLifeFor(masteryLevel: number, distinctDays: number): number {
+  const base = HALF_LIFE_DAYS[Math.min(5, Math.max(0, Math.round(masteryLevel)))] ?? HALF_LIFE_DAYS[0];
+  const spacing = Math.min(SPACING_CEILING, 1 + SPACING_GAIN * Math.max(0, distinctDays - 1));
+  return base * spacing;
+}
+
+/** What is left of a reading after this long. Exponential rather than linear
+ *  because forgetting is: most of the loss happens early, and what survives the
+ *  first month tends to survive the third. */
+export function retentionAfter(masteryLevel: number, distinctDays: number, ageDays: number): number {
+  if (ageDays <= 0) return 1;
+  return 0.5 ** (ageDays / halfLifeFor(masteryLevel, distinctDays));
+}
+
+export function freshnessOf(retention: number, hasEvidence: boolean): Freshness {
+  if (!hasEvidence) return "untested";
+  if (retention >= 0.7) return "fresh";
+  if (retention >= 0.4) return "fading";
+  return "stale";
+}
+
+/**
+ * Whether this is worth putting back in front of the learner.
+ *
+ * Level 0 is excluded because there is nothing to review: an idea they have
+ * only been introduced to needs teaching, and offering it as revision would
+ * claim they once had it.
+ */
+export function dueForReview(standing: ConceptStanding): boolean {
+  return standing.masteryLevel >= 1 && standing.freshness === "stale";
+}
+
+/** The standing as one line for the agent, naming only what it cannot infer
+ *  from the level: how long ago, and what the learner has actually been asked
+ *  to do with it. */
+export function describeStanding(standing: ConceptStanding, now: Date = new Date()): string {
+  if (!standing.lastEvidenceAt) return "no evidence yet";
+  const days = Math.max(0, Math.round((now.getTime() - new Date(standing.lastEvidenceAt).getTime()) / 86_400_000));
+  const when = days === 0 ? "today" : days === 1 ? "yesterday" : days < 14 ? `${days}d ago` : days < 60 ? `${Math.round(days / 7)}w ago` : `${Math.round(days / 30)}mo ago`;
+  const demands = standing.demands.length > 0 ? standing.demands.join("/") : "none";
+  return `${when}, ${standing.freshness}, demands ${demands}`;
+}

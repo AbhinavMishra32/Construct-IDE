@@ -340,7 +340,9 @@ export function OnboardingPage({
    *  of them are the intake being finished. */
   const saveProfile = useCallback(async () => {
     if (!api) return null;
-    return api.saveLearner({ ...latest.current, portrait: portrait.trim() });
+    /* Nothing observed yet: the intake is the first thing that happens, and
+       observations are what the agent adds afterwards. */
+    return api.saveLearner({ ...latest.current, portrait: portrait.trim(), observations: [] });
   }, [api, portrait]);
 
   /**

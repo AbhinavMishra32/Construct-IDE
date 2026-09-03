@@ -6,6 +6,7 @@ import { MEMORY_FILES } from "../memory/memoryService.js";
 import type { PathNodeInput, PlannedPath } from "../learning/pathService.js";
 import type { WebSearchResult } from "../webSearch.js";
 import type { ConceptEvent } from "../store/projectStore.js";
+import { EVIDENCE_DEMANDS, EVIDENCE_KINDS, EVIDENCE_OUTCOMES, type EvidenceDemand, type EvidenceKind, type EvidenceOutcome } from "@construct/domain";
 
 const run = promisify(execFile);
 
@@ -32,6 +33,8 @@ export type AgentToolContext = {
     criteria: string[];
     concepts: string[];
     files: string[];
+    /** The path node this task belongs to. Empty when the agent did not say. */
+    nodeId: string;
   }): void;
   /** The agent's verdict on a submitted task. */
   judgeTask(taskId: string, passed: boolean, outcome: string): void;
@@ -51,11 +54,23 @@ export type AgentToolContext = {
     content: string;
     docs: Array<{ title: string; url: string }>;
     tags: string[];
+    /** What the learner actually did to earn this reading, if anything did.
+     *  Omitted means the call is a note rather than a judgement — recording it
+     *  as evidence anyway would put words in the learner's mouth. */
+    evidence?: { kind: EvidenceKind; demand: EvidenceDemand; outcome: EvidenceOutcome; excerpt: string };
     /** What the call did to the concept: the level it moved from, and which
      *  written parts it rewrote. Returned rather than only filed, because the
      *  transcript draws this call as a card and only the store knows what the
      *  concept looked like a moment ago. */
   }): ConceptEvent | void;
+  /** Reads back concept notes the agent wrote earlier, with what is behind
+   *  their level. The project state carries titles and levels for every concept
+   *  because placing a new one needs the whole tree; bodies and evidence are
+   *  pulled here because they are large and only a few matter per turn. */
+  fetchConcepts(conceptIds: string[], includeEvidence: boolean): unknown;
+  /** Adds one line to the learner's global profile — the record that follows
+   *  them between projects, not this project's `learner.md`. */
+  noteAboutLearner(note: string, basis: string): Promise<void>;
   /** Flow Memory: the four Markdown files in the project's own `.construct`.
    *  Read by purpose rather than by habit, and patched rather than rewritten —
    *  see `memoryService.ts` for why both of those matter. */
@@ -64,6 +79,10 @@ export type AgentToolContext = {
   /** Records or revises the teaching path: the ordered steps between where the
    *  learner is and the project they set out to build. */
   planPath(input: { reason: string; currentNodeId?: string | undefined; nodes: PathNodeInput[] }): Promise<PlannedPath>;
+  /** Marks one path step finished and moves to the next. Separate from
+   *  `planPath` because finishing a step is not replanning: the path is the
+   *  same, the learner has moved along it. */
+  completePathNode(nodeId: string, reason: string): Promise<PlannedPath>;
   /** The web, when a key is configured. Unconfigured is an answer rather than an
    *  error: the agent has other ways to make progress and a thrown error would
    *  end the turn. */
@@ -115,6 +134,23 @@ export async function executeAgentTool(name: string, input: unknown, context: Ag
             ? null
             : String(args.parentId).trim();
 
+      /* Read before the call rather than trusted from it. A model that sends a
+         demand we do not have a meaning for would otherwise write a row nothing
+         can ever interpret, and the log is append-only. */
+      const raw = (args.evidence ?? null) as Record<string, unknown> | null;
+      const kind = String(raw?.kind ?? "observed");
+      const demand = String(raw?.demand ?? "");
+      const outcome = String(raw?.outcome ?? "");
+      const evidence =
+        raw && (EVIDENCE_DEMANDS as readonly string[]).includes(demand) && (EVIDENCE_OUTCOMES as readonly string[]).includes(outcome)
+          ? {
+              kind: ((EVIDENCE_KINDS as readonly string[]).includes(kind) ? kind : "observed") as EvidenceKind,
+              demand: demand as EvidenceDemand,
+              outcome: outcome as EvidenceOutcome,
+              excerpt: String(raw.excerpt ?? ""),
+            }
+          : null;
+
       const change = context.recordConcept({
         conceptId,
         ...(parent === undefined ? {} : { parentId: parent }),
@@ -138,6 +174,7 @@ export async function executeAgentTool(name: string, input: unknown, context: Ag
               .slice(0, 5)
           : [],
         tags: Array.isArray(args.tags) ? args.tags.map(String).slice(0, 8) : [],
+        ...(evidence ? { evidence } : {}),
       });
       /* The change goes back to the model as well as to the window. It is the
          only way the agent learns that its own reading moved a level, which is
@@ -160,6 +197,7 @@ export async function executeAgentTool(name: string, input: unknown, context: Ag
         criteria,
         concepts: Array.isArray(args.concepts) ? args.concepts.map(String).slice(0, 8) : [],
         files: Array.isArray(args.files) ? args.files.map(String).slice(0, 8) : [],
+        nodeId: String(args.nodeId ?? "").trim(),
       });
       return { set: true };
     }
@@ -167,6 +205,19 @@ export async function executeAgentTool(name: string, input: unknown, context: Ag
     case "judge-practice-task": {
       context.judgeTask(String(args.taskId ?? "").trim(), args.passed === true, String(args.outcome ?? ""));
       return { judged: true };
+    }
+
+    case "fetch-concepts": {
+      const ids = Array.isArray(args.conceptIds) ? args.conceptIds.map(String).slice(0, 8) : [];
+      if (ids.length === 0) throw new Error("Name at least one concept id to fetch.");
+      return context.fetchConcepts(ids, args.includeEvidence !== false);
+    }
+
+    case "note-about-learner": {
+      const note = String(args.note ?? "").trim();
+      if (!note) throw new Error("Say what you noticed.");
+      await context.noteAboutLearner(note.slice(0, 400), String(args.basis ?? "").slice(0, 300));
+      return { noted: true };
     }
 
     case "flow-memory-fetch": {
@@ -218,6 +269,12 @@ export async function executeAgentTool(name: string, input: unknown, context: Ag
           } as PathNodeInput;
         }),
       });
+    }
+
+    case "complete-path-step": {
+      const nodeId = String(args.nodeId ?? "").trim();
+      if (!nodeId) throw new Error("Name the path step that is finished.");
+      return context.completePathNode(nodeId, String(args.reason ?? "The learner met this step's exit criteria."));
     }
 
     case "web-search":

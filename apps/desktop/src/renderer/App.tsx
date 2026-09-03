@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { AlertCircle, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import type { AtlasConcept, BootstrapData, ConceptSummary, ConstructApi, LearnerProfile, ProjectPath, ProjectSummary, ThemePreference } from "../shared/api";
+import type { AtlasConcept, BootstrapData, ConceptStanding, ConceptSummary, ConstructApi, LearnerProfile, ProjectPath, ProjectSummary, TaskSummary, ThemePreference } from "../shared/api";
 import { cn } from "@/lib/utils";
 import { message } from "@/lib/format";
 import { Sidebar, type Page, type ProjectActions } from "./components/shell/Sidebar";
@@ -46,6 +46,13 @@ export function App() {
      them and the workspace opens them — one owner, two consumers. */
   const [concepts, setConcepts] = useState<ConceptSummary[]>([]);
   const [path, setPath] = useState<ProjectPath | null>(null);
+  /* What is behind each level, and what each step actually asked. Read here
+     rather than in the workspace because the sidebar outlives the workspace
+     panes and is where the timeline lives. The workspace keeps its own copy of
+     the tasks because it mutates them; both re-read on the same event, so they
+     converge rather than drift. */
+  const [standings, setStandings] = useState<ConceptStanding[]>([]);
+  const [tasks, setTasks] = useState<TaskSummary[]>([]);
   const [openConcept, setOpenConcept] = useState<ConceptSummary | null>(null);
   /* Every concept in every project, and the one being read. Owned here because
      the Atlas is now two components — the sidebar lists them and the page reads
@@ -244,6 +251,27 @@ export function App() {
     void loadPath();
   }, [activeProject, loadPath]);
 
+  /* What the timeline's hovers are made of: the evidence behind each level, and
+     the work each step set. Both change on exactly the same turns the concepts
+     and the path do. */
+  const loadStanding = useCallback(async () => {
+    if (!api || !activeProject) {
+      setStandings([]);
+      setTasks([]);
+      return;
+    }
+    const [read, set] = await Promise.all([
+      api.conceptStandings({ projectId: activeProject.id }).catch(() => []),
+      api.listTasks({ projectId: activeProject.id }).catch(() => []),
+    ]);
+    setStandings(read);
+    setTasks(set);
+  }, [activeProject]);
+
+  useEffect(() => {
+    void loadStanding();
+  }, [loadStanding]);
+
   /* A turn is exactly when mastery moves and when the path is revised, so both
      are re-read then rather than polled. */
   useEffect(() => {
@@ -258,8 +286,9 @@ export function App() {
       }
       if (event.kind === "concepts" || event.kind === "done") void loadConcepts();
       if (event.kind === "path" || event.kind === "done") void loadPath();
+      if (event.kind === "concepts" || event.kind === "tasks" || event.kind === "done") void loadStanding();
     });
-  }, [activeProject?.id, loadConcepts, loadPath, refreshProjects]);
+  }, [activeProject?.id, loadConcepts, loadPath, loadStanding, refreshProjects]);
 
   /**
    * Opens a concept the transcript named, by id.
@@ -454,7 +483,15 @@ export function App() {
                           onError={setError}
                         />
                       ),
-                      path: <PathList activeStepId={path?.currentNodeId ?? null} path={path} />,
+                      path: (
+                        <PathList
+                          activeStepId={path?.currentNodeId ?? null}
+                          concepts={concepts}
+                          path={path}
+                          standings={standings}
+                          tasks={tasks}
+                        />
+                      ),
                       concepts: (
                         <ConceptTree
                           activeConceptId={openConcept?.conceptId ?? null}
