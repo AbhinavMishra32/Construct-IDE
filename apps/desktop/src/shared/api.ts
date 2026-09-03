@@ -660,12 +660,17 @@ export const learnerOpeningSchema = z.object({
 });
 export type LearnerOpening = z.infer<typeof learnerOpeningSchema>;
 
-/** What the intake sends when it asks for one more suggestion: the draft, plus
- *  the cards already on the screen. The cards go up rather than being
- *  remembered down here because the window is what decides how many it has room
- *  for and which of them survived. */
+/** What the intake sends when it asks for one more suggestion: the draft, the
+ *  cards already on the screen, and anything the learner said when they asked
+ *  for something else. The cards go up rather than being remembered down here
+ *  because the window is what decides how many it has room for and which of
+ *  them survived. */
 export const learnerOpeningInput = learnerDraftInput.extend({
   taken: z.array(learnerOpeningSchema).max(3),
+  /** Empty unless they asked for something else than what was offered. Not the
+   *  same thing as their ambition: the ambition is what they want to be able to
+   *  do, this is what they would rather be building to get there. */
+  steer: z.string().max(500),
 });
 
 /** The three sizes the window has before it is a workspace, and the workspace
@@ -955,10 +960,11 @@ export interface ConstructApi {
   /** One project worth starting, written for this person from their intake.
    *
    *  Asked three times, once per card, with `taken` carrying the cards already
-   *  on the screen so the next one is different in kind from them. Never fails
-   *  into nothing: with no model reachable the main process composes one from
-   *  the draft itself, because "here is what I would build with you" is the
-   *  last thing the intake says and it cannot be a shrug. */
+   *  on the screen so the next one is different in kind from them, and `steer`
+   *  carrying what they said if they asked for something else. Never fails into
+   *  nothing: with no model reachable the main process composes one from the
+   *  draft itself, because "here is what I would build with you" is the last
+   *  thing the intake says and it cannot be a shrug. */
   learnerOpening(input: z.infer<typeof learnerOpeningInput>): Promise<LearnerOpening>;
   /** Grows or shrinks the window for the screen now showing. */
   setWindowStage(stage: WindowStage): Promise<void>;

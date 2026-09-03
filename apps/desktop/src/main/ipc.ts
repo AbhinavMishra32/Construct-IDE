@@ -426,8 +426,8 @@ export function installIpc({ store, auth, projects, providers, workspace, termin
   handle(ipc.learnerQuestion, (input) => agent.learnerQuestion(learnerDraftInput.parse(input)));
   handle(ipc.learnerPortrait, (input) => agent.learnerPortrait(learnerDraftInput.parse(input)));
   handle(ipc.learnerOpening, (input) => {
-    const { taken, ...draft } = learnerOpeningInput.parse(input);
-    return agent.learnerOpening(draft, taken);
+    const { taken, steer, ...draft } = learnerOpeningInput.parse(input);
+    return agent.learnerOpening(draft, taken, steer);
   });
 
   handle(ipc.windowStage, (input) => fitWindowTo(window(), windowStageSchema.parse(input)));

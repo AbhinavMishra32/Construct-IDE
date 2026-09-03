@@ -363,8 +363,8 @@ export class AgentService {
    * holds a written-here suggestion for every footing, and the screen this
    * feeds cannot be a shrug.
    */
-  async learnerOpening(draft: LearnerDraft, taken: LearnerOpening[]): Promise<LearnerOpening> {
-    const written = await this.complete(OPENING_PROMPT, describeOffered(draft, taken), 20_000);
+  async learnerOpening(draft: LearnerDraft, taken: LearnerOpening[], steer: string): Promise<LearnerOpening> {
+    const written = await this.complete(OPENING_PROMPT, describeOffered(draft, taken, steer), 20_000);
     const offered = written ? cleanOpenings(written, draft.language) : [];
     const named = new Set(taken.map((entry) => entry.name.toLowerCase()));
     const fresh = offered.find((entry) => !named.has(entry.name.toLowerCase()));
@@ -373,7 +373,10 @@ export class AgentService {
        fallbacks are a ladder of three per footing, so asking for the second
        card after a model failure gets the second rung rather than the first
        again. */
-    const ladder = composeOpenings(draft);
+    /* A steer is spent on the fallback too, as the ambition it effectively is:
+       someone who has just typed what they would rather build must not be shown
+       the same three written-here cards they asked to be rid of. */
+    const ladder = composeOpenings(steer.trim() ? { ...draft, ambition: steer.trim() } : draft);
     const composed = ladder.find((entry) => !named.has(entry.name.toLowerCase())) ?? ladder[0];
     /* Three per footing, and at most two are ever taken, so the ladder always
        answers. This branch is the type system's, not a real one. */
@@ -1232,6 +1235,7 @@ const OPENING_PROMPT = [
   "Where they named tools, ecosystems or domains they already work in, build on those rather than around them.",
   "It has to be finishable by them, from where they actually are, in a few sittings. A project they cannot finish teaches them nothing.",
   "Aim it at what they said they want to be able to build. If they were vague, take one honest reading of it rather than a safe default.",
+  "If they have asked for something else than what was offered, that is now the subject: build their words into a project rather than nudging them back to what you would have suggested.",
   "If projects are already on their screen, yours must be different in kind from every one of them — a different thing to build, exercising a different part of the craft. Not another size of the same idea.",
   "Reply with JSON and nothing else: one object with these keys.",
   '  "name": the project title, two to four words, Title Case. Name the subject, not the activity.',
@@ -1242,15 +1246,23 @@ const OPENING_PROMPT = [
   "No markdown fence, no commentary, no trailing text. The object alone.",
 ].join("\n");
 
-/** The draft, plus the cards already on the screen.
+/** The draft, what they asked for instead, and the cards already on the screen.
  *
- *  Names and goals both, because a name alone does not tell a model that the
- *  card it is about to write is the same project under a different title. */
-function describeOffered(draft: LearnerDraft, taken: LearnerOpening[]): string {
-  const drafted = describeDraft(draft);
-  if (taken.length === 0) return drafted;
-  const already = taken.map((entry, position) => `${position + 1}. ${entry.name} — ${entry.goal}`);
-  return [drafted, "", "Already on their screen, so yours must be different in kind:", ...already].join("\n");
+ *  Names and goals both for the cards, because a name alone does not tell a
+ *  model that the card it is about to write is the same project under a
+ *  different title. The steer goes last and is labelled as the thing that
+ *  outranks the rest: it is the most recent thing the learner said, and they
+ *  said it in order to change the answer. */
+function describeOffered(draft: LearnerDraft, taken: LearnerOpening[], steer: string): string {
+  const lines = [describeDraft(draft)];
+  if (steer.trim()) {
+    lines.push("", `They have just asked for something else, in their words: ${steer.trim()}`, "This outranks everything above it. Aim the project at it.");
+  }
+  if (taken.length > 0) {
+    lines.push("", "Already on their screen, so yours must be different in kind:");
+    lines.push(...taken.map((entry, position) => `${position + 1}. ${entry.name} — ${entry.goal}`));
+  }
+  return lines.join("\n");
 }
 
 /** A paragraph, or nothing. Headings and bullets mean the model wrote a

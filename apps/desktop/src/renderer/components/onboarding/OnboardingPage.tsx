@@ -82,6 +82,16 @@ export function OnboardingPage({
      cards beside it get out of the way by knowing they are not it. */
   const [openings, setOpenings] = useState<LearnerOpening[]>([]);
   const [starting, setStarting] = useState<string | null>(null);
+  /* What they said when they asked for something else than the three on offer,
+     and whether the field to say it in is open. The three cards are rewritten
+     from it — this screen recommends, and asking for something else is asking
+     it to recommend again, not being handed a blank dialog. */
+  const [steer, setSteer] = useState("");
+  const [asking, setAsking] = useState(false);
+  /* Nothing arrived and nothing is on the way: no model, or three requests that
+     all failed. Held apart from "none yet" so the screen can offer to try
+     again instead of pretending it has finished. */
+  const [refused, setRefused] = useState(false);
 
   /* Whether a turn can run at all. Read once on arrival and again after every
      connection, because the whole of the first step is waiting for this to
@@ -253,23 +263,57 @@ export function OnboardingPage({
    * an error on the last screen of an intake.
    */
   const sought = useRef(false);
-  const seekOpenings = useCallback(async () => {
-    if (!api || sought.current) return;
-    sought.current = true;
+  /* Which run is the live one. Asking for something else starts a second run
+     over the top of a first that may still have two requests in flight, and
+     without this the older run's cards land on the screen after the newer
+     run's — a learner who asked for something else watching what they rejected
+     come back. */
+  const run = useRef(0);
+  const seekOpenings = useCallback(async (hint: string) => {
+    if (!api) return;
+    const token = (run.current += 1);
+    const stale = () => run.current !== token;
+    setRefused(false);
+    setOpenings([]);
     const found: LearnerOpening[] = [];
-    for (let remaining = 3; remaining > 0; remaining -= 1) {
-      setSeeking(remaining);
+    const ask = async () => {
+      /* try/catch rather than `.catch`, because a build whose preload predates
+         this channel does not reject — `api.learnerOpening` is not a function,
+         and that throws on the way in. */
       try {
-        found.push(await api.learnerOpening({ ...latest.current, taken: found }));
+        return await api.learnerOpening({ ...latest.current, taken: found, steer: hint });
       } catch {
-        break;
+        return null;
       }
+    };
+    for (let position = 0; position < 3; position += 1) {
+      if (stale()) return;
+      setSeeking(3 - position);
+      /* The first request gets a second attempt. Every later one can fail into
+         a shorter screen, but the first failing is the difference between a
+         screen with something on it and a screen with nothing. */
+      const next = (await ask()) ?? (position === 0 ? await ask() : null);
+      if (stale()) return;
+      if (!next) break;
+      found.push(next);
       /* A new array every time, so the list that has already been rendered is
          never the one being pushed into. */
       setOpenings([...found]);
     }
+    if (stale()) return;
     setSeeking(0);
+    setRefused(found.length === 0);
   }, [api]);
+
+  /** Asking for something else. Closes the field, keeps what they typed — it is
+   *  the subject now, and it stays in the box so they can amend it rather than
+   *  retype it — and rewrites all three cards from it, live, exactly as they
+   *  were written the first time. */
+  const reseek = useCallback(() => {
+    setAsking(false);
+    rouse();
+    void seekOpenings(steer.trim());
+  }, [rouse, seekOpenings, steer]);
 
   /** Stores the profile. Both ways off the last step go through it, because both
    *  of them are the intake being finished. */
@@ -369,8 +413,9 @@ export function OnboardingPage({
   /* On arrival, and only here. See `seekOpenings`: the writing of these is
      something to watch rather than something to hide. */
   useEffect(() => {
-    if (step !== "openings") return;
-    void seekOpenings();
+    if (step !== "openings" || sought.current) return;
+    sought.current = true;
+    void seekOpenings("");
   }, [seekOpenings, step]);
 
   /* Enter moves on everywhere; the two textareas keep Enter for newlines and
@@ -382,7 +427,9 @@ export function OnboardingPage({
       /* Not while the connect dialog is open. Enter inside it submits a key or
          a code, and that keypress bubbling out to here would step off the model
          screen the moment the learner finished connecting one. */
-      if (event.key !== "Enter" || stalled || connecting || starting) return;
+      /* Not while the "something else" field is open: Enter there is the
+         form's, and it means "recommend again", not "leave". */
+      if (event.key !== "Enter" || stalled || connecting || starting || asking) return;
       const inTextarea = (event.target as HTMLElement | null)?.tagName === "TEXTAREA";
       if (inTextarea && !(event.metaKey || event.ctrlKey)) return;
       event.preventDefault();
@@ -390,7 +437,7 @@ export function OnboardingPage({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [advance, connecting, stalled, starting]);
+  }, [advance, asking, connecting, stalled, starting]);
 
   const toggleLeaning = useCallback((value: LearnerLeaning) => {
     rouse();
@@ -774,10 +821,11 @@ export function OnboardingPage({
             )}
             {step === "openings" && (
               <div className="space-y-1.5">
-                {/* Three slots, and they exist before the cards do. A screen
-                    that grows a card at a time shifts everything under it three
-                    times; three slots that fill in place is the same
-                    information arriving without the furniture moving. */}
+                {/* All three slots, from the first frame, whether or not there
+                    is anything in them yet. A screen that grows a card at a
+                    time shifts everything under it three times and is mostly
+                    void while it does; three slots that fill in place say what
+                    is coming, where, and how big, and then nothing moves. */}
                 {[0, 1, 2].map((position) => {
                   const opening = openings[position];
                   if (opening) {
@@ -796,18 +844,81 @@ export function OnboardingPage({
                       />
                     );
                   }
-                  /* Only the one being written, not the ones after it. Two empty
-                     slots below a shimmering one is a queue, and a queue invites
-                     the learner to count how long this will take. */
-                  return seeking > 0 && position === openings.length ? <OpeningSlot key="writing" index={position + 1} /> : null;
+                  /* Only the one actually being written moves. The ones behind
+                     it are present but still, which is the difference between
+                     three things arriving and a progress bar in three parts. */
+                  return seeking > 0 ? (
+                    <OpeningSlot index={position + 1} key={`slot-${position}`} writing={position === openings.length} />
+                  ) : null;
                 })}
-                {/* No api, which is the only way to reach this screen with
-                    nothing on it and nothing on the way. Nothing to apologise
-                    for and nothing to explain: describing your own is the way
-                    on, and it is under this line. */}
-                {seeking === 0 && openings.length === 0 && (
-                  <p className="py-8 text-center text-ui text-muted-foreground">Describe your first project yourself, on the next screen.</p>
+
+                {/* Nothing came back and nothing is coming. Not an apology and
+                    not a dead end: the screen says what happened in one line
+                    and offers the two things that can be done about it. */}
+                {refused && (
+                  <motion.div
+                    animate={{ opacity: 1 }}
+                    className={cn(GROUP, "px-4 py-5 text-center")}
+                    initial={{ opacity: 0 }}
+                    transition={TEXT}
+                  >
+                    <p className="text-ui text-muted-foreground">
+                      I could not reach a model to write these. Everything you told me is saved.
+                    </p>
+                    <button
+                      className="mt-2.5 rounded text-ui text-foreground underline decoration-transparent transition-colors hover:decoration-current"
+                      onClick={() => { rouse(); void seekOpenings(steer.trim()); }}
+                      type="button"
+                    >
+                      Try again
+                    </button>
+                  </motion.div>
                 )}
+
+                {/* Asking for something else, and the whole point of it: it
+                    rewrites the three cards rather than handing over an empty
+                    project dialog. Construct did the recommending on the way in
+                    and it does the recommending again — the learner supplies a
+                    subject, not a specification.
+
+                    Hidden while the cards are arriving. An offer to change the
+                    answer, made before the answer has finished appearing, reads
+                    as an apology for it. */}
+                <AnimatePresence initial={false}>
+                  {seeking === 0 && starting === null && (
+                    <motion.div animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} initial={{ opacity: 0, y: 4 }} key="steer" transition={TEXT}>
+                      {asking ? (
+                        <form
+                          className="flex items-center gap-2 pt-1.5"
+                          onSubmit={(event) => { event.preventDefault(); reseek(); }}
+                        >
+                          <input
+                            aria-label="What you would rather build"
+                            autoFocus
+                            className={cn(field, "h-10 py-0 text-ui")}
+                            onChange={(event) => setSteer(event.target.value)}
+                            onKeyDown={(event) => { if (event.key === "Escape") setAsking(false); }}
+                            placeholder="Say what you would rather build."
+                            value={steer}
+                          />
+                          <Button className="h-10 shrink-0 px-3.5" disabled={!steer.trim()} type="submit" variant="secondary">
+                            <ArrowRight />
+                          </Button>
+                        </form>
+                      ) : (
+                        <button
+                          className="w-full rounded-xl py-2 text-center text-ui text-muted-foreground transition-colors hover:text-foreground"
+                          onClick={() => { rouse(); setAsking(true); }}
+                          type="button"
+                        >
+                          {/* Changes once they have steered it, because by then
+                              the question is whether this one is right either. */}
+                          {steer.trim() ? "Ask for something else again" : "Had something else in mind?"}
+                        </button>
+                      )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             )}
           </div>
@@ -871,11 +982,12 @@ export function OnboardingPage({
                 ? inventory && !modelReady ? "Connect a provider to continue" : ""
                 : step === "openings"
                   /* While they are still arriving the line says so, because the
-                     shimmering slot above it is the only other thing saying it.
-                     It goes quiet as soon as there is something to press. */
+                     shimmering slots above it are the only other thing saying
+                     it. It turns into the keyboard hint the moment there is
+                     something to press. */
                   ? starting ? `Setting up ${starting}…`
+                    : seeking && openings.length === 0 ? "Thinking about what to build with you…"
                     : options ? `Press 1–${Math.min(options, 9)} to start one`
-                    : seeking ? "Thinking about what to build with you…"
                     : ""
                 : options
                   ? `Press 1–${Math.min(options, 9)} to choose${step === "leanings" ? ", or several" : ""}`
@@ -895,9 +1007,11 @@ export function OnboardingPage({
               Back
             </button>
           )}
-          {/* Not "Skip this". Nothing is being skipped: describing your own is
-              the other way of answering this step, and the project list is
-              where that is done. */}
+          {/* The way past the last step without starting anything. Quiet, and
+              deliberately not the way to ask for a different project — that is
+              "Had something else in mind?", up with the cards, and it gets you
+              three new recommendations rather than an empty dialog. This is
+              only for someone who wants none of this today. */}
           {step === "openings" && (
             <button
               className="rounded text-muted-foreground transition-colors hover:text-foreground disabled:opacity-45"
@@ -905,7 +1019,7 @@ export function OnboardingPage({
               onClick={advance}
               type="button"
             >
-              {waiting === "saving" ? "Saving…" : "I'll describe my own"}
+              {waiting === "saving" ? "Saving…" : "Not now"}
             </button>
           )}
         </motion.div>
@@ -1033,20 +1147,25 @@ function OpeningCard({
 }
 
 /**
- * The card that is being written, in the place it will appear.
+ * A card that has not arrived yet, in the place it will appear.
  *
- * A card-shaped hole rather than a spinner, and rather than the centred line of
+ * Card-shaped holes rather than a spinner, and rather than the centred line of
  * text this screen used to show while all three were fetched at once. Three
- * things are true of it at the same time: it says something is coming, it says
- * where, and it says how big — so when the card lands, nothing moves.
+ * things are true of them at the same time: they say something is coming, they
+ * say where, and they say how big — so when a card lands, nothing moves and
+ * nothing below it jumps.
  *
- * No words in it. The line under the three slots says what is happening, and a
- * placeholder that also narrates is two things saying one thing.
+ * All three are drawn from the first frame; only the one being written breathes.
+ * The other two are present and still, which reads as three things being
+ * written in order rather than as a progress bar in three parts.
+ *
+ * No words in any of them. The line under the cards says what is happening, and
+ * a placeholder that narrates as well is two things saying one thing.
  */
-function OpeningSlot({ index }: { index: number }) {
+function OpeningSlot({ index, writing }: { index: number; writing: boolean }) {
   return (
     <motion.div
-      animate={{ opacity: 1 }}
+      animate={{ opacity: writing ? 1 : 0.5 }}
       aria-hidden
       className={cn(
         "rounded-xl px-4 py-3",
@@ -1058,14 +1177,14 @@ function OpeningSlot({ index }: { index: number }) {
       <div className="flex items-baseline gap-2.5">
         {/* The number is real: this card is about to be pressable with it. */}
         <span className="w-3 shrink-0 text-ui tabular-nums text-muted-foreground/50">{index}</span>
-        <Bar className="h-[0.7rem] w-[42%]" delay={0} />
+        <Bar className="h-[0.7rem] w-[42%]" delay={0} writing={writing} />
       </div>
       {/* Two lines for the goal and one for the reason, at the lengths the
           writing actually comes back at, so the slot is the size of the card. */}
       <div className="mt-2 space-y-1.5 pl-[1.375rem]">
-        <Bar className="h-[0.55rem] w-full" delay={0.08} />
-        <Bar className="h-[0.55rem] w-[78%]" delay={0.16} />
-        <Bar className="h-[0.55rem] w-[58%]" delay={0.24} />
+        <Bar className="h-[0.55rem] w-full" delay={0.08} writing={writing} />
+        <Bar className="h-[0.55rem] w-[78%]" delay={0.16} writing={writing} />
+        <Bar className="h-[0.55rem] w-[58%]" delay={0.24} writing={writing} />
       </div>
     </motion.div>
   );
@@ -1075,12 +1194,12 @@ function OpeningSlot({ index }: { index: number }) {
  *  sweep the transcript uses while the agent is working, so waiting looks the
  *  same everywhere in the app; the breathing underneath it, offset per line, is
  *  what keeps a stack of four from reading as a static skeleton. */
-function Bar({ className, delay }: { className: string; delay: number }) {
+function Bar({ className, delay, writing }: { className: string; delay: number; writing: boolean }) {
   return (
     <motion.span
-      animate={{ opacity: [0.55, 1, 0.55] }}
-      className={cn("writing-sheen block rounded-full", className)}
-      transition={{ duration: 1.8, repeat: Infinity, ease: "easeInOut", delay }}
+      animate={writing ? { opacity: [0.55, 1, 0.55] } : { opacity: 0.55 }}
+      className={cn("block rounded-full", writing ? "writing-sheen" : "bg-[color-mix(in_oklab,var(--foreground)_8%,transparent)]", className)}
+      transition={writing ? { duration: 1.8, repeat: Infinity, ease: "easeInOut", delay } : TEXT}
     />
   );
 }
