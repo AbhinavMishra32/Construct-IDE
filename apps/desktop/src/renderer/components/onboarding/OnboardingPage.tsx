@@ -92,6 +92,13 @@ export function OnboardingPage({
      all failed. Held apart from "none yet" so the screen can offer to try
      again instead of pretending it has finished. */
   const [refused, setRefused] = useState(false);
+  /* What went wrong, in the failure's own words. The screen used to swallow this
+     and assert a cause instead — "I could not reach a model" — which is the one
+     thing it can be sure it is not: with no model reachable the main process
+     composes a card from the draft itself and returns it. So a screen with
+     nothing on it means the request never arrived, and saying which is the
+     difference between a bug someone can report and one they cannot. */
+  const [trouble, setTrouble] = useState("");
 
   /* Whether a turn can run at all. Read once on arrival and again after every
      connection, because the whole of the first step is waiting for this to
@@ -274,21 +281,28 @@ export function OnboardingPage({
        once the preload has answered, but the screen must not be blank if it
        ever is. */
     if (!api) {
+      setTrouble("The window has no connection to Construct's own process.");
       setRefused(true);
       return;
     }
     const token = (run.current += 1);
     const stale = () => run.current !== token;
     setRefused(false);
+    setTrouble("");
     setOpenings([]);
     const found: LearnerOpening[] = [];
+    let why = "";
     const ask = async () => {
       /* try/catch rather than `.catch`, because a build whose preload predates
          this channel does not reject — `api.learnerOpening` is not a function,
          and that throws on the way in. */
       try {
         return await api.learnerOpening({ ...latest.current, taken: found, steer: hint });
-      } catch {
+      } catch (error) {
+        why = error instanceof Error ? error.message : String(error);
+        /* Logged as well as shown: the card has room for one line, and whoever
+           is looking at a console wants the stack. */
+        console.error("learner:opening failed", error);
         return null;
       }
     };
@@ -308,6 +322,7 @@ export function OnboardingPage({
     }
     if (stale()) return;
     setSeeking(0);
+    setTrouble(found.length === 0 ? why : "");
     setRefused(found.length === 0);
   }, [api]);
 
@@ -868,16 +883,22 @@ export function OnboardingPage({
                     initial={{ opacity: 0 }}
                     transition={TEXT}
                   >
-                    <p className="text-ui text-muted-foreground">
-                      I could not reach a model to write these. Everything you told me is saved.
+                    <p className="text-content text-foreground">Something went wrong writing these.</p>
+                    <p className="mx-auto mt-1 max-w-[24rem] text-balance text-ui text-muted-foreground">
+                      Everything you told me is saved, and you can start a project yourself at any time.
                     </p>
-                    <button
-                      className="mt-2.5 rounded text-ui text-foreground underline decoration-transparent transition-colors hover:decoration-current"
-                      onClick={() => { rouse(); void seekOpenings(steer.trim()); }}
-                      type="button"
-                    >
+                    {/* The reason, verbatim and set quietly. Not decoration: the
+                        two failures this screen actually has — a window talking
+                        to an older Construct process, and a request that never
+                        left — look identical without it. */}
+                    {trouble && (
+                      <p className="mx-auto mt-2 max-w-[26rem] text-balance font-mono text-ui-sm text-muted-foreground/65">
+                        {trouble}
+                      </p>
+                    )}
+                    <Button className="mt-3.5" onClick={() => { rouse(); void seekOpenings(steer.trim()); }} size="sm" variant="outline">
                       Try again
-                    </button>
+                    </Button>
                   </motion.div>
                 )}
 
@@ -891,7 +912,7 @@ export function OnboardingPage({
                     answer, made before the answer has finished appearing, reads
                     as an apology for it. */}
                 <AnimatePresence initial={false}>
-                  {seeking === 0 && starting === null && (
+                  {seeking === 0 && starting === null && !refused && (
                     <motion.div animate={{ opacity: 1, y: 0 }} className="pt-1" exit={{ opacity: 0 }} initial={{ opacity: 0, y: 4 }} key="steer" transition={TEXT}>
                       {asking ? (
                         <form
