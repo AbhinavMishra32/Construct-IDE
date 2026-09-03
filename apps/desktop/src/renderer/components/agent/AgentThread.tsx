@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { Markdown } from "./Markdown";
 import { ChallengePublished, PROSE_GAP, Reasoning, ROW_GLYPH, RunFailure, SolveRead, STEP_GAP, ToolRow } from "./ActivityRow";
 import { SystemEvent } from "./SystemEvent";
-import { ConceptCard, conceptFromToolInput } from "./ConceptCard";
+import { ConceptCard, conceptChangeFromToolOutput, conceptFromToolInput } from "./ConceptCard";
 import { TaskChip } from "./TaskChip";
 import { taskFromToolInput } from "./taskInput";
 import { groupParts, type AgentRun, type RunPart } from "./agentRun";
@@ -161,7 +161,23 @@ function Rows({ parts, onOpenConcept, onShowTask, tasks }: { parts: RunPart[] } 
              treatment a published challenge gets, and for the same reason. */
           if (part.part.tool === "record-concept") {
             const concept = conceptFromToolInput(part.part.input);
-            if (concept) return wrap(<ConceptCard level={concept.level} note={concept.note} onOpen={onOpenConcept ? () => onOpenConcept(concept.conceptId) : undefined} title={concept.title} />);
+            /* What the call *did*, which only the store knew: the level it came
+               from, and the parts of the note it rewrote. Absent for a turn
+               recorded before the tool answered with it, and the card then
+               shows the level alone as it always did. */
+            const change = conceptChangeFromToolOutput(part.part.output);
+            if (concept)
+              return wrap(
+                <ConceptCard
+                  changed={change?.changed}
+                  level={concept.level}
+                  note={concept.note}
+                  onOpen={onOpenConcept ? () => onOpenConcept(concept.conceptId) : undefined}
+                  previousLevel={change?.previousLevel}
+                  reason={change?.reason}
+                  title={concept.title}
+                />,
+              );
           }
           /* A task set is the outcome of the turn in the same way a mastery
              reading is: the row would say "Set a practice task" and hide the

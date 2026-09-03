@@ -153,6 +153,7 @@ export function ConceptsPage({
                   api={api}
                   concept={selected}
                   onOpen={(concept) => onSelect(key(concept as AtlasConcept))}
+                  projectId={selected.projectId}
                   siblings={siblings}
                   where={selected.projectName}
                 />

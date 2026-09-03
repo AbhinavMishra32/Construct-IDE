@@ -216,6 +216,21 @@ const MIGRATIONS: readonly string[] = [
    ALTER TABLE projects ADD COLUMN deleted_at TEXT;
    ALTER TABLE agent_messages ADD COLUMN deleted_at TEXT;
    CREATE INDEX projects_updated ON projects (updated_at);`,
+
+  /* What a concept change actually was.
+
+     `concept_events` has recorded every reading since the first migration and
+     nothing has ever read it back — so the history was there and invisible, and
+     the level was the only part of it the row could name. A concept usually
+     changes in ways a level does not describe: the note gets rewritten, the
+     summary reworded, the concept moved under a parent. Those are the entries a
+     learner recognises when they look at what happened to their own note, so
+     the fields the call rewrote are stored beside the level it set.
+     
+     Empty for every event written before this, which is honest: those changes
+     happened and nobody wrote down which parts they touched. */
+  `ALTER TABLE concept_events ADD COLUMN changed TEXT NOT NULL DEFAULT '[]';
+   CREATE INDEX concept_events_concept ON concept_events (project_id, concept_id, created_at);`,
 ];
 
 type ProjectRow = {
@@ -258,6 +273,28 @@ export type ConceptRecord = {
   firstSeenAt: string;
   updatedAt: string;
 };
+
+/** One entry in a concept's history: what a single `record-concept` call did to
+ *  it. The learner's own change log for a note they own. */
+export type ConceptEvent = {
+  eventId: string;
+  conceptId: string;
+  /** How the reading moved. `referenced` is a call that left the level where it
+   *  was — the agent came back to the idea and did not change its mind. */
+  kind: "introduced" | "leveled-up" | "leveled-down" | "referenced";
+  /** Null for the first reading, which had nothing before it. */
+  previousLevel: number | null;
+  masteryLevel: number;
+  /** The agent's own sentence on why, when it gave one. */
+  reason: string;
+  /** Which written parts the call rewrote: `title`, `summary`, `content`,
+   *  `note`, `docs`, `tags`, `parent`. Empty when only the level moved, and for
+   *  events recorded before this was kept. */
+  changed: ConceptField[];
+  createdAt: string;
+};
+
+export type ConceptField = "title" | "summary" | "content" | "note" | "docs" | "tags" | "parent";
 
 /**
  * One practice task.
@@ -706,13 +743,16 @@ export class ProjectStore {
     content: string;
     docs: Array<{ title: string; url: string }>;
     tags: string[];
-  }): void {
+  }): ConceptEvent {
     const now = new Date().toISOString();
+    /* The whole row, not just the level: what changed is the question the
+       history has to answer, and a diff needs the side that is already there. */
     const existing = this.database
-      .prepare("SELECT mastery_level FROM concepts WHERE project_id = ? AND concept_id = ?")
-      .get(input.projectId, input.conceptId) as { mastery_level: number } | undefined;
+      .prepare("SELECT mastery_level, parent_id, title, summary, content, note, docs, tags FROM concepts WHERE project_id = ? AND concept_id = ?")
+      .get(input.projectId, input.conceptId) as Record<string, string | number | null> | undefined;
 
     const level = Math.min(5, Math.max(0, Math.round(input.masteryLevel)));
+    const changed = conceptChanges(existing, input);
 
     /* The written content is only overwritten when the agent sends something.
        A later turn that just moves the level must not blank the explanation the
@@ -771,11 +811,48 @@ export class ProjectStore {
         .run(input.parentId && input.parentId !== input.conceptId ? input.parentId : null, input.projectId, input.conceptId);
     }
 
-    const kind = existing === undefined ? "introduced" : level > existing.mastery_level ? "leveled-up" : level < existing.mastery_level ? "leveled-down" : "referenced";
+    const before = existing === undefined ? null : Number(existing.mastery_level);
+    const kind: ConceptEvent["kind"] =
+      before === null ? "introduced" : level > before ? "leveled-up" : level < before ? "leveled-down" : "referenced";
+    const eventId = randomUUID();
 
     this.database
-      .prepare("INSERT INTO concept_events (id, project_id, concept_id, kind, previous_level, mastery_level, reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(randomUUID(), input.projectId, input.conceptId, kind, existing?.mastery_level ?? null, level, input.reason, now);
+      .prepare("INSERT INTO concept_events (id, project_id, concept_id, kind, previous_level, mastery_level, reason, changed, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(eventId, input.projectId, input.conceptId, kind, before, level, input.reason, JSON.stringify(changed), now);
+
+    /* Handed back rather than only filed. The transcript draws this call as a
+       card, and "L2 → L3, because they explained the depth test unprompted" is
+       the whole point of the card — it cannot be recovered from the arguments,
+       because only the store knows what was there before. */
+    return { eventId, conceptId: input.conceptId, kind, previousLevel: before, masteryLevel: level, reason: input.reason, changed, createdAt: now };
+  }
+
+  /**
+   * One concept's history, newest first.
+   *
+   * Every reading the agent has taken of this idea, which is a different account
+   * of the project from the transcript: the transcript says what was said, and
+   * this says what it was taken to mean.
+   */
+  listConceptEvents(projectId: string, conceptId: string): ConceptEvent[] {
+    const rows = this.database
+      .prepare("SELECT * FROM concept_events WHERE project_id = ? AND concept_id = ? ORDER BY created_at DESC, rowid DESC")
+      .all(projectId, conceptId) as Array<Record<string, string | number | null>>;
+
+    return rows.map((row) => ({
+      eventId: String(row.id),
+      conceptId: String(row.concept_id),
+      kind: (["introduced", "leveled-up", "leveled-down", "referenced"] as const).includes(row.kind as never)
+        ? (row.kind as ConceptEvent["kind"])
+        : "referenced",
+      previousLevel: row.previous_level === null ? null : Number(row.previous_level),
+      masteryLevel: Number(row.mastery_level ?? 0),
+      reason: String(row.reason ?? ""),
+      changed: parseJson<ConceptField[]>(String(row.changed ?? "[]"), []).filter((field): field is ConceptField =>
+        (CONCEPT_FIELDS as readonly string[]).includes(field),
+      ),
+      createdAt: String(row.created_at),
+    }));
   }
 
   /* ---- Practice tasks ---------------------------------------------------- */
@@ -1378,6 +1455,47 @@ function toSummary(row: ProjectRow): ProjectSummary {
     archivedAt: row.archived_at,
     present: existsSync(row.directory),
   };
+}
+
+export const CONCEPT_FIELDS = ["title", "summary", "content", "note", "docs", "tags", "parent"] as const;
+
+/**
+ * Which written parts of a concept a call actually rewrote.
+ *
+ * Only the parts it *sent*: `record-concept` is allowed to carry the level
+ * alone, and the upsert deliberately keeps whatever prose is already there when
+ * a field arrives empty. So an empty field is "leave it" rather than "clear it",
+ * and counting it as a change would report every level bump as a rewrite of the
+ * whole note.
+ *
+ * A field sent with exactly what is already stored is not a change either. The
+ * agent re-sends the title on nearly every call, and a history that said "title"
+ * against all of them would be a history of the calling convention.
+ */
+function conceptChanges(
+  existing: Record<string, string | number | null> | undefined,
+  input: { parentId?: string | null; title: string; note: string; summary: string; content: string; docs: Array<{ title: string; url: string }>; tags: string[] },
+): ConceptField[] {
+  /* A concept that did not exist has no diff to show. "Introduced" already says
+     that everything about it is new. */
+  if (!existing) return [];
+
+  const changes: ConceptField[] = [];
+  const moved = (field: ConceptField, sent: string, before: unknown) => {
+    if (sent && sent !== String(before ?? "")) changes.push(field);
+  };
+
+  moved("title", input.title.trim(), existing.title);
+  moved("summary", input.summary.trim(), existing.summary);
+  moved("content", input.content.trim(), existing.content);
+  moved("note", input.note.trim(), existing.note);
+  if (input.docs.length > 0 && JSON.stringify(input.docs) !== String(existing.docs ?? "[]")) changes.push("docs");
+  if (input.tags.length > 0 && JSON.stringify(input.tags) !== String(existing.tags ?? "[]")) changes.push("tags");
+  /* Absent means "leave it where it is", so only an explicit parentId counts —
+     including an explicit null, which is a move back to the top. */
+  if (input.parentId !== undefined && (input.parentId || null) !== (existing.parent_id || null)) changes.push("parent");
+
+  return changes;
 }
 
 /** One concept row, as a record. Shared by the per-project read and the atlas so

@@ -42,12 +42,16 @@ const SPRING = { type: "spring" as const, stiffness: 460, damping: 42, mass: 0.9
 export function ConceptPip({
   api,
   concept,
+  projectId,
   initial,
   onArrange,
   onClose,
 }: {
   api: ConstructApi | undefined;
   concept: ConceptSummary;
+  /** The project this card is floating over, so the entry can show how its
+   *  reading of the concept moved. */
+  projectId: string;
   /** Where this project left the card last time. */
   initial?: { corner: Corner; width: number; height: number } | undefined;
   /** Reported whenever the card comes to rest, so the workspace can remember
@@ -215,7 +219,7 @@ export function ConceptPip({
               window with it: the learner would lose the file they were reading
               to a card they only glanced at. */}
           <PipBoundary>
-            <ConceptEntry api={api} concept={concept} />
+            <ConceptEntry api={api} concept={concept} projectId={projectId} />
           </PipBoundary>
         </div>
 

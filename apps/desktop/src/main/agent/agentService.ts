@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
+import { LANGUAGES } from "@construct/domain";
 import type { AgentActivityStep, AgentMessage } from "@construct/domain";
-import type { AgentStreamEvent, LearnerProfile, learnerDraftInput } from "../../shared/api.js";
+import type { AgentStreamEvent, LearnerOpening, LearnerProfile, learnerDraftInput } from "../../shared/api.js";
 import type { z } from "zod";
-import { composePortrait, profilePromptBlock } from "../learner/learnerProfile.js";
+import { cleanOpenings, composeOpenings, composePortrait, profilePromptBlock } from "../learner/learnerProfile.js";
 import type { AskUserQuestionRequest } from "@construct/domain";
 import type { ProjectStore } from "../store/projectStore.js";
 import type { ProviderService } from "../provider.js";
@@ -337,6 +338,37 @@ export class AgentService {
     const written = await this.complete(PORTRAIT_PROMPT, describeDraft(draft), 15_000);
     const cleaned = written ? cleanPortrait(written) : null;
     return cleaned ?? composePortrait({ ...draft, followUp: draft.followUp });
+  }
+
+  /**
+   * Three projects worth starting, for this person.
+   *
+   * The intake's last screen used to be a button that said "Start building" and
+   * led to an empty project list — which asks someone who has just explained
+   * what they want to build to describe it again, in a dialog, as a goal. The
+   * answers are right there. This spends them.
+   *
+   * JSON rather than prose, because three cards need three fields each and
+   * parsing that out of a paragraph is guesswork. Anything malformed is thrown
+   * away per-entry rather than wholesale — two good suggestions beat none — and
+   * `composeOpenings` fills the rest, so this never returns fewer than three
+   * and never returns nothing. A little longer than the other two completions
+   * is allowed: it is writing three of these, and it is the screen the whole
+   * intake has been walking towards.
+   */
+  async learnerOpenings(draft: LearnerDraft): Promise<LearnerOpening[]> {
+    const written = await this.complete(OPENINGS_PROMPT, describeDraft(draft), 25_000);
+    const offered = written ? cleanOpenings(written, draft.language) : [];
+    /* Topped up rather than replaced. A model that returned two usable cards has
+       still done most of the work, and the written-here third is indistinguishable
+       in shape from the two beside it. */
+    const filled = [...offered];
+    for (const fallback of composeOpenings(draft)) {
+      if (filled.length >= 3) break;
+      if (filled.some((entry) => entry.name.toLowerCase() === fallback.name.toLowerCase())) continue;
+      filled.push(fallback);
+    }
+    return filled.slice(0, 3);
   }
 
   /**
@@ -985,8 +1017,9 @@ export class AgentService {
       },
       recordConcept: (record) => {
         if (!record.conceptId || !record.title) return;
-        this.store.recordConcept({ projectId, ...record });
+        const change = this.store.recordConcept({ projectId, ...record });
         this.emit({ projectId, kind: "concepts" });
+        return change;
       },
       askLearner: (request) =>
         new Promise<string>((resolve, reject) => {
@@ -1074,10 +1107,11 @@ const TOOL_LABEL: Record<string, string> = {
   "run-terminal-command": "Ran a command",
   "record-concept": "Recorded what you understand",
   /* The names a learner reads, not the tool ids. "flow-memory-patch" tells them
-     nothing; "Remembered something about this project" tells them what just
-     happened to their project. */
-  "flow-memory-fetch": "Recalled what it knows about this project",
-  "flow-memory-patch": "Remembered something about this project",
+     nothing; "Updated memory" tells them what just happened to their project.
+     Which part of the memory it was is `toolSubject`'s job, from the call's own
+     arguments. */
+  "flow-memory-fetch": "Recalled what it knows",
+  "flow-memory-patch": "Updated memory",
   "plan-learning-path": "Planned what to teach next",
   "web-search": "Searched the web",
   "web-fetch": "Read a page",
@@ -1179,6 +1213,20 @@ function cleanQuestion(raw: string): string | null {
   if (trimmed.split("?").length > 3) return null;
   return trimmed.endsWith("?") ? trimmed : `${trimmed}?`;
 }
+
+const OPENINGS_PROMPT = [
+  "You are Construct, a coding mentor. Someone has just told you about themselves, and you are about to suggest the first project you would build with them.",
+  "Propose exactly three projects. They must be different in kind, not three sizes of the same idea: vary what gets built and which part of the craft it exercises.",
+  "Every one has to be buildable by this person, from where they actually are, in their stated language, in a few sittings. A project they cannot finish teaches them nothing.",
+  "Aim each at what they said they want to be able to build. If they were vague, pick three honest readings of it rather than three safe defaults.",
+  "Reply with JSON and nothing else: an array of three objects with these keys.",
+  '  "name": the project title, two to four words, Title Case. Name the subject, not the activity.',
+  '  "goal": what they will be able to do once it is done, in the second person, one or two sentences. This is what the teaching is aimed at, so make it specific enough to be finishable.',
+  '  "why": why this one for this person, one sentence, second person. Point at something they actually said.',
+  '  "artifact": the thing that exists at the end, two to four words, lower case. "a working ray tracer", "a shell you can pipe into".',
+  '  "language": one of: ' + LANGUAGES.join(", ") + ". Use their home language unless the project genuinely demands another.",
+  "No markdown fence, no commentary, no trailing text. The array alone.",
+].join("\n");
 
 /** A paragraph, or nothing. Headings and bullets mean the model wrote a
  *  document instead of a paragraph, and the screen has room for a paragraph. */

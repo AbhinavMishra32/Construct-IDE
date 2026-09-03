@@ -643,6 +643,7 @@ export function Workspace({ api, project, openPath, onError, onExpandSidebar, na
               <ConceptPip
                 api={api}
                 concept={concept}
+                projectId={project.id}
                 initial={restored.concept?.conceptId === concept.conceptId ? restored.concept : undefined}
                 key={concept.conceptId}
                 onArrange={(state) => remember({ concept: { conceptId: concept.conceptId, ...state } })}

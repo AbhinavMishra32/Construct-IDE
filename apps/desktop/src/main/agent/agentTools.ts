@@ -5,6 +5,7 @@ import type { MemoryFile, MemoryPatch, MemoryRead, MemoryPatchResult } from "../
 import { MEMORY_FILES } from "../memory/memoryService.js";
 import type { PathNodeInput, PlannedPath } from "../learning/pathService.js";
 import type { WebSearchResult } from "../webSearch.js";
+import type { ConceptEvent } from "../store/projectStore.js";
 
 const run = promisify(execFile);
 
@@ -50,7 +51,11 @@ export type AgentToolContext = {
     content: string;
     docs: Array<{ title: string; url: string }>;
     tags: string[];
-  }): void;
+    /** What the call did to the concept: the level it moved from, and which
+     *  written parts it rewrote. Returned rather than only filed, because the
+     *  transcript draws this call as a card and only the store knows what the
+     *  concept looked like a moment ago. */
+  }): ConceptEvent | void;
   /** Flow Memory: the four Markdown files in the project's own `.construct`.
    *  Read by purpose rather than by habit, and patched rather than rewritten —
    *  see `memoryService.ts` for why both of those matter. */
@@ -110,7 +115,7 @@ export async function executeAgentTool(name: string, input: unknown, context: Ag
             ? null
             : String(args.parentId).trim();
 
-      context.recordConcept({
+      const change = context.recordConcept({
         conceptId,
         ...(parent === undefined ? {} : { parentId: parent }),
         title: String(args.title ?? "").trim(),
@@ -134,7 +139,10 @@ export async function executeAgentTool(name: string, input: unknown, context: Ag
           : [],
         tags: Array.isArray(args.tags) ? args.tags.map(String).slice(0, 8) : [],
       });
-      return { recorded: true };
+      /* The change goes back to the model as well as to the window. It is the
+         only way the agent learns that its own reading moved a level, which is
+         what it needs to decide whether a task is fair yet. */
+      return { recorded: true, ...(change ?? {}) };
     }
 
     case "set-practice-task": {

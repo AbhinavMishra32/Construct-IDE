@@ -214,6 +214,95 @@ describe("ordering ties", () => {
   });
 });
 
+describe("a concept's history", () => {
+  const reading = (
+    projectId: string,
+    level: number,
+    extra: Partial<{ title: string; summary: string; content: string; note: string; reason: string; parentId: string | null; tags: string[] }> = {},
+  ) => ({
+    projectId,
+    conceptId: "rasterisation",
+    title: "Rasterisation",
+    masteryLevel: level,
+    confidence: "medium",
+    note: "",
+    reason: "",
+    summary: "",
+    content: "",
+    docs: [],
+    tags: [],
+    ...extra,
+  });
+
+  /* The level alone is not a change: "level 3" says nothing without what it was
+     a moment ago, and only the store knows that. So the call answers with it,
+     which is what lets the transcript draw L2 → L3 at all. */
+  it("answers with where the reading came from, not just where it landed", () => {
+    const created = store.createProject(project());
+    const first = store.recordConcept(reading(created.id, 1));
+    const second = store.recordConcept(reading(created.id, 3, { reason: "explained the depth test unprompted" }));
+
+    expect(first).toMatchObject({ kind: "introduced", previousLevel: null, masteryLevel: 1 });
+    expect(second).toMatchObject({ kind: "leveled-up", previousLevel: 1, masteryLevel: 3, reason: "explained the depth test unprompted" });
+  });
+
+  it("calls a call that left the level alone a reference rather than a change", () => {
+    const created = store.createProject(project());
+    store.recordConcept(reading(created.id, 2));
+
+    expect(store.recordConcept(reading(created.id, 2))).toMatchObject({ kind: "referenced", previousLevel: 2 });
+    expect(store.recordConcept(reading(created.id, 1))).toMatchObject({ kind: "leveled-down" });
+  });
+
+  /* Most calls do not move the level: the agent comes back to an idea and
+     rewrites the note. A history that only recorded levels said nothing had
+     happened on exactly those calls. */
+  it("records which written parts a call rewrote", () => {
+    const created = store.createProject(project());
+    store.recordConcept(reading(created.id, 2, { summary: "Turning triangles into pixels." }));
+    const change = store.recordConcept(
+      reading(created.id, 2, { summary: "Turning triangles into pixels.", content: "# Rasterisation\n\nOne triangle at a time.", tags: ["graphics"] }),
+    );
+
+    /* The summary was sent again unchanged, and re-sending is the calling
+       convention rather than an edit. */
+    expect(change.changed).toEqual(["content", "tags"]);
+  });
+
+  /* `record-concept` may carry the level alone, and the upsert deliberately
+     keeps whatever prose is already there when a field arrives empty — so an
+     empty field is "leave it", and counting it would report every level bump as
+     a rewrite of the whole note. */
+  it("does not call an unsent field a change", () => {
+    const created = store.createProject(project());
+    store.recordConcept(reading(created.id, 2, { content: "The note the learner has been reading." }));
+
+    expect(store.recordConcept(reading(created.id, 3)).changed).toEqual([]);
+    expect(store.listConcepts(created.id)[0]?.content).toBe("The note the learner has been reading.");
+  });
+
+  it("reads the whole history back, newest first", () => {
+    const created = store.createProject(project());
+    store.recordConcept(reading(created.id, 1));
+    store.recordConcept(reading(created.id, 2, { reason: "wrote the loop themselves" }));
+    store.recordConcept(reading(created.id, 4));
+
+    const history = store.listConceptEvents(created.id, "rasterisation");
+    expect(history.map((event) => event.masteryLevel)).toEqual([4, 2, 1]);
+    expect(history.map((event) => event.kind)).toEqual(["leveled-up", "leveled-up", "introduced"]);
+    expect(history[1]?.reason).toBe("wrote the loop themselves");
+  });
+
+  it("keeps one concept's history out of another's", () => {
+    const created = store.createProject(project());
+    store.recordConcept(reading(created.id, 1));
+    store.recordConcept({ ...reading(created.id, 5), conceptId: "shading", title: "Shading" });
+
+    expect(store.listConceptEvents(created.id, "rasterisation")).toHaveLength(1);
+    expect(store.listConceptEvents(created.id, "shading")[0]?.masteryLevel).toBe(5);
+  });
+});
+
 describe("the atlas read", () => {
   const concept = (projectId: string, conceptId: string, level: number) => ({
     projectId,

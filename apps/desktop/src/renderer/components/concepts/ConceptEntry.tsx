@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { relativeTime } from "@/lib/format";
 import { masteryColor } from "@/lib/mastery";
 import { Markdown } from "../agent/Markdown";
+import { ConceptHistory } from "./ConceptHistory";
 
 /**
  * One concept, as an encyclopedia entry.
@@ -26,6 +27,7 @@ export function ConceptEntry({
   concept,
   siblings,
   where,
+  projectId,
   onOpen,
 }: {
   api: ConstructApi | undefined;
@@ -37,6 +39,10 @@ export function ConceptEntry({
   /** Where the concept was learned. Shown only in the atlas, which spans
    *  projects; inside a project it would name the project you are in. */
   where?: string | undefined;
+  /** The project whose reading of this concept is being shown. Mastery is per
+   *  project, and so is the history: absent leaves the log out rather than
+   *  showing another project's. */
+  projectId?: string | undefined;
   onOpen?: ((concept: ConceptSummary) => void) | undefined;
 }) {
   const rubric = rubricForLevel(concept.masteryLevel);
@@ -131,6 +137,8 @@ export function ConceptEntry({
           <p className="text-ui leading-[1.6] text-muted-foreground">{concept.note}</p>
         </section>
       )}
+
+      <ConceptHistory api={api} conceptId={concept.conceptId} projectId={projectId} />
 
       {siblings && siblings.length > 0 && (
         <section className="mt-5 border-t border-border/60 pt-3">
