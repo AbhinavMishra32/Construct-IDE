@@ -123,6 +123,7 @@ describe("practice tasks", () => {
       criteria: ["It runs"],
       concepts: [],
       files: [],
+      nodeId: "",
       status: "open",
       outcome: "",
       ...extra,
@@ -288,14 +289,14 @@ describe("rewinding to a snapshot", () => {
   it("undoes tasks the later turns set", () => {
     message("m1", "learner", "2026-01-01T00:00:00.000Z");
     snap("m1");
-    store.saveTask(projectId, { taskId: "t1", title: "T", brief: "", criteria: ["x"], concepts: [], files: [], status: "open", outcome: "" });
+    store.saveTask(projectId, { taskId: "t1", title: "T", brief: "", criteria: ["x"], concepts: [], files: [], nodeId: "", status: "open", outcome: "" });
 
     store.rewindTo(projectId, store.snapshot(projectId, "m1")!);
     expect(store.listTasks(projectId)).toEqual([]);
   });
 
   it("keeps a task that already existed, with the status it had", () => {
-    store.saveTask(projectId, { taskId: "t1", title: "T", brief: "", criteria: ["x"], concepts: [], files: [], status: "open", outcome: "" });
+    store.saveTask(projectId, { taskId: "t1", title: "T", brief: "", criteria: ["x"], concepts: [], files: [], nodeId: "", status: "open", outcome: "" });
     message("m1", "learner", "2026-01-01T00:00:00.000Z");
     snap("m1");
     store.setTaskStatus(projectId, "t1", "passed", "Well done");

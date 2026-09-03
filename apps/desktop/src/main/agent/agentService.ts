@@ -1241,7 +1241,7 @@ const TOOL_LABEL: Record<string, string> = {
  */
 function conceptOutline(
   concepts: Array<{ conceptId: string; parentId: string | null; title: string; masteryLevel: number }>,
-  standings: Map<string, ConceptStanding> = new Map(),
+  standings: Map<string, ConceptStanding>,
 ): string[] {
   const describe = (conceptId: string): string => {
     const standing = standings.get(conceptId);

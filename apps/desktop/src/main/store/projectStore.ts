@@ -368,9 +368,9 @@ export type TaskRecord = {
   concepts: string[];
   /** Project-relative paths the work belongs in. */
   files: string[];
-  /** The path node this task belongs to, or "" for a task set before the path
-   *  existed. A task is one step of one stage, and the timeline is where the
-   *  learner reads it back. */
+  /** The path node this task belongs to, or "" when the agent set work without
+   *  naming a step. A task is one step of one stage, and the timeline is where
+   *  the learner reads it back. */
   nodeId: string;
   status: "open" | "submitted" | "passed";
   /** The agent's verdict, shown under the task once it has one. */
@@ -1073,7 +1073,7 @@ export class ProjectStore {
   /** Writes a task, or updates the one with this id. The agent sets these, so
    *  one call has to serve both "here is a new task" and "here is that task
    *  again, corrected". */
-  saveTask(projectId: string, task: Omit<TaskRecord, "createdAt" | "updatedAt" | "nodeId"> & { nodeId?: string }): void {
+  saveTask(projectId: string, task: Omit<TaskRecord, "createdAt" | "updatedAt">): void {
     const now = new Date().toISOString();
     this.database
       .prepare(
@@ -1098,7 +1098,7 @@ export class ProjectStore {
         JSON.stringify(task.criteria),
         JSON.stringify(task.concepts),
         JSON.stringify(task.files),
-        task.nodeId ?? "",
+        task.nodeId,
         task.status,
         task.outcome,
         now,

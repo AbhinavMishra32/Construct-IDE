@@ -60,28 +60,28 @@ const TASK_MARK: Record<TaskSummary["status"], { label: string; className: strin
 
 export function PathList({
   activeStepId,
-  concepts = [],
+  concepts,
   onOpen,
   path,
-  standings = [],
-  tasks = [],
+  standings,
+  tasks,
 }: {
   /** The step the agent says it is on, from `currentNodeId`. */
   activeStepId: string | null;
-  /** Titles for the concept ids a step names. Optional, and a missing title
-   *  falls back to the id rather than hiding the concept: a step that teaches
+  /** Titles and levels for the concept ids a step names. A missing one falls
+   *  back to the id rather than hiding the concept: a step that teaches
    *  something the tree has not caught up with is still teaching it. */
-  concepts?: ConceptSummary[];
+  concepts: ConceptSummary[];
   /** Opens a step's detail. Optional: the list is worth showing before there is
    *  anywhere to go from it. */
   onOpen?: ((step: PathStep) => void) | undefined;
   path: ProjectPath | null;
-  /** What is behind each level. Optional, and absent simply means the hover
-   *  shows a level without a freshness beside it. */
-  standings?: ConceptStanding[];
+  /** What is behind each level: how fresh the reading is, and what the learner
+   *  has actually been asked to do with it. */
+  standings: ConceptStanding[];
   /** Every task in the project. Filtered here by node, because what a step
    *  actually asked of the learner is the part of it they remember. */
-  tasks?: TaskSummary[];
+  tasks: TaskSummary[];
 }) {
   const titles = new Map(concepts.map((concept) => [concept.conceptId, concept.title]));
   const standing = new Map(standings.map((entry) => [entry.conceptId, entry]));

@@ -58,12 +58,10 @@ export class LearnerProfileService {
   ) {}
 
   read(): LearnerProfile {
-    const stored = this.store.getSetting<LearnerProfile>(RECORD, EMPTY_PROFILE);
-    /* Every profile saved before observations existed is missing the field, and
-       the type says it is there. Normalised on the way out rather than
-       migrated, because the record is one settings blob and a half-written
-       migration of it would lose a profile. */
-    return { ...stored, observations: stored.observations ?? [] };
+    /* Over the empty profile rather than instead of it: the record is one
+       settings blob with no schema behind it, so `EMPTY_PROFILE` is what
+       defines the shape and a stored copy only overrides the parts it has. */
+    return { ...EMPTY_PROFILE, ...this.store.getSetting<LearnerProfile>(RECORD, EMPTY_PROFILE) };
   }
 
   /**
