@@ -29,6 +29,18 @@ describe("the Construct agent prompt", () => {
        prompt that models the punctuation it forbids is a prompt the model will
        follow twice, so the instruction reads "dynamic, and do not force". */
     "- When asking questions, Socratic checks, or creating exercises about knowledge the learner gained from a concept or the chat history, anchor and nudge the learner by referencing that context (e.g., \"Recall from the concept card we just discussed...\" or \"Building on our chat about X...\"). Do not ask dry, completely out-of-context questions about arbitrary files or setups unless they are anchored in the current project or what was just explained. However, keep this progression natural and dynamic\u2014do not force a rigid or mechanical reference to concepts every time.",
+    /* Two lines named tools Construct does not have. v0.7 reached the web
+       through `internet_search` and `internet_fetch`; Construct's are
+       `web-search` and `web-fetch`, so the instruction as written told the
+       agent to call something that is not in its tool list — and what it did
+       instead was search, never fetch, and teach from the extracts. The
+       replacements carry the same instruction under the real names, and say
+       outright that an extract is for choosing a page rather than for teaching
+       from. */
+    "- When the Current Flow run mode says source grounding is enabled, use internet_search and internet_fetch before teaching or recording factual concepts about languages, frameworks, APIs, libraries, standards, tools, or current project-domain facts unless the exact source is already in the current prompt.",
+    "- If source grounding is disabled, do not call internet_search or internet_fetch and do not imply fresh web research. You may still link previously saved concept sources if they are already present.",
+    "You may use internet_search, internet_fetch, read, grep, glob, flowMemoryFetch, and flowMemoryPatch.",
+    "Keep it concise and source-grounded. Use short search queries, low result counts, and no raw web dumps. Prefer official docs or primary project sources when available. Use internet_fetch when you already have exact URLs and need the page contents; use query-focused fetch chunks for long docs. Put citations next to the sentences or bullets they support using markdown links or [[source:source-id|Label]] refs from web tool results.",
     "- Before add-concept, inspect the current project concept tree. If the full tree and candidate parents are not already visible in the prompt or current tool output, call fetch-concepts with includeTree true and a query for the proposed concept. Treat concept placement as architecture: choose the narrowest existing parent that already owns the mental model, then make the new concept a child of that parent.",
   ];
 

@@ -27,6 +27,11 @@ export type MarkdownLinks = {
    *  and is never wrong — only plainer. */
   language?: string | undefined;
   onOpenConcept?: ((conceptId: string) => void) | undefined;
+  /** Opens a web page outside the app. The renderer cannot navigate — the window
+   *  denies it — so a search result is only a link where the surface around the
+   *  transcript has handed it the door. Undefined leaves results unclickable
+   *  rather than dead. */
+  onOpenUrl?: ((url: string) => void) | undefined;
   onOpenFile?: ((path: string) => void) | undefined;
   onCreateFile?: ((path: string) => void) | undefined;
   /** Resolves whether a project-relative path is on disk. Undefined while the

@@ -86,10 +86,35 @@ function hostTool(name: string, description: string, schema: z.ZodTypeAny, reque
  *  because a file's whole contents as a tool result would be a wall of text in
  *  a row meant to be glanced at and opened deliberately. */
 function format(value: unknown): string {
-  const text = typeof value === "string" ? value : JSON.stringify(value, null, 2);
-  if (!text) return "";
-  return text.length > 4_000 ? `${text.slice(0, 4_000)}\n… truncated` : text;
+  if (typeof value === "string") return value.length > STRING_CAP ? `${value.slice(0, STRING_CAP)}\n… truncated` : value;
+
+  /* Long strings are clipped *inside* the structure, not off the end of it.
+     
+     Truncating the serialised JSON is how the web search rows came to say
+     "Nothing came back": five pages of extracts run well past four thousand
+     characters, so the stored result was a JSON document cut off mid-string —
+     unparseable, and therefore indistinguishable from an empty answer to every
+     detail view that reads it. Clipping each string keeps the document valid,
+     which is the property the whole transcript depends on. The model is
+     unaffected: it gets the tool's real return value, and this is only what the
+     window is shown. */
+  const clipped = JSON.stringify(value, (_key, field: unknown) =>
+    typeof field === "string" && field.length > FIELD_CAP ? `${field.slice(0, FIELD_CAP)}…` : field,
+    2,
+  );
+  if (!clipped) return "";
+  if (clipped.length <= STRUCTURE_CAP) return clipped;
+  /* Past the cap even clipped — a result with hundreds of entries. Nothing can
+     be shown as structure, so the raw payload view takes it from here. */
+  return `${clipped.slice(0, STRUCTURE_CAP)}\n… truncated`;
 }
+
+/** A bare string result: a file, a command's output. */
+const STRING_CAP = 4_000;
+/** One string field inside a structured result. Enough of a search extract to
+ *  decide whether to open the page, which is what the row is for. */
+const FIELD_CAP = 1_500;
+const STRUCTURE_CAP = 24_000;
 
 /**
  * Pulls text out of whatever shape a step field arrives in.

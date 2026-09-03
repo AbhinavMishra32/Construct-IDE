@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { CornerDownRight, Folder, Globe } from "lucide-react";
+import { CornerDownRight, Folder, Search as SearchMark } from "lucide-react";
 
 import { languageForPath } from "@construct/domain";
 import { useCodeTheme } from "@/hooks/use-code-theme";
@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { LanguageGlyph, languageOf } from "../common/LanguageGlyph";
 import { Inline } from "./Markdown";
 import { useMarkdownLinks } from "./MarkdownLinks";
+import { memoryLabel } from "./toolSubject";
 import { RawPayload } from "./ToolPayload";
 
 /**
@@ -76,13 +77,17 @@ export function ToolDetail({
     case "web-search": {
       const query = text(args?.query);
       if (!query) break;
-      return <Search query={query} results={result} />;
+      return <WebSearch query={query} result={result} />;
     }
 
     case "web-fetch": {
-      const url = text(args?.url);
-      if (!url) break;
-      return <Fetched body={output} url={url} />;
+      /* The tool takes `urls`, plural, and always has. Reading `url` off it
+         found nothing, so every page the agent read fell through to the raw
+         payload — the one row in the transcript that showed the learner a wall
+         of JSON. The old spelling is still read, for turns stored before this. */
+      const urls = Array.isArray(args?.urls) ? (args.urls as unknown[]).map(text).filter(Boolean) : [text(args?.url)].filter(Boolean);
+      if (urls.length === 0) break;
+      return <WebPages result={result} urls={urls} />;
     }
 
     /* Both spellings: the transcript carries v0.7's underscored names as well as
@@ -352,32 +357,190 @@ function Command({ command, exitCode, output }: { command: string; exitCode: num
 }
 
 /** A web search: what was asked, and what came back. */
-function Search({ query, results }: { query: string; results: unknown }) {
-  const rows = Array.isArray(results)
-    ? (results as Array<Record<string, unknown>>)
-    : Array.isArray(record(results).results)
-      ? (record(results).results as Array<Record<string, unknown>>)
-      : [];
+/**
+ * A web search, drawn as a search.
+ *
+ * This row used to be the worst-looking thing in the transcript: a query, then a
+ * list of bare titles with a domain under each, and — because the fetch tool
+ * takes `urls` and this file read `url` — a wall of raw JSON whenever the agent
+ * actually read a page. What the learner wants from an open search row is the
+ * same thing they want from a browser: the question that was asked, the sites
+ * that answered it, and enough of each answer to know whether to go there.
+ *
+ * So: the query sits in something shaped like the search field it was typed
+ * into, every result carries the site's real favicon, and the extract Exa
+ * already returned is shown rather than thrown away. The whole row is a link,
+ * because a result you cannot open is a screenshot of a search.
+ */
+function WebSearch({ query, result }: { query: string; result: unknown }) {
+  const rows = resultRows(result);
+  const note = text(record(result).note);
 
   return (
     <div className="min-w-0">
-      <div className="flex min-w-0 items-center gap-1.5 px-2.5 pt-2 pb-1.5">
-        <Globe className="size-3.5 shrink-0 text-muted-foreground/60 [&_*]:[stroke-width:1.6]" />
-        <span className="min-w-0 truncate text-ui text-foreground/85">{query}</span>
+      <div className="flex min-w-0 items-center gap-2 px-2.5 pt-2.5 pb-1.5">
+        <span className="flex min-w-0 flex-1 items-center gap-1.5 rounded-full bg-[var(--accent)] px-2.5 py-1">
+          <SearchMark className="size-3.5 shrink-0 text-muted-foreground/70 [&_*]:[stroke-width:1.8]" />
+          <span className="min-w-0 truncate text-ui text-foreground/90">{query}</span>
+        </span>
+        {rows.length > 0 && (
+          <span className="shrink-0 text-ui-sm tabular-nums text-muted-foreground/60">
+            {rows.length === 1 ? "1 result" : `${rows.length} results`}
+          </span>
+        )}
       </div>
-      {rows.length === 0 ? (
-        <p className="px-2.5 pb-2 text-ui-sm text-muted-foreground/60">Nothing came back.</p>
-      ) : (
-        <ul className="pb-2">
-          {rows.slice(0, 8).map((row, index) => (
-            <li className="min-w-0 px-2.5 py-1" key={index}>
-              <p className="min-w-0 truncate text-ui text-foreground/85">{text(row.title) || text(row.url)}</p>
-              {text(row.url) && <p className="min-w-0 truncate text-ui-sm text-muted-foreground/60">{host(text(row.url))}</p>}
-            </li>
-          ))}
-        </ul>
-      )}
+      {note && <Note>{note}</Note>}
+      {rows.length === 0 && !note && <Note>Nothing came back for this one.</Note>}
+      <ul className="pb-1.5">
+        {rows.map((row, index) => (
+          <li className="min-w-0" key={`${text(row.url)}-${index}`}>
+            <Result row={row} />
+          </li>
+        ))}
+      </ul>
     </div>
+  );
+}
+
+/** Pages read in full. The same result rows, opened out: everything the search
+ *  view shows, plus the text the agent was actually reading. */
+function WebPages({ result, urls }: { result: unknown; urls: string[] }) {
+  const rows = resultRows(result);
+  const note = text(record(result).note);
+  /* A URL that came back with nothing — unreachable, or a page with no text —
+     is still worth naming, because "it read three pages" and "it tried three
+     and got one" are different things to have watched happen. */
+  const missing = urls.filter((url) => !rows.some((row) => text(row.url) === url));
+
+  return (
+    <div className="min-w-0 pt-1">
+      {note && <Note>{note}</Note>}
+      {rows.map((row, index) => (
+        <div className="min-w-0" key={`${text(row.url)}-${index}`}>
+          {index > 0 && <div className="mx-2.5 border-t border-border/60" />}
+          <Result row={row} />
+          <Lines body={text(row.extract)} />
+        </div>
+      ))}
+      {missing.map((url) => (
+        <div className="flex min-w-0 items-center gap-2 px-2.5 py-1.5 text-ui-sm text-muted-foreground/60" key={url}>
+          <Favicon host={host(url)} />
+          <span className="min-w-0 truncate">{host(url)} returned nothing to read.</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** One page: who published it, what it is called, and the first of what it says. */
+function Result({ row }: { row: Record<string, unknown> }) {
+  const links = useMarkdownLinks();
+  const url = text(row.url);
+  const title = text(row.title) || url;
+  const extract = text(row.extract);
+  const when = published(text(row.published));
+
+  return (
+    <button
+      className="group/result flex w-full min-w-0 gap-2 rounded-md px-2.5 py-1.5 text-left transition-colors hover:bg-[var(--accent)] disabled:cursor-default"
+      disabled={!url || !links.onOpenUrl}
+      onClick={() => url && links.onOpenUrl?.(url)}
+      type="button"
+    >
+      <span className="pt-[0.2rem]">
+        <Favicon host={host(url)} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="flex min-w-0 items-baseline gap-1.5">
+          <span className="min-w-0 truncate text-ui text-foreground/90 group-hover/result:text-foreground">{title}</span>
+        </span>
+        <span className="flex min-w-0 items-baseline gap-1.5 text-ui-sm text-muted-foreground/60">
+          <span className="min-w-0 truncate">{host(url)}</span>
+          {when && <span className="shrink-0">· {when}</span>}
+        </span>
+        {extract && (
+          <span className="mt-0.5 line-clamp-2 text-ui-sm leading-[1.5] text-muted-foreground/80">{extract}</span>
+        )}
+      </span>
+    </button>
+  );
+}
+
+/** A short aside in the detail panel: an Exa error, an unset key, an empty
+ *  result. Said in a sentence, where the raw payload used to be. */
+function Note({ children }: { children: React.ReactNode }) {
+  return <p className="px-2.5 pb-2 text-ui-sm leading-[1.5] text-muted-foreground/70">{children}</p>;
+}
+
+/** The results out of a `WebSearchResult`, whichever shape the turn stored —
+ *  the bare array of older turns, or today's `{ configured, note, results }`. */
+function resultRows(result: unknown): Array<Record<string, unknown>> {
+  if (Array.isArray(result)) return result as Array<Record<string, unknown>>;
+  const inner = record(result).results;
+  return Array.isArray(inner) ? (inner as Array<Record<string, unknown>>) : [];
+}
+
+/** A publication date as a person writes one. Exa returns ISO timestamps, and
+ *  the time of day a blog post went up is never the point. */
+function published(value: string): string {
+  if (!value) return "";
+  const at = new Date(value);
+  if (Number.isNaN(at.getTime())) return "";
+  return at.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
+/**
+ * A site's own icon.
+ *
+ * The real one, because that is what makes a list of results readable at a
+ * glance — you recognise the Rust logo before you have read the domain beside
+ * it. Two sources are tried in order and neither is a tracker: the site's own
+ * `/favicon.ico`, which tells only the site itself that its icon was wanted and
+ * which it learned anyway when the agent read the page; then DuckDuckGo's icon
+ * service, for the many sites that declare an icon in markup and serve nothing
+ * at the well-known path.
+ *
+ * The last tier is a monogram, so a site with no icon at all still gets
+ * something the eye can use as one rather than a gap in the row. The hue is
+ * derived from the host, which is what makes it work: the same site is the same
+ * colour every time it appears.
+ */
+function Favicon({ host: site }: { host: string }) {
+  const sources = useMemo(
+    () => (site && !site.includes("/") ? [`https://${site}/favicon.ico`, `https://icons.duckduckgo.com/ip3/${site}.ico`] : []),
+    [site],
+  );
+  const [tier, setTier] = useState(0);
+  useEffect(() => setTier(0), [sources]);
+
+  const source = sources[tier];
+  if (!source) return <Monogram host={site} />;
+
+  return (
+    <img
+      alt=""
+      className="size-4 shrink-0 rounded-[3px] object-contain"
+      loading="lazy"
+      onError={() => setTier((value) => value + 1)}
+      src={source}
+    />
+  );
+}
+
+function Monogram({ host: site }: { host: string }) {
+  const letter = (site.replace(/^www\./, "")[0] ?? "?").toUpperCase();
+  /* Deterministic, so one site keeps one colour across every row it appears in.
+     A rotating palette would make the same source look like three. */
+  let hash = 0;
+  for (const character of site) hash = (hash * 31 + character.charCodeAt(0)) % 360;
+
+  return (
+    <span
+      className="flex size-4 shrink-0 items-center justify-center rounded-[3px] text-[0.5625rem] font-semibold text-white/95"
+      style={{ backgroundColor: `hsl(${hash} 42% 52%)` }}
+    >
+      {letter}
+    </span>
   );
 }
 
@@ -391,19 +554,7 @@ function host(url: string): string {
   }
 }
 
-function Fetched({ body, url }: { body: string; url: string }) {
-  return (
-    <div className="min-w-0">
-      <div className="flex min-w-0 items-center gap-1.5 px-2.5 pt-2 pb-1.5">
-        <Globe className="size-3.5 shrink-0 text-muted-foreground/60 [&_*]:[stroke-width:1.6]" />
-        <span className="min-w-0 truncate text-ui text-foreground/85">{host(url)}</span>
-      </div>
-      <Lines body={body} />
-    </div>
-  );
-}
-
-/** Flow Memory, read back. One section per file, named as the file is. */
+/** Flow Memory, read back. One section per note, named for what it holds. */
 function Memory({ reads }: { reads: unknown }) {
   const rows = Array.isArray(reads) ? (reads as Array<Record<string, unknown>>) : [];
   if (rows.length === 0) return null;
@@ -413,13 +564,22 @@ function Memory({ reads }: { reads: unknown }) {
       {rows.map((row, index) => (
         <div className="min-w-0" key={index}>
           {index > 0 && <div className="mx-2.5 border-t border-border/60" />}
-          <Eyebrow>{text(row.file) || "memory"}</Eyebrow>
+          <Eyebrow>{memoryLabel(text(row.file)) || "Memory"}</Eyebrow>
           <Lines body={text(row.content)} />
         </div>
       ))}
     </div>
   );
 }
+
+/** How a patch changed the note, in words rather than in the tool's own
+ *  vocabulary: "replace" is what the code does, "rewritten" is what happened to
+ *  something the learner owns. */
+const PATCH_MODE: Record<string, string> = {
+  append: "added",
+  prepend: "added at the top",
+  replace: "rewritten",
+};
 
 /** Flow Memory, written. What was changed and how, per patch. */
 function Patches({ patches }: { patches: unknown }) {
@@ -432,8 +592,8 @@ function Patches({ patches }: { patches: unknown }) {
         <div className="min-w-0" key={index}>
           {index > 0 && <div className="mx-2.5 border-t border-border/60" />}
           <div className="flex min-w-0 items-baseline gap-1.5 px-2.5 pt-2 pb-1">
-            <span className="shrink-0 font-mono text-ui-sm text-foreground/85">{text(row.file)}</span>
-            <span className="shrink-0 text-ui-sm text-muted-foreground/60">{text(row.mode) || "append"}</span>
+            <span className="shrink-0 text-ui-sm text-foreground/85">{memoryLabel(text(row.file)) || "Memory"}</span>
+            <span className="shrink-0 text-ui-sm text-muted-foreground/60">{PATCH_MODE[text(row.mode)] ?? PATCH_MODE.append}</span>
             {text(row.reason) && <span className="min-w-0 truncate text-ui-sm text-muted-foreground/60">· {text(row.reason)}</span>}
           </div>
           <Lines body={text(row.content)} />

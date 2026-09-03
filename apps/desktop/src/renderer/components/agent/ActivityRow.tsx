@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { BookOpen, Check, ChevronDown, CircleAlert, FilePenLine, FolderOpen, Globe, GraduationCap, History, Link2, ListChecks, MessageCircleQuestionMark, Route, Search, SquareTerminal, Wrench } from "lucide-react";
+import { BookOpen, Check, ChevronDown, CircleAlert, FilePenLine, FolderOpen, Globe, GraduationCap, History, Link2, ListChecks, MessageCircleQuestionMark, NotebookPen, NotebookText, Route, Search, SquareTerminal, Wrench } from "lucide-react";
 import { ThinkingOrb, type OrbState } from "thinking-orbs";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
@@ -71,11 +71,16 @@ function ToolIcon({ part }: { part: ToolPart }) {
     case "web_fetch":
       return <Link2 className={MARK} />;
     case "read-file":
-    case "flow-memory-fetch":
       return <BookOpen className={MARK} />;
     case "write-file":
-    case "flow-memory-patch":
       return <FilePenLine className={MARK} />;
+    /* Memory is marked as notes, not as files. A page-and-pen next to "Updated
+       memory" reads as another write into the learner's source tree; what
+       actually changed is Construct's own notebook about them. */
+    case "flow-memory-fetch":
+      return <NotebookText className={MARK} />;
+    case "flow-memory-patch":
+      return <NotebookPen className={MARK} />;
     case "list-files":
       return <FolderOpen className={MARK} />;
     case "run-terminal-command":
@@ -387,6 +392,10 @@ function Caret({ open }: { open: boolean }) {
 /** How long a settled call took. Absent for a stored row, which does not keep
  *  timings, and for anything under a second, where the number is noise. */
 function took(part: ToolPart): string {
+  /* A question is not work the agent did — it is a wait on the learner. "Asked a
+     question in 25s" times how long somebody took to read and think, which is a
+     stopwatch held on them and tells them nothing about their project. */
+  if (part.tool === "ask_user_question" || part.tool === "ask-user-question") return "";
   if (part.phase === "running" || !part.startedAt || !part.endedAt) return "";
   const seconds = (part.endedAt - part.startedAt) / 1_000;
   return seconds < 1 ? "" : `in ${seconds < 10 ? seconds.toFixed(1) : Math.round(seconds)}s`;

@@ -7,7 +7,7 @@ import { parseReference, Reference, useMarkdownLinks } from "./MarkdownLinks";
 import { parse, type Block } from "./markdownBlocks";
 import { LanguageGlyph, languageOf } from "../common/LanguageGlyph";
 
-/** Inline spans: `code`, **bold**, *italic*, and bare links rendered as plain text.
+/** Inline spans: `code`, **bold**, *italic*, and real links.
  *
  *  Exported because the thread is not the only place agent prose appears. A
  *  question the agent asks is written in the same language as the message
@@ -17,7 +17,17 @@ export function Inline({ text }: { text: string }) {
   const nodes = useMemo(() => {
     /* References first, so a `[[file:a_b.c|x]]` is not torn apart by the
        emphasis rule looking at its underscores. */
-    const pattern = /(\[\[(?:concept|file):[^\]]+\]\])|(`[^`]+`)|(\*\*[^*]+\*\*)|(\*[^*]+\*)|(_[^_]+_)/g;
+    /* `[label](url)` sits between the references and the emphasis rules: after,
+       so `[[file:a|b]]` still wins its own brackets, and before, so a title with
+       an asterisk in it is not torn in half. Bare URLs are matched last, and
+       only after the bracketed form has had its chance at them.
+       
+       Until this existed the agent's own citations printed as their markdown —
+       `[SolveWithPython version](https://…)` — which is the one thing a reader
+       cannot use: the link is right there and unclickable, and the URL is
+       spelled out in the middle of a sentence. */
+    const pattern =
+      /(\[\[(?:concept|file):[^\]]+\]\])|(\[[^\]\n]*\]\((?:https?:\/\/|mailto:)[^\s)]+\))|(`[^`]+`)|(\*\*[^*]+\*\*)|(\*[^*]+\*)|(_[^_]+_)|(https?:\/\/[^\s<>()[\]"']+)/g;
     const result: Array<{ key: string; node: React.ReactNode }> = [];
     let cursor = 0;
     let match: RegExpExecArray | null;
@@ -32,6 +42,16 @@ export function Inline({ text }: { text: string }) {
           key: `r${match.index}`,
           node: <Reference kind={reference.kind} label={reference.label} target={reference.target} />,
         });
+      } else if (value.startsWith("[")) {
+        const split = value.indexOf("](");
+        const label = value.slice(1, split);
+        const href = value.slice(split + 2, -1);
+        result.push({ key: `l${match.index}`, node: <Hyperlink href={href} label={label || linkText(href)} /> });
+      } else if (/^https?:\/\//.test(value)) {
+        /* A URL written out in prose. Shown as its host and path rather than in
+           full: the query string of a documentation link is longer than the
+           sentence around it and says nothing. */
+        result.push({ key: `u${match.index}`, node: <Hyperlink href={value} label={linkText(value)} /> });
       } else if (value.startsWith("`")) {
         result.push({ key: `c${match.index}`, node: <InlineCode body={value.slice(1, -1)} /> });
       } else if (value.startsWith("**")) {
@@ -83,6 +103,44 @@ export function Inline({ text }: { text: string }) {
  * back uncoloured and it renders exactly as it did before: a plain chip. That
  * fallback is why this is safe to run on every `torch.zeros` in a transcript.
  */
+/**
+ * A web link in agent prose.
+ *
+ * A button rather than an anchor, because the window refuses to navigate — an
+ * `<a href>` in the renderer either does nothing or replaces the app with a web
+ * page, and neither is what following a citation should do. The surface around
+ * the transcript hands down the door via `onOpenUrl`; where it has not, the link
+ * renders as its label in plain text, which is what the prose said anyway.
+ */
+function Hyperlink({ href, label }: { href: string; label: string }) {
+  const links = useMarkdownLinks();
+  if (!links.onOpenUrl) return <span className="text-foreground/85">{label}</span>;
+
+  return (
+    <button
+      className="cursor-default rounded-[3px] text-foreground underline decoration-foreground/30 decoration-1 underline-offset-[3px] transition-colors outline-none hover:decoration-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+      onClick={() => links.onOpenUrl?.(href)}
+      title={href}
+      type="button"
+    >
+      {label}
+    </button>
+  );
+}
+
+/** A URL as a person would read it out: the site, and the path if it says
+ *  something. No scheme, no `www.`, no query string. */
+function linkText(href: string): string {
+  try {
+    const url = new URL(href);
+    const path = url.pathname.replace(/\/$/, "");
+    const shown = `${url.host.replace(/^www\./, "")}${path}`;
+    return shown.length > 48 ? `${shown.slice(0, 47)}…` : shown;
+  } catch {
+    return href;
+  }
+}
+
 function InlineCode({ body }: { body: string }) {
   const { language } = useMarkdownLinks();
   const { theme } = useCodeTheme();

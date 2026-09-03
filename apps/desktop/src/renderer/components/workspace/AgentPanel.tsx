@@ -49,6 +49,7 @@ export function AgentPanel({ api, projectId, onError, onOpenFile, onOpenSettings
       language,
       onOpenConcept,
       onOpenFile,
+      onOpenUrl: (url) => void api?.openExternal(url),
       onCreateFile: (path) => {
         if (!api) return;
         void api

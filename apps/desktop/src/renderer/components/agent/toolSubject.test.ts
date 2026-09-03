@@ -53,12 +53,34 @@ describe("toolSubject", () => {
 
   it("summarises a memory read rather than listing four files", () => {
     expect(toolSubject("flow-memory-fetch", json({ files: [] }))?.subject).toBe("what it knows");
-    expect(toolSubject("flow-memory-fetch", json({ files: ["learner.md", "path.md"] }))?.subject).toBe("learner.md, path.md");
+    expect(toolSubject("flow-memory-fetch", json({ files: ["learner.md", "path.md"] }))?.subject).toBe("what it knows about you and the plan");
   });
 
-  it("names the files a memory patch touched, once each", () => {
+  /* A file name is the agent's business. The learner reads what the memory is
+     about, and reads the word "memory" for the write itself — "Remembered
+     learner.md" was both an internal detail and the same phrase every time. */
+  it("says what a memory patch was about rather than which file it wrote", () => {
     const patches = [{ file: "learner.md" }, { file: "learner.md" }, { file: "path.md" }];
-    expect(toolSubject("flow-memory-patch", json({ patches }))?.subject).toBe("learner.md, path.md");
+    expect(toolSubject("flow-memory-patch", json({ patches }))).toEqual({ verb: "Updated memory", subject: "about you and the plan" });
+    expect(toolSubject("flow-memory-patch", json({ patches: [{ file: "learner.md" }] }), true)).toEqual({
+      verb: "Updating memory",
+      subject: "about you",
+    });
+  });
+
+  /* Touching three or more is every note Construct keeps, and a list of all of
+     them is longer than the row and says less than "everything". */
+  it("stops listing once a patch touches most of the memory", () => {
+    const patches = [{ file: "learner.md" }, { file: "path.md" }, { file: "project.md" }];
+    expect(toolSubject("flow-memory-patch", json({ patches }))?.subject).toBe("about everything it knows");
+  });
+
+  /* The topic order is the map's, not the call's, so the same pair of notes
+     always reads the same way however the agent happened to list them. */
+  it("phrases the same pair of notes the same way whatever order they arrive in", () => {
+    const one = toolSubject("flow-memory-patch", json({ patches: [{ file: "path.md" }, { file: "learner.md" }] }));
+    const other = toolSubject("flow-memory-patch", json({ patches: [{ file: "learner.md" }, { file: "path.md" }] }));
+    expect(one).toEqual(other);
   });
 
   it("gives up rather than guessing", () => {

@@ -267,10 +267,12 @@ const SAFE_TOOL_LABELS: Record<string, [string, string]> = {
   "run-terminal-command": ["Run a command", "Ran a command"],
   "record-concept": ["Record what you understand", "Recorded what you understand"],
   /* Memory is named for what it is *for*. "flow-memory-patch" tells the learner
-     nothing; "Remembered something about this project" tells them what just
-     happened to it — and that it is theirs. */
-  "flow-memory-fetch": ["Recall this project", "Recalled what it knows about this project"],
-  "flow-memory-patch": ["Remember something", "Remembered something about this project"],
+     nothing; "Updating memory" tells them what just happened to it — and that it
+     is theirs. These are the labels for a call whose arguments were not stored,
+     so they cannot say which part of the memory it was; `toolSubject` says that
+     whenever the arguments are there to read. */
+  "flow-memory-fetch": ["Recalling what it knows", "Recalled what it knows"],
+  "flow-memory-patch": ["Updating memory", "Updated memory"],
   "plan-learning-path": ["Plan what to teach next", "Planned what to teach next"],
   "web-search": ["Search the web", "Searched the web"],
   "web-fetch": ["Read a page", "Read a page"],
