@@ -275,6 +275,10 @@
   /* Only painted when the platform gives us no native material to sit on. */
   --app-sidebar-fill: oklch(95.5% 0 0);
   --app-vibrant-tint: oklch(100% 0 0 / 30%);
+  /* Windows Acrylic blurs harder than macOS vibrancy and carries a luminosity
+     tint of its own, so the wash over it is lighter — the macOS value there
+     reads as a milky panel rather than as a hole in the window. */
+  --app-vibrant-tint-acrylic: oklch(100% 0 0 / 14%);
   /* Opaque, for every page that is mostly text: the desktop moving behind a
      paragraph is the desktop competing with it, and the sidebar still shows the
      native material, so the two surfaces stay told apart by the one that is meant
@@ -454,6 +458,7 @@
      sits on, so it catches more light. Only painted with no native material. */
   --app-sidebar-fill: oklch(20% 0 0);
   --app-vibrant-tint: oklch(100% 0 0 / 6%);
+  --app-vibrant-tint-acrylic: oklch(100% 0 0 / 3%);
   --app-glass-fill: 100%;
   --app-glass-fill-translucent: 86%;
   /* Heavier still in dark: dark glass over a bright desktop loses contrast
@@ -708,6 +713,13 @@
      or the hole shows the desktop straight through. */
   :root[data-native-surface="none"] .app-vibrant {
     background: var(--app-sidebar-fill);
+  }
+
+  /* Windows 11 22H2 and later, where the window material is real Acrylic rather
+     than Mica's still wallpaper sample. It carries its own tint, so ours steps
+     back out of its way. */
+  :root[data-native-surface="acrylic"] .app-vibrant {
+    background: var(--app-vibrant-tint-acrylic);
   }
 
   /* Named for what it is rather than how it is built: this is the fill every

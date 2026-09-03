@@ -8,7 +8,7 @@ import type { BrowserWindow, BrowserWindowConstructorOptions } from "electron";
  * window so the material shows through, and a hole with nothing behind it shows
  * the desktop. So when the answer is "none" the renderer paints its own fill.
  */
-export type NativeSurface = "liquid-glass" | "vibrancy" | "mica" | "none";
+export type NativeSurface = "liquid-glass" | "vibrancy" | "acrylic" | "mica" | "none";
 
 /**
  * Which edge of our first row the OS draws its window buttons over, and so which
@@ -29,10 +29,32 @@ function macMajor(): number {
   return Number.parseInt(release().split(".")[0] ?? "0", 10);
 }
 
-/** Mica needs Windows 11, which is NT 10.0 build 22000 and up. */
-function isWindows11(): boolean {
-  const build = Number.parseInt(release().split(".")[2] ?? "0", 10);
-  return build >= 22_000;
+/** The Windows 11 build number, or 0 anywhere else. `os.release()` there is
+ *  "10.0.<build>", and the build is the only part that separates the materials:
+ *  Mica arrived with Windows 11 itself (22000), and window-level Acrylic with
+ *  22H2 (22621). */
+function windowsBuild(): number {
+  return Number.parseInt(release().split(".")[2] ?? "0", 10);
+}
+
+/**
+ * Which material Windows will paint behind the window.
+ *
+ * Acrylic where it exists, because the sidebar is the surface this is for and
+ * Mica is not really translucent: it is a wallpaper tint, sampled once and held
+ * still, so a sidebar over it reads as a flat grey panel rather than as a hole
+ * in the window. Acrylic actually blurs what is behind it, which is the effect
+ * macOS has had all along and the one the sidebar's tint was drawn against.
+ *
+ * Mica stays the answer for the first Windows 11 builds, where Acrylic is not
+ * available at window level, and Windows 10 gets no material at all — the
+ * renderer paints the sidebar itself there.
+ */
+function windowsSurface(): "acrylic" | "mica" | "none" {
+  const build = windowsBuild();
+  if (build >= 22_621) return "acrylic";
+  if (build >= 22_000) return "mica";
+  return "none";
 }
 
 /**
@@ -61,25 +83,22 @@ export function planSurface(): SurfacePlan {
     };
   }
 
-  if (process.platform === "win32" && isWindows11()) {
+  if (process.platform === "win32") {
+    const surface = windowsSurface();
     return {
-      surface: "mica",
+      surface,
       controls: "right",
       options: {
-        // `transparent` and `backgroundMaterial` are mutually exclusive on
-        // Windows, and transparent windows there lose snap and resize borders.
-        backgroundMaterial: "mica",
         titleBarStyle: "hidden",
         titleBarOverlay: true,
-        backgroundColor: "#00000000",
+        /* `transparent` and `backgroundMaterial` are mutually exclusive on
+           Windows, and transparent windows there lose snap and the resize
+           borders — so the material is asked for by name and the background is
+           cleared to let it through. Windows 10 has neither material and keeps
+           its opaque fill, which the renderer then paints the sidebar over. */
+        ...(surface === "none" ? {} : { backgroundMaterial: surface, backgroundColor: "#00000000" }),
       },
     };
-  }
-
-  // Windows 10 has no Mica, but still gets the custom title bar so the chrome
-  // matches; everywhere else keeps the native frame.
-  if (process.platform === "win32") {
-    return { surface: "none", controls: "right", options: { titleBarStyle: "hidden", titleBarOverlay: true } };
   }
 
   return { surface: "none", controls: "none", options: {} };
