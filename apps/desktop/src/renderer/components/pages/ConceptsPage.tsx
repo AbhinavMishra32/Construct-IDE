@@ -35,6 +35,7 @@ export function ConceptsPage({
   concepts,
   onChanged,
   onError,
+  onOpenProjects,
   onSelect,
   selectedKey,
 }: {
@@ -45,6 +46,9 @@ export function ConceptsPage({
   onChanged(): void;
   onError(message: string): void;
   onSelect(key: string | null): void;
+  /** Away to the project list. Only used by the empty state, which is the one
+   *  screen in the app whose answer is on another page. */
+  onOpenProjects?: () => void;
   /** `projectId:conceptId`, since a concept id is only unique in its project. */
   selectedKey: string | null;
 }) {
@@ -99,11 +103,23 @@ export function ConceptsPage({
 
   if (concepts !== null && concepts.length === 0) {
     return (
-      <div className="p-6">
+      /* The atlas before there is anything to chart. It cannot be filled from
+         here — nothing on this page creates a concept, and offering a button
+         that only navigates elsewhere would be a control pretending to be an
+         answer — so it says who fills it and when, and points at the one place
+         that does. */
+      <div className="grid h-full place-items-center">
         <EmptyState
-          description="Construct records what you understand as it teaches you. Open a project and start a conversation — the atlas fills itself in."
+          action={
+            onOpenProjects ? (
+              <Button className="px-4" onClick={onOpenProjects} size="lg" variant="outline">
+                Go to projects
+              </Button>
+            ) : undefined
+          }
+          description="Construct writes down every idea it teaches you, and how well it thinks you hold it. Start teaching in a project and this map draws itself."
           icon={Orbit}
-          title="Nothing charted yet"
+          title="Nothing charted yet."
         />
       </div>
     );
@@ -159,7 +175,18 @@ export function ConceptsPage({
                 />
               </div>
             ) : (
-              <EmptyState className="mt-10" description="Pick one from the list, or from the atlas." icon={Orbit} title="Nothing open" />
+              /* Inside a pane whose answer is on the same screen, twice over:
+                 the index on the left and the atlas on the right. So this is a
+                 line of text and not a panel with a mark and a heading in it —
+                 a second empty state competing with the two lists that would
+                 fill it. */
+              <EmptyState
+                className="mt-16"
+                compact
+                description="Pick one from the list, or from the atlas."
+                icon={Orbit}
+                title="Nothing open"
+              />
             )}
           </div>
         </Panel>

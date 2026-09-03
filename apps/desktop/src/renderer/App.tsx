@@ -570,6 +570,7 @@ export function App() {
               concepts={atlas}
               onChanged={loadAtlas}
               onError={setError}
+              onOpenProjects={() => goToPage("projects")}
               onSelect={setAtlasSelected}
               selectedKey={atlasSelected}
             />

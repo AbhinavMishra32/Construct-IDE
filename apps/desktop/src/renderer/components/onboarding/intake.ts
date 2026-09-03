@@ -108,7 +108,7 @@ export const COPY: Record<StepName, StepCopy> = {
   },
   openings: {
     title: "Three things I would build with you.",
-    caption: "Written from what you told me. Pick one and we start on it now.",
+    caption: "Written from what you told me. Pick one and we start on it now, together.",
     action: "Start building",
   },
 };

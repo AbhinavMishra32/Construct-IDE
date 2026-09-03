@@ -5,6 +5,7 @@ import { LANGUAGES, type Language } from "@construct/domain";
 import type { AtlasConcept, ConstructApi, ProjectDefaults, ProjectSummary } from "../../../shared/api";
 import { cn } from "@/lib/utils";
 import { relativeTime } from "@/lib/format";
+import { modKey } from "@/lib/platform";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldLabel } from "@/components/ui/field";
@@ -99,20 +100,34 @@ export function ProjectsPage({ api, defaults, projects, creating, onCreatingChan
   };
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-6 py-6">
+    /* The empty screen is centred in the window rather than sitting at the top
+       of an otherwise blank page, which is what a page-width container with
+       nothing under it produces. */
+    <div className={cn("mx-auto w-full max-w-3xl px-6", projects.length === 0 ? "flex h-full items-center justify-center py-6" : "py-6")}>
       {projects.length === 0 ? (
+        /* The first screen of the application, for anyone who did not start one
+           of the three the intake offered. It is the whole page rather than a
+           card in the middle of it, and it says what a project *is* — the one
+           thing about Construct that is not obvious and that everything after
+           it depends on: it works in a folder on your disk, on your files, and
+           it is not a chat window with a workspace bolted on.
+
+           Both actions are here at full size and neither is a link. Starting
+           something and bringing something in are the only two things that can
+           happen on this screen, so they are the screen. */
         <EmptyState
-          icon={FolderOpen}
-          title="No projects yet"
-          description="A Construct project is a folder on your disk. Start a new one, or bring in something you are already working on."
           action={
-            <div className="flex gap-2">
-              <Button onClick={() => onCreatingChange(true)}>
+            <>
+              <Button className="px-4" onClick={() => onCreatingChange(true)} size="lg">
                 <FolderPlus className="size-4" /> New project
               </Button>
-              <ImportButton api={api} onChanged={onChanged} onError={onError} />
-            </div>
+              <ImportButton api={api} onChanged={onChanged} onError={onError} size="lg" />
+            </>
           }
+          description="Construct works in a folder on your disk — your files, your git history, your build. Start an empty one, or bring in something you are already working on."
+          hint={<><kbd className="font-sans">{modKey}N</kbd> for a new one, any time</>}
+          icon={FolderOpen}
+          title="Nothing on the go yet."
         />
       ) : (
         <>
@@ -387,12 +402,25 @@ function RenameDialog({
   );
 }
 
-function ImportButton({ api, onChanged, onError }: { api: ConstructApi | undefined; onChanged(): Promise<void>; onError(message: string): void }) {
+function ImportButton({
+  api,
+  onChanged,
+  onError,
+  /* Small in the page header beside the other control, full size on the empty
+     screen where it is one of the two things the page is for. */
+  size = "sm",
+}: {
+  api: ConstructApi | undefined;
+  onChanged(): Promise<void>;
+  onError(message: string): void;
+  size?: "sm" | "lg";
+}) {
   const [busy, setBusy] = useState(false);
 
   return (
     <Button
-      size="sm"
+      className={size === "lg" ? "px-4" : undefined}
+      size={size}
       variant="outline"
       disabled={busy}
       onClick={async () => {

@@ -143,3 +143,21 @@ describe("the transcript reads as well in light as it does in dark", () => {
     expect(contrast(token(dark, "--muted-foreground"), DARK_GROUND, 0.7)).toBeGreaterThanOrEqual(3);
   });
 });
+
+/**
+ * Every type size the interface asks for, declared.
+ *
+ * Tailwind v4 generates `text-title` only if `--text-title` is in the theme,
+ * and generates nothing at all — no warning, no fallback — if it is not. Three
+ * headings used that class for two releases with no token behind it, so the
+ * page titles were body text in bold and nothing said so. A missing size is
+ * invisible in exactly the way a missing colour is not.
+ */
+describe("the type scale", () => {
+  for (const name of ["ui-sm", "ui", "content", "title"]) {
+    it(`declares --text-${name}, so text-${name} is a class that exists`, () => {
+      expect(css).toMatch(new RegExp(`--text-${name}:\\s*[\\d.]+rem;`));
+      expect(css, `--text-${name} has no line height`).toMatch(new RegExp(`--text-${name}--line-height:`));
+    });
+  }
+});

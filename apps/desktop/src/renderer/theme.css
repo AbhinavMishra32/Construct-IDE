@@ -156,6 +156,19 @@
   --text-ui-sm--line-height: 1rem;
   --text-content: 0.8125rem;
   --text-content--line-height: 1.375rem;
+  /* A page's own name, and the heading of anything that is a document: the
+     concept entry, a task, the projects page. One real step above content and
+     no further — this is a dense desktop window, and a heading that has to be
+     16px to read as a heading is a heading in a window with no hierarchy
+     anywhere else.
+
+     It is declared here because it was not. `text-title` had been in use on
+     three headings since 0.7 with no token behind it, which in Tailwind v4
+     means the utility is never generated: every page title in the application
+     was rendering at body size, bold, and the pages read as lists with a line
+     of bold text on top rather than as pages. */
+  --text-title: 1rem;
+  --text-title--line-height: 1.375rem;
 
   /* The source list runs a step above the rest of the chrome, and deliberately.
      A sidebar is read at a glance and from further away than a toolbar — it is

@@ -270,7 +270,13 @@ export function OnboardingPage({
      come back. */
   const run = useRef(0);
   const seekOpenings = useCallback(async (hint: string) => {
-    if (!api) return;
+    /* No bridge at all — not reachable from the shell, which only renders this
+       once the preload has answered, but the screen must not be blank if it
+       ever is. */
+    if (!api) {
+      setRefused(true);
+      return;
+    }
     const token = (run.current += 1);
     const stale = () => run.current !== token;
     setRefused(false);
@@ -528,7 +534,7 @@ export function OnboardingPage({
         <motion.div animate={{ opacity: 1, y: 0 }} initial={{ opacity: 0, y: 6 }} key={step} transition={STEP}>
           <div className="mt-5 text-center">
             <h1 className="text-content font-medium text-foreground">{copy.title}</h1>
-            <p className="mx-auto mt-1 max-w-[22rem] text-ui text-muted-foreground">{copy.caption}</p>
+            <p className="mx-auto mt-1 max-w-[24rem] text-balance text-ui text-muted-foreground">{copy.caption}</p>
           </div>
 
           <div className="mt-5">
@@ -886,7 +892,7 @@ export function OnboardingPage({
                     as an apology for it. */}
                 <AnimatePresence initial={false}>
                   {seeking === 0 && starting === null && (
-                    <motion.div animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} initial={{ opacity: 0, y: 4 }} key="steer" transition={TEXT}>
+                    <motion.div animate={{ opacity: 1, y: 0 }} className="pt-1" exit={{ opacity: 0 }} initial={{ opacity: 0, y: 4 }} key="steer" transition={TEXT}>
                       {asking ? (
                         <form
                           className="flex items-center gap-2 pt-1.5"
@@ -906,15 +912,30 @@ export function OnboardingPage({
                           </Button>
                         </form>
                       ) : (
-                        <button
-                          className="w-full rounded-xl py-2 text-center text-ui text-muted-foreground transition-colors hover:text-foreground"
-                          onClick={() => { rouse(); setAsking(true); }}
-                          type="button"
-                        >
-                          {/* Changes once they have steered it, because by then
-                              the question is whether this one is right either. */}
-                          {steer.trim() ? "Ask for something else again" : "Had something else in mind?"}
-                        </button>
+                        /* The keyboard hint and the way to change the answer, on
+                           one line. They were two lines and the step's own
+                           status was a third, which is three rows of small grey
+                           text under three cards — the screen ending in a
+                           whimper. One row, and the step's status line is empty
+                           by the time this appears. */
+                        <div className="flex items-center justify-center gap-2.5 text-ui">
+                          {options > 0 && (
+                            <span className="text-muted-foreground">
+                              {options === 1 ? "Press 1 to start it" : `Press 1–${options} to start one`}
+                            </span>
+                          )}
+                          {options > 0 && <span aria-hidden className="text-muted-foreground/40">·</span>}
+                          <button
+                            className="rounded text-muted-foreground transition-colors hover:text-foreground"
+                            onClick={() => { rouse(); setAsking(true); }}
+                            type="button"
+                          >
+                            {/* Changes once they have steered it, because by
+                                then the question is whether this one is right
+                                either. */}
+                            {steer.trim() ? "Ask for something else again" : "Had something else in mind?"}
+                          </button>
+                        </div>
                       )}
                     </motion.div>
                   )}
@@ -981,13 +1002,11 @@ export function OnboardingPage({
               (step === "model"
                 ? inventory && !modelReady ? "Connect a provider to continue" : ""
                 : step === "openings"
-                  /* While they are still arriving the line says so, because the
-                     shimmering slots above it are the only other thing saying
-                     it. It turns into the keyboard hint the moment there is
-                     something to press. */
+                  /* Only what nothing else on the screen is saying. Once the
+                     cards have landed the row under them carries the keyboard
+                     hint, so this line goes quiet rather than saying it twice. */
                   ? starting ? `Setting up ${starting}…`
                     : seeking && openings.length === 0 ? "Thinking about what to build with you…"
-                    : options ? `Press 1–${Math.min(options, 9)} to start one`
                     : ""
                 : options
                   ? `Press 1–${Math.min(options, 9)} to choose${step === "leanings" ? ", or several" : ""}`
@@ -1179,12 +1198,14 @@ function OpeningSlot({ index, writing }: { index: number; writing: boolean }) {
         <span className="w-3 shrink-0 text-ui tabular-nums text-muted-foreground/50">{index}</span>
         <Bar className="h-[0.7rem] w-[42%]" delay={0} writing={writing} />
       </div>
-      {/* Two lines for the goal and one for the reason, at the lengths the
-          writing actually comes back at, so the slot is the size of the card. */}
+      {/* Two lines for the goal and two for the reason, at the lengths the
+          writing actually comes back at, so the slot is the height of the card
+          rather than something the card then pushes down. */}
       <div className="mt-2 space-y-1.5 pl-[1.375rem]">
         <Bar className="h-[0.55rem] w-full" delay={0.08} writing={writing} />
-        <Bar className="h-[0.55rem] w-[78%]" delay={0.16} writing={writing} />
-        <Bar className="h-[0.55rem] w-[58%]" delay={0.24} writing={writing} />
+        <Bar className="h-[0.55rem] w-[84%]" delay={0.16} writing={writing} />
+        <Bar className="mt-2.5 h-[0.55rem] w-[92%]" delay={0.24} writing={writing} />
+        <Bar className="h-[0.55rem] w-[62%]" delay={0.32} writing={writing} />
       </div>
     </motion.div>
   );
