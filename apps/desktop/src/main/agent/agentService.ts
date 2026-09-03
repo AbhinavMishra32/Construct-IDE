@@ -341,34 +341,44 @@ export class AgentService {
   }
 
   /**
-   * Three projects worth starting, for this person.
+   * One project worth starting, for this person, knowing what has already been
+   * offered.
    *
    * The intake's last screen used to be a button that said "Start building" and
    * led to an empty project list — which asks someone who has just explained
    * what they want to build to describe it again, in a dialog, as a goal. The
    * answers are right there. This spends them.
    *
-   * JSON rather than prose, because three cards need three fields each and
-   * parsing that out of a paragraph is guesswork. Anything malformed is thrown
-   * away per-entry rather than wholesale — two good suggestions beat none — and
-   * `composeOpenings` fills the rest, so this never returns fewer than three
-   * and never returns nothing. A little longer than the other two completions
-   * is allowed: it is writing three of these, and it is the screen the whole
-   * intake has been walking towards.
+   * One at a time, rather than three in one answer, and that is a change of
+   * design and not only of plumbing. Three in one answer is a screen that is
+   * blank for twenty-five seconds and then full, which the learner has no
+   * reason to read as thinking; a card at a time is a screen where the first
+   * suggestion can be read — and started — while the third is still being
+   * written. It also makes each one better: `taken` carries the cards already
+   * on screen, so "different in kind from these" is a fact the model has rather
+   * than an instruction it has to remember.
+   *
+   * JSON rather than prose, because a card is four fields and parsing that out
+   * of a paragraph is guesswork. Null is never returned: `composeOpenings`
+   * holds a written-here suggestion for every footing, and the screen this
+   * feeds cannot be a shrug.
    */
-  async learnerOpenings(draft: LearnerDraft): Promise<LearnerOpening[]> {
-    const written = await this.complete(OPENINGS_PROMPT, describeDraft(draft), 25_000);
+  async learnerOpening(draft: LearnerDraft, taken: LearnerOpening[]): Promise<LearnerOpening> {
+    const written = await this.complete(OPENING_PROMPT, describeOffered(draft, taken), 20_000);
     const offered = written ? cleanOpenings(written, draft.language) : [];
-    /* Topped up rather than replaced. A model that returned two usable cards has
-       still done most of the work, and the written-here third is indistinguishable
-       in shape from the two beside it. */
-    const filled = [...offered];
-    for (const fallback of composeOpenings(draft)) {
-      if (filled.length >= 3) break;
-      if (filled.some((entry) => entry.name.toLowerCase() === fallback.name.toLowerCase())) continue;
-      filled.push(fallback);
-    }
-    return filled.slice(0, 3);
+    const named = new Set(taken.map((entry) => entry.name.toLowerCase()));
+    const fresh = offered.find((entry) => !named.has(entry.name.toLowerCase()));
+    if (fresh) return fresh;
+    /* Written here, and the first one that is not already on the screen — the
+       fallbacks are a ladder of three per footing, so asking for the second
+       card after a model failure gets the second rung rather than the first
+       again. */
+    const ladder = composeOpenings(draft);
+    const composed = ladder.find((entry) => !named.has(entry.name.toLowerCase())) ?? ladder[0];
+    /* Three per footing, and at most two are ever taken, so the ladder always
+       answers. This branch is the type system's, not a real one. */
+    if (!composed) throw new Error("Construct could not think of a project to suggest.");
+    return composed;
   }
 
   /**
@@ -1214,19 +1224,34 @@ function cleanQuestion(raw: string): string | null {
   return trimmed.endsWith("?") ? trimmed : `${trimmed}?`;
 }
 
-const OPENINGS_PROMPT = [
-  "You are Construct, a coding mentor. Someone has just told you about themselves, and you are about to suggest the first project you would build with them.",
-  "Propose exactly three projects. They must be different in kind, not three sizes of the same idea: vary what gets built and which part of the craft it exercises.",
-  "Every one has to be buildable by this person, from where they actually are, in their stated language, in a few sittings. A project they cannot finish teaches them nothing.",
-  "Aim each at what they said they want to be able to build. If they were vague, pick three honest readings of it rather than three safe defaults.",
-  "Reply with JSON and nothing else: an array of three objects with these keys.",
+const OPENING_PROMPT = [
+  "You are Construct, a coding mentor. Someone has just told you about themselves, and you are suggesting a project you would build with them.",
+  "Propose exactly ONE project.",
+  "It must be a real project with a real subject — the thing itself, named. Not a category, not an exercise, not \"a small app\": say what is being built and what it is built with.",
+  "Name the actual stack: the language, and the framework, library, runtime or platform it is built on. Choose one this person can plausibly reach from where they are and from what they said they know, not the most impressive one.",
+  "Where they named tools, ecosystems or domains they already work in, build on those rather than around them.",
+  "It has to be finishable by them, from where they actually are, in a few sittings. A project they cannot finish teaches them nothing.",
+  "Aim it at what they said they want to be able to build. If they were vague, take one honest reading of it rather than a safe default.",
+  "If projects are already on their screen, yours must be different in kind from every one of them — a different thing to build, exercising a different part of the craft. Not another size of the same idea.",
+  "Reply with JSON and nothing else: one object with these keys.",
   '  "name": the project title, two to four words, Title Case. Name the subject, not the activity.',
-  '  "goal": what they will be able to do once it is done, in the second person, one or two sentences. This is what the teaching is aimed at, so make it specific enough to be finishable.',
+  '  "goal": what they will be able to do once it is done, in the second person, one or two sentences. Name the stack here, and make it specific enough to be finishable.',
   '  "why": why this one for this person, one sentence, second person. Point at something they actually said.',
-  '  "artifact": the thing that exists at the end, two to four words, lower case. "a working ray tracer", "a shell you can pipe into".',
+  '  "artifact": the thing that exists at the end, two to four words, lower case, starting with an article. A noun, not an activity.',
   '  "language": one of: ' + LANGUAGES.join(", ") + ". Use their home language unless the project genuinely demands another.",
-  "No markdown fence, no commentary, no trailing text. The array alone.",
+  "No markdown fence, no commentary, no trailing text. The object alone.",
 ].join("\n");
+
+/** The draft, plus the cards already on the screen.
+ *
+ *  Names and goals both, because a name alone does not tell a model that the
+ *  card it is about to write is the same project under a different title. */
+function describeOffered(draft: LearnerDraft, taken: LearnerOpening[]): string {
+  const drafted = describeDraft(draft);
+  if (taken.length === 0) return drafted;
+  const already = taken.map((entry, position) => `${position + 1}. ${entry.name} — ${entry.goal}`);
+  return [drafted, "", "Already on their screen, so yours must be different in kind:", ...already].join("\n");
+}
 
 /** A paragraph, or nothing. Headings and bullets mean the model wrote a
  *  document instead of a paragraph, and the screen has room for a paragraph. */

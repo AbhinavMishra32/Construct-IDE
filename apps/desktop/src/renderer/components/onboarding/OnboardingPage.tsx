@@ -134,7 +134,14 @@ export function OnboardingPage({
   /* What is being waited on, rather than a bare boolean: the two waits say
      different things, and "Reading that back…" under a spinner is the difference
      between a pause that feels considered and one that feels broken. */
-  const [waiting, setWaiting] = useState<"question" | "portrait" | "openings" | "saving" | null>(null);
+  const [waiting, setWaiting] = useState<"question" | "portrait" | "saving" | null>(null);
+  /* The openings are not in `waiting`, and that is the design of the last
+     screen rather than an oversight. `waiting` means "the learner has nothing
+     to do but wait", and while the three cards are being written they have:
+     the first one can be read and started while the third is still arriving.
+     So this is a count of how many are still to come, and it holds nothing
+     back. */
+  const [seeking, setSeeking] = useState(0);
   const { pass, awake, rouse } = useMarkPass(waiting !== null);
 
   const draft = useMemo(
@@ -166,11 +173,7 @@ export function OnboardingPage({
   const stalled =
     waiting === "portrait" ||
     waiting === "saving" ||
-    (waiting === "question" && step === "question") ||
-    /* Same rule as the question, one screen later: the openings are fetched
-       while the learner is reading the portrait, and a request nobody is
-       waiting for must not disable the button in front of them. */
-    (waiting === "openings" && step === "openings");
+    (waiting === "question" && step === "question");
 
   const copy = COPY[step];
   const complete = answered(step, { name, ambition, leanings, followUpAnswer, modelReady, searchReady });
@@ -206,12 +209,20 @@ export function OnboardingPage({
     }
   }, [api]);
 
+  const drawn = useRef(false);
   const writePortrait = useCallback(async () => {
     if (!api) return;
     setWaiting("portrait");
     try {
       setPortrait(await api.learnerPortrait(latest.current));
     } catch (cause) {
+      /* The guard is released on the way out, so the step can try again — going
+         back a screen and forward again, or reopening the intake, now retries
+         rather than showing the empty box a failed first attempt left behind.
+         That box was this bug: a field with nothing in it, promising in its own
+         placeholder that Construct would fill it in, over a button that said
+         Continue. */
+      drawn.current = false;
       onError(cause instanceof Error ? cause.message : "Construct could not write that back.");
     } finally {
       setWaiting(null);
@@ -219,33 +230,45 @@ export function OnboardingPage({
   }, [api, onError]);
 
   /**
-   * The three projects, fetched while the learner is still reading the portrait.
+   * The three projects, written on the screen that shows them.
    *
-   * Same trick as the adaptive question and for the same reason: this is the
-   * longest of the three completions — it is writing three suggestions, not one
-   * sentence — and the portrait step is a screen people genuinely stop on,
-   * because it is about them and it is editable. By the time they press on from
-   * it the cards are usually already there.
+   * Not fetched a step early, and that is the one thing about this screen worth
+   * arguing over. Every other model call in the intake is started a step ahead
+   * so its latency is spent somewhere else; this one is not, because the
+   * generating *is* the screen. Three cards that were quietly assembled while
+   * the learner read their portrait arrive as a block of text that was
+   * evidently already written. The same three, arriving one at a time in front
+   * of them, are Construct thinking about what to build with them — which is
+   * the truth of what is happening, and the whole reason the eight steps before
+   * this were worth answering.
    *
-   * It cannot fail into nothing. The main process tops the list up from the
-   * draft itself when the model returns less than three, so the only empty case
-   * is no api at all, and then nothing on this screen works anyway.
+   * One request per card, in sequence rather than at once, and each one is told
+   * what is already on the screen. That is what makes the second card different
+   * in kind from the first instead of another size of it, and it means the
+   * first is readable — and startable — while the third is still being written.
+   *
+   * It cannot fail into nothing: the main process composes a card from the
+   * draft itself when no model answers. A request that throws stops the run
+   * where it is and leaves what arrived, because two cards and a way on beats
+   * an error on the last screen of an intake.
    */
   const sought = useRef(false);
   const seekOpenings = useCallback(async () => {
     if (!api || sought.current) return;
     sought.current = true;
-    setWaiting("openings");
-    try {
-      setOpenings(await api.learnerOpenings(latest.current));
-    } catch {
-      /* Silent, like the question. There is a way past this screen either way,
-         and an error about a model on the last screen of an intake is a worse
-         ending than three fewer suggestions. */
-      setOpenings([]);
-    } finally {
-      setWaiting(null);
+    const found: LearnerOpening[] = [];
+    for (let remaining = 3; remaining > 0; remaining -= 1) {
+      setSeeking(remaining);
+      try {
+        found.push(await api.learnerOpening({ ...latest.current, taken: found }));
+      } catch {
+        break;
+      }
+      /* A new array every time, so the list that has already been rendered is
+         never the one being pushed into. */
+      setOpenings([...found]);
     }
+    setSeeking(0);
   }, [api]);
 
   /** Stores the profile. Both ways off the last step go through it, because both
@@ -337,20 +360,16 @@ export function OnboardingPage({
      reached — including the common one, where the question was skipped and the
      step before it was never left. A blank last screen was what this looked like
      when it was wrong. */
-  const drawn = useRef(false);
   useEffect(() => {
     if (step !== "portrait" || drawn.current || !api) return;
     drawn.current = true;
     void writePortrait();
   }, [api, step, writePortrait]);
 
-  /* Started from the portrait's arrival rather than from its departure, so the
-     time it takes is spent on a screen the learner is reading. Unawaited, and
-     deliberately not chained onto the portrait: they are two independent
-     requests off the same draft, and making the second wait for the first would
-     put the whole of both latencies in front of the last screen. */
+  /* On arrival, and only here. See `seekOpenings`: the writing of these is
+     something to watch rather than something to hide. */
   useEffect(() => {
-    if (step !== "portrait") return;
+    if (step !== "openings") return;
     void seekOpenings();
   }, [seekOpenings, step]);
 
@@ -740,7 +759,12 @@ export function OnboardingPage({
                     <Textarea
                       className={cn(field, "min-h-[9rem] resize-none border-0 leading-relaxed")}
                       onChange={(event) => setPortrait(event.target.value)}
-                      placeholder="Construct will fill this in."
+                      /* Not "Construct will fill this in." An empty field
+                         promising to fill itself is a promise the screen has
+                         already broken by the time anybody reads it — that is
+                         exactly what a failed portrait used to look like — and
+                         the field is genuinely theirs to write in either way. */
+                      placeholder="In your own words, if you like."
                       rows={6}
                       value={portrait}
                     />
@@ -749,26 +773,15 @@ export function OnboardingPage({
               </AnimatePresence>
             )}
             {step === "openings" && (
-              <AnimatePresence initial={false} mode="wait">
-                {waiting === "openings" ? (
-                  <motion.p
-                    animate={{ opacity: 1 }}
-                    className="thinking-shimmer py-8 text-center text-content"
-                    exit={{ opacity: 0 }}
-                    initial={{ opacity: 0 }}
-                    key="waiting"
-                    transition={TEXT}
-                  >
-                    Thinking about what to build with you…
-                  </motion.p>
-                ) : openings.length === 0 ? (
-                  /* No api, which is the only way to get here empty. Nothing to
-                     apologise for and nothing to explain: the button below is
-                     the way on, and it is the way on for everybody. */
-                  <p className="py-8 text-center text-ui text-muted-foreground">Describe your first project yourself, on the next screen.</p>
-                ) : (
-                  <motion.div className="space-y-2" key="openings">
-                    {openings.map((opening, position) => (
+              <div className="space-y-1.5">
+                {/* Three slots, and they exist before the cards do. A screen
+                    that grows a card at a time shifts everything under it three
+                    times; three slots that fill in place is the same
+                    information arriving without the furniture moving. */}
+                {[0, 1, 2].map((position) => {
+                  const opening = openings[position];
+                  if (opening) {
+                    return (
                       <OpeningCard
                         chosen={starting === opening.name}
                         index={position + 1}
@@ -781,70 +794,96 @@ export function OnboardingPage({
                            looking like a choice the instant it is made. */
                         standDown={starting !== null && starting !== opening.name}
                       />
-                    ))}
-                  </motion.div>
+                    );
+                  }
+                  /* Only the one being written, not the ones after it. Two empty
+                     slots below a shimmering one is a queue, and a queue invites
+                     the learner to count how long this will take. */
+                  return seeking > 0 && position === openings.length ? <OpeningSlot key="writing" index={position + 1} /> : null;
+                })}
+                {/* No api, which is the only way to reach this screen with
+                    nothing on it and nothing on the way. Nothing to apologise
+                    for and nothing to explain: describing your own is the way
+                    on, and it is under this line. */}
+                {seeking === 0 && openings.length === 0 && (
+                  <p className="py-8 text-center text-ui text-muted-foreground">Describe your first project yourself, on the next screen.</p>
                 )}
-              </AnimatePresence>
+              </div>
             )}
           </div>
 
-          <Button
-            className="mt-4 h-11 w-full text-[0.8125rem]"
-            disabled={stalled || starting !== null}
-            onClick={advance}
-            size="lg"
-            type="button"
-          >
-            <motion.span
-              animate={{ opacity: 1 }}
-              className="inline-flex items-center gap-1.5"
-              initial={{ opacity: 0 }}
-              key={starting ?? ((stalled && waiting) || (complete ? copy.action : "skip"))}
-              transition={TEXT}
+          {/* Every step but the last one is answered by this button, so it is
+              the biggest thing on the screen. The last one is answered by
+              pressing a card — and a full-width filled button under three
+              offers is the loudest thing on a screen whose whole job is to make
+              one of those three look like the obvious next move. So it is not
+              drawn there; describing your own sits with Back instead, in the
+              row below, at the weight a second choice deserves. */}
+          {step !== "openings" && (
+            <Button
+              className="mt-4 h-11 w-full text-[0.8125rem]"
+              disabled={stalled}
+              onClick={advance}
+              size="lg"
+              type="button"
             >
-              {starting ? (
-                `Setting up ${starting}…`
-              ) : waiting === "saving" ? (
-                "Saving…"
-              ) : stalled ? (
-                "One moment…"
-              ) : (
-                <>
-                  {/* Says plainly that a step is being left unanswered. The
-                      whole of the pressure this intake applies, and all of it
-                      it should apply. */}
-                  {complete
-                    ? copy.action
-                    : step === "model" ? "I'll connect one later"
-                    : step === "research" ? "I'll add a key later"
-                    /* Not "Skip this". Nothing is being skipped: describing your
-                       own project is the other way of doing this step, and it is
-                       what the project list is for. */
-                    : step === "openings" ? "I'll describe my own"
-                    : "Skip this"}
-                  {complete ? <ArrowRight data-icon="inline-end" /> : null}
-                </>
-              )}
-            </motion.span>
-          </Button>
+              <motion.span
+                animate={{ opacity: 1 }}
+                className="inline-flex items-center gap-1.5"
+                initial={{ opacity: 0 }}
+                key={(stalled && waiting) || (complete ? copy.action : "skip")}
+                transition={TEXT}
+              >
+                {waiting === "saving" ? (
+                  "Saving…"
+                ) : stalled ? (
+                  "One moment…"
+                ) : (
+                  <>
+                    {/* Says plainly that a step is being left unanswered. The
+                        whole of the pressure this intake applies, and all of it
+                        it should apply. */}
+                    {complete
+                      ? copy.action
+                      : step === "model" ? "I'll connect one later"
+                      : step === "research" ? "I'll add a key later"
+                      : "Skip this"}
+                    {complete ? <ArrowRight data-icon="inline-end" /> : null}
+                  </>
+                )}
+              </motion.span>
+            </Button>
+          )}
           {/* One line for the step, under the action rather than beside it: what
               the keys do, what is still missing, or what went wrong. Numbered
               rows that never say the numbers work are a shortcut nobody finds. */}
           <p
             aria-live="polite"
-            className={cn("mt-2.5 min-h-4 text-center text-ui", step === "research" && keyError ? "text-destructive" : "text-muted-foreground/70")}
+            className={cn(
+              "min-h-4 text-center text-ui",
+              step === "openings" ? "mt-3.5" : "mt-2.5",
+              step === "research" && keyError ? "text-destructive" : "text-muted-foreground",
+            )}
             role="status"
           >
             {(step === "research" ? keyError : "") ||
               (step === "model"
                 ? inventory && !modelReady ? "Connect a provider to continue" : ""
+                : step === "openings"
+                  /* While they are still arriving the line says so, because the
+                     shimmering slot above it is the only other thing saying it.
+                     It goes quiet as soon as there is something to press. */
+                  ? starting ? `Setting up ${starting}…`
+                    : options ? `Press 1–${Math.min(options, 9)} to start one`
+                    : seeking ? "Thinking about what to build with you…"
+                    : ""
                 : options
-                  ? `Press 1–${Math.min(options, 9)} to ${step === "openings" ? "start one" : "choose"}${step === "leanings" ? ", or several" : ""}`
+                  ? `Press 1–${Math.min(options, 9)} to choose${step === "leanings" ? ", or several" : ""}`
                   : "")}
           </p>
         </motion.div>
 
-        <motion.div className="mt-3 flex items-center justify-center gap-4 text-ui" layout transition={LINKS}>
+        <motion.div className="mt-3 flex items-center justify-center gap-5 text-ui" layout transition={LINKS}>
           {index > 0 && (
             <button
               className="inline-flex items-center gap-1 rounded text-muted-foreground transition-colors hover:text-foreground disabled:opacity-45"
@@ -854,6 +893,19 @@ export function OnboardingPage({
             >
               <ArrowLeft className="size-3" />
               Back
+            </button>
+          )}
+          {/* Not "Skip this". Nothing is being skipped: describing your own is
+              the other way of answering this step, and the project list is
+              where that is done. */}
+          {step === "openings" && (
+            <button
+              className="rounded text-muted-foreground transition-colors hover:text-foreground disabled:opacity-45"
+              disabled={stalled || starting !== null}
+              onClick={advance}
+              type="button"
+            >
+              {waiting === "saving" ? "Saving…" : "I'll describe my own"}
             </button>
           )}
         </motion.div>
@@ -931,7 +983,7 @@ function OpeningCard({
         scale: standDown ? 0.985 : 1,
       }}
       className={cn(
-        "group relative block w-full overflow-hidden rounded-xl px-4 py-3.5 text-left outline-none",
+        "group relative block w-full overflow-hidden rounded-xl px-4 py-3 text-left outline-none",
         "bg-[var(--color-background-elevated-secondary)] shadow-[inset_0_0_0_0.5px_var(--border-strong)]",
         "transition-shadow",
         chosen
@@ -939,19 +991,20 @@ function OpeningCard({
           : "hover:shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--foreground)_18%,transparent)] focus-visible:shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--foreground)_22%,transparent)]",
       )}
       disabled={standDown || chosen}
-      /* Staggered in, a card at a time, in the order they will be read. Three
-         cards arriving together is a block of text appearing; three arriving in
-         sequence is Construct putting them down. */
-      initial={{ opacity: 0, y: 8 }}
+      /* No stagger, and none is needed any more. These used to be dealt out on a
+         timer because all three landed in the same tick; now each one arrives
+         when it has actually been written, into the slot that was shimmering for
+         it, and the sequence is real. */
+      initial={{ opacity: 0, y: 4 }}
       onClick={onStart}
-      transition={{ ...STEP, delay: standDown || chosen ? 0 : (index - 1) * 0.07 }}
+      transition={STEP}
       type="button"
       whileHover={standDown || chosen ? undefined : { y: -1 }}
     >
       <div className="flex items-baseline gap-2.5">
         {/* Same column, same width, same job as `OptionRow`'s: the key that
             picks this card. */}
-        <span aria-hidden className="w-3 shrink-0 text-ui tabular-nums text-muted-foreground/55 transition-colors group-hover:text-foreground/70">
+        <span aria-hidden className="w-3 shrink-0 text-ui tabular-nums text-muted-foreground transition-colors group-hover:text-foreground/70">
           {index}
         </span>
         <span className="min-w-0 flex-1 truncate text-content font-medium leading-tight text-foreground">{opening.name}</span>
@@ -960,22 +1013,75 @@ function OpeningCard({
         <LanguageGlyph className="size-4 shrink-0 translate-y-[1px]" language={opening.language} />
       </div>
 
-      <p className="mt-1.5 pl-[1.375rem] text-ui leading-[1.45] text-muted-foreground">{opening.goal}</p>
+      <p className="mt-1 pl-[1.375rem] text-ui leading-[1.45] text-muted-foreground">{opening.goal}</p>
 
-      {/* The reason, set apart from the goal because it is the only line on the
-          card written about the reader rather than about the project. */}
+      {/* The reason and the thing that exists at the end, on one line.
+          They were two, a gap apart, and the gaps were the problem: four
+          separately spaced paragraphs in a card is a card with more air in it
+          than writing. They belong together anyway — the reason is the only
+          line written about the reader, the artifact is the answer to "and then
+          what do I have", and read as one sentence each makes the other
+          concrete. */}
       <p className="mt-2 flex items-start gap-1.5 pl-[1.375rem] text-ui leading-[1.45] text-foreground/75">
         <Sparkles className="mt-[0.15rem] size-3 shrink-0 opacity-50" />
-        <span className="min-w-0 flex-1">{opening.why}</span>
-      </p>
-
-      {/* What exists at the end. Last, small, and the only thing on the card
-          that is a noun on its own: it is the answer to "and then what do I
-          have", which is the question a goal never quite answers. */}
-      <p className="mt-2 pl-[1.375rem] text-ui text-muted-foreground/70">
-        You end up with {opening.artifact}.
+        <span className="min-w-0 flex-1">
+          {opening.why} <span className="text-muted-foreground">You end up with {opening.artifact}.</span>
+        </span>
       </p>
     </motion.button>
+  );
+}
+
+/**
+ * The card that is being written, in the place it will appear.
+ *
+ * A card-shaped hole rather than a spinner, and rather than the centred line of
+ * text this screen used to show while all three were fetched at once. Three
+ * things are true of it at the same time: it says something is coming, it says
+ * where, and it says how big — so when the card lands, nothing moves.
+ *
+ * No words in it. The line under the three slots says what is happening, and a
+ * placeholder that also narrates is two things saying one thing.
+ */
+function OpeningSlot({ index }: { index: number }) {
+  return (
+    <motion.div
+      animate={{ opacity: 1 }}
+      aria-hidden
+      className={cn(
+        "rounded-xl px-4 py-3",
+        "bg-[var(--color-background-elevated-secondary)] shadow-[inset_0_0_0_0.5px_var(--border-strong)]",
+      )}
+      initial={{ opacity: 0 }}
+      transition={TEXT}
+    >
+      <div className="flex items-baseline gap-2.5">
+        {/* The number is real: this card is about to be pressable with it. */}
+        <span className="w-3 shrink-0 text-ui tabular-nums text-muted-foreground/50">{index}</span>
+        <Bar className="h-[0.7rem] w-[42%]" delay={0} />
+      </div>
+      {/* Two lines for the goal and one for the reason, at the lengths the
+          writing actually comes back at, so the slot is the size of the card. */}
+      <div className="mt-2 space-y-1.5 pl-[1.375rem]">
+        <Bar className="h-[0.55rem] w-full" delay={0.08} />
+        <Bar className="h-[0.55rem] w-[78%]" delay={0.16} />
+        <Bar className="h-[0.55rem] w-[58%]" delay={0.24} />
+      </div>
+    </motion.div>
+  );
+}
+
+/** One line of the not-yet-written. The sheen travelling across it is the same
+ *  sweep the transcript uses while the agent is working, so waiting looks the
+ *  same everywhere in the app; the breathing underneath it, offset per line, is
+ *  what keeps a stack of four from reading as a static skeleton. */
+function Bar({ className, delay }: { className: string; delay: number }) {
+  return (
+    <motion.span
+      animate={{ opacity: [0.55, 1, 0.55] }}
+      className={cn("writing-sheen block rounded-full", className)}
+      transition={{ duration: 1.8, repeat: Infinity, ease: "easeInOut", delay }}
+    />
   );
 }
 

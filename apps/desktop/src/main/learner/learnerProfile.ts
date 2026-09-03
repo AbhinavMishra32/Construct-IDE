@@ -276,13 +276,17 @@ export function renderProfile(profile: LearnerProfile): string {
 }
 
 /**
- * The model's three suggestions, or as many of them as survive.
+ * The model's suggestions, or as many of them as survive.
  *
  * Every defence here is against an answer that is JSON-shaped rather than JSON:
  * a fenced block, a preamble, an object wrapping the array, a fourth entry, a
  * language nobody offered. Entries are validated one at a time and a bad one is
- * dropped rather than taking the other two with it — see `learnerOpenings`,
- * which tops the list back up to three from the draft.
+ * dropped rather than taking the others with it — see `learnerOpening`, which
+ * falls back to one composed from the draft.
+ *
+ * A bare object counts as a list of one. The intake asks for the three cards a
+ * card at a time, so a single suggestion is now the common answer rather than
+ * the odd one, and a model asked for one project replies with one object.
  */
 export function cleanOpenings(raw: string, fallbackLanguage: LearnerProfile["language"]): LearnerOpening[] {
   /* The array, wherever it is. A model told not to use a fence will sometimes
@@ -291,14 +295,19 @@ export function cleanOpenings(raw: string, fallbackLanguage: LearnerProfile["lan
   const text = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
   const start = text.indexOf("[");
   const end = text.lastIndexOf("]");
-  if (start < 0 || end <= start) return [];
+  const object = start < 0 || end <= start;
+  const slice = object
+    ? text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1)
+    : text.slice(start, end + 1);
+  if (!slice) return [];
 
   let parsed: unknown;
   try {
-    parsed = JSON.parse(text.slice(start, end + 1));
+    parsed = JSON.parse(slice);
   } catch {
     return [];
   }
+  if (object && typeof parsed === "object" && parsed !== null) parsed = [parsed];
   if (!Array.isArray(parsed)) return [];
 
   const openings: LearnerOpening[] = [];

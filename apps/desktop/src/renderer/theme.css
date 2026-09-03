@@ -1346,6 +1346,26 @@
     animation: agent-shimmer 2.4s linear infinite;
   }
 
+  /* The same sweep, over a shape instead of over words.
+     `.thinking-shimmer` cannot do this: it clips its gradient to the glyphs and
+     sets `color: transparent`, so on an empty element it paints nothing at all.
+     This is for the placeholder lines of something being written — a card that
+     has not arrived yet — so the gradient is the paint rather than the mask, and
+     it is quiet: a placeholder that shimmers as brightly as text reads as
+     content rather than as the absence of it. */
+  .writing-sheen {
+    background: linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--foreground) 8%, transparent) 0%,
+      color-mix(in srgb, var(--foreground) 8%, transparent) 35%,
+      color-mix(in srgb, var(--foreground) 20%, transparent) 50%,
+      color-mix(in srgb, var(--foreground) 8%, transparent) 65%,
+      color-mix(in srgb, var(--foreground) 8%, transparent) 100%
+    );
+    background-size: 220% 100%;
+    animation: agent-shimmer 2.4s linear infinite;
+  }
+
   /* Launch is the wordmark and nothing else. It fades up once and a highlight
      travels across it — slower and over a wider gradient than the working
      shimmer, because at this size a 2.4s sweep reads as a loading bar. Whatever
@@ -1930,6 +1950,7 @@
   }
 
   .thinking-shimmer,
+  .writing-sheen,
   .boot-wordmark,
   .streaming-caret::after,
   .work-blob[data-busy="true"]::after,

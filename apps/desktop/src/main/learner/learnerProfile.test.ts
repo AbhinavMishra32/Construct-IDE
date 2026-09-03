@@ -140,7 +140,7 @@ describe("the fallback portrait", () => {
   });
 });
 
-describe("reading the model's three suggestions", () => {
+describe("reading the model's suggestions", () => {
   const one = (overrides: Record<string, unknown> = {}) => ({
     name: "Triangle Rasterisation",
     goal: "Put a lit triangle on screen and understand every line that got it there.",
@@ -165,8 +165,8 @@ describe("reading the model's three suggestions", () => {
   });
 
   it("drops a bad entry rather than the whole answer", () => {
-    /* Two good suggestions beat none — `learnerOpenings` tops the list back up
-       from the draft, and a written-here card is the same shape as these. */
+    /* Two good suggestions beat none — `learnerOpening` falls back to one
+       composed from the draft, and a written-here card is the same shape. */
     const openings = cleanOpenings(JSON.stringify([one(), { name: "No" }, one({ name: "Third" })]), "typescript");
     expect(openings.map((opening) => opening.name)).toEqual(["Triangle Rasterisation", "Third"]);
   });
@@ -187,9 +187,23 @@ describe("reading the model's three suggestions", () => {
     ]);
   });
 
+  /* The intake asks for its three cards one at a time now, so one object is the
+     common answer rather than the odd one — and a model asked for one project
+     replies with one project, not with a list of one. */
+  it("reads a bare object as a list of one", () => {
+    const openings = cleanOpenings(JSON.stringify(one()), "typescript");
+    expect(openings.map((opening) => opening.name)).toEqual(["Triangle Rasterisation"]);
+  });
+
+  it("digs a bare object out of a fence or a preamble", () => {
+    expect(cleanOpenings("```json\n" + JSON.stringify(one()) + "\n```", "typescript")).toHaveLength(1);
+    expect(cleanOpenings("Here is one:\n" + JSON.stringify(one()), "typescript")).toHaveLength(1);
+  });
+
   it("returns nothing at all rather than guessing at prose", () => {
     expect(cleanOpenings("I would suggest building a renderer.", "typescript")).toEqual([]);
     expect(cleanOpenings("[not json", "typescript")).toEqual([]);
+    expect(cleanOpenings("{not json", "typescript")).toEqual([]);
   });
 });
 

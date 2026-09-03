@@ -9,6 +9,7 @@ import {
   conceptDeleteInput,
   projectDefaultsInput,
   learnerDraftInput,
+  learnerOpeningInput,
   learnerProfileInput,
   windowStageSchema,
   projectIdInput,
@@ -424,7 +425,10 @@ export function installIpc({ store, auth, projects, providers, workspace, termin
 
   handle(ipc.learnerQuestion, (input) => agent.learnerQuestion(learnerDraftInput.parse(input)));
   handle(ipc.learnerPortrait, (input) => agent.learnerPortrait(learnerDraftInput.parse(input)));
-  handle(ipc.learnerOpenings, (input) => agent.learnerOpenings(learnerDraftInput.parse(input)));
+  handle(ipc.learnerOpening, (input) => {
+    const { taken, ...draft } = learnerOpeningInput.parse(input);
+    return agent.learnerOpening(draft, taken);
+  });
 
   handle(ipc.windowStage, (input) => fitWindowTo(window(), windowStageSchema.parse(input)));
 

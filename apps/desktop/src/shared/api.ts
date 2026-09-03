@@ -118,7 +118,7 @@ export const ipc = {
   learnerSave: "learner:save",
   learnerQuestion: "learner:question",
   learnerPortrait: "learner:portrait",
-  learnerOpenings: "learner:openings",
+  learnerOpening: "learner:opening",
   /** Moves the window to the size the stage it has reached wants. The renderer
    *  owns which screen is showing, so it is what tells the main process. */
   windowStage: "app:stage",
@@ -660,6 +660,14 @@ export const learnerOpeningSchema = z.object({
 });
 export type LearnerOpening = z.infer<typeof learnerOpeningSchema>;
 
+/** What the intake sends when it asks for one more suggestion: the draft, plus
+ *  the cards already on the screen. The cards go up rather than being
+ *  remembered down here because the window is what decides how many it has room
+ *  for and which of them survived. */
+export const learnerOpeningInput = learnerDraftInput.extend({
+  taken: z.array(learnerOpeningSchema).max(3),
+});
+
 /** The three sizes the window has before it is a workspace, and the workspace
  *  itself. Mirrors the main process's own type; declared here because the
  *  renderer is what decides which one is showing. */
@@ -944,11 +952,14 @@ export interface ConstructApi {
   /** The portrait, in Construct's words and the second person. Falls back to a
    *  written-here summary when no model answers, so this never returns empty. */
   learnerPortrait(input: z.infer<typeof learnerDraftInput>): Promise<string>;
-  /** Three projects worth starting, written for this person from their intake.
-   *  Never empty: with no model reachable the main process composes three from
+  /** One project worth starting, written for this person from their intake.
+   *
+   *  Asked three times, once per card, with `taken` carrying the cards already
+   *  on the screen so the next one is different in kind from them. Never fails
+   *  into nothing: with no model reachable the main process composes one from
    *  the draft itself, because "here is what I would build with you" is the
    *  last thing the intake says and it cannot be a shrug. */
-  learnerOpenings(input: z.infer<typeof learnerDraftInput>): Promise<LearnerOpening[]>;
+  learnerOpening(input: z.infer<typeof learnerOpeningInput>): Promise<LearnerOpening>;
   /** Grows or shrinks the window for the screen now showing. */
   setWindowStage(stage: WindowStage): Promise<void>;
   updateState(): Promise<UpdateState>;
