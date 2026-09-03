@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { LearnerProfile } from "../../shared/api.js";
 import { ProjectStore } from "../store/projectStore.js";
-import { composePortrait, EMPTY_PROFILE, LearnerProfileService, profileMemoryLines, profilePromptBlock } from "./learnerProfile.js";
+import { cleanOpenings, composeOpenings, composePortrait, EMPTY_PROFILE, LearnerProfileService, profileMemoryLines, profilePromptBlock } from "./learnerProfile.js";
 
 let root: string;
 let store: ProjectStore;
@@ -137,5 +137,79 @@ describe("the fallback portrait", () => {
     /* No apology, no mention of a provider: the last screen of the intake is
        not where someone learns their model is down. */
     expect(text.toLowerCase()).not.toContain("could not");
+  });
+});
+
+describe("reading the model's three suggestions", () => {
+  const one = (overrides: Record<string, unknown> = {}) => ({
+    name: "Triangle Rasterisation",
+    goal: "Put a lit triangle on screen and understand every line that got it there.",
+    why: "You said a renderer, and this is the smallest one that is still a renderer.",
+    artifact: "a working rasteriser",
+    language: "rust",
+    ...overrides,
+  });
+
+  it("reads a plain array", () => {
+    const openings = cleanOpenings(JSON.stringify([one(), one({ name: "Second" }), one({ name: "Third" })]), "typescript");
+    expect(openings.map((opening) => opening.name)).toEqual(["Triangle Rasterisation", "Second", "Third"]);
+  });
+
+  /* A model told not to use a fence uses one anyway, and one told to reply with
+     an array wraps it in an object. Both are one slice from parseable, and a
+     screen with nothing on it is not the right response to either. */
+  it("digs the array out of a fence or a wrapper", () => {
+    const body = JSON.stringify([one()]);
+    expect(cleanOpenings("```json\n" + body + "\n```", "typescript")).toHaveLength(1);
+    expect(cleanOpenings('Here you go:\n{"projects": ' + body + "}", "typescript")).toHaveLength(1);
+  });
+
+  it("drops a bad entry rather than the whole answer", () => {
+    /* Two good suggestions beat none — `learnerOpenings` tops the list back up
+       from the draft, and a written-here card is the same shape as these. */
+    const openings = cleanOpenings(JSON.stringify([one(), { name: "No" }, one({ name: "Third" })]), "typescript");
+    expect(openings.map((opening) => opening.name)).toEqual(["Triangle Rasterisation", "Third"]);
+  });
+
+  it("keeps a card whose language it had to correct", () => {
+    /* A suggestion right in every other respect should not be thrown away over
+       a capital letter, or over a language Construct does not offer. */
+    expect(cleanOpenings(JSON.stringify([one({ language: "Rust" })]), "typescript")[0]?.language).toBe("rust");
+    expect(cleanOpenings(JSON.stringify([one({ language: "haskell" })]), "typescript")[0]?.language).toBe("typescript");
+  });
+
+  it("takes no more than three, and no duplicates", () => {
+    const four = [one(), one(), one({ name: "Second" }), one({ name: "Third" }), one({ name: "Fourth" })];
+    expect(cleanOpenings(JSON.stringify(four), "typescript").map((opening) => opening.name)).toEqual([
+      "Triangle Rasterisation",
+      "Second",
+      "Third",
+    ]);
+  });
+
+  it("returns nothing at all rather than guessing at prose", () => {
+    expect(cleanOpenings("I would suggest building a renderer.", "typescript")).toEqual([]);
+    expect(cleanOpenings("[not json", "typescript")).toEqual([]);
+  });
+});
+
+describe("the fallback openings", () => {
+  /* The last screen of the intake offers to start something. With no model
+     reachable it still has to offer three, because "Construct could not think of
+     anything" is a worse ending than never having offered. */
+  it("always offers three, in the learner's language", () => {
+    const openings = composeOpenings(filled({ ambition: "" }));
+    expect(openings).toHaveLength(3);
+    for (const opening of openings) expect(opening.language).toBe("rust");
+  });
+
+  it("leads with what they actually said, when they said something", () => {
+    const openings = composeOpenings(filled());
+    expect(openings[0]?.goal).toContain("A renderer that puts a lit triangle on screen");
+    expect(openings).toHaveLength(3);
+  });
+
+  it("pitches at the footing, since footing is what decides whether a project is finishable", () => {
+    expect(composeOpenings(filled({ ambition: "", footing: "new" }))).not.toEqual(composeOpenings(filled({ ambition: "", footing: "working" })));
   });
 });

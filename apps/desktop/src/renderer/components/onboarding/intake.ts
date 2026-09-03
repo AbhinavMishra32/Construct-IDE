@@ -36,7 +36,14 @@ import type { LearnerFooting, LearnerLeaning, LearnerPace } from "../../../share
    shared laptop was never shown, or asked about, the model their work was about
    to be sent to. One connected row with a tick answers the step in the time it
    takes to read it. */
-export const STEPS = ["model", "name", "footing", "language", "ambition", "leanings", "research", "question", "portrait"] as const;
+/* The openings step is last, and it is the reason the eight before it are worth
+   answering. Everything up to the portrait is Construct finding out; that screen
+   is Construct spending what it found out on three projects it would actually
+   build with this person. It used to end on a button that said "Start building"
+   and led to an empty project list — which asks someone who has just spent five
+   minutes explaining what they want to build to explain it again, in a dialog,
+   as a goal. */
+export const STEPS = ["model", "name", "footing", "language", "ambition", "leanings", "research", "question", "portrait", "openings"] as const;
 export type StepName = (typeof STEPS)[number];
 
 export type StepCopy = {
@@ -97,6 +104,11 @@ export const COPY: Record<StepName, StepCopy> = {
   portrait: {
     title: "Here is what I understood.",
     caption: "Change anything I got wrong. This is what I carry into every project.",
+    action: "Continue",
+  },
+  openings: {
+    title: "Three things I would build with you.",
+    caption: "Written from what you told me. Pick one and we start on it now.",
     action: "Start building",
   },
 };
@@ -152,6 +164,10 @@ export function answered(
       return draft.modelReady;
     case "research":
       return draft.searchReady;
+    /* The openings step is answered by pressing a card, not by the button under
+       them — so the button is always the way past it, and always says so. */
+    case "openings":
+      return false;
     /* Footing, language and the portrait all start on a real value rather than
        an empty one, so there is nothing here that can be half-done. */
     default:

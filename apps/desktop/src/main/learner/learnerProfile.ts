@@ -2,7 +2,9 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import type { LearnerFooting, LearnerLeaning, LearnerPace, LearnerProfile } from "../../shared/api.js";
+import type { LearnerFooting, LearnerLeaning, LearnerOpening, LearnerPace, LearnerProfile } from "../../shared/api.js";
+import { learnerOpeningSchema } from "../../shared/api.js";
+import { LANGUAGES } from "@construct/domain";
 import type { SyncLearner } from "../../shared/sync.js";
 import type { ProjectStore } from "../store/projectStore.js";
 
@@ -272,6 +274,139 @@ export function renderProfile(profile: LearnerProfile): string {
 
   return `${lines.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd()}\n`;
 }
+
+/**
+ * The model's three suggestions, or as many of them as survive.
+ *
+ * Every defence here is against an answer that is JSON-shaped rather than JSON:
+ * a fenced block, a preamble, an object wrapping the array, a fourth entry, a
+ * language nobody offered. Entries are validated one at a time and a bad one is
+ * dropped rather than taking the other two with it — see `learnerOpenings`,
+ * which tops the list back up to three from the draft.
+ */
+export function cleanOpenings(raw: string, fallbackLanguage: LearnerProfile["language"]): LearnerOpening[] {
+  /* The array, wherever it is. A model told not to use a fence will sometimes
+     use one anyway, and one told to reply with an array will sometimes wrap it
+     in `{"projects": [...]}`; both are one slice away from parseable. */
+  const text = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
+  const start = text.indexOf("[");
+  const end = text.lastIndexOf("]");
+  if (start < 0 || end <= start) return [];
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text.slice(start, end + 1));
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+
+  const openings: LearnerOpening[] = [];
+  const seen = new Set<string>();
+  for (const entry of parsed) {
+    if (openings.length >= 3) break;
+    if (typeof entry !== "object" || entry === null) continue;
+    const record = entry as Record<string, unknown>;
+    /* The language is coerced rather than validated away. A suggestion that is
+       right in every other respect should not be discarded because the model
+       answered "TypeScript" where the enum says "typescript", or named one
+       Construct does not offer. */
+    const named = String(record.language ?? "").trim().toLowerCase();
+    const candidate = {
+      name: clipField(record.name, 60),
+      goal: clipField(record.goal, 400),
+      why: clipField(record.why, 240),
+      artifact: clipField(record.artifact, 48),
+      language: (LANGUAGES as readonly string[]).includes(named) ? named : fallbackLanguage,
+    };
+    const valid = learnerOpeningSchema.safeParse(candidate);
+    if (!valid.success) continue;
+    const key = valid.data.name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    openings.push(valid.data);
+  }
+  return openings;
+}
+
+/** One field off a parsed object, made safe to put on a card: a string, its
+ *  whitespace collapsed, its wrapping quotes gone, cut to what the schema will
+ *  take. Anything that is not a string becomes empty, which fails validation —
+ *  which is the point. */
+function clipField(value: unknown, limit: number): string {
+  if (typeof value !== "string") return "";
+  const text = value.replace(/\s+/g, " ").replace(/^["'`]+|["'`]+$/g, "").trim();
+  return text.length <= limit ? text : `${text.slice(0, limit - 1).trimEnd()}…`;
+}
+
+/**
+ * Three projects, written here, for when no model can be reached.
+ *
+ * Same argument as `composePortrait`, one screen later and with more riding on
+ * it: the last thing the intake does is offer to start something, and "Construct
+ * could not think of anything" is a worse ending than the intake not having
+ * offered at all. So there is always something to press.
+ *
+ * They are deliberately generic in subject and specific in shape. A written-here
+ * suggestion cannot know what this person wants to build — that is what the
+ * model was for — but it can be a real project with a real finish line, pitched
+ * at their footing and in their language, which is most of what makes a first
+ * project work. The ladder is by footing rather than by topic, because footing
+ * is the one answer that decides whether a project is a week or an afternoon.
+ *
+ * Their ambition is carried into the first card's goal when they gave one. That
+ * card is then the honest one: it is their own words, aimed at their own
+ * language, and the agent's research pass is what turns it into a path.
+ */
+export function composeOpenings(draft: Omit<LearnerProfile, "updatedAt" | "portrait">): LearnerOpening[] {
+  const language = draft.language;
+  const ambition = clip(draft.ambition, 240);
+  const ladder = FALLBACK_OPENINGS[draft.footing];
+  const openings = ladder.map((entry) => ({ ...entry, language }));
+
+  /* Their own ambition, first, whenever they said one. It outranks anything
+     written here because it is the only card on the screen that came from them. */
+  if (ambition) {
+    openings.unshift({
+      name: "What You Came For",
+      goal: `Build towards this, in ${language}, one finishable piece at a time: ${ambition}`,
+      why: "This is what you said you wanted, so it is where I would rather start.",
+      artifact: "your own project",
+      language,
+    });
+  }
+  return openings.slice(0, 3);
+}
+
+/**
+ * The written-here suggestions, by footing.
+ *
+ * Three per footing so that a learner who gave no ambition still gets a full
+ * screen, and each one is a project rather than an exercise: something exists at
+ * the end of it, and the thing that exists is the reason to build it.
+ */
+const FALLBACK_OPENINGS: Record<LearnerFooting, Array<Omit<LearnerOpening, "language">>> = {
+  new: [
+    { name: "A Tool You Use", goal: "Write a small command-line tool that does one thing you actually want done, and understand every line of it.", why: "Starting from nothing, the fastest way to feel fluent is a program you reach for again.", artifact: "a tool you keep" },
+    { name: "Reading Your Own Data", goal: "Take a file of real data — your own, ideally — and write a program that answers a question about it.", why: "Loops, conditions and types stop being vocabulary the moment they are answering something you asked.", artifact: "an answer from a file" },
+    { name: "A Game With Rules", goal: "Build a small game with rules you decide, and learn how state and input fit together by moving them around.", why: "A game tells you immediately when your model of the state was wrong.", artifact: "a game you can play" },
+  ],
+  some: [
+    { name: "Something From Scratch", goal: "Rebuild a library you have always imported — a router, a test runner, an argument parser — small but real.", why: "You have used these. Building one is where the box stops being black.", artifact: "your own library" },
+    { name: "A Service You Own", goal: "Build a small service end to end: storage, an interface over it, and a reason for it to exist.", why: "You can build pieces. This is about how the pieces fit and where they leak.", artifact: "a running service" },
+    { name: "One Idea, Properly", goal: "Implement one algorithm or data structure from the ground up, then make it fast, then prove it stayed correct.", why: "Depth on one thing is what turns tutorial fluency into judgement.", artifact: "a fast, tested implementation" },
+  ],
+  working: [
+    { name: "The Layer Below", goal: "Reimplement a piece of infrastructure you depend on daily, far enough to know how it fails.", why: "You already ship on top of this. Knowing its shape changes how you design against it.", artifact: "a working reimplementation" },
+    { name: "A Language Runtime", goal: "Write a lexer, a parser and an evaluator for a small language, and take it as far as closures.", why: "Nothing rearranges how you read code faster than having written something that reads code.", artifact: "a language that runs" },
+    { name: "Under Load", goal: "Build something small, measure it honestly, and take it apart until you know exactly what its limits are made of.", why: "You write code professionally, so the interesting question is not whether it works but why it is this fast.", artifact: "a measured system" },
+  ],
+  returning: [
+    { name: "Back In The Water", goal: "Build one complete small project, start to finish, in the way the language is written today.", why: "Your foundations are intact. This is about which specifics moved while you were away.", artifact: "one finished project" },
+    { name: "What Changed", goal: "Take something you built before and rebuild it with the current tools, noticing every place the answer is now different.", why: "Comparing against your own old work is the fastest way to find what went stale.", artifact: "the same thing, rebuilt" },
+    { name: "A Tool You Use", goal: "Write a small command-line tool you will actually reach for, and get comfortable in the toolchain again.", why: "Getting the build, the tests and the editor working is half of coming back.", artifact: "a tool you keep" },
+  ],
+};
 
 /**
  * The portrait, written here, for when no model can be reached.

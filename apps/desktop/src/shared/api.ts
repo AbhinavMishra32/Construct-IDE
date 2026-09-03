@@ -74,6 +74,7 @@ export const ipc = {
   conceptsList: "concepts:list",
   conceptsAtlas: "concepts:atlas",
   conceptsDelete: "concepts:delete",
+  conceptsHistory: "concepts:history",
 
   /* What Construct remembers about a project: four Markdown files in the
      project's own `.construct`, and the ordered steps it plans to teach. */
@@ -117,6 +118,7 @@ export const ipc = {
   learnerSave: "learner:save",
   learnerQuestion: "learner:question",
   learnerPortrait: "learner:portrait",
+  learnerOpenings: "learner:openings",
   /** Moves the window to the size the stage it has reached wants. The renderer
    *  owns which screen is showing, so it is what tells the main process. */
   windowStage: "app:stage",
@@ -485,6 +487,31 @@ export type ConceptSummary = {
   updatedAt: string;
 };
 
+/**
+ * One entry in a concept's history.
+ *
+ * Every reading the agent has taken of one idea, which is a different account of
+ * the project from the transcript: the transcript says what was said, and this
+ * says what it was taken to mean. Recorded since the first version and, until
+ * now, never read back — so a learner could see where a concept had got to and
+ * never how it got there.
+ */
+export type ConceptEvent = {
+  eventId: string;
+  conceptId: string;
+  /** `referenced` is a call that left the level alone: the agent came back to
+   *  the idea and did not change its mind about it. */
+  kind: "introduced" | "leveled-up" | "leveled-down" | "referenced";
+  /** Null for the first reading, which had nothing before it. */
+  previousLevel: number | null;
+  masteryLevel: number;
+  reason: string;
+  /** Which written parts that call rewrote. Empty when only the level moved,
+   *  and for events recorded before this was kept. */
+  changed: Array<"title" | "summary" | "content" | "note" | "docs" | "tags" | "parent">;
+  createdAt: string;
+};
+
 export type AgentEvent =
   /** A turn has begun, and what kind it is. Emitted for every turn, including
    *  the ones Construct starts itself — research and the opening turn — because
@@ -609,6 +636,29 @@ export const learnerDraftInput = z.object({
   pace: learnerPaceSchema,
   followUp: learnerFollowUpSchema.nullable(),
 });
+
+/**
+ * One project Construct suggests, on the last screen of the intake.
+ *
+ * A goal rather than a curriculum, because a goal is what a project in
+ * Construct actually is — the thing the agent teaches against — and the three
+ * of these are generated from the same draft the portrait was. `why` is the
+ * only field that exists for the learner rather than for the system, and it is
+ * one line: three cards each arguing their case at length is a reading task
+ * standing between someone and their first project.
+ */
+export const learnerOpeningSchema = z.object({
+  /** Two to four words, Title Case. Becomes the project's name verbatim. */
+  name: z.string().min(2).max(60),
+  /** What the learner will be able to do at the end of it. Becomes the goal. */
+  goal: z.string().min(10).max(400),
+  /** Why this one, for this person. One sentence, second person. */
+  why: z.string().min(10).max(240),
+  /** What they will have built. Short enough to sit on a card as a badge. */
+  artifact: z.string().min(2).max(48),
+  language: languageSchema,
+});
+export type LearnerOpening = z.infer<typeof learnerOpeningSchema>;
 
 /** The three sizes the window has before it is a workspace, and the workspace
  *  itself. Mirrors the main process's own type; declared here because the
@@ -828,6 +878,8 @@ export interface ConstructApi {
   /** Forgets a concept. The learner's correction for a concept the agent filed
    *  wrongly — an atlas that cannot be corrected is one they stop trusting. */
   deleteConcept(input: z.infer<typeof conceptDeleteInput>): Promise<void>;
+  /** How one concept got to where it is: every reading, newest first. */
+  conceptHistory(input: z.infer<typeof conceptDeleteInput>): Promise<ConceptEvent[]>;
   /** Flow Memory, as the learner would read it. Shown rather than hidden: memory
    *  that only the agent can see is memory nobody can correct. */
   readMemory(input: z.infer<typeof projectIdInput>): Promise<MemoryFileState[]>;
@@ -892,6 +944,11 @@ export interface ConstructApi {
   /** The portrait, in Construct's words and the second person. Falls back to a
    *  written-here summary when no model answers, so this never returns empty. */
   learnerPortrait(input: z.infer<typeof learnerDraftInput>): Promise<string>;
+  /** Three projects worth starting, written for this person from their intake.
+   *  Never empty: with no model reachable the main process composes three from
+   *  the draft itself, because "here is what I would build with you" is the
+   *  last thing the intake says and it cannot be a shrug. */
+  learnerOpenings(input: z.infer<typeof learnerDraftInput>): Promise<LearnerOpening[]>;
   /** Grows or shrinks the window for the screen now showing. */
   setWindowStage(stage: WindowStage): Promise<void>;
   updateState(): Promise<UpdateState>;

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, Check, ExternalLink, KeyRound } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, ExternalLink, KeyRound, Sparkles } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { LANGUAGES, type Language } from "@construct/domain";
 
-import type { ConstructApi, LearnerFooting, LearnerLeaning, LearnerPace, LearnerProfile, ProviderInventory } from "../../../shared/api";
+import type { ConstructApi, LearnerFooting, LearnerLeaning, LearnerOpening, LearnerPace, LearnerProfile, ProjectSummary, ProviderInventory } from "../../../shared/api";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -54,8 +54,14 @@ export function OnboardingPage({
   /** What is already known. Empty for a new account; populated when the intake
    *  is reopened from Settings to be redone. */
   profile: LearnerProfile;
-  /** The profile has been stored. The shell re-reads bootstrap and opens out. */
-  onFinished(): Promise<void>;
+  /** The profile has been stored. The shell re-reads bootstrap and opens out.
+   *
+   *  A project comes with it when the learner started one of the three the last
+   *  step offered: the shell opens straight into it, because Construct is
+   *  already working on it by then — creating a project starts a research pass
+   *  and the first teaching turn, and landing on the project list instead means
+   *  all of that happens somewhere nobody can see. */
+  onFinished(project?: ProjectSummary): Promise<void>;
   onError(value: string): void;
 }) {
   const [index, setIndex] = useState(0);
@@ -70,6 +76,12 @@ export function OnboardingPage({
   const [question, setQuestion] = useState<string | null>(profile.followUp?.question ?? null);
   const [followUpAnswer, setFollowUpAnswer] = useState(profile.followUp?.answer ?? "");
   const [portrait, setPortrait] = useState(profile.portrait);
+  /* The three projects the last step offers, and which one is being started.
+     `starting` is the card's name rather than a boolean because it is what the
+     screen says out loud while the project is being made, and because the two
+     cards beside it get out of the way by knowing they are not it. */
+  const [openings, setOpenings] = useState<LearnerOpening[]>([]);
+  const [starting, setStarting] = useState<string | null>(null);
 
   /* Whether a turn can run at all. Read once on arrival and again after every
      connection, because the whole of the first step is waiting for this to
@@ -122,7 +134,7 @@ export function OnboardingPage({
   /* What is being waited on, rather than a bare boolean: the two waits say
      different things, and "Reading that back…" under a spinner is the difference
      between a pause that feels considered and one that feels broken. */
-  const [waiting, setWaiting] = useState<"question" | "portrait" | "saving" | null>(null);
+  const [waiting, setWaiting] = useState<"question" | "portrait" | "openings" | "saving" | null>(null);
   const { pass, awake, rouse } = useMarkPass(waiting !== null);
 
   const draft = useMemo(
@@ -151,7 +163,14 @@ export function OnboardingPage({
      disable the button in front of them, which is what "One moment…" on the
      research step was. The mark keeps turning either way, because something
      genuinely is being worked on. */
-  const stalled = waiting === "portrait" || waiting === "saving" || (waiting === "question" && step === "question");
+  const stalled =
+    waiting === "portrait" ||
+    waiting === "saving" ||
+    (waiting === "question" && step === "question") ||
+    /* Same rule as the question, one screen later: the openings are fetched
+       while the learner is reading the portrait, and a request nobody is
+       waiting for must not disable the button in front of them. */
+    (waiting === "openings" && step === "openings");
 
   const copy = COPY[step];
   const complete = answered(step, { name, ambition, leanings, followUpAnswer, modelReady, searchReady });
@@ -199,6 +218,73 @@ export function OnboardingPage({
     }
   }, [api, onError]);
 
+  /**
+   * The three projects, fetched while the learner is still reading the portrait.
+   *
+   * Same trick as the adaptive question and for the same reason: this is the
+   * longest of the three completions — it is writing three suggestions, not one
+   * sentence — and the portrait step is a screen people genuinely stop on,
+   * because it is about them and it is editable. By the time they press on from
+   * it the cards are usually already there.
+   *
+   * It cannot fail into nothing. The main process tops the list up from the
+   * draft itself when the model returns less than three, so the only empty case
+   * is no api at all, and then nothing on this screen works anyway.
+   */
+  const sought = useRef(false);
+  const seekOpenings = useCallback(async () => {
+    if (!api || sought.current) return;
+    sought.current = true;
+    setWaiting("openings");
+    try {
+      setOpenings(await api.learnerOpenings(latest.current));
+    } catch {
+      /* Silent, like the question. There is a way past this screen either way,
+         and an error about a model on the last screen of an intake is a worse
+         ending than three fewer suggestions. */
+      setOpenings([]);
+    } finally {
+      setWaiting(null);
+    }
+  }, [api]);
+
+  /** Stores the profile. Both ways off the last step go through it, because both
+   *  of them are the intake being finished. */
+  const saveProfile = useCallback(async () => {
+    if (!api) return null;
+    return api.saveLearner({ ...latest.current, portrait: portrait.trim() });
+  }, [api, portrait]);
+
+  /**
+   * Starting one of the three.
+   *
+   * The profile is saved first and the project second, in that order, because a
+   * project created against an unsaved profile is a project whose `learner.md`
+   * is written from nothing — and the first thing the agent does with a new
+   * project is read it.
+   *
+   * The language is the card's rather than the intake's. A suggestion is allowed
+   * to name another language where the project genuinely demands one, and
+   * overriding it here would create the project in a language its own goal does
+   * not match.
+   */
+  const startOpening = useCallback(
+    async (opening: LearnerOpening) => {
+      if (!api || starting) return;
+      rouse();
+      setStarting(opening.name);
+      try {
+        await saveProfile();
+        const created = await api.createProject({ name: opening.name, goal: opening.goal, language: opening.language });
+        await onFinished(created);
+      } catch (cause) {
+        setStarting(null);
+        onError(cause instanceof Error ? cause.message : "Construct could not start that project.");
+      }
+    },
+    [api, onError, onFinished, rouse, saveProfile, starting],
+  );
+
   const go = useCallback((next: number) => {
     setIndex(Math.max(0, Math.min(STEPS.length - 1, next)));
   }, []);
@@ -207,11 +293,13 @@ export function OnboardingPage({
     rouse();
     const current = STEPS[index];
 
-    if (current === "portrait") {
+    /* The last step. Pressing the button here is choosing none of the three, so
+       the profile is stored and the window opens on the project list — which is
+       where someone who wants to describe their own project was headed anyway. */
+    if (current === "openings") {
       if (!api) return;
       setWaiting("saving");
-      void api
-        .saveLearner({ ...latest.current, portrait: portrait.trim() })
+      void saveProfile()
         .then(() => onFinished())
         .catch((cause: unknown) => onError(cause instanceof Error ? cause.message : "Construct could not save that."))
         .finally(() => setWaiting(null));
@@ -228,7 +316,7 @@ export function OnboardingPage({
     }
 
     go(index + 1);
-  }, [api, askQuestion, go, index, onError, onFinished, portrait, rouse]);
+  }, [api, askQuestion, go, index, onError, onFinished, rouse, saveProfile]);
 
   /* A question that never arrived is a step with nothing on it, so it stands
      down as soon as that is known rather than being guessed at from the step
@@ -256,6 +344,16 @@ export function OnboardingPage({
     void writePortrait();
   }, [api, step, writePortrait]);
 
+  /* Started from the portrait's arrival rather than from its departure, so the
+     time it takes is spent on a screen the learner is reading. Unawaited, and
+     deliberately not chained onto the portrait: they are two independent
+     requests off the same draft, and making the second wait for the first would
+     put the whole of both latencies in front of the last screen. */
+  useEffect(() => {
+    if (step !== "portrait") return;
+    void seekOpenings();
+  }, [seekOpenings, step]);
+
   /* Enter moves on everywhere; the two textareas keep Enter for newlines and
      take ⌘/Ctrl+Enter instead. Handled at the panel rather than per-field so a
      step with no field at all — the language grid, the footing list — still
@@ -265,7 +363,7 @@ export function OnboardingPage({
       /* Not while the connect dialog is open. Enter inside it submits a key or
          a code, and that keypress bubbling out to here would step off the model
          screen the moment the learner finished connecting one. */
-      if (event.key !== "Enter" || stalled || connecting) return;
+      if (event.key !== "Enter" || stalled || connecting || starting) return;
       const inTextarea = (event.target as HTMLElement | null)?.tagName === "TEXTAREA";
       if (inTextarea && !(event.metaKey || event.ctrlKey)) return;
       event.preventDefault();
@@ -273,7 +371,7 @@ export function OnboardingPage({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [advance, connecting, stalled]);
+  }, [advance, connecting, stalled, starting]);
 
   const toggleLeaning = useCallback((value: LearnerLeaning) => {
     rouse();
@@ -290,7 +388,15 @@ export function OnboardingPage({
      contract the agent's own questions keep mid-project. Only the rows that lead
      somewhere are numbered: a connected provider is not a choice to make.
      A keyboard has no "10" key, so nothing past nine gets one. */
-  const options = step === "footing" ? FOOTINGS.length : step === "leanings" ? LEANINGS.length : step === "model" ? offered.length : 0;
+  const options =
+    step === "footing" ? FOOTINGS.length
+    : step === "leanings" ? LEANINGS.length
+    : step === "model" ? offered.length
+    /* The cards keep the same contract as every other list of choices here, and
+       it matters more on this one: pressing 1 is the shortest path there has
+       ever been between finishing the intake and the agent working. */
+    : step === "openings" ? openings.length
+    : 0;
 
   useEffect(() => {
     if (!options || connecting || stalled) return;
@@ -306,10 +412,14 @@ export function OnboardingPage({
       if (step === "footing") { rouse(); setFooting(FOOTINGS[position]!.value); }
       if (step === "leanings") toggleLeaning(LEANINGS[position]!.value);
       if (step === "model") setConnecting(offered[position] ?? null);
+      if (step === "openings") {
+        const chosen = openings[position];
+        if (chosen) void startOpening(chosen);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [connecting, offered, options, rouse, stalled, step, toggleLeaning]);
+  }, [connecting, offered, openings, options, rouse, stalled, startOpening, step, toggleLeaning]);
 
   const field =
     "w-full rounded-xl bg-[var(--color-background-elevated-secondary)] px-3.5 py-3 text-content outline-none " +
@@ -319,7 +429,16 @@ export function OnboardingPage({
     <div className="app-drag app-pane relative grid h-full place-items-center overflow-hidden px-6">
       <div aria-hidden className="auth-field text-foreground" />
 
-      <motion.div className="app-no-drag relative w-full max-w-[26rem] pb-[var(--titlebar-height)]" layout transition={PANEL}>
+      {/* The panel widens for the last step and nothing else. Three cards at the
+          width of a single text field are three cramped cards, and the widening
+          itself is doing something: the room opens up at the moment the intake
+          stops asking and starts offering. `layout` carries it on the same easing
+          as every other change of size on this screen. */}
+      <motion.div
+        className={cn("app-no-drag relative w-full pb-[var(--titlebar-height)]", step === "openings" ? "max-w-[32rem]" : "max-w-[26rem]")}
+        layout
+        transition={PANEL}
+      >
         <motion.div className="flex items-center justify-center gap-2.5" layout="position" transition={PANEL}>
           <ConstructDots key={pass} pattern={awake ? "pass" : "still"} size={30} {...(waiting ? { label: "Working" } : {})} />
           <ConstructWordmark className="block text-[2rem] leading-none text-foreground" />
@@ -629,11 +748,49 @@ export function OnboardingPage({
                 )}
               </AnimatePresence>
             )}
+            {step === "openings" && (
+              <AnimatePresence initial={false} mode="wait">
+                {waiting === "openings" ? (
+                  <motion.p
+                    animate={{ opacity: 1 }}
+                    className="thinking-shimmer py-8 text-center text-content"
+                    exit={{ opacity: 0 }}
+                    initial={{ opacity: 0 }}
+                    key="waiting"
+                    transition={TEXT}
+                  >
+                    Thinking about what to build with you…
+                  </motion.p>
+                ) : openings.length === 0 ? (
+                  /* No api, which is the only way to get here empty. Nothing to
+                     apologise for and nothing to explain: the button below is
+                     the way on, and it is the way on for everybody. */
+                  <p className="py-8 text-center text-ui text-muted-foreground">Describe your first project yourself, on the next screen.</p>
+                ) : (
+                  <motion.div className="space-y-2" key="openings">
+                    {openings.map((opening, position) => (
+                      <OpeningCard
+                        chosen={starting === opening.name}
+                        index={position + 1}
+                        key={opening.name}
+                        onStart={() => void startOpening(opening)}
+                        opening={opening}
+                        /* Every card dims and stands down once one is pressed,
+                           except the one that was pressed. That is the whole of
+                           the transition into the project: the choice stops
+                           looking like a choice the instant it is made. */
+                        standDown={starting !== null && starting !== opening.name}
+                      />
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            )}
           </div>
 
           <Button
             className="mt-4 h-11 w-full text-[0.8125rem]"
-            disabled={stalled}
+            disabled={stalled || starting !== null}
             onClick={advance}
             size="lg"
             type="button"
@@ -642,10 +799,12 @@ export function OnboardingPage({
               animate={{ opacity: 1 }}
               className="inline-flex items-center gap-1.5"
               initial={{ opacity: 0 }}
-              key={(stalled && waiting) || (complete ? copy.action : "skip")}
+              key={starting ?? ((stalled && waiting) || (complete ? copy.action : "skip"))}
               transition={TEXT}
             >
-              {waiting === "saving" ? (
+              {starting ? (
+                `Setting up ${starting}…`
+              ) : waiting === "saving" ? (
                 "Saving…"
               ) : stalled ? (
                 "One moment…"
@@ -654,7 +813,15 @@ export function OnboardingPage({
                   {/* Says plainly that a step is being left unanswered. The
                       whole of the pressure this intake applies, and all of it
                       it should apply. */}
-                  {complete ? copy.action : step === "model" ? "I'll connect one later" : step === "research" ? "I'll add a key later" : "Skip this"}
+                  {complete
+                    ? copy.action
+                    : step === "model" ? "I'll connect one later"
+                    : step === "research" ? "I'll add a key later"
+                    /* Not "Skip this". Nothing is being skipped: describing your
+                       own project is the other way of doing this step, and it is
+                       what the project list is for. */
+                    : step === "openings" ? "I'll describe my own"
+                    : "Skip this"}
                   {complete ? <ArrowRight data-icon="inline-end" /> : null}
                 </>
               )}
@@ -672,7 +839,7 @@ export function OnboardingPage({
               (step === "model"
                 ? inventory && !modelReady ? "Connect a provider to continue" : ""
                 : options
-                  ? `Press 1–${Math.min(options, 9)} to choose${step === "leanings" ? ", or several" : ""}`
+                  ? `Press 1–${Math.min(options, 9)} to ${step === "openings" ? "start one" : "choose"}${step === "leanings" ? ", or several" : ""}`
                   : "")}
           </p>
         </motion.div>
@@ -681,7 +848,7 @@ export function OnboardingPage({
           {index > 0 && (
             <button
               className="inline-flex items-center gap-1 rounded text-muted-foreground transition-colors hover:text-foreground disabled:opacity-45"
-              disabled={stalled}
+              disabled={stalled || starting !== null}
               onClick={() => { rouse(); go(index - (STEPS[index - 1] === "question" && !question ? 2 : 1)); }}
               type="button"
             >
@@ -720,6 +887,97 @@ export function OnboardingPage({
  * One object with rows in it is what a list of answers actually is.
  */
 const GROUP = "overflow-hidden rounded-xl bg-[var(--color-background-elevated-secondary)] shadow-[inset_0_0_0_0.5px_var(--border-strong)]";
+
+/**
+ * One project Construct is offering to start.
+ *
+ * A card rather than a row, and it is the one place on this screen that breaks
+ * the sunken-group grammar every other step uses. That is deliberate. Every
+ * other step is a list of answers to one question, where one object with rows in
+ * it is what the thing actually is. These three are not answers — they are three
+ * offers, each with a name, a goal, a reason and a thing that exists at the end
+ * of it, and four fields stacked inside a row is a row that has stopped being
+ * one.
+ *
+ * Three states, and the third is the point of the animation. Resting, hovered —
+ * where the card lifts a hair and its accent comes up — and standing down, which
+ * is what the other two do the moment one is pressed. Nothing spins and nothing
+ * is replaced by a spinner: the two cards not chosen get quietly out of the way,
+ * the chosen one stays exactly where it is under the cursor, and the mark at the
+ * top of the window is already turning.
+ */
+function OpeningCard({
+  chosen,
+  index,
+  onStart,
+  opening,
+  standDown,
+}: {
+  /** This is the one being started. */
+  chosen: boolean;
+  index: number;
+  onStart(): void;
+  opening: LearnerOpening;
+  /** Another card is being started, so this one is not. */
+  standDown: boolean;
+}) {
+  return (
+    <motion.button
+      animate={{
+        opacity: standDown ? 0.28 : 1,
+        /* The chosen card comes forward by the same hair a hover does, and stays
+           there — so pressing it does not look like the hover ending. */
+        y: chosen ? -1 : 0,
+        scale: standDown ? 0.985 : 1,
+      }}
+      className={cn(
+        "group relative block w-full overflow-hidden rounded-xl px-4 py-3.5 text-left outline-none",
+        "bg-[var(--color-background-elevated-secondary)] shadow-[inset_0_0_0_0.5px_var(--border-strong)]",
+        "transition-shadow",
+        chosen
+          ? "shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--foreground)_30%,transparent)]"
+          : "hover:shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--foreground)_18%,transparent)] focus-visible:shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--foreground)_22%,transparent)]",
+      )}
+      disabled={standDown || chosen}
+      /* Staggered in, a card at a time, in the order they will be read. Three
+         cards arriving together is a block of text appearing; three arriving in
+         sequence is Construct putting them down. */
+      initial={{ opacity: 0, y: 8 }}
+      onClick={onStart}
+      transition={{ ...STEP, delay: standDown || chosen ? 0 : (index - 1) * 0.07 }}
+      type="button"
+      whileHover={standDown || chosen ? undefined : { y: -1 }}
+    >
+      <div className="flex items-baseline gap-2.5">
+        {/* Same column, same width, same job as `OptionRow`'s: the key that
+            picks this card. */}
+        <span aria-hidden className="w-3 shrink-0 text-ui tabular-nums text-muted-foreground/55 transition-colors group-hover:text-foreground/70">
+          {index}
+        </span>
+        <span className="min-w-0 flex-1 truncate text-content font-medium leading-tight text-foreground">{opening.name}</span>
+        {/* The language, because a card is allowed to name one other than the
+            learner's and they should not have to open the project to find out. */}
+        <LanguageGlyph className="size-4 shrink-0 translate-y-[1px]" language={opening.language} />
+      </div>
+
+      <p className="mt-1.5 pl-[1.375rem] text-ui leading-[1.45] text-muted-foreground">{opening.goal}</p>
+
+      {/* The reason, set apart from the goal because it is the only line on the
+          card written about the reader rather than about the project. */}
+      <p className="mt-2 flex items-start gap-1.5 pl-[1.375rem] text-ui leading-[1.45] text-foreground/75">
+        <Sparkles className="mt-[0.15rem] size-3 shrink-0 opacity-50" />
+        <span className="min-w-0 flex-1">{opening.why}</span>
+      </p>
+
+      {/* What exists at the end. Last, small, and the only thing on the card
+          that is a noun on its own: it is the answer to "and then what do I
+          have", which is the question a goal never quite answers. */}
+      <p className="mt-2 pl-[1.375rem] text-ui text-muted-foreground/70">
+        You end up with {opening.artifact}.
+      </p>
+    </motion.button>
+  );
+}
 
 /**
  * One choice.

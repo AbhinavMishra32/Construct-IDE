@@ -365,9 +365,15 @@ export function App() {
       <OnboardingPage
         api={api}
         onError={setError}
-        onFinished={async () => {
+        onFinished={async (project) => {
           setRetaking(null);
           await load();
+          /* Straight into it when the intake started one of the three projects
+             it offered. Construct is already working by this point — creating a
+             project runs a research pass and then the first teaching turn — and
+             landing on the project list would mean the learner's first sight of
+             Construct working is a card that mysteriously fills itself in. */
+          if (project) await openProject(project);
         }}
         profile={retaking ?? data.learner}
       />

@@ -336,6 +336,11 @@ export function installIpc({ store, auth, projects, providers, workspace, termin
   });
 
   handle(ipc.pathRead, (input) => learningPath.read(projectIdInput.parse(input).projectId));
+  handle(ipc.conceptsHistory, (input) => {
+    const { projectId, conceptId } = conceptDeleteInput.parse(input);
+    return store.listConceptEvents(projectId, conceptId);
+  });
+
   handle(ipc.conceptsDelete, (input) => {
     const { projectId, conceptId } = conceptDeleteInput.parse(input);
     store.deleteConcept(projectId, conceptId);
@@ -419,6 +424,7 @@ export function installIpc({ store, auth, projects, providers, workspace, termin
 
   handle(ipc.learnerQuestion, (input) => agent.learnerQuestion(learnerDraftInput.parse(input)));
   handle(ipc.learnerPortrait, (input) => agent.learnerPortrait(learnerDraftInput.parse(input)));
+  handle(ipc.learnerOpenings, (input) => agent.learnerOpenings(learnerDraftInput.parse(input)));
 
   handle(ipc.windowStage, (input) => fitWindowTo(window(), windowStageSchema.parse(input)));
 

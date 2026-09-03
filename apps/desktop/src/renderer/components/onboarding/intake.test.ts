@@ -40,12 +40,23 @@ describe("the intake's shape", () => {
     }
   });
 
-  it("ends on the portrait", () => {
-    /* The order carries meaning: the adaptive question can only be written from
-       the answers before it, and the portrait can only be written from that. */
-    expect(STEPS[STEPS.length - 1]).toBe("portrait");
+  it("ends on the openings, and gets there through the portrait", () => {
+    /* The order carries meaning all the way down: the adaptive question can only
+       be written from the answers before it, the portrait from that, and the
+       three projects from all of it. The openings are last because they are the
+       only step that leads somewhere other than the next step. */
+    expect(STEPS[STEPS.length - 1]).toBe("openings");
     expect(STEPS.indexOf("question")).toBeGreaterThan(STEPS.indexOf("leanings"));
     expect(STEPS.indexOf("portrait")).toBeGreaterThan(STEPS.indexOf("question"));
+    expect(STEPS.indexOf("openings")).toBeGreaterThan(STEPS.indexOf("portrait"));
+  });
+
+  it("never calls the openings answered, so the way past them is always offered", () => {
+    /* The cards are the answer, and pressing one leaves this screen for a
+       project rather than for the next step. So the button under them is only
+       ever the way out, and `answered` saying false is what keeps it saying so
+       — see the "I'll start my own" branch in OnboardingPage. */
+    expect(answered("openings", draft({ name: "Ada", ambition: "a renderer" }))).toBe(false);
   });
 });
 
